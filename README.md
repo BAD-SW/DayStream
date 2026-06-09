@@ -4,75 +4,21 @@ A configurable wellness-business management platform for recovery centers, welln
 
 **First customer:** Transcend Health Mallorca
 
-## Tech Stack
+## Status
 
-- **Frontend:** Next.js 16 · React 19 · TypeScript · Tailwind CSS 4
-- **Backend/DB:** Supabase (PostgreSQL + Auth + Storage)
-- **Payments:** Stripe
-- **Testing:** Vitest · Testing Library · MSW
-- **Mobile (Future):** React Native + Expo
-
-## Project Structure
-
-```
-src/
-├── app/
-│   ├── (customer)/       # Customer-facing routes
-│   │   ├── book/         # Booking flow
-│   │   ├── bookings/     # My bookings
-│   │   ├── login/        # Auth pages
-│   │   ├── register/
-│   │   └── services/     # Service catalog
-│   ├── admin/            # Admin dashboard
-│   │   ├── bookings/     # Booking management
-│   │   ├── schedule/     # Staff scheduling
-│   │   ├── services/     # Service CRUD
-│   │   └── users/        # User management
-│   └── api/              # API routes
-├── components/
-│   ├── admin/            # Admin-specific components
-│   ├── customer/         # Customer-facing components
-│   ├── pwa/              # Progressive web app components
-│   └── ui/               # Shared design system
-├── lib/
-│   ├── services/         # Business logic
-│   ├── supabase/         # Database client & helpers
-│   └── types/            # TypeScript type definitions
-└── __tests__/            # Test suites
-```
+Project is in planning phase. Tech stack and architecture decisions are under review.
 
 ## Documentation
 
-- [Project Phases](docs/PROJECT_PHASES.md) — Full roadmap broken into 5 phases
+- [Project Phases](docs/phases/README.md) — 23-phase roadmap with dependency map
+- [Architecture Decisions](docs/ARCHITECTURE_DECISIONS.md) — Proposed tech stack and design decisions
+- [Full Roadmap](docs/PROJECT_PHASES.md) — Detailed phase breakdown
 
-## Getting Started
+## Specs
 
-```bash
-npm install
-npm run dev
-```
+Phase specifications live in `.kiro/specs/`. Each phase has its own folder with requirements, design, and tasks documented as planning progresses.
 
-Open [http://localhost:3000](http://localhost:3000)
+## Repository
 
-## Scripts
-
-| Command | Description |
-|---|---|
-| `npm run dev` | Start development server |
-| `npm run build` | Production build |
-| `npm run lint` | Run ESLint |
-| `npm run test` | Run tests (single run) |
-| `npm run test:watch` | Run tests in watch mode |
-| `npm run test:coverage` | Run tests with coverage |
-
-## Phase Overview
-
-| Phase | Focus | Status |
-|---|---|---|
-| 1 | Foundation & POC (Transcend) | 🚧 In Progress |
-| 2 | Business Growth Tools | 🔲 Planned |
-| 3 | Multi-Tenant SaaS & Scale | 🔲 Planned |
-| 4 | AI & Differentiation | 🔲 Planned |
-| 5 | Enterprise & Expansion | 🔲 Planned |
-
-See [docs/PROJECT_PHASES.md](docs/PROJECT_PHASES.md) for full details on each phase.
+- **Organization:** [BAD-SW](https://github.com/BAD-SW)
+- **Repo:** [booking-manager](https://github.com/BAD-SW/booking-manager)
