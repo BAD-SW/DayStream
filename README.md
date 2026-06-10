@@ -1,6 +1,6 @@
-# Transcend Wellness Platform
+# Booking Platform
 
-A configurable wellness-business management platform for recovery centers, wellness studios, health optimization centers, gyms, spas, and clinics.
+A configurable booking management platform for recovery centers, wellness studios, health optimization centers, gyms, spas, clinics and similar.
 
 **First customer:** Transcend Health Mallorca
 
