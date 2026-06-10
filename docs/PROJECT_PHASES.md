@@ -1,8 +1,8 @@
-# Transcend Wellness Platform — Project Phases
+# Booking Management Platform — Project Phases
 
 ## Overview
 
-A configurable wellness-business management platform for recovery centers, wellness studios, health optimization centers, gyms, spas, clinics, and hybrid businesses. First customer: **Transcend Health Mallorca**.
+A configurable booking management platform for recovery centers, wellness studios, health optimization centers, gyms, spas, clinics, and hybrid businesses. First customer: **Transcend Health Mallorca**.
 
 **Architecture:** Multi-tenant SaaS (single codebase, multiple businesses)  
 **Stack:** Next.js 16 · React 19 · TypeScript · Tailwind CSS 4 · Supabase (Auth + PostgreSQL + Storage) · Stripe  
@@ -10,7 +10,7 @@ A configurable wellness-business management platform for recovery centers, welln
 
 ---
 
-## Phase 1 — Foundation & POC (Transcend)
+## Phase 1 — Foundation & POC
 
 Goal: A working booking system for a single tenant (Transcend Health Mallorca) with core scheduling, payments, and customer management.
 
