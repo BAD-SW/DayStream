@@ -2,29 +2,31 @@
 
 ## Overview
 
-This phase implements a CI/CD pipeline on GitHub Actions for the DayStream platform, a versioning strategy, and automated build/test/deploy workflows. The platform uses a calendar-based versioning scheme (YYYY.M.YYYYMMDD) with monthly feature releases and daily patch builds. The repository is hosted on GitHub at `BAD-SW/daystream` with no pipelines currently configured. Initial deployment targets local development, with AWS migration planned for the future.
+This phase implements a CI/CD pipeline on GitHub Actions for the DayStream platform, a simplified versioning strategy, and automated build/test/deploy workflows. The platform uses a major.patch versioning scheme with quarterly feature releases and weekly bug-fix patches. The repository is hosted on GitHub at `BAD-SW/daystream` with no pipelines currently configured. Initial deployment targets local development, with AWS migration planned for the future.
 
 ## Goals
 
 - Establish automated build and test pipelines on GitHub Actions for the `BAD-SW/daystream` repository
-- Implement calendar-based versioning with monthly releases and daily patch builds
-- Support multiple concurrently active release branches (rolling 12 months)
+- Implement a simplified versioning scheme (major.patch) with quarterly releases and weekly patches
+- Support a two-branch release model (main + current release)
 - Provide automated testing gates that prevent broken code from reaching main
 - Establish artifact packaging for future deployment automation
 - Lay groundwork for an Admin "Updates" interface for managing platform updates
+- Ensure version comparison is always numeric (not lexicographic)
 
 ## Glossary
 
-- **Platform**: The DayStream multi-tenant SaaS wellness business management system
-- **Version**: A monthly feature release identified by `YYYY.M.0` (e.g., `2026.8.0`)
-- **Patch**: A bug-fix-only build applied to an existing Version, identified by `YYYY.M.YYYYMMDD` (e.g., `2026.8.20260815`)
-- **Release_Branch**: A long-lived Git branch for a specific Version (e.g., `release/2026.8`) that receives cherry-picked bug fixes
-- **Build_Pipeline**: The GitHub Actions workflow that compiles, tests, and packages the Platform into deployment artifacts
+- **Platform**: The DayStream multi-tenant SaaS booking and business management platform
+- **Version**: A quarterly feature release identified by a major integer (e.g., `1`, `2`, `3`)
+- **Patch**: A bug-fix build applied to the current release Version, identified by `Major.Patch` (e.g., `2.7`)
+- **Main_Branch**: The `main` branch where all development work is committed (features + fixes)
+- **Release_Branch**: A branch for a specific Version (e.g., `release/2`) that receives cherry-picked bug fixes only
+- **Build_Pipeline**: The GitHub Actions workflow that compiles, tests, and packages the Platform
 - **Artifact**: A versioned, deployable package containing compiled backend code, built frontend assets, migration files, and metadata
-- **Version_Manifest**: A JSON document listing all available Versions and Patches with their metadata
+- **Version_Manifest**: A JSON document listing all available Versions and Patches with metadata
 - **Update_Manager**: The backend service responsible for checking for updates, downloading Artifacts, and orchestrating the update process
-- **Update_Scheduler**: A scheduled job that checks for and applies Patches or Upgrades at a configured time
-- **Migration**: An ordered, idempotent SQL script that modifies the database schema, tracked in the migrations table
+- **Update_Scheduler**: A scheduled job that checks for and applies Patches at a configured time
+- **Migration**: An ordered, idempotent SQL script that modifies the database schema
 - **Rollback**: The process of reverting the Platform to a previous Artifact after a failed update
 - **Backup_Snapshot**: A point-in-time copy of the database and configuration taken before an update
 - **Super_Admin**: A user with the super administrator role who manages Platform-wide settings
@@ -46,36 +48,39 @@ This phase implements a CI/CD pipeline on GitHub Actions for the DayStream platf
 5. IF any test or lint check fails, THEN THE Build_Pipeline SHALL abort the build and mark the workflow as failed
 6. THE Build_Pipeline SHALL compile the backend TypeScript code and produce a production-ready Node.js bundle
 7. THE Build_Pipeline SHALL build the frontend React application using Vite and produce optimized static assets
-8. THE Build_Pipeline SHALL generate a build metadata file containing version, Git commit SHA, branch, build number, timestamp, and artifact checksums
+8. THE Build_Pipeline SHALL generate a build metadata file containing version, Git commit SHA, branch, build number, and timestamp
 9. THE Build_Pipeline SHALL upload build artifacts to GitHub Actions artifact storage
-10. THE Build_Pipeline SHALL support a manual trigger for production deployment from tagged version workflows
+10. THE Build_Pipeline SHALL support a manual trigger for production deployment from tagged version builds
 
-### Requirement 2: Calendar-Based Versioning Scheme
+### Requirement 2: Simplified Versioning Scheme
 
-**User Story:** As a product manager, I want a clear versioning format that communicates when a release was created and whether it is a feature release or a patch, so that customers and support can easily identify what version an instance is running.
-
-#### Acceptance Criteria
-
-1. THE system SHALL use the versioning format `YYYY.M.YYYYMMDD` where `YYYY.M` identifies the monthly Version and `YYYYMMDD` identifies the patch date
-2. A base monthly Version release SHALL use `0` as the patch segment (e.g., `2026.8.0`)
-3. A Patch build SHALL use the build date as the patch segment (e.g., `2026.8.20260815`)
-4. THE Build_Pipeline SHALL derive the version automatically from the branch name and build date: `release/YYYY.M` branches produce `YYYY.M.0` for the initial tag and `YYYY.M.YYYYMMDD` for subsequent patch builds
-5. THE system SHALL maintain up to 12 active Release_Branches at any time, corresponding to a rolling 12-month window
-6. WHEN a 13th monthly Version is created, THE system SHALL archive (stop building) the oldest Release_Branch
-7. Patches SHALL contain only bug fixes; new features SHALL only be introduced in new monthly Versions built from `main`
-
-### Requirement 3: Multi-Version Release Branch Management
-
-**User Story:** As a developer, I want each monthly version to have its own long-lived release branch, so that bug fixes can be cherry-picked to any supported version independently.
+**User Story:** As a product manager, I want a clear versioning format that communicates the release number and patch level, so that customers and support can easily identify what version an instance is running.
 
 #### Acceptance Criteria
 
-1. THE system SHALL create a new `release/YYYY.M` branch from `main` at the start of each monthly release cycle
-2. THE Build_Pipeline SHALL run on every push to any `release/*` branch, producing a Patch Artifact
-3. Bug fixes SHALL be cherry-picked from `main` into the relevant `release/*` branches
-4. Each Release_Branch SHALL have its own pipeline configuration that tags Artifacts with the correct `YYYY.M.YYYYMMDD` version
-5. THE system SHALL support building and deploying any of the 12 active Release_Branches independently
-6. Multiple DayStream instances SHALL be able to run different Versions simultaneously, each pulling Artifacts from their respective Release_Branch
+1. THE system SHALL use the versioning format `Major.Patch` (e.g., `2.7` means release 2, patch 7)
+2. A new quarterly release SHALL increment the Major number and reset Patch to 0 (e.g., `2.0`, `3.0`)
+3. A bug-fix patch SHALL increment the Patch number (e.g., `2.1`, `2.2`, `2.3`)
+4. THE system SHALL compare versions numerically on both components (e.g., `2.12` > `2.9`, `10.1` > `9.52`)
+5. THE system SHALL NEVER compare version strings lexicographically
+6. THE Build_Pipeline SHALL derive the version from a version file or git tag on the release branch
+7. New features SHALL only be introduced in new Major versions (built from `main`)
+8. Bug fixes SHALL be cherry-picked from `main` into the current Release_Branch
+
+### Requirement 3: Two-Branch Release Model
+
+**User Story:** As a developer, I want a simple branching model with main for development and a release branch for production, so that the release process is straightforward and predictable.
+
+#### Acceptance Criteria
+
+1. THE system SHALL use `main` as the development branch where all features and fixes are committed
+2. THE system SHALL create a new `release/N` branch from `main` when a quarterly release is ready (e.g., `release/1`, `release/2`)
+3. Bug fixes SHALL be cherry-picked from `main` into the current `release/N` branch
+4. THE current Release_Branch SHALL receive only bug fixes (no new features)
+5. THE system SHALL support at most two active Release_Branches at any time (current + previous for transition)
+6. WHEN a new Release_Branch is created, THE previous Release_Branch SHALL be archived after a transition period
+7. THE Build_Pipeline SHALL run on both `main` and the active `release/*` branch
+8. Pull requests from `main` to a `release/*` branch SHALL require review before merging
 
 ### Requirement 4: Artifact Storage and Version Manifest
 
@@ -85,9 +90,9 @@ This phase implements a CI/CD pipeline on GitHub Actions for the DayStream platf
 
 1. THE Build_Pipeline SHALL publish built Artifacts upon successful build completion
 2. THE system SHALL maintain a Version_Manifest as a JSON document listing all available Versions and Patches
-3. THE Version_Manifest SHALL include for each entry: version string, release date, changelog summary, migration requirements, minimum compatible upgrade-from version, and artifact checksums
-4. THE Version_Manifest SHALL distinguish between Version upgrades (new monthly releases) and Patches (bug fixes for the current Version)
-5. WHEN a new Artifact is published, THE Build_Pipeline SHALL append the entry to the Version_Manifest atomically
+3. THE Version_Manifest SHALL include for each entry: version string (Major.Patch), release date, changelog summary, migration requirements, minimum compatible upgrade-from version, and artifact checksums
+4. THE Version_Manifest SHALL distinguish between Major upgrades (new quarterly releases) and Patches (bug fixes for the current Version)
+5. WHEN a new Artifact is published, THE Build_Pipeline SHALL append the entry to the Version_Manifest
 6. THE Version_Manifest SHALL include a checksum for integrity verification
 7. THE Update_Manager SHALL fetch the latest Version_Manifest when checking for updates
 
@@ -98,9 +103,9 @@ This phase implements a CI/CD pipeline on GitHub Actions for the DayStream platf
 #### Acceptance Criteria
 
 1. THE Platform SHALL provide an "Updates" section in the Super Admin area
-2. THE Updates section SHALL display the currently installed Platform version
-3. THE Updates section SHALL display available Patches for the currently installed Version
-4. THE Updates section SHALL display available Version upgrades (newer monthly releases)
+2. THE Updates section SHALL display the currently installed Platform version (Major.Patch)
+3. THE Updates section SHALL display available Patches for the currently installed Major version
+4. THE Updates section SHALL display available Major upgrades (newer quarterly releases)
 5. THE Updates section SHALL display the changelog and migration summary for each available update
 6. THE Updates section SHALL indicate compatibility status for each available update
 7. THE Updates section SHALL provide a "Check for Updates" action that refreshes the Version_Manifest
@@ -112,7 +117,7 @@ This phase implements a CI/CD pipeline on GitHub Actions for the DayStream platf
 
 #### Acceptance Criteria
 
-1. THE Updates section SHALL provide an "Install Now" button for each compatible Patch and Version upgrade
+1. THE Updates section SHALL provide an "Install Now" button for each compatible Patch and Major upgrade
 2. WHEN the Super_Admin clicks "Install Now", THE Update_Manager SHALL initiate the full update sequence
 3. THE Update_Manager SHALL create a Backup_Snapshot of the database and current application configuration before applying any changes
 4. THE Update_Manager SHALL download and verify the Artifact checksum before proceeding with installation
@@ -123,10 +128,11 @@ This phase implements a CI/CD pipeline on GitHub Actions for the DayStream platf
 9. WHEN all Health_Checks pass, THE Update_Manager SHALL exit maintenance mode and resume normal operations
 10. THE Update_Manager SHALL log every step of the update process with timestamps and outcomes
 11. IF any step of the update fails, THEN THE Update_Manager SHALL initiate an automatic Rollback
+12. THE Update_Manager SHALL verify numerically that the target version is higher than the current version before proceeding
 
 ### Requirement 7: Scheduled Updates
 
-**User Story:** As a Super_Admin, I want to schedule a one-time upgrade or configure recurring patch checks, so that updates are applied during low-usage windows without manual intervention.
+**User Story:** As a Super_Admin, I want to schedule patch applications, so that updates are applied during low-usage windows without manual intervention.
 
 #### Acceptance Criteria
 
@@ -179,7 +185,7 @@ This phase implements a CI/CD pipeline on GitHub Actions for the DayStream platf
 2. THE Health_Check SHALL verify the backend API responds on `GET /api/health` with HTTP 200
 3. THE Health_Check SHALL verify the frontend application is accessible
 4. THE Health_Check SHALL verify database connectivity and query execution
-5. THE Health_Check SHALL verify that the reported application version matches the expected version
+5. THE Health_Check SHALL verify that the reported application version matches the expected version (numeric comparison)
 6. IF any Health_Check fails within 3 retry attempts, THEN THE Update_Manager SHALL mark the update as failed and initiate a Rollback
 7. THE Update_Manager SHALL record Health_Check results as part of the update history
 
@@ -190,8 +196,8 @@ This phase implements a CI/CD pipeline on GitHub Actions for the DayStream platf
 #### Acceptance Criteria
 
 1. THE Platform SHALL log all update-related events in an audit trail accessible from the Updates section
-2. THE audit trail SHALL record: event type, timestamp, initiating user or schedule, version, outcome, and duration
-3. WHEN a new Patch or Version becomes available, THE Platform SHALL display a notification indicator in the Super Admin navigation
+2. THE audit trail SHALL record: event type, timestamp, initiating user or schedule, version (Major.Patch), outcome, and duration
+3. WHEN a new Patch or Major version becomes available, THE Platform SHALL display a notification indicator in the Super Admin navigation
 4. WHEN an update starts, THE Platform SHALL send a notification to all Super_Admin users
 5. WHEN an update completes or fails, THE Platform SHALL send a notification with the outcome summary
 6. THE audit trail SHALL be retained for at least 1 year
@@ -221,28 +227,31 @@ This phase implements a CI/CD pipeline on GitHub Actions for the DayStream platf
 
 - GitHub Actions builds and tests code on every push to `main` and `release/*` branches
 - Pull requests cannot be merged if tests, lint, or type-checks fail
-- Versioned artifacts are produced with correct calendar-based version strings
+- Versioned artifacts are produced with correct Major.Patch version strings
+- Version comparison is always numeric (10.1 > 9.52, not string-based)
 - Super Admin users can view available patches and version upgrades
 - Manual "Install Now" executes the full update sequence including migrations and health checks
 - Scheduled updates execute at the configured time
 - Failed updates trigger automatic rollback to the previous working state
-- Multiple instances can run different versions simultaneously
+- At most two release branches exist at any time (current + previous during transition)
 
 ## Out of Scope
 
 - Blue-green or canary deployment strategies - Future enhancement
 - Zero-downtime deployments - Updates use a maintenance window
 - Per-tenant version pinning or staggered rollouts - All tenants in an instance update together
-- Automatic version bumping from commit messages - Version derived from branch name and build date
 - AWS-specific deployment (ECS, ECR) - Tracked in MIGRATION_TRACKER.md for later
 - Docker containerization - Will be added when AWS deployment is implemented
+- Rolling 12-month multi-branch management - Simplified to two-branch model
 
 ## Notes
 
 - The repository `BAD-SW/daystream` on GitHub has no workflows configured
 - Current deployment is local development only; CI/CD establishes the foundation for future production deployment
 - The migration system from Phase 00 (sequential numbered SQL files with tracking table) is reused by the Update_Manager
-- AWS deployment details (ECS, ECR, S3 for manifests) will be added to MIGRATION_TRACKER.md when the time comes
+- Version comparison must use numeric parsing: split on `.`, compare Major as integer, then Patch as integer
+- Expected cadence: ~4 major releases per year (quarterly), ~52 patches per year (weekly)
+- Cherry-picking from main to release branch is the developer's responsibility; CI validates the result
 - Initial implementation may use local artifact storage until AWS S3 is available
 
 ---

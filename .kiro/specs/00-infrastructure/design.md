@@ -501,7 +501,7 @@ export const openApiSpec = {
   info: {
     title: 'DayStream API',
     version: '0.1.0',
-    description: 'DayStream wellness platform API',
+    description: 'DayStream booking and business management API',
   },
   servers: [
     { url: 'http://localhost:4001', description: 'Local development' },

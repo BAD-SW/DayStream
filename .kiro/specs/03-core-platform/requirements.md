@@ -17,7 +17,7 @@ This phase establishes the foundational platform capabilities including multi-te
 
 ## Glossary
 
-- **Platform**: The DayStream multi-tenant SaaS wellness business management system
+- **Platform**: The DayStream multi-tenant SaaS booking and business management platform
 - **Tenant**: An isolated customer business using the Platform
 - **User**: An individual with authenticated access to the Platform
 - **Tenant_Context**: The runtime context identifying which Tenant a request belongs to

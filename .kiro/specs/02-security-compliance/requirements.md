@@ -17,7 +17,7 @@ This phase implements enterprise-grade security features for the DayStream platf
 
 ## Glossary
 
-- **Platform**: The DayStream multi-tenant SaaS wellness business management system
+- **Platform**: The DayStream multi-tenant SaaS booking and business management platform
 - **SSO**: Single Sign-On authentication mechanism
 - **IdP**: Identity Provider that authenticates users (Google, Apple, etc.)
 - **MFA**: Multi-Factor Authentication requiring multiple verification methods

@@ -57,7 +57,7 @@ ChatGPT POC Requirements
 KIRO Requirements Specification
 Project: DayStream (Momence-Class SaaS + Mobile App)
 Vision
-Develop a configurable wellness-business management platform inspired by Momence, Mindbody, Mariana Tek, Glofox, WellnessLiving, and similar systems, specifically tailored for recovery centers, wellness studios, health optimization centers, gyms, spas, clinics, and hybrid businesses.
+Develop a configurable booking and business management platform inspired by Momence, Mindbody, Mariana Tek, Glofox, WellnessLiving, and similar systems. Applicable to service-based businesses including recovery centers, wellness studios, health optimization centers, gyms, spas, clinics, auto care, and similar industries.
 The first implementation/customer is:
 Transcend Health Mallorca
 The platform must support Transcend's current business model while remaining fully configurable for future customers and verticals.

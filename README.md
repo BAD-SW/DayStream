@@ -1,6 +1,6 @@
 # DayStream
 
-A configurable booking management platform for recovery centers, wellness studios, health optimization centers, gyms, spas, clinics and similar.
+A configurable multi-tenant booking and business management platform for service-based businesses.
 
 **First customer:** Transcend Health Mallorca
 
