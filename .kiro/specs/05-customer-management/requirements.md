@@ -1,31 +1,235 @@
-# Phase 05: Customer Management (CRM)
+# Phase 05: Customer Management (CRM) - Requirements
 
-## Status: 🔲 Not Started
+## Overview
 
-## Objective
-Build the customer profile system, contact management, segmentation engine, and customer lifecycle tracking.
+This phase builds the customer profile system, contact management, segmentation engine, and customer lifecycle tracking. Customers are the central entity that bookings, memberships, payments, and communications revolve around. The CRM must support wellness-specific data (goals, injuries, recovery focus) while remaining flexible for other business types (yoga studios, gyms, clinics).
 
-## Dependencies
-- Phase 03: Core Platform
-- Phase 02: Security & Compliance
+## Goals
 
-## Scope Summary
-- Customer profile CRUD (personal info, contact, language, country)
-- Customer search and filtering
-- Segmentation engine (by membership, attendance, revenue, last visit, interests)
-- Customer tags (manual and automated)
-- Activity timeline per customer
-- Lead tracking (prospect → trial → member pipeline)
-- Wellness notes (goals, injuries, recovery focus, preferences)
-- Customer import/export
-- Duplicate detection and merge
-- Communication preferences and consent tracking
+- Build complete customer profile CRUD with personal, contact, and wellness information
+- Implement customer search, filtering, and segmentation
+- Support customer lifecycle tracking (lead → trial → active → churned)
+- Enable tagging (manual and automated) for marketing and operations
+- Build activity timeline per customer
+- Support customer import/export and duplicate detection
+- Ensure all customer data is tenant-scoped and GDPR-compliant
 
-## Key Decisions Pending
-- Customer data schema flexibility (strict vs. extensible per business type)
-- Segmentation query engine (real-time vs. pre-computed)
-- Lead pipeline configurability
+## Glossary
+
+- **Customer**: An individual who books services, holds memberships, or interacts with a Tenant's business
+- **Customer_Profile**: The complete data record for a Customer including personal info, contact, preferences, and wellness notes
+- **Segment**: A dynamic group of Customers defined by filter criteria
+- **Tag**: A label applied to a Customer for categorization (manual or automated)
+- **Activity_Timeline**: A chronological feed of all actions and events related to a Customer
+- **Lead**: A prospective Customer who has not yet booked or purchased
+- **Lifecycle_Stage**: The current stage of a Customer's relationship (lead, trial, active, at-risk, churned, winback)
+- **PII**: Personally Identifiable Information subject to GDPR protections
+- **Consent_Record**: A timestamped record of a Customer's consent for data processing
+
+## Requirements
+
+### Requirement 1: Customer Profile CRUD
+
+**User Story:** As a receptionist, I want to create and manage customer profiles, so that I have all relevant information when a customer visits or calls.
+
+#### Acceptance Criteria
+
+1. THE system SHALL support creating a Customer_Profile with: first name, last name, email, mobile phone, date of birth, gender, preferred language, country
+2. THE system SHALL support updating any Customer_Profile field via API
+3. THE system SHALL support archiving (soft-delete) a Customer_Profile
+4. THE system SHALL enforce unique email per Tenant (no duplicate customers with same email)
+5. THE system SHALL store all Customer_Profiles scoped to the current Tenant
+6. THE system SHALL auto-generate a customer reference number per Tenant (e.g., CUST-0001)
+7. THE system SHALL track `created_at`, `updated_at`, and `created_by` on every profile
+8. THE system SHALL support an optional profile photo/avatar
+9. THE system SHALL support custom fields configurable per Tenant (key-value pairs for business-specific data)
+
+### Requirement 2: Wellness and Health Notes
+
+**User Story:** As a therapist, I want to record customer health goals, injuries, and preferences, so that I can provide personalized service.
+
+#### Acceptance Criteria
+
+1. THE system SHALL support storing wellness notes per Customer: goals, injuries, recovery focus, contraindications, preferences
+2. THE system SHALL encrypt wellness notes at the application level before database storage (field-level encryption)
+3. THE system SHALL restrict access to wellness notes based on role (Therapist, Trainer, Manager, Owner only)
+4. THE system SHALL log all access to wellness notes in the audit trail
+5. THE system SHALL support timestamped note entries (append-only wellness log)
+6. THE system SHALL allow Customers to view their own wellness notes via the customer portal
+7. THE system SHALL support attaching categories/tags to wellness notes (e.g., "knee injury", "stress management")
+
+### Requirement 3: Customer Search and Filtering
+
+**User Story:** As a receptionist, I want to quickly find customers by name, email, or phone, so that I can pull up their profile during a call or visit.
+
+#### Acceptance Criteria
+
+1. THE system SHALL support full-text search across customer name, email, and phone number
+2. THE system SHALL return search results within 500ms for up to 10,000 customers per tenant
+3. THE system SHALL support filtering customers by: lifecycle stage, membership status, tag, last visit date, registration date, language
+4. THE system SHALL support combining multiple filters (AND logic)
+5. THE system SHALL support sorting results by: name, last visit, registration date, total spend
+6. THE system SHALL paginate search results with configurable page size
+7. THE system SHALL highlight matching text in search results
+
+### Requirement 4: Customer Segmentation Engine
+
+**User Story:** As a business owner, I want to define customer segments based on behavior and attributes, so that I can target marketing campaigns and identify trends.
+
+#### Acceptance Criteria
+
+1. THE system SHALL support defining Segments with filter rules on: membership type, attendance frequency, total revenue, last visit date, lifecycle stage, tags, age range, registration date
+2. THE system SHALL support AND/OR logic for combining segment rules
+3. THE system SHALL calculate segment membership dynamically (not pre-computed, evaluated at query time)
+4. THE system SHALL support saving named Segments for reuse
+5. THE system SHALL display segment member count when viewing a Segment
+6. THE system SHALL provide predefined Segments: "New this month", "No visit in 30 days", "High value (top 10% spend)", "At risk (no visit in 60 days)"
+7. THE system SHALL support exporting a Segment's customer list (for marketing phases)
+
+### Requirement 5: Customer Tags
+
+**User Story:** As a manager, I want to tag customers with labels, so that I can categorize them for operational and marketing purposes.
+
+#### Acceptance Criteria
+
+1. THE system SHALL support creating custom tags per Tenant
+2. THE system SHALL support assigning multiple tags to a Customer
+3. THE system SHALL support removing tags from a Customer
+4. THE system SHALL support manual tag assignment by staff
+5. THE system SHALL support automated tag assignment based on rules (e.g., "VIP" after 50 visits, "New" for first 30 days)
+6. THE system SHALL display tags on the Customer_Profile and in search results
+7. THE system SHALL support filtering customers by tag in search and segmentation
+8. THE system SHALL support tag colors for visual differentiation
+
+### Requirement 6: Activity Timeline
+
+**User Story:** As a receptionist, I want to see a customer's complete history at a glance, so that I can provide informed service.
+
+#### Acceptance Criteria
+
+1. THE system SHALL display a chronological Activity_Timeline on each Customer_Profile
+2. THE Activity_Timeline SHALL include: bookings (booked, attended, cancelled, no-show), membership changes (joined, renewed, cancelled, paused), payments (charged, refunded), communications (emails sent, SMS sent), profile changes, wellness note additions, check-ins
+3. THE Activity_Timeline SHALL support filtering by activity type
+4. THE Activity_Timeline SHALL support date range filtering
+5. THE Activity_Timeline SHALL paginate for customers with extensive history
+6. THE Activity_Timeline SHALL display the most recent activities first
+7. THE Activity_Timeline SHALL be populated automatically from other modules (booking, payment, membership events)
+
+### Requirement 7: Customer Lifecycle Tracking
+
+**User Story:** As a business owner, I want to track where each customer is in their journey, so that I can identify opportunities and risks.
+
+#### Acceptance Criteria
+
+1. THE system SHALL define lifecycle stages: Lead, Trial, Active, At-Risk, Churned, Winback
+2. THE system SHALL automatically transition customers between stages based on configurable rules:
+   - Lead → Trial: first booking made
+   - Trial → Active: membership purchased or 3+ visits
+   - Active → At-Risk: no visit in configurable days (default 30)
+   - At-Risk → Churned: no visit in configurable days (default 90)
+   - Churned → Winback: returns after being churned
+3. THE system SHALL support manual lifecycle stage override by staff
+4. THE system SHALL log lifecycle stage transitions in the Activity_Timeline
+5. THE system SHALL support viewing customer counts per lifecycle stage (pipeline view)
+6. THE system SHALL support configuring transition rules per Tenant
+
+### Requirement 8: Customer Import and Export
+
+**User Story:** As a business owner, I want to import existing customers from a spreadsheet, so that I can migrate from another system without manual data entry.
+
+#### Acceptance Criteria
+
+1. THE system SHALL support importing customers from CSV files
+2. THE system SHALL support column mapping during import (map CSV columns to Customer_Profile fields)
+3. THE system SHALL validate imported data against the same rules as manual creation
+4. THE system SHALL report import errors with row numbers and field-level details
+5. THE system SHALL support dry-run mode (validate without saving)
+6. THE system SHALL support exporting all customers or a filtered set to CSV
+7. THE system SHALL export in GDPR-compliant format when requested (right to data portability)
+8. THE system SHALL log import operations in the audit trail with record counts
+
+### Requirement 9: Duplicate Detection and Merge
+
+**User Story:** As a receptionist, I want the system to detect potential duplicate customers, so that I don't create multiple records for the same person.
+
+#### Acceptance Criteria
+
+1. THE system SHALL check for potential duplicates when creating a new customer (matching on email, phone, or name similarity)
+2. THE system SHALL display potential matches and allow the user to proceed or link to existing
+3. THE system SHALL support merging two Customer_Profiles into one (staff-initiated)
+4. WHEN merging, THE system SHALL combine Activity_Timelines, bookings, memberships, and payment history
+5. WHEN merging, THE system SHALL allow selecting which profile fields to keep
+6. THE system SHALL log merge operations in the audit trail with both original record IDs
+7. THE system SHALL prevent merging customers across different Tenants
+
+### Requirement 10: Communication Preferences and Consent
+
+**User Story:** As a customer, I want to control how the business communicates with me, so that I only receive messages I've opted into.
+
+#### Acceptance Criteria
+
+1. THE system SHALL store communication preferences per Customer: email marketing (opt-in/out), SMS marketing (opt-in/out), push notifications (opt-in/out), booking reminders (on/off)
+2. THE system SHALL record Consent_Records with timestamp, purpose, and method of consent
+3. THE system SHALL respect opt-out preferences in all marketing modules (Phase 16)
+4. THE system SHALL provide a customer-facing preference management interface
+5. THE system SHALL support an unsubscribe link in marketing communications that updates preferences
+6. THE system SHALL log all preference changes in the audit trail
+7. THE system SHALL default to opted-out for marketing communications (GDPR: opt-in required)
+
+### Requirement 11: Customer Portal Access
+
+**User Story:** As a customer, I want to view and update my own profile, so that my information stays current without needing to call the business.
+
+#### Acceptance Criteria
+
+1. THE system SHALL allow authenticated Customers to view their own profile
+2. THE system SHALL allow Customers to update their contact information (email, phone, address)
+3. THE system SHALL allow Customers to update their communication preferences
+4. THE system SHALL allow Customers to view their own wellness notes (read-only)
+5. THE system SHALL allow Customers to view their Activity_Timeline
+6. THE system SHALL allow Customers to request data export (GDPR right to access)
+7. THE system SHALL allow Customers to request account deletion (GDPR right to erasure)
+8. THE system SHALL NOT allow Customers to modify their lifecycle stage, tags, or internal notes
 
 ---
 
-*Requirements, design, and tasks to be detailed during spec planning.*
+## Dependencies
+
+- Phase 00: Infrastructure - Database, API, migration runner
+- Phase 02: Security & Compliance - Authentication, RBAC, audit logging, GDPR features, field-level encryption
+- Phase 03: Core Platform - Tenant context, API infrastructure, i18n, configuration engine
+- Phase 04: Design System - UI components for profile views, forms, tables, timelines
+
+## Success Criteria
+
+- Customer profiles can be created, searched, filtered, and updated
+- Wellness notes are encrypted and access-controlled
+- Segmentation engine returns correct customer sets based on filter criteria
+- Activity timeline aggregates events from across the platform
+- Lifecycle stages transition automatically based on configured rules
+- CSV import handles 10,000 records with validation and error reporting
+- Duplicate detection catches matching email/phone on creation
+- GDPR export and deletion requests function correctly
+- All customer data is strictly tenant-scoped
+
+## Out of Scope
+
+- Marketing campaign execution - Phase 16 (Marketing & Automation)
+- Booking history display - Phase 07 (populated by Booking Engine)
+- Membership data - Phase 08 (populated by Membership Engine)
+- Payment history - Phase 10 (populated by Payment Platform)
+- Customer-to-customer social features - Phase 22 (Community)
+
+## Notes
+
+- Wellness notes require field-level encryption due to sensitivity (even pre-HIPAA)
+- Segmentation is evaluated at query time to avoid stale data; caching can be added later if performance requires
+- Activity_Timeline is an aggregation view — events are written by other modules and read here
+- Custom fields per tenant enable flexibility without schema changes for each business type
+- The Customer entity is referenced by nearly every other module; its schema must be stable early
+
+---
+
+**Status**: 📋 Planned
+**Dependencies**: Phase 00, Phase 02, Phase 03, Phase 04
+**Next Phase**: Phase 06 (Service Management)
