@@ -23,6 +23,9 @@ coverage/
 .env.*
 !.env.example
 
+# Reference files (shared outside repo)
+docs/TRANSCEND FILES/
+
 # OS
 .DS_Store
 Thumbs.db
