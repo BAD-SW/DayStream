@@ -54,18 +54,21 @@ This phase implements enterprise-grade security features for the DayStream platf
 
 ### Requirement 2: Social/OAuth Authentication
 
-**User Story:** As a customer, I want to sign in with Google or Apple, so that I can access the platform quickly without creating another password.
+**User Story:** As a customer, I want to sign in with my existing social accounts, so that I can access the platform quickly without creating another password.
 
 #### Acceptance Criteria
 
 1. THE Platform SHALL support Google OAuth 2.0 sign-in
-2. THE Platform SHALL support Apple Sign-In
-3. WHEN a User authenticates via OAuth, THE Platform SHALL create or link the user account automatically
-4. THE Platform SHALL extract user profile information (name, email, avatar) from the OAuth provider
-5. THE Platform SHALL support linking multiple OAuth providers to a single user account
-6. THE Platform SHALL allow unlinking OAuth providers if another authentication method exists
-7. IF OAuth authentication fails, THEN THE Platform SHALL display a clear error and offer alternative sign-in methods
-8. THE Platform SHALL validate OAuth tokens with the provider on each authentication
+2. THE Platform SHALL support Facebook Login
+3. THE Platform SHALL support Apple Sign-In (required for iOS App Store compliance)
+4. THE Platform SHALL support a configurable set of OAuth providers per Tenant (enable/disable specific providers)
+5. WHEN a User authenticates via OAuth, THE Platform SHALL create or link the user account automatically
+6. THE Platform SHALL extract user profile information (name, email, avatar) from the OAuth provider
+7. THE Platform SHALL support linking multiple OAuth providers to a single user account
+8. THE Platform SHALL allow unlinking OAuth providers if another authentication method exists
+9. IF OAuth authentication fails, THEN THE Platform SHALL display a clear error and offer alternative sign-in methods
+10. THE Platform SHALL validate OAuth tokens with the provider on each authentication
+11. THE Platform SHALL support adding new OAuth providers in the future without architectural changes
 
 ### Requirement 3: Multi-Factor Authentication
 
@@ -89,7 +92,7 @@ This phase implements enterprise-grade security features for the DayStream platf
 
 #### Acceptance Criteria
 
-1. THE Platform SHALL define the following base roles: Super Admin, Business Owner, Manager, Reception, Therapist, Trainer, Customer
+1. THE Platform SHALL define the following base roles: Super Admin, Business Owner, Manager, Staff, Customer
 2. THE Platform SHALL assign permissions to roles (not directly to users)
 3. THE Platform SHALL evaluate permissions on every API request via middleware
 4. THE Platform SHALL scope role assignments per Tenant (a user can have different roles in different tenants)
