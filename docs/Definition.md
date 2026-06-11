@@ -55,7 +55,7 @@ Custom quote
 ChatGPT POC Requirements
 
 KIRO Requirements Specification
-Project: Transcend Wellness Platform (Momence-Class SaaS + Mobile App)
+Project: DayStream (Momence-Class SaaS + Mobile App)
 Vision
 Develop a configurable wellness-business management platform inspired by Momence, Mindbody, Mariana Tek, Glofox, WellnessLiving, and similar systems, specifically tailored for recovery centers, wellness studios, health optimization centers, gyms, spas, clinics, and hybrid businesses.
 The first implementation/customer is:

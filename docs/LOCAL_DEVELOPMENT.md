@@ -11,7 +11,7 @@
 ## Database
 
 - **Instance:** Existing local PostgreSQL on port 5432
-- **Database name:** `booking_manager_dev` (to be created)
+- **Database name:** `daystream_dev` (to be created)
 
 ## Configuration Philosophy
 

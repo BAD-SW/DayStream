@@ -2,7 +2,7 @@
 
 ## Overview
 
-This phase establishes the reusable UI component library, theming infrastructure, and per-tenant branding system for the Booking Manager platform. The design system provides the visual foundation for all customer-facing and admin interfaces while supporting tenant-level customization. The initial aesthetic is a premium wellness look (dark-first, Scandinavian minimal), but the system must be flexible enough to accommodate any business type's brand identity.
+This phase establishes the reusable UI component library, theming infrastructure, and per-tenant branding system for the DayStream platform. The design system provides the visual foundation for all customer-facing and admin interfaces while supporting tenant-level customization. The initial aesthetic is a premium wellness look (dark-first, Scandinavian minimal), but the system must be flexible enough to accommodate any business type's brand identity.
 
 ## Goals
 

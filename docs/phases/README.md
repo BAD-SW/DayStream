@@ -1,6 +1,6 @@
 # Project Phases
 
-This directory contains the high-level phase overview for the Transcend Wellness Platform.
+This directory contains the high-level phase overview for the DayStream platform.
 
 **Detailed specs live in:** `.kiro/specs/<phase-folder>/`
 

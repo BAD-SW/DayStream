@@ -1,4 +1,4 @@
-# Booking Platform
+# DayStream
 
 A configurable booking management platform for recovery centers, wellness studios, health optimization centers, gyms, spas, clinics and similar.
 
@@ -21,4 +21,4 @@ Phase specifications live in `.kiro/specs/`. Each phase has its own folder with 
 ## Repository
 
 - **Organization:** [BAD-SW](https://github.com/BAD-SW)
-- **Repo:** [booking-manager](https://github.com/BAD-SW/booking-manager)
+- **Repo:** [daystream](https://github.com/BAD-SW/daystream)

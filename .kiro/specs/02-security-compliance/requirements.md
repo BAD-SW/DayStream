@@ -2,7 +2,7 @@
 
 ## Overview
 
-This phase implements enterprise-grade security features for the Booking Manager platform including authentication, multi-factor authentication, role-based access control, tenant isolation, data encryption, GDPR compliance, and audit logging. These capabilities enable the platform to meet security requirements for handling customer data, payment information, and wellness/health-related records while maintaining comprehensive audit trails and tamper-proof logging.
+This phase implements enterprise-grade security features for the DayStream platform including authentication, multi-factor authentication, role-based access control, tenant isolation, data encryption, GDPR compliance, and audit logging. These capabilities enable the platform to meet security requirements for handling customer data, payment information, and wellness/health-related records while maintaining comprehensive audit trails and tamper-proof logging.
 
 ## Goals
 
@@ -17,7 +17,7 @@ This phase implements enterprise-grade security features for the Booking Manager
 
 ## Glossary
 
-- **Platform**: The Booking Manager multi-tenant SaaS wellness business management system
+- **Platform**: The DayStream multi-tenant SaaS wellness business management system
 - **SSO**: Single Sign-On authentication mechanism
 - **IdP**: Identity Provider that authenticates users (Google, Apple, etc.)
 - **MFA**: Multi-Factor Authentication requiring multiple verification methods

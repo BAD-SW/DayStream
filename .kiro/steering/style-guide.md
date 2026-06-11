@@ -1,13 +1,13 @@
 ---
 inclusion: auto
-description: UI/UX style guide for Booking Manager - defines design system, colors, typography, and component specifications
+description: UI/UX style guide for DayStream - defines design system, colors, typography, and component specifications
 ---
 
-# Booking Manager - UI/UX Style Guide
+# DayStream - UI/UX Style Guide
 
 ## Overview
 
-This style guide defines the visual design system, UI components, and interaction patterns for the Booking Manager platform. The design system ensures consistency across the platform while providing a premium, wellness-focused, and accessible user experience. The default aesthetic is inspired by high-end wellness and recovery brands (dark-first, Scandinavian minimalism), but all values are themeable per tenant.
+This style guide defines the visual design system, UI components, and interaction patterns for the DayStream platform. The design system ensures consistency across the platform while providing a premium, wellness-focused, and accessible user experience. The default aesthetic is inspired by high-end wellness and recovery brands (dark-first, Scandinavian minimalism), but all values are themeable per tenant.
 
 ## Design Principles
 

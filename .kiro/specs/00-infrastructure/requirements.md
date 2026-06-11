@@ -2,7 +2,7 @@
 
 ## Overview
 
-Establish the local development infrastructure for the booking manager platform. This phase scaffolds the monorepo, configures the database, sets up the API and frontend projects, and creates the foundation that all subsequent phases build upon. AWS migration is out of scope — this is local-first development infrastructure.
+Establish the local development infrastructure for the DayStream platform. This phase scaffolds the monorepo, configures the database, sets up the API and frontend projects, and creates the foundation that all subsequent phases build upon. AWS migration is out of scope — this is local-first development infrastructure.
 
 ## Goals
 
@@ -88,7 +88,7 @@ Establish the local development infrastructure for the booking manager platform.
 
 ##### Acceptance Criteria
 
-1. THE system SHALL connect to a PostgreSQL database named `booking_manager_dev` on localhost:5432
+1. THE system SHALL connect to a PostgreSQL database named `DayStream` on localhost:5432
 2. THE system SHALL use the `pg` driver (no ORM)
 3. THE system SHALL provide a database connection pool with configurable pool size
 4. THE system SHALL gracefully handle database connection failures with clear error messages

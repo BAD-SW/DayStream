@@ -2,11 +2,11 @@
 
 ## Overview
 
-This phase implements a CI/CD pipeline on GitHub Actions for the Booking Manager platform, a versioning strategy, and automated build/test/deploy workflows. The platform uses a calendar-based versioning scheme (YYYY.M.YYYYMMDD) with monthly feature releases and daily patch builds. The repository is hosted on GitHub at `BAD-SW/booking-manager` with no pipelines currently configured. Initial deployment targets local development, with AWS migration planned for the future.
+This phase implements a CI/CD pipeline on GitHub Actions for the DayStream platform, a versioning strategy, and automated build/test/deploy workflows. The platform uses a calendar-based versioning scheme (YYYY.M.YYYYMMDD) with monthly feature releases and daily patch builds. The repository is hosted on GitHub at `BAD-SW/daystream` with no pipelines currently configured. Initial deployment targets local development, with AWS migration planned for the future.
 
 ## Goals
 
-- Establish automated build and test pipelines on GitHub Actions for the `BAD-SW/booking-manager` repository
+- Establish automated build and test pipelines on GitHub Actions for the `BAD-SW/daystream` repository
 - Implement calendar-based versioning with monthly releases and daily patch builds
 - Support multiple concurrently active release branches (rolling 12 months)
 - Provide automated testing gates that prevent broken code from reaching main
@@ -15,7 +15,7 @@ This phase implements a CI/CD pipeline on GitHub Actions for the Booking Manager
 
 ## Glossary
 
-- **Platform**: The Booking Manager multi-tenant SaaS wellness business management system
+- **Platform**: The DayStream multi-tenant SaaS wellness business management system
 - **Version**: A monthly feature release identified by `YYYY.M.0` (e.g., `2026.8.0`)
 - **Patch**: A bug-fix-only build applied to an existing Version, identified by `YYYY.M.YYYYMMDD` (e.g., `2026.8.20260815`)
 - **Release_Branch**: A long-lived Git branch for a specific Version (e.g., `release/2026.8`) that receives cherry-picked bug fixes
@@ -75,7 +75,7 @@ This phase implements a CI/CD pipeline on GitHub Actions for the Booking Manager
 3. Bug fixes SHALL be cherry-picked from `main` into the relevant `release/*` branches
 4. Each Release_Branch SHALL have its own pipeline configuration that tags Artifacts with the correct `YYYY.M.YYYYMMDD` version
 5. THE system SHALL support building and deploying any of the 12 active Release_Branches independently
-6. Multiple Booking Manager instances SHALL be able to run different Versions simultaneously, each pulling Artifacts from their respective Release_Branch
+6. Multiple DayStream instances SHALL be able to run different Versions simultaneously, each pulling Artifacts from their respective Release_Branch
 
 ### Requirement 4: Artifact Storage and Version Manifest
 
@@ -239,7 +239,7 @@ This phase implements a CI/CD pipeline on GitHub Actions for the Booking Manager
 
 ## Notes
 
-- The repository `BAD-SW/booking-manager` on GitHub has no workflows configured
+- The repository `BAD-SW/daystream` on GitHub has no workflows configured
 - Current deployment is local development only; CI/CD establishes the foundation for future production deployment
 - The migration system from Phase 00 (sequential numbered SQL files with tracking table) is reused by the Update_Manager
 - AWS deployment details (ECS, ECR, S3 for manifests) will be added to MIGRATION_TRACKER.md when the time comes
