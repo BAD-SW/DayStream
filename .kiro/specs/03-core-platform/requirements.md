@@ -163,15 +163,17 @@ This phase establishes the foundational platform capabilities including multi-te
 
 #### Acceptance Criteria
 
-1. THE Platform SHALL use i18next for frontend internationalization
-2. THE Platform SHALL support English and Spanish as initial languages
-3. THE Platform SHALL store translation files in a structured format (JSON per namespace per locale)
-4. THE Platform SHALL detect user language preference from browser settings or user profile
-5. THE Platform SHALL allow users to override language preference in their profile
-6. THE Platform SHALL support per-tenant default language
-7. THE Platform SHALL externalize all user-facing strings (no hardcoded text in components)
-8. THE Platform SHALL support date, time, number, and currency formatting per locale
-9. THE Backend SHALL return localized error messages based on the user's language preference
+1. THE Platform SHALL implement i18n as a system-level capability — all tenants share the same set of supported languages
+2. THE Platform SHALL use i18next for frontend internationalization
+3. THE Platform SHALL support English and Spanish as initial languages
+4. THE Platform SHALL store translation files in a structured format (JSON per namespace per locale)
+5. THE Platform SHALL detect user language preference from browser settings or user profile
+6. THE Platform SHALL allow users to override language preference in their profile
+7. THE Platform SHALL support per-tenant default language (selected from the system-level language set)
+8. THE Platform SHALL externalize all user-facing strings (no hardcoded text in components)
+9. THE Platform SHALL support date, time, number, and currency formatting per locale
+10. THE Backend SHALL return localized error messages based on the user's language preference
+11. THE Platform SHALL apply the same language selection mechanism and options across all tenants (no tenant-specific language packs)
 
 ### Requirement 10: Multi-Currency Foundation
 
