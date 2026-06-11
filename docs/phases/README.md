@@ -45,6 +45,7 @@ Each phase has a dedicated spec folder containing:
 | 20 | `20-integrations` | Calendar sync, Zapier, WhatsApp, third-party connectors | 🔲 |
 | 21 | `21-ai-features` | Booking assistant, chatbot, business intelligence | 🔲 |
 | 22 | `22-community-engagement` | Social feed, challenges, leaderboards, VOD, LMS | 🔲 |
+| 23 | `23-hosted-infrastructure` | AWS deployment, environments, scaling, monitoring | 🔲 |
 
 ## Dependency Map
 

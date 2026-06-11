@@ -154,14 +154,17 @@ Establish the local development infrastructure for the DayStream platform. This 
 
 #### Requirement 10: Environment Configuration
 
-**User Story**: As a developer, I want a documented and minimal environment setup, so that onboarding is straightforward and secrets are not committed.
+**User Story**: As a developer, I want a minimal environment file containing only what is needed to bootstrap the application, so that all other configuration lives in the database and onboarding is straightforward.
 
 ##### Acceptance Criteria
 
 1. THE system SHALL include a `.env.example` file documenting all required environment variables
 2. THE system SHALL include `.env` in `.gitignore`
-3. THE system SHALL require only database connection details and port numbers in `.env`
-4. THE system SHALL fail gracefully with clear messages if required environment variables are missing
+3. THE system SHALL limit `.env` to ONLY bootstrap-level values: database connection string (host, port, user, password, database name), application ports (server, client), Node environment (development, staging, production)
+4. THE system SHALL NOT store application configuration, feature flags, tenant settings, or business logic values in `.env`
+5. THE system SHALL load all non-bootstrap configuration from the database via the Configuration Engine (Phase 03)
+6. THE system SHALL fail gracefully with clear messages if required environment variables are missing
+7. THE system SHALL validate environment variables at startup before attempting database connection
 
 #### Requirement 11: Project Scripts
 
