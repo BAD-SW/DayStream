@@ -17,28 +17,28 @@ Implementation tasks for authentication, OAuth social login, MFA, role-based acc
 ## 1. Email/Password Authentication
 
 ### 1.1 Registration
-- [ ] Create `POST /api/v1/auth/register` endpoint
-- [ ] Validate input (email, password, first_name, last_name) with Joi
-- [ ] Enforce password complexity (min 10 chars, mixed case, numbers, symbols)
-- [ ] Hash password with bcrypt (cost factor 12)
-- [ ] Check for existing user with same email in tenant
-- [ ] Create user record in database
-- [ ] Issue JWT access token and refresh token
-- [ ] Write unit tests for registration flow
+- [x] ✅ Create `POST /api/v1/auth/register` endpoint
+- [x] ✅ Validate input (email, password, first_name, last_name) with Joi
+- [x] ✅ Enforce password complexity (min 10 chars, mixed case, numbers, symbols)
+- [x] ✅ Hash password with bcrypt (cost factor 12)
+- [x] ✅ Check for existing user with same email in tenant
+- [x] ✅ Create user record in database
+- [x] ✅ Issue JWT access token and refresh token
+- [x] ✅ Write unit tests for registration flow
 
 ### 1.2 Login
-- [ ] Create `POST /api/v1/auth/login` endpoint
-- [ ] Validate input (email, password)
-- [ ] Look up user by email and tenant
-- [ ] Verify password with bcrypt.compare
-- [ ] Check account lockout status (5 failed attempts)
-- [ ] Record login attempt (success/failure)
-- [ ] Issue JWT access token and refresh token on success
-- [ ] Return MFA challenge if MFA is enabled
-- [ ] Write unit tests for login flow (success, wrong password, locked account)
+- [x] ✅ Create `POST /api/v1/auth/login` endpoint
+- [x] ✅ Validate input (email, password)
+- [x] ✅ Look up user by email and tenant
+- [x] ✅ Verify password with bcrypt.compare
+- [x] ✅ Check account lockout status (5 failed attempts)
+- [x] ✅ Record login attempt (success/failure)
+- [x] ✅ Issue JWT access token and refresh token on success
+- [x] ✅ Return MFA challenge if MFA is enabled
+- [x] ✅ Write unit tests for login flow (success, wrong password, locked account)
 
 ### 1.3 Password Reset
-- [ ] Create `POST /api/v1/auth/forgot-password` endpoint (sends reset email)
+- [x] ✅ Create `POST /api/v1/auth/forgot-password` endpoint (sends reset email)
 - [ ] Generate time-limited reset token (15 minutes)
 - [ ] Create `POST /api/v1/auth/reset-password` endpoint (validates token, sets new password)
 - [ ] Check password history (prevent reuse of last 5)
@@ -47,10 +47,10 @@ Implementation tasks for authentication, OAuth social login, MFA, role-based acc
 - [ ] Write unit tests for reset flow
 
 ### 1.4 Account Lockout
-- [ ] Track failed login attempts per email + tenant
-- [ ] Lock account after 5 consecutive failures
-- [ ] Auto-unlock after 15 minutes
-- [ ] Clear failure count on successful login
+- [x] ✅ Track failed login attempts per email + tenant
+- [x] ✅ Lock account after 5 consecutive failures
+- [x] ✅ Auto-unlock after 15 minutes
+- [x] ✅ Clear failure count on successful login
 - [ ] Log lockout events in audit trail
 
 ---
@@ -84,7 +84,7 @@ Implementation tasks for authentication, OAuth social login, MFA, role-based acc
 - [ ] Write integration tests
 
 ### 2.5 Account Linking
-- [ ] Create `oauth_links` table migration
+- [x] ✅ Create `oauth_links` table migration
 - [ ] Support linking multiple providers to one account
 - [ ] Support unlinking a provider (if another auth method exists)
 - [ ] Create `GET /api/v1/auth/linked-accounts` endpoint
@@ -102,7 +102,7 @@ Implementation tasks for authentication, OAuth social login, MFA, role-based acc
 - [ ] Store backup codes in `mfa_backup_codes` table
 
 ### 3.2 MFA Login Flow
-- [ ] Modify login to return MFA challenge when MFA is enabled
+- [x] ✅ Modify login to return MFA challenge when MFA is enabled
 - [ ] Create `POST /api/v1/auth/mfa/verify` endpoint (verify TOTP code, issue tokens)
 - [ ] Support backup code verification (mark as used)
 - [ ] Support "remember this device" (skip MFA for 30 days on recognized device)
@@ -119,17 +119,17 @@ Implementation tasks for authentication, OAuth social login, MFA, role-based acc
 ## 4. Role-Based Access Control
 
 ### 4.1 Database Setup
-- [ ] Create `roles` table migration
-- [ ] Create `user_roles` table migration
-- [ ] Seed default system roles (Super Admin, Business Owner, Manager, Staff, Customer)
-- [ ] Define default permissions per role
+- [x] ✅ Create `roles` table migration
+- [x] ✅ Create `user_roles` table migration
+- [x] ✅ Seed default system roles (Super Admin, Business Owner, Manager, Staff, Customer)
+- [x] ✅ Define default permissions per role
 
 ### 4.2 Permission Middleware
-- [ ] Create `requirePermission()` middleware
-- [ ] Implement permission matching logic (exact, wildcard resource, wildcard all)
-- [ ] Deny access by default (only granted permissions allow)
+- [x] ✅ Create `requirePermission()` middleware
+- [x] ✅ Implement permission matching logic (exact, wildcard resource, wildcard all)
+- [x] ✅ Deny access by default (only granted permissions allow)
 - [ ] Log permission denials in audit trail
-- [ ] Write unit tests for permission matching
+- [x] ✅ Write unit tests for permission matching
 
 ### 4.3 Role Management API
 - [ ] Create `GET /api/v1/admin/roles` endpoint (list roles for tenant)
@@ -149,8 +149,8 @@ Implementation tasks for authentication, OAuth social login, MFA, role-based acc
 ## 5. Tenant Data Isolation
 
 ### 5.1 Middleware
-- [ ] Create `tenantContext` middleware (extract tenant_id from JWT, attach to request)
-- [ ] Reject requests missing tenant context (except public endpoints)
+- [x] ✅ Create `tenantContext` middleware (extract tenant_id from JWT, attach to request)
+- [x] ✅ Reject requests missing tenant context (except public endpoints)
 - [ ] Create helper function for scoped queries (always includes tenant_id)
 
 ### 5.2 Row-Level Security
@@ -169,12 +169,12 @@ Implementation tasks for authentication, OAuth social login, MFA, role-based acc
 ## 6. Data Encryption
 
 ### 6.1 Encryption Module
-- [ ] Create `packages/server/src/utils/encryption.ts`
-- [ ] Implement AES-256-GCM encrypt function
-- [ ] Implement AES-256-GCM decrypt function
-- [ ] Load encryption key from environment variable
-- [ ] Write unit tests for encrypt/decrypt round-trip
-- [ ] Write test for tampered ciphertext detection
+- [x] ✅ Create `packages/server/src/utils/encryption.ts`
+- [x] ✅ Implement AES-256-GCM encrypt function
+- [x] ✅ Implement AES-256-GCM decrypt function
+- [x] ✅ Load encryption key from environment variable
+- [x] ✅ Write unit tests for encrypt/decrypt round-trip
+- [x] ✅ Write test for tampered ciphertext detection
 
 ### 6.2 Apply to Sensitive Fields
 - [ ] Encrypt OAuth client secrets before database storage
@@ -187,16 +187,16 @@ Implementation tasks for authentication, OAuth social login, MFA, role-based acc
 ## 7. Session Management
 
 ### 7.1 Refresh Tokens
-- [ ] Create `refresh_tokens` table migration
-- [ ] Implement refresh token generation (crypto random, hashed for storage)
-- [ ] Create `POST /api/v1/auth/refresh` endpoint (exchange refresh token for new access token)
-- [ ] Implement token rotation (new refresh token on each use, revoke old)
-- [ ] Store device info and IP address with refresh token
+- [x] ✅ Create `refresh_tokens` table migration
+- [x] ✅ Implement refresh token generation (crypto random, hashed for storage)
+- [x] ✅ Create `POST /api/v1/auth/refresh` endpoint (exchange refresh token for new access token)
+- [x] ✅ Implement token rotation (new refresh token on each use, revoke old)
+- [x] ✅ Store device info and IP address with refresh token
 
 ### 7.2 Session Control
 - [ ] Create `GET /api/v1/auth/sessions` endpoint (list active sessions)
 - [ ] Create `DELETE /api/v1/auth/sessions/:id` endpoint (revoke specific session)
-- [ ] Create `DELETE /api/v1/auth/sessions` endpoint (revoke all — sign out everywhere)
+- [x] ✅ Create `DELETE /api/v1/auth/sessions` endpoint (revoke all — sign out everywhere)
 - [ ] Revoke all on password change
 - [ ] Revoke all on MFA reset
 
@@ -217,7 +217,7 @@ Implementation tasks for authentication, OAuth social login, MFA, role-based acc
 - [ ] Expire download link after 48 hours
 
 ### 8.2 Data Deletion
-- [ ] Create `deletion_requests` table migration
+- [x] ✅ Create `deletion_requests` table migration
 - [ ] Create `POST /api/v1/profile/delete-account` endpoint (request deletion)
 - [ ] Implement grace period (configurable, default 30 days)
 - [ ] Implement anonymization (replace PII with "[deleted]")
@@ -226,7 +226,7 @@ Implementation tasks for authentication, OAuth social login, MFA, role-based acc
 - [ ] Send confirmation email
 
 ### 8.3 Consent Management
-- [ ] Create `consent_records` table migration
+- [x] ✅ Create `consent_records` table migration
 - [ ] Create `GET /api/v1/profile/consents` endpoint
 - [ ] Create `PUT /api/v1/profile/consents` endpoint (grant/revoke)
 - [ ] Record all consent changes with timestamp, method, IP
@@ -237,22 +237,22 @@ Implementation tasks for authentication, OAuth social login, MFA, role-based acc
 ## 9. Audit Logging
 
 ### 9.1 Audit Service
-- [ ] Create `audit_log` table migration
-- [ ] Create `packages/server/src/services/audit.ts`
-- [ ] Implement `logAudit()` function (write log entry with HMAC signature)
-- [ ] Implement HMAC chain (link to previous entry signature)
+- [x] ✅ Create `audit_log` table migration
+- [x] ✅ Create `packages/server/src/services/audit.ts`
+- [x] ✅ Implement `logAudit()` function (write log entry with HMAC signature)
+- [x] ✅ Implement HMAC chain (link to previous entry signature)
 - [ ] Implement tamper detection (verify chain on read)
 - [ ] Batch writes for performance (queue and flush)
 
 ### 9.2 Audit Middleware
 - [ ] Create middleware that auto-logs all API requests (method, path, status, duration)
 - [ ] Redact sensitive data from logs (passwords, tokens, card numbers)
-- [ ] Include request metadata (IP, user agent, tenant_id, user_id)
-- [ ] Handle audit logging failures without impacting request processing
+- [x] ✅ Include request metadata (IP, user agent, tenant_id, user_id)
+- [x] ✅ Handle audit logging failures without impacting request processing
 
 ### 9.3 Audit API
 - [ ] Create `GET /api/v1/admin/audit-log` endpoint (paginated, filterable)
-- [ ] Support filtering by: date range, user, action, resource type
+- [x] ✅ Support filtering by: date range, user, action, resource type
 - [ ] Restrict access to Manager+ roles
 - [ ] Support export to JSON and CSV
 
@@ -261,11 +261,11 @@ Implementation tasks for authentication, OAuth social login, MFA, role-based acc
 ## 10. Rate Limiting
 
 ### 10.1 Implementation
-- [ ] Install and configure `express-rate-limit`
-- [ ] Apply strict rate limit to auth endpoints (10 req/min per IP)
-- [ ] Apply moderate rate limit to API endpoints (1000 req/hour per user or IP)
-- [ ] Exempt health check and docs endpoints
-- [ ] Return 429 with Retry-After header when exceeded
+- [x] ✅ Install and configure `express-rate-limit`
+- [x] ✅ Apply strict rate limit to auth endpoints (10 req/min per IP)
+- [x] ✅ Apply moderate rate limit to API endpoints (1000 req/hour per user or IP)
+- [x] ✅ Exempt health check and docs endpoints
+- [x] ✅ Return 429 with Retry-After header when exceeded
 - [ ] Log rate limit violations in audit trail
 - [ ] Write tests for rate limiting behavior
 
@@ -274,11 +274,11 @@ Implementation tasks for authentication, OAuth social login, MFA, role-based acc
 ## 11. Input Validation
 
 ### 11.1 Validation Framework
-- [ ] Create `validate()` middleware (Joi schema → request validation)
-- [ ] Support body, query, and params validation
-- [ ] Return structured error response with field-level details
-- [ ] Strip unknown fields (strict mode)
-- [ ] Enforce max request body size (1MB)
+- [x] ✅ Create `validate()` middleware (Joi schema → request validation)
+- [x] ✅ Support body, query, and params validation
+- [x] ✅ Return structured error response with field-level details
+- [x] ✅ Strip unknown fields (strict mode)
+- [x] ✅ Enforce max request body size (1MB)
 
 ### 11.2 Sanitization
 - [ ] Sanitize string inputs against SQL injection
@@ -305,21 +305,34 @@ Implementation tasks for authentication, OAuth social login, MFA, role-based acc
 ## 13. Testing
 
 ### 13.1 Unit Tests
-- [ ] Test password hashing and verification
-- [ ] Test JWT generation and validation
-- [ ] Test permission matching logic (wildcards, exact, deny)
-- [ ] Test encryption round-trip
+- [x] ✅ Test password hashing and verification
+- [x] ✅ Test JWT generation and validation
+- [x] ✅ Test permission matching logic (wildcards, exact, deny)
+- [x] ✅ Test encryption round-trip
 - [ ] Test TOTP generation and verification
 - [ ] Test version comparison (numeric)
 - [ ] Test rate limiter behavior
 
 ### 13.2 Integration Tests
-- [ ] Test full registration → login → access protected endpoint flow
+- [x] ✅ Test full registration → login → access protected endpoint flow
 - [ ] Test OAuth callback and account linking
 - [ ] Test MFA enrollment and verification flow
-- [ ] Test refresh token rotation
+- [x] ✅ Test refresh token rotation
 - [ ] Test account lockout and unlock
 - [ ] Test tenant isolation (cross-tenant access denied)
 - [ ] Test GDPR export generates correct data
 - [ ] Test GDPR deletion anonymizes correctly
 - [ ] Test audit log chain integrity
+
+---
+
+## 14. Email Service
+
+### 14.1 Nodemailer + Ethereal
+- [x] ✅ Install and configure Nodemailer
+- [x] ✅ Create email service with Ethereal transport for development
+- [x] ✅ Support production SMTP configuration
+- [x] ✅ Log preview URLs for dev emails
+- [x] ✅ Create password reset email template
+- [x] ✅ Create data export ready email template
+- [x] ✅ Create account deletion confirmation email template
