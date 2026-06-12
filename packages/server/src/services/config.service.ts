@@ -1,4 +1,4 @@
-import { pool } from '../db/pool';
+import { pool, adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
 import { logAudit } from './audit.service';
 
@@ -26,7 +26,7 @@ export async function getConfig(tenantId: string, key: string): Promise<unknown>
   }
 
   // Check tenant override
-  const { rows: overrideRows } = await pool.query(
+  const { rows: overrideRows } = await adminPool.query(
     `SELECT tc.value, cd.data_type FROM tenant_configurations tc
      JOIN configuration_definitions cd ON cd.key = tc.key
      WHERE tc.tenant_id = $1 AND tc.key = $2`,
@@ -40,7 +40,7 @@ export async function getConfig(tenantId: string, key: string): Promise<unknown>
   }
 
   // Fall back to default
-  const { rows: defaultRows } = await pool.query(
+  const { rows: defaultRows } = await adminPool.query(
     'SELECT default_value, data_type FROM configuration_definitions WHERE key = $1',
     [key],
   );
@@ -61,7 +61,7 @@ export async function setConfig(
   tenantId: string, key: string, value: unknown, userId: string,
 ): Promise<void> {
   // Validate the key exists
-  const { rows: defRows } = await pool.query(
+  const { rows: defRows } = await adminPool.query(
     'SELECT data_type FROM configuration_definitions WHERE key = $1',
     [key],
   );
@@ -72,7 +72,7 @@ export async function setConfig(
   const stringValue = String(value);
 
   // Upsert tenant override
-  await pool.query(
+  await adminPool.query(
     `INSERT INTO tenant_configurations (tenant_id, key, value, updated_by, updated_at)
      VALUES ($1, $2, $3, $4, NOW())
      ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_by = $4, updated_at = NOW()`,
@@ -98,7 +98,7 @@ export async function setConfig(
  * Get all configuration for a tenant (defaults merged with overrides).
  */
 export async function getAllConfig(tenantId: string): Promise<Record<string, unknown>> {
-  const { rows } = await pool.query(
+  const { rows } = await adminPool.query(
     `SELECT cd.key, cd.data_type, cd.category, cd.description,
             COALESCE(tc.value, cd.default_value) AS value
      FROM configuration_definitions cd

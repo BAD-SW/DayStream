@@ -1,5 +1,5 @@
 import bcrypt from 'bcrypt';
-import { pool } from './pool';
+import { adminPool } from './pool';
 
 // Fixed seed UUIDs for idempotent seeding
 const SEED_TENANT_ID = '00000000-0000-0000-0000-000000000001';
@@ -58,7 +58,7 @@ function hashPassword(password: string): string {
 }
 
 async function seed() {
-  const client = await pool.connect();
+  const client = await adminPool.connect();
 
   try {
     await client.query('BEGIN');
@@ -120,7 +120,7 @@ async function seed() {
     throw err;
   } finally {
     client.release();
-    await pool.end();
+    await adminPool.end();
   }
 }
 

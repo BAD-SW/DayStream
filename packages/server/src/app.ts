@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { v4 as uuidv4 } from 'uuid';
 import swaggerUi from 'swagger-ui-express';
 import { logger } from './middleware/logger';
@@ -38,6 +39,9 @@ app.use(cors({
   origin: `http://localhost:${config.nodeEnv === 'development' ? 4000 : config.port}`,
   credentials: true,
 }));
+
+// Cookie parser
+app.use(cookieParser());
 
 // Body parsing
 app.use(express.json({ limit: '1mb' }));

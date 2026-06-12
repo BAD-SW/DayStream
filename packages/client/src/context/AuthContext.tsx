@@ -13,6 +13,7 @@ interface AuthState {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  featureFlags: Record<string, boolean>;
   login: (tenantId: string, email: string, password: string) => Promise<void>;
   logout: () => void;
 }
@@ -22,15 +23,24 @@ const AuthContext = createContext<AuthState | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({});
+
+  // Load feature flags
+  async function loadFeatureFlags() {
+    try {
+      const res = await apiClient.get('/v1/admin/feature-flags');
+      setFeatureFlags(res.data.data || {});
+    } catch {
+      // Flags are non-critical — silently fail
+    }
+  }
 
   // On mount, check if we have a stored token and try to use it
   useEffect(() => {
     const token = localStorage.getItem('access_token');
     if (token) {
-      // Decode the JWT to get basic user info (without calling API)
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
-        // Check expiry
         if (payload.exp * 1000 > Date.now()) {
           setUser({
             id: payload.sub,
@@ -39,8 +49,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             last_name: '',
             role: payload.role || '',
           });
+          loadFeatureFlags();
         } else {
-          // Token expired — clear it
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
         }
@@ -63,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('access_token', access_token);
     localStorage.setItem('refresh_token', refresh_token);
     setUser(userData);
+    await loadFeatureFlags();
   }
 
   function logout() {
@@ -73,10 +84,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     setUser(null);
+    setFeatureFlags({});
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, featureFlags, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

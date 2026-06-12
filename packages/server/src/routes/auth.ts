@@ -98,10 +98,19 @@ authRouter.post('/login', validate(loginSchema), async (req: Request, res: Respo
       return;
     }
 
+    // Set refresh token as httpOnly cookie
+    res.cookie('refresh_token', result.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/api/v1/auth',
+    });
+
     res.status(200).json({
       data: {
         access_token: result.accessToken,
-        refresh_token: result.refreshToken,
+        refresh_token: result.refreshToken, // also in body for non-browser clients
         user: {
           id: result.user.id,
           email: result.user.email,
@@ -123,10 +132,25 @@ authRouter.post('/login', validate(loginSchema), async (req: Request, res: Respo
 });
 
 // POST /api/v1/auth/refresh
-authRouter.post('/refresh', validate(refreshSchema), async (req: Request, res: Response) => {
+authRouter.post('/refresh', async (req: Request, res: Response) => {
   try {
-    const { refresh_token } = req.body;
-    const result = await authService.refreshAccessToken(refresh_token);
+    // Accept refresh token from cookie OR body
+    const refreshTokenValue = req.cookies?.refresh_token || req.body?.refresh_token;
+    if (!refreshTokenValue) {
+      res.status(401).json({ error: 'Refresh token required', code: 'INVALID_REFRESH_TOKEN' });
+      return;
+    }
+
+    const result = await authService.refreshAccessToken(refreshTokenValue);
+
+    // Update the cookie with the new refresh token
+    res.cookie('refresh_token', result.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/api/v1/auth',
+    });
 
     res.status(200).json({
       data: {
@@ -142,10 +166,19 @@ authRouter.post('/refresh', validate(refreshSchema), async (req: Request, res: R
 // POST /api/v1/auth/logout
 authRouter.post('/logout', authenticate, async (req: Request, res: Response) => {
   try {
-    const { refresh_token } = req.body;
-    if (refresh_token) {
-      await authService.revokeRefreshToken(refresh_token);
+    const refreshTokenValue = req.cookies?.refresh_token || req.body?.refresh_token;
+    if (refreshTokenValue) {
+      await authService.revokeRefreshToken(refreshTokenValue);
     }
+
+    // Clear the cookie
+    res.clearCookie('refresh_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/api/v1/auth',
+    });
+
     res.status(200).json({ data: { message: 'Logged out successfully' } });
   } catch (err: any) {
     res.status(500).json({ error: 'Logout failed', code: 'INTERNAL_ERROR' });

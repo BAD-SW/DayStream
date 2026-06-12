@@ -21,7 +21,9 @@ export function Login() {
 
     try {
       await login(TENANT_ID, email, password);
-      navigate('/dashboard');
+      const redirectUrl = sessionStorage.getItem('redirectAfterLogin') || '/dashboard';
+      sessionStorage.removeItem('redirectAfterLogin');
+      navigate(redirectUrl);
     } catch (err: any) {
       const msg = err.response?.data?.error || 'Login failed';
       setError(msg);

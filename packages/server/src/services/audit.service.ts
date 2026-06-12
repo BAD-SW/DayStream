@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { pool } from '../db/pool';
+import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
 
 interface AuditEntry {
@@ -31,7 +31,7 @@ export async function logAudit(entry: AuditEntry): Promise<void> {
   try {
     const signature = signEntry(entry, lastSignature);
 
-    await pool.query(
+    await adminPool.query(
       `INSERT INTO audit_log (tenant_id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, signature, previous_signature)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [

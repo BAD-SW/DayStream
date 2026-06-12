@@ -1,11 +1,11 @@
 import path from 'path';
 import fs from 'fs';
-import { pool } from './pool';
+import { adminPool } from './pool';
 
 const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
 
 async function migrate() {
-  const client = await pool.connect();
+  const client = await adminPool.connect();
 
   try {
     // Create migrations table if it doesn't exist
@@ -57,7 +57,7 @@ async function migrate() {
     }
   } finally {
     client.release();
-    await pool.end();
+    await adminPool.end();
   }
 }
 

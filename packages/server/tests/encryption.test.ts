@@ -19,10 +19,10 @@ describe('Encryption', () => {
   });
 
   it('detects tampered ciphertext', () => {
-    const ciphertext = encrypt('secret data');
+    const ciphertext = encrypt('secret data that is long enough to tamper reliably');
     const parts = ciphertext.split(':');
-    // Flip a character in the encrypted portion
-    parts[2] = parts[2].substring(0, parts[2].length - 1) + '0';
+    // Tamper with the auth tag to guarantee authentication failure
+    parts[1] = '0'.repeat(parts[1].length);
     const tampered = parts.join(':');
     expect(() => decrypt(tampered)).toThrow();
   });

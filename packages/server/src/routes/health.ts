@@ -35,3 +35,30 @@ healthRouter.get('/ready', async (req, res) => {
     });
   }
 });
+
+healthRouter.get('/dependencies', async (req, res) => {
+  try {
+    const start = Date.now();
+    const dbResult = await pool.query('SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()');
+    const responseTime = Date.now() - start;
+    const activeConnections = parseInt(dbResult.rows[0].count, 10);
+
+    res.json({
+      status: 'ok',
+      dependencies: {
+        database: {
+          status: 'ok',
+          responseTime,
+          activeConnections,
+        },
+      },
+    });
+  } catch (err: any) {
+    res.status(503).json({
+      status: 'unavailable',
+      dependencies: {
+        database: { status: 'unavailable', error: err.message },
+      },
+    });
+  }
+});

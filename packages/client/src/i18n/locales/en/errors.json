@@ -1,0 +1,10 @@
+{
+  "generic": "Something went wrong. Please try again.",
+  "not_found": "The requested resource was not found.",
+  "validation": "Please check your input and try again.",
+  "unauthorized": "You need to sign in to access this page.",
+  "forbidden": "You don't have permission to do this.",
+  "rate_limited": "Too many requests. Please wait a moment.",
+  "network": "Unable to connect to the server. Check your internet connection.",
+  "timeout": "The request took too long. Please try again."
+}

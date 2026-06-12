@@ -7,8 +7,9 @@ import { tenantContext } from '../auth/tenant-context';
 import * as tenantService from '../services/tenant.service';
 import * as configService from '../services/config.service';
 import * as featureFlagService from '../services/feature-flag.service';
+import { logAudit } from '../services/audit.service';
 import { success, error } from '../utils/response';
-import { pool } from '../db/pool';
+import { adminPool } from '../db/pool';
 
 export const adminRouter = Router();
 
@@ -65,6 +66,45 @@ adminRouter.get('/tenants/:id', requirePermission('*:*'), async (req: Request, r
     success(res, tenant);
   } catch (err: any) {
     error(res, 'Failed to get tenant', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/admin/tenants/:id — Update tenant
+const updateTenantSchema = Joi.object({
+  name: Joi.string().min(2).max(255),
+  default_language: Joi.string().valid('en', 'es'),
+  currency: Joi.string().length(3).uppercase(),
+  timezone: Joi.string().max(50),
+}).min(1);
+
+adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantSchema), async (req: Request, res: Response) => {
+  try {
+    const tenant = await tenantService.getTenantById(req.params.id);
+    if (!tenant) {
+      error(res, 'Tenant not found', 'NOT_FOUND', 404);
+      return;
+    }
+
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    for (const [key, val] of Object.entries(req.body)) {
+      fields.push(`${key} = $${idx++}`);
+      values.push(val);
+    }
+    fields.push('updated_at = NOW()');
+    values.push(req.params.id);
+
+    await adminPool.query(
+      `UPDATE tenants SET ${fields.join(', ')} WHERE id = $${idx}`,
+      values,
+    );
+
+    const updated = await tenantService.getTenantById(req.params.id);
+    success(res, updated);
+  } catch (err: any) {
+    error(res, 'Failed to update tenant', 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -169,11 +209,19 @@ const updateFlagSchema = Joi.object({
 
 adminRouter.put('/feature-flags/:key', requirePermission('*:*'), validate(updateFlagSchema), async (req: Request, res: Response) => {
   try {
-    await pool.query(
+    const authReq = req as AuthenticatedRequest;
+    await adminPool.query(
       'UPDATE feature_flags SET enabled = $1, updated_at = NOW() WHERE key = $2',
       [req.body.enabled, req.params.key],
     );
     featureFlagService.invalidateFlagCache();
+    await logAudit({
+      tenantId: authReq.user.tid || 'system',
+      userId: authReq.user.sub,
+      action: 'feature_flag.updated',
+      resourceType: 'feature_flag',
+      details: { key: req.params.key, enabled: req.body.enabled, scope: 'global' },
+    });
     success(res, { key: req.params.key, enabled: req.body.enabled });
   } catch (err: any) {
     error(res, 'Failed to update feature flag', 'INTERNAL_ERROR', 500);
@@ -185,19 +233,26 @@ adminRouter.put('/feature-flags/:key/override', tenantContext, requirePermission
   try {
     const authReq = req as AuthenticatedRequest;
     // Get flag ID
-    const { rows } = await pool.query('SELECT id FROM feature_flags WHERE key = $1', [req.params.key]);
+    const { rows } = await adminPool.query('SELECT id FROM feature_flags WHERE key = $1', [req.params.key]);
     if (rows.length === 0) {
       error(res, 'Feature flag not found', 'NOT_FOUND', 404);
       return;
     }
 
-    await pool.query(
+    await adminPool.query(
       `INSERT INTO feature_flag_overrides (flag_id, tenant_id, enabled)
        VALUES ($1, $2, $3)
        ON CONFLICT (flag_id, tenant_id) DO UPDATE SET enabled = $3`,
       [rows[0].id, authReq.tenantId, req.body.enabled],
     );
     featureFlagService.invalidateFlagCache();
+    await logAudit({
+      tenantId: authReq.tenantId,
+      userId: authReq.user.sub,
+      action: 'feature_flag.override',
+      resourceType: 'feature_flag',
+      details: { key: req.params.key, enabled: req.body.enabled, scope: 'tenant' },
+    });
     success(res, { key: req.params.key, enabled: req.body.enabled, scope: 'tenant' });
   } catch (err: any) {
     error(res, 'Failed to update feature flag override', 'INTERNAL_ERROR', 500);

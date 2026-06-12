@@ -11,6 +11,8 @@ export default defineConfig({
       DB_USER: 'postgres',
       DB_PASSWORD: 'postgres',
       DB_NAME: 'daystream_dev',
+      DB_APP_USER: 'daystream_app',
+      DB_APP_PASSWORD: 'daystream_app_dev',
       SERVER_PORT: '4001',
       NODE_ENV: 'test',
       JWT_SECRET: 'test-jwt-secret-for-vitest',

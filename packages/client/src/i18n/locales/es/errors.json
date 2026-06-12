@@ -1,0 +1,10 @@
+{
+  "generic": "Algo salió mal. Por favor, inténtalo de nuevo.",
+  "not_found": "El recurso solicitado no fue encontrado.",
+  "validation": "Por favor, revisa tu entrada e inténtalo de nuevo.",
+  "unauthorized": "Necesitas iniciar sesión para acceder a esta página.",
+  "forbidden": "No tienes permiso para hacer esto.",
+  "rate_limited": "Demasiadas solicitudes. Por favor, espera un momento.",
+  "network": "No se puede conectar al servidor. Verifica tu conexión a internet.",
+  "timeout": "La solicitud tardó demasiado. Por favor, inténtalo de nuevo."
+}

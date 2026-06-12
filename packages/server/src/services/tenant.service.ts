@@ -1,4 +1,4 @@
-import { pool } from '../db/pool';
+import { pool, adminPool } from '../db/pool';
 import { hashPassword } from './auth.service';
 import { logAudit } from './audit.service';
 import { generateSlug } from '@daystream/shared';
@@ -20,12 +20,12 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
   const slug = input.slug || generateSlug(input.name);
 
   // Check slug uniqueness
-  const { rows: existing } = await pool.query('SELECT id FROM tenants WHERE slug = $1', [slug]);
+  const { rows: existing } = await adminPool.query('SELECT id FROM tenants WHERE slug = $1', [slug]);
   if (existing.length > 0) {
     throw new Error('A tenant with this slug already exists');
   }
 
-  const client = await pool.connect();
+  const client = await adminPool.connect();
   try {
     await client.query('BEGIN');
 
@@ -72,6 +72,15 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
       [owner.id, roleIds['Business Owner'], tenant.id],
     );
 
+    // Apply default configuration values for new tenant
+    const { rows: configDefs } = await client.query('SELECT key, default_value FROM configuration_definitions');
+    for (const def of configDefs) {
+      await client.query(
+        'INSERT INTO tenant_configurations (tenant_id, key, value, updated_by) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+        [tenant.id, def.key, def.default_value, owner.id],
+      );
+    }
+
     await client.query('COMMIT');
 
     // Audit log
@@ -96,14 +105,14 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
 }
 
 export async function getTenants() {
-  const { rows } = await pool.query(
+  const { rows } = await adminPool.query(
     'SELECT id, name, slug, status, default_language, currency, timezone, created_at, updated_at FROM tenants ORDER BY created_at DESC',
   );
   return rows;
 }
 
 export async function getTenantById(id: string) {
-  const { rows } = await pool.query('SELECT * FROM tenants WHERE id = $1', [id]);
+  const { rows } = await adminPool.query('SELECT * FROM tenants WHERE id = $1', [id]);
   return rows[0] || null;
 }
 
@@ -122,7 +131,7 @@ export async function updateTenantStatus(id: string, status: 'active' | 'suspend
     throw new Error(`Cannot transition from ${tenant.status} to ${status}`);
   }
 
-  await pool.query('UPDATE tenants SET status = $1, updated_at = NOW() WHERE id = $2', [status, id]);
+  await adminPool.query('UPDATE tenants SET status = $1, updated_at = NOW() WHERE id = $2', [status, id]);
 
   await logAudit({
     tenantId: id,

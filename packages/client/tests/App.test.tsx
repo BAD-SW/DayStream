@@ -37,4 +37,10 @@ describe('App', () => {
     renderApp('/dashboard');
     expect(screen.getByText('Sign in to your account')).toBeInTheDocument();
   });
+
+  it('redirects admin routes to login when not authenticated', () => {
+    localStorage.removeItem('access_token');
+    renderApp('/admin');
+    expect(screen.getByText('Sign in to your account')).toBeInTheDocument();
+  });
 });

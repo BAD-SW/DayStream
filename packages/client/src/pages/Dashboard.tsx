@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useAuth } from '../context/AuthContext';
 import { apiClient } from '../api/client';
 
 interface HealthResponse {
@@ -11,7 +10,6 @@ interface HealthResponse {
 
 export function Dashboard() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
-  const { user, logout } = useAuth();
 
   useEffect(() => {
     apiClient.get<HealthResponse>('/health')
@@ -20,76 +18,28 @@ export function Dashboard() {
   }, []);
 
   return (
-    <div style={styles.container}>
-      <header style={styles.header}>
-        <h1 style={styles.logo}>DayStream</h1>
-        <div style={styles.headerRight}>
-          {user && <span style={styles.userName}>{user.first_name || user.email}</span>}
-          <button onClick={logout} style={styles.logoutBtn}>Sign Out</button>
+    <div>
+      <h2 style={styles.heading}>Dashboard</h2>
+      <p style={styles.text}>
+        You're signed in. This is a placeholder until Phase 04 (Design System) is implemented.
+      </p>
+
+      {health && (
+        <div style={styles.statusCard}>
+          <p style={styles.statusLabel}>API Status</p>
+          <p style={styles.statusValue}>✓ {health.status} — v{health.version} — uptime {health.uptime}s</p>
         </div>
-      </header>
-
-      <main style={styles.main}>
-        <h2 style={styles.heading}>Dashboard</h2>
-        <p style={styles.text}>You're signed in. This is a placeholder until Phase 04 (Design System) is implemented.</p>
-
-        {health && (
-          <div style={styles.statusCard}>
-            <p style={styles.statusLabel}>API Status</p>
-            <p style={styles.statusValue}>✓ {health.status} — v{health.version} — uptime {health.uptime}s</p>
-          </div>
-        )}
-      </main>
+      )}
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: {
-    minHeight: '100vh',
-    backgroundColor: '#1A1A1A',
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-    color: '#F5F5F3',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '16px 32px',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-  },
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-  },
-  logo: {
-    fontSize: '20px',
-    fontWeight: 600,
-    margin: 0,
-    color: '#C9A96E',
-  },
-  userName: {
-    fontSize: '14px',
-    color: '#B0B0B0',
-  },
-  logoutBtn: {
-    background: 'none',
-    border: '1px solid #333',
-    borderRadius: '8px',
-    color: '#B0B0B0',
-    padding: '8px 16px',
-    fontSize: '14px',
-    cursor: 'pointer',
-  },
-  main: {
-    padding: '48px 32px',
-    maxWidth: '768px',
-  },
   heading: {
     fontSize: '24px',
     fontWeight: 300,
     margin: '0 0 16px 0',
+    color: '#F5F5F3',
   },
   text: {
     color: '#B0B0B0',

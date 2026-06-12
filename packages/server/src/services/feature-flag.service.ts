@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { pool } from '../db/pool';
+import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
 
 interface FlagContext {
@@ -24,7 +24,7 @@ async function loadFlags(): Promise<FlagRow[]> {
   if (flagCache && Date.now() < flagCacheExpiry) {
     return flagCache;
   }
-  const { rows } = await pool.query('SELECT id, key, scope, enabled, percentage FROM feature_flags');
+  const { rows } = await adminPool.query('SELECT id, key, scope, enabled, percentage FROM feature_flags');
   flagCache = rows;
   flagCacheExpiry = Date.now() + FLAG_CACHE_TTL;
   return rows;
@@ -54,7 +54,7 @@ export async function isFeatureEnabled(flagKey: string, context: FlagContext): P
 
     case 'tenant': {
       // Check for tenant-specific override
-      const { rows } = await pool.query(
+      const { rows } = await adminPool.query(
         'SELECT enabled FROM feature_flag_overrides WHERE flag_id = $1 AND tenant_id = $2',
         [flag.id, context.tenantId],
       );
