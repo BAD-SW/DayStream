@@ -1,0 +1,21 @@
+{
+  "name": "daystream",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "npm run dev --workspace=packages/server",
+    "dev:client": "npm run dev --workspace=packages/client",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "migrate:dev": "npm run migrate:dev --workspace=packages/server",
+    "seed:dev": "npm run seed:dev --workspace=packages/server"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
