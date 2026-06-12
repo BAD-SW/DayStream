@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import bcrypt from 'bcrypt';
 import { pool } from './pool';
 
 // Fixed seed UUIDs for idempotent seeding
@@ -64,6 +64,10 @@ async function seed() {
     await client.query('BEGIN');
 
     // Clear existing seed data
+    await client.query('DELETE FROM login_attempts WHERE tenant_id = $1', [SEED_TENANT_ID]);
+    await client.query('DELETE FROM refresh_tokens WHERE user_id IN (SELECT id FROM users WHERE tenant_id = $1)', [SEED_TENANT_ID]);
+    await client.query('DELETE FROM password_history WHERE user_id IN (SELECT id FROM users WHERE tenant_id = $1)', [SEED_TENANT_ID]);
+    await client.query('DELETE FROM user_roles WHERE tenant_id = $1', [SEED_TENANT_ID]);
     await client.query('DELETE FROM users WHERE tenant_id = $1', [SEED_TENANT_ID]);
     await client.query('DELETE FROM tenants WHERE id = $1', [SEED_TENANT_ID]);
 
@@ -74,9 +78,19 @@ async function seed() {
       [SEED_TENANT_ID, 'Transcend Health Mallorca', 'transcend', 'active'],
     );
 
-    // Insert test users
-    const passwordHash = hashPassword('password123');
+    // Hash password with bcrypt (same as auth service)
+    const passwordHash = await bcrypt.hash('password123', 12);
     let userCount = 0;
+
+    // Role mapping to system role IDs from migration 002
+    const roleMap: Record<string, string> = {
+      business_owner: '00000000-0000-0000-0000-000000000101',
+      manager: '00000000-0000-0000-0000-000000000102',
+      reception: '00000000-0000-0000-0000-000000000103',
+      therapist: '00000000-0000-0000-0000-000000000103',
+      trainer: '00000000-0000-0000-0000-000000000103',
+      customer: '00000000-0000-0000-0000-000000000104',
+    };
 
     for (const [, user] of Object.entries(SEED_USERS)) {
       await client.query(
@@ -84,6 +98,16 @@ async function seed() {
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')`,
         [user.id, SEED_TENANT_ID, user.email, user.firstName, user.lastName, passwordHash, user.role],
       );
+
+      // Assign role in user_roles table
+      const roleId = roleMap[user.role];
+      if (roleId) {
+        await client.query(
+          `INSERT INTO user_roles (user_id, role_id, tenant_id) VALUES ($1, $2, $3)`,
+          [user.id, roleId, SEED_TENANT_ID],
+        );
+      }
+
       userCount++;
     }
 

@@ -1,24 +1,35 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { BrowserRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import { App } from '../src/App';
 
 describe('App', () => {
-  it('renders DayStream heading', () => {
+  it('renders login page by default', () => {
     render(
-      <BrowserRouter>
+      <MemoryRouter initialEntries={['/login']}>
         <App />
-      </BrowserRouter>,
+      </MemoryRouter>,
     );
     expect(screen.getByText('DayStream')).toBeInTheDocument();
+    expect(screen.getByText('Sign in to your account')).toBeInTheDocument();
   });
 
-  it('shows connecting message initially', () => {
+  it('shows email and password fields', () => {
     render(
-      <BrowserRouter>
+      <MemoryRouter initialEntries={['/login']}>
         <App />
-      </BrowserRouter>,
+      </MemoryRouter>,
     );
-    expect(screen.getByText('Connecting to API...')).toBeInTheDocument();
+    expect(screen.getByLabelText('Email')).toBeInTheDocument();
+    expect(screen.getByLabelText('Password')).toBeInTheDocument();
+  });
+
+  it('has a sign in button', () => {
+    render(
+      <MemoryRouter initialEntries={['/login']}>
+        <App />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('button', { name: 'Sign In' })).toBeInTheDocument();
   });
 });
