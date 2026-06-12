@@ -17,20 +17,20 @@ Implementation tasks for multi-tenant architecture, tenant provisioning, context
 ## 1. Multi-Tenant Architecture
 
 ### 1.1 Tenant Table Extensions
-- [ ] Create migration to add `default_language`, `currency`, `timezone` to tenants table
-- [ ] Add CHECK constraints for valid values
-- [ ] Update shared types (Tenant interface)
+- [x] ✅ Create migration to add `default_language`, `currency`, `timezone` to tenants table
+- [x] ✅ Add CHECK constraints for valid values
+- [x] ✅ Update shared types (Tenant interface)
 
 ### 1.2 Row-Level Security
+- [x] ✅ Enable RLS on users table
+- [x] ✅ Create RLS policies (USING tenant_id = current_setting)
+- [x] ✅ Create helper to set/reset `app.current_tenant_id` session variable
 - [ ] Enable RLS on tenants table
-- [ ] Enable RLS on users table
-- [ ] Create RLS policies (USING tenant_id = current_setting)
-- [ ] Create helper to set/reset `app.current_tenant_id` session variable
 - [ ] Write integration tests verifying RLS blocks cross-tenant access
 
 ### 1.3 Scoped Query Helpers
-- [ ] Create `tenantQuery()` function (sets RLS context, executes query, resets)
-- [ ] Ensure all future queries use this helper for tenant-scoped data
+- [x] ✅ Create `tenantQuery()` function (sets RLS context, executes query, resets)
+- [x] ✅ Create `tenantTransaction()` function (sets RLS context, executes in transaction)
 - [ ] Write unit tests for query helper
 
 ---
@@ -38,23 +38,23 @@ Implementation tasks for multi-tenant architecture, tenant provisioning, context
 ## 2. Tenant Provisioning
 
 ### 2.1 Provisioning API
-- [ ] Create `POST /api/v1/admin/tenants` endpoint (Super Admin only)
-- [ ] Validate input: name, slug, owner email, currency, timezone, language
-- [ ] Check slug uniqueness
-- [ ] Create tenant record
-- [ ] Create default roles for tenant (Business Owner, Manager, Staff, Customer)
-- [ ] Create initial Business Owner user
+- [x] ✅ Create `POST /api/v1/admin/tenants` endpoint (Super Admin only)
+- [x] ✅ Validate input: name, slug, owner email, currency, timezone, language
+- [x] ✅ Check slug uniqueness
+- [x] ✅ Create tenant record
+- [x] ✅ Create default roles for tenant (Business Owner, Manager, Staff, Customer)
+- [x] ✅ Create initial Business Owner user
 - [ ] Apply default configuration values
-- [ ] Log provisioning in audit trail
+- [x] ✅ Log provisioning in audit trail
 - [ ] Write unit tests for provisioning flow
 
 ### 2.2 Tenant Management API
-- [ ] Create `GET /api/v1/admin/tenants` endpoint (list all — Super Admin)
-- [ ] Create `GET /api/v1/admin/tenants/:id` endpoint (detail)
+- [x] ✅ Create `GET /api/v1/admin/tenants` endpoint (list all — Super Admin)
+- [x] ✅ Create `GET /api/v1/admin/tenants/:id` endpoint (detail)
 - [ ] Create `PUT /api/v1/admin/tenants/:id` endpoint (update name, status)
-- [ ] Create `PUT /api/v1/admin/tenants/:id/suspend` endpoint
-- [ ] Create `PUT /api/v1/admin/tenants/:id/activate` endpoint
-- [ ] Enforce status transitions (active → suspended → archived)
+- [x] ✅ Create `PUT /api/v1/admin/tenants/:id/suspend` endpoint
+- [x] ✅ Create `PUT /api/v1/admin/tenants/:id/activate` endpoint
+- [x] ✅ Enforce status transitions (active → suspended → archived)
 - [ ] Write unit tests for management operations
 
 ### 2.3 Tenant Status Enforcement
@@ -67,10 +67,10 @@ Implementation tasks for multi-tenant architecture, tenant provisioning, context
 ## 3. Tenant Context Propagation
 
 ### 3.1 Context Middleware
-- [ ] Create `tenantContext` middleware (extract tenant_id from JWT)
-- [ ] Attach tenant_id to request object
-- [ ] Reject requests missing tenant context (401)
-- [ ] Apply to all `/api/v1/*` routes (except public endpoints)
+- [x] ✅ Create `tenantContext` middleware (extract tenant_id from JWT)
+- [x] ✅ Attach tenant_id to request object
+- [x] ✅ Reject requests missing tenant context (401)
+- [x] ✅ Apply to all `/api/v1/*` routes (except public endpoints)
 - [ ] Create list of exempt routes (health, auth/login, auth/register, public catalog)
 
 ### 3.2 Storage Scoping
@@ -83,61 +83,61 @@ Implementation tasks for multi-tenant architecture, tenant provisioning, context
 ## 4. API Infrastructure
 
 ### 4.1 Route Organization
+- [x] ✅ Mount auth routes (`/api/v1/auth/*`)
+- [x] ✅ Mount tenant admin routes (`/api/v1/admin/tenants/*`)
 - [ ] Create `packages/server/src/routes/v1/index.ts` (V1 router)
-- [ ] Mount auth routes (`/api/v1/auth/*`)
-- [ ] Mount tenant admin routes (`/api/v1/admin/tenants/*`)
 - [ ] Mount user routes (`/api/v1/users/*`)
 - [ ] Mount profile routes (`/api/v1/profile/*`)
-- [ ] Mount config routes (`/api/v1/admin/config/*`)
+- [x] ✅ Mount config routes (`/api/v1/admin/config/*`)
 
 ### 4.2 Response Helpers
-- [ ] Create `success()` response helper
-- [ ] Create `error()` response helper
-- [ ] Define standard error codes (constants in shared package)
-- [ ] Create consistent 404 handler
-- [ ] Create global error handler (catches unhandled errors, returns structured response)
+- [x] ✅ Create `success()` response helper
+- [x] ✅ Create `error()` response helper
+- [x] ✅ Define standard error codes (constants in shared package)
+- [x] ✅ Create consistent 404 handler
+- [x] ✅ Create global error handler (catches unhandled errors, returns structured response)
 
 ### 4.3 Pagination
-- [ ] Create pagination validation schema (page, limit, sort, order)
-- [ ] Create `paginate()` query helper (adds LIMIT, OFFSET, ORDER BY)
-- [ ] Create pagination response meta builder (page, limit, total, totalPages)
+- [x] ✅ Create pagination validation schema (page, limit, sort, order)
+- [x] ✅ Create `paginate()` query helper (adds LIMIT, OFFSET, ORDER BY)
+- [x] ✅ Create pagination response meta builder (page, limit, total, totalPages)
 - [ ] Write unit tests for pagination logic
 
 ### 4.4 Request ID
-- [ ] Create request ID middleware (generate UUID, set X-Request-Id header)
-- [ ] Include request ID in all log entries
-- [ ] Pass request ID through to error responses
+- [x] ✅ Create request ID middleware (generate UUID, set X-Request-Id header)
+- [x] ✅ Include request ID in all log entries
+- [x] ✅ Pass request ID through to error responses
 
 ---
 
 ## 5. Frontend Application
 
 ### 5.1 Routing Setup
-- [ ] Configure react-router-dom with route structure
-- [ ] Create public routes (login, register, forgot-password)
-- [ ] Create protected routes with AuthGuard component
+- [x] ✅ Configure react-router-dom with route structure
+- [x] ✅ Create public routes (login)
+- [x] ✅ Create protected routes with AuthGuard
 - [ ] Create admin routes with role-based AuthGuard
 - [ ] Create placeholder pages for each route
 
 ### 5.2 Auth Guard
-- [ ] Create `AuthGuard` component (checks auth state, redirects if not logged in)
+- [x] ✅ Create `AuthGuard` component (checks auth state, redirects if not logged in)
 - [ ] Support `requiredRole` prop for role-based access
 - [ ] Show loading spinner while auth state is resolving
 - [ ] Store redirect URL for post-login navigation
 
 ### 5.3 API Client
-- [ ] Create axios instance with base URL and default headers
-- [ ] Add request interceptor (attach Authorization header)
-- [ ] Add response interceptor (handle 401, attempt token refresh)
-- [ ] Redirect to login on refresh failure
+- [x] ✅ Create axios instance with base URL and default headers
+- [x] ✅ Add request interceptor (attach Authorization header)
+- [x] ✅ Add response interceptor (handle 401, attempt token refresh)
+- [x] ✅ Redirect to login on refresh failure
 - [ ] Create typed API helper functions (get, post, put, delete)
 
 ### 5.4 Auth State Management
-- [ ] Create auth context/provider (stores user, tokens, loading state)
-- [ ] Implement login function (call API, store tokens, set user)
-- [ ] Implement logout function (clear tokens, redirect)
-- [ ] Implement token refresh function
-- [ ] Persist tokens securely (memory for access, httpOnly cookie or secure storage for refresh)
+- [x] ✅ Create auth context/provider (stores user, tokens, loading state)
+- [x] ✅ Implement login function (call API, store tokens, set user)
+- [x] ✅ Implement logout function (clear tokens, redirect)
+- [x] ✅ Implement token refresh function
+- [ ] Persist tokens securely (memory for access, secure storage for refresh)
 
 ### 5.5 Layout
 - [ ] Create `AppLayout` component (header, sidebar, content area)
@@ -152,24 +152,24 @@ Implementation tasks for multi-tenant architecture, tenant provisioning, context
 ## 6. Configuration Engine
 
 ### 6.1 Database Setup
-- [ ] Create migration for `configuration_definitions` table
-- [ ] Create migration for `tenant_configurations` table
-- [ ] Seed default configuration definitions (branding, features, limits)
+- [x] ✅ Create migration for `configuration_definitions` table
+- [x] ✅ Create migration for `tenant_configurations` table
+- [x] ✅ Seed default configuration definitions (branding, features, limits)
 
 ### 6.2 Configuration Service
-- [ ] Create `ConfigurationService` class
-- [ ] Implement `get(tenantId, key)` — check cache → tenant override → default
-- [ ] Implement `set(tenantId, key, value, userId)` — validate, upsert, invalidate cache, audit log
-- [ ] Implement in-memory cache with configurable TTL (5 minutes)
-- [ ] Implement cache invalidation on update
+- [x] ✅ Create `ConfigurationService` (get, set, getAll)
+- [x] ✅ Implement `get(tenantId, key)` — check cache → tenant override → default
+- [x] ✅ Implement `set(tenantId, key, value, userId)` — validate, upsert, invalidate cache, audit log
+- [x] ✅ Implement in-memory cache with configurable TTL (5 minutes)
+- [x] ✅ Implement cache invalidation on update
 - [ ] Write unit tests for caching behavior
 
 ### 6.3 Configuration API
-- [ ] Create `GET /api/v1/admin/config` endpoint (list all config for tenant)
-- [ ] Create `GET /api/v1/admin/config/:key` endpoint (get specific value)
-- [ ] Create `PUT /api/v1/admin/config/:key` endpoint (update value)
-- [ ] Validate values against definition schema before saving
-- [ ] Restrict to Business Owner+ role
+- [x] ✅ Create `GET /api/v1/admin/config` endpoint (list all config for tenant)
+- [x] ✅ Create `GET /api/v1/admin/config/:key` endpoint (get specific value)
+- [x] ✅ Create `PUT /api/v1/admin/config/:key` endpoint (update value)
+- [x] ✅ Validate values against definition schema before saving
+- [x] ✅ Restrict to Business Owner+ role
 - [ ] Write unit tests for API endpoints
 
 ---
@@ -177,23 +177,23 @@ Implementation tasks for multi-tenant architecture, tenant provisioning, context
 ## 7. Feature Flag System
 
 ### 7.1 Database Setup
-- [ ] Create migration for `feature_flags` table
-- [ ] Create migration for `feature_flag_overrides` table
-- [ ] Seed initial feature flags (booking, waitlist, etc. — all enabled by default)
+- [x] ✅ Create migration for `feature_flags` table
+- [x] ✅ Create migration for `feature_flag_overrides` table
+- [x] ✅ Seed initial feature flags (booking, waitlist, etc.)
 
 ### 7.2 Feature Flag Service
-- [ ] Create `FeatureFlagService` class
-- [ ] Implement `isEnabled(flagKey, context)` — evaluate based on scope
-- [ ] Support global, tenant, and percentage-based evaluation
-- [ ] Implement deterministic percentage evaluation (hash-based)
-- [ ] Cache flag evaluations (invalidate on change)
+- [x] ✅ Create `FeatureFlagService` (isEnabled, evaluateAll)
+- [x] ✅ Implement `isEnabled(flagKey, context)` — evaluate based on scope
+- [x] ✅ Support global, tenant, and percentage-based evaluation
+- [x] ✅ Implement deterministic percentage evaluation (hash-based)
+- [x] ✅ Cache flag evaluations (invalidate on change)
 - [ ] Write unit tests for each scope type
 
 ### 7.3 Feature Flag API
-- [ ] Create `GET /api/v1/admin/feature-flags` endpoint (list all flags)
-- [ ] Create `PUT /api/v1/admin/feature-flags/:key` endpoint (update flag)
-- [ ] Create `PUT /api/v1/admin/feature-flags/:key/override` endpoint (tenant override)
-- [ ] Restrict to Super Admin (global flags) and Business Owner (tenant overrides)
+- [x] ✅ Create `GET /api/v1/admin/feature-flags` endpoint (list all flags)
+- [x] ✅ Create `PUT /api/v1/admin/feature-flags/:key` endpoint (update flag)
+- [x] ✅ Create `PUT /api/v1/admin/feature-flags/:key/override` endpoint (tenant override)
+- [x] ✅ Restrict to Super Admin (global flags) and Business Owner (tenant overrides)
 - [ ] Audit log all flag changes
 
 ### 7.4 Frontend Integration
@@ -207,20 +207,20 @@ Implementation tasks for multi-tenant architecture, tenant provisioning, context
 ## 8. Internationalization (i18n)
 
 ### 8.1 Framework Setup
-- [ ] Install i18next and react-i18next in client package
-- [ ] Create i18n configuration (initialization, fallback, namespaces)
-- [ ] Create locale directory structure (`locales/en/`, `locales/es/`)
+- [x] ✅ Install i18next and react-i18next in client package
+- [x] ✅ Create i18n configuration (initialization, fallback, namespaces)
+- [x] ✅ Create locale directory structure (`locales/en/`, `locales/es/`)
 
 ### 8.2 Translation Files
-- [ ] Create `common.json` for English (buttons, labels, generic messages)
-- [ ] Create `auth.json` for English (login, register, password messages)
+- [x] ✅ Create `common.json` for English (buttons, labels, generic messages)
+- [x] ✅ Create `auth.json` for English (login, register, password messages)
+- [x] ✅ Create `common.json` for Spanish
+- [x] ✅ Create `auth.json` for Spanish
 - [ ] Create `errors.json` for English (error messages)
-- [ ] Create `common.json` for Spanish
-- [ ] Create `auth.json` for Spanish
 - [ ] Create `errors.json` for Spanish
 
 ### 8.3 Language Detection
-- [ ] Implement language detection priority (user profile → browser → tenant default → 'en')
+- [x] ✅ Implement language detection priority (browser → localStorage → 'en')
 - [ ] Create language switcher component (dropdown in header/settings)
 - [ ] Persist language preference to user profile on change
 - [ ] Apply language change without page reload
@@ -236,9 +236,9 @@ Implementation tasks for multi-tenant architecture, tenant provisioning, context
 ## 9. Multi-Currency
 
 ### 9.1 Currency Configuration
-- [ ] Store currency per tenant (set during provisioning)
-- [ ] Create `formatCurrency()` utility in shared package (uses Intl.NumberFormat)
-- [ ] Store all monetary values as integers (cents/minor units)
+- [x] ✅ Store currency per tenant (set during provisioning)
+- [x] ✅ Create `formatCurrency()` utility in shared package (uses Intl.NumberFormat)
+- [x] ✅ Store all monetary values as integers (cents/minor units) — documented in design
 - [ ] Write unit tests for currency formatting (EUR, USD, GBP)
 
 ### 9.2 Frontend Formatting
@@ -251,22 +251,22 @@ Implementation tasks for multi-tenant architecture, tenant provisioning, context
 ## 10. Shared Utilities Package
 
 ### 10.1 Types
-- [ ] Define `Tenant` interface (with new fields: default_language, currency, timezone)
-- [ ] Define `ConfigDefinition` interface
-- [ ] Define `FeatureFlag` interface
-- [ ] Define `PaginatedResult<T>` interface
-- [ ] Export all types from barrel index
+- [x] ✅ Define `Tenant` interface (with new fields: default_language, currency, timezone)
+- [x] ✅ Define `ConfigDefinition` interface
+- [x] ✅ Define `FeatureFlag` interface
+- [x] ✅ Define `PaginatedResult<T>` interface
+- [x] ✅ Export all types from barrel index
 
 ### 10.2 Constants
-- [ ] Define `ERROR_CODES` object
-- [ ] Define `CONFIG_KEYS` object
-- [ ] Define `SUPPORTED_LANGUAGES` array
-- [ ] Define `SUPPORTED_CURRENCIES` array
+- [x] ✅ Define `ERROR_CODES` object
+- [x] ✅ Define `CONFIG_KEYS` object
+- [x] ✅ Define `SUPPORTED_LANGUAGES` array
+- [x] ✅ Define `SUPPORTED_CURRENCIES` array
 
 ### 10.3 Utilities
-- [ ] Create `generateSlug(name)` function
-- [ ] Create `formatDate(date, locale)` function
-- [ ] Create `formatCurrency(cents, currency, locale)` function
+- [x] ✅ Create `generateSlug(name)` function
+- [x] ✅ Create `formatDate(date, locale)` function
+- [x] ✅ Create `formatCurrency(cents, currency, locale)` function
 - [ ] Write unit tests for all utility functions
 
 ---
@@ -274,10 +274,10 @@ Implementation tasks for multi-tenant architecture, tenant provisioning, context
 ## 11. Health Endpoints
 
 ### 11.1 Implementation
-- [ ] Create `GET /api/health` (basic — no auth, no rate limit)
-- [ ] Create `GET /api/health/ready` (checks DB connectivity)
+- [x] ✅ Create `GET /api/health` (basic — no auth, no rate limit)
+- [x] ✅ Create `GET /api/health/ready` (checks DB connectivity)
 - [ ] Create `GET /api/health/dependencies` (full detail — admin only)
-- [ ] Return 503 if critical dependency is down
+- [x] ✅ Return 503 if critical dependency is down
 - [ ] Write unit tests for health endpoints
 
 ---

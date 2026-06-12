@@ -1,0 +1,20 @@
+{
+  "app_name": "DayStream",
+  "loading": "Cargando...",
+  "save": "Guardar",
+  "cancel": "Cancelar",
+  "delete": "Eliminar",
+  "edit": "Editar",
+  "create": "Crear",
+  "back": "Atrás",
+  "next": "Siguiente",
+  "confirm": "Confirmar",
+  "search": "Buscar",
+  "filter": "Filtrar",
+  "no_results": "No se encontraron resultados",
+  "error_generic": "Algo salió mal. Por favor, inténtalo de nuevo.",
+  "sign_out": "Cerrar sesión",
+  "dashboard": "Panel",
+  "settings": "Configuración",
+  "profile": "Perfil"
+}

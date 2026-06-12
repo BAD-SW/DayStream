@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { apiClient } from '../api/client';
 
 interface HealthResponse {
@@ -11,7 +11,7 @@ interface HealthResponse {
 
 export function Dashboard() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
-  const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   useEffect(() => {
     apiClient.get<HealthResponse>('/health')
@@ -19,17 +19,14 @@ export function Dashboard() {
       .catch(() => {});
   }, []);
 
-  function handleLogout() {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    navigate('/login');
-  }
-
   return (
     <div style={styles.container}>
       <header style={styles.header}>
         <h1 style={styles.logo}>DayStream</h1>
-        <button onClick={handleLogout} style={styles.logoutBtn}>Sign Out</button>
+        <div style={styles.headerRight}>
+          {user && <span style={styles.userName}>{user.first_name || user.email}</span>}
+          <button onClick={logout} style={styles.logoutBtn}>Sign Out</button>
+        </div>
       </header>
 
       <main style={styles.main}>
@@ -61,11 +58,20 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '16px 32px',
     borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
   },
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+  },
   logo: {
     fontSize: '20px',
     fontWeight: 600,
     margin: 0,
     color: '#C9A96E',
+  },
+  userName: {
+    fontSize: '14px',
+    color: '#B0B0B0',
   },
   logoutBtn: {
     background: 'none',

@@ -1,12 +1,15 @@
 import { useState, FormEvent } from 'react';
-import { apiClient } from '../api/client';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 export function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState<string | null>(null);
+
+  const { login } = useAuth();
+  const navigate = useNavigate();
 
   // For now, hardcode the seed tenant
   const TENANT_ID = '00000000-0000-0000-0000-000000000001';
@@ -14,20 +17,11 @@ export function Login() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setSuccess(null);
     setLoading(true);
 
     try {
-      const res = await apiClient.post('/v1/auth/login', {
-        tenant_id: TENANT_ID,
-        email,
-        password,
-      });
-
-      const { access_token, refresh_token, user } = res.data.data;
-      localStorage.setItem('access_token', access_token);
-      localStorage.setItem('refresh_token', refresh_token);
-      setSuccess(`Welcome back, ${user.first_name}!`);
+      await login(TENANT_ID, email, password);
+      navigate('/dashboard');
     } catch (err: any) {
       const msg = err.response?.data?.error || 'Login failed';
       setError(msg);
@@ -72,7 +66,6 @@ export function Login() {
           </div>
 
           {error && <p style={styles.error}>{error}</p>}
-          {success && <p style={styles.success}>{success}</p>}
 
           <button type="submit" disabled={loading} style={styles.button}>
             {loading ? 'Signing in...' : 'Sign In'}
@@ -157,12 +150,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
   error: {
     color: '#EF5350',
-    fontSize: '14px',
-    margin: 0,
-    textAlign: 'center' as const,
-  },
-  success: {
-    color: '#66BB6A',
     fontSize: '14px',
     margin: 0,
     textAlign: 'center' as const,

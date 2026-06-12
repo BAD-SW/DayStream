@@ -1,0 +1,91 @@
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { apiClient } from '../api/client';
+
+interface User {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: string;
+}
+
+interface AuthState {
+  user: User | null;
+  isLoading: boolean;
+  isAuthenticated: boolean;
+  login: (tenantId: string, email: string, password: string) => Promise<void>;
+  logout: () => void;
+}
+
+const AuthContext = createContext<AuthState | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // On mount, check if we have a stored token and try to use it
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      // Decode the JWT to get basic user info (without calling API)
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        // Check expiry
+        if (payload.exp * 1000 > Date.now()) {
+          setUser({
+            id: payload.sub,
+            email: '',
+            first_name: '',
+            last_name: '',
+            role: payload.role || '',
+          });
+        } else {
+          // Token expired — clear it
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+        }
+      } catch {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+      }
+    }
+    setIsLoading(false);
+  }, []);
+
+  async function login(tenantId: string, email: string, password: string) {
+    const res = await apiClient.post('/v1/auth/login', {
+      tenant_id: tenantId,
+      email,
+      password,
+    });
+
+    const { access_token, refresh_token, user: userData } = res.data.data;
+    localStorage.setItem('access_token', access_token);
+    localStorage.setItem('refresh_token', refresh_token);
+    setUser(userData);
+  }
+
+  function logout() {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (refreshToken) {
+      apiClient.post('/v1/auth/logout', { refresh_token: refreshToken }).catch(() => {});
+    }
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    setUser(null);
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth(): AuthState {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}
