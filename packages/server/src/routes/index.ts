@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { healthRouter } from './health';
+import { authRouter } from './auth';
+import { authLimiter } from '../middleware/rate-limit';
 
 export const router = Router();
 
@@ -7,4 +9,4 @@ export const router = Router();
 router.use('/health', healthRouter);
 
 // Versioned routes
-// router.use('/v1/...', ...);
+router.use('/v1/auth', authLimiter, authRouter);
