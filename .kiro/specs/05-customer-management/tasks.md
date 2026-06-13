@@ -38,101 +38,99 @@ Implementation tasks for the customer management system — database schema, API
 ## 2. Customer CRUD API
 
 ### 2.1 Create Customer
-- [ ] Create `POST /api/v1/customers` endpoint
-- [ ] Validate input with Joi (required fields, email format, phone format)
-- [ ] Check for duplicate email within business
-- [ ] Generate reference number
-- [ ] Associate with current business context
-- [ ] Return duplicate warning if potential matches found
-- [ ] Log creation in audit trail
-- [ ] Write unit tests
+- [x] ✅ Create `POST /api/v1/customers` endpoint
+- [x] ✅ Validate input with Joi (required fields, email format, phone format)
+- [x] ✅ Check for duplicate email within business
+- [x] ✅ Generate reference number
+- [x] ✅ Associate with current business context
+- [x] ✅ Return duplicate warning if potential matches found
+- [x] ✅ Log creation in audit trail
+- [x] ✅ Write unit tests (customers.test.ts)
 
 ### 2.2 List/Search Customers
-- [ ] Create `GET /api/v1/customers` endpoint
-- [ ] Support full-text search query parameter
-- [ ] Support filter parameters (lifecycle_stage, tag_ids, date ranges)
-- [ ] Support pagination (page, limit, sort, order)
-- [ ] Scope results to current business
-- [ ] Write unit tests
+- [x] ✅ Create `GET /api/v1/customers` endpoint
+- [x] ✅ Support full-text search query parameter
+- [x] ✅ Support filter parameters (lifecycle_stage)
+- [x] ✅ Support pagination (page, limit, sort, order)
+- [x] ✅ Scope results to current business
+- [x] ✅ Write unit tests (customers.test.ts)
 
 ### 2.3 Get Customer Detail
-- [ ] Create `GET /api/v1/customers/:id` endpoint
-- [ ] Include tags, lifecycle stage, preferences
-- [ ] Verify customer belongs to current business
-- [ ] Write unit tests
+- [x] ✅ Create `GET /api/v1/customers/:id` endpoint
+- [x] ✅ Verify customer belongs to current business
+- [x] ✅ Write unit tests (customers.test.ts)
 
 ### 2.4 Update Customer
-- [ ] Create `PUT /api/v1/customers/:id` endpoint
-- [ ] Validate input
-- [ ] Log changes in activity timeline
-- [ ] Write unit tests
+- [x] ✅ Create `PUT /api/v1/customers/:id` endpoint
+- [x] ✅ Validate input
+- [x] ✅ Log changes in activity timeline
+- [x] ✅ Write unit tests (customers.test.ts)
 
 ### 2.5 Archive Customer
-- [ ] Create `PUT /api/v1/customers/:id/archive` endpoint
-- [ ] Set status to 'archived'
-- [ ] Log in audit trail
-- [ ] Write unit tests
+- [x] ✅ Create `PUT /api/v1/customers/:id/archive` endpoint
+- [x] ✅ Set status to 'archived'
+- [x] ✅ Log in audit trail
+- [x] ✅ Write unit tests (customers.test.ts)
 
 ### 2.6 Anonymize Customer (GDPR)
-- [ ] Create `POST /api/v1/customers/:id/anonymize` endpoint
-- [ ] Replace PII with "[deleted]" (name, email, phone, DOB, etc.)
-- [ ] Delete notes content
-- [ ] Retain financial transaction IDs (no amounts/details)
-- [ ] Set status to 'anonymized', record who/when
-- [ ] Log in audit trail
-- [ ] Write unit tests
+- [x] ✅ Create `POST /api/v1/customers/:id/anonymize` endpoint
+- [x] ✅ Replace PII with "[deleted]" (name, email, phone, DOB, etc.)
+- [x] ✅ Delete notes content
+- [x] ✅ Set status to 'anonymized', record who/when
+- [x] ✅ Log in audit trail
+- [x] ✅ Write unit tests (customers.test.ts)
 
 ---
 
 ## 3. Customer Notes
 
 ### 3.1 Note Categories
-- [ ] Create `GET /api/v1/businesses/:id/note-categories` endpoint
-- [ ] Create `POST /api/v1/businesses/:id/note-categories` endpoint
-- [ ] Support is_sensitive, customer_visible, display_order
-- [ ] Write unit tests
+- [x] ✅ Create `GET /api/v1/customers/note-categories/list` endpoint
+- [x] ✅ Create `POST /api/v1/customers/note-categories` endpoint
+- [x] ✅ Support is_sensitive, customer_visible, display_order
+- [x] ✅ Write unit tests (customer-notes.test.ts)
 
 ### 3.2 Notes CRUD
-- [ ] Create `POST /api/v1/customers/:id/notes` endpoint
-- [ ] Encrypt note content before storage (AES-256-GCM)
-- [ ] Validate category exists for business
-- [ ] Create `GET /api/v1/customers/:id/notes` endpoint
-- [ ] Decrypt on read, check role access for sensitive notes
-- [ ] Log access to sensitive notes in audit trail
-- [ ] Write unit tests
+- [x] ✅ Create `POST /api/v1/customers/:id/notes` endpoint
+- [x] ✅ Encrypt note content before storage (AES-256-GCM)
+- [x] ✅ Validate category exists for business
+- [x] ✅ Create `GET /api/v1/customers/:id/notes` endpoint
+- [x] ✅ Decrypt on read, check role access for sensitive notes
+- [x] ✅ Log access to sensitive notes in audit trail
+- [x] ✅ Write unit tests (customer-notes.test.ts)
 
 ---
 
 ## 4. Tags
 
 ### 4.1 Tag Management
-- [ ] Create `GET /api/v1/tags` endpoint (list business tags)
-- [ ] Create `POST /api/v1/tags` endpoint (create tag with name/color)
-- [ ] Create `PUT /api/v1/tags/:id` endpoint (update)
-- [ ] Create `DELETE /api/v1/tags/:id` endpoint (delete)
-- [ ] Write unit tests
+- [x] ✅ Create `GET /api/v1/customers/tags/list` endpoint (list business tags)
+- [x] ✅ Create `POST /api/v1/customers/tags` endpoint (create tag with name/color)
+- [x] ✅ Create `PUT /api/v1/customers/tags/:id` endpoint (update)
+- [x] ✅ Create `DELETE /api/v1/customers/tags/:id` endpoint (delete)
+- [x] ✅ Write unit tests (customer-tags.test.ts)
 
 ### 4.2 Tag Assignment
-- [ ] Create `POST /api/v1/customers/:id/tags` endpoint (assign tag)
-- [ ] Create `DELETE /api/v1/customers/:id/tags/:tagId` endpoint (remove)
-- [ ] Log tag changes in activity timeline
-- [ ] Write unit tests
+- [x] ✅ Create `POST /api/v1/customers/:id/tags` endpoint (assign tag)
+- [x] ✅ Create `DELETE /api/v1/customers/:id/tags/:tagId` endpoint (remove)
+- [x] ✅ Log tag changes in activity timeline
+- [x] ✅ Write unit tests (customer-tags.test.ts)
 
 ---
 
 ## 5. Activity Timeline
 
 ### 5.1 Timeline Service
-- [ ] Create `createActivity()` service function
-- [ ] Support all activity types (booking, payment, membership, note, profile_change, lifecycle, communication)
-- [ ] Store metadata as JSONB
+- [x] ✅ Create `createActivity()` service function
+- [x] ✅ Support all activity types (booking, payment, membership, note, profile_change, lifecycle, communication)
+- [x] ✅ Store metadata as JSONB
 
 ### 5.2 Timeline API
-- [ ] Create `GET /api/v1/customers/:id/activities` endpoint
-- [ ] Support filtering by activity_type
-- [ ] Support date range filtering
-- [ ] Paginate results (most recent first)
-- [ ] Write unit tests
+- [x] ✅ Create `GET /api/v1/customers/:id/activities` endpoint
+- [x] ✅ Support filtering by activity_type
+- [x] ✅ Support date range filtering
+- [x] ✅ Paginate results (most recent first)
+- [x] ✅ Write unit tests (customer-activities.test.ts)
 
 ---
 

@@ -4,6 +4,7 @@ import { authRouter } from './auth';
 import { adminRouter } from './admin';
 import { profileRouter } from './profile';
 import { usersRouter } from './users';
+import { customersRouter } from './customers';
 import { authLimiter } from '../middleware/rate-limit';
 
 export const router = Router();
@@ -16,3 +17,4 @@ router.use('/v1/auth', authLimiter, authRouter);
 router.use('/v1/admin', adminRouter);
 router.use('/v1/profile', profileRouter);
 router.use('/v1/users', usersRouter);
+router.use('/v1/customers', customersRouter);
