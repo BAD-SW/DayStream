@@ -3,13 +3,14 @@ import { adminPool } from './pool';
 
 // Fixed seed UUIDs for idempotent seeding
 const SEED_TENANT_ID = '00000000-0000-0000-0000-000000000001';
-const SEED_USERS: Record<string, { id: string; email: string; firstName: string; lastName: string; role: string }> = {
+const SEED_USERS: Record<string, { id: string; email: string; firstName: string; lastName: string; role: string; persona: string }> = {
   owner: {
     id: '00000000-0000-0000-0000-000000000010',
     email: 'owner@transcend.test',
     firstName: 'Maria',
     lastName: 'García',
     role: 'business_owner',
+    persona: 'business',
   },
   manager: {
     id: '00000000-0000-0000-0000-000000000011',
@@ -17,6 +18,7 @@ const SEED_USERS: Record<string, { id: string; email: string; firstName: string;
     firstName: 'Carlos',
     lastName: 'López',
     role: 'manager',
+    persona: 'business',
   },
   reception: {
     id: '00000000-0000-0000-0000-000000000012',
@@ -24,6 +26,7 @@ const SEED_USERS: Record<string, { id: string; email: string; firstName: string;
     firstName: 'Ana',
     lastName: 'Martínez',
     role: 'reception',
+    persona: 'business',
   },
   therapist: {
     id: '00000000-0000-0000-0000-000000000013',
@@ -31,6 +34,7 @@ const SEED_USERS: Record<string, { id: string; email: string; firstName: string;
     firstName: 'Javier',
     lastName: 'Ruiz',
     role: 'therapist',
+    persona: 'business',
   },
   trainer: {
     id: '00000000-0000-0000-0000-000000000014',
@@ -38,6 +42,7 @@ const SEED_USERS: Record<string, { id: string; email: string; firstName: string;
     firstName: 'Laura',
     lastName: 'Fernández',
     role: 'trainer',
+    persona: 'business',
   },
   customer: {
     id: '00000000-0000-0000-0000-000000000015',
@@ -45,6 +50,40 @@ const SEED_USERS: Record<string, { id: string; email: string; firstName: string;
     firstName: 'James',
     lastName: 'Wilson',
     role: 'customer',
+    persona: 'customer',
+  },
+  // Persona test accounts
+  systemUser: {
+    id: '00000000-0000-0000-0000-000000000020',
+    email: 'system@daystream.test',
+    firstName: 'System',
+    lastName: 'Admin',
+    role: 'system_admin',
+    persona: 'system',
+  },
+  tenantUser: {
+    id: '00000000-0000-0000-0000-000000000021',
+    email: 'tenant@daystream.test',
+    firstName: 'Tenant',
+    lastName: 'Owner',
+    role: 'tenant_owner',
+    persona: 'tenant',
+  },
+  businessUser: {
+    id: '00000000-0000-0000-0000-000000000022',
+    email: 'business@daystream.test',
+    firstName: 'Business',
+    lastName: 'Owner',
+    role: 'business_owner',
+    persona: 'business',
+  },
+  customerUser: {
+    id: '00000000-0000-0000-0000-000000000023',
+    email: 'customer@daystream.test',
+    firstName: 'Customer',
+    lastName: 'User',
+    role: 'customer',
+    persona: 'customer',
   },
 };
 
@@ -67,6 +106,7 @@ async function seed() {
     await client.query('DELETE FROM login_attempts WHERE tenant_id = $1', [SEED_TENANT_ID]);
     await client.query('DELETE FROM refresh_tokens WHERE user_id IN (SELECT id FROM users WHERE tenant_id = $1)', [SEED_TENANT_ID]);
     await client.query('DELETE FROM password_history WHERE user_id IN (SELECT id FROM users WHERE tenant_id = $1)', [SEED_TENANT_ID]);
+    await client.query('DELETE FROM tenant_configurations WHERE tenant_id = $1', [SEED_TENANT_ID]);
     await client.query('DELETE FROM user_roles WHERE tenant_id = $1', [SEED_TENANT_ID]);
     await client.query('DELETE FROM users WHERE tenant_id = $1', [SEED_TENANT_ID]);
     await client.query('DELETE FROM tenants WHERE id = $1', [SEED_TENANT_ID]);
@@ -84,6 +124,10 @@ async function seed() {
 
     // Role mapping to system role IDs from migration 002
     const roleMap: Record<string, string> = {
+      system_admin: '00000000-0000-0000-0000-000000000100',
+      system_support: '00000000-0000-0000-0000-000000000100',
+      tenant_owner: '00000000-0000-0000-0000-000000000101',
+      tenant_manager: '00000000-0000-0000-0000-000000000102',
       business_owner: '00000000-0000-0000-0000-000000000101',
       manager: '00000000-0000-0000-0000-000000000102',
       reception: '00000000-0000-0000-0000-000000000103',
@@ -94,9 +138,9 @@ async function seed() {
 
     for (const [, user] of Object.entries(SEED_USERS)) {
       await client.query(
-        `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')`,
-        [user.id, SEED_TENANT_ID, user.email, user.firstName, user.lastName, passwordHash, user.role],
+        `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, persona, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')`,
+        [user.id, SEED_TENANT_ID, user.email, user.firstName, user.lastName, passwordHash, user.role, user.persona],
       );
 
       // Assign role in user_roles table
