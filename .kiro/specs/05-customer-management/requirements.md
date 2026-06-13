@@ -2,23 +2,24 @@
 
 ## Overview
 
-This phase builds the customer profile system, contact management, segmentation engine, and customer lifecycle tracking. Customers are the central entity that bookings, memberships, payments, and communications revolve around. The CRM must support wellness-specific data (goals, injuries, recovery focus) while remaining flexible for other business types (yoga studios, gyms, clinics).
+This phase builds the customer profile system, contact management, segmentation engine, and customer lifecycle tracking. Customers are the central entity that bookings, memberships, payments, and communications revolve around. Customers belong to a specific Business — if the same individual interacts with a different Business within the same Tenant, they are a separate customer record. The CRM must support wellness-specific data (goals, injuries, recovery focus) while remaining flexible for other business types (yoga studios, gyms, clinics).
 
 ## Goals
 
 - Build complete customer profile CRUD with personal, contact, and wellness information
-- Implement customer search, filtering, and segmentation
-- Support customer lifecycle tracking (lead → trial → active → churned)
+- Implement customer search, filtering, and segmentation at the business level
+- Support customer lifecycle tracking (lead → trial → active → churned) per business
 - Enable tagging (manual and automated) for marketing and operations
-- Build activity timeline per customer
+- Build activity timeline per customer per business
 - Support customer import/export and duplicate detection
-- Ensure all customer data is tenant-scoped and GDPR-compliant
+- Ensure all customer data is tenant-scoped with business-level access control and GDPR-compliant
 
 ## Glossary
 
-- **Customer**: An individual who books services, holds memberships, or interacts with a Tenant's business
+- **Customer**: An individual who books services, holds memberships, or interacts with a Business. A Customer belongs to a single Business. If the same individual uses a different Business within the same Tenant, they are a separate Customer record.
 - **Customer_Profile**: The complete data record for a Customer including personal info, contact, preferences, and wellness notes
-- **Segment**: A dynamic group of Customers defined by filter criteria
+- **Business**: The specific business within a Tenant that the Customer belongs to. Customer data is scoped to the Business level.
+- **Segment**: A dynamic group of Customers defined by filter criteria, scoped per Business
 - **Tag**: A label applied to a Customer for categorization (manual or automated)
 - **Activity_Timeline**: A chronological feed of all actions and events related to a Customer
 - **Lead**: A prospective Customer who has not yet booked or purchased
@@ -37,54 +38,61 @@ This phase builds the customer profile system, contact management, segmentation 
 1. THE system SHALL support creating a Customer_Profile with: first name, last name, email, mobile phone, date of birth, gender, preferred language, country
 2. THE system SHALL support updating any Customer_Profile field via API
 3. THE system SHALL support archiving (soft-delete) a Customer_Profile
-4. THE system SHALL enforce unique email per Tenant (no duplicate customers with same email)
-5. THE system SHALL store all Customer_Profiles scoped to the current Tenant
-6. THE system SHALL auto-generate a customer reference number per Tenant (e.g., CUST-0001)
+4. THE system SHALL support anonymizing a Customer_Profile (GDPR right to erasure) — replacing all PII with "[deleted]" while retaining non-identifying transaction history
+5. WHEN anonymizing, THE system SHALL log the date, time, and user who performed the action in the audit trail
+6. WHEN anonymizing, THE system SHALL retain financial records as required by law but strip all personally identifiable information
+7. THE system SHALL enforce unique email per Business (no duplicate customers with same email within a single Business)
+5. THE system SHALL store all Customer_Profiles scoped to a specific Business (business_id on every customer record)
+6. THE system SHALL auto-generate a customer reference number per Business (e.g., CUST-0001)
 7. THE system SHALL track `created_at`, `updated_at`, and `created_by` on every profile
 8. THE system SHALL support an optional profile photo/avatar
-9. THE system SHALL support custom fields configurable per Tenant (key-value pairs for business-specific data)
+9. THE system SHALL support custom fields configurable per Business (key-value pairs for business-specific data)
+10. THE system SHALL scope Business User access to only see customers belonging to their Business
 
-### Requirement 2: Wellness and Health Notes
+### Requirement 2: Customer Notes and Records
 
-**User Story:** As a therapist, I want to record customer health goals, injuries, and preferences, so that I can provide personalized service.
+**User Story:** As a service provider, I want to record notes, history, and relevant details about a customer, so that I can provide informed and personalized service.
 
 #### Acceptance Criteria
 
-1. THE system SHALL support storing wellness notes per Customer: goals, injuries, recovery focus, contraindications, preferences
-2. THE system SHALL encrypt wellness notes at the application level before database storage (field-level encryption)
-3. THE system SHALL restrict access to wellness notes based on role (Therapist, Trainer, Manager, Owner only)
-4. THE system SHALL log all access to wellness notes in the audit trail
-5. THE system SHALL support timestamped note entries (append-only wellness log)
-6. THE system SHALL allow Customers to view their own wellness notes via the customer portal
-7. THE system SHALL support attaching categories/tags to wellness notes (e.g., "knee injury", "stress management")
+1. THE system SHALL support storing categorized notes per Customer (e.g., service history, preferences, special requirements, medical/health info, vehicle details, pet details — depending on business type)
+2. THE system SHALL encrypt sensitive notes at the application level before database storage (field-level encryption)
+3. THE system SHALL restrict access to sensitive notes based on role (configurable per Business)
+4. THE system SHALL log all access to sensitive notes in the audit trail
+5. THE system SHALL support timestamped note entries (append-only note log)
+6. THE system SHALL allow Customers to view their own notes via the customer portal (configurable: Business Owner decides which note categories are customer-visible)
+7. THE system SHALL support attaching categories/tags to notes (Business-defined categories, e.g., "allergies", "vehicle info", "preferences", "goals")
+8. THE system SHALL allow Businesses to define their own note categories relevant to their industry
 
 ### Requirement 3: Customer Search and Filtering
 
-**User Story:** As a receptionist, I want to quickly find customers by name, email, or phone, so that I can pull up their profile during a call or visit.
+**User Story:** As a staff member, I want to quickly find customers by name, email, or phone, so that I can pull up their profile during a call or visit.
 
 #### Acceptance Criteria
 
 1. THE system SHALL support full-text search across customer name, email, and phone number
-2. THE system SHALL return search results within 500ms for up to 10,000 customers per tenant
+2. THE system SHALL return search results within 500ms for up to 10,000 customers per business
 3. THE system SHALL support filtering customers by: lifecycle stage, membership status, tag, last visit date, registration date, language
 4. THE system SHALL support combining multiple filters (AND logic)
 5. THE system SHALL support sorting results by: name, last visit, registration date, total spend
 6. THE system SHALL paginate search results with configurable page size
 7. THE system SHALL highlight matching text in search results
+8. THE system SHALL scope search results to the current Business
 
 ### Requirement 4: Customer Segmentation Engine
 
-**User Story:** As a business owner, I want to define customer segments based on behavior and attributes, so that I can target marketing campaigns and identify trends.
+**User Story:** As a business staff member, I want to define customer segments based on behavior and attributes, so that I can target marketing campaigns and identify trends.
 
 #### Acceptance Criteria
 
 1. THE system SHALL support defining Segments with filter rules on: membership type, attendance frequency, total revenue, last visit date, lifecycle stage, tags, age range, registration date
 2. THE system SHALL support AND/OR logic for combining segment rules
 3. THE system SHALL calculate segment membership dynamically (not pre-computed, evaluated at query time)
-4. THE system SHALL support saving named Segments for reuse
+4. THE system SHALL support saving named Segments for reuse, scoped per Business
 5. THE system SHALL display segment member count when viewing a Segment
 6. THE system SHALL provide predefined Segments: "New this month", "No visit in 30 days", "High value (top 10% spend)", "At risk (no visit in 60 days)"
 7. THE system SHALL support exporting a Segment's customer list (for marketing phases)
+8. THE system SHALL scope segment data to the current Business for Business Users
 
 ### Requirement 5: Customer Tags
 
@@ -92,8 +100,8 @@ This phase builds the customer profile system, contact management, segmentation 
 
 #### Acceptance Criteria
 
-1. THE system SHALL support creating custom tags per Tenant
-2. THE system SHALL support assigning multiple tags to a Customer
+1. THE system SHALL support creating custom tags per Business
+2. THE system SHALL support assigning multiple tags to a Customer within a Business context
 3. THE system SHALL support removing tags from a Customer
 4. THE system SHALL support manual tag assignment by staff
 5. THE system SHALL support automated tag assignment based on rules (e.g., "VIP" after 50 visits, "New" for first 30 days)
@@ -103,7 +111,7 @@ This phase builds the customer profile system, contact management, segmentation 
 
 ### Requirement 6: Activity Timeline
 
-**User Story:** As a receptionist, I want to see a customer's complete history at a glance, so that I can provide informed service.
+**User Story:** As a staff member, I want to see a customer's complete history at a glance, so that I can provide informed service.
 
 #### Acceptance Criteria
 
@@ -117,7 +125,7 @@ This phase builds the customer profile system, contact management, segmentation 
 
 ### Requirement 7: Customer Lifecycle Tracking
 
-**User Story:** As a business owner, I want to track where each customer is in their journey, so that I can identify opportunities and risks.
+**User Story:** As a staff member, I want to track where each customer is in their journey, so that I can identify opportunities and risks.
 
 #### Acceptance Criteria
 
@@ -131,11 +139,12 @@ This phase builds the customer profile system, contact management, segmentation 
 3. THE system SHALL support manual lifecycle stage override by staff
 4. THE system SHALL log lifecycle stage transitions in the Activity_Timeline
 5. THE system SHALL support viewing customer counts per lifecycle stage (pipeline view)
-6. THE system SHALL support configuring transition rules per Tenant
+6. THE system SHALL support configuring transition rules per Business
+7. THE system SHALL track lifecycle stage per customer (scoped to the Business the customer belongs to)
 
 ### Requirement 8: Customer Import and Export
 
-**User Story:** As a business owner, I want to import existing customers from a spreadsheet, so that I can migrate from another system without manual data entry.
+**User Story:** As a staff member, I want to import existing customers from a spreadsheet or csv, so that I can migrate from another system without manual data entry.
 
 #### Acceptance Criteria
 
@@ -150,17 +159,17 @@ This phase builds the customer profile system, contact management, segmentation 
 
 ### Requirement 9: Duplicate Detection and Merge
 
-**User Story:** As a receptionist, I want the system to detect potential duplicate customers, so that I don't create multiple records for the same person.
+**User Story:** As a staff member, I want the system to detect potential duplicate customers, so that I don't create multiple records for the same person.
 
 #### Acceptance Criteria
 
-1. THE system SHALL check for potential duplicates when creating a new customer (matching on email, phone, or name similarity)
+1. THE system SHALL check for potential duplicates when creating a new customer (matching on email, phone, or name similarity within the Business)
 2. THE system SHALL display potential matches and allow the user to proceed or link to existing
-3. THE system SHALL support merging two Customer_Profiles into one (staff-initiated)
+3. THE system SHALL support merging two Customer_Profiles into one within the same Business (staff-initiated)
 4. WHEN merging, THE system SHALL combine Activity_Timelines, bookings, memberships, and payment history
 5. WHEN merging, THE system SHALL allow selecting which profile fields to keep
 6. THE system SHALL log merge operations in the audit trail with both original record IDs
-7. THE system SHALL prevent merging customers across different Tenants
+7. THE system SHALL prevent merging customers across different Businesses or Tenants
 
 ### Requirement 10: Communication Preferences and Consent
 
@@ -203,14 +212,16 @@ This phase builds the customer profile system, contact management, segmentation 
 ## Success Criteria
 
 - Customer profiles can be created, searched, filtered, and updated
-- Wellness notes are encrypted and access-controlled
+- Business Users only see customers belonging to their Business
+- Tenant Users do not have access to customer-level data (administrative role only)
+- Sensitive notes are encrypted and access-controlled
 - Segmentation engine returns correct customer sets based on filter criteria
 - Activity timeline aggregates events from across the platform
-- Lifecycle stages transition automatically based on configured rules
+- Lifecycle stages transition automatically based on configured rules per Business
 - CSV import handles 10,000 records with validation and error reporting
-- Duplicate detection catches matching email/phone on creation
+- Duplicate detection catches matching email/phone on creation within a Business
 - GDPR export and deletion requests function correctly
-- All customer data is strictly tenant-scoped
+- All customer data is scoped to a specific Business within a Tenant
 
 ## Out of Scope
 
@@ -225,8 +236,11 @@ This phase builds the customer profile system, contact management, segmentation 
 - Wellness notes require field-level encryption due to sensitivity (even pre-HIPAA)
 - Segmentation is evaluated at query time to avoid stale data; caching can be added later if performance requires
 - Activity_Timeline is an aggregation view — events are written by other modules and read here
-- Custom fields per tenant enable flexibility without schema changes for each business type
+- Custom fields per Business enable flexibility without schema changes for each business type
 - The Customer entity is referenced by nearly every other module; its schema must be stable early
+- Customers belong to a single Business. If the same individual uses multiple Businesses within a Tenant, they are separate customer records (potentially with the same personal information).
+- Tenant Users do not have access to customer data — they are administrative and do not interact with business-level details
+- Business Users see only their Business's customers
 
 ---
 
