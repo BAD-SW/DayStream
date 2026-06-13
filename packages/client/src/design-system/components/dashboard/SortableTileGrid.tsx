@@ -103,8 +103,9 @@ export function SortableTileGrid({ modules }: SortableTileGridProps) {
 const styles: Record<string, React.CSSProperties> = {
   grid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: 'var(--space-md)',
+    gridTemplateColumns: 'repeat(5, 176px)',
+    gap: 'var(--space-lg)',
+    width: '100%',
   },
   resetBtn: {
     marginTop: 'var(--space-md)',

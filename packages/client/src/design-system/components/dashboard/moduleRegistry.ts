@@ -18,62 +18,62 @@ export interface ModuleDefinition {
  */
 export const MODULE_REGISTRY: ModuleDefinition[] = [
   // Phase 5: Customer Management
-  { id: 'customers', phase: 5, icon: '👥', titleKey: 'modules.customers', descriptionKey: 'modules.customers_desc', path: '/customers', personas: ['business'], permission: 'customers:read' },
+  { id: 'customers', phase: 5, icon: '👥', titleKey: 'Customers', descriptionKey: 'Manage customer accounts', path: '/customers', personas: ['business'], permission: 'customers:read' },
 
   // Phase 6: Service Management
-  { id: 'services', phase: 6, icon: '💼', titleKey: 'modules.services', descriptionKey: 'modules.services_desc', path: '/services', personas: ['business'], permission: 'services:read' },
+  { id: 'services', phase: 6, icon: '💼', titleKey: 'Services', descriptionKey: 'Manage service offerings', path: '/services', personas: ['business'], permission: 'services:read' },
 
   // Phase 7: Booking Engine
-  { id: 'bookings', phase: 7, icon: '📅', titleKey: 'modules.bookings', descriptionKey: 'modules.bookings_desc', path: '/bookings', personas: ['business', 'customer'], permission: 'bookings:read' },
+  { id: 'bookings', phase: 7, icon: '📅', titleKey: 'Bookings', descriptionKey: 'Schedule and manage bookings', path: '/bookings', personas: ['business', 'customer'], permission: 'bookings:read' },
 
   // Phase 8: Membership Engine
-  { id: 'memberships', phase: 8, icon: '🏷️', titleKey: 'modules.memberships', descriptionKey: 'modules.memberships_desc', path: '/memberships', personas: ['business', 'customer'], featureFlag: 'feature.memberships' },
+  { id: 'memberships', phase: 8, icon: '🏷️', titleKey: 'Memberships', descriptionKey: 'Manage memberships and subscriptions', path: '/memberships', personas: ['business', 'customer'], featureFlag: 'feature.memberships' },
 
   // Phase 9: Pricing Engine
-  { id: 'pricing', phase: 9, icon: '💰', titleKey: 'modules.pricing', descriptionKey: 'modules.pricing_desc', path: '/pricing', personas: ['business'], permission: 'services:*' },
+  { id: 'pricing', phase: 9, icon: '💰', titleKey: 'Pricing', descriptionKey: 'Configure pricing and packages', path: '/pricing', personas: ['business'], permission: 'services:*' },
 
   // Phase 10: Payment Platform
-  { id: 'payments', phase: 10, icon: '💳', titleKey: 'modules.payments', descriptionKey: 'modules.payments_desc', path: '/payments', personas: ['business', 'customer'] },
+  { id: 'payments', phase: 10, icon: '💳', titleKey: 'Payments', descriptionKey: 'Process and track payments', path: '/payments', personas: ['business', 'customer'] },
 
   // Phase 11: Accounts Payable
-  { id: 'accounts', phase: 11, icon: '📊', titleKey: 'modules.accounts', descriptionKey: 'modules.accounts_desc', path: '/accounts', personas: ['business'], permission: 'reports:*' },
+  { id: 'accounts', phase: 11, icon: '📊', titleKey: 'Accounts', descriptionKey: 'Financial accounts and payables', path: '/accounts', personas: ['business'], permission: 'reports:*' },
 
   // Phase 12: Staff Management
-  { id: 'staff', phase: 12, icon: '👔', titleKey: 'modules.staff', descriptionKey: 'modules.staff_desc', path: '/staff', personas: ['business'], permission: 'staff:read' },
+  { id: 'staff', phase: 12, icon: '👔', titleKey: 'Staff', descriptionKey: 'Manage team and schedules', path: '/staff', personas: ['business'], permission: 'staff:read' },
 
   // Phase 13: Resource Management
-  { id: 'resources', phase: 13, icon: '🏢', titleKey: 'modules.resources', descriptionKey: 'modules.resources_desc', path: '/resources', personas: ['business'], permission: 'services:*' },
+  { id: 'resources', phase: 13, icon: '🏢', titleKey: 'Resources', descriptionKey: 'Rooms, equipment, and facilities', path: '/resources', personas: ['business'], permission: 'services:*' },
 
   // Phase 14: Events & Workshops
-  { id: 'events', phase: 14, icon: '🎪', titleKey: 'modules.events', descriptionKey: 'modules.events_desc', path: '/events', personas: ['business', 'customer'], featureFlag: 'feature.events' },
+  { id: 'events', phase: 14, icon: '🎪', titleKey: 'Events', descriptionKey: 'Events and workshops', path: '/events', personas: ['business', 'customer'], featureFlag: 'feature.events' },
 
   // Phase 15: Check-in System
-  { id: 'checkin', phase: 15, icon: '✅', titleKey: 'modules.checkin', descriptionKey: 'modules.checkin_desc', path: '/checkin', personas: ['business'] },
+  { id: 'checkin', phase: 15, icon: '✅', titleKey: 'Check-in', descriptionKey: 'Customer check-in and attendance', path: '/checkin', personas: ['business'] },
 
   // Phase 16: Marketing Automation
-  { id: 'marketing', phase: 16, icon: '📣', titleKey: 'modules.marketing', descriptionKey: 'modules.marketing_desc', path: '/marketing', personas: ['business'], permission: 'settings:*' },
+  { id: 'marketing', phase: 16, icon: '📣', titleKey: 'Marketing', descriptionKey: 'Campaigns and automation', path: '/marketing', personas: ['business'], permission: 'settings:*' },
 
   // Phase 17: Reporting & Analytics
-  { id: 'reports', phase: 17, icon: '📈', titleKey: 'modules.reports', descriptionKey: 'modules.reports_desc', path: '/reports', personas: ['business', 'tenant'], permission: 'reports:read' },
+  { id: 'reports', phase: 17, icon: '📈', titleKey: 'Reports', descriptionKey: 'Analytics and insights', path: '/reports', personas: ['business', 'tenant'], permission: 'reports:read' },
 
   // Phase 18: Website & CMS
-  { id: 'website', phase: 18, icon: '🌐', titleKey: 'modules.website', descriptionKey: 'modules.website_desc', path: '/website', personas: ['business'], permission: 'settings:*' },
+  { id: 'website', phase: 18, icon: '🌐', titleKey: 'Website', descriptionKey: 'Manage your online presence', path: '/website', personas: ['business'], permission: 'settings:*' },
 
   // Phase 20: Integrations
-  { id: 'integrations', phase: 20, icon: '🔗', titleKey: 'modules.integrations', descriptionKey: 'modules.integrations_desc', path: '/integrations', personas: ['business'], permission: 'settings:*' },
+  { id: 'integrations', phase: 20, icon: '🔗', titleKey: 'Integrations', descriptionKey: 'Third-party connections', path: '/integrations', personas: ['business'], permission: 'settings:*' },
 
   // Phase 22: Community Engagement
-  { id: 'community', phase: 22, icon: '🤝', titleKey: 'modules.community', descriptionKey: 'modules.community_desc', path: '/community', personas: ['business', 'customer'], featureFlag: 'feature.community' },
+  { id: 'community', phase: 22, icon: '🤝', titleKey: 'Community', descriptionKey: 'Community and engagement', path: '/community', personas: ['business', 'customer'], featureFlag: 'feature.community' },
 
   // Tenant-level modules
-  { id: 'tenant-businesses', phase: 0, icon: '🏪', titleKey: 'modules.businesses', descriptionKey: 'modules.businesses_desc', path: '/admin/businesses', personas: ['tenant'] },
-  { id: 'tenant-billing', phase: 0, icon: '🧾', titleKey: 'modules.billing', descriptionKey: 'modules.billing_desc', path: '/admin/billing', personas: ['tenant'] },
-  { id: 'tenant-reports', phase: 0, icon: '📈', titleKey: 'modules.tenant_reports', descriptionKey: 'modules.tenant_reports_desc', path: '/admin/reports', personas: ['tenant'] },
+  { id: 'tenant-businesses', phase: 0, icon: '🏪', titleKey: 'Businesses', descriptionKey: 'Manage businesses', path: '/admin/businesses', personas: ['tenant'] },
+  { id: 'tenant-billing', phase: 0, icon: '🧾', titleKey: 'Billing', descriptionKey: 'Billing and invoices', path: '/admin/billing', personas: ['tenant'] },
+  { id: 'tenant-reports', phase: 0, icon: '📈', titleKey: 'Reports', descriptionKey: 'Tenant analytics', path: '/admin/reports', personas: ['tenant'] },
 
   // System-level modules
-  { id: 'system-tenants', phase: 0, icon: '🏢', titleKey: 'modules.tenants', descriptionKey: 'modules.tenants_desc', path: '/admin/tenants', personas: ['system'] },
-  { id: 'system-config', phase: 0, icon: '⚙️', titleKey: 'modules.platform_config', descriptionKey: 'modules.platform_config_desc', path: '/admin/config', personas: ['system'] },
-  { id: 'system-audit', phase: 0, icon: '🔍', titleKey: 'modules.audit_log', descriptionKey: 'modules.audit_log_desc', path: '/admin/audit', personas: ['system'] },
+  { id: 'system-tenants', phase: 0, icon: '🏢', titleKey: 'Tenants', descriptionKey: 'Manage tenants', path: '/admin/tenants', personas: ['system'] },
+  { id: 'system-config', phase: 0, icon: '⚙️', titleKey: 'Configuration', descriptionKey: 'Platform settings', path: '/admin/config', personas: ['system'] },
+  { id: 'system-audit', phase: 0, icon: '🔍', titleKey: 'Audit Log', descriptionKey: 'System activity', path: '/admin/audit', personas: ['system'] },
 ];
 
 /**

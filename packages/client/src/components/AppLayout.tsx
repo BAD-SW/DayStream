@@ -145,6 +145,5 @@ const styles: Record<string, React.CSSProperties> = {
   content: {
     flex: 1,
     padding: '32px',
-    maxWidth: '1024px',
   },
 };
