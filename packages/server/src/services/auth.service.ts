@@ -278,7 +278,19 @@ export async function loginUser(
   const refreshToken = generateRefreshToken();
   await storeRefreshToken(user.id, refreshToken, userAgent, ip);
 
-  return { user, accessToken, refreshToken, requiresMfa: false };
+  // If user has no business_id, resolve from tenant's businesses
+  let defaultBusinessId: string | null = null;
+  if (!user.business_id) {
+    const { rows: bizRows } = await adminPool.query(
+      "SELECT id FROM businesses WHERE tenant_id = $1 AND status = 'active' ORDER BY created_at LIMIT 1",
+      [tenantId],
+    );
+    if (bizRows.length > 0) {
+      defaultBusinessId = bizRows[0].id;
+    }
+  }
+
+  return { user, accessToken, refreshToken, requiresMfa: false, defaultBusinessId };
 }
 
 // --- Token refresh ---
