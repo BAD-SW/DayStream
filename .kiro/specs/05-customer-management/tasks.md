@@ -17,21 +17,21 @@ Implementation tasks for the customer management system — database schema, API
 ## 1. Database Schema
 
 ### 1.1 Core Tables
-- [ ] Create migration for `customers` table (with business_id, lifecycle_stage, status, anonymization fields)
-- [ ] Create migration for `customer_notes` table (encrypted content, categories)
-- [ ] Create migration for `note_categories` table (per-business, sensitivity, visibility)
-- [ ] Create migration for `tags` and `customer_tags` tables
-- [ ] Create migration for `customer_custom_fields` table
-- [ ] Create migration for `customer_activities` table (timeline events)
-- [ ] Create migration for `segments` table
-- [ ] Create migration for `customer_preferences` table (communication opt-ins)
-- [ ] Add full-text search index on customers (name, email, phone)
-- [ ] Add RLS policies on all new tables (business-scoped)
-- [ ] Grant permissions to daystream_app role
+- [x] ✅ Create migration for `customers` table (with business_id, lifecycle_stage, status, anonymization fields)
+- [x] ✅ Create migration for `customer_notes` table (encrypted content, categories)
+- [x] ✅ Create migration for `note_categories` table (per-business, sensitivity, visibility)
+- [x] ✅ Create migration for `tags` and `customer_tags` tables
+- [x] ✅ Create migration for `customer_custom_fields` table
+- [x] ✅ Create migration for `customer_activities` table (timeline events)
+- [x] ✅ Create migration for `segments` table
+- [x] ✅ Create migration for `customer_preferences` table (communication opt-ins)
+- [x] ✅ Add full-text search index on customers (name, email, phone)
+- [x] ✅ Add RLS policies on all new tables (business-scoped via tenant)
+- [x] ✅ Grant permissions to daystream_app role
 
 ### 1.2 Reference Number Generation
-- [ ] Create function to auto-generate reference numbers per business (CUST-0001, CUST-0002)
-- [ ] Ensure uniqueness within business context
+- [x] ✅ Create function to auto-generate reference numbers per business (CUST-0001, CUST-0002)
+- [x] ✅ Ensure uniqueness within business context
 
 ---
 
