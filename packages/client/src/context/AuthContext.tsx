@@ -7,6 +7,7 @@ interface User {
   first_name: string;
   last_name: string;
   role: string;
+  business_id?: string;
 }
 
 interface AuthState {
@@ -48,15 +49,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             first_name: '',
             last_name: '',
             role: payload.role || '',
+            business_id: localStorage.getItem('business_id') || undefined,
           });
           loadFeatureFlags();
         } else {
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
+          localStorage.removeItem('business_id');
         }
       } catch {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
+        localStorage.removeItem('business_id');
       }
     }
     setIsLoading(false);
@@ -72,6 +76,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { access_token, refresh_token, user: userData } = res.data.data;
     localStorage.setItem('access_token', access_token);
     localStorage.setItem('refresh_token', refresh_token);
+    if (userData.business_id) {
+      localStorage.setItem('business_id', userData.business_id);
+    }
     setUser(userData);
     await loadFeatureFlags();
   }
@@ -83,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
+    localStorage.removeItem('business_id');
     setUser(null);
     setFeatureFlags({});
   }

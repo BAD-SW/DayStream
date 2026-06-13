@@ -35,7 +35,10 @@ export function Customers() {
   const businessId = localStorage.getItem('business_id') || '';
 
   const fetchCustomers = useCallback(async () => {
-    if (!businessId) return;
+    if (!businessId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const result = await customersApi.getCustomers(businessId, {
@@ -125,6 +128,11 @@ export function Customers() {
       </div>
 
       {/* Table */}
+      {!businessId && !loading && (
+        <div style={styles.noContext}>
+          <p>No business context found. Please log out and log back in to refresh your session.</p>
+        </div>
+      )}
       <Table
         columns={columns}
         data={customers}
@@ -162,4 +170,5 @@ const styles: Record<string, React.CSSProperties> = {
   summaryLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', textTransform: 'capitalize' as const },
   toolbar: { display: 'flex', gap: 'var(--space-md)', alignItems: 'center', marginBottom: 'var(--space-md)' },
   selectedCount: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
+  noContext: { padding: 'var(--space-xl)', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' },
 };
