@@ -7,6 +7,8 @@ import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import * as customerService from '../services/customer.service';
+import * as lifecycleService from '../services/customer-lifecycle.service';
+import { logAudit } from '../services/audit.service';
 
 export const customersRouter = Router();
 
@@ -101,6 +103,50 @@ customersRouter.get('/', requirePermission('customers:read'), async (req: Reques
     });
   } catch (err: any) {
     error(res, 'Failed to list customers', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/customers/lifecycle-summary — Counts per lifecycle stage (must be before /:id)
+customersRouter.get('/lifecycle-summary', requirePermission('customers:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const summary = await lifecycleService.getLifecycleSummary(businessId);
+    success(res, summary);
+  } catch (err: any) {
+    error(res, 'Failed to get lifecycle summary', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/customers/export — Export to CSV (must be before /:id)
+customersRouter.get('/export', requirePermission('customers:read'), async (req: Request, res: Response) => {
+  try {
+    const { exportCustomers, exportGDPR } = await import('../services/customer-import.service');
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const format = req.query.format as string;
+
+    if (format === 'gdpr' && req.query.customer_id) {
+      const data = await exportGDPR(req.query.customer_id as string, businessId);
+      if (!data) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', 'attachment; filename="gdpr-export.json"');
+      res.json(data);
+      return;
+    }
+
+    const csv = await exportCustomers(businessId, {
+      lifecycle_stage: req.query.lifecycle_stage as string,
+      search: req.query.search as string,
+    });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="customers-export.csv"');
+    res.send(csv);
+  } catch (err: any) {
+    error(res, 'Failed to export customers', 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -378,6 +424,38 @@ customersRouter.delete('/:id/tags/:tagId', requirePermission('customers:*'), asy
   }
 });
 
+// --- Lifecycle ---
+
+const lifecycleOverrideSchema = Joi.object({
+  lifecycle_stage: Joi.string().valid('lead', 'trial', 'active', 'at_risk', 'churned', 'winback').required(),
+});
+
+// PUT /api/v1/customers/:id/lifecycle — Manual lifecycle stage override
+customersRouter.put('/:id/lifecycle', requirePermission('customers:*'), validate(lifecycleOverrideSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const result = await lifecycleService.manualOverride(
+      req.params.id, businessId, req.body.lifecycle_stage, authReq.user.sub,
+    );
+
+    if (!result.success) {
+      if (result.error === 'Customer not found') {
+        error(res, 'Customer not found', 'NOT_FOUND', 404);
+      } else {
+        error(res, result.error || 'Failed to update lifecycle', 'VALIDATION_ERROR', 400);
+      }
+      return;
+    }
+
+    success(res, { from: result.from, to: result.to });
+  } catch (err: any) {
+    error(res, 'Failed to update lifecycle stage', 'INTERNAL_ERROR', 500);
+  }
+});
+
 // --- Activity Timeline ---
 import * as activityService from '../services/customer-activity.service';
 
@@ -405,5 +483,165 @@ customersRouter.get('/:id/activities', requirePermission('customers:read'), asyn
     });
   } catch (err: any) {
     error(res, 'Failed to get activities', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// --- Import/Export ---
+import * as importService from '../services/customer-import.service';
+
+const importValidateSchema = Joi.object({
+  csv_text: Joi.string().min(1).required(),
+  mapping: Joi.object().pattern(Joi.string(), Joi.string()).required(),
+  business_id: Joi.string().uuid().required(),
+});
+
+const importExecuteSchema = Joi.object({
+  csv_text: Joi.string().min(1).required(),
+  mapping: Joi.object().pattern(Joi.string(), Joi.string()).required(),
+  business_id: Joi.string().uuid().required(),
+});
+
+// POST /api/v1/customers/import/validate — Dry-run validation
+customersRouter.post('/import/validate', requirePermission('customers:*'), validate(importValidateSchema), async (req: Request, res: Response) => {
+  try {
+    const result = importService.validateImport(req.body.csv_text, req.body.mapping);
+    success(res, result);
+  } catch (err: any) {
+    error(res, 'Failed to validate import', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// POST /api/v1/customers/import — Execute import
+customersRouter.post('/import', requirePermission('customers:*'), validate(importExecuteSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const result = await importService.executeImport(
+      req.body.csv_text,
+      req.body.mapping,
+      req.body.business_id,
+      authReq.tenantId,
+      authReq.user.sub,
+    );
+    success(res, result);
+  } catch (err: any) {
+    error(res, 'Failed to execute import', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/customers/export is registered above (before /:id) to avoid route conflict
+
+// --- Duplicate Detection & Merge ---
+import * as duplicateService from '../services/customer-duplicates.service';
+
+const mergeSchema = Joi.object({
+  primary_id: Joi.string().uuid().required(),
+  secondary_id: Joi.string().uuid().required(),
+  keep_fields: Joi.object().pattern(Joi.string(), Joi.string().valid('primary', 'secondary')).default({}),
+  business_id: Joi.string().uuid().required(),
+});
+
+// POST /api/v1/customers/merge — Merge two customers
+customersRouter.post('/merge', requirePermission('customers:*'), validate(mergeSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const result = await duplicateService.mergeCustomers(
+      req.body.primary_id,
+      req.body.secondary_id,
+      req.body.business_id,
+      req.body.keep_fields,
+      authReq.user.sub,
+      authReq.tenantId,
+    );
+
+    if (!result.success) {
+      error(res, result.error || 'Merge failed', 'VALIDATION_ERROR', 400);
+      return;
+    }
+
+    success(res, result.customer);
+  } catch (err: any) {
+    error(res, 'Failed to merge customers', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// --- Communication Preferences ---
+
+const updatePreferencesSchema = Joi.object({
+  email_marketing: Joi.boolean(),
+  sms_marketing: Joi.boolean(),
+  push_notifications: Joi.boolean(),
+  booking_reminders: Joi.boolean(),
+}).min(1);
+
+// GET /api/v1/customers/:id/preferences — Get preferences
+customersRouter.get('/:id/preferences', requirePermission('customers:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    // Verify customer belongs to business
+    const customer = await customerService.getCustomerById(req.params.id, businessId);
+    if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+
+    const { rows } = await adminPool.query(
+      'SELECT * FROM customer_preferences WHERE customer_id = $1',
+      [req.params.id],
+    );
+
+    success(res, rows[0] || { email_marketing: false, sms_marketing: false, push_notifications: false, booking_reminders: true });
+  } catch (err: any) {
+    error(res, 'Failed to get preferences', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/customers/:id/preferences — Update preferences
+customersRouter.put('/:id/preferences', requirePermission('customers:*'), validate(updatePreferencesSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const customer = await customerService.getCustomerById(req.params.id, businessId);
+    if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    for (const [key, value] of Object.entries(req.body)) {
+      if (['email_marketing', 'sms_marketing', 'push_notifications', 'booking_reminders'].includes(key)) {
+        fields.push(`${key} = $${idx++}`);
+        values.push(value);
+      }
+    }
+
+    fields.push('updated_at = NOW()');
+    values.push(req.params.id);
+
+    await adminPool.query(
+      `INSERT INTO customer_preferences (customer_id) VALUES ($${idx})
+       ON CONFLICT (customer_id) DO UPDATE SET ${fields.join(', ')}`,
+      values,
+    );
+
+    // Audit log
+    await logAudit({
+      tenantId: authReq.tenantId,
+      userId: authReq.user.sub,
+      action: 'customer.preferences_updated',
+      resourceType: 'customer',
+      resourceId: req.params.id,
+      details: req.body,
+    });
+
+    // Get updated preferences
+    const { rows } = await adminPool.query(
+      'SELECT * FROM customer_preferences WHERE customer_id = $1',
+      [req.params.id],
+    );
+
+    success(res, rows[0]);
+  } catch (err: any) {
+    error(res, 'Failed to update preferences', 'INTERNAL_ERROR', 500);
   }
 });

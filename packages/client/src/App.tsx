@@ -6,6 +6,10 @@ import { Login } from './pages/Login';
 import { Profile } from './pages/Profile';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { PersonaDashboard } from './design-system/components/dashboard/PersonaDashboard';
+import { Customers } from './pages/Customers';
+import { CustomerDetail } from './pages/CustomerDetail';
+import { Segments } from './pages/Segments';
+import { CustomerImport } from './pages/CustomerImport';
 
 export function App() {
   return (
@@ -19,6 +23,12 @@ export function App() {
 
         {/* Protected app routes */}
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+
+        {/* Customers */}
+        <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
+        <Route path="/customers/import" element={<ProtectedRoute><CustomerImport /></ProtectedRoute>} />
+        <Route path="/customers/segments" element={<ProtectedRoute><Segments /></ProtectedRoute>} />
+        <Route path="/customers/:id" element={<ProtectedRoute><CustomerDetail /></ProtectedRoute>} />
 
         {/* Admin routes */}
         <Route

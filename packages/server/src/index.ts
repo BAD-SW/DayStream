@@ -2,6 +2,7 @@ import { app } from './app';
 import { config } from './config';
 import { pool } from './db/pool';
 import { logger } from './middleware/logger';
+import { startLifecycleScheduler } from './jobs/lifecycle-scheduler';
 
 const start = async () => {
   // Test database connection
@@ -13,6 +14,9 @@ const start = async () => {
     logger.error('  Check your .env database configuration and ensure PostgreSQL is running.');
     process.exit(1);
   }
+
+  // Start background jobs
+  startLifecycleScheduler();
 
   // Start server
   app.listen(config.port, () => {
