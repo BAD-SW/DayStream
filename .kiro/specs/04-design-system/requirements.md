@@ -2,15 +2,15 @@
 
 ## Overview
 
-This phase establishes the reusable UI component library, theming infrastructure, and per-tenant branding system for the DayStream platform. The design system provides the visual foundation for all customer-facing and admin interfaces while supporting tenant-level customization. The initial aesthetic is a premium wellness look (dark-first, Scandinavian minimal), but the system must be flexible enough to accommodate any business type's brand identity.
+This phase establishes the reusable UI component library, theming infrastructure, and per-business branding system for the DayStream platform. The design system provides the visual foundation for all customer-facing and admin interfaces while supporting business-level customization. The initial aesthetic is a premium wellness look (dark-first, Scandinavian minimal), but the system must be flexible enough to accommodate any business type's brand identity.
 
 ## Goals
 
-- Create a themeable component library that supports per-tenant branding
+- Create a themeable component library that supports per-business branding
 - Define design tokens (colors, typography, spacing, shadows) as a configurable system
 - Build core UI components used across all platform pages
 - Establish dark and light theme support
-- Implement per-tenant theme customization driven by database configuration
+- Implement per-business theme customization driven by database configuration
 - Ensure accessibility compliance (WCAG 2.1 AA)
 - Ensure mobile-first responsive design throughout
 
@@ -20,6 +20,7 @@ This phase establishes the reusable UI component library, theming infrastructure
 - **Theme**: A complete set of Design_Tokens that define the visual appearance
 - **Component_Library**: The collection of reusable React UI components
 - **Tenant_Theme**: A per-tenant override of the default Theme, stored in the database
+- **Business_Theme**: A per-business override of the default Theme, stored in the database (branding happens at business level)
 - **Breakpoint**: A screen width threshold at which the layout adapts
 - **Design_System**: The combination of tokens, themes, components, and documentation
 
@@ -37,7 +38,7 @@ This phase establishes the reusable UI component library, theming infrastructure
 4. THE Design_System SHALL define a type scale with at least 6 levels (xs, sm, base, lg, xl, 2xl) plus heading levels (h1–h6)
 5. THE Design_System SHALL define a spacing scale based on a consistent base unit (e.g., 4px grid)
 6. THE Design_System SHALL export tokens as TypeScript constants for use in component logic
-7. THE Design_System SHALL support overriding any token value at the tenant level
+7. THE Design_System SHALL support overriding any token value at the business level
 
 ### Requirement 2: Theme Engine
 
@@ -47,13 +48,13 @@ This phase establishes the reusable UI component library, theming infrastructure
 
 1. THE Theme_Engine SHALL support a default theme (dark-first, premium wellness aesthetic)
 2. THE Theme_Engine SHALL support dark and light mode variants
-3. THE Theme_Engine SHALL load Tenant_Theme overrides from the Configuration_Engine (Phase 03)
-4. THE Theme_Engine SHALL apply tenant overrides by setting CSS custom properties at the root level
+3. THE Theme_Engine SHALL load Business_Theme overrides from the business_configurations table
+4. THE Theme_Engine SHALL apply business overrides by setting CSS custom properties at the root level
 5. THE Theme_Engine SHALL support overriding: primary color, secondary color, accent color, logo, font family, border-radius style
 6. THE Theme_Engine SHALL allow users to toggle between dark and light mode (respecting system preference as default)
 7. THE Theme_Engine SHALL persist user's theme mode preference
 8. THE Theme_Engine SHALL apply theme changes without requiring a page reload
-9. THE Theme_Engine SHALL validate that tenant color overrides meet contrast ratio requirements (WCAG AA)
+9. THE Theme_Engine SHALL validate that business color overrides meet contrast ratio requirements (WCAG AA)
 
 ### Requirement 3: Core Layout Components
 
@@ -69,6 +70,22 @@ This phase establishes the reusable UI component library, theming infrastructure
 6. THE Component_Library SHALL provide a `Header` component with navigation, user menu, and tenant logo
 7. THE Component_Library SHALL be mobile-first, using the following breakpoints: sm (640px), md (768px), lg (1024px), xl (1280px)
 8. THE Component_Library SHALL provide separate layout variants for admin and customer-facing views
+
+### Requirement 3A: Persona-Based Dashboard Layouts
+
+**User Story:** As a user, I want to see a dashboard tailored to my role after logging in, so that I immediately have access to the information and actions most relevant to me.
+
+#### Acceptance Criteria
+
+1. THE Design_System SHALL provide a `DashboardShell` component with a KPI summary area (top half) and a module tile grid (bottom half)
+2. THE Design_System SHALL provide a System Dashboard layout for System Users showing platform-wide KPIs and admin module tiles
+3. THE Design_System SHALL provide a Tenant Dashboard layout for Tenant Users showing tenant-level KPIs and tenant management module tiles
+4. THE Design_System SHALL provide a Business Dashboard layout for Business Users showing business-level KPIs and business operation module tiles
+5. THE Design_System SHALL provide a Customer Dashboard layout for Customers showing personal KPIs (upcoming bookings, membership status) and customer action tiles
+6. THE DashboardShell SHALL determine which layout to render based on the authenticated user's persona
+7. THE KPI summary area SHALL support configurable KPI cards (icon, label, value, trend indicator)
+8. THE module tile grid SHALL only display tiles for modules the user has permission to access
+9. THE module tiles SHALL be defined by Phases 5–22 and registered dynamically as those phases are implemented
 
 ### Requirement 4: Form Components
 
@@ -209,7 +226,7 @@ This phase establishes the reusable UI component library, theming infrastructure
 ## Success Criteria
 
 - All core components render correctly with the default theme
-- Tenant theme overrides change the visual appearance without code changes
+- Business theme overrides change the visual appearance without code changes
 - Dark/light mode toggle works and persists preference
 - All components pass WCAG 2.1 AA automated checks
 - Components render responsively across mobile, tablet, and desktop
@@ -218,7 +235,7 @@ This phase establishes the reusable UI component library, theming infrastructure
 
 ## Out of Scope
 
-- Transcend-specific branding implementation - This is the system, not one tenant's theme
+- Transcend-specific branding implementation - This is the system, not one business's theme
 - Admin UI for uploading logos/configuring themes - Phase 18 (Website & CMS)
 - Animation library selection - Keep transitions simple via CSS; revisit if needed
 - Native mobile components - Phase 19 (Mobile App) will have its own component system
@@ -227,10 +244,12 @@ This phase establishes the reusable UI component library, theming infrastructure
 ## Notes
 
 - Colleague will have a big say in look and feel; this phase creates the system, not the final aesthetic
-- The default theme is a starting point (premium wellness dark-first), tenant overrides customize it
+- The default theme is a starting point (premium wellness dark-first), business overrides customize it
 - Component library approach (build from scratch vs. Radix/shadcn base) is a decision to be made with colleague
 - CSS custom properties enable runtime theme switching without JS re-renders
 - All text content in components comes from i18next — no hardcoded English strings
+- Branding (colors, logo, font) is configured at the business level, not tenant level
+- System Users and Tenant Users see the DayStream default theme; Business Users and Customers see business-branded theme
 
 ---
 

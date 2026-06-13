@@ -3,9 +3,9 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminLayout } from './components/AdminLayout';
 import { Login } from './pages/Login';
-import { Dashboard } from './pages/Dashboard';
 import { Profile } from './pages/Profile';
 import { AdminDashboard } from './pages/AdminDashboard';
+import { PersonaDashboard } from './design-system/components/dashboard/PersonaDashboard';
 
 export function App() {
   return (
@@ -14,8 +14,10 @@ export function App() {
         {/* Public routes */}
         <Route path="/login" element={<Login />} />
 
+        {/* Main dashboard — persona-based */}
+        <Route path="/dashboard" element={<ProtectedRoute><PersonaDashboard /></ProtectedRoute>} />
+
         {/* Protected app routes */}
-        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
 
         {/* Admin routes */}

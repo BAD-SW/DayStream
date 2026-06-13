@@ -1,0 +1,30 @@
+/* Light Theme — overrides dark defaults */
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  /* Background & Surface */
+  --color-background: #FFFFFF;
+  --color-surface: #F9F9F9;
+  --color-surface-hover: #F0F0F0;
+  --color-surface-active: #E8E8E8;
+
+  /* Text */
+  --color-text: #1A1A1A;
+  --color-text-secondary: #4A4A4A;
+  --color-text-disabled: #8A8A8A;
+  --color-text-inverse: #F5F5F3;
+
+  /* Border */
+  --color-border: #E0E0E0;
+  --color-border-hover: #CCCCCC;
+
+  /* Overlay */
+  --color-overlay: rgba(0, 0, 0, 0.6);
+
+  /* Shadows are more visible in light mode */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 20px 30px rgba(0, 0, 0, 0.15);
+}

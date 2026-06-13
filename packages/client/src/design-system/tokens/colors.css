@@ -1,0 +1,61 @@
+/* Color Tokens — Semantic color system
+ * Dark mode values are the defaults (dark-first design).
+ * Light mode overrides are in themes/light.css
+ */
+
+:root {
+  /* Primary */
+  --color-primary: #C9A96E;
+  --color-primary-hover: #D4B87F;
+  --color-primary-active: #B8945A;
+  --color-primary-contrast: #1A1A1A;
+
+  /* Background & Surface */
+  --color-background: #1A1A1A;
+  --color-surface: #242424;
+  --color-surface-hover: #2D2D2D;
+  --color-surface-active: #333333;
+
+  /* Text */
+  --color-text: #F5F5F3;
+  --color-text-secondary: #B0B0B0;
+  --color-text-disabled: #8A8A8A;
+  --color-text-inverse: #1A1A1A;
+
+  /* Border */
+  --color-border: #333333;
+  --color-border-hover: #4A4A4A;
+  --color-border-focus: var(--color-primary);
+
+  /* Accent (secondary highlight) */
+  --color-accent: #4A90A4;
+  --color-accent-hover: #6BA8BC;
+  --color-accent-contrast: #FFFFFF;
+
+  /* Semantic — Success */
+  --color-success: #2E7D32;
+  --color-success-light: #66BB6A;
+  --color-success-dark: #1B5E20;
+  --color-success-bg: rgba(46, 125, 50, 0.1);
+
+  /* Semantic — Warning */
+  --color-warning: #E6A817;
+  --color-warning-light: #FFD54F;
+  --color-warning-dark: #C49000;
+  --color-warning-bg: rgba(230, 168, 23, 0.1);
+
+  /* Semantic — Error */
+  --color-error: #D32F2F;
+  --color-error-light: #EF5350;
+  --color-error-dark: #C62828;
+  --color-error-bg: rgba(211, 47, 47, 0.1);
+
+  /* Semantic — Info */
+  --color-info: #4A90A4;
+  --color-info-light: #6BA8BC;
+  --color-info-dark: #3A7A8E;
+  --color-info-bg: rgba(74, 144, 164, 0.1);
+
+  /* Overlay */
+  --color-overlay: rgba(0, 0, 0, 0.5);
+}

@@ -1,0 +1,5 @@
+/* Dark Theme (default) — no overrides needed since tokens/colors.css defines dark values */
+
+[data-theme='dark'] {
+  color-scheme: dark;
+}

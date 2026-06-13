@@ -1,0 +1,10 @@
+/* Design System Tokens — imports all token files */
+
+@import './colors.css';
+@import './typography.css';
+@import './spacing.css';
+@import './borders.css';
+@import './shadows.css';
+@import './transitions.css';
+@import './z-index.css';
+@import './accessibility.css';
