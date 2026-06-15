@@ -19,6 +19,8 @@ import { BookingCalendar } from './pages/BookingCalendar';
 import { BookingFlow } from './pages/BookingFlow';
 import { Memberships } from './pages/Memberships';
 import { MembershipPlans } from './pages/MembershipPlans';
+import { PricingRules } from './pages/PricingRules';
+import { DiscountCodes } from './pages/DiscountCodes';
 
 export function App() {
   return (
@@ -53,6 +55,10 @@ export function App() {
         {/* Memberships */}
         <Route path="/memberships" element={<ProtectedRoute><Memberships /></ProtectedRoute>} />
         <Route path="/memberships/plans" element={<ProtectedRoute><MembershipPlans /></ProtectedRoute>} />
+
+        {/* Pricing */}
+        <Route path="/pricing/rules" element={<ProtectedRoute><PricingRules /></ProtectedRoute>} />
+        <Route path="/pricing/codes" element={<ProtectedRoute><DiscountCodes /></ProtectedRoute>} />
 
         {/* Admin routes */}
         <Route
