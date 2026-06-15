@@ -10,6 +10,7 @@ import { customerPortalRouter } from './customer-portal';
 import { servicesRouter } from './services';
 import { catalogRouter } from './catalog';
 import { bookingsRouter } from './bookings';
+import { membershipsRouter } from './memberships';
 import { authLimiter } from '../middleware/rate-limit';
 
 export const router = Router();
@@ -28,3 +29,4 @@ router.use('/v1/segments', segmentsRouter);
 router.use('/v1/services', servicesRouter);
 router.use('/v1/catalog', catalogRouter);
 router.use('/v1/bookings', bookingsRouter);
+router.use('/v1/memberships', membershipsRouter);
