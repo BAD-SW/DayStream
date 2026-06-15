@@ -45,3 +45,6 @@ yarn-error.log*
 # Misc
 *.pem
 *.tsbuildinfo
+
+# Local file storage (images, uploads)
+packages/server/storage/

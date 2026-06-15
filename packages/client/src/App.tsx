@@ -11,6 +11,9 @@ import { CustomerCreate } from './pages/CustomerCreate';
 import { CustomerDetail } from './pages/CustomerDetail';
 import { Segments } from './pages/Segments';
 import { CustomerImport } from './pages/CustomerImport';
+import { Services } from './pages/Services';
+import { ServiceDetail } from './pages/ServiceDetail';
+import { ServiceCategories } from './pages/ServiceCategories';
 
 export function App() {
   return (
@@ -31,6 +34,11 @@ export function App() {
         <Route path="/customers/import" element={<ProtectedRoute><CustomerImport /></ProtectedRoute>} />
         <Route path="/customers/segments" element={<ProtectedRoute><Segments /></ProtectedRoute>} />
         <Route path="/customers/:id" element={<ProtectedRoute><CustomerDetail /></ProtectedRoute>} />
+
+        {/* Services */}
+        <Route path="/services" element={<ProtectedRoute><Services /></ProtectedRoute>} />
+        <Route path="/services/categories" element={<ProtectedRoute><ServiceCategories /></ProtectedRoute>} />
+        <Route path="/services/:id" element={<ProtectedRoute><ServiceDetail /></ProtectedRoute>} />
 
         {/* Admin routes */}
         <Route

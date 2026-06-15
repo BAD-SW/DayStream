@@ -74,17 +74,23 @@ This phase builds the dynamic service engine allowing businesses to create, conf
 
 ### Requirement 4: Service Variants and Pricing
 
-**User Story:** As a business owner, I want to offer different durations and price points for a single service, so that customers can choose what fits their needs and budget.
+**User Story:** As a business owner, I want to offer different durations, price points, and billing models for a single service, so that customers can choose what fits their needs and budget.
 
 #### Acceptance Criteria
 
 1. THE system SHALL support multiple Service_Variants per Service (e.g., 30 min / €45, 60 min / €75, 90 min / €105)
-2. Each Service_Variant SHALL have: name/label, duration (minutes), base price (stored as cents/minor currency units), status (active/inactive)
-3. THE system SHALL support at least one active variant per active Service
-4. THE system SHALL support reordering variants via display order
-5. THE system SHALL support variant-specific capacity overrides (if different from service default)
-6. THE system SHALL support variant-specific resource requirements (if different from service default)
-7. THE system SHALL integrate with the Pricing Engine (Phase 09) for dynamic/promotional pricing
+2. Each Service_Variant SHALL have: name/label, duration (minutes), base price (stored as cents/minor currency units), pricing model, status (active/inactive)
+3. THE system SHALL support the following pricing models per variant:
+   - **per_session**: one-time charge per booking (default)
+   - **subscription**: recurring fee granting access to the service on a billing cycle
+4. For subscription variants, THE system SHALL store: billing interval (weekly, biweekly, monthly, quarterly, annually), included sessions per interval (numeric or unlimited), whether unused sessions roll over to the next interval
+5. THE system SHALL support at least one active variant per active Service
+6. THE system SHALL support reordering variants via display order
+7. THE system SHALL support variant-specific capacity overrides (if different from service default)
+8. THE system SHALL support variant-specific resource requirements (if different from service default)
+9. THE system SHALL integrate with the Pricing Engine (Phase 09) for dynamic/promotional pricing
+10. For subscription variants, DayStream SHALL initiate all recurring billing requests to the external payment processor — the payment processor does not drive the billing cycle
+11. THE system SHALL store subscription terms on the variant definition; actual billing execution is handled by the Payment Platform (Phase 10)
 
 ### Requirement 5: Service Images and Media
 
@@ -95,10 +101,13 @@ This phase builds the dynamic service engine allowing businesses to create, conf
 1. THE system SHALL support uploading multiple images per Service (minimum 1, maximum 10)
 2. THE system SHALL designate one image as the primary/hero image
 3. THE system SHALL support image reordering
-4. THE system SHALL store images in tenant-scoped storage paths
-5. THE system SHALL generate responsive image sizes (thumbnail, medium, large) on upload
-6. THE system SHALL validate image uploads: accepted formats (JPEG, PNG, WebP), maximum file size (5MB), minimum dimensions (400x300px)
-7. THE system SHALL support alt text per image for accessibility
+4. THE system SHALL store image binary files on the filesystem (local directory or S3-compatible object storage) — never in the database
+5. THE system SHALL store only image metadata in the database (file path, filename, alt text, display order, dimensions, size)
+6. THE system SHALL organize stored files under a tenant-scoped directory structure (e.g., `/{tenant_id}/{business_id}/services/{service_id}/`)
+7. THE system SHALL generate responsive image sizes (thumbnail, medium, large) on upload and store them alongside the original
+8. THE system SHALL validate image uploads: accepted formats (JPEG, PNG, WebP), maximum file size (5MB), minimum dimensions (400x300px)
+9. THE system SHALL support alt text per image for accessibility
+10. THE system SHALL support configuring the storage backend via environment variable (local path for development, S3 bucket/endpoint for production)
 
 ### Requirement 6: Staff Assignment
 
