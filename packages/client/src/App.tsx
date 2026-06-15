@@ -14,6 +14,9 @@ import { CustomerImport } from './pages/CustomerImport';
 import { Services } from './pages/Services';
 import { ServiceDetail } from './pages/ServiceDetail';
 import { ServiceCategories } from './pages/ServiceCategories';
+import { Bookings } from './pages/Bookings';
+import { BookingCalendar } from './pages/BookingCalendar';
+import { BookingFlow } from './pages/BookingFlow';
 
 export function App() {
   return (
@@ -39,6 +42,11 @@ export function App() {
         <Route path="/services" element={<ProtectedRoute><Services /></ProtectedRoute>} />
         <Route path="/services/categories" element={<ProtectedRoute><ServiceCategories /></ProtectedRoute>} />
         <Route path="/services/:id" element={<ProtectedRoute><ServiceDetail /></ProtectedRoute>} />
+
+        {/* Bookings */}
+        <Route path="/bookings" element={<ProtectedRoute><Bookings /></ProtectedRoute>} />
+        <Route path="/bookings/calendar" element={<ProtectedRoute><BookingCalendar /></ProtectedRoute>} />
+        <Route path="/book/:serviceSlug" element={<ProtectedRoute><BookingFlow /></ProtectedRoute>} />
 
         {/* Admin routes */}
         <Route

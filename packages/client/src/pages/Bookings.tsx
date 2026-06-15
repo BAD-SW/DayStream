@@ -1,0 +1,117 @@
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Table } from '../design-system/components/data/Table';
+import { Badge } from '../design-system/components/data/Badge';
+import * as bookingsApi from '../api/bookings';
+import type { Booking } from '../api/bookings';
+
+const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
+  pending: 'neutral', confirmed: 'info', in_progress: 'warning', completed: 'success', cancelled: 'error', no_show: 'error',
+};
+
+export function Bookings() {
+  const navigate = useNavigate();
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  const businessId = localStorage.getItem('business_id') || '';
+
+  const fetchBookings = useCallback(async () => {
+    if (!businessId) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      const result = await bookingsApi.getBookings(businessId, { status: statusFilter || undefined, page });
+      setBookings(result.data);
+      setTotalPages(result.meta?.totalPages || 1);
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  }, [businessId, statusFilter, page]);
+
+  useEffect(() => { fetchBookings(); }, [fetchBookings]);
+
+  const handleAction = async (action: string, booking: Booking) => {
+    try {
+      if (action === 'confirm') await bookingsApi.confirmBooking(booking.id, businessId);
+      else if (action === 'cancel') await bookingsApi.cancelBooking(booking.id, businessId);
+      else if (action === 'no-show') await bookingsApi.noShowBooking(booking.id, businessId);
+      else if (action === 'check-in') await bookingsApi.checkInBooking(booking.id, businessId);
+      else if (action === 'complete') await bookingsApi.completeBooking(booking.id, businessId);
+      fetchBookings();
+    } catch { /* silent */ }
+  };
+
+  const columns = [
+    { key: 'booking_reference', header: 'Ref', width: '120px' },
+    {
+      key: 'customer', header: 'Customer',
+      render: (_: any, row: Booking) => `${row.customer_first_name} ${row.customer_last_name}`,
+    },
+    { key: 'service_name', header: 'Service' },
+    {
+      key: 'start_time', header: 'Date/Time', sortable: true,
+      render: (val: string) => new Date(val).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }),
+    },
+    {
+      key: 'status', header: 'Status',
+      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val.replace('_', ' ')}</Badge>,
+    },
+    {
+      key: 'staff', header: 'Staff',
+      render: (_: any, row: Booking) => row.staff_first_name ? `${row.staff_first_name} ${row.staff_last_name}` : '—',
+    },
+    {
+      key: 'actions', header: '',
+      render: (_: any, row: Booking) => (
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {row.status === 'pending' && <ActionBtn label="Confirm" onClick={() => handleAction('confirm', row)} />}
+          {row.status === 'confirmed' && <ActionBtn label="Check-in" onClick={() => handleAction('check-in', row)} />}
+          {row.status === 'in_progress' && <ActionBtn label="Complete" onClick={() => handleAction('complete', row)} />}
+          {['pending', 'confirmed'].includes(row.status) && <ActionBtn label="Cancel" onClick={() => handleAction('cancel', row)} />}
+          {row.status === 'confirmed' && <ActionBtn label="No-show" onClick={() => handleAction('no-show', row)} />}
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <div style={styles.page}>
+      <div style={styles.header}>
+        <h1 style={styles.title}>Bookings</h1>
+        <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+          <button style={styles.navBtn} onClick={() => navigate('/bookings/calendar')}>Calendar</button>
+        </div>
+      </div>
+
+      <div style={styles.toolbar}>
+        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
+          <option value="">All Statuses</option>
+          <option value="pending">Pending</option>
+          <option value="confirmed">Confirmed</option>
+          <option value="in_progress">In Progress</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="no_show">No Show</option>
+        </select>
+      </div>
+
+      <Table columns={columns} data={bookings} loading={loading} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No bookings found" mobileCardMode />
+    </div>
+  );
+}
+
+function ActionBtn({ label, onClick }: { label: string; onClick: () => void }) {
+  return <button onClick={(e) => { e.stopPropagation(); onClick(); }} style={styles.actionBtn}>{label}</button>;
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  page: { padding: 'var(--space-lg)', maxWidth: '1200px', margin: '0 auto' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
+  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
+  toolbar: { display: 'flex', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' },
+  select: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
+  navBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 16px', color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
+  actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
+};
