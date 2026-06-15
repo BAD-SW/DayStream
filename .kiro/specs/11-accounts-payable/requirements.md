@@ -83,13 +83,14 @@ This phase builds a reusable financial module for payroll tracking, vendor payme
 
 #### Acceptance Criteria
 
-1. THE system SHALL support configuring recurring deductions per staff member (e.g., insurance, benefits, loan repayments)
+1. THE system SHALL support configuring recurring deductions per staff member (e.g., insurance, benefits, loan repayments, taxes)
 2. THE system SHALL support one-time adjustments (bonuses, advances, corrections)
 3. THE system SHALL apply deductions and adjustments during the Payroll_Run calculation
 4. THE system SHALL display deduction details on the payroll summary
 5. THE system SHALL support percentage-based and fixed-amount deductions
 6. THE system SHALL support deduction effective date ranges
-7. THE system SHALL NOT calculate tax withholding (out of scope — varies by jurisdiction, complex regulatory area)
+7. THE system SHALL support tax withholding deductions (income tax, social security, etc.) configured as percentage or fixed amount per staff member
+8. THE system SHALL calculate net pay as: gross pay minus all applicable deductions (taxes, insurance, benefits, loan repayments)
 
 ### Requirement 5: Vendor Management
 
@@ -101,7 +102,7 @@ This phase builds a reusable financial module for payroll tracking, vendor payme
 2. THE system SHALL support updating and archiving Vendor records
 3. THE system SHALL track total spend per Vendor over time
 4. THE system SHALL support categorizing Vendors (supplies, services, utilities, rent, equipment)
-5. THE system SHALL store all Vendor records scoped to the current Tenant
+5. THE system SHALL store all Vendor records scoped to the current Business
 6. THE system SHALL support linking multiple Bills to a Vendor
 7. THE system SHALL display outstanding balance per Vendor
 
@@ -192,6 +193,23 @@ This phase builds a reusable financial module for payroll tracking, vendor payme
 6. THE system SHALL support marking items as reconciled
 7. THE system SHALL report reconciliation status per bank account per period
 
+### Requirement 12: Tax Document Generation
+
+**User Story:** As a business owner, I want to generate year-end tax documents for my employees and contractors, so that I can provide them with the required forms for tax filing.
+
+#### Acceptance Criteria
+
+1. THE system SHALL generate 1099-NEC documents for independent contractors who earned above the reporting threshold ($600 USD or equivalent) during the tax year
+2. THE system SHALL generate W-2 summary reports for employees showing total compensation, federal/state tax withheld, social security, and Medicare deductions
+3. THE system SHALL produce downloadable PDF documents in the standard form layout for 1099-NEC and W-2
+4. THE system SHALL populate forms with: business information (name, EIN/tax ID, address), worker information (name, SSN/TIN, address), total compensation for the year, total taxes withheld by category
+5. THE system SHALL support generating documents for a specific tax year
+6. THE system SHALL support batch generation (all qualifying workers at once) and individual generation
+7. THE system SHALL track generation status per worker per year (generated, delivered, corrected)
+8. THE system SHALL support issuing corrected forms if payroll data is adjusted after initial generation
+9. THE system SHALL store generated documents for retrieval by the business owner and the worker (via portal)
+10. THE system SHALL NOT perform electronic filing with tax authorities (out of scope — business owner submits manually or via tax software)
+
 ---
 
 ## Dependencies
@@ -216,7 +234,8 @@ This phase builds a reusable financial module for payroll tracking, vendor payme
 
 ## Out of Scope
 
-- Actual payroll processing (tax withholding, direct deposit, pay slips) - Varies heavily by jurisdiction; tracking only
+- Actual payroll disbursement (direct deposit, check printing) - Varies by jurisdiction; tracking and calculation only
+- Electronic filing of tax documents with IRS/tax authorities - Business owner submits via their tax software or accountant
 - Integration with external accounting software (Xero, QuickBooks) - Phase 20 (Integrations)
 - Accounts Receivable (invoicing customers) - Handled by Phase 10 (Payment Platform)
 - Budgeting and forecasting - Future enhancement
@@ -226,7 +245,8 @@ This phase builds a reusable financial module for payroll tracking, vendor payme
 ## Notes
 
 - **Cornerstone component**: Designed for reusability. Architecture should allow extraction as a standalone module for future applications.
-- Tax withholding is explicitly out of scope — it's a regulatory minefield that varies by country/state. The system tracks gross pay; actual tax calculation requires jurisdiction-specific services.
+- Tax withholding is tracked as configured deductions per employee — the system applies rates set by the business owner but does not determine correct rates per jurisdiction automatically
+- Tax document generation (1099, W-2) produces standard-layout PDFs; e-filing with IRS is out of scope
 - Double-entry bookkeeping is important for financial integrity but adds complexity; ensure all automated entries are tested thoroughly
 - This phase intersects with Phase 10 (incoming money) — Phase 11 is the outgoing money and classification side
 - Bank reconciliation is foundational here; full auto-reconciliation via bank APIs (Open Banking, Plaid) is a future enhancement

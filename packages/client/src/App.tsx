@@ -21,6 +21,8 @@ import { Memberships } from './pages/Memberships';
 import { MembershipPlans } from './pages/MembershipPlans';
 import { PricingRules } from './pages/PricingRules';
 import { DiscountCodes } from './pages/DiscountCodes';
+import { Payroll } from './pages/Payroll';
+import { AccountsPayable } from './pages/AccountsPayable';
 
 export function App() {
   return (
@@ -59,6 +61,10 @@ export function App() {
         {/* Pricing */}
         <Route path="/pricing/rules" element={<ProtectedRoute><PricingRules /></ProtectedRoute>} />
         <Route path="/pricing/codes" element={<ProtectedRoute><DiscountCodes /></ProtectedRoute>} />
+
+        {/* Payroll & AP */}
+        <Route path="/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
+        <Route path="/ap" element={<ProtectedRoute><AccountsPayable /></ProtectedRoute>} />
 
         {/* Admin routes */}
         <Route

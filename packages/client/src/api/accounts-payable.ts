@@ -1,0 +1,80 @@
+import { apiClient } from './client';
+
+// --- Vendors ---
+export async function getVendors(businessId: string) {
+  const res = await apiClient.get(`/v1/ap/vendors?business_id=${businessId}`);
+  return res.data.data;
+}
+export async function createVendor(data: any) {
+  const res = await apiClient.post('/v1/ap/vendors', data);
+  return res.data.data;
+}
+
+// --- Bills ---
+export async function getBills(businessId: string, filters?: { status?: string }) {
+  const params = new URLSearchParams({ business_id: businessId });
+  if (filters?.status) params.set('status', filters.status);
+  const res = await apiClient.get(`/v1/ap/bills?${params}`);
+  return res.data.data;
+}
+export async function createBill(data: any) {
+  const res = await apiClient.post('/v1/ap/bills', data);
+  return res.data.data;
+}
+export async function approveBill(id: string, businessId: string) {
+  await apiClient.put(`/v1/ap/bills/${id}/approve?business_id=${businessId}`);
+}
+export async function payBill(id: string, businessId: string, amount: number) {
+  const res = await apiClient.put(`/v1/ap/bills/${id}/pay?business_id=${businessId}`, { amount });
+  return res.data.data;
+}
+
+// --- Expenses ---
+export async function getExpenses(businessId: string) {
+  const res = await apiClient.get(`/v1/ap/expenses?business_id=${businessId}`);
+  return res.data.data;
+}
+export async function createExpense(data: any) {
+  const res = await apiClient.post('/v1/ap/expenses', data);
+  return res.data.data;
+}
+export async function approveExpense(id: string, businessId: string) {
+  await apiClient.put(`/v1/ap/expenses/${id}/approve?business_id=${businessId}`);
+}
+
+// --- Chart of Accounts ---
+export async function getAccounts(businessId: string) {
+  const res = await apiClient.get(`/v1/ap/accounts?business_id=${businessId}`);
+  return res.data.data;
+}
+export async function createAccount(data: any) {
+  const res = await apiClient.post('/v1/ap/accounts', data);
+  return res.data.data;
+}
+export async function seedAccounts(businessId: string) {
+  await apiClient.post(`/v1/ap/accounts/seed?business_id=${businessId}`);
+}
+
+// --- Journal ---
+export async function getJournalEntries(businessId: string) {
+  const res = await apiClient.get(`/v1/ap/journal?business_id=${businessId}`);
+  return res.data;
+}
+export async function createJournalEntry(data: any) {
+  const res = await apiClient.post('/v1/ap/journal', data);
+  return res.data.data;
+}
+
+// --- Reports ---
+export async function getPnL(businessId: string, dateFrom: string, dateTo: string) {
+  const res = await apiClient.get(`/v1/ap/reports/pnl?business_id=${businessId}&date_from=${dateFrom}&date_to=${dateTo}`);
+  return res.data.data;
+}
+export async function getStaffCosts(businessId: string, dateFrom: string, dateTo: string) {
+  const res = await apiClient.get(`/v1/ap/reports/staff-costs?business_id=${businessId}&date_from=${dateFrom}&date_to=${dateTo}`);
+  return res.data.data;
+}
+export async function getAPAging(businessId: string) {
+  const res = await apiClient.get(`/v1/ap/reports/ap-aging?business_id=${businessId}`);
+  return res.data.data;
+}
