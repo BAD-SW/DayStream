@@ -28,6 +28,9 @@ import { StaffCreate } from './pages/StaffCreate';
 import { StaffDetail } from './pages/StaffDetail';
 import { StaffLeave } from './pages/StaffLeave';
 import { StaffCalendar } from './pages/StaffCalendar';
+import { Resources } from './pages/Resources';
+import { ResourceDetail } from './pages/ResourceDetail';
+import { ResourceCalendar } from './pages/ResourceCalendar';
 
 export function App() {
   return (
@@ -77,6 +80,11 @@ export function App() {
         <Route path="/staff/leave" element={<ProtectedRoute><StaffLeave /></ProtectedRoute>} />
         <Route path="/staff/calendar" element={<ProtectedRoute><StaffCalendar /></ProtectedRoute>} />
         <Route path="/staff/:id" element={<ProtectedRoute><StaffDetail /></ProtectedRoute>} />
+
+        {/* Resource Management */}
+        <Route path="/resources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
+        <Route path="/resources/calendar" element={<ProtectedRoute><ResourceCalendar /></ProtectedRoute>} />
+        <Route path="/resources/:id" element={<ProtectedRoute><ResourceDetail /></ProtectedRoute>} />
 
         {/* Admin routes */}
         <Route
