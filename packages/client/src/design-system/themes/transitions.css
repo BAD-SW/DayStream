@@ -1,0 +1,10 @@
+/**
+ * Theme transition — applied to <html> during mode switches for smooth animation.
+ * The class is added by ThemeProvider before changing data-theme and removed after transitionend.
+ */
+html.theme-transitioning,
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after {
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease, box-shadow 200ms ease !important;
+}

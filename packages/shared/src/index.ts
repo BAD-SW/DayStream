@@ -4,6 +4,14 @@ export type { Business } from './types/business';
 export type { User, UserRole, Persona } from './types/user';
 export type { ApiResponse, ApiError } from './types/api';
 export type { ConfigDefinition, FeatureFlag, PaginatedResult } from './types/config';
+export type {
+  QueryExecuteRequest,
+  QueryExecuteResponse,
+  ColumnInfo,
+  SchemaTable,
+  SavedQueryDTO,
+  QueryHistoryDTO,
+} from './types/query-editor';
 
 // Constants
 export { USER_ROLES, PERSONAS } from './constants/roles';

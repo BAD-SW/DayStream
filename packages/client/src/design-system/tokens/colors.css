@@ -56,6 +56,20 @@
   --color-info-dark: #3A7A8E;
   --color-info-bg: rgba(74, 144, 164, 0.1);
 
+  /* Sidebar */
+  --color-sidebar-bg: #1A1A1A;
+  --color-sidebar-border: rgba(255, 255, 255, 0.08);
+
+  /* Header */
+  --color-header-bg: #1A1A1A;
+
+  /* Navigation */
+  --color-nav-active-bg: rgba(201, 169, 110, 0.15);
+  --color-nav-active-text: #C9A96E;
+
+  /* Background gradient */
+  --color-background-gradient: none;
+
   /* Overlay */
   --color-overlay: rgba(0, 0, 0, 0.5);
 }

@@ -56,6 +56,35 @@ export async function logAudit(entry: AuditEntry): Promise<void> {
 }
 
 /**
+ * Write an entry to the audit log with HMAC chain integrity.
+ * Unlike logAudit, this function throws on failure (fail-closed).
+ * Used by security-critical paths like the Query Editor where audit
+ * failure must block the operation.
+ */
+export async function logAuditStrict(entry: AuditEntry): Promise<void> {
+  const signature = signEntry(entry, lastSignature);
+
+  await adminPool.query(
+    `INSERT INTO audit_log (tenant_id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, signature, previous_signature)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [
+      entry.tenantId,
+      entry.userId || null,
+      entry.action,
+      entry.resourceType || null,
+      entry.resourceId || null,
+      entry.details ? JSON.stringify(entry.details) : null,
+      entry.ipAddress || null,
+      entry.userAgent || null,
+      signature,
+      lastSignature,
+    ],
+  );
+
+  lastSignature = signature;
+}
+
+/**
  * Query audit log with filters and pagination.
  */
 export async function queryAuditLog(

@@ -5,6 +5,7 @@ import { adminRouter } from './admin';
 import { profileRouter } from './profile';
 import { usersRouter } from './users';
 import { customersRouter } from './customers';
+import { queryEditorRouter } from './query-editor';
 import { authLimiter } from '../middleware/rate-limit';
 
 export const router = Router();
@@ -18,3 +19,6 @@ router.use('/v1/admin', adminRouter);
 router.use('/v1/profile', profileRouter);
 router.use('/v1/users', usersRouter);
 router.use('/v1/customers', customersRouter);
+
+// Query Editor (authentication and authorization handled within the router)
+router.use('/v1/query-editor', queryEditorRouter);

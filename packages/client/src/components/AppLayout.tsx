@@ -1,6 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { LanguageSwitcher } from './LanguageSwitcher';
+import { ThemeModeToggle } from '../design-system/themes/ThemeModeToggle';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -21,6 +22,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         </div>
         <div style={styles.headerRight}>
           <LanguageSwitcher />
+          {user && <ThemeModeToggle />}
           {user && (
             <span style={styles.userName}>
               {user.first_name ? `${user.first_name} ${user.last_name}` : user.email}
@@ -36,11 +38,17 @@ export function AppLayout({ children }: AppLayoutProps) {
             <>
               <a href="/dashboard" style={styles.navLink}>Dashboard</a>
               <a href="/profile" style={styles.navLink}>Profile</a>
+              {user?.role === 'Super Admin' && (
+                <a href="/query-editor" style={styles.navLink}>Query Editor</a>
+              )}
             </>
           ) : (
             <>
               <a href="/dashboard" style={styles.navIcon} title="Dashboard">🏠</a>
               <a href="/profile" style={styles.navIcon} title="Profile">👤</a>
+              {user?.role === 'Super Admin' && (
+                <a href="/query-editor" style={styles.navIcon} title="Query Editor">⚡</a>
+              )}
             </>
           )}
         </nav>
@@ -56,9 +64,9 @@ export function AppLayout({ children }: AppLayoutProps) {
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100vh',
-    backgroundColor: '#1A1A1A',
+    backgroundColor: 'var(--color-background)',
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-    color: '#F5F5F3',
+    color: 'var(--color-text)',
     display: 'flex',
     flexDirection: 'column' as const,
   },
@@ -67,7 +75,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '12px 24px',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+    borderBottom: '1px solid var(--color-border)',
+    backgroundColor: 'var(--color-header-bg)',
     height: '56px',
     boxSizing: 'border-box' as const,
   },
@@ -84,7 +93,7 @@ const styles: Record<string, React.CSSProperties> = {
   menuBtn: {
     background: 'none',
     border: 'none',
-    color: '#B0B0B0',
+    color: 'var(--color-text-secondary)',
     fontSize: '20px',
     cursor: 'pointer',
     padding: '4px 8px',
@@ -94,17 +103,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '18px',
     fontWeight: 600,
     margin: 0,
-    color: '#C9A96E',
+    color: 'var(--color-primary)',
   },
   userName: {
     fontSize: '13px',
-    color: '#B0B0B0',
+    color: 'var(--color-text-secondary)',
   },
   logoutBtn: {
     background: 'none',
-    border: '1px solid #333',
+    border: '1px solid var(--color-border)',
     borderRadius: '6px',
-    color: '#B0B0B0',
+    color: 'var(--color-text-secondary)',
     padding: '6px 12px',
     fontSize: '13px',
     cursor: 'pointer',
@@ -115,7 +124,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   sidebar: {
     width: '200px',
-    borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'var(--color-sidebar-bg)',
+    borderRight: '1px solid var(--color-sidebar-border)',
     padding: '24px 16px',
     display: 'flex',
     flexDirection: 'column' as const,
@@ -128,14 +138,14 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center' as const,
   },
   navLink: {
-    color: '#B0B0B0',
+    color: 'var(--color-text-secondary)',
     textDecoration: 'none',
     fontSize: '14px',
     padding: '8px 12px',
     borderRadius: '6px',
   },
   navIcon: {
-    color: '#B0B0B0',
+    color: 'var(--color-text-secondary)',
     textDecoration: 'none',
     fontSize: '18px',
     padding: '8px',
