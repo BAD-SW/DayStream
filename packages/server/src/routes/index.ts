@@ -14,6 +14,7 @@ import { membershipsRouter } from './memberships';
 import { pricingRouter } from './pricing';
 import { payrollRouter } from './payroll';
 import { apRouter } from './accounts-payable';
+import { staffRouter } from './staff';
 import { authLimiter } from '../middleware/rate-limit';
 
 export const router = Router();
@@ -36,3 +37,4 @@ router.use('/v1/memberships', membershipsRouter);
 router.use('/v1/pricing', pricingRouter);
 router.use('/v1/payroll', payrollRouter);
 router.use('/v1/ap', apRouter);
+router.use('/v1/staff', staffRouter);

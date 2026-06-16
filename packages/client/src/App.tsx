@@ -23,6 +23,11 @@ import { PricingRules } from './pages/PricingRules';
 import { DiscountCodes } from './pages/DiscountCodes';
 import { Payroll } from './pages/Payroll';
 import { AccountsPayable } from './pages/AccountsPayable';
+import { Staff } from './pages/Staff';
+import { StaffCreate } from './pages/StaffCreate';
+import { StaffDetail } from './pages/StaffDetail';
+import { StaffLeave } from './pages/StaffLeave';
+import { StaffCalendar } from './pages/StaffCalendar';
 
 export function App() {
   return (
@@ -65,6 +70,13 @@ export function App() {
         {/* Payroll & AP */}
         <Route path="/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
         <Route path="/ap" element={<ProtectedRoute><AccountsPayable /></ProtectedRoute>} />
+
+        {/* Staff Management */}
+        <Route path="/staff" element={<ProtectedRoute><Staff /></ProtectedRoute>} />
+        <Route path="/staff/new" element={<ProtectedRoute><StaffCreate /></ProtectedRoute>} />
+        <Route path="/staff/leave" element={<ProtectedRoute><StaffLeave /></ProtectedRoute>} />
+        <Route path="/staff/calendar" element={<ProtectedRoute><StaffCalendar /></ProtectedRoute>} />
+        <Route path="/staff/:id" element={<ProtectedRoute><StaffDetail /></ProtectedRoute>} />
 
         {/* Admin routes */}
         <Route
