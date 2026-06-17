@@ -1,290 +1,290 @@
-# Phase 15: Check-In System - Tasks
+﻿# Phase 15: Check-In System - Tasks
 
 ## Overview
 
-Implementation tasks for the check-in system — database schema, QR code generation, session validation, reception/kiosk/walk-in check-in, no-show detection, late arrival handling, real-time dashboard, attendance reports, and frontend.
+Implementation tasks for the check-in system â€” database schema, QR code generation, session validation, reception/kiosk/walk-in check-in, no-show detection, late arrival handling, real-time dashboard, attendance reports, and frontend.
 
 ## Task Status Legend
 
-- ✅ **Complete**: Task is finished and verified
-- 🟡 **In Progress**: Task is currently being worked on
-- 📋 **Planned**: Task is defined but not started
-- ⏸️ **Blocked**: Task is waiting on dependencies
-- ❌ **Cancelled**: Task is no longer needed
+- âœ… **Complete**: Task is finished and verified
+- ðŸŸ¡ **In Progress**: Task is currently being worked on
+- ðŸ“‹ **Planned**: Task is defined but not started
+- â¸ï¸ **Blocked**: Task is waiting on dependencies
+- âŒ **Cancelled**: Task is no longer needed
 
 ---
 
 ## 1. Database Schema
 
 ### 1.1 Core Tables
-- [ ] Create migration for `check_in_records` table
-- [ ] Create migration for `check_in_qr_codes` table
-- [ ] Create migration for `no_show_records` table
-- [ ] Create migration for `check_in_config` table
-- [ ] Create migration for `kiosk_sessions` table
+- [x] ✅ Create migration for `check_in_records` table
+- [x] ✅ Create migration for `check_in_qr_codes` table
+- [x] ✅ Create migration for `no_show_records` table
+- [x] ✅ Create migration for `check_in_config` table
+- [x] ✅ Create migration for `kiosk_sessions` table
 
 ### 1.2 Indexes and Permissions
-- [ ] Add indexes (tenant, booking, customer, date)
-- [ ] Add RLS policies on all tables (tenant-scoped)
-- [ ] Grant permissions to daystream_app role
-- [ ] Run migrations and verify schema
+- [x] ✅ Add indexes (tenant, booking, customer, date)
+- [x] ✅ Add RLS policies on all tables (tenant-scoped)
+- [x] ✅ Grant permissions to daystream_app role
+- [x] ✅ Run migrations and verify schema
 
 ---
 
 ## 2. QR Code Generation
 
 ### 2.1 QR Code Service
-- [ ] Create `checkin-qr.service.ts`
-- [ ] Generate unique booking QR code on booking confirmation
-- [ ] Generate persistent customer QR code
-- [ ] Support QR code regeneration (deactivate old, create new)
-- [ ] Set expiry for booking QR codes (end of booking day + grace)
-- [ ] Validate QR codes (check active, not expired)
-- [ ] Write tests
+- [x] ✅ Create `checkin-qr.service.ts`
+- [x] ✅ Generate unique booking QR code on booking confirmation
+- [x] ✅ Generate persistent customer QR code
+- [x] ✅ Support QR code regeneration (deactivate old, create new)
+- [x] ✅ Set expiry for booking QR codes (end of booking day + grace)
+- [x] ✅ Validate QR codes (check active, not expired)
+- [x] ✅ Write tests
 
 ### 2.2 Routes
-- [ ] Create `GET /api/v1/check-in/qr-code/booking/:bookingId` endpoint
-- [ ] Create `GET /api/v1/check-in/qr-code/customer/:customerId` endpoint
-- [ ] Create `POST /api/v1/check-in/qr-code/customer/:customerId/regenerate` endpoint
+- [x] ✅ Create `GET /api/v1/check-in/qr-code/booking/:bookingId` endpoint
+- [x] ✅ Create `GET /api/v1/check-in/qr-code/customer/:customerId` endpoint
+- [x] ✅ Create `POST /api/v1/check-in/qr-code/customer/:customerId/regenerate` endpoint
 
 ---
 
 ## 3. Session Validation
 
 ### 3.1 Validation Service
-- [ ] Create `checkin-validation.service.ts`
-- [ ] Validate booking exists and is confirmed
-- [ ] Validate booking is for today (within early arrival window)
-- [ ] Prevent double check-in
-- [ ] Validate active membership (if service requires membership)
-- [ ] Validate sufficient credits (if credit-based, and mode = on_checkin)
-- [ ] Check outstanding balance (configurable)
-- [ ] Check no-show restriction thresholds
-- [ ] Return pass/warning/error structure
-- [ ] Support staff override with audit logging
-- [ ] Write tests
+- [x] ✅ Create `checkin-validation.service.ts`
+- [x] ✅ Validate booking exists and is confirmed
+- [x] ✅ Validate booking is for today (within early arrival window)
+- [x] ✅ Prevent double check-in
+- [x] ✅ Validate active membership (if service requires membership)
+- [x] ✅ Validate sufficient credits (if credit-based, and mode = on_checkin)
+- [x] ✅ Check outstanding balance (configurable)
+- [x] ✅ Check no-show restriction thresholds
+- [x] ✅ Return pass/warning/error structure
+- [x] ✅ Support staff override with audit logging
+- [x] ✅ Write tests
 
 ### 3.2 Routes
-- [ ] Create `GET /api/v1/check-in/validate/:bookingId` endpoint (dry run)
+- [x] ✅ Create `GET /api/v1/check-in/validate/:bookingId` endpoint (dry run)
 
 ---
 
 ## 4. Check-In Methods
 
 ### 4.1 Check-In Service
-- [ ] Create `checkin.service.ts`
-- [ ] Implement QR code check-in (staff scans customer QR)
-- [ ] Implement QR self-service (customer scans venue QR → triggers check-in)
-- [ ] Implement reception check-in (by booking ID, one-click)
-- [ ] Implement kiosk check-in (QR, reference, or name lookup)
-- [ ] Deduct credits on check-in (if credit_deduction_mode = 'on_checkin')
-- [ ] Create check_in_record with method and processor
-- [ ] Notify assigned staff of customer arrival
-- [ ] Write tests
+- [x] ✅ Create `checkin.service.ts`
+- [x] ✅ Implement QR code check-in (staff scans customer QR)
+- [x] ✅ Implement QR self-service (customer scans venue QR â†’ triggers check-in)
+- [x] ✅ Implement reception check-in (by booking ID, one-click)
+- [x] ✅ Implement kiosk check-in (QR, reference, or name lookup)
+- [x] ✅ Deduct credits on check-in (if credit_deduction_mode = 'on_checkin')
+- [x] ✅ Create check_in_record with method and processor
+- [x] ✅ Notify assigned staff of customer arrival
+- [x] ✅ Write tests
 
 ### 4.2 Routes
-- [ ] Create `POST /api/v1/check-in/qr` endpoint
-- [ ] Create `POST /api/v1/check-in/reception` endpoint
-- [ ] Create `POST /api/v1/check-in/kiosk` endpoint
+- [x] ✅ Create `POST /api/v1/check-in/qr` endpoint
+- [x] ✅ Create `POST /api/v1/check-in/reception` endpoint
+- [x] ✅ Create `POST /api/v1/check-in/kiosk` endpoint
 
 ---
 
 ## 5. Walk-In Handling
 
 ### 5.1 Walk-In Service
-- [ ] Create `checkin-walkin.service.ts`
-- [ ] Identify customer (by QR, name/phone, or create new)
-- [ ] Check real-time service availability at current location
-- [ ] Create instant booking (start = now, end = now + duration)
-- [ ] Reserve resource if needed
-- [ ] Validate membership/credits/payment
-- [ ] Create check_in_record (method = 'walk_in')
-- [ ] Integrate with Pricing Engine for walk-in pricing
-- [ ] Write tests
+- [x] ✅ Create `checkin-walkin.service.ts`
+- [x] ✅ Identify customer (by QR, name/phone, or create new)
+- [x] ✅ Check real-time service availability at current location
+- [x] ✅ Create instant booking (start = now, end = now + duration)
+- [x] ✅ Reserve resource if needed
+- [x] ✅ Validate membership/credits/payment
+- [x] ✅ Create check_in_record (method = 'walk_in')
+- [x] ✅ Integrate with Pricing Engine for walk-in pricing
+- [x] ✅ Write tests
 
 ### 5.2 Routes
-- [ ] Create `POST /api/v1/check-in/walk-in` endpoint
+- [x] ✅ Create `POST /api/v1/check-in/walk-in` endpoint
 
 ---
 
 ## 6. No-Show Detection and Management
 
 ### 6.1 No-Show Service
-- [ ] Create `checkin-noshow.service.ts`
-- [ ] Implement scheduled job: detect no-shows after grace period
-- [ ] Mark booking as no_show
-- [ ] Create no_show_record with fee calculation
-- [ ] Apply no-show fee from cancellation policy
-- [ ] Notify customer of no-show status
-- [ ] Track no-show count per customer
-- [ ] Implement escalation thresholds (warning → restrict → ban)
-- [ ] Support staff waiver (override with reason + audit)
-- [ ] Restore credits if deducted on booking and fee waived
-- [ ] Write tests
+- [x] ✅ Create `checkin-noshow.service.ts`
+- [x] ✅ Implement scheduled job: detect no-shows after grace period
+- [x] ✅ Mark booking as no_show
+- [x] ✅ Create no_show_record with fee calculation
+- [x] ✅ Apply no-show fee from cancellation policy
+- [x] ✅ Notify customer of no-show status
+- [x] ✅ Track no-show count per customer
+- [x] ✅ Implement escalation thresholds (warning â†’ restrict â†’ ban)
+- [x] ✅ Support staff waiver (override with reason + audit)
+- [x] ✅ Restore credits if deducted on booking and fee waived
+- [x] ✅ Write tests
 
 ### 6.2 Routes
-- [ ] Create `GET /api/v1/check-in/no-shows` endpoint (list, date range)
-- [ ] Create `PUT /api/v1/check-in/no-shows/:id/waive` endpoint
-- [ ] Create `GET /api/v1/check-in/no-shows/customer/:customerId` endpoint
+- [x] ✅ Create `GET /api/v1/check-in/no-shows` endpoint (list, date range)
+- [x] ✅ Create `PUT /api/v1/check-in/no-shows/:id/waive` endpoint
+- [x] ✅ Create `GET /api/v1/check-in/no-shows/customer/:customerId` endpoint
 
 ---
 
 ## 7. Late Arrival Handling
 
 ### 7.1 Late Arrival Logic
-- [ ] Support late arrival policies per service (allow, reschedule, no-show)
-- [ ] Allow check-in within configurable late window
-- [ ] Record actual check-in time (vs booking start)
-- [ ] Adjust session end time if "reduced time" policy applies
-- [ ] Notify assigned staff of late arrival
-- [ ] Write tests
+- [x] ✅ Support late arrival policies per service (allow, reschedule, no-show)
+- [x] ✅ Allow check-in within configurable late window
+- [x] ✅ Record actual check-in time (vs booking start)
+- [x] ✅ Adjust session end time if "reduced time" policy applies
+- [x] ✅ Notify assigned staff of late arrival
+- [x] ✅ Write tests
 
 ---
 
 ## 8. Configuration
 
 ### 8.1 Configuration Service
-- [ ] Create `checkin-config.service.ts`
-- [ ] Support tenant-level config (grace period, early arrival, credit mode, no-show thresholds)
-- [ ] Support kiosk enablement per location
-- [ ] Support walk-in enablement
-- [ ] Write tests
+- [x] ✅ Create `checkin-config.service.ts`
+- [x] ✅ Support tenant-level config (grace period, early arrival, credit mode, no-show thresholds)
+- [x] ✅ Support kiosk enablement per location
+- [x] ✅ Support walk-in enablement
+- [x] ✅ Write tests
 
 ### 8.2 Routes
-- [ ] Create `GET /api/v1/check-in/config` endpoint
-- [ ] Create `PUT /api/v1/check-in/config` endpoint
+- [x] ✅ Create `GET /api/v1/check-in/config` endpoint
+- [x] ✅ Create `PUT /api/v1/check-in/config` endpoint
 
 ---
 
 ## 9. Kiosk Mode
 
 ### 9.1 Kiosk Service
-- [ ] Create `checkin-kiosk.service.ts`
-- [ ] Register kiosk devices per location (token-based auth)
-- [ ] Scope check-in to kiosk's location
-- [ ] Support QR scan, reference entry, name/phone lookup
-- [ ] Auto-timeout (return to welcome screen after 30s)
-- [ ] Write tests
+- [x] ✅ Create `checkin-kiosk.service.ts`
+- [x] ✅ Register kiosk devices per location (token-based auth)
+- [x] ✅ Scope check-in to kiosk's location
+- [x] ✅ Support QR scan, reference entry, name/phone lookup
+- [x] ✅ Auto-timeout (return to welcome screen after 30s)
+- [x] ✅ Write tests
 
 ### 9.2 Routes
-- [ ] Create `POST /api/v1/check-in/kiosk/register` endpoint
-- [ ] Create `GET /api/v1/check-in/kiosk/status` endpoint
+- [x] ✅ Create `POST /api/v1/check-in/kiosk/register` endpoint
+- [x] ✅ Create `GET /api/v1/check-in/kiosk/status` endpoint
 
 ---
 
 ## 10. Real-Time Dashboard
 
 ### 10.1 Dashboard Service
-- [ ] Create `checkin-dashboard.service.ts`
-- [ ] Aggregate today's bookings with check-in status
-- [ ] Categorize: upcoming, awaiting, checked-in, in-progress, completed, no-show
-- [ ] Support filtering by service, staff, resource, location
-- [ ] Support upcoming queue (next N bookings)
-- [ ] Include customer photo and service details
-- [ ] Write tests
+- [x] ✅ Create `checkin-dashboard.service.ts`
+- [x] ✅ Aggregate today's bookings with check-in status
+- [x] ✅ Categorize: upcoming, awaiting, checked-in, in-progress, completed, no-show
+- [x] ✅ Support filtering by service, staff, resource, location
+- [x] ✅ Support upcoming queue (next N bookings)
+- [x] ✅ Include customer photo and service details
+- [x] ✅ Write tests
 
 ### 10.2 Routes
-- [ ] Create `GET /api/v1/check-in/dashboard` endpoint
-- [ ] Create `GET /api/v1/check-in/dashboard/upcoming` endpoint
+- [x] ✅ Create `GET /api/v1/check-in/dashboard` endpoint
+- [x] ✅ Create `GET /api/v1/check-in/dashboard/upcoming` endpoint
 
 ---
 
 ## 11. Check-In Notifications
 
 ### 11.1 Notification Logic
-- [ ] Notify assigned staff when customer checks in
-- [ ] Notify reception of all check-ins (configurable)
-- [ ] Alert staff when customer approaching no-show threshold
-- [ ] Include customer name, service, special notes
-- [ ] Support in-app notification channel
-- [ ] Write tests
+- [x] ✅ Notify assigned staff when customer checks in
+- [x] ✅ Notify reception of all check-ins (configurable)
+- [x] ✅ Alert staff when customer approaching no-show threshold
+- [x] ✅ Include customer name, service, special notes
+- [x] ✅ Support in-app notification channel
+- [x] ✅ Write tests
 
 ---
 
 ## 12. Attendance Reporting
 
 ### 12.1 Reports Service
-- [ ] Create `checkin-reports.service.ts`
-- [ ] Calculate attendance rate (check-ins / confirmed bookings)
-- [ ] Calculate no-show rate per period
-- [ ] Calculate late arrival rate
-- [ ] Calculate walk-in volume
-- [ ] Report attendance by service type
-- [ ] Report peak check-in times
-- [ ] Report by check-in method (QR, reception, kiosk)
-- [ ] Identify high no-show customers
-- [ ] Write tests
+- [x] ✅ Create `checkin-reports.service.ts`
+- [x] ✅ Calculate attendance rate (check-ins / confirmed bookings)
+- [x] ✅ Calculate no-show rate per period
+- [x] ✅ Calculate late arrival rate
+- [x] ✅ Calculate walk-in volume
+- [x] ✅ Report attendance by service type
+- [x] ✅ Report peak check-in times
+- [x] ✅ Report by check-in method (QR, reception, kiosk)
+- [x] ✅ Identify high no-show customers
+- [x] ✅ Write tests
 
 ### 12.2 Routes
-- [ ] Create `GET /api/v1/check-in/reports/attendance` endpoint
-- [ ] Create `GET /api/v1/check-in/reports/no-shows` endpoint
-- [ ] Create `GET /api/v1/check-in/reports/walk-ins` endpoint
-- [ ] Create `GET /api/v1/check-in/reports/peak-times` endpoint
-- [ ] Create `GET /api/v1/check-in/reports/methods` endpoint
+- [x] ✅ Create `GET /api/v1/check-in/reports/attendance` endpoint
+- [x] ✅ Create `GET /api/v1/check-in/reports/no-shows` endpoint
+- [x] ✅ Create `GET /api/v1/check-in/reports/walk-ins` endpoint
+- [x] ✅ Create `GET /api/v1/check-in/reports/peak-times` endpoint
+- [x] ✅ Create `GET /api/v1/check-in/reports/methods` endpoint
 
 ---
 
 ## 13. Frontend
 
 ### 13.1 Reception Check-In Page
-- [ ] Create `/check-in` page with today's bookings
-- [ ] One-click check-in buttons
-- [ ] Search by name/phone/reference
-- [ ] Validation result display (pass/warning/error)
-- [ ] Override button with reason input
-- [ ] Real-time auto-refresh (polling)
+- [x] ✅ Create `/check-in` page with today's bookings
+- [x] ✅ One-click check-in buttons
+- [x] ✅ Search by name/phone/reference
+- [x] ✅ Validation result display (pass/warning/error)
+- [x] ✅ Override button with reason input
+- [x] ✅ Real-time auto-refresh (polling)
 
 ### 13.2 Kiosk Mode
-- [ ] Create `/check-in/kiosk` full-screen interface
-- [ ] QR scanner (device camera)
-- [ ] Booking reference numeric input
-- [ ] Name/phone lookup
-- [ ] Large success/error feedback
-- [ ] Auto-reset (30s inactivity)
-- [ ] Tenant branding
+- [x] ✅ Create `/check-in/kiosk` full-screen interface
+- [x] ✅ QR scanner (device camera)
+- [x] ✅ Booking reference numeric input
+- [x] ✅ Name/phone lookup
+- [x] ✅ Large success/error feedback
+- [x] ✅ Auto-reset (30s inactivity)
+- [x] ✅ Tenant branding
 
 ### 13.3 Real-Time Dashboard
-- [ ] Create `/check-in/dashboard` page
-- [ ] Timeline with color-coded status
-- [ ] Columns: upcoming, awaiting, checked-in, in-progress, completed, no-show
-- [ ] Customer photo and service names
-- [ ] Filters (service, staff, resource)
-- [ ] Highlight overdue arrivals
+- [x] ✅ Create `/check-in/dashboard` page
+- [x] ✅ Timeline with color-coded status
+- [x] ✅ Columns: upcoming, awaiting, checked-in, in-progress, completed, no-show
+- [x] ✅ Customer photo and service names
+- [x] ✅ Filters (service, staff, resource)
+- [x] ✅ Highlight overdue arrivals
 
 ### 13.4 No-Show Management
-- [ ] Create `/check-in/no-shows` page
-- [ ] List with dates, fees, status
-- [ ] Waive button with reason
-- [ ] Customer repeat-offender flags
+- [x] ✅ Create `/check-in/no-shows` page
+- [x] ✅ List with dates, fees, status
+- [x] ✅ Waive button with reason
+- [x] ✅ Customer repeat-offender flags
 
 ### 13.5 Attendance Reports
-- [ ] Create `/check-in/reports` page
-- [ ] Attendance rate chart
-- [ ] No-show trend
-- [ ] Walk-in volume
-- [ ] Peak times heatmap
-- [ ] Method breakdown
-- [ ] High no-show customer list
+- [x] ✅ Create `/check-in/reports` page
+- [x] ✅ Attendance rate chart
+- [x] ✅ No-show trend
+- [x] ✅ Walk-in volume
+- [x] ✅ Peak times heatmap
+- [x] ✅ Method breakdown
+- [x] ✅ High no-show customer list
 
 ---
 
 ## 14. Testing
 
 ### 14.1 Unit Tests
-- [ ] Test QR code generation (booking, customer, regeneration, expiry)
-- [ ] Test session validation (all conditions: booking, membership, credits, no-show)
-- [ ] Test check-in methods (QR, reception, kiosk, walk-in)
-- [ ] Test no-show detection (grace period, fee application, escalation)
-- [ ] Test walk-in flow (availability check, instant booking, credit deduction)
-- [ ] Test late arrival handling (policies, time adjustment)
-- [ ] Test dashboard status categorization
-- [ ] Test attendance calculations
+- [x] ✅ Test QR code generation (booking, customer, regeneration, expiry)
+- [x] ✅ Test session validation (all conditions: booking, membership, credits, no-show)
+- [x] ✅ Test check-in methods (QR, reception, kiosk, walk-in)
+- [x] ✅ Test no-show detection (grace period, fee application, escalation)
+- [x] ✅ Test walk-in flow (availability check, instant booking, credit deduction)
+- [x] ✅ Test late arrival handling (policies, time adjustment)
+- [x] ✅ Test dashboard status categorization
+- [x] ✅ Test attendance calculations
 
 ### 14.2 Integration Tests
-- [ ] Test full check-in flow (booking confirmed → QR generated → scan → validated → checked in)
-- [ ] Test no-show detection job (booking passes grace → marked → fee applied → notified)
-- [ ] Test walk-in complete flow (arrive → identify → select service → book → check-in)
-- [ ] Test credit deduction on check-in mode
-- [ ] Test override flow (validation fails → staff override → check-in allowed)
-- [ ] Test no-show escalation (multiple no-shows → restriction applied)
-- [ ] Test tenant scoping (check-in data isolated per tenant)
+- [x] ✅ Test full check-in flow (booking confirmed â†’ QR generated â†’ scan â†’ validated â†’ checked in)
+- [x] ✅ Test no-show detection job (booking passes grace â†’ marked â†’ fee applied â†’ notified)
+- [x] ✅ Test walk-in complete flow (arrive â†’ identify â†’ select service â†’ book â†’ check-in)
+- [x] ✅ Test credit deduction on check-in mode
+- [x] ✅ Test override flow (validation fails â†’ staff override â†’ check-in allowed)
+- [x] ✅ Test no-show escalation (multiple no-shows â†’ restriction applied)
+- [x] ✅ Test tenant scoping (check-in data isolated per tenant)
