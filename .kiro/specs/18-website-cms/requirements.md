@@ -130,20 +130,48 @@ This phase provides tenant-customizable web presence — branded pages, content 
 7. THE system SHALL support connecting Google Search Console (verification meta tag)
 8. THE system SHALL display an SEO checklist/score per page (title length, description length, heading structure)
 
-### Requirement 8: Custom Domain Support
+### Requirement 8: Custom Domain and White-Label Hosting
 
-**User Story:** As a business owner, I want my booking site on my own domain (e.g., book.mybusiness.com), so that it feels like my own brand.
+**User Story:** As a business owner, I want customers to always stay on my brand — whether I'm using DayStream as my full website or embedding it into my existing one — so that I don't have the "Momence problem" where customers get redirected to a third-party domain.
+
+#### Context
+
+A common complaint with platforms like Momence and Mindbody is that customers start on the business's website (e.g., `https://www.transcendhealth.eu/`) and get redirected to the platform's domain (e.g., `https://momence.com/Transcend-Health`) for booking, events, or portal access. This breaks the brand experience and erodes trust.
+
+DayStream solves this by offering three hosting tiers — every tier keeps the customer on the business's brand. The business chooses based on their technical capability:
+
+**Tier 1: Full Custom Domain (recommended)**
+- Business points their domain (e.g., `www.transcendhealth.eu`) to DayStream via DNS
+- DayStream serves the entire site — homepage, booking, events, customer portal — all on that domain
+- Customer never sees `daystream.com` anywhere
+- Requires: business adds a CNAME or A record in their DNS provider
+
+**Tier 2: DayStream Subdomain (zero-config)**
+- For businesses without an existing domain or without DNS access
+- DayStream provides a branded subdomain: `transcend-health.daystream.app`
+- All functionality available immediately — no DNS changes needed
+- Business can upgrade to Tier 1 later when ready
+
+**Tier 3: Embedded Widgets (hybrid)**
+- For businesses that already have a WordPress/Squarespace/Wix site they want to keep
+- DayStream provides embeddable components (booking widget, event calendar, schedule, customer portal) that run inside the business's existing site
+- The URL stays on the business's domain — no redirect happens
+- Components render in an iframe or web component; styled to match the host site
 
 #### Acceptance Criteria
 
-1. THE system SHALL support mapping a Custom_Domain to a Tenant_Site
-2. THE system SHALL provide DNS configuration instructions to the Tenant
-3. THE system SHALL provision and manage SSL/TLS certificates for custom domains (e.g., via Let's Encrypt)
-4. THE system SHALL verify domain ownership before activating
-5. THE system SHALL support both root domains (mybusiness.com) and subdomains (book.mybusiness.com)
-6. THE system SHALL redirect the default platform URL to the custom domain when configured
-7. THE system SHALL handle certificate renewal automatically
-8. THE system SHALL gracefully fall back to the default URL if custom domain configuration fails
+1. THE system SHALL support all three hosting tiers and allow tenants to choose their configuration
+2. THE system SHALL support mapping a custom domain (root or subdomain) to a Tenant_Site (Tier 1)
+3. THE system SHALL provide clear, step-by-step DNS configuration instructions (with provider-specific guides for common registrars: GoDaddy, Cloudflare, Namecheap)
+4. THE system SHALL provision and manage SSL/TLS certificates automatically for custom domains (via Let's Encrypt or AWS ACM)
+5. THE system SHALL verify domain ownership (via DNS TXT record or HTTP challenge) before activating
+6. THE system SHALL handle certificate renewal automatically with no downtime
+7. THE system SHALL provide a default DayStream subdomain per tenant (`{slug}.daystream.app`) that works immediately (Tier 2)
+8. THE system SHALL redirect the default subdomain to the custom domain when Tier 1 is configured (so old links still work)
+9. THE system SHALL ensure that all customer-facing flows (booking, events, portal, check-in) remain on the tenant's domain — no redirect to `daystream.com` at any point
+10. THE system SHALL gracefully fall back to the DayStream subdomain if custom domain configuration fails or is removed
+11. THE system SHALL provide embeddable widgets that operate entirely within the host page's domain (Tier 3) — see Requirement 9 for widget details
+12. THE system SHALL display the current hosting tier and domain status in the tenant admin (verified, pending, failed)
 
 ### Requirement 9: Embeddable Booking Widget
 
@@ -230,6 +258,7 @@ This phase provides tenant-customizable web presence — branded pages, content 
 - Data-linked blocks (services, pricing, team) auto-update — no manual sync needed
 - Blog/SEO is important for organic customer acquisition for each tenant
 - Media storage is local filesystem during development (S3 migration tracked)
+- **Multi-language (i18n)**: DayStream is designed as a global system supporting many languages (established in Phase 03). While full i18n implementation is deferred, the CMS content model MUST be i18n-ready from the start. This means: content blocks should support language variants (e.g., a page's title/description stored per locale), the rendering layer should resolve the correct language based on customer locale or browser preference, and the admin should be able to author content in multiple languages per page. This is especially critical for Phase 18 because it's the primary consumer-facing surface — customers in Spain see Spanish, customers in the UK see English, all on the same tenant site.
 
 ---
 
