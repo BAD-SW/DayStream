@@ -29,6 +29,7 @@ export function ModuleTile({ id, icon, title, description, path, badge, disabled
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleClick(); }}
       aria-disabled={disabled}
       data-module-id={id}
+      data-theme-lock="dark"
     >
       {badge && <span className={styles.badge}>{badge}</span>}
       <span className={styles.icon}>{icon}</span>

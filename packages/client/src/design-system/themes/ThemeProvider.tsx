@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { apiClient } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 
@@ -18,21 +18,71 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
+/**
+ * Safely read from localStorage, returning null on any error
+ * (handles private browsing in Safari and other restricted environments).
+ */
+function safeGetItem(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Safely write to localStorage, silently ignoring errors.
+ */
+function safeSetItem(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Silently ignore — private browsing or quota exceeded
+  }
+}
+
 function detectSystemPreference(): 'dark' | 'light' {
-  const stored = localStorage.getItem('theme-mode');
+  const stored = safeGetItem('theme-mode');
+  // Validate stored value is exactly 'dark' or 'light'
   if (stored === 'dark' || stored === 'light') return stored;
+  // Invalid or missing — fall through to OS preference detection
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+/**
+ * Persist theme preference to user profile API (fire-and-forget).
+ * Only calls if user is authenticated (access_token exists).
+ */
+function persistToApi(mode: 'dark' | 'light'): void {
+  try {
+    const token = safeGetItem('access_token');
+    if (!token) return;
+
+    fetch('/v1/users/preferences', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ theme_mode: mode }),
+    }).catch(() => {
+      // Silently ignore — fire-and-forget
+    });
+  } catch {
+    // Silently ignore any errors
+  }
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<'dark' | 'light'>(detectSystemPreference);
   const [businessTheme, setBusinessTheme] = useState<BusinessTheme | null>(null);
   const { user } = useAuth();
+  const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Apply theme mode to document
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', mode);
-    localStorage.setItem('theme-mode', mode);
+    safeSetItem('theme-mode', mode);
   }, [mode]);
 
   // Load business theme when user context changes
@@ -82,7 +132,29 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }
 
   function toggleMode() {
-    setMode((m) => (m === 'dark' ? 'light' : 'dark'));
+    const root = document.documentElement;
+
+    // Add transition class BEFORE changing the theme
+    root.classList.add('theme-transitioning');
+
+    // Clear any existing timeout
+    if (transitionTimeoutRef.current) {
+      clearTimeout(transitionTimeoutRef.current);
+    }
+
+    // Switch the mode
+    setMode((m) => {
+      const newMode = m === 'dark' ? 'light' : 'dark';
+      // Fire-and-forget API persistence
+      persistToApi(newMode);
+      return newMode;
+    });
+
+    // Remove transition class after 250ms fallback timeout
+    transitionTimeoutRef.current = setTimeout(() => {
+      root.classList.remove('theme-transitioning');
+      transitionTimeoutRef.current = null;
+    }, 250);
   }
 
   return (

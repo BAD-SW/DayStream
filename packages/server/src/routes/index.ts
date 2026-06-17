@@ -16,6 +16,7 @@ import { payrollRouter } from './payroll';
 import { apRouter } from './accounts-payable';
 import { staffRouter } from './staff';
 import { resourcesRouter } from './resources';
+import { queryEditorRouter } from './query-editor';
 import { authLimiter } from '../middleware/rate-limit';
 
 export const router = Router();
@@ -40,3 +41,6 @@ router.use('/v1/payroll', payrollRouter);
 router.use('/v1/ap', apRouter);
 router.use('/v1/staff', staffRouter);
 router.use('/v1/resources', resourcesRouter);
+
+// Query Editor (authentication and authorization handled within the router)
+router.use('/v1/query-editor', queryEditorRouter);

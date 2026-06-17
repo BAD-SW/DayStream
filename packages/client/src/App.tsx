@@ -5,6 +5,7 @@ import { AdminLayout } from './components/AdminLayout';
 import { Login } from './pages/Login';
 import { Profile } from './pages/Profile';
 import { AdminDashboard } from './pages/AdminDashboard';
+import { QueryEditorPage } from './pages/QueryEditorPage';
 import { PersonaDashboard } from './design-system/components/dashboard/PersonaDashboard';
 import { Customers } from './pages/Customers';
 import { CustomerCreate } from './pages/CustomerCreate';
@@ -85,6 +86,16 @@ export function App() {
         <Route path="/resources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
         <Route path="/resources/calendar" element={<ProtectedRoute><ResourceCalendar /></ProtectedRoute>} />
         <Route path="/resources/:id" element={<ProtectedRoute><ResourceDetail /></ProtectedRoute>} />
+
+        {/* Query Editor — restricted to system_admin and tenant_owner */}
+        <Route
+          path="/query-editor"
+          element={
+            <ProtectedRoute>
+              <QueryEditorPage />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Admin routes */}
         <Route
