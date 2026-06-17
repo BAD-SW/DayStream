@@ -32,6 +32,8 @@ import { StaffCalendar } from './pages/StaffCalendar';
 import { Resources } from './pages/Resources';
 import { ResourceDetail } from './pages/ResourceDetail';
 import { ResourceCalendar } from './pages/ResourceCalendar';
+import { Events } from './pages/Events';
+import { EventDetail } from './pages/EventDetail';
 
 export function App() {
   return (
@@ -86,6 +88,10 @@ export function App() {
         <Route path="/resources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
         <Route path="/resources/calendar" element={<ProtectedRoute><ResourceCalendar /></ProtectedRoute>} />
         <Route path="/resources/:id" element={<ProtectedRoute><ResourceDetail /></ProtectedRoute>} />
+
+        {/* Events & Workshops */}
+        <Route path="/events" element={<ProtectedRoute><Events /></ProtectedRoute>} />
+        <Route path="/events/:id" element={<ProtectedRoute><EventDetail /></ProtectedRoute>} />
 
         {/* Query Editor — restricted to system_admin and tenant_owner */}
         <Route
