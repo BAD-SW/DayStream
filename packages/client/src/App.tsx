@@ -38,6 +38,7 @@ import { CheckIn } from './pages/CheckIn';
 import { Marketing } from './pages/Marketing';
 import { Reports } from './pages/Reports';
 import { CMS } from './pages/CMS';
+import { Integrations } from './pages/Integrations';
 
 export function App() {
   return (
@@ -108,6 +109,9 @@ export function App() {
 
         {/* CMS */}
         <Route path="/cms" element={<ProtectedRoute><CMS /></ProtectedRoute>} />
+
+        {/* Integrations */}
+        <Route path="/integrations" element={<ProtectedRoute><Integrations /></ProtectedRoute>} />
 
         {/* Query Editor — restricted to system_admin and tenant_owner */}
         <Route
