@@ -151,11 +151,12 @@ This phase builds the business intelligence layer — dashboards, KPI tracking, 
 1. THE system SHALL provide a Profit & Loss summary (revenue - expenses = profit) from Phase 11 data
 2. THE system SHALL report revenue vs. expenses trend over time
 3. THE system SHALL report accounts payable aging (outstanding bills by due date)
-4. THE system SHALL report payroll costs per period
-5. THE system SHALL report payment method distribution (card, cash, membership credit)
-6. THE system SHALL report refund totals and rates
-7. THE system SHALL report outstanding invoices (unpaid)
-8. THE system SHALL report tax collected per period
+4. THE system SHALL report accounts receivable aging (outstanding customer invoices grouped by aging buckets: current, 1-30 days, 31-60 days, 61-90 days, 90+ days overdue)
+5. THE system SHALL report payroll costs per period
+6. THE system SHALL report payment method distribution (card, cash, membership credit)
+7. THE system SHALL report refund totals and rates
+8. THE system SHALL report outstanding invoices (unpaid)
+9. THE system SHALL report tax collected per period
 
 ### Requirement 10: Scheduled Reports
 

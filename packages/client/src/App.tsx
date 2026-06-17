@@ -36,6 +36,7 @@ import { Events } from './pages/Events';
 import { EventDetail } from './pages/EventDetail';
 import { CheckIn } from './pages/CheckIn';
 import { Marketing } from './pages/Marketing';
+import { Reports } from './pages/Reports';
 
 export function App() {
   return (
@@ -100,6 +101,9 @@ export function App() {
 
         {/* Marketing */}
         <Route path="/marketing" element={<ProtectedRoute><Marketing /></ProtectedRoute>} />
+
+        {/* Reports */}
+        <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
 
         {/* Query Editor — restricted to system_admin and tenant_owner */}
         <Route
