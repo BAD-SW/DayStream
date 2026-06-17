@@ -39,6 +39,7 @@ import { Marketing } from './pages/Marketing';
 import { Reports } from './pages/Reports';
 import { CMS } from './pages/CMS';
 import { Integrations } from './pages/Integrations';
+import { Community } from './pages/Community';
 
 export function App() {
   return (
@@ -112,6 +113,9 @@ export function App() {
 
         {/* Integrations */}
         <Route path="/integrations" element={<ProtectedRoute><Integrations /></ProtectedRoute>} />
+
+        {/* Community */}
+        <Route path="/community" element={<ProtectedRoute><Community /></ProtectedRoute>} />
 
         {/* Query Editor — restricted to system_admin and tenant_owner */}
         <Route
