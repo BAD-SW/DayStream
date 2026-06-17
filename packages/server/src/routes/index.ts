@@ -19,6 +19,7 @@ import { resourcesRouter } from './resources';
 import { queryEditorRouter } from './query-editor';
 import { eventsRouter } from './events';
 import { checkInRouter } from './check-in';
+import { marketingRouter } from './marketing';
 import { authLimiter } from '../middleware/rate-limit';
 
 export const router = Router();
@@ -45,6 +46,7 @@ router.use('/v1/staff', staffRouter);
 router.use('/v1/resources', resourcesRouter);
 router.use('/v1/events', eventsRouter);
 router.use('/v1/check-in', checkInRouter);
+router.use('/v1/marketing', marketingRouter);
 
 // Query Editor (authentication and authorization handled within the router)
 router.use('/v1/query-editor', queryEditorRouter);

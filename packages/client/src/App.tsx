@@ -35,6 +35,7 @@ import { ResourceCalendar } from './pages/ResourceCalendar';
 import { Events } from './pages/Events';
 import { EventDetail } from './pages/EventDetail';
 import { CheckIn } from './pages/CheckIn';
+import { Marketing } from './pages/Marketing';
 
 export function App() {
   return (
@@ -96,6 +97,9 @@ export function App() {
 
         {/* Check-In */}
         <Route path="/check-in" element={<ProtectedRoute><CheckIn /></ProtectedRoute>} />
+
+        {/* Marketing */}
+        <Route path="/marketing" element={<ProtectedRoute><Marketing /></ProtectedRoute>} />
 
         {/* Query Editor — restricted to system_admin and tenant_owner */}
         <Route
