@@ -34,6 +34,7 @@ import { ResourceDetail } from './pages/ResourceDetail';
 import { ResourceCalendar } from './pages/ResourceCalendar';
 import { Events } from './pages/Events';
 import { EventDetail } from './pages/EventDetail';
+import { CheckIn } from './pages/CheckIn';
 
 export function App() {
   return (
@@ -92,6 +93,9 @@ export function App() {
         {/* Events & Workshops */}
         <Route path="/events" element={<ProtectedRoute><Events /></ProtectedRoute>} />
         <Route path="/events/:id" element={<ProtectedRoute><EventDetail /></ProtectedRoute>} />
+
+        {/* Check-In */}
+        <Route path="/check-in" element={<ProtectedRoute><CheckIn /></ProtectedRoute>} />
 
         {/* Query Editor — restricted to system_admin and tenant_owner */}
         <Route
