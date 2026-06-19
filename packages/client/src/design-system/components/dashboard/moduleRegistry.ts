@@ -73,7 +73,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   // System-level modules
   { id: 'system-tenants', phase: 0, icon: '🏢', titleKey: 'Tenants', descriptionKey: 'Manage tenants', path: '/admin/tenants', personas: ['system'] },
   { id: 'system-config', phase: 0, icon: '⚙️', titleKey: 'Configuration', descriptionKey: 'Platform settings', path: '/admin/config', personas: ['system'] },
-  { id: 'system-audit', phase: 0, icon: '🔍', titleKey: 'Audit Log', descriptionKey: 'System activity', path: '/admin/audit', personas: ['system'] },
+  { id: 'system-audit', phase: 0, icon: '🔍', titleKey: 'Audit Log', descriptionKey: 'System activity', path: '/admin/audit-log', personas: ['system'] },
 ];
 
 /**

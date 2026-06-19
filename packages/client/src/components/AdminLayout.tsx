@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { LanguageSwitcher } from './LanguageSwitcher';
 
@@ -26,13 +27,13 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
       <div style={styles.body}>
         <nav style={styles.sidebar}>
-          <a href="/admin" style={styles.navLink}>Admin Dashboard</a>
-          <a href="/admin/tenants" style={styles.navLink}>Tenants</a>
-          <a href="/admin/config" style={styles.navLink}>Configuration</a>
-          <a href="/admin/feature-flags" style={styles.navLink}>Feature Flags</a>
-          <a href="/admin/audit-log" style={styles.navLink}>Audit Log</a>
+          <Link to="/admin" style={styles.navLink}>Admin Dashboard</Link>
+          <Link to="/admin/tenants" style={styles.navLink}>Tenants</Link>
+          <Link to="/admin/config" style={styles.navLink}>Configuration</Link>
+          <Link to="/admin/feature-flags" style={styles.navLink}>Feature Flags</Link>
+          <Link to="/admin/audit-log" style={styles.navLink}>Audit Log</Link>
           <div style={styles.divider} />
-          <a href="/dashboard" style={styles.navLink}>← Back to App</a>
+          <Link to="/dashboard" style={styles.navLink}>← Back to App</Link>
         </nav>
 
         <main style={styles.content}>

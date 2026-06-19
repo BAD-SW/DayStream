@@ -5,6 +5,10 @@ import { AdminLayout } from './components/AdminLayout';
 import { Login } from './pages/Login';
 import { Profile } from './pages/Profile';
 import { AdminDashboard } from './pages/AdminDashboard';
+import { Tenants } from './pages/Tenants';
+import { AdminConfig } from './pages/AdminConfig';
+import { FeatureFlags } from './pages/FeatureFlags';
+import { AuditLog } from './pages/AuditLog';
 import { QueryEditorPage } from './pages/QueryEditorPage';
 import { PersonaDashboard } from './design-system/components/dashboard/PersonaDashboard';
 import { Customers } from './pages/Customers';
@@ -133,6 +137,38 @@ export function App() {
           element={
             <ProtectedRoute requiredRole="Manager" layout="none">
               <AdminLayout><AdminDashboard /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/tenants"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><Tenants /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/config"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><AdminConfig /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/feature-flags"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><FeatureFlags /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/audit-log"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><AuditLog /></AdminLayout>
             </ProtectedRoute>
           }
         />

@@ -31,8 +31,14 @@ export function ProtectedRoute({ children, requiredRole, layout = 'app' }: Prote
     return <Navigate to="/login" replace />;
   }
 
-  if (requiredRole && user?.role !== requiredRole && user?.role !== 'Super Admin' && user?.role !== 'Business Owner') {
-    return <Navigate to="/dashboard" replace />;
+  if (requiredRole) {
+    const userRole = user?.role || '';
+    // Allow both database column values (snake_case) and roles table names (display format)
+    const elevatedRoles = ['Super Admin', 'system_admin', 'system_support', 'Business Owner', 'business_owner', 'tenant_owner'];
+    const hasAccess = userRole === requiredRole || elevatedRoles.includes(userRole);
+    if (!hasAccess) {
+      return <Navigate to="/dashboard" replace />;
+    }
   }
 
   if (layout === 'app') {

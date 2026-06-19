@@ -1,4 +1,5 @@
 import { ReactNode, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { ThemeModeToggle } from '../design-system/themes/ThemeModeToggle';
@@ -36,18 +37,18 @@ export function AppLayout({ children }: AppLayoutProps) {
         <nav style={{ ...styles.sidebar, ...(sidebarOpen ? {} : styles.sidebarCollapsed) }}>
           {sidebarOpen ? (
             <>
-              <a href="/dashboard" style={styles.navLink}>Dashboard</a>
-              <a href="/profile" style={styles.navLink}>Profile</a>
+              <Link to="/dashboard" style={styles.navLink}>Dashboard</Link>
+              <Link to="/profile" style={styles.navLink}>Profile</Link>
               {user?.role === 'Super Admin' && (
-                <a href="/query-editor" style={styles.navLink}>Query Editor</a>
+                <Link to="/query-editor" style={styles.navLink}>Query Editor</Link>
               )}
             </>
           ) : (
             <>
-              <a href="/dashboard" style={styles.navIcon} title="Dashboard">🏠</a>
-              <a href="/profile" style={styles.navIcon} title="Profile">👤</a>
+              <Link to="/dashboard" style={styles.navIcon} title="Dashboard">🏠</Link>
+              <Link to="/profile" style={styles.navIcon} title="Profile">👤</Link>
               {user?.role === 'Super Admin' && (
-                <a href="/query-editor" style={styles.navIcon} title="Query Editor">⚡</a>
+                <Link to="/query-editor" style={styles.navIcon} title="Query Editor">⚡</Link>
               )}
             </>
           )}
