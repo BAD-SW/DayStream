@@ -39,19 +39,19 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '24px',
     fontWeight: 300,
     margin: '0 0 16px 0',
-    color: '#F5F5F3',
+    color: 'var(--color-text)',
   },
   text: {
-    color: '#B0B0B0',
+    color: 'var(--color-text-secondary)',
     fontSize: '14px',
     lineHeight: 1.5,
   },
   statusCard: {
     marginTop: '32px',
     padding: '20px',
-    backgroundColor: '#242424',
+    backgroundColor: 'var(--color-surface)',
     borderRadius: '8px',
-    border: '1px solid rgba(255, 255, 255, 0.08)',
+    border: '1px solid var(--color-border)',
   },
   statusLabel: {
     fontSize: '12px',

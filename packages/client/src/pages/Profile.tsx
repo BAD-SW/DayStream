@@ -26,11 +26,11 @@ export function Profile() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  heading: { fontSize: '24px', fontWeight: 300, margin: '0 0 24px 0', color: '#F5F5F3' },
+  heading: { fontSize: '24px', fontWeight: 300, margin: '0 0 24px 0', color: 'var(--color-text)' },
   card: {
-    backgroundColor: '#242424',
+    backgroundColor: 'var(--color-surface)',
     borderRadius: '8px',
-    border: '1px solid rgba(255, 255, 255, 0.08)',
+    border: '1px solid var(--color-border)',
     padding: '24px',
     display: 'flex',
     flexDirection: 'column' as const,
@@ -38,6 +38,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
   field: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
   label: { fontSize: '12px', color: '#8A8A8A', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
-  value: { fontSize: '14px', color: '#F5F5F3' },
+  value: { fontSize: '14px', color: 'var(--color-text)' },
   hint: { fontSize: '13px', color: '#8A8A8A', marginTop: '16px' },
 };

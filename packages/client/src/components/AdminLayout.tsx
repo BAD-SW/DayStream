@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { LanguageSwitcher } from './LanguageSwitcher';
+import { ThemeModeToggle } from '../design-system/themes/ThemeModeToggle';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -16,6 +17,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         <h1 style={styles.logo}>DayStream <span style={styles.adminBadge}>Admin</span></h1>
         <div style={styles.headerRight}>
           <LanguageSwitcher />
+          <ThemeModeToggle />
           {user && (
             <span style={styles.userName}>
               {user.first_name ? `${user.first_name} ${user.last_name}` : user.email}
@@ -47,9 +49,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100vh',
-    backgroundColor: '#1A1A1A',
+    backgroundColor: 'var(--color-background)',
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-    color: '#F5F5F3',
+    color: 'var(--color-text)',
     display: 'flex',
     flexDirection: 'column' as const,
   },
@@ -58,7 +60,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '12px 24px',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+    borderBottom: '1px solid var(--color-border)',
+    backgroundColor: 'var(--color-header-bg)',
     height: '56px',
     boxSizing: 'border-box' as const,
   },
@@ -71,13 +74,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '18px',
     fontWeight: 600,
     margin: 0,
-    color: '#C9A96E',
+    color: 'var(--color-primary)',
   },
   adminBadge: {
     fontSize: '11px',
     fontWeight: 500,
-    color: '#8A8A8A',
-    border: '1px solid #333',
+    color: 'var(--color-text-secondary)',
+    border: '1px solid var(--color-border)',
     borderRadius: '4px',
     padding: '2px 6px',
     marginLeft: '8px',
@@ -85,13 +88,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   userName: {
     fontSize: '13px',
-    color: '#B0B0B0',
+    color: 'var(--color-text-secondary)',
   },
   logoutBtn: {
     background: 'none',
-    border: '1px solid #333',
+    border: '1px solid var(--color-border)',
     borderRadius: '6px',
-    color: '#B0B0B0',
+    color: 'var(--color-text-secondary)',
     padding: '6px 12px',
     fontSize: '13px',
     cursor: 'pointer',
@@ -102,14 +105,15 @@ const styles: Record<string, React.CSSProperties> = {
   },
   sidebar: {
     width: '220px',
-    borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'var(--color-sidebar-bg)',
+    borderRight: '1px solid var(--color-sidebar-border)',
     padding: '24px 16px',
     display: 'flex',
     flexDirection: 'column' as const,
     gap: '4px',
   },
   navLink: {
-    color: '#B0B0B0',
+    color: 'var(--color-text-secondary)',
     textDecoration: 'none',
     fontSize: '14px',
     padding: '8px 12px',
@@ -117,7 +121,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   divider: {
     height: '1px',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'var(--color-border)',
     margin: '12px 0',
   },
   content: {
