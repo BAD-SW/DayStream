@@ -7,7 +7,7 @@ import { tenantContext } from '../auth/tenant-context';
 import * as tenantService from '../services/tenant.service';
 import * as configService from '../services/config.service';
 import * as featureFlagService from '../services/feature-flag.service';
-import { logAudit } from '../services/audit.service';
+import { logAudit, queryAuditLog } from '../services/audit.service';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 
@@ -55,7 +55,7 @@ adminRouter.get('/tenants', requirePermission('*:*'), async (req: Request, res: 
   }
 });
 
-// GET /api/v1/admin/tenants/:id — Get tenant detail
+// GET /api/v1/admin/tenants/:id — Get tenant detail (includes owner)
 adminRouter.get('/tenants/:id', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
     const tenant = await tenantService.getTenantById(req.params.id);
@@ -63,7 +63,13 @@ adminRouter.get('/tenants/:id', requirePermission('*:*'), async (req: Request, r
       error(res, 'Tenant not found', 'NOT_FOUND', 404);
       return;
     }
-    success(res, tenant);
+    // Fetch owner (first business_owner user for this tenant)
+    const { rows: ownerRows } = await adminPool.query(
+      `SELECT id, email, first_name, last_name FROM users WHERE tenant_id = $1 AND role = 'business_owner' ORDER BY created_at ASC LIMIT 1`,
+      [req.params.id],
+    );
+    const owner = ownerRows[0] || null;
+    success(res, { ...tenant, owner });
   } catch (err: any) {
     error(res, 'Failed to get tenant', 'INTERNAL_ERROR', 500);
   }
@@ -72,9 +78,13 @@ adminRouter.get('/tenants/:id', requirePermission('*:*'), async (req: Request, r
 // PUT /api/v1/admin/tenants/:id — Update tenant
 const updateTenantSchema = Joi.object({
   name: Joi.string().min(2).max(255),
+  slug: Joi.string().min(2).max(100).pattern(/^[a-z0-9-]+$/),
   default_language: Joi.string().valid('en', 'es'),
   currency: Joi.string().length(3).uppercase(),
   timezone: Joi.string().max(50),
+  owner_email: Joi.string().email({ tlds: false }),
+  owner_first_name: Joi.string().min(1).max(100),
+  owner_last_name: Joi.string().min(1).max(100),
 }).min(1);
 
 adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantSchema), async (req: Request, res: Response) => {
@@ -85,24 +95,62 @@ adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantS
       return;
     }
 
-    const fields: string[] = [];
-    const values: any[] = [];
-    let idx = 1;
+    // Separate tenant fields from owner fields
+    const { owner_email, owner_first_name, owner_last_name, ...tenantFields } = req.body;
 
-    for (const [key, val] of Object.entries(req.body)) {
-      fields.push(`${key} = $${idx++}`);
-      values.push(val);
+    // Check slug uniqueness if changing
+    if (tenantFields.slug && tenantFields.slug !== tenant.slug) {
+      const { rows: existing } = await adminPool.query(
+        'SELECT id FROM tenants WHERE slug = $1 AND id != $2',
+        [tenantFields.slug, req.params.id],
+      );
+      if (existing.length > 0) {
+        error(res, 'A tenant with this slug already exists', 'SLUG_EXISTS', 409);
+        return;
+      }
     }
-    fields.push('updated_at = NOW()');
-    values.push(req.params.id);
 
-    await adminPool.query(
-      `UPDATE tenants SET ${fields.join(', ')} WHERE id = $${idx}`,
-      values,
-    );
+    // Update tenant record
+    const tenantEntries = Object.entries(tenantFields);
+    if (tenantEntries.length > 0) {
+      const fields: string[] = [];
+      const values: any[] = [];
+      let idx = 1;
+      for (const [key, val] of tenantEntries) {
+        fields.push(`${key} = $${idx++}`);
+        values.push(val);
+      }
+      fields.push('updated_at = NOW()');
+      values.push(req.params.id);
+      await adminPool.query(
+        `UPDATE tenants SET ${fields.join(', ')} WHERE id = $${idx}`,
+        values,
+      );
+    }
 
+    // Update owner user if any owner fields provided
+    if (owner_email || owner_first_name || owner_last_name) {
+      const ownerFields: string[] = [];
+      const ownerValues: any[] = [];
+      let oidx = 1;
+      if (owner_email) { ownerFields.push(`email = $${oidx++}`); ownerValues.push(owner_email); }
+      if (owner_first_name) { ownerFields.push(`first_name = $${oidx++}`); ownerValues.push(owner_first_name); }
+      if (owner_last_name) { ownerFields.push(`last_name = $${oidx++}`); ownerValues.push(owner_last_name); }
+      ownerFields.push(`updated_at = NOW()`);
+      ownerValues.push(req.params.id);
+      await adminPool.query(
+        `UPDATE users SET ${ownerFields.join(', ')} WHERE tenant_id = $${oidx} AND role = 'business_owner'`,
+        ownerValues,
+      );
+    }
+
+    // Return updated tenant with owner
     const updated = await tenantService.getTenantById(req.params.id);
-    success(res, updated);
+    const { rows: ownerRows } = await adminPool.query(
+      `SELECT id, email, first_name, last_name FROM users WHERE tenant_id = $1 AND role = 'business_owner' ORDER BY created_at ASC LIMIT 1`,
+      [req.params.id],
+    );
+    success(res, { ...updated, owner: ownerRows[0] || null });
   } catch (err: any) {
     error(res, 'Failed to update tenant', 'INTERNAL_ERROR', 500);
   }
@@ -256,5 +304,27 @@ adminRouter.put('/feature-flags/:key/override', tenantContext, requirePermission
     success(res, { key: req.params.key, enabled: req.body.enabled, scope: 'tenant' });
   } catch (err: any) {
     error(res, 'Failed to update feature flag override', 'INTERNAL_ERROR', 500);
+  }
+});
+
+
+// --- Audit Log ---
+
+// GET /api/v1/admin/audit-log — Query audit log
+adminRouter.get('/audit-log', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const result = await queryAuditLog(authReq.tenantId, {
+      userId: req.query.user_id as string,
+      action: req.query.action as string,
+      resourceType: req.query.resource_type as string,
+      startDate: req.query.start_date as string,
+      endDate: req.query.end_date as string,
+      page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
+      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 50,
+    });
+    success(res, result.entries, { page: result.page, limit: result.limit, total: result.total });
+  } catch (err: any) {
+    error(res, 'Failed to query audit log', 'INTERNAL_ERROR', 500);
   }
 });

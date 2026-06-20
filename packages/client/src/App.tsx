@@ -7,7 +7,6 @@ import { Profile } from './pages/Profile';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { Tenants } from './pages/Tenants';
 import { AdminConfig } from './pages/AdminConfig';
-import { FeatureFlags } from './pages/FeatureFlags';
 import { AuditLog } from './pages/AuditLog';
 import { QueryEditorPage } from './pages/QueryEditorPage';
 import { PersonaDashboard } from './design-system/components/dashboard/PersonaDashboard';
@@ -156,14 +155,7 @@ export function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/admin/feature-flags"
-          element={
-            <ProtectedRoute requiredRole="Manager" layout="none">
-              <AdminLayout><FeatureFlags /></AdminLayout>
-            </ProtectedRoute>
-          }
-        />
+
         <Route
           path="/admin/audit-log"
           element={

@@ -14,6 +14,8 @@ interface TableProps<T> {
   loading?: boolean;
   emptyMessage?: string;
   onSort?: (key: string, order: 'asc' | 'desc') => void;
+  /** When true, the Table will sort data locally without needing onSort */
+  clientSort?: boolean;
   onRowClick?: (row: T) => void;
   // Pagination
   page?: number;
@@ -34,6 +36,7 @@ export function Table<T extends Record<string, any>>({
   loading,
   emptyMessage = 'No data found',
   onSort,
+  clientSort,
   onRowClick,
   page,
   totalPages,
@@ -52,6 +55,26 @@ export function Table<T extends Record<string, any>>({
     setSortKey(key);
     setSortOrder(newOrder);
     onSort?.(key, newOrder);
+  }
+
+  // Client-side sorting
+  let sortedData = data;
+  if (clientSort && sortKey) {
+    sortedData = [...data].sort((a, b) => {
+      const aVal = a[sortKey];
+      const bVal = b[sortKey];
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return sortOrder === 'asc' ? -1 : 1;
+      if (bVal == null) return sortOrder === 'asc' ? 1 : -1;
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+      const aStr = String(aVal).toLowerCase();
+      const bStr = String(bVal).toLowerCase();
+      if (aStr < bStr) return sortOrder === 'asc' ? -1 : 1;
+      if (aStr > bStr) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
   }
 
   function toggleRow(id: string) {
@@ -89,7 +112,7 @@ export function Table<T extends Record<string, any>>({
   if (mobileCardMode && typeof window !== 'undefined' && window.innerWidth < 768) {
     return (
       <div style={styles.cardList}>
-        {data.map((row, rowIndex) => (
+        {sortedData.map((row, rowIndex) => (
           <div key={rowIndex} style={styles.card} onClick={onRowClick ? () => onRowClick(row) : undefined}>
             {columns.map((col) => (
               <div key={col.key} style={styles.cardField}>
@@ -140,7 +163,7 @@ export function Table<T extends Record<string, any>>({
             </tr>
           </thead>
           <tbody>
-            {data.map((row, rowIndex) => {
+            {sortedData.map((row, rowIndex) => {
               const id = rowId(row);
               return (
                 <tr

@@ -86,6 +86,7 @@ export async function logAuditStrict(entry: AuditEntry): Promise<void> {
 
 /**
  * Query audit log with filters and pagination.
+ * Joins users and tenants tables to return human-readable names.
  */
 export async function queryAuditLog(
   tenantId: string,
@@ -99,28 +100,28 @@ export async function queryAuditLog(
     limit?: number;
   },
 ) {
-  const conditions = ['tenant_id = $1'];
+  const conditions = ['a.tenant_id = $1'];
   const params: any[] = [tenantId];
   let paramIndex = 2;
 
   if (filters.userId) {
-    conditions.push(`user_id = $${paramIndex++}`);
+    conditions.push(`a.user_id = $${paramIndex++}`);
     params.push(filters.userId);
   }
   if (filters.action) {
-    conditions.push(`action = $${paramIndex++}`);
-    params.push(filters.action);
+    conditions.push(`a.action ILIKE $${paramIndex++}`);
+    params.push(`%${filters.action}%`);
   }
   if (filters.resourceType) {
-    conditions.push(`resource_type = $${paramIndex++}`);
+    conditions.push(`a.resource_type = $${paramIndex++}`);
     params.push(filters.resourceType);
   }
   if (filters.startDate) {
-    conditions.push(`created_at >= $${paramIndex++}`);
+    conditions.push(`a.created_at >= $${paramIndex++}`);
     params.push(filters.startDate);
   }
   if (filters.endDate) {
-    conditions.push(`created_at <= $${paramIndex++}`);
+    conditions.push(`a.created_at <= $${paramIndex++}`);
     params.push(filters.endDate);
   }
 
@@ -131,11 +132,17 @@ export async function queryAuditLog(
   const where = conditions.join(' AND ');
 
   const [dataResult, countResult] = await Promise.all([
-    pool.query(
-      `SELECT * FROM audit_log WHERE ${where} ORDER BY created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
+    adminPool.query(
+      `SELECT a.*, u.email as user_email, u.first_name as user_first_name, u.last_name as user_last_name, t.name as tenant_name
+       FROM audit_log a
+       LEFT JOIN users u ON a.user_id::uuid = u.id
+       LEFT JOIN tenants t ON a.tenant_id::uuid = t.id
+       WHERE ${where}
+       ORDER BY a.created_at DESC
+       LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
       [...params, limit, offset],
     ),
-    pool.query(`SELECT COUNT(*) AS total FROM audit_log WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*) AS total FROM audit_log a WHERE ${where}`, params),
   ]);
 
   return {

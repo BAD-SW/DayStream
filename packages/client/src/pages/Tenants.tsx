@@ -15,6 +15,12 @@ interface Tenant {
   timezone: string;
   created_at: string;
   updated_at: string;
+  owner?: {
+    id: string;
+    email: string;
+    first_name: string;
+    last_name: string;
+  } | null;
 }
 
 interface CreateTenantForm {
@@ -27,6 +33,17 @@ interface CreateTenantForm {
   default_language: string;
   currency: string;
   timezone: string;
+}
+
+interface EditTenantForm {
+  name: string;
+  slug: string;
+  default_language: string;
+  currency: string;
+  timezone: string;
+  owner_email: string;
+  owner_first_name: string;
+  owner_last_name: string;
 }
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
@@ -66,6 +83,12 @@ export function Tenants() {
   // Detail panel state
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Edit mode state
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState<EditTenantForm>({ name: '', default_language: '', currency: '', timezone: '' });
+  const [editError, setEditError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const fetchTenants = useCallback(async () => {
     setLoading(true);
@@ -153,9 +176,79 @@ export function Tenants() {
     }
   }
 
+  // Start editing
+  function startEditing(tenant: Tenant) {
+    setEditForm({
+      name: tenant.name,
+      slug: tenant.slug,
+      default_language: tenant.default_language,
+      currency: tenant.currency,
+      timezone: tenant.timezone,
+      owner_email: tenant.owner?.email || '',
+      owner_first_name: tenant.owner?.first_name || '',
+      owner_last_name: tenant.owner?.last_name || '',
+    });
+    setEditError(null);
+    setEditing(true);
+  }
+
+  // Save edit
+  async function handleSaveEdit() {
+    if (!selectedTenant) return;
+    setSaving(true);
+    setEditError(null);
+    try {
+      const body: Record<string, string> = {};
+      // Only send fields that changed
+      if (editForm.name !== selectedTenant.name) body.name = editForm.name;
+      if (editForm.slug !== selectedTenant.slug) body.slug = editForm.slug;
+      if (editForm.default_language !== selectedTenant.default_language) body.default_language = editForm.default_language;
+      if (editForm.currency !== selectedTenant.currency) body.currency = editForm.currency;
+      if (editForm.timezone !== selectedTenant.timezone) body.timezone = editForm.timezone;
+      if (editForm.owner_email !== (selectedTenant.owner?.email || '')) body.owner_email = editForm.owner_email;
+      if (editForm.owner_first_name !== (selectedTenant.owner?.first_name || '')) body.owner_first_name = editForm.owner_first_name;
+      if (editForm.owner_last_name !== (selectedTenant.owner?.last_name || '')) body.owner_last_name = editForm.owner_last_name;
+
+      if (Object.keys(body).length === 0) {
+        setEditing(false);
+        return;
+      }
+
+      const res = await apiClient.put(`/v1/admin/tenants/${selectedTenant.id}`, body);
+      const updated = res.data.data;
+      setSelectedTenant(updated);
+      setEditing(false);
+      fetchTenants();
+    } catch (err: any) {
+      setEditError(err.response?.data?.message || 'Failed to update tenant');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Close detail panel
+  function closeDetail() {
+    setSelectedTenant(null);
+    setEditing(false);
+    setEditError(null);
+  }
+
+  // Open detail panel with full data (including owner)
+  async function openTenantDetail(tenant: Tenant) {
+    setSelectedTenant(tenant);
+    setEditing(false);
+    setEditError(null);
+    try {
+      const res = await apiClient.get(`/v1/admin/tenants/${tenant.id}`);
+      setSelectedTenant(res.data.data);
+    } catch {
+      // Still show basic data if detail fetch fails
+    }
+  }
+
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
-    { key: 'slug', header: 'Slug', sortable: true },
+    { key: 'slug', header: 'URL Alias', sortable: true },
     {
       key: 'status',
       header: 'Status',
@@ -164,8 +257,8 @@ export function Tenants() {
         <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{formatStatus(val)}</Badge>
       ),
     },
-    { key: 'currency', header: 'Currency' },
-    { key: 'default_language', header: 'Language' },
+    { key: 'currency', header: 'Currency', sortable: true },
+    { key: 'default_language', header: 'Language', sortable: true },
     {
       key: 'created_at',
       header: 'Created',
@@ -203,83 +296,227 @@ export function Tenants() {
         columns={columns}
         data={filteredTenants}
         loading={loading}
-        onRowClick={(row) => setSelectedTenant(row)}
+        onRowClick={(row) => openTenantDetail(row)}
         emptyMessage="No tenants found"
+        clientSort
         mobileCardMode
       />
 
       {/* Detail Panel */}
       {selectedTenant && (
-        <div style={styles.overlay} onClick={() => setSelectedTenant(null)}>
+        <div style={styles.overlay} onClick={closeDetail}>
           <div style={styles.detailPanel} onClick={(e) => e.stopPropagation()}>
             <div style={styles.detailHeader}>
-              <h2 style={styles.detailTitle}>{selectedTenant.name}</h2>
+              <h2 style={styles.detailTitle}>{editing ? 'Edit Tenant' : selectedTenant.name}</h2>
               <button
                 style={styles.closeBtn}
-                onClick={() => setSelectedTenant(null)}
+                onClick={closeDetail}
                 aria-label="Close detail panel"
               >
                 &times;
               </button>
             </div>
-            <div style={styles.detailBody}>
-              <div style={styles.detailRow}>
-                <span style={styles.detailLabel}>Slug</span>
-                <span style={styles.detailValue}>{selectedTenant.slug}</span>
+
+            {editError && <div style={styles.formError}>{editError}</div>}
+
+            {editing ? (
+              /* Edit Mode */
+              <div style={styles.form}>
+                <div style={styles.formDivider}>Tenant Details</div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label} htmlFor="edit-name">Tenant Name</label>
+                  <input
+                    id="edit-name"
+                    style={styles.input}
+                    type="text"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label} htmlFor="edit-slug">URL Alias</label>
+                  <input
+                    id="edit-slug"
+                    style={styles.input}
+                    type="text"
+                    value={editForm.slug}
+                    onChange={(e) => setEditForm({ ...editForm, slug: e.target.value })}
+                    pattern="^[a-z0-9-]+$"
+                  />
+                  <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Lowercase letters, numbers, and hyphens only</span>
+                </div>
+
+                <div style={styles.formRow}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label} htmlFor="edit-language">Language</label>
+                    <select
+                      id="edit-language"
+                      style={styles.input}
+                      value={editForm.default_language}
+                      onChange={(e) => setEditForm({ ...editForm, default_language: e.target.value })}
+                    >
+                      <option value="en">English</option>
+                      <option value="es">Spanish</option>
+                    </select>
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label} htmlFor="edit-currency">Currency</label>
+                    <input
+                      id="edit-currency"
+                      style={styles.input}
+                      type="text"
+                      value={editForm.currency}
+                      onChange={(e) => setEditForm({ ...editForm, currency: e.target.value.toUpperCase() })}
+                      maxLength={3}
+                    />
+                  </div>
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label} htmlFor="edit-timezone">Timezone</label>
+                  <input
+                    id="edit-timezone"
+                    style={styles.input}
+                    type="text"
+                    value={editForm.timezone}
+                    onChange={(e) => setEditForm({ ...editForm, timezone: e.target.value })}
+                    placeholder="UTC"
+                  />
+                </div>
+
+                <div style={styles.formDivider}>Owner Details</div>
+
+                <div style={styles.formRow}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label} htmlFor="edit-owner-first">First Name</label>
+                    <input
+                      id="edit-owner-first"
+                      style={styles.input}
+                      type="text"
+                      value={editForm.owner_first_name}
+                      onChange={(e) => setEditForm({ ...editForm, owner_first_name: e.target.value })}
+                    />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label} htmlFor="edit-owner-last">Last Name</label>
+                    <input
+                      id="edit-owner-last"
+                      style={styles.input}
+                      type="text"
+                      value={editForm.owner_last_name}
+                      onChange={(e) => setEditForm({ ...editForm, owner_last_name: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label} htmlFor="edit-owner-email">Email</label>
+                  <input
+                    id="edit-owner-email"
+                    style={styles.input}
+                    type="email"
+                    value={editForm.owner_email}
+                    onChange={(e) => setEditForm({ ...editForm, owner_email: e.target.value })}
+                  />
+                </div>
+
+                <div style={styles.formActions}>
+                  <Button variant="outline" type="button" onClick={() => { setEditing(false); setEditError(null); }}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleSaveEdit} loading={saving}>
+                    Save Changes
+                  </Button>
+                </div>
               </div>
-              <div style={styles.detailRow}>
-                <span style={styles.detailLabel}>Status</span>
-                <Badge variant={STATUS_VARIANTS[selectedTenant.status] || 'neutral'}>
-                  {formatStatus(selectedTenant.status)}
-                </Badge>
-              </div>
-              <div style={styles.detailRow}>
-                <span style={styles.detailLabel}>Currency</span>
-                <span style={styles.detailValue}>{selectedTenant.currency}</span>
-              </div>
-              <div style={styles.detailRow}>
-                <span style={styles.detailLabel}>Timezone</span>
-                <span style={styles.detailValue}>{selectedTenant.timezone}</span>
-              </div>
-              <div style={styles.detailRow}>
-                <span style={styles.detailLabel}>Language</span>
-                <span style={styles.detailValue}>{selectedTenant.default_language}</span>
-              </div>
-              <div style={styles.detailRow}>
-                <span style={styles.detailLabel}>Created</span>
-                <span style={styles.detailValue}>
-                  {new Date(selectedTenant.created_at).toLocaleString()}
-                </span>
-              </div>
-              <div style={styles.detailRow}>
-                <span style={styles.detailLabel}>Updated</span>
-                <span style={styles.detailValue}>
-                  {new Date(selectedTenant.updated_at).toLocaleString()}
-                </span>
-              </div>
-            </div>
-            <div style={styles.detailActions}>
-              {selectedTenant.status === 'active' && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  loading={actionLoading}
-                  onClick={() => handleSuspend(selectedTenant)}
-                >
-                  Suspend Tenant
-                </Button>
-              )}
-              {selectedTenant.status === 'suspended' && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  loading={actionLoading}
-                  onClick={() => handleActivate(selectedTenant)}
-                >
-                  Activate Tenant
-                </Button>
-              )}
-            </div>
+            ) : (
+              /* View Mode */
+              <>
+                <div style={styles.detailBody}>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>URL Alias</span>
+                    <span style={styles.detailValue}>{selectedTenant.slug}</span>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Status</span>
+                    <Badge variant={STATUS_VARIANTS[selectedTenant.status] || 'neutral'}>
+                      {formatStatus(selectedTenant.status)}
+                    </Badge>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Currency</span>
+                    <span style={styles.detailValue}>{selectedTenant.currency}</span>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Timezone</span>
+                    <span style={styles.detailValue}>{selectedTenant.timezone}</span>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Language</span>
+                    <span style={styles.detailValue}>{selectedTenant.default_language}</span>
+                  </div>
+                  {selectedTenant.owner && (
+                    <>
+                      <div style={{ ...styles.formDivider, marginTop: '12px' }}>Owner</div>
+                      <div style={styles.detailRow}>
+                        <span style={styles.detailLabel}>Name</span>
+                        <span style={styles.detailValue}>
+                          {selectedTenant.owner.first_name} {selectedTenant.owner.last_name}
+                        </span>
+                      </div>
+                      <div style={styles.detailRow}>
+                        <span style={styles.detailLabel}>Email</span>
+                        <span style={styles.detailValue}>{selectedTenant.owner.email}</span>
+                      </div>
+                    </>
+                  )}
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Created</span>
+                    <span style={styles.detailValue}>
+                      {new Date(selectedTenant.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Updated</span>
+                    <span style={styles.detailValue}>
+                      {new Date(selectedTenant.updated_at).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+                <div style={styles.detailActions}>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => startEditing(selectedTenant)}
+                  >
+                    Edit
+                  </Button>
+                  {selectedTenant.status === 'active' && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      loading={actionLoading}
+                      onClick={() => handleSuspend(selectedTenant)}
+                    >
+                      Suspend
+                    </Button>
+                  )}
+                  {selectedTenant.status === 'suspended' && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      loading={actionLoading}
+                      onClick={() => handleActivate(selectedTenant)}
+                    >
+                      Activate
+                    </Button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -315,7 +552,7 @@ export function Tenants() {
               </div>
 
               <div style={styles.formGroup}>
-                <label style={styles.label} htmlFor="tenant-slug">Slug (optional, auto-generates)</label>
+                <label style={styles.label} htmlFor="tenant-slug">URL Alias (optional, auto-generates)</label>
                 <input
                   id="tenant-slug"
                   style={styles.input}
@@ -449,15 +686,17 @@ const styles: Record<string, React.CSSProperties> = {
 
   // Overlay
   overlay: {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+    backdropFilter: 'blur(2px)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
   },
 
   // Detail Panel
   detailPanel: {
-    background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)',
+    background: 'var(--color-surface-elevated, var(--color-surface))', borderRadius: 'var(--radius-lg)',
     padding: 'var(--space-xl)', width: '100%', maxWidth: '480px',
     maxHeight: '80vh', overflowY: 'auto' as const,
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px var(--color-border)',
   },
   detailHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
   detailTitle: { fontSize: 'var(--font-size-xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
@@ -469,9 +708,10 @@ const styles: Record<string, React.CSSProperties> = {
 
   // Modal
   modal: {
-    background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)',
+    background: 'var(--color-surface-elevated, var(--color-surface))', borderRadius: 'var(--radius-lg)',
     padding: 'var(--space-xl)', width: '100%', maxWidth: '560px',
     maxHeight: '85vh', overflowY: 'auto' as const,
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px var(--color-border)',
   },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
   modalTitle: { fontSize: 'var(--font-size-xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },

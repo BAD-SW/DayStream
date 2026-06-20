@@ -29,13 +29,10 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
       <div style={styles.body}>
         <nav style={styles.sidebar}>
-          <Link to="/admin" style={styles.navLink}>Admin Dashboard</Link>
+          <Link to="/dashboard" style={styles.navLink}>Admin Dashboard</Link>
           <Link to="/admin/tenants" style={styles.navLink}>Tenants</Link>
           <Link to="/admin/config" style={styles.navLink}>Configuration</Link>
-          <Link to="/admin/feature-flags" style={styles.navLink}>Feature Flags</Link>
           <Link to="/admin/audit-log" style={styles.navLink}>Audit Log</Link>
-          <div style={styles.divider} />
-          <Link to="/dashboard" style={styles.navLink}>← Back to App</Link>
         </nav>
 
         <main style={styles.content}>
@@ -118,11 +115,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '14px',
     padding: '8px 12px',
     borderRadius: '6px',
-  },
-  divider: {
-    height: '1px',
-    backgroundColor: 'var(--color-border)',
-    margin: '12px 0',
   },
   content: {
     flex: 1,

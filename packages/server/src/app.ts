@@ -7,6 +7,7 @@ import { logger } from './middleware/logger';
 import { router } from './routes';
 import { openApiSpec } from './docs/openapi';
 import { config } from './config';
+import { adminPool } from './db/pool';
 
 export const app = express();
 
@@ -30,6 +31,23 @@ app.use((req, res, next) => {
       duration,
       requestId: (req as any).requestId,
     });
+
+    // Also log to api_request_logs table for Query History
+    const reqPath = req.originalUrl || req.path;
+    if (reqPath.startsWith('/api/') && !reqPath.startsWith('/api/health')) {
+      const user = (req as any).user;
+      const userId = user?.sub || null;
+      const tenantId = (req as any).tenantId || user?.tid || null;
+      const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+        || req.socket.remoteAddress || 'unknown';
+      adminPool.query(
+        `INSERT INTO api_request_logs (method, path, status_code, duration_ms, ip_address, user_agent, request_id, user_id, tenant_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [req.method, reqPath, res.statusCode, duration, ip, req.headers['user-agent'] || null, (req as any).requestId, userId, tenantId],
+      ).catch((err: any) => {
+        console.error('[request-logger]', err.message);
+      });
+    }
   });
   next();
 });
