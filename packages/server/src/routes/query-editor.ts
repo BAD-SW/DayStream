@@ -22,27 +22,43 @@ const schemaService = new SchemaService();
 // --- Middleware ---
 
 /**
- * Role check middleware: restricts access to system_admin and tenant_owner roles.
+ * Role check middleware: restricts access to users with *:* permission (super admins)
+ * or specific allowed roles.
  */
 function roleCheck(allowedRoles: string[]) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const authReq = req as AuthenticatedRequest;
-    if (!authReq.user || !allowedRoles.includes(authReq.user.role)) {
+    if (!authReq.user) {
       error(res, 'Insufficient permissions to access Query Editor', 'FORBIDDEN', 403);
       return;
     }
-    next();
+    // Allow if user has wildcard permission
+    if (authReq.user.permissions?.includes('*:*')) {
+      next();
+      return;
+    }
+    // Allow if role matches
+    if (allowedRoles.includes(authReq.user.role)) {
+      next();
+      return;
+    }
+    error(res, 'Insufficient permissions to access Query Editor', 'FORBIDDEN', 403);
   };
 }
 
 /**
  * Feature flag check middleware: ensures the query_editor_enabled flag is active
- * for the requesting tenant.
+ * for the requesting tenant. Super admins (with *:* permission) bypass this check.
  */
 function featureFlagCheck(flagKey: string) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const authReq = req as AuthenticatedRequest;
     try {
+      // Super admins bypass feature flag checks
+      if (authReq.user.permissions?.includes('*:*')) {
+        next();
+        return;
+      }
       const enabled = await isFeatureEnabled(flagKey, { tenantId: authReq.tenantId });
       if (!enabled) {
         error(res, 'Query Editor is not enabled for your organization', 'FEATURE_DISABLED', 403);
@@ -59,7 +75,7 @@ function featureFlagCheck(flagKey: string) {
 // Apply middleware chain to all routes: authenticate → roleCheck → featureFlagCheck
 queryEditorRouter.use(
   authenticate,
-  roleCheck(['Super Admin']),
+  roleCheck(['Super Admin', 'system_admin', 'system_support', 'tenant_owner']),
   featureFlagCheck('query_editor_enabled'),
 );
 

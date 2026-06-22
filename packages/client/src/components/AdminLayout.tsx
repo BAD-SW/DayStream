@@ -33,6 +33,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           <Link to="/admin/tenants" style={styles.navLink}>Tenants</Link>
           <Link to="/admin/config" style={styles.navLink}>Configuration</Link>
           <Link to="/admin/audit-log" style={styles.navLink}>Audit Log</Link>
+          <Link to="/query-editor" style={styles.navLink}>Query Editor</Link>
         </nav>
 
         <main style={styles.content}>

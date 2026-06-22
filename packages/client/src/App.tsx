@@ -124,8 +124,8 @@ export function App() {
         <Route
           path="/query-editor"
           element={
-            <ProtectedRoute>
-              <QueryEditorPage />
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><QueryEditorPage /></AdminLayout>
             </ProtectedRoute>
           }
         />
