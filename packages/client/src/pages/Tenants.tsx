@@ -4,8 +4,7 @@ import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { apiClient } from '../api/client';
-
-interface Tenant {
+import { TIMEZONES } from '../utils/timezones';interface Tenant {
   id: string;
   name: string;
   slug: string;
@@ -377,14 +376,14 @@ export function Tenants() {
 
                 <div style={styles.formGroup}>
                   <label style={styles.label} htmlFor="edit-timezone">Timezone</label>
-                  <input
+                  <select
                     id="edit-timezone"
                     style={styles.input}
-                    type="text"
                     value={editForm.timezone}
                     onChange={(e) => setEditForm({ ...editForm, timezone: e.target.value })}
-                    placeholder="UTC"
-                  />
+                  >
+                    {TIMEZONES.map((tz) => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
+                  </select>
                 </div>
 
                 <div style={styles.formDivider}>Owner Details</div>
@@ -646,14 +645,14 @@ export function Tenants() {
 
               <div style={styles.formGroup}>
                 <label style={styles.label} htmlFor="tenant-timezone">Timezone</label>
-                <input
+                <select
                   id="tenant-timezone"
                   style={styles.input}
-                  type="text"
                   value={createForm.timezone}
                   onChange={(e) => setCreateForm({ ...createForm, timezone: e.target.value })}
-                  placeholder="UTC"
-                />
+                >
+                  {TIMEZONES.map((tz) => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
+                </select>
               </div>
 
               <div style={styles.formActions}>

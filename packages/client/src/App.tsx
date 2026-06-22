@@ -10,6 +10,9 @@ import { AdminConfig } from './pages/AdminConfig';
 import { AuditLog } from './pages/AuditLog';
 import { QueryEditorPage } from './pages/QueryEditorPage';
 import { PersonaDashboard } from './design-system/components/dashboard/PersonaDashboard';
+import { TenantBusinesses } from './pages/TenantBusinesses';
+import { TenantBilling } from './pages/TenantBilling';
+import { TenantReports } from './pages/TenantReports';
 import { Customers } from './pages/Customers';
 import { CustomerCreate } from './pages/CustomerCreate';
 import { CustomerDetail } from './pages/CustomerDetail';
@@ -161,6 +164,32 @@ export function App() {
           element={
             <ProtectedRoute requiredRole="Manager" layout="none">
               <AdminLayout><AuditLog /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Tenant routes */}
+        <Route
+          path="/admin/businesses"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><TenantBusinesses /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/billing"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><TenantBilling /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/reports"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><TenantReports /></AdminLayout>
             </ProtectedRoute>
           }
         />

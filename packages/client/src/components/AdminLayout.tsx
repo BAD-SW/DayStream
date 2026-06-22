@@ -11,6 +11,24 @@ interface AdminLayoutProps {
 export function AdminLayout({ children }: AdminLayoutProps) {
   const { user, logout } = useAuth();
 
+  // Determine which sidebar links to show based on role
+  const isSystemAdmin = user?.role === 'Super Admin' || user?.role === 'system_admin' || user?.role === 'system_support';
+
+  const sidebarLinks = isSystemAdmin
+    ? [
+        { to: '/dashboard', label: 'Admin Dashboard' },
+        { to: '/admin/tenants', label: 'Tenants' },
+        { to: '/admin/config', label: 'Configuration' },
+        { to: '/admin/audit-log', label: 'Audit Log' },
+        { to: '/query-editor', label: 'Query Editor' },
+      ]
+    : [
+        { to: '/dashboard', label: 'Dashboard' },
+        { to: '/admin/businesses', label: 'Businesses' },
+        { to: '/admin/billing', label: 'Billing' },
+        { to: '/admin/reports', label: 'Reports' },
+      ];
+
   return (
     <div style={styles.container}>
       <header style={styles.header}>
@@ -29,11 +47,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
       <div style={styles.body}>
         <nav style={styles.sidebar}>
-          <Link to="/dashboard" style={styles.navLink}>Admin Dashboard</Link>
-          <Link to="/admin/tenants" style={styles.navLink}>Tenants</Link>
-          <Link to="/admin/config" style={styles.navLink}>Configuration</Link>
-          <Link to="/admin/audit-log" style={styles.navLink}>Audit Log</Link>
-          <Link to="/query-editor" style={styles.navLink}>Query Editor</Link>
+          {sidebarLinks.map((link) => (
+            <Link key={link.to} to={link.to} style={styles.navLink}>{link.label}</Link>
+          ))}
         </nav>
 
         <main style={styles.content}>

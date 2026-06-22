@@ -190,6 +190,95 @@ adminRouter.put('/tenants/:id/activate', requirePermission('*:*'), async (req: R
   }
 });
 
+// --- Businesses (Tenant Owner) ---
+
+// GET /api/v1/admin/businesses — List businesses for current tenant
+adminRouter.get('/businesses', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { rows } = await adminPool.query(
+      'SELECT id, name, slug, status, email, phone, address, default_language, currency, timezone, primary_color, created_at, updated_at FROM businesses WHERE tenant_id = $1 ORDER BY name',
+      [authReq.tenantId],
+    );
+    success(res, rows);
+  } catch (err: any) {
+    error(res, 'Failed to list businesses', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// POST /api/v1/admin/businesses — Create a business
+adminRouter.post('/businesses', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { name, slug, email, phone, address, default_language, currency, timezone, primary_color } = req.body;
+    if (!name) { error(res, 'Name is required', 'VALIDATION_ERROR', 400); return; }
+    const businessSlug = slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const { rows } = await adminPool.query(
+      `INSERT INTO businesses (tenant_id, name, slug, email, phone, address, default_language, currency, timezone, primary_color)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [authReq.tenantId, name, businessSlug, email || null, phone || null, address || null, default_language || 'en', currency || 'EUR', timezone || 'UTC', primary_color || '#C9A96E'],
+    );
+    success(res, rows[0], undefined, 201);
+  } catch (err: any) {
+    if (err.message?.includes('unique') || err.code === '23505') {
+      error(res, 'A business with this URL alias already exists', 'SLUG_EXISTS', 409);
+    } else {
+      error(res, 'Failed to create business', 'INTERNAL_ERROR', 500);
+    }
+  }
+});
+
+// PUT /api/v1/admin/businesses/:id — Update a business
+adminRouter.put('/businesses/:id', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { name, slug, email, phone, address, default_language, currency, timezone, primary_color, status } = req.body;
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+    if (name !== undefined) { fields.push(`name = $${idx++}`); values.push(name); }
+    if (slug !== undefined) { fields.push(`slug = $${idx++}`); values.push(slug); }
+    if (email !== undefined) { fields.push(`email = $${idx++}`); values.push(email); }
+    if (phone !== undefined) { fields.push(`phone = $${idx++}`); values.push(phone); }
+    if (address !== undefined) { fields.push(`address = $${idx++}`); values.push(address); }
+    if (default_language !== undefined) { fields.push(`default_language = $${idx++}`); values.push(default_language); }
+    if (currency !== undefined) { fields.push(`currency = $${idx++}`); values.push(currency); }
+    if (timezone !== undefined) { fields.push(`timezone = $${idx++}`); values.push(timezone); }
+    if (primary_color !== undefined) { fields.push(`primary_color = $${idx++}`); values.push(primary_color); }
+    if (status !== undefined) { fields.push(`status = $${idx++}`); values.push(status); }
+    if (fields.length === 0) { error(res, 'No fields to update', 'VALIDATION_ERROR', 400); return; }
+    fields.push('updated_at = NOW()');
+    values.push(req.params.id, authReq.tenantId);
+    const { rows } = await adminPool.query(
+      `UPDATE businesses SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
+      values,
+    );
+    if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    success(res, rows[0]);
+  } catch (err: any) {
+    if (err.code === '23505') {
+      error(res, 'A business with this URL alias already exists', 'SLUG_EXISTS', 409);
+    } else {
+      error(res, 'Failed to update business', 'INTERNAL_ERROR', 500);
+    }
+  }
+});
+
+// DELETE /api/v1/admin/businesses/:id — Archive a business
+adminRouter.delete('/businesses/:id', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { rows } = await adminPool.query(
+      `UPDATE businesses SET status = 'archived', updated_at = NOW() WHERE id = $1 AND tenant_id = $2 RETURNING id, name, status`,
+      [req.params.id, authReq.tenantId],
+    );
+    if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    success(res, rows[0]);
+  } catch (err: any) {
+    error(res, 'Failed to archive business', 'INTERNAL_ERROR', 500);
+  }
+});
+
 // --- Configuration (Business Owner+, requires tenant context) ---
 
 // GET /api/v1/admin/config — Get all config for current tenant

@@ -1,0 +1,62 @@
+/**
+ * Common IANA timezones with abbreviations for dropdown selection.
+ */
+export const TIMEZONES: { value: string; label: string }[] = [
+  // Americas
+  { value: 'America/New_York', label: 'America/New_York (EST/EDT)' },
+  { value: 'America/Chicago', label: 'America/Chicago (CST/CDT)' },
+  { value: 'America/Denver', label: 'America/Denver (MST/MDT)' },
+  { value: 'America/Los_Angeles', label: 'America/Los_Angeles (PST/PDT)' },
+  { value: 'America/Anchorage', label: 'America/Anchorage (AKST/AKDT)' },
+  { value: 'America/Phoenix', label: 'America/Phoenix (MST)' },
+  { value: 'America/Toronto', label: 'America/Toronto (EST/EDT)' },
+  { value: 'America/Vancouver', label: 'America/Vancouver (PST/PDT)' },
+  { value: 'America/Mexico_City', label: 'America/Mexico_City (CST)' },
+  { value: 'America/Bogota', label: 'America/Bogota (COT)' },
+  { value: 'America/Lima', label: 'America/Lima (PET)' },
+  { value: 'America/Buenos_Aires', label: 'America/Buenos_Aires (ART)' },
+  { value: 'America/Sao_Paulo', label: 'America/Sao_Paulo (BRT)' },
+  // Europe
+  { value: 'Europe/London', label: 'Europe/London (GMT/BST)' },
+  { value: 'Europe/Dublin', label: 'Europe/Dublin (GMT/IST)' },
+  { value: 'Europe/Paris', label: 'Europe/Paris (CET/CEST)' },
+  { value: 'Europe/Berlin', label: 'Europe/Berlin (CET/CEST)' },
+  { value: 'Europe/Madrid', label: 'Europe/Madrid (CET/CEST)' },
+  { value: 'Europe/Rome', label: 'Europe/Rome (CET/CEST)' },
+  { value: 'Europe/Amsterdam', label: 'Europe/Amsterdam (CET/CEST)' },
+  { value: 'Europe/Brussels', label: 'Europe/Brussels (CET/CEST)' },
+  { value: 'Europe/Zurich', label: 'Europe/Zurich (CET/CEST)' },
+  { value: 'Europe/Vienna', label: 'Europe/Vienna (CET/CEST)' },
+  { value: 'Europe/Stockholm', label: 'Europe/Stockholm (CET/CEST)' },
+  { value: 'Europe/Oslo', label: 'Europe/Oslo (CET/CEST)' },
+  { value: 'Europe/Copenhagen', label: 'Europe/Copenhagen (CET/CEST)' },
+  { value: 'Europe/Helsinki', label: 'Europe/Helsinki (EET/EEST)' },
+  { value: 'Europe/Warsaw', label: 'Europe/Warsaw (CET/CEST)' },
+  { value: 'Europe/Prague', label: 'Europe/Prague (CET/CEST)' },
+  { value: 'Europe/Bucharest', label: 'Europe/Bucharest (EET/EEST)' },
+  { value: 'Europe/Athens', label: 'Europe/Athens (EET/EEST)' },
+  { value: 'Europe/Istanbul', label: 'Europe/Istanbul (TRT)' },
+  { value: 'Europe/Moscow', label: 'Europe/Moscow (MSK)' },
+  // Asia
+  { value: 'Asia/Dubai', label: 'Asia/Dubai (GST)' },
+  { value: 'Asia/Kolkata', label: 'Asia/Kolkata (IST)' },
+  { value: 'Asia/Bangkok', label: 'Asia/Bangkok (ICT)' },
+  { value: 'Asia/Singapore', label: 'Asia/Singapore (SGT)' },
+  { value: 'Asia/Hong_Kong', label: 'Asia/Hong_Kong (HKT)' },
+  { value: 'Asia/Shanghai', label: 'Asia/Shanghai (CST)' },
+  { value: 'Asia/Seoul', label: 'Asia/Seoul (KST)' },
+  { value: 'Asia/Tokyo', label: 'Asia/Tokyo (JST)' },
+  // Oceania
+  { value: 'Australia/Sydney', label: 'Australia/Sydney (AEST/AEDT)' },
+  { value: 'Australia/Melbourne', label: 'Australia/Melbourne (AEST/AEDT)' },
+  { value: 'Australia/Perth', label: 'Australia/Perth (AWST)' },
+  { value: 'Australia/Brisbane', label: 'Australia/Brisbane (AEST)' },
+  { value: 'Pacific/Auckland', label: 'Pacific/Auckland (NZST/NZDT)' },
+  // Africa
+  { value: 'Africa/Cairo', label: 'Africa/Cairo (EET)' },
+  { value: 'Africa/Lagos', label: 'Africa/Lagos (WAT)' },
+  { value: 'Africa/Johannesburg', label: 'Africa/Johannesburg (SAST)' },
+  { value: 'Africa/Nairobi', label: 'Africa/Nairobi (EAT)' },
+  // Other
+  { value: 'UTC', label: 'UTC' },
+];
