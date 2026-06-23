@@ -12,6 +12,11 @@ import { TIMEZONES } from '../utils/timezones';interface Tenant {
   default_language: string;
   currency: string;
   timezone: string;
+  billing_frequency: string;
+  billing_amount: number;
+  billing_method: string;
+  signup_date: string | null;
+  next_billing_date: string | null;
   created_at: string;
   updated_at: string;
   owner?: {
@@ -43,6 +48,26 @@ interface EditTenantForm {
   owner_email: string;
   owner_first_name: string;
   owner_last_name: string;
+  billing_frequency: string;
+  billing_amount: string;
+  billing_method: string;
+  signup_date: string;
+  next_billing_date: string;
+  // Receiving account (where business payments go)
+  receiving_bank_name: string;
+  receiving_account_holder: string;
+  receiving_account_number: string;
+  receiving_routing_number: string;
+  receiving_iban: string;
+  // Payment source (how tenant pays DayStream)
+  payment_bank_name: string;
+  payment_account_holder: string;
+  payment_account_number: string;
+  payment_routing_number: string;
+  payment_iban: string;
+  payment_card_last4: string;
+  payment_card_brand: string;
+  payment_card_exp: string;
 }
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
@@ -186,6 +211,24 @@ export function Tenants() {
       owner_email: tenant.owner?.email || '',
       owner_first_name: tenant.owner?.first_name || '',
       owner_last_name: tenant.owner?.last_name || '',
+      billing_frequency: tenant.billing_frequency || 'monthly',
+      billing_amount: String(tenant.billing_amount || 0),
+      billing_method: tenant.billing_method || 'tbd',
+      signup_date: tenant.signup_date ? tenant.signup_date.split('T')[0] : '',
+      next_billing_date: tenant.next_billing_date ? tenant.next_billing_date.split('T')[0] : '',
+      receiving_bank_name: (tenant as any).receiving_bank_name || '',
+      receiving_account_holder: (tenant as any).receiving_account_holder || '',
+      receiving_account_number: (tenant as any).receiving_account_number || '',
+      receiving_routing_number: (tenant as any).receiving_routing_number || '',
+      receiving_iban: (tenant as any).receiving_iban || '',
+      payment_bank_name: (tenant as any).payment_bank_name || '',
+      payment_account_holder: (tenant as any).payment_account_holder || '',
+      payment_account_number: (tenant as any).payment_account_number || '',
+      payment_routing_number: (tenant as any).payment_routing_number || '',
+      payment_iban: (tenant as any).payment_iban || '',
+      payment_card_last4: (tenant as any).payment_card_last4 || '',
+      payment_card_brand: (tenant as any).payment_card_brand || '',
+      payment_card_exp: (tenant as any).payment_card_exp || '',
     });
     setEditError(null);
     setEditing(true);
@@ -197,8 +240,7 @@ export function Tenants() {
     setSaving(true);
     setEditError(null);
     try {
-      const body: Record<string, string> = {};
-      // Only send fields that changed
+      const body: Record<string, any> = {};
       if (editForm.name !== selectedTenant.name) body.name = editForm.name;
       if (editForm.slug !== selectedTenant.slug) body.slug = editForm.slug;
       if (editForm.default_language !== selectedTenant.default_language) body.default_language = editForm.default_language;
@@ -207,6 +249,11 @@ export function Tenants() {
       if (editForm.owner_email !== (selectedTenant.owner?.email || '')) body.owner_email = editForm.owner_email;
       if (editForm.owner_first_name !== (selectedTenant.owner?.first_name || '')) body.owner_first_name = editForm.owner_first_name;
       if (editForm.owner_last_name !== (selectedTenant.owner?.last_name || '')) body.owner_last_name = editForm.owner_last_name;
+      if (editForm.billing_frequency !== (selectedTenant.billing_frequency || 'monthly')) body.billing_frequency = editForm.billing_frequency;
+      if (String(parseInt(editForm.billing_amount) || 0) !== String(selectedTenant.billing_amount || 0)) body.billing_amount = parseInt(editForm.billing_amount) || 0;
+      if (editForm.billing_method !== (selectedTenant.billing_method || 'tbd')) body.billing_method = editForm.billing_method;
+      if (editForm.signup_date !== (selectedTenant.signup_date || '')) body.signup_date = editForm.signup_date || null;
+      if (editForm.next_billing_date !== (selectedTenant.next_billing_date || '')) body.next_billing_date = editForm.next_billing_date || null;
 
       if (Object.keys(body).length === 0) {
         setEditing(false);
@@ -422,6 +469,132 @@ export function Tenants() {
                   />
                 </div>
 
+                <div style={styles.formDivider}>Billing</div>
+
+                <div style={styles.formRow}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label} htmlFor="edit-billing-freq">Frequency</label>
+                    <select id="edit-billing-freq" style={styles.input} value={editForm.billing_frequency} onChange={(e) => {
+                      const newFreq = e.target.value;
+                      const ref = editForm.signup_date;
+                      if (ref) {
+                        const refDate = new Date(ref);
+                        const now = new Date();
+                        let next = new Date(refDate);
+                        const add = (d: Date) => { const r = new Date(d); switch(newFreq) { case 'monthly': r.setMonth(r.getMonth()+1); break; case 'quarterly': r.setMonth(r.getMonth()+3); break; case 'semi-annual': r.setMonth(r.getMonth()+6); break; case 'annual': r.setFullYear(r.getFullYear()+1); break; default: r.setMonth(r.getMonth()+1); } return r; };
+                        while (next <= now) { next = add(next); }
+                        setEditForm({ ...editForm, billing_frequency: newFreq, next_billing_date: next.toISOString().split('T')[0] });
+                      } else {
+                        setEditForm({ ...editForm, billing_frequency: newFreq });
+                      }
+                    }}>
+                      <option value="monthly">Monthly</option>
+                      <option value="quarterly">Quarterly</option>
+                      <option value="semi-annual">Semi-Annual</option>
+                      <option value="annual">Annual</option>
+                    </select>
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label} htmlFor="edit-billing-amt">Amount (cents)</label>
+                    <input id="edit-billing-amt" style={styles.input} type="number" value={editForm.billing_amount} onChange={(e) => setEditForm({ ...editForm, billing_amount: e.target.value })} min="0" />
+                  </div>
+                </div>
+
+                <div style={styles.formRow}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label} htmlFor="edit-signup-date">Signup Date</label>
+                    <input id="edit-signup-date" style={styles.input} type="date" value={editForm.signup_date} onChange={(e) => {
+                      const newSignup = e.target.value;
+                      if (newSignup) {
+                        const freq = editForm.billing_frequency || 'monthly';
+                        const refDate = new Date(newSignup);
+                        const now = new Date();
+                        let next = new Date(refDate);
+                        const add = (d: Date) => { const r = new Date(d); switch(freq) { case 'monthly': r.setMonth(r.getMonth()+1); break; case 'quarterly': r.setMonth(r.getMonth()+3); break; case 'semi-annual': r.setMonth(r.getMonth()+6); break; case 'annual': r.setFullYear(r.getFullYear()+1); break; default: r.setMonth(r.getMonth()+1); } return r; };
+                        while (next <= now) { next = add(next); }
+                        setEditForm({ ...editForm, signup_date: newSignup, next_billing_date: next.toISOString().split('T')[0] });
+                      } else {
+                        setEditForm({ ...editForm, signup_date: newSignup });
+                      }
+                    }} />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label} htmlFor="edit-next-billing">Next Billing Date</label>
+                    <input id="edit-next-billing" style={{ ...styles.input, opacity: 0.7, cursor: 'not-allowed' }} type="date" value={editForm.next_billing_date} disabled />
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Auto-calculated from last billing date and frequency.</span>
+                  </div>
+                </div>
+
+                <div style={styles.formDivider}>Receiving Account (where business payments are deposited)</div>
+
+                <div style={styles.formRow}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Bank Name</label>
+                    <input style={styles.input} value={editForm.receiving_bank_name} onChange={(e) => setEditForm({ ...editForm, receiving_bank_name: e.target.value })} placeholder="Bank of America" />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Account Holder</label>
+                    <input style={styles.input} value={editForm.receiving_account_holder} onChange={(e) => setEditForm({ ...editForm, receiving_account_holder: e.target.value })} placeholder="Company Name LLC" />
+                  </div>
+                </div>
+                <div style={styles.formRow}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Account Number</label>
+                    <input style={styles.input} value={editForm.receiving_account_number} onChange={(e) => setEditForm({ ...editForm, receiving_account_number: e.target.value })} placeholder="••••••1234" />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Routing Number</label>
+                    <input style={styles.input} value={editForm.receiving_routing_number} onChange={(e) => setEditForm({ ...editForm, receiving_routing_number: e.target.value })} placeholder="021000021" />
+                  </div>
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>IBAN (for international)</label>
+                  <input style={styles.input} value={editForm.receiving_iban} onChange={(e) => setEditForm({ ...editForm, receiving_iban: e.target.value })} placeholder="GB29 NWBK 6016 1331 9268 19" />
+                </div>
+
+                <div style={styles.formDivider}>Payment Source (how tenant pays DayStream)</div>
+
+                <div style={styles.formRow}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Bank Name</label>
+                    <input style={styles.input} value={editForm.payment_bank_name} onChange={(e) => setEditForm({ ...editForm, payment_bank_name: e.target.value })} placeholder="Bank Name" />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Account Holder</label>
+                    <input style={styles.input} value={editForm.payment_account_holder} onChange={(e) => setEditForm({ ...editForm, payment_account_holder: e.target.value })} placeholder="Account Holder Name" />
+                  </div>
+                </div>
+                <div style={styles.formRow}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Account Number</label>
+                    <input style={styles.input} value={editForm.payment_account_number} onChange={(e) => setEditForm({ ...editForm, payment_account_number: e.target.value })} placeholder="••••••5678" />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Routing / IBAN</label>
+                    <input style={styles.input} value={editForm.payment_routing_number || editForm.payment_iban} onChange={(e) => setEditForm({ ...editForm, payment_routing_number: e.target.value })} placeholder="Routing or IBAN" />
+                  </div>
+                </div>
+                <div style={styles.formRow}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Card on File (last 4)</label>
+                    <input style={styles.input} value={editForm.payment_card_last4} onChange={(e) => setEditForm({ ...editForm, payment_card_last4: e.target.value })} maxLength={4} placeholder="4242" />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Card Brand</label>
+                    <select style={styles.input} value={editForm.payment_card_brand} onChange={(e) => setEditForm({ ...editForm, payment_card_brand: e.target.value })}>
+                      <option value="">None</option>
+                      <option value="visa">Visa</option>
+                      <option value="mastercard">Mastercard</option>
+                      <option value="amex">Amex</option>
+                      <option value="discover">Discover</option>
+                    </select>
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Expiry</label>
+                    <input style={styles.input} value={editForm.payment_card_exp} onChange={(e) => setEditForm({ ...editForm, payment_card_exp: e.target.value })} placeholder="MM/YYYY" maxLength={7} />
+                  </div>
+                </div>
+
                 <div style={styles.formActions}>
                   <Button variant="outline" type="button" onClick={() => { setEditing(false); setEditError(null); }}>
                     Cancel
@@ -472,6 +645,27 @@ export function Tenants() {
                       </div>
                     </>
                   )}
+                  <div style={{ ...styles.formDivider, marginTop: '12px' }}>Billing</div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Frequency</span>
+                    <span style={styles.detailValue}>{(selectedTenant.billing_frequency || 'monthly').charAt(0).toUpperCase() + (selectedTenant.billing_frequency || 'monthly').slice(1)}</span>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Amount</span>
+                    <span style={styles.detailValue}>{selectedTenant.billing_amount ? `${(selectedTenant.billing_amount / 100).toFixed(2)} ${selectedTenant.currency}` : '—'}</span>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Method</span>
+                    <span style={styles.detailValue}>{selectedTenant.billing_method === 'tbd' ? 'TBD' : (selectedTenant.billing_method || '—')}</span>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Signup Date</span>
+                    <span style={styles.detailValue}>{selectedTenant.signup_date ? new Date(selectedTenant.signup_date).toLocaleDateString() : '—'}</span>
+                  </div>
+                  <div style={styles.detailRow}>
+                    <span style={styles.detailLabel}>Next Billing Date</span>
+                    <span style={styles.detailValue}>{selectedTenant.next_billing_date ? new Date(selectedTenant.next_billing_date).toLocaleDateString() : '—'}</span>
+                  </div>
                   <div style={styles.detailRow}>
                     <span style={styles.detailLabel}>Created</span>
                     <span style={styles.detailValue}>

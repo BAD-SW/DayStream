@@ -3,7 +3,7 @@ import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { apiClient } from '../api/client';
 
-type Tab = 'settings' | 'feature-flags' | 'email' | 'storage' | 'notifications' | 'logs' | 'query-history';
+type Tab = 'settings' | 'feature-flags' | 'email' | 'storage' | 'notifications' | 'logs' | 'query-history' | 'platform-billing';
 
 export function AdminConfig() {
   const [activeTab, setActiveTab] = useState<Tab>('settings');
@@ -16,6 +16,7 @@ export function AdminConfig() {
     { key: 'notifications', label: 'Notifications' },
     { key: 'logs', label: 'Server Logs' },
     { key: 'query-history', label: 'Query Log' },
+    { key: 'platform-billing', label: 'Platform Billing' },
   ];
 
   return (
@@ -45,6 +46,7 @@ export function AdminConfig() {
       {activeTab === 'notifications' && <NotificationsPanel />}
       {activeTab === 'logs' && <LogsPanel />}
       {activeTab === 'query-history' && <QueryHistoryPanel />}
+      {activeTab === 'platform-billing' && <PlatformBillingPanel />}
     </div>
   );
 }
@@ -699,6 +701,104 @@ function LogsPanel() {
   );
 }
 
+
+// ============================================================
+// Platform Billing Panel (DayStream's receiving account)
+// ============================================================
+
+interface PlatformBillingConfig {
+  bank_name: string;
+  account_holder: string;
+  account_number: string;
+  routing_number: string;
+  iban: string;
+  swift: string;
+}
+
+const EMPTY_PLATFORM_BILLING: PlatformBillingConfig = {
+  bank_name: '', account_holder: '', account_number: '',
+  routing_number: '', iban: '', swift: '',
+};
+
+function PlatformBillingPanel() {
+  const [form, setForm] = useState<PlatformBillingConfig>(EMPTY_PLATFORM_BILLING);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiClient.get('/v1/admin/system-config/platform-billing')
+      .then((res) => {
+        if (res.data.data) {
+          const d = res.data.data;
+          setForm({
+            bank_name: d.bank_name || '',
+            account_holder: d.account_holder || '',
+            account_number: d.account_number || '',
+            routing_number: d.routing_number || '',
+            iban: d.iban || '',
+            swift: d.swift || '',
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true); setMessage(null);
+    try {
+      await apiClient.put('/v1/admin/system-config/platform-billing', form);
+      setMessage('Platform billing account saved.');
+    } catch (err: any) { setMessage(err.response?.data?.message || 'Failed to save'); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <p style={styles.loading}>Loading...</p>;
+
+  return (
+    <div style={styles.panel}>
+      <h3 style={styles.panelTitle}>Platform Receiving Account</h3>
+      <p style={styles.panelSubtext}>DayStream bank account where all tenant payments are deposited.</p>
+      {message && <div style={styles.successMsg}>{message}</div>}
+      <div style={styles.formSection}>
+        <div style={styles.formRow}>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Bank Name</label>
+            <input style={styles.input} value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })} placeholder="Bank Name" />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Account Holder</label>
+            <input style={styles.input} value={form.account_holder} onChange={(e) => setForm({ ...form, account_holder: e.target.value })} placeholder="DayStream Inc." />
+          </div>
+        </div>
+        <div style={styles.formRow}>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Account Number</label>
+            <input style={styles.input} value={form.account_number} onChange={(e) => setForm({ ...form, account_number: e.target.value })} placeholder="••••••1234" />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Routing Number</label>
+            <input style={styles.input} value={form.routing_number} onChange={(e) => setForm({ ...form, routing_number: e.target.value })} placeholder="021000021" />
+          </div>
+        </div>
+        <div style={styles.formRow}>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>IBAN (international)</label>
+            <input style={styles.input} value={form.iban} onChange={(e) => setForm({ ...form, iban: e.target.value })} placeholder="GB29 NWBK 6016 1331 9268 19" />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>SWIFT/BIC</label>
+            <input style={styles.input} value={form.swift} onChange={(e) => setForm({ ...form, swift: e.target.value })} placeholder="NWBKGB2L" />
+          </div>
+        </div>
+      </div>
+      <div style={styles.formActions}>
+        <Button onClick={handleSave} loading={saving}>Save Configuration</Button>
+      </div>
+    </div>
+  );
+}
 
 // ============================================================
 // Query History Panel

@@ -16,6 +16,38 @@ export const adminRouter = Router();
 // All admin routes require authentication
 adminRouter.use(authenticate);
 
+/**
+ * Calculate the next billing date based on last billing date (or signup date as fallback) and frequency.
+ * Logic: advance from the reference date by the frequency interval until the date is in the future.
+ */
+function calculateNextBillingDate(lastBillingDate: string | null, signupDate: string | null, frequency: string): string | null {
+  const refDateStr = lastBillingDate || signupDate;
+  if (!refDateStr) return null;
+  const ref = new Date(refDateStr);
+  if (isNaN(ref.getTime())) return null;
+
+  const now = new Date();
+  let next = new Date(ref);
+
+  const addInterval = (d: Date): Date => {
+    const result = new Date(d);
+    switch (frequency) {
+      case 'monthly': result.setMonth(result.getMonth() + 1); break;
+      case 'quarterly': result.setMonth(result.getMonth() + 3); break;
+      case 'semi-annual': result.setMonth(result.getMonth() + 6); break;
+      case 'annual': result.setFullYear(result.getFullYear() + 1); break;
+      default: result.setMonth(result.getMonth() + 1);
+    }
+    return result;
+  };
+
+  // Advance until next billing date is in the future
+  while (next <= now) {
+    next = addInterval(next);
+  }
+
+  return next.toISOString().split('T')[0];
+}
 // --- Tenant Management (Super Admin only) ---
 
 const createTenantSchema = Joi.object({
@@ -85,6 +117,11 @@ const updateTenantSchema = Joi.object({
   owner_email: Joi.string().email({ tlds: false }),
   owner_first_name: Joi.string().min(1).max(100),
   owner_last_name: Joi.string().min(1).max(100),
+  billing_frequency: Joi.string().valid('monthly', 'quarterly', 'semi-annual', 'annual'),
+  billing_amount: Joi.number().integer().min(0),
+  billing_method: Joi.string().max(50),
+  signup_date: Joi.string().isoDate(),
+  next_billing_date: Joi.string().isoDate().allow(null, ''),
 }).min(1);
 
 adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantSchema), async (req: Request, res: Response) => {
@@ -113,6 +150,17 @@ adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantS
     // Update tenant record
     const tenantEntries = Object.entries(tenantFields);
     if (tenantEntries.length > 0) {
+      // Auto-calculate next_billing_date if frequency or signup_date changed but next_billing_date wasn't explicitly set
+      if (!tenantFields.next_billing_date && (tenantFields.billing_frequency || tenantFields.signup_date)) {
+        const lastBilling = tenant.last_billing_date;
+        const signupDt = tenantFields.signup_date || tenant.signup_date;
+        const freq = tenantFields.billing_frequency || tenant.billing_frequency || 'monthly';
+        const nextBilling = calculateNextBillingDate(lastBilling, signupDt, freq);
+        if (nextBilling && !tenantEntries.find(([k]) => k === 'next_billing_date')) {
+          tenantEntries.push(['next_billing_date', nextBilling]);
+        }
+      }
+
       const fields: string[] = [];
       const values: any[] = [];
       let idx = 1;
@@ -197,7 +245,7 @@ adminRouter.get('/businesses', tenantContext, requirePermission('settings:*'), a
   try {
     const authReq = req as AuthenticatedRequest;
     const { rows } = await adminPool.query(
-      'SELECT id, name, slug, status, email, phone, address, default_language, currency, timezone, primary_color, created_at, updated_at FROM businesses WHERE tenant_id = $1 ORDER BY name',
+      'SELECT id, name, slug, status, email, phone, address, default_language, currency, timezone, primary_color, billing_frequency, billing_amount, billing_method, created_at, updated_at FROM businesses WHERE tenant_id = $1 ORDER BY name',
       [authReq.tenantId],
     );
     success(res, rows);
@@ -210,13 +258,16 @@ adminRouter.get('/businesses', tenantContext, requirePermission('settings:*'), a
 adminRouter.post('/businesses', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { name, slug, email, phone, address, default_language, currency, timezone, primary_color } = req.body;
+    const { name, slug, email, phone, address, default_language, currency, timezone, primary_color, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date } = req.body;
     if (!name) { error(res, 'Name is required', 'VALIDATION_ERROR', 400); return; }
     const businessSlug = slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const freq = billing_frequency || 'monthly';
+    const signupDt = signup_date || new Date().toISOString().split('T')[0];
+    const nextBilling = next_billing_date || calculateNextBillingDate(null, signupDt, freq);
     const { rows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, email, phone, address, default_language, currency, timezone, primary_color)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-      [authReq.tenantId, name, businessSlug, email || null, phone || null, address || null, default_language || 'en', currency || 'EUR', timezone || 'UTC', primary_color || '#C9A96E'],
+      `INSERT INTO businesses (tenant_id, name, slug, email, phone, address, default_language, currency, timezone, primary_color, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
+      [authReq.tenantId, name, businessSlug, email || null, phone || null, address || null, default_language || 'en', currency || 'EUR', timezone || 'UTC', primary_color || '#C9A96E', freq, billing_amount ?? 0, billing_method || 'tbd', signupDt, nextBilling],
     );
     success(res, rows[0], undefined, 201);
   } catch (err: any) {
@@ -232,7 +283,7 @@ adminRouter.post('/businesses', tenantContext, requirePermission('settings:*'), 
 adminRouter.put('/businesses/:id', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { name, slug, email, phone, address, default_language, currency, timezone, primary_color, status } = req.body;
+    const { name, slug, email, phone, address, default_language, currency, timezone, primary_color, status, billing_frequency, billing_amount, billing_method } = req.body;
     const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
@@ -246,6 +297,23 @@ adminRouter.put('/businesses/:id', tenantContext, requirePermission('settings:*'
     if (timezone !== undefined) { fields.push(`timezone = $${idx++}`); values.push(timezone); }
     if (primary_color !== undefined) { fields.push(`primary_color = $${idx++}`); values.push(primary_color); }
     if (status !== undefined) { fields.push(`status = $${idx++}`); values.push(status); }
+    if (billing_frequency !== undefined) { fields.push(`billing_frequency = $${idx++}`); values.push(billing_frequency); }
+    if (billing_amount !== undefined) { fields.push(`billing_amount = $${idx++}`); values.push(billing_amount); }
+    if (billing_method !== undefined) { fields.push(`billing_method = $${idx++}`); values.push(billing_method); }
+    if (req.body.signup_date !== undefined) { fields.push(`signup_date = $${idx++}`); values.push(req.body.signup_date); }
+    if (req.body.next_billing_date !== undefined) { fields.push(`next_billing_date = $${idx++}`); values.push(req.body.next_billing_date); }
+    // Auto-calculate next_billing_date if frequency or signup_date changed but next_billing_date wasn't explicitly set
+    if (req.body.next_billing_date === undefined && (req.body.billing_frequency || req.body.signup_date)) {
+      // Fetch current record to get the full context
+      const { rows: currentRows } = await adminPool.query('SELECT signup_date, billing_frequency, last_billing_date FROM businesses WHERE id = $1 AND tenant_id = $2', [req.params.id, authReq.tenantId]);
+      if (currentRows.length > 0) {
+        const lastBilling = currentRows[0].last_billing_date;
+        const signupDt = req.body.signup_date || currentRows[0].signup_date;
+        const freq = req.body.billing_frequency || currentRows[0].billing_frequency;
+        const nextBilling = calculateNextBillingDate(lastBilling, signupDt, freq);
+        if (nextBilling) { fields.push(`next_billing_date = $${idx++}`); values.push(nextBilling); }
+      }
+    }
     if (fields.length === 0) { error(res, 'No fields to update', 'VALIDATION_ERROR', 400); return; }
     fields.push('updated_at = NOW()');
     values.push(req.params.id, authReq.tenantId);

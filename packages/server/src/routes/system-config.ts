@@ -197,6 +197,36 @@ systemConfigRouter.put('/notifications', requirePermission('*:*'), async (req: R
 });
 
 // ============================================================
+// Platform Billing (DayStream's receiving account)
+// ============================================================
+
+systemConfigRouter.get('/platform-billing', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const data = await getSystemConfig('platform-billing');
+    success(res, data);
+  } catch (err: any) {
+    error(res, 'Failed to get platform billing config', 'INTERNAL_ERROR', 500);
+  }
+});
+
+systemConfigRouter.put('/platform-billing', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    await upsertSystemConfig('platform-billing', req.body, authReq.user.sub);
+    await logAudit({
+      tenantId: 'system',
+      userId: authReq.user.sub,
+      action: 'system_config.platform_billing.updated',
+      resourceType: 'system_config',
+      details: { category: 'platform-billing' },
+    });
+    success(res, req.body);
+  } catch (err: any) {
+    error(res, 'Failed to save platform billing config', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// ============================================================
 // Server Logs
 // ============================================================
 

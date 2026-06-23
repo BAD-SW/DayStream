@@ -18,6 +18,11 @@ interface Business {
   currency: string;
   timezone: string;
   primary_color: string;
+  billing_frequency: string;
+  billing_amount: number;
+  billing_method: string;
+  signup_date: string | null;
+  next_billing_date: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -32,11 +37,29 @@ interface BusinessForm {
   currency: string;
   timezone: string;
   primary_color: string;
+  billing_frequency: string;
+  billing_amount: string;
+  billing_method: string;
+  signup_date: string;
+  next_billing_date: string;
+  payment_bank_name: string;
+  payment_account_holder: string;
+  payment_account_number: string;
+  payment_routing_number: string;
+  payment_iban: string;
+  payment_card_last4: string;
+  payment_card_brand: string;
+  payment_card_exp: string;
 }
 
 const EMPTY_FORM: BusinessForm = {
   name: '', slug: '', email: '', phone: '', address: '',
   default_language: 'en', currency: 'EUR', timezone: 'UTC', primary_color: '#C9A96E',
+  billing_frequency: 'monthly', billing_amount: '0', billing_method: 'tbd',
+  signup_date: '', next_billing_date: '',
+  payment_bank_name: '', payment_account_holder: '', payment_account_number: '',
+  payment_routing_number: '', payment_iban: '',
+  payment_card_last4: '', payment_card_brand: '', payment_card_exp: '',
 };
 
 export function TenantBusinesses() {
@@ -76,6 +99,19 @@ export function TenantBusinesses() {
       name: biz.name, slug: biz.slug, email: biz.email || '', phone: biz.phone || '',
       address: biz.address || '', default_language: biz.default_language,
       currency: biz.currency, timezone: biz.timezone, primary_color: biz.primary_color,
+      billing_frequency: biz.billing_frequency || 'monthly',
+      billing_amount: String(biz.billing_amount || 0),
+      billing_method: biz.billing_method || 'tbd',
+      signup_date: biz.signup_date ? biz.signup_date.split('T')[0] : '',
+      next_billing_date: biz.next_billing_date ? biz.next_billing_date.split('T')[0] : '',
+      payment_bank_name: (biz as any).payment_bank_name || '',
+      payment_account_holder: (biz as any).payment_account_holder || '',
+      payment_account_number: (biz as any).payment_account_number || '',
+      payment_routing_number: (biz as any).payment_routing_number || '',
+      payment_iban: (biz as any).payment_iban || '',
+      payment_card_last4: (biz as any).payment_card_last4 || '',
+      payment_card_brand: (biz as any).payment_card_brand || '',
+      payment_card_exp: (biz as any).payment_card_exp || '',
     });
     setFormError(null); setEditing(true);
   }
@@ -83,7 +119,12 @@ export function TenantBusinesses() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault(); setSaving(true); setFormError(null);
     try {
-      await apiClient.post('/v1/admin/businesses', form);
+      await apiClient.post('/v1/admin/businesses', {
+        ...form,
+        billing_amount: parseInt(form.billing_amount) || 0,
+        signup_date: form.signup_date || null,
+        next_billing_date: form.next_billing_date || null,
+      });
       setShowCreate(false); fetchBusinesses();
     } catch (err: any) { setFormError(err.response?.data?.message || 'Failed to create'); }
     finally { setSaving(false); }
@@ -93,7 +134,12 @@ export function TenantBusinesses() {
     if (!selectedBiz) return;
     setSaving(true); setFormError(null);
     try {
-      const res = await apiClient.put(`/v1/admin/businesses/${selectedBiz.id}`, form);
+      const res = await apiClient.put(`/v1/admin/businesses/${selectedBiz.id}`, {
+        ...form,
+        billing_amount: parseInt(form.billing_amount) || 0,
+        signup_date: form.signup_date || null,
+        next_billing_date: form.next_billing_date || null,
+      });
       setSelectedBiz(res.data.data); setEditing(false); fetchBusinesses();
     } catch (err: any) { setFormError(err.response?.data?.message || 'Failed to update'); }
     finally { setSaving(false); }
@@ -157,6 +203,11 @@ export function TenantBusinesses() {
                   <DetailRow label="Currency" value={selectedBiz.currency} />
                   <DetailRow label="Timezone" value={selectedBiz.timezone} />
                   <DetailRow label="Brand Color" value={selectedBiz.primary_color} />
+                  <DetailRow label="Billing Frequency" value={selectedBiz.billing_frequency?.charAt(0).toUpperCase() + selectedBiz.billing_frequency?.slice(1) || '—'} />
+                  <DetailRow label="Billing Amount" value={selectedBiz.billing_amount ? `${(selectedBiz.billing_amount / 100).toFixed(2)} ${selectedBiz.currency}` : '—'} />
+                  <DetailRow label="Billing Method" value={selectedBiz.billing_method === 'tbd' ? 'TBD' : selectedBiz.billing_method} />
+                  <DetailRow label="Signup Date" value={selectedBiz.signup_date ? new Date(selectedBiz.signup_date).toLocaleDateString() : '—'} />
+                  <DetailRow label="Next Billing Date" value={selectedBiz.next_billing_date ? new Date(selectedBiz.next_billing_date).toLocaleDateString() : '—'} />
                   <DetailRow label="Created" value={new Date(selectedBiz.created_at).toLocaleString()} />
                 </div>
                 <div style={styles.actions}>
@@ -194,6 +245,38 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
   form: BusinessForm; setForm: (f: BusinessForm) => void;
   saving: boolean; onSave: () => void; onCancel: () => void; isCreate?: boolean;
 }) {
+  // Auto-calculate next billing date preview when frequency or signup date changes
+  function recalcNextBilling(newForm: BusinessForm) {
+    const ref = newForm.signup_date;
+    if (!ref) return newForm;
+    const freq = newForm.billing_frequency || 'monthly';
+    const refDate = new Date(ref);
+    if (isNaN(refDate.getTime())) return newForm;
+    const now = new Date();
+    let next = new Date(refDate);
+    const addInterval = (d: Date): Date => {
+      const r = new Date(d);
+      switch (freq) {
+        case 'monthly': r.setMonth(r.getMonth() + 1); break;
+        case 'quarterly': r.setMonth(r.getMonth() + 3); break;
+        case 'semi-annual': r.setMonth(r.getMonth() + 6); break;
+        case 'annual': r.setFullYear(r.getFullYear() + 1); break;
+        default: r.setMonth(r.getMonth() + 1);
+      }
+      return r;
+    };
+    while (next <= now) { next = addInterval(next); }
+    return { ...newForm, next_billing_date: next.toISOString().split('T')[0] };
+  }
+
+  function handleFrequencyChange(value: string) {
+    setForm(recalcNextBilling({ ...form, billing_frequency: value }));
+  }
+
+  function handleSignupChange(value: string) {
+    setForm(recalcNextBilling({ ...form, signup_date: value }));
+  }
+
   return (
     <div style={styles.formBody}>
       <div style={styles.formGroup}>
@@ -245,6 +328,82 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
           <input style={{ ...styles.input, maxWidth: '100px' }} value={form.primary_color} onChange={(e) => setForm({ ...form, primary_color: e.target.value })} />
         </div>
       </div>
+      <div style={styles.formRow}>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Billing Frequency</label>
+          <select style={styles.input} value={form.billing_frequency} onChange={(e) => handleFrequencyChange(e.target.value)}>
+            <option value="monthly">Monthly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="semi-annual">Semi-Annual</option>
+            <option value="annual">Annual</option>
+          </select>
+        </div>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Billing Amount (cents)</label>
+          <input style={styles.input} type="number" value={form.billing_amount} onChange={(e) => setForm({ ...form, billing_amount: e.target.value })} min="0" placeholder="0" />
+          <span style={styles.helper}>Enter in cents (e.g. 9900 = $99.00)</span>
+        </div>
+      </div>
+      <div style={styles.formRow}>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Signup Date</label>
+          <input style={styles.input} type="date" value={form.signup_date} onChange={(e) => handleSignupChange(e.target.value)} />
+        </div>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Next Billing Date</label>
+          <input style={{ ...styles.input, opacity: 0.7, cursor: 'not-allowed' }} type="date" value={form.next_billing_date} disabled />
+          <span style={styles.helper}>Auto-calculated from last billing date and frequency.</span>
+        </div>
+      </div>
+
+      <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
+        Payment Source (ACH/SEPA — primary)
+      </div>
+      <div style={styles.formRow}>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Bank Name</label>
+          <input style={styles.input} value={form.payment_bank_name} onChange={(e) => setForm({ ...form, payment_bank_name: e.target.value })} placeholder="Bank Name" />
+        </div>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Account Holder</label>
+          <input style={styles.input} value={form.payment_account_holder} onChange={(e) => setForm({ ...form, payment_account_holder: e.target.value })} placeholder="Business Name LLC" />
+        </div>
+      </div>
+      <div style={styles.formRow}>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Account Number</label>
+          <input style={styles.input} value={form.payment_account_number} onChange={(e) => setForm({ ...form, payment_account_number: e.target.value })} placeholder="••••••1234" />
+        </div>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Routing / IBAN</label>
+          <input style={styles.input} value={form.payment_routing_number || form.payment_iban} onChange={(e) => setForm({ ...form, payment_routing_number: e.target.value })} placeholder="Routing or IBAN" />
+        </div>
+      </div>
+
+      <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
+        Card on File (backup)
+      </div>
+      <div style={styles.formRow}>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Last 4 Digits</label>
+          <input style={styles.input} value={form.payment_card_last4} onChange={(e) => setForm({ ...form, payment_card_last4: e.target.value })} maxLength={4} placeholder="4242" />
+        </div>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Brand</label>
+          <select style={styles.input} value={form.payment_card_brand} onChange={(e) => setForm({ ...form, payment_card_brand: e.target.value })}>
+            <option value="">None</option>
+            <option value="visa">Visa</option>
+            <option value="mastercard">Mastercard</option>
+            <option value="amex">Amex</option>
+            <option value="discover">Discover</option>
+          </select>
+        </div>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Expiry</label>
+          <input style={styles.input} value={form.payment_card_exp} onChange={(e) => setForm({ ...form, payment_card_exp: e.target.value })} placeholder="MM/YYYY" maxLength={7} />
+        </div>
+      </div>
+
       <div style={styles.formActions}>
         <Button variant="outline" type="button" onClick={onCancel}>Cancel</Button>
         {isCreate
