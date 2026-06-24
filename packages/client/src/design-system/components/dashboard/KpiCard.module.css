@@ -65,3 +65,15 @@
   border: 1px solid rgba(229,221,205,0.6);
   box-shadow: 0 4px 12px rgba(0,0,0,0.05);
 }
+
+.clickHint {
+  font-size: 10px;
+  color: var(--color-primary);
+  margin-top: 4px;
+}
+
+.prior {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}

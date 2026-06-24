@@ -835,3 +835,64 @@ adminRouter.get('/reports/tenant-memberships/detail', tenantContext, requirePerm
     error(res, 'Failed to get membership detail', 'INTERNAL_ERROR', 500);
   }
 });
+
+
+// --- System KPIs ---
+
+// GET /api/v1/admin/reports/system-kpis
+adminRouter.get('/reports/system-kpis', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const { rows: tenantRows } = await adminPool.query(
+      "SELECT COUNT(*) as count FROM tenants WHERE status = 'active'",
+    );
+    const { rows: bizRows } = await adminPool.query(
+      "SELECT COUNT(*) as count FROM businesses WHERE status = 'active'",
+    );
+    // Expected MTD: tenants whose next_billing_date is this month
+    const { rows: expectedMtdRows } = await adminPool.query(
+      `SELECT COALESCE(SUM(billing_amount), 0) as total
+       FROM tenants WHERE status = 'active' AND billing_amount > 0
+       AND next_billing_date >= date_trunc('month', NOW())
+       AND next_billing_date < date_trunc('month', NOW()) + INTERVAL '1 month'`,
+    );
+    // Platform revenue YTD and MTD - placeholder until billing ledger exists
+    success(res, {
+      total_tenants: parseInt(tenantRows[0].count),
+      total_businesses: parseInt(bizRows[0].count),
+      platform_revenue_ytd: 0,
+      platform_revenue_ytd_prior: 0,
+      platform_revenue_mtd: 0,
+      platform_revenue_mtd_prior: 0,
+      expected_remaining_mtd: parseInt(expectedMtdRows[0].total),
+    });
+  } catch (err: any) {
+    error(res, 'Failed to get system KPIs', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/admin/reports/system-revenue/detail
+adminRouter.get('/reports/system-revenue/detail', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const type = req.query.type as string;
+    if (type === 'ytd' || type === 'mtd') {
+      // Revenue per tenant - placeholder until payment ledger exists
+      const { rows } = await adminPool.query(
+        "SELECT name, 0 as revenue FROM tenants WHERE status = 'active' ORDER BY name",
+      );
+      success(res, rows);
+    } else if (type === 'expected_mtd') {
+      const { rows } = await adminPool.query(
+        `SELECT name, billing_amount, next_billing_date
+         FROM tenants WHERE status = 'active' AND billing_amount > 0
+         AND next_billing_date >= date_trunc('month', NOW())
+         AND next_billing_date < date_trunc('month', NOW()) + INTERVAL '1 month'
+         ORDER BY next_billing_date`,
+      );
+      success(res, rows);
+    } else {
+      success(res, []);
+    }
+  } catch (err: any) {
+    error(res, 'Failed to get system revenue detail', 'INTERNAL_ERROR', 500);
+  }
+});
