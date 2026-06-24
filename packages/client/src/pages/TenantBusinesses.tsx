@@ -5,6 +5,7 @@ import { Button } from '../design-system/components/actions/Button';
 import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { apiClient } from '../api/client';
 import { TIMEZONES } from '../utils/timezones';
+import { CurrencyInput } from '../components/CurrencyInput';
 
 interface Business {
   id: string;
@@ -38,7 +39,7 @@ interface BusinessForm {
   timezone: string;
   primary_color: string;
   billing_frequency: string;
-  billing_amount: string;
+  billing_amount: number; // stored as cents
   billing_method: string;
   signup_date: string;
   next_billing_date: string;
@@ -55,7 +56,7 @@ interface BusinessForm {
 const EMPTY_FORM: BusinessForm = {
   name: '', slug: '', email: '', phone: '', address: '',
   default_language: 'en', currency: 'EUR', timezone: 'UTC', primary_color: '#C9A96E',
-  billing_frequency: 'monthly', billing_amount: '0', billing_method: 'tbd',
+  billing_frequency: 'monthly', billing_amount: 0, billing_method: 'tbd',
   signup_date: '', next_billing_date: '',
   payment_bank_name: '', payment_account_holder: '', payment_account_number: '',
   payment_routing_number: '', payment_iban: '',
@@ -100,7 +101,7 @@ export function TenantBusinesses() {
       address: biz.address || '', default_language: biz.default_language,
       currency: biz.currency, timezone: biz.timezone, primary_color: biz.primary_color,
       billing_frequency: biz.billing_frequency || 'monthly',
-      billing_amount: String(biz.billing_amount || 0),
+      billing_amount: biz.billing_amount || 0,
       billing_method: biz.billing_method || 'tbd',
       signup_date: biz.signup_date ? biz.signup_date.split('T')[0] : '',
       next_billing_date: biz.next_billing_date ? biz.next_billing_date.split('T')[0] : '',
@@ -121,7 +122,7 @@ export function TenantBusinesses() {
     try {
       await apiClient.post('/v1/admin/businesses', {
         ...form,
-        billing_amount: parseInt(form.billing_amount) || 0,
+        billing_amount: form.billing_amount,
         signup_date: form.signup_date || null,
         next_billing_date: form.next_billing_date || null,
       });
@@ -136,7 +137,7 @@ export function TenantBusinesses() {
     try {
       const res = await apiClient.put(`/v1/admin/businesses/${selectedBiz.id}`, {
         ...form,
-        billing_amount: parseInt(form.billing_amount) || 0,
+        billing_amount: form.billing_amount,
         signup_date: form.signup_date || null,
         next_billing_date: form.next_billing_date || null,
       });
@@ -339,9 +340,8 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
           </select>
         </div>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Billing Amount (cents)</label>
-          <input style={styles.input} type="number" value={form.billing_amount} onChange={(e) => setForm({ ...form, billing_amount: e.target.value })} min="0" placeholder="0" />
-          <span style={styles.helper}>Enter in cents (e.g. 9900 = $99.00)</span>
+          <label style={styles.label}>Billing Amount</label>
+          <CurrencyInput style={styles.input} value={form.billing_amount} onChange={(cents) => setForm({ ...form, billing_amount: cents })} />
         </div>
       </div>
       <div style={styles.formRow}>

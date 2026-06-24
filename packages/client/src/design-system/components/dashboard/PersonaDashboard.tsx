@@ -1,24 +1,44 @@
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { DashboardShell } from './DashboardShell';
 import { KpiCard } from './KpiCard';
 import { SortableTileGrid } from './SortableTileGrid';
 import { getVisibleModules } from './moduleRegistry';
 import { Persona } from '@daystream/shared';
+import { apiClient } from '../../../api/client';
 
 /**
  * Resolves persona from auth context and renders the appropriate dashboard.
  */
 export function PersonaDashboard() {
   const { user, featureFlags } = useAuth();
+  const [tenantKpis, setTenantKpis] = useState<KpiData[] | null>(null);
+
+  const persona = user ? resolvePersona(user.role) : null;
+
+  useEffect(() => {
+    if (persona === 'tenant') {
+      Promise.all([
+        apiClient.get('/v1/admin/reports/tenant-customers').then(r => r.data.data).catch(() => null),
+        apiClient.get('/v1/admin/reports/tenant-revenue').then(r => r.data.data).catch(() => null),
+        apiClient.get('/v1/admin/my-billing').then(r => r.data.data).catch(() => null),
+      ]).then(([biz, rev, billing]) => {
+        setTenantKpis([
+          { icon: '🏪', label: 'Active Businesses', value: biz?.active_businesses ?? '—' },
+          { icon: '💰', label: 'Revenue YTD', value: rev?.total_revenue_ytd != null ? `${(rev.total_revenue_ytd / 100).toFixed(2)}` : '—' },
+          { icon: '💵', label: 'Revenue MTD', value: rev?.month_revenue != null ? `${(rev.month_revenue / 100).toFixed(2)}` : '—' },
+          { icon: '📈', label: 'Still Expected MTD', value: rev?.expected_remaining_mtd != null ? `${(rev.expected_remaining_mtd / 100).toFixed(2)}` : '—' },
+        ]);
+      });
+    }
+  }, [persona]);
 
   if (!user) return null;
 
-  // Resolve persona from user role
-  const persona = resolvePersona(user.role);
   const permissions = getPermissionsFromRole(user.role);
-  const modules = getVisibleModules(persona, permissions, featureFlags);
+  const modules = getVisibleModules(persona!, permissions, featureFlags);
 
-  const kpis = getKpisForPersona(persona);
+  const kpis = tenantKpis || getKpisForPersona(persona!);
   const tiles = modules;
 
   return (
@@ -75,10 +95,10 @@ function getKpisForPersona(persona: Persona): KpiData[] {
       ];
     case 'tenant':
       return [
-        { icon: '🏪', label: 'Businesses', value: '—' },
-        { icon: '💰', label: 'Revenue', value: '—' },
-        { icon: '👥', label: 'Active Customers', value: '—' },
-        { icon: '📈', label: 'New Signups', value: '—' },
+        { icon: '🏪', label: 'Active Businesses', value: '—' },
+        { icon: '💰', label: 'Revenue YTD', value: '—' },
+        { icon: '📈', label: 'New This Month', value: '—' },
+        { icon: '📅', label: 'Next Billing', value: '—' },
       ];
     case 'business':
       return [

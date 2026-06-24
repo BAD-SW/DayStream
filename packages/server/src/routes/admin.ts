@@ -531,3 +531,307 @@ adminRouter.put('/my-billing/payment-method', tenantContext, requirePermission('
     error(res, 'Failed to update payment method', 'INTERNAL_ERROR', 500);
   }
 });
+
+
+// --- Tenant Reports ---
+
+// GET /api/v1/admin/reports/tenant-revenue
+adminRouter.get('/reports/tenant-revenue', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { rows: bizRows } = await adminPool.query(
+      "SELECT COUNT(*) as count FROM businesses WHERE tenant_id = $1 AND status = 'active'",
+      [authReq.tenantId],
+    );
+    // Placeholder: real revenue would come from payment/billing ledger
+    // Calculate expected remaining revenue for the current month
+    // Businesses whose next_billing_date is this month (haven't been billed yet)
+    const { rows: expectedMtdRows } = await adminPool.query(
+      `SELECT COALESCE(SUM(billing_amount), 0) as expected_remaining_mtd
+       FROM businesses WHERE tenant_id = $1 AND status = 'active' AND billing_amount > 0
+       AND next_billing_date >= date_trunc('month', NOW())
+       AND next_billing_date < date_trunc('month', NOW()) + INTERVAL '1 month'`,
+      [authReq.tenantId],
+    );
+    // Calculate expected remaining revenue for the year
+    const { rows: expectedRows } = await adminPool.query(
+      `SELECT COALESCE(SUM(
+        billing_amount * (
+          CASE billing_frequency
+            WHEN 'monthly' THEN (12 - EXTRACT(MONTH FROM NOW())::int)
+            WHEN 'quarterly' THEN GREATEST(0, 4 - CEIL(EXTRACT(MONTH FROM NOW()) / 3.0)::int)
+            WHEN 'semi-annual' THEN GREATEST(0, 2 - CEIL(EXTRACT(MONTH FROM NOW()) / 6.0)::int)
+            WHEN 'annual' THEN CASE WHEN EXTRACT(MONTH FROM next_billing_date) > EXTRACT(MONTH FROM NOW()) THEN 1 ELSE 0 END
+            ELSE 0
+          END
+        )
+      ), 0) as expected_remaining
+       FROM businesses WHERE tenant_id = $1 AND status = 'active' AND billing_amount > 0`,
+      [authReq.tenantId],
+    );
+    success(res, {
+      total_revenue_ytd: 0,
+      total_revenue_ytd_prior: 0,
+      month_revenue: 0,
+      month_revenue_prior: 0,
+      active_businesses: parseInt(bizRows[0].count),
+      expected_remaining: parseInt(expectedRows[0].expected_remaining),
+      expected_remaining_mtd: parseInt(expectedMtdRows[0].expected_remaining_mtd),
+    });
+  } catch (err: any) {
+    error(res, 'Failed to get revenue report', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/admin/reports/tenant-customers
+adminRouter.get('/reports/tenant-customers', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    // Active businesses
+    const { rows: activeRows } = await adminPool.query(
+      "SELECT COUNT(*) as count FROM businesses WHERE tenant_id = $1 AND status = 'active'",
+      [authReq.tenantId],
+    );
+    // Active businesses same time prior year
+    const { rows: activePriorRows } = await adminPool.query(
+      "SELECT COUNT(*) as count FROM businesses WHERE tenant_id = $1 AND status = 'active' AND created_at <= (NOW() - INTERVAL '1 year')",
+      [authReq.tenantId],
+    );
+    // New this month
+    const { rows: newRows } = await adminPool.query(
+      "SELECT COUNT(*) as count FROM businesses WHERE tenant_id = $1 AND created_at >= date_trunc('month', NOW())",
+      [authReq.tenantId],
+    );
+    // New same month prior year
+    const { rows: newPriorRows } = await adminPool.query(
+      "SELECT COUNT(*) as count FROM businesses WHERE tenant_id = $1 AND created_at >= date_trunc('month', NOW() - INTERVAL '1 year') AND created_at < date_trunc('month', NOW() - INTERVAL '1 year') + INTERVAL '1 month'",
+      [authReq.tenantId],
+    );
+    // Churned this month (status changed to archived/suspended this month)
+    const { rows: churnedRows } = await adminPool.query(
+      "SELECT COUNT(*) as count FROM businesses WHERE tenant_id = $1 AND status != 'active' AND updated_at >= date_trunc('month', NOW())",
+      [authReq.tenantId],
+    );
+    // Churned same month prior year
+    const { rows: churnedPriorRows } = await adminPool.query(
+      "SELECT COUNT(*) as count FROM businesses WHERE tenant_id = $1 AND status != 'active' AND updated_at >= date_trunc('month', NOW() - INTERVAL '1 year') AND updated_at < date_trunc('month', NOW() - INTERVAL '1 year') + INTERVAL '1 month'",
+      [authReq.tenantId],
+    );
+    success(res, {
+      active_businesses: parseInt(activeRows[0].count),
+      active_businesses_prior: parseInt(activePriorRows[0].count),
+      new_this_month: parseInt(newRows[0].count),
+      new_this_month_prior: parseInt(newPriorRows[0].count),
+      churned_this_month: parseInt(churnedRows[0].count),
+      churned_this_month_prior: parseInt(churnedPriorRows[0].count),
+    });
+  } catch (err: any) {
+    error(res, 'Failed to get business report', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/admin/reports/tenant-bookings
+adminRouter.get('/reports/tenant-bookings', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    // Get business IDs for this tenant
+    const { rows: bizRows } = await adminPool.query(
+      'SELECT id FROM businesses WHERE tenant_id = $1',
+      [authReq.tenantId],
+    );
+    const bizIds = bizRows.map((r: any) => r.id);
+    if (bizIds.length === 0) {
+      success(res, { total_bookings: 0, month_bookings: 0, completed: 0, cancellation_rate: 0 });
+      return;
+    }
+    const { rows: totalRows } = await adminPool.query(
+      `SELECT COUNT(*) as count FROM bookings WHERE business_id = ANY($1)`,
+      [bizIds],
+    );
+    const { rows: monthRows } = await adminPool.query(
+      `SELECT COUNT(*) as count FROM bookings WHERE business_id = ANY($1) AND created_at >= date_trunc('month', NOW())`,
+      [bizIds],
+    );
+    const { rows: completedRows } = await adminPool.query(
+      `SELECT COUNT(*) as count FROM bookings WHERE business_id = ANY($1) AND status = 'completed'`,
+      [bizIds],
+    );
+    const { rows: cancelledRows } = await adminPool.query(
+      `SELECT COUNT(*) as count FROM bookings WHERE business_id = ANY($1) AND status = 'cancelled'`,
+      [bizIds],
+    );
+    const total = parseInt(totalRows[0].count);
+    const cancelled = parseInt(cancelledRows[0].count);
+    success(res, {
+      total_bookings: total,
+      month_bookings: parseInt(monthRows[0].count),
+      completed: parseInt(completedRows[0].count),
+      cancellation_rate: total > 0 ? Math.round((cancelled / total) * 100) : 0,
+    });
+  } catch (err: any) {
+    error(res, 'Failed to get booking report', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/admin/reports/tenant-memberships
+adminRouter.get('/reports/tenant-memberships', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { rows: bizRows } = await adminPool.query(
+      'SELECT id FROM businesses WHERE tenant_id = $1',
+      [authReq.tenantId],
+    );
+    const bizIds = bizRows.map((r: any) => r.id);
+    if (bizIds.length === 0) {
+      success(res, { active_members: 0, new_this_month: 0, monthly_revenue: 0, churn_rate: 0 });
+      return;
+    }
+    const { rows: activeRows } = await adminPool.query(
+      `SELECT COUNT(*) as count FROM memberships WHERE business_id = ANY($1) AND status = 'active'`,
+      [bizIds],
+    );
+    const { rows: newRows } = await adminPool.query(
+      `SELECT COUNT(*) as count FROM memberships WHERE business_id = ANY($1) AND status = 'active' AND created_at >= date_trunc('month', NOW())`,
+      [bizIds],
+    );
+    success(res, {
+      active_members: parseInt(activeRows[0].count),
+      new_this_month: parseInt(newRows[0].count),
+      monthly_revenue: 0, // Placeholder: would sum from billing records
+      churn_rate: 0, // Placeholder: would calculate from cancellations
+    });
+  } catch (err: any) {
+    error(res, 'Failed to get membership report', 'INTERNAL_ERROR', 500);
+  }
+});
+
+
+// --- Tenant Report Details ---
+
+// GET /api/v1/admin/reports/tenant-revenue/detail
+adminRouter.get('/reports/tenant-revenue/detail', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const type = req.query.type as string;
+    if (type === 'businesses') {
+      const { rows } = await adminPool.query(
+        "SELECT name, status, created_at FROM businesses WHERE tenant_id = $1 AND status = 'active' ORDER BY name",
+        [authReq.tenantId],
+      );
+      success(res, rows);
+    } else if (type === 'expected') {
+      const { rows } = await adminPool.query(
+        `SELECT name, billing_amount, billing_frequency,
+          billing_amount * (
+            CASE billing_frequency
+              WHEN 'monthly' THEN (12 - EXTRACT(MONTH FROM NOW())::int)
+              WHEN 'quarterly' THEN GREATEST(0, 4 - CEIL(EXTRACT(MONTH FROM NOW()) / 3.0)::int)
+              WHEN 'semi-annual' THEN GREATEST(0, 2 - CEIL(EXTRACT(MONTH FROM NOW()) / 6.0)::int)
+              WHEN 'annual' THEN CASE WHEN EXTRACT(MONTH FROM next_billing_date) > EXTRACT(MONTH FROM NOW()) THEN 1 ELSE 0 END
+              ELSE 0
+            END
+          ) as expected_remaining
+         FROM businesses WHERE tenant_id = $1 AND status = 'active' AND billing_amount > 0
+         ORDER BY expected_remaining DESC`,
+        [authReq.tenantId],
+      );
+      success(res, rows);
+    } else if (type === 'expected_mtd') {
+      const { rows } = await adminPool.query(
+        `SELECT name, billing_amount, next_billing_date
+         FROM businesses WHERE tenant_id = $1 AND status = 'active' AND billing_amount > 0
+         AND next_billing_date >= date_trunc('month', NOW())
+         AND next_billing_date < date_trunc('month', NOW()) + INTERVAL '1 month'
+         ORDER BY next_billing_date`,
+        [authReq.tenantId],
+      );
+      success(res, rows);
+    } else {
+      // Revenue per business YTD - placeholder until payment ledger exists
+      const { rows } = await adminPool.query(
+        "SELECT name, 0 as revenue FROM businesses WHERE tenant_id = $1 AND status = 'active' ORDER BY name",
+        [authReq.tenantId],
+      );
+      success(res, rows);
+    }
+  } catch (err: any) {
+    error(res, 'Failed to get revenue detail', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/admin/reports/tenant-customers/detail
+adminRouter.get('/reports/tenant-customers/detail', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const type = req.query.type as string;
+    let query = 'SELECT name, status, created_at, updated_at FROM businesses WHERE tenant_id = $1';
+    if (type === 'active') {
+      query += " AND status = 'active'";
+    } else if (type === 'new') {
+      query += " AND created_at >= date_trunc('month', NOW())";
+    } else if (type === 'churned') {
+      query += " AND status != 'active' AND updated_at >= date_trunc('month', NOW())";
+    }
+    query += ' ORDER BY created_at DESC LIMIT 100';
+    const { rows } = await adminPool.query(query, [authReq.tenantId]);
+    success(res, rows);
+  } catch (err: any) {
+    error(res, 'Failed to get business detail', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/admin/reports/tenant-bookings/detail
+adminRouter.get('/reports/tenant-bookings/detail', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const type = req.query.type as string;
+    const { rows: bizRows } = await adminPool.query('SELECT id FROM businesses WHERE tenant_id = $1', [authReq.tenantId]);
+    const bizIds = bizRows.map((r: any) => r.id);
+    if (bizIds.length === 0) { success(res, []); return; }
+
+    let query = `SELECT b.id, b.status, b.start_time, b.created_at,
+                   COALESCE(u.first_name || ' ' || u.last_name, 'Unknown') as customer_name,
+                   COALESCE(s.name, 'Unknown') as service_name
+                 FROM bookings b
+                 LEFT JOIN users u ON b.customer_id = u.id
+                 LEFT JOIN services s ON b.service_id = s.id
+                 WHERE b.business_id = ANY($1)`;
+    if (type === 'month') {
+      query += " AND b.created_at >= date_trunc('month', NOW())";
+    }
+    query += ' ORDER BY b.created_at DESC LIMIT 100';
+    const { rows } = await adminPool.query(query, [bizIds]);
+    success(res, rows);
+  } catch (err: any) {
+    error(res, 'Failed to get booking detail', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/admin/reports/tenant-memberships/detail
+adminRouter.get('/reports/tenant-memberships/detail', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const type = req.query.type as string;
+    const { rows: bizRows } = await adminPool.query('SELECT id FROM businesses WHERE tenant_id = $1', [authReq.tenantId]);
+    const bizIds = bizRows.map((r: any) => r.id);
+    if (bizIds.length === 0) { success(res, []); return; }
+
+    let query = `SELECT m.id, m.status, m.created_at,
+                   COALESCE(u.first_name || ' ' || u.last_name, 'Unknown') as customer_name,
+                   COALESCE(mp.name, 'Unknown') as plan_name
+                 FROM memberships m
+                 LEFT JOIN users u ON m.customer_id = u.id
+                 LEFT JOIN membership_plans mp ON m.plan_id = mp.id
+                 WHERE m.business_id = ANY($1)`;
+    if (type === 'active') {
+      query += " AND m.status = 'active'";
+    } else if (type === 'new') {
+      query += " AND m.status = 'active' AND m.created_at >= date_trunc('month', NOW())";
+    }
+    query += ' ORDER BY m.created_at DESC LIMIT 100';
+    const { rows } = await adminPool.query(query, [bizIds]);
+    success(res, rows);
+  } catch (err: any) {
+    error(res, 'Failed to get membership detail', 'INTERNAL_ERROR', 500);
+  }
+});

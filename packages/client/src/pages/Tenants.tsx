@@ -4,7 +4,8 @@ import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { apiClient } from '../api/client';
-import { TIMEZONES } from '../utils/timezones';interface Tenant {
+import { TIMEZONES } from '../utils/timezones';
+import { CurrencyInput } from '../components/CurrencyInput';interface Tenant {
   id: string;
   name: string;
   slug: string;
@@ -49,7 +50,7 @@ interface EditTenantForm {
   owner_first_name: string;
   owner_last_name: string;
   billing_frequency: string;
-  billing_amount: string;
+  billing_amount: number; // stored as cents
   billing_method: string;
   signup_date: string;
   next_billing_date: string;
@@ -212,7 +213,7 @@ export function Tenants() {
       owner_first_name: tenant.owner?.first_name || '',
       owner_last_name: tenant.owner?.last_name || '',
       billing_frequency: tenant.billing_frequency || 'monthly',
-      billing_amount: String(tenant.billing_amount || 0),
+      billing_amount: tenant.billing_amount || 0,
       billing_method: tenant.billing_method || 'tbd',
       signup_date: tenant.signup_date ? tenant.signup_date.split('T')[0] : '',
       next_billing_date: tenant.next_billing_date ? tenant.next_billing_date.split('T')[0] : '',
@@ -250,7 +251,7 @@ export function Tenants() {
       if (editForm.owner_first_name !== (selectedTenant.owner?.first_name || '')) body.owner_first_name = editForm.owner_first_name;
       if (editForm.owner_last_name !== (selectedTenant.owner?.last_name || '')) body.owner_last_name = editForm.owner_last_name;
       if (editForm.billing_frequency !== (selectedTenant.billing_frequency || 'monthly')) body.billing_frequency = editForm.billing_frequency;
-      if (String(parseInt(editForm.billing_amount) || 0) !== String(selectedTenant.billing_amount || 0)) body.billing_amount = parseInt(editForm.billing_amount) || 0;
+      if (editForm.billing_amount !== (selectedTenant.billing_amount || 0)) body.billing_amount = editForm.billing_amount;
       if (editForm.billing_method !== (selectedTenant.billing_method || 'tbd')) body.billing_method = editForm.billing_method;
       if (editForm.signup_date !== (selectedTenant.signup_date || '')) body.signup_date = editForm.signup_date || null;
       if (editForm.next_billing_date !== (selectedTenant.next_billing_date || '')) body.next_billing_date = editForm.next_billing_date || null;
@@ -495,8 +496,8 @@ export function Tenants() {
                     </select>
                   </div>
                   <div style={styles.formGroup}>
-                    <label style={styles.label} htmlFor="edit-billing-amt">Amount (cents)</label>
-                    <input id="edit-billing-amt" style={styles.input} type="number" value={editForm.billing_amount} onChange={(e) => setEditForm({ ...editForm, billing_amount: e.target.value })} min="0" />
+                    <label style={styles.label} htmlFor="edit-billing-amt">Amount</label>
+                    <CurrencyInput style={styles.input} value={editForm.billing_amount} onChange={(cents) => setEditForm({ ...editForm, billing_amount: cents })} />
                   </div>
                 </div>
 
