@@ -485,3 +485,49 @@ adminRouter.get('/audit-log', tenantContext, requirePermission('settings:*'), as
     error(res, 'Failed to query audit log', 'INTERNAL_ERROR', 500);
   }
 });
+
+// --- Tenant Billing Self-Service ---
+
+// GET /api/v1/admin/my-billing — Tenant views their own billing info (read-only terms + editable payment method)
+adminRouter.get('/my-billing', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { rows } = await adminPool.query(
+      `SELECT billing_frequency, billing_amount, billing_method, currency, signup_date, next_billing_date, last_billing_date,
+              payment_bank_name, payment_account_holder, payment_account_number, payment_routing_number, payment_iban,
+              payment_card_last4, payment_card_brand, payment_card_exp
+       FROM tenants WHERE id = $1`,
+      [authReq.tenantId],
+    );
+    if (rows.length === 0) { error(res, 'Tenant not found', 'NOT_FOUND', 404); return; }
+    success(res, rows[0]);
+  } catch (err: any) {
+    error(res, 'Failed to get billing info', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/admin/my-billing/payment-method — Tenant updates their own payment method
+adminRouter.put('/my-billing/payment-method', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { payment_bank_name, payment_account_holder, payment_account_number, payment_routing_number, payment_iban, payment_card_last4, payment_card_brand, payment_card_exp } = req.body;
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+    if (payment_bank_name !== undefined) { fields.push(`payment_bank_name = $${idx++}`); values.push(payment_bank_name); }
+    if (payment_account_holder !== undefined) { fields.push(`payment_account_holder = $${idx++}`); values.push(payment_account_holder); }
+    if (payment_account_number !== undefined) { fields.push(`payment_account_number = $${idx++}`); values.push(payment_account_number); }
+    if (payment_routing_number !== undefined) { fields.push(`payment_routing_number = $${idx++}`); values.push(payment_routing_number); }
+    if (payment_iban !== undefined) { fields.push(`payment_iban = $${idx++}`); values.push(payment_iban); }
+    if (payment_card_last4 !== undefined) { fields.push(`payment_card_last4 = $${idx++}`); values.push(payment_card_last4); }
+    if (payment_card_brand !== undefined) { fields.push(`payment_card_brand = $${idx++}`); values.push(payment_card_brand); }
+    if (payment_card_exp !== undefined) { fields.push(`payment_card_exp = $${idx++}`); values.push(payment_card_exp); }
+    if (fields.length === 0) { error(res, 'No fields to update', 'VALIDATION_ERROR', 400); return; }
+    fields.push('updated_at = NOW()');
+    values.push(authReq.tenantId);
+    await adminPool.query(`UPDATE tenants SET ${fields.join(', ')} WHERE id = $${idx}`, values);
+    success(res, { message: 'Payment method updated' });
+  } catch (err: any) {
+    error(res, 'Failed to update payment method', 'INTERNAL_ERROR', 500);
+  }
+});
