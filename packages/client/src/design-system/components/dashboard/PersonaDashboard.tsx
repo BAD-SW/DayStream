@@ -20,6 +20,7 @@ export function PersonaDashboard() {
   const { user, featureFlags } = useAuth();
   const [tenantKpis, setTenantKpis] = useState<KpiData[] | null>(null);
   const [systemKpis, setSystemKpis] = useState<KpiData[] | null>(null);
+  const [businessKpis, setBusinessKpis] = useState<KpiData[] | null>(null);
   const [detail, setDetail] = useState<DetailModal | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -69,6 +70,30 @@ export function PersonaDashboard() {
         ]);
       }).catch(() => {});
     }
+    if (persona === 'business') {
+      const isOwnerOrManager = ['business_owner', 'Business Owner', 'manager', 'Manager', 'business_manager', 'tenant_owner'].includes(user?.role || '');
+      const endpoint = isOwnerOrManager ? '/v1/reports/business-kpis' : '/v1/reports/staff-kpis';
+      const bizId = localStorage.getItem('business_id') || '';
+      apiClient.get(endpoint, { headers: { 'x-business-id': bizId } }).then(r => {
+        const d = r.data.data;
+        if (isOwnerOrManager) {
+          const ytd = d?.revenue_ytd != null ? (d.revenue_ytd / 100).toFixed(2) : '0.00';
+          const mtd = d?.revenue_mtd != null ? (d.revenue_mtd / 100).toFixed(2) : '0.00';
+          setBusinessKpis([
+            { icon: '💰', label: 'Revenue — YTD / MTD', value: `$${ytd} / $${mtd}` },
+            { icon: '📅', label: 'Bookings — Week / Today', value: `${d?.week_bookings ?? '0'} / ${d?.todays_bookings ?? '0'}` },
+            { icon: '👥', label: 'Customers — Active / New MTD', value: `${d?.active_customers ?? '0'} / ${d?.new_customers_month ?? '0'}` },
+          ]);
+        } else {
+          setBusinessKpis([
+            { icon: '📅', label: 'My Bookings Today', value: d?.my_bookings_today ?? '0' },
+            { icon: '📆', label: 'My Bookings This Week', value: d?.my_bookings_week ?? '0' },
+            { icon: '👥', label: 'My Customers', value: d?.my_customers ?? '0' },
+            { icon: '⏰', label: 'Next Appointment', value: d?.next_appointment || '—' },
+          ]);
+        }
+      }).catch(() => {});
+    }
   }, [persona]);
 
   if (!user) return null;
@@ -76,7 +101,7 @@ export function PersonaDashboard() {
   const permissions = getPermissionsFromRole(user.role);
   const modules = getVisibleModules(persona!, permissions, featureFlags);
 
-  const kpis = (persona === 'system' ? systemKpis : tenantKpis) || getKpisForPersona(persona!);
+  const kpis = (persona === 'system' ? systemKpis : persona === 'tenant' ? tenantKpis : businessKpis) || getKpisForPersona(persona!);
   const tiles = modules;
 
   return (
@@ -132,16 +157,16 @@ function resolvePersona(role: string): Persona {
 
 function getPermissionsFromRole(role: string): string[] {
   // Simplified — in production this comes from JWT/auth context
-  switch (role) {
-    case 'system_admin': return ['*:*'];
-    case 'system_support': return ['*:*'];
+  const r = role.toLowerCase().replace(/\s+/g, '_');
+  switch (r) {
+    case 'system_admin': case 'system_support': case 'super_admin': return ['*:*'];
     case 'tenant_owner': return ['*:*'];
     case 'tenant_manager': return ['reports:read', 'settings:*'];
     case 'business_owner': return ['services:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*', 'customers:*'];
-    case 'business_manager': return ['services:read', 'bookings:*', 'staff:read', 'reports:read', 'customers:*'];
-    case 'business_staff': return ['bookings:read', 'bookings:update', 'customers:read'];
+    case 'business_manager': case 'manager': return ['services:read', 'bookings:*', 'staff:read', 'reports:read', 'customers:*', 'schedule:*'];
+    case 'business_staff': case 'staff': case 'reception': case 'therapist': case 'trainer': return ['bookings:read', 'bookings:update', 'customers:read', 'schedule:read'];
     case 'customer': return ['bookings:read', 'bookings:create'];
-    default: return [];
+    default: return ['services:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*', 'customers:*'];
   }
 }
 
@@ -149,6 +174,7 @@ interface KpiData {
   icon: string;
   label: string;
   value: string | number;
+  subValue?: string;
   trend?: { direction: 'up' | 'down' | 'flat'; percentage: number; period: string };
   prior?: string;
   onClick?: () => void;
@@ -172,10 +198,10 @@ function getKpisForPersona(persona: Persona): KpiData[] {
       ];
     case 'business':
       return [
+        { icon: '💰', label: 'Revenue MTD', value: '—' },
         { icon: '📅', label: "Today's Bookings", value: '—' },
-        { icon: '💰', label: 'Weekly Revenue', value: '—' },
-        { icon: '👥', label: 'New Customers', value: '—' },
-        { icon: '👔', label: 'Staff Online', value: '—' },
+        { icon: '👥', label: 'Active Customers', value: '—' },
+        { icon: '🆕', label: 'New Customers', value: '—' },
       ];
     case 'customer':
       return [

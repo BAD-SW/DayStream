@@ -35,11 +35,13 @@ const updateCustomerSchema = Joi.object({
   first_name: Joi.string().min(1).max(100),
   last_name: Joi.string().min(1).max(100),
   phone: Joi.string().max(50).allow('', null),
-  date_of_birth: Joi.string().isoDate().allow(null),
+  date_of_birth: Joi.string().isoDate().allow(null, ''),
   gender: Joi.string().max(20).allow('', null),
   preferred_language: Joi.string().max(5),
   country: Joi.string().max(100).allow('', null),
   avatar_url: Joi.string().uri().allow('', null),
+  status: Joi.string().valid('active', 'archived'),
+  lifecycle_stage: Joi.string().valid('lead', 'trial', 'active', 'at_risk', 'churned', 'winback'),
 }).min(1);
 
 // --- Routes ---
@@ -212,6 +214,40 @@ customersRouter.put('/:id/archive', requirePermission('customers:*'), async (req
     success(res, result);
   } catch (err: any) {
     error(res, 'Failed to archive customer', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/customers/:id/reactivate — Reactivate an archived customer
+customersRouter.put('/:id/reactivate', requirePermission('customers:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) {
+      error(res, 'business_id query parameter is required', 'VALIDATION_ERROR', 400);
+      return;
+    }
+
+    const { rows } = await adminPool.query(
+      "UPDATE customers SET status = 'active', updated_at = NOW() WHERE id = $1 AND business_id = $2 AND status = 'archived' RETURNING *",
+      [req.params.id, businessId],
+    );
+
+    if (rows.length === 0) {
+      error(res, 'Customer not found or not archived', 'NOT_FOUND', 404);
+      return;
+    }
+
+    await logAudit({
+      tenantId: authReq.tenantId,
+      userId: authReq.user.sub,
+      action: 'customer.reactivated',
+      resourceType: 'customer',
+      resourceId: req.params.id,
+    });
+
+    success(res, rows[0]);
+  } catch (err: any) {
+    error(res, 'Failed to reactivate customer', 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -643,5 +679,46 @@ customersRouter.put('/:id/preferences', requirePermission('customers:*'), valida
     success(res, rows[0]);
   } catch (err: any) {
     error(res, 'Failed to update preferences', 'INTERNAL_ERROR', 500);
+  }
+});
+
+
+// PUT /api/v1/customers/:id/lifecycle-stage — Change lifecycle stage
+const lifecycleStageSchema = Joi.object({
+  stage: Joi.string().valid('lead', 'trial', 'active', 'at_risk', 'churned', 'winback').required(),
+  business_id: Joi.string().uuid().required(),
+});
+
+customersRouter.put('/:id/lifecycle-stage', requirePermission('customers:*'), validate(lifecycleStageSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { stage, business_id } = req.body;
+    const customerId = req.params.id;
+
+    // Verify customer exists
+    const customer = await customerService.getCustomerById(customerId, business_id);
+    if (!customer) {
+      error(res, 'Customer not found', 'NOT_FOUND', 404);
+      return;
+    }
+
+    // Update lifecycle stage
+    await adminPool.query(
+      'UPDATE customers SET lifecycle_stage = $1, updated_at = NOW() WHERE id = $2 AND business_id = $3',
+      [stage, customerId, business_id],
+    );
+
+    await logAudit({
+      tenantId: authReq.tenantId,
+      userId: authReq.user.sub,
+      action: 'customer.lifecycle_changed',
+      resourceType: 'customer',
+      resourceId: customerId,
+      details: { previous_stage: customer.lifecycle_stage, new_stage: stage },
+    });
+
+    success(res, { ...customer, lifecycle_stage: stage });
+  } catch (err: any) {
+    error(res, 'Failed to update lifecycle stage', 'INTERNAL_ERROR', 500);
   }
 });

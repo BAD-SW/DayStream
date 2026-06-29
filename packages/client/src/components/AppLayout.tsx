@@ -3,14 +3,20 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { ThemeModeToggle } from '../design-system/themes/ThemeModeToggle';
+import { getVisibleModules } from '../design-system/components/dashboard/moduleRegistry';
 
 interface AppLayoutProps {
   children: ReactNode;
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
-  const { user, logout } = useAuth();
+  const { user, logout, featureFlags } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Get modules visible to this user for the sidebar
+  const persona = user ? resolvePersona(user.role) : 'business';
+  const permissions = user ? getPermissionsFromRole(user.role) : [];
+  const modules = getVisibleModules(persona, permissions, featureFlags);
 
   return (
     <div style={styles.container}>
@@ -38,18 +44,18 @@ export function AppLayout({ children }: AppLayoutProps) {
           {sidebarOpen ? (
             <>
               <Link to="/dashboard" style={styles.navLink}>Dashboard</Link>
-              <Link to="/profile" style={styles.navLink}>Profile</Link>
-              {user?.role === 'Super Admin' && (
-                <Link to="/query-editor" style={styles.navLink}>Query Editor</Link>
-              )}
+              {modules.map((mod) => (
+                <Link key={mod.id} to={mod.path} style={styles.navLink}>{mod.titleKey}</Link>
+              ))}
+              <Link to="/profile" style={styles.navLinkBottom}>Profile</Link>
             </>
           ) : (
             <>
               <Link to="/dashboard" style={styles.navIcon} title="Dashboard">🏠</Link>
+              {modules.map((mod) => (
+                <Link key={mod.id} to={mod.path} style={styles.navIcon} title={mod.titleKey}>{mod.icon}</Link>
+              ))}
               <Link to="/profile" style={styles.navIcon} title="Profile">👤</Link>
-              {user?.role === 'Super Admin' && (
-                <Link to="/query-editor" style={styles.navIcon} title="Query Editor">⚡</Link>
-              )}
             </>
           )}
         </nav>
@@ -60,6 +66,26 @@ export function AppLayout({ children }: AppLayoutProps) {
       </div>
     </div>
   );
+}
+
+function resolvePersona(role: string): 'system' | 'tenant' | 'business' | 'customer' {
+  if (role === 'system_admin' || role === 'system_support' || role === 'Super Admin') return 'system';
+  if (role === 'tenant_owner' || role === 'tenant_manager') return 'tenant';
+  if (role === 'customer') return 'customer';
+  return 'business';
+}
+
+function getPermissionsFromRole(role: string): string[] {
+  switch (role) {
+    case 'system_admin': case 'system_support': case 'Super Admin': return ['*:*'];
+    case 'tenant_owner': return ['*:*'];
+    case 'tenant_manager': return ['reports:read', 'settings:*'];
+    case 'business_owner': return ['services:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*', 'customers:*'];
+    case 'business_manager': case 'manager': return ['services:read', 'bookings:*', 'staff:read', 'reports:read', 'customers:*'];
+    case 'business_staff': return ['bookings:read', 'bookings:update', 'customers:read'];
+    case 'customer': return ['bookings:read', 'bookings:create'];
+    default: return ['services:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*', 'customers:*'];
+  }
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -144,6 +170,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '14px',
     padding: '8px 12px',
     borderRadius: '6px',
+  },
+  navLinkBottom: {
+    color: 'var(--color-text-secondary)',
+    textDecoration: 'none',
+    fontSize: '14px',
+    padding: '8px 12px',
+    borderRadius: '6px',
+    marginTop: 'auto',
+    borderTop: '1px solid var(--color-border)',
+    paddingTop: '12px',
   },
   navIcon: {
     color: 'var(--color-text-secondary)',

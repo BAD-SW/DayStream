@@ -24,6 +24,7 @@ export function CustomerDetail() {
   const [activities, setActivities] = useState<any[]>([]);
   const [preferences, setPreferences] = useState<any>(null);
   const [tags, setTags] = useState<any[]>([]);
+  const [stageChanging, setStageChanging] = useState(false);
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -53,6 +54,18 @@ export function CustomerDetail() {
     setPreferences(updated);
   };
 
+  const handleStageChange = async (newStage: string) => {
+    if (!customer || newStage === customer.lifecycle_stage) return;
+    setStageChanging(true);
+    try {
+      const { apiClient } = await import('../api/client');
+      await apiClient.put(`/v1/customers/${customer.id}/lifecycle-stage`, { stage: newStage, business_id: businessId });
+      setCustomer({ ...customer, lifecycle_stage: newStage });
+    } catch {
+      alert('Failed to update lifecycle stage');
+    } finally { setStageChanging(false); }
+  };
+
   return (
     <div style={styles.page}>
       {/* Back button */}
@@ -69,6 +82,19 @@ export function CustomerDetail() {
           <Badge variant={LIFECYCLE_VARIANTS[customer.lifecycle_stage] || 'neutral'}>
             {formatStage(customer.lifecycle_stage)}
           </Badge>
+          <select
+            value={customer.lifecycle_stage}
+            onChange={(e) => handleStageChange(e.target.value)}
+            disabled={stageChanging}
+            style={{ marginLeft: '8px', fontSize: '12px', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--color-border)', background: 'var(--color-background)', color: 'var(--color-text)', cursor: 'pointer' }}
+          >
+            <option value="lead">Lead</option>
+            <option value="trial">Trial</option>
+            <option value="active">Active</option>
+            <option value="at_risk">At Risk</option>
+            <option value="churned">Churned</option>
+            <option value="winback">Winback</option>
+          </select>
         </div>
       </div>
 
@@ -88,14 +114,94 @@ export function CustomerDetail() {
 // --- Sub-components for tabs ---
 
 function OverviewTab({ customer, tags }: { customer: Customer; tags: any[] }) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    first_name: customer.first_name,
+    last_name: customer.last_name,
+    email: customer.email,
+    phone: customer.phone || '',
+    date_of_birth: customer.date_of_birth || '',
+    gender: customer.gender || '',
+    preferred_language: customer.preferred_language || 'en',
+    country: customer.country || '',
+  });
+  const [statusChanging, setStatusChanging] = useState(false);
+
+  const businessId = localStorage.getItem('business_id') || '';
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await customersApi.updateCustomer(customer.id, businessId, form);
+      Object.assign(customer, form);
+      setEditing(false);
+    } catch { alert('Failed to update customer'); }
+    finally { setSaving(false); }
+  };
+
+  const handleArchive = async () => {
+    if (!confirm('Archive this customer? They will be hidden from active lists.')) return;
+    setStatusChanging(true);
+    try {
+      await customersApi.updateCustomer(customer.id, businessId, { status: 'archived' });
+      customer.status = 'archived';
+      setStatusChanging(false);
+    } catch { alert('Failed to archive'); setStatusChanging(false); }
+  };
+
+  const handleReactivate = async () => {
+    setStatusChanging(true);
+    try {
+      await customersApi.updateCustomer(customer.id, businessId, { status: 'active' });
+      customer.status = 'active';
+      setStatusChanging(false);
+    } catch { alert('Failed to reactivate'); setStatusChanging(false); }
+  };
+
+  if (editing) {
+    return (
+      <div style={styles.tabContent}>
+        <div style={styles.fieldGrid}>
+          <div style={styles.formGroup}><label style={styles.fieldLabel}>First Name</label><input style={styles.fieldInput} value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.fieldLabel}>Last Name</label><input style={styles.fieldInput} value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.fieldLabel}>Email</label><input style={styles.fieldInput} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.fieldLabel}>Phone</label><input style={styles.fieldInput} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.fieldLabel}>Date of Birth</label><input style={styles.fieldInput} type="date" value={form.date_of_birth} onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.fieldLabel}>Gender</label>
+            <select style={styles.fieldInput} value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+              <option value="">Not specified</option><option value="male">Male</option><option value="female">Female</option><option value="non-binary">Non-binary</option><option value="other">Other</option>
+            </select>
+          </div>
+          <div style={styles.formGroup}><label style={styles.fieldLabel}>Language</label>
+            <select style={styles.fieldInput} value={form.preferred_language} onChange={(e) => setForm({ ...form, preferred_language: e.target.value })}>
+              <option value="en">English</option><option value="es">Spanish</option>
+            </select>
+          </div>
+          <div style={styles.formGroup}><label style={styles.fieldLabel}>Country</label><input style={styles.fieldInput} value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} /></div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+          <Button variant="outline" size="sm" onClick={() => setEditing(false)}>Cancel</Button>
+          <Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.tabContent}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '12px' }}>
+        <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>Edit</Button>
+        {customer.status === 'active' && <Button variant="destructive" size="sm" onClick={handleArchive} loading={statusChanging}>Archive</Button>}
+        {customer.status === 'archived' && <Button variant="primary" size="sm" onClick={handleReactivate} loading={statusChanging}>Reactivate</Button>}
+      </div>
       <div style={styles.fieldGrid}>
         <Field label="Email" value={customer.email} />
         <Field label="Phone" value={customer.phone || '—'} />
         <Field label="Date of Birth" value={customer.date_of_birth || '—'} />
         <Field label="Gender" value={customer.gender || '—'} />
         <Field label="Language" value={customer.preferred_language || 'en'} />
+        <Field label="Country" value={customer.country || '—'} />
         <Field label="Status" value={customer.status} />
         <Field label="Joined" value={new Date(customer.created_at).toLocaleDateString()} />
       </div>
@@ -243,6 +349,8 @@ const styles: Record<string, React.CSSProperties> = {
   field: { display: 'flex', flexDirection: 'column' as const },
   fieldLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginBottom: '2px' },
   fieldValue: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
+  fieldInput: { backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--color-text)', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)' },
+  formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
   tagsSection: { marginTop: 'var(--space-lg)' },
   sectionTitle: { fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-semibold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-sm)' },
   tagsList: { display: 'flex', gap: 'var(--space-xs)', flexWrap: 'wrap' as const },

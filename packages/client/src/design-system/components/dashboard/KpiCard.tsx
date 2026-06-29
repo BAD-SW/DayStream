@@ -4,6 +4,7 @@ interface KpiCardProps {
   icon: string;
   label: string;
   value: string | number;
+  subValue?: string;
   trend?: {
     direction: 'up' | 'down' | 'flat';
     percentage: number;
@@ -14,7 +15,7 @@ interface KpiCardProps {
   onClick?: () => void;
 }
 
-export function KpiCard({ icon, label, value, trend, prior, color, onClick }: KpiCardProps) {
+export function KpiCard({ icon, label, value, subValue, trend, prior, color, onClick }: KpiCardProps) {
   return (
     <div className={styles.card} onClick={onClick} style={onClick ? { cursor: 'pointer' } : undefined}>
       <div className={styles.iconWrapper} style={color ? { color } : undefined}>
@@ -23,6 +24,7 @@ export function KpiCard({ icon, label, value, trend, prior, color, onClick }: Kp
       <div className={styles.content}>
         <span className={styles.label}>{label}</span>
         <span className={styles.value}>{value}</span>
+        {subValue && <span className={styles.subValue}>{subValue}</span>}
         {prior !== undefined && (
           <span className={styles.prior}>Prior year: {prior}</span>
         )}

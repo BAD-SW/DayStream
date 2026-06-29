@@ -125,7 +125,7 @@ export async function updateCustomer(id: string, businessId: string, updates: Re
   const customer = await getCustomerById(id, businessId);
   if (!customer) return null;
 
-  const allowedFields = ['email', 'first_name', 'last_name', 'phone', 'date_of_birth', 'gender', 'preferred_language', 'country', 'avatar_url'];
+  const allowedFields = ['email', 'first_name', 'last_name', 'phone', 'date_of_birth', 'gender', 'preferred_language', 'country', 'avatar_url', 'status', 'lifecycle_stage'];
   const fields: string[] = [];
   const values: any[] = [];
   let idx = 1;
