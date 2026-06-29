@@ -80,7 +80,7 @@ export function Customers() {
       render: (_: any, row: Customer) => `${row.first_name} ${row.last_name}`,
     },
     { key: 'email', header: 'Email', sortable: true },
-    { key: 'phone', header: 'Phone' },
+    { key: 'phone', header: 'Phone', sortable: true },
     {
       key: 'lifecycle_stage', header: 'Stage', sortable: true,
       render: (val: string) => <Badge variant={LIFECYCLE_VARIANTS[val] || 'neutral'}>{formatStage(val)}</Badge>,
@@ -95,7 +95,22 @@ export function Customers() {
     <div style={styles.page}>
       <div style={styles.header}>
         <h1 style={styles.title}>Customers</h1>
-        <Button onClick={() => navigate('/customers/new')}>Add Customer</Button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <Button variant="outline" onClick={async () => {
+            try {
+              const url = customersApi.getExportUrl(businessId, { lifecycle_stage: lifecycleFilter, search });
+              const res = await fetch(url, { headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` } });
+              if (!res.ok) throw new Error('Export failed');
+              const blob = await res.blob();
+              const link = document.createElement('a');
+              link.href = URL.createObjectURL(blob);
+              link.download = `customers-${new Date().toISOString().split('T')[0]}.csv`;
+              link.click();
+              URL.revokeObjectURL(link.href);
+            } catch { alert('Export failed'); }
+          }}>Export CSV</Button>
+          <Button onClick={() => navigate('/customers/new')}>Add Customer</Button>
+        </div>
       </div>
 
       {/* Lifecycle summary cards */}
@@ -137,9 +152,6 @@ export function Customers() {
         columns={columns}
         data={customers}
         loading={loading}
-        selectable
-        selectedIds={selectedIds}
-        onSelectionChange={setSelectedIds}
         onRowClick={(row) => navigate(`/customers/${row.id}`)}
         clientSort
         page={page}

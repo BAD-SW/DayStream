@@ -24,7 +24,6 @@ export function CustomerDetail() {
   const [activities, setActivities] = useState<any[]>([]);
   const [preferences, setPreferences] = useState<any>(null);
   const [tags, setTags] = useState<any[]>([]);
-  const [stageChanging, setStageChanging] = useState(false);
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -54,18 +53,6 @@ export function CustomerDetail() {
     setPreferences(updated);
   };
 
-  const handleStageChange = async (newStage: string) => {
-    if (!customer || newStage === customer.lifecycle_stage) return;
-    setStageChanging(true);
-    try {
-      const { apiClient } = await import('../api/client');
-      await apiClient.put(`/v1/customers/${customer.id}/lifecycle-stage`, { stage: newStage, business_id: businessId });
-      setCustomer({ ...customer, lifecycle_stage: newStage });
-    } catch {
-      alert('Failed to update lifecycle stage');
-    } finally { setStageChanging(false); }
-  };
-
   return (
     <div style={styles.page}>
       {/* Back button */}
@@ -82,26 +69,13 @@ export function CustomerDetail() {
           <Badge variant={LIFECYCLE_VARIANTS[customer.lifecycle_stage] || 'neutral'}>
             {formatStage(customer.lifecycle_stage)}
           </Badge>
-          <select
-            value={customer.lifecycle_stage}
-            onChange={(e) => handleStageChange(e.target.value)}
-            disabled={stageChanging}
-            style={{ marginLeft: '8px', fontSize: '12px', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--color-border)', background: 'var(--color-background)', color: 'var(--color-text)', cursor: 'pointer' }}
-          >
-            <option value="lead">Lead</option>
-            <option value="trial">Trial</option>
-            <option value="active">Active</option>
-            <option value="at_risk">At Risk</option>
-            <option value="churned">Churned</option>
-            <option value="winback">Winback</option>
-          </select>
         </div>
       </div>
 
       {/* Tabs */}
       <Tabs
         items={[
-          { id: 'overview', label: 'Overview', content: <OverviewTab customer={customer} tags={tags} /> },
+          { id: 'overview', label: 'Overview', content: <OverviewTab customer={customer} tags={tags} onUpdate={setCustomer} /> },
           { id: 'notes', label: 'Notes', content: <NotesTab notes={notes} customerId={customer.id} businessId={businessId} onRefresh={(n) => setNotes(n)} /> },
           { id: 'timeline', label: 'Timeline', content: <TimelineTab activities={activities} customerId={customer.id} businessId={businessId} /> },
           { id: 'preferences', label: 'Preferences', content: <PreferencesTab preferences={preferences} onChange={handlePreferenceChange} /> },
@@ -113,7 +87,7 @@ export function CustomerDetail() {
 
 // --- Sub-components for tabs ---
 
-function OverviewTab({ customer, tags }: { customer: Customer; tags: any[] }) {
+function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: any[]; onUpdate: (c: Customer) => void }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -125,6 +99,7 @@ function OverviewTab({ customer, tags }: { customer: Customer; tags: any[] }) {
     gender: customer.gender || '',
     preferred_language: customer.preferred_language || 'en',
     country: customer.country || '',
+    lifecycle_stage: customer.lifecycle_stage || 'lead',
   });
   const [statusChanging, setStatusChanging] = useState(false);
   const [anonymizing, setAnonymizing] = useState(false);
@@ -134,8 +109,8 @@ function OverviewTab({ customer, tags }: { customer: Customer; tags: any[] }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await customersApi.updateCustomer(customer.id, businessId, form);
-      Object.assign(customer, form);
+      const updated = await customersApi.updateCustomer(customer.id, businessId, form);
+      onUpdate(updated);
       setEditing(false);
     } catch { alert('Failed to update customer'); }
     finally { setSaving(false); }
@@ -145,8 +120,8 @@ function OverviewTab({ customer, tags }: { customer: Customer; tags: any[] }) {
     if (!confirm('Archive this customer? They will be hidden from active lists.')) return;
     setStatusChanging(true);
     try {
-      await customersApi.updateCustomer(customer.id, businessId, { status: 'archived' });
-      customer.status = 'archived';
+      const updated = await customersApi.updateCustomer(customer.id, businessId, { status: 'archived' });
+      onUpdate(updated);
       setStatusChanging(false);
     } catch { alert('Failed to archive'); setStatusChanging(false); }
   };
@@ -154,8 +129,8 @@ function OverviewTab({ customer, tags }: { customer: Customer; tags: any[] }) {
   const handleReactivate = async () => {
     setStatusChanging(true);
     try {
-      await customersApi.updateCustomer(customer.id, businessId, { status: 'active' });
-      customer.status = 'active';
+      const updated = await customersApi.updateCustomer(customer.id, businessId, { status: 'active' });
+      onUpdate(updated);
       setStatusChanging(false);
     } catch { alert('Failed to reactivate'); setStatusChanging(false); }
   };
@@ -208,6 +183,16 @@ function OverviewTab({ customer, tags }: { customer: Customer; tags: any[] }) {
             </select>
           </div>
           <div style={styles.formGroup}><label style={styles.fieldLabel}>Country</label><input style={styles.fieldInput} value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.fieldLabel}>Lifecycle Stage</label>
+            <select style={styles.fieldInput} value={form.lifecycle_stage} onChange={(e) => setForm({ ...form, lifecycle_stage: e.target.value })}>
+              <option value="lead">Lead</option>
+              <option value="trial">Trial</option>
+              <option value="active">Active</option>
+              <option value="at_risk">At Risk</option>
+              <option value="churned">Churned</option>
+              <option value="winback">Winback</option>
+            </select>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
           <Button variant="outline" size="sm" onClick={() => setEditing(false)}>Cancel</Button>

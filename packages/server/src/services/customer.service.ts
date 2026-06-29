@@ -79,8 +79,8 @@ export async function getCustomers(businessId: string, filters: CustomerFilters)
   let paramIndex = 2;
 
   if (filters.search) {
-    conditions.push(`to_tsvector('english', first_name || ' ' || last_name || ' ' || email || ' ' || COALESCE(phone, '')) @@ plainto_tsquery('english', $${paramIndex})`);
-    params.push(filters.search);
+    conditions.push(`(first_name ILIKE $${paramIndex} OR last_name ILIKE $${paramIndex} OR email ILIKE $${paramIndex} OR COALESCE(phone, '') ILIKE $${paramIndex} OR COALESCE(reference_number, '') ILIKE $${paramIndex})`);
+    params.push(`%${filters.search}%`);
     paramIndex++;
   }
 
@@ -91,7 +91,7 @@ export async function getCustomers(businessId: string, filters: CustomerFilters)
   }
 
   const where = conditions.join(' AND ');
-  const sort = ['first_name', 'last_name', 'email', 'created_at', 'lifecycle_stage'].includes(filters.sort || '') ? filters.sort : 'created_at';
+  const sort = ['first_name', 'last_name', 'email', 'phone', 'reference_number', 'created_at', 'lifecycle_stage'].includes(filters.sort || '') ? filters.sort : 'created_at';
   const order = filters.order === 'asc' ? 'ASC' : 'DESC';
   const limit = Math.min(filters.limit || 20, 100);
   const page = filters.page || 1;
