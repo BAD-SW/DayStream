@@ -37,6 +37,22 @@ export function Memberships() {
       if (action === 'cancel') await membershipsApi.cancelMembership(m.id, businessId);
       else if (action === 'pause') await membershipsApi.pauseMembership(m.id, businessId, 14);
       else if (action === 'resume') await membershipsApi.resumeMembership(m.id, businessId);
+      else if (action === 'downgrade') {
+        const planId = prompt('Enter plan ID to downgrade to:');
+        if (planId) await membershipsApi.downgradeMembership(m.id, businessId, planId);
+      }
+      fetchMemberships();
+    } catch { /* silent */ }
+  };
+
+  const handleCreditAction = async (action: string, m: Membership) => {
+    const amount = prompt(`Enter credit amount to ${action}:`);
+    if (!amount || isNaN(Number(amount))) return;
+    const reason = prompt('Reason (optional):') || undefined;
+    try {
+      if (action === 'adjust') await membershipsApi.adjustCredits(m.id, { amount: Number(amount), reason });
+      else if (action === 'deduct') await membershipsApi.deductCredits(m.id, { amount: Number(amount), reason });
+      else if (action === 'restore') await membershipsApi.restoreCredits(m.id, { amount: Number(amount), reason });
       fetchMemberships();
     } catch { /* silent */ }
   };
@@ -51,10 +67,14 @@ export function Memberships() {
     {
       key: 'actions', header: '',
       render: (_: any, row: Membership) => (
-        <div style={{ display: 'flex', gap: '4px' }}>
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
           {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleAction('pause', row)} />}
           {row.status === 'paused' && <ActionBtn label="Resume" onClick={() => handleAction('resume', row)} />}
+          {row.status === 'active' && <ActionBtn label="Downgrade" onClick={() => handleAction('downgrade', row)} />}
           {['active', 'paused'].includes(row.status) && <ActionBtn label="Cancel" onClick={() => handleAction('cancel', row)} />}
+          <ActionBtn label="Adjust Credits" onClick={() => handleCreditAction('adjust', row)} />
+          <ActionBtn label="Deduct Credits" onClick={() => handleCreditAction('deduct', row)} />
+          <ActionBtn label="Restore Credits" onClick={() => handleCreditAction('restore', row)} />
         </div>
       ),
     },
@@ -76,6 +96,50 @@ export function Memberships() {
         </select>
       </div>
       <Table columns={columns} data={memberships} loading={loading} onRowClick={(row) => navigate(`/memberships/${row.id}`)} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No memberships found" mobileCardMode />
+      <FamilySection businessId={businessId} />
+    </div>
+  );
+}
+
+function FamilySection({ businessId }: { businessId: string }) {
+  const [membershipId, setMembershipId] = useState('');
+  const [familyMembers, setFamilyMembers] = useState<any[]>([]);
+  const [showFamily, setShowFamily] = useState(false);
+
+  const loadFamily = async () => {
+    if (!membershipId) return;
+    try {
+      const members = await membershipsApi.getFamilyMembers(membershipId);
+      setFamilyMembers(members);
+      setShowFamily(true);
+    } catch { alert('Could not load family members'); }
+  };
+
+  const handleRemove = async (customerId: string) => {
+    if (!confirm('Remove this member from the family plan?')) return;
+    await membershipsApi.removeFamilyMember(membershipId, customerId);
+    setFamilyMembers(familyMembers.filter((m: any) => m.customer_id !== customerId));
+  };
+
+  return (
+    <div style={{ marginTop: 'var(--space-lg)', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-lg)' }}>
+      <h2 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-bold)' as any, marginBottom: 'var(--space-md)' }}>Family Members</h2>
+      <div style={{ display: 'flex', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
+        <input style={styles.select} placeholder="Membership ID" value={membershipId} onChange={(e) => setMembershipId(e.target.value)} />
+        <button style={styles.navBtn} onClick={loadFamily}>Load Family</button>
+      </div>
+      {showFamily && (
+        <div>
+          {familyMembers.length === 0 ? <p style={{ color: 'var(--color-text-secondary)' }}>No family members</p> : (
+            familyMembers.map((m: any) => (
+              <div key={m.customer_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', marginBottom: '4px' }}>
+                <span>{m.first_name} {m.last_name}</span>
+                <button style={styles.actionBtn} onClick={() => handleRemove(m.customer_id)}>Remove</button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }

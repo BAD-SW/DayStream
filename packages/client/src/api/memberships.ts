@@ -98,6 +98,27 @@ export async function addFamilyMember(membershipId: string, businessId: string, 
   return res.data.data;
 }
 
+export async function removeFamilyMember(membershipId: string, customerId: string) {
+  await apiClient.delete(`/v1/memberships/${membershipId}/members/${customerId}`);
+}
+
+// Credit management
+export async function adjustCredits(membershipId: string, data: Record<string, any>) {
+  const res = await apiClient.put(`/v1/memberships/${membershipId}/credits/adjust`, data); return res.data.data;
+}
+export async function deductCredits(membershipId: string, data: Record<string, any>) {
+  const res = await apiClient.put(`/v1/memberships/${membershipId}/credits/deduct`, data); return res.data.data;
+}
+export async function restoreCredits(membershipId: string, data: Record<string, any>) {
+  const res = await apiClient.put(`/v1/memberships/${membershipId}/credits/restore`, data); return res.data.data;
+}
+
+// Downgrade
+export async function downgradeMembership(id: string, businessId: string, planId: string) {
+  const res = await apiClient.put(`/v1/memberships/${id}/downgrade?business_id=${businessId}`, { plan_id: planId });
+  return res.data.data;
+}
+
 // Reports
 export async function getSummaryReport(businessId: string) {
   const res = await apiClient.get(`/v1/memberships/reports/summary?business_id=${businessId}`);

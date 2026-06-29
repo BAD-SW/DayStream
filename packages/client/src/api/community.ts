@@ -17,3 +17,20 @@ export async function getVodLibrary(params?: Record<string, any>) { const r = aw
 export async function getCourses() { const r = await apiClient.get('/v1/community/courses'); return r.data.data; }
 export async function enrollInCourse(id: string) { const r = await apiClient.post(`/v1/community/courses/${id}/enroll`); return r.data.data; }
 export async function submitReview(data: Record<string, any>) { const r = await apiClient.post('/v1/community/reviews', data); return r.data.data; }
+
+// Challenge leaderboard
+export async function getChallengeLeaderboard(id: string) { const r = await apiClient.get(`/v1/community/challenges/${id}/leaderboard`); return r.data.data; }
+
+// Lesson completion
+export async function completeLesson(courseId: string, lessonId: string) { const r = await apiClient.post(`/v1/community/courses/${courseId}/lessons/${lessonId}/complete`); return r.data.data; }
+
+// Review moderation
+export async function moderateReview(id: string, data: Record<string, any>) { const r = await apiClient.put(`/v1/community/reviews/${id}/moderate`, data); return r.data.data; }
+export async function respondToReview(id: string, data: Record<string, any>) { const r = await apiClient.post(`/v1/community/reviews/${id}/respond`, data); return r.data.data; }
+
+// Reviews by service
+export async function getReviewsByService(serviceId: string) { const r = await apiClient.get(`/v1/community/reviews/service/${serviceId}`); return r.data.data; }
+
+// VOD detail and progress
+export async function getVodDetail(id: string) { const r = await apiClient.get(`/v1/community/vod/${id}`); return r.data.data; }
+export async function updateVodProgress(id: string, data: Record<string, any>) { const r = await apiClient.put(`/v1/community/vod/${id}/progress`, data); return r.data.data; }

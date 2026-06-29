@@ -10,6 +10,9 @@ export async function createCampaign(data: Record<string, any>) {
 export async function getCampaign(id: string) { const res = await apiClient.get(`/v1/marketing/campaigns/${id}`); return res.data.data; }
 export async function sendCampaign(id: string) { const res = await apiClient.post(`/v1/marketing/campaigns/${id}/send`); return res.data.data; }
 export async function getCampaignAnalytics(id: string) { const res = await apiClient.get(`/v1/marketing/campaigns/${id}/analytics`); return res.data.data; }
+export async function getCampaignRecipients(id: string) { const res = await apiClient.get(`/v1/marketing/campaigns/${id}/recipients`); return res.data.data; }
+export async function scheduleCampaign(id: string, data: Record<string, any>) { const res = await apiClient.put(`/v1/marketing/campaigns/${id}/schedule`, data); return res.data.data; }
+export async function testCampaign(id: string, data: Record<string, any>) { const res = await apiClient.post(`/v1/marketing/campaigns/${id}/test`, data); return res.data.data; }
 
 // Sequences
 export async function getSequences(params?: Record<string, any>) {
@@ -37,3 +40,6 @@ export async function updatePreferences(customerId: string, prefs: any[]) { cons
 export async function getFunnels() { const res = await apiClient.get('/v1/marketing/funnels'); return res.data.data; }
 export async function createFunnel(data: Record<string, any>) { const res = await apiClient.post('/v1/marketing/funnels', data); return res.data.data; }
 export async function getFunnelAnalytics(id: string) { const res = await apiClient.get(`/v1/marketing/funnels/${id}/analytics`); return res.data.data; }
+
+// Sequence enrollments
+export async function getSequenceEnrollments(id: string) { const res = await apiClient.get(`/v1/marketing/sequences/${id}/enrollments`); return res.data.data; }

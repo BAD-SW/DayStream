@@ -54,3 +54,21 @@ export async function getPeakTimes(params?: Record<string, any>) {
 export async function getMethodBreakdown(params?: Record<string, any>) {
   const res = await apiClient.get('/v1/check-in/reports/methods', { params }); return res.data.data;
 }
+
+// Kiosk
+export async function registerKiosk(data: Record<string, any>) {
+  const res = await apiClient.post('/v1/check-in/kiosk/register', data); return res.data.data;
+}
+export async function getKioskStatus() {
+  const res = await apiClient.get('/v1/check-in/kiosk/status'); return res.data.data;
+}
+
+// Customer no-show history
+export async function getCustomerNoShows(customerId: string) {
+  const res = await apiClient.get(`/v1/check-in/no-shows/customer/${customerId}`); return res.data.data;
+}
+
+// Walk-in report
+export async function getWalkInReport(params?: Record<string, any>) {
+  const res = await apiClient.get('/v1/check-in/reports/walk-ins', { params }); return res.data.data;
+}

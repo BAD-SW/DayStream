@@ -71,3 +71,80 @@ export async function getCommunications(eventId: string) {
 export async function sendCommunication(eventId: string, data: Record<string, any>) {
   const res = await apiClient.post(`/v1/events/${eventId}/communications`, data); return res.data.data;
 }
+
+// Export attendees
+export async function exportAttendees(eventId: string) {
+  const res = await apiClient.get(`/v1/events/${eventId}/attendees/export`, { responseType: 'blob' });
+  return res.data;
+}
+
+// Facilitators
+export async function getFacilitators(eventId: string) {
+  const res = await apiClient.get(`/v1/events/${eventId}/facilitators`); return res.data.data;
+}
+export async function addFacilitator(eventId: string, data: Record<string, any>) {
+  const res = await apiClient.post(`/v1/events/${eventId}/facilitators`, data); return res.data.data;
+}
+export async function removeFacilitator(eventId: string, facilitatorId: string) {
+  await apiClient.delete(`/v1/events/${eventId}/facilitators/${facilitatorId}`);
+}
+
+// Ticket CRUD
+export async function updateTier(eventId: string, tierId: string, data: Record<string, any>) {
+  const res = await apiClient.put(`/v1/events/${eventId}/tickets/${tierId}`, data); return res.data.data;
+}
+export async function deleteTier(eventId: string, tierId: string) {
+  await apiClient.delete(`/v1/events/${eventId}/tickets/${tierId}`);
+}
+
+// Recurring events
+export async function getRecurringEvent(id: string) {
+  const res = await apiClient.get(`/v1/events/recurring/${id}`); return res.data.data;
+}
+export async function updateRecurringEvent(id: string, data: Record<string, any>) {
+  const res = await apiClient.put(`/v1/events/recurring/${id}`, data); return res.data.data;
+}
+export async function deleteRecurringEvent(id: string) {
+  await apiClient.delete(`/v1/events/recurring/${id}`);
+}
+export async function generateRecurringInstances(id: string) {
+  const res = await apiClient.post(`/v1/events/recurring/${id}/generate`); return res.data.data;
+}
+export async function cancelRecurringEvent(id: string) {
+  const res = await apiClient.put(`/v1/events/recurring/${id}/cancel`); return res.data.data;
+}
+
+// Registration actions
+export async function cancelRegistration(registrationId: string) {
+  const res = await apiClient.put(`/v1/events/registrations/${registrationId}/cancel`); return res.data.data;
+}
+export async function checkInRegistration(registrationId: string) {
+  const res = await apiClient.put(`/v1/events/registrations/${registrationId}/check-in`); return res.data.data;
+}
+export async function transferRegistration(registrationId: string, data: Record<string, any>) {
+  const res = await apiClient.put(`/v1/events/registrations/${registrationId}/transfer`, data); return res.data.data;
+}
+
+// Event series
+export async function updateSeries(id: string, data: Record<string, any>) {
+  const res = await apiClient.put(`/v1/events/series/${id}`, data); return res.data.data;
+}
+export async function deleteSeries(id: string) {
+  await apiClient.delete(`/v1/events/series/${id}`);
+}
+
+// Event types
+export async function createEventType(data: Record<string, any>) {
+  const res = await apiClient.post('/v1/events/types', data); return res.data.data;
+}
+export async function updateEventType(id: string, data: Record<string, any>) {
+  const res = await apiClient.put(`/v1/events/types/${id}`, data); return res.data.data;
+}
+export async function deleteEventType(id: string) {
+  await apiClient.delete(`/v1/events/types/${id}`);
+}
+
+// Waitlist
+export async function confirmWaitlist(waitlistId: string) {
+  const res = await apiClient.put(`/v1/events/waitlist/${waitlistId}/confirm`); return res.data.data;
+}

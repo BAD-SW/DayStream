@@ -5,7 +5,7 @@ import { Badge } from '../design-system/components/data/Badge';
 import * as eventsApi from '../api/events';
 import type { Event } from '../api/events';
 
-type Tab = 'details' | 'tickets' | 'registrations' | 'waitlist' | 'communications' | 'reports';
+type Tab = 'details' | 'tickets' | 'registrations' | 'waitlist' | 'facilitators' | 'communications' | 'reports';
 
 export function EventDetail() {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +25,7 @@ export function EventDetail() {
   const tabs: { key: Tab; label: string }[] = [
     { key: 'details', label: 'Details' }, { key: 'tickets', label: 'Tickets' },
     { key: 'registrations', label: 'Registrations' }, { key: 'waitlist', label: 'Waitlist' },
+    { key: 'facilitators', label: 'Facilitators' },
     { key: 'communications', label: 'Communications' }, { key: 'reports', label: 'Reports' },
   ];
 
@@ -59,6 +60,7 @@ export function EventDetail() {
       {activeTab === 'tickets' && <TicketsTab eventId={event.id} />}
       {activeTab === 'registrations' && <RegistrationsTab eventId={event.id} />}
       {activeTab === 'waitlist' && <WaitlistTab eventId={event.id} />}
+      {activeTab === 'facilitators' && <FacilitatorsTab eventId={event.id} />}
       {activeTab === 'communications' && <CommsTab eventId={event.id} />}
       {activeTab === 'reports' && <ReportsTab eventId={event.id} />}
     </div>
@@ -82,7 +84,25 @@ function DetailsTab({ event }: { event: Event }) {
 
 function TicketsTab({ eventId }: { eventId: string }) {
   const [tiers, setTiers] = useState<any[]>([]);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editPrice, setEditPrice] = useState('');
   useEffect(() => { eventsApi.getTiers(eventId).then(setTiers); }, [eventId]);
+
+  const handleDelete = async (tierId: string) => {
+    if (!confirm('Delete this ticket tier?')) return;
+    await eventsApi.deleteTier(eventId, tierId);
+    setTiers(tiers.filter((t) => t.id !== tierId));
+  };
+
+  const handleEdit = (t: any) => { setEditing(t.id); setEditName(t.name); setEditPrice(String(t.price / 100)); };
+
+  const handleSave = async (tierId: string) => {
+    const updated = await eventsApi.updateTier(eventId, tierId, { name: editName, price: Math.round(parseFloat(editPrice) * 100) });
+    setTiers(tiers.map((t) => t.id === tierId ? updated : t));
+    setEditing(null);
+  };
+
   return (
     <div>
       <h3 className="font-medium mb-4">Ticket Tiers</h3>
@@ -90,8 +110,23 @@ function TicketsTab({ eventId }: { eventId: string }) {
         <div className="space-y-2">
           {tiers.map((t: any) => (
             <div key={t.id} className="border rounded p-3 flex justify-between items-center">
-              <div><span className="font-medium">{t.name}</span> — ${(t.price / 100).toFixed(2)}</div>
-              <div className="text-sm text-gray-500">{t.sold_count || 0} / {t.quantity_available || '∞'} sold</div>
+              {editing === t.id ? (
+                <div className="flex gap-2 items-center flex-1">
+                  <input className="border rounded px-2 py-1 text-sm" value={editName} onChange={(e) => setEditName(e.target.value)} />
+                  <input className="border rounded px-2 py-1 text-sm w-24" type="number" step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} />
+                  <Button size="sm" onClick={() => handleSave(t.id)}>Save</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+                </div>
+              ) : (
+                <>
+                  <div><span className="font-medium">{t.name}</span> — ${(t.price / 100).toFixed(2)}</div>
+                  <div className="flex gap-2 items-center">
+                    <span className="text-sm text-gray-500">{t.sold_count || 0} / {t.quantity_available || '∞'} sold</span>
+                    <Button size="sm" variant="ghost" onClick={() => handleEdit(t)}>Edit</Button>
+                    <Button size="sm" variant="destructive" onClick={() => handleDelete(t.id)}>Delete</Button>
+                  </div>
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -102,22 +137,74 @@ function TicketsTab({ eventId }: { eventId: string }) {
 
 function RegistrationsTab({ eventId }: { eventId: string }) {
   const [regs, setRegs] = useState<any[]>([]);
+  const [transferTarget, setTransferTarget] = useState<string | null>(null);
+  const [transferEmail, setTransferEmail] = useState('');
   useEffect(() => { eventsApi.getRegistrations(eventId).then((r) => setRegs(r.data)); }, [eventId]);
+
+  const handleExportAttendees = async () => {
+    try {
+      const blob = await eventsApi.exportAttendees(eventId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'attendees.csv'; a.click();
+      window.URL.revokeObjectURL(url);
+    } catch { alert('Export failed'); }
+  };
+
+  const handleCancel = async (regId: string) => {
+    if (!confirm('Cancel this registration?')) return;
+    const updated = await eventsApi.cancelRegistration(regId);
+    setRegs(regs.map((r) => r.id === regId ? { ...r, status: updated.status || 'cancelled' } : r));
+  };
+
+  const handleCheckIn = async (regId: string) => {
+    const updated = await eventsApi.checkInRegistration(regId);
+    setRegs(regs.map((r) => r.id === regId ? { ...r, checked_in_at: updated.checked_in_at || new Date().toISOString() } : r));
+  };
+
+  const handleTransfer = async (regId: string) => {
+    if (!transferEmail) return;
+    await eventsApi.transferRegistration(regId, { email: transferEmail });
+    setTransferTarget(null); setTransferEmail('');
+    const result = await eventsApi.getRegistrations(eventId);
+    setRegs(result.data);
+  };
+
   return (
     <div>
-      <h3 className="font-medium mb-4">Registrations ({regs.length})</h3>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="font-medium">Registrations ({regs.length})</h3>
+        <Button size="sm" variant="ghost" onClick={handleExportAttendees}>Export Attendees</Button>
+      </div>
       {regs.length === 0 ? <p className="text-gray-500 text-sm">No registrations yet</p> : (
         <div className="space-y-2">
           {regs.map((r: any) => (
-            <div key={r.id} className="border rounded p-2 flex justify-between items-center">
-              <div>
-                <span className="font-medium">{r.first_name} {r.last_name}</span>
-                <span className="text-xs text-gray-500 ml-2">{r.reference_number}</span>
+            <div key={r.id} className="border rounded p-2">
+              <div className="flex justify-between items-center">
+                <div>
+                  <span className="font-medium">{r.first_name} {r.last_name}</span>
+                  <span className="text-xs text-gray-500 ml-2">{r.reference_number}</span>
+                </div>
+                <div className="flex gap-2 items-center">
+                  {r.checked_in_at && <Badge variant="success">Checked In</Badge>}
+                  <Badge variant={r.status === 'confirmed' ? 'success' : r.status === 'cancelled' ? 'error' : 'neutral'}>{r.status}</Badge>
+                  {r.status === 'confirmed' && !r.checked_in_at && (
+                    <Button size="sm" onClick={() => handleCheckIn(r.id)}>Check In</Button>
+                  )}
+                  {r.status === 'confirmed' && (
+                    <>
+                      <Button size="sm" variant="ghost" onClick={() => setTransferTarget(r.id)}>Transfer</Button>
+                      <Button size="sm" variant="destructive" onClick={() => handleCancel(r.id)}>Cancel</Button>
+                    </>
+                  )}
+                </div>
               </div>
-              <div className="flex gap-2 items-center">
-                {r.checked_in_at && <Badge variant="success">Checked In</Badge>}
-                <Badge variant={r.status === 'confirmed' ? 'success' : r.status === 'cancelled' ? 'error' : 'neutral'}>{r.status}</Badge>
-              </div>
+              {transferTarget === r.id && (
+                <div className="flex gap-2 mt-2 items-center">
+                  <input className="border rounded px-2 py-1 text-sm flex-1" placeholder="Recipient email" value={transferEmail} onChange={(e) => setTransferEmail(e.target.value)} />
+                  <Button size="sm" onClick={() => handleTransfer(r.id)}>Confirm Transfer</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setTransferTarget(null)}>Cancel</Button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -129,15 +216,73 @@ function RegistrationsTab({ eventId }: { eventId: string }) {
 function WaitlistTab({ eventId }: { eventId: string }) {
   const [waitlist, setWaitlist] = useState<any[]>([]);
   useEffect(() => { eventsApi.getWaitlist(eventId).then(setWaitlist); }, [eventId]);
+
+  const handleConfirm = async (waitlistId: string) => {
+    await eventsApi.confirmWaitlist(waitlistId);
+    setWaitlist(waitlist.filter((w) => w.id !== waitlistId));
+  };
+
   return (
     <div>
       <h3 className="font-medium mb-4">Waitlist ({waitlist.length})</h3>
       {waitlist.length === 0 ? <p className="text-gray-500 text-sm">No one on waitlist</p> : (
         <div className="space-y-2">
           {waitlist.map((w: any) => (
-            <div key={w.id} className="border rounded p-2 flex justify-between">
+            <div key={w.id} className="border rounded p-2 flex justify-between items-center">
               <span>#{w.position} — {w.first_name} {w.last_name}</span>
-              <Badge variant={w.status === 'waiting' ? 'info' : 'warning'}>{w.status}</Badge>
+              <div className="flex gap-2 items-center">
+                <Badge variant={w.status === 'waiting' ? 'info' : 'warning'}>{w.status}</Badge>
+                {w.status === 'waiting' && <Button size="sm" onClick={() => handleConfirm(w.id)}>Confirm</Button>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FacilitatorsTab({ eventId }: { eventId: string }) {
+  const [facilitators, setFacilitators] = useState<any[]>([]);
+  const [staffId, setStaffId] = useState('');
+  const [role, setRole] = useState('facilitator');
+
+  useEffect(() => { eventsApi.getFacilitators(eventId).then(setFacilitators).catch(() => {}); }, [eventId]);
+
+  const handleAdd = async () => {
+    if (!staffId) return;
+    const f = await eventsApi.addFacilitator(eventId, { staff_id: staffId, role });
+    setFacilitators([...facilitators, f]);
+    setStaffId(''); setRole('facilitator');
+  };
+
+  const handleRemove = async (fid: string) => {
+    if (!confirm('Remove this facilitator?')) return;
+    await eventsApi.removeFacilitator(eventId, fid);
+    setFacilitators(facilitators.filter((f) => f.id !== fid));
+  };
+
+  return (
+    <div>
+      <h3 className="font-medium mb-4">Facilitators</h3>
+      <div className="flex gap-2 mb-4">
+        <input className="border rounded px-2 py-1 text-sm flex-1" placeholder="Staff ID" value={staffId} onChange={(e) => setStaffId(e.target.value)} />
+        <select className="border rounded px-2 py-1 text-sm" value={role} onChange={(e) => setRole(e.target.value)}>
+          <option value="facilitator">Facilitator</option>
+          <option value="instructor">Instructor</option>
+          <option value="assistant">Assistant</option>
+        </select>
+        <Button size="sm" onClick={handleAdd}>Add</Button>
+      </div>
+      {facilitators.length === 0 ? <p className="text-gray-500 text-sm">No facilitators assigned</p> : (
+        <div className="space-y-2">
+          {facilitators.map((f: any) => (
+            <div key={f.id} className="border rounded p-2 flex justify-between items-center">
+              <div>
+                <span className="font-medium">{f.staff_name || f.staff_id}</span>
+                <Badge variant="neutral" className="ml-2">{f.role}</Badge>
+              </div>
+              <Button size="sm" variant="destructive" onClick={() => handleRemove(f.id)}>Remove</Button>
             </div>
           ))}
         </div>

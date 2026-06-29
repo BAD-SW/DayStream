@@ -13,3 +13,6 @@ export async function getApiKeys() { const r = await apiClient.get('/v1/integrat
 export async function createApiKey(data: Record<string, any>) { const r = await apiClient.post('/v1/integrations/api-keys', data); return r.data.data; }
 export async function deleteApiKey(id: string) { await apiClient.delete(`/v1/integrations/api-keys/${id}`); }
 export async function getStaffIcalFeed() { const r = await apiClient.get('/v1/integrations/ical/staff'); return r.data.data; }
+export async function getCustomerIcalFeed() { const r = await apiClient.get('/v1/integrations/ical/customer'); return r.data.data; }
+export async function regenerateIcalToken() { const r = await apiClient.post('/v1/integrations/ical/regenerate'); return r.data.data; }
+export async function getWebhookDeliveries(webhookId: string) { const r = await apiClient.get(`/v1/integrations/webhooks/${webhookId}/deliveries`); return r.data.data; }
