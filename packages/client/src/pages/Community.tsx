@@ -101,7 +101,7 @@ function ChallengesTab({ challenges }: { challenges: any[] }) {
                 <Button size="sm" variant="ghost" onClick={() => handleViewLeaderboard(c.id)}>
                   {selectedChallenge === c.id ? 'Hide Leaderboard' : 'Leaderboard'}
                 </Button>
-                <Button size="sm">Join</Button>
+                <Button size="sm" onClick={() => communityApi.joinChallenge(c.id).then(() => alert('Joined!')).catch(() => alert('Could not join'))}>Join</Button>
               </div>
             </div>
           </div>

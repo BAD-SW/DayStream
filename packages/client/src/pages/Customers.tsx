@@ -141,10 +141,7 @@ export function Customers() {
         selectedIds={selectedIds}
         onSelectionChange={setSelectedIds}
         onRowClick={(row) => navigate(`/customers/${row.id}`)}
-        onSort={(key, order) => {
-          // Re-fetch with sort
-          // TODO: pass sort/order to API
-        }}
+        clientSort
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}

@@ -74,7 +74,6 @@ export function Profile() {
         )}
       </div>
 
-      <p style={styles.hint}>Profile editing will be available in a future phase.</p>
     </div>
   );
 }

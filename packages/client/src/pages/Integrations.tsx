@@ -53,9 +53,9 @@ export function Integrations() {
                     </div>
                     <p className="text-sm text-gray-500 mb-3">{item.description}</p>
                     {item.connectionStatus === 'not_connected' ? (
-                      <Button size="sm">Connect</Button>
+                      <Button size="sm" onClick={() => integrationsApi.connectProvider(item.provider || item.name.toLowerCase(), window.location.origin + '/integrations').catch(() => alert('Connection failed'))}>Connect</Button>
                     ) : (
-                      <Button size="sm" variant="ghost">Manage</Button>
+                      <Button size="sm" variant="ghost" onClick={() => { if (confirm('Disconnect this integration?')) integrationsApi.disconnectIntegration(item.id).then(() => window.location.reload()).catch(() => alert('Disconnect failed')); }}>Manage</Button>
                     )}
                   </div>
                 ))}
