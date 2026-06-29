@@ -115,6 +115,15 @@ export async function createBundle(data: any) {
   return res.data.data;
 }
 
+export async function updateBundle(id: string, data: any) {
+  const res = await apiClient.put(`/v1/pricing/bundles/${id}`, data);
+  return res.data.data;
+}
+
+export async function deleteBundle(id: string) {
+  await apiClient.delete(`/v1/pricing/bundles/${id}`);
+}
+
 // --- Corporate ---
 
 export async function getCorporateAccounts(businessId: string) {
@@ -125,6 +134,20 @@ export async function getCorporateAccounts(businessId: string) {
 export async function createCorporateAccount(data: any) {
   const res = await apiClient.post('/v1/pricing/corporate', data);
   return res.data.data;
+}
+
+export async function getCorporateMembers(corporateId: string) {
+  const res = await apiClient.get(`/v1/pricing/corporate/${corporateId}/members`);
+  return res.data.data;
+}
+
+export async function addCorporateMember(corporateId: string, data: { customer_id: string }) {
+  const res = await apiClient.post(`/v1/pricing/corporate/${corporateId}/members`, data);
+  return res.data.data;
+}
+
+export async function removeCorporateMember(corporateId: string, customerId: string) {
+  await apiClient.delete(`/v1/pricing/corporate/${corporateId}/members/${customerId}`);
 }
 
 // --- History ---

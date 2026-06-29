@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import * as staffApi from '../api/staff';
-import type { StaffProfile, Qualification, AvailabilityPattern } from '../api/staff';
+import type { StaffProfile, Qualification, AvailabilityPattern, AvailabilityOverride } from '../api/staff';
 
 type Tab = 'profile' | 'qualifications' | 'availability' | 'services' | 'calendar' | 'capacity';
 
@@ -141,11 +141,44 @@ function QualificationsTab({ staffId }: { staffId: string }) {
 
 function AvailabilityTab({ staffId }: { staffId: string }) {
   const [patterns, setPatterns] = useState<AvailabilityPattern[]>([]);
+  const [overrides, setOverrides] = useState<AvailabilityOverride[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showOverrideForm, setShowOverrideForm] = useState(false);
+  const [overrideForm, setOverrideForm] = useState({ override_date: '', start_time: '', end_time: '', is_unavailable: true, reason: '' });
 
   useEffect(() => {
-    staffApi.getAvailabilityPatterns(staffId).then(setPatterns).finally(() => setLoading(false));
+    Promise.all([
+      staffApi.getAvailabilityPatterns(staffId),
+      staffApi.getAvailabilityOverrides(staffId),
+    ]).then(([p, o]) => { setPatterns(p); setOverrides(o); }).finally(() => setLoading(false));
   }, [staffId]);
+
+  const handleCopyPattern = async (patternId: string) => {
+    const copied = await staffApi.copyAvailabilityPattern(staffId, patternId);
+    setPatterns([...patterns, copied]);
+  };
+
+  const handleCreateOverride = async () => {
+    const data: Record<string, any> = {
+      override_date: overrideForm.override_date,
+      is_unavailable: overrideForm.is_unavailable,
+    };
+    if (!overrideForm.is_unavailable) {
+      data.start_time = overrideForm.start_time;
+      data.end_time = overrideForm.end_time;
+    }
+    if (overrideForm.reason) data.reason = overrideForm.reason;
+    const created = await staffApi.createAvailabilityOverride(staffId, data);
+    setOverrides([...overrides, created]);
+    setShowOverrideForm(false);
+    setOverrideForm({ override_date: '', start_time: '', end_time: '', is_unavailable: true, reason: '' });
+  };
+
+  const handleDeleteOverride = async (overrideId: string) => {
+    if (!confirm('Delete this override?')) return;
+    await staffApi.deleteAvailabilityOverride(staffId, overrideId);
+    setOverrides(overrides.filter((o) => o.id !== overrideId));
+  };
 
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -162,9 +195,12 @@ function AvailabilityTab({ staffId }: { staffId: string }) {
             <div key={p.id} className="border rounded p-4">
               <div className="flex justify-between items-center mb-2">
                 <span className="font-medium">{p.name}</span>
-                <span className="text-sm text-gray-500">
-                  {p.effective_from} → {p.effective_to || 'Ongoing'}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">
+                    {p.effective_from} → {p.effective_to || 'Ongoing'}
+                  </span>
+                  <Button variant="ghost" onClick={() => handleCopyPattern(p.id)}>Copy</Button>
+                </div>
               </div>
               <div className="grid grid-cols-7 gap-1 text-xs">
                 {dayNames.map((day, idx) => {
@@ -187,6 +223,83 @@ function AvailabilityTab({ staffId }: { staffId: string }) {
           ))}
         </div>
       )}
+
+      {/* Overrides Section */}
+      <div className="mt-8">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-medium">Overrides</h3>
+          <Button onClick={() => setShowOverrideForm(true)}>Add Override</Button>
+        </div>
+
+        {showOverrideForm && (
+          <div className="border rounded p-4 mb-4 bg-gray-50">
+            <div className="grid grid-cols-2 gap-4 mb-3">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Date</label>
+                <input type="date" className="border rounded px-3 py-2 text-sm w-full"
+                  value={overrideForm.override_date}
+                  onChange={(e) => setOverrideForm({ ...overrideForm, override_date: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Reason</label>
+                <input type="text" className="border rounded px-3 py-2 text-sm w-full" placeholder="Optional reason"
+                  value={overrideForm.reason}
+                  onChange={(e) => setOverrideForm({ ...overrideForm, reason: e.target.value })} />
+              </div>
+            </div>
+            <div className="mb-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={overrideForm.is_unavailable}
+                  onChange={(e) => setOverrideForm({ ...overrideForm, is_unavailable: e.target.checked })} />
+                Mark as unavailable (full day off)
+              </label>
+            </div>
+            {!overrideForm.is_unavailable && (
+              <div className="grid grid-cols-2 gap-4 mb-3">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Start Time</label>
+                  <input type="time" className="border rounded px-3 py-2 text-sm w-full"
+                    value={overrideForm.start_time}
+                    onChange={(e) => setOverrideForm({ ...overrideForm, start_time: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">End Time</label>
+                  <input type="time" className="border rounded px-3 py-2 text-sm w-full"
+                    value={overrideForm.end_time}
+                    onChange={(e) => setOverrideForm({ ...overrideForm, end_time: e.target.value })} />
+                </div>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button onClick={handleCreateOverride}>Save Override</Button>
+              <Button variant="ghost" onClick={() => setShowOverrideForm(false)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+
+        {overrides.length === 0 ? (
+          <p className="text-gray-500 text-sm">No overrides set</p>
+        ) : (
+          <div className="space-y-2">
+            {overrides.map((o) => (
+              <div key={o.id} className="border rounded p-3 flex justify-between items-center">
+                <div>
+                  <span className="font-medium">{o.override_date}</span>
+                  {o.is_unavailable ? (
+                    <Badge variant="warning">Unavailable</Badge>
+                  ) : (
+                    <span className="text-sm text-green-600 ml-2">
+                      {o.start_time?.slice(0,5)}–{o.end_time?.slice(0,5)}
+                    </span>
+                  )}
+                  {o.reason && <span className="text-sm text-gray-500 ml-2">({o.reason})</span>}
+                </div>
+                <Button variant="destructive" onClick={() => handleDeleteOverride(o.id)}>Delete</Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -205,6 +318,12 @@ function ServicesTab({ staffId }: { staffId: string }) {
       setLocations(loc);
     }).finally(() => setLoading(false));
   }, [staffId]);
+
+  const handleRemoveLocation = async (locationId: string) => {
+    if (!confirm('Remove this location assignment?')) return;
+    await staffApi.removeLocationAssignment(staffId, locationId);
+    setLocations(locations.filter((l: any) => l.id !== locationId));
+  };
 
   if (loading) return <div>Loading...</div>;
 
@@ -233,8 +352,11 @@ function ServicesTab({ staffId }: { staffId: string }) {
           <div className="space-y-2">
             {locations.map((l: any) => (
               <div key={l.id} className="border rounded p-2 flex justify-between items-center">
-                <span>{l.location_id}</span>
-                {l.is_primary && <Badge variant="info">Primary</Badge>}
+                <div className="flex items-center gap-2">
+                  <span>{l.location_id}</span>
+                  {l.is_primary && <Badge variant="info">Primary</Badge>}
+                </div>
+                <Button variant="destructive" onClick={() => handleRemoveLocation(l.id)}>Remove</Button>
               </div>
             ))}
           </div>
@@ -290,16 +412,55 @@ function CalendarTab({ staffId }: { staffId: string }) {
 function CapacityTab({ staffId }: { staffId: string }) {
   const [config, setConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showOverrideForm, setShowOverrideForm] = useState(false);
+  const [overrideData, setOverrideData] = useState({ date: '', max_bookings: '' });
 
   useEffect(() => {
     staffApi.getCapacity(staffId).then(setConfig).finally(() => setLoading(false));
   }, [staffId]);
 
+  const handleOverride = async () => {
+    await staffApi.overrideCapacity(staffId, {
+      date: overrideData.date,
+      max_bookings: overrideData.max_bookings ? Number(overrideData.max_bookings) : null,
+    });
+    setShowOverrideForm(false);
+    setOverrideData({ date: '', max_bookings: '' });
+  };
+
   if (loading) return <div>Loading...</div>;
 
   return (
     <div>
-      <h3 className="font-medium mb-4">Capacity Configuration</h3>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="font-medium">Capacity Configuration</h3>
+        <Button onClick={() => setShowOverrideForm(true)}>Override Capacity</Button>
+      </div>
+
+      {showOverrideForm && (
+        <div className="border rounded p-4 mb-4 bg-gray-50">
+          <h4 className="text-sm font-medium mb-3">Capacity Override</h4>
+          <div className="grid grid-cols-2 gap-4 mb-3">
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Date</label>
+              <input type="date" className="border rounded px-3 py-2 text-sm w-full"
+                value={overrideData.date}
+                onChange={(e) => setOverrideData({ ...overrideData, date: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Max Bookings</label>
+              <input type="number" className="border rounded px-3 py-2 text-sm w-full" placeholder="Leave empty for unlimited"
+                value={overrideData.max_bookings}
+                onChange={(e) => setOverrideData({ ...overrideData, max_bookings: e.target.value })} />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={handleOverride}>Save Override</Button>
+            <Button variant="ghost" onClick={() => setShowOverrideForm(false)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-3">
         <div className="border rounded p-3">
           <span className="text-gray-500 text-sm">Max bookings per day:</span>{' '}

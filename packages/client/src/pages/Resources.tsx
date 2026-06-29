@@ -20,6 +20,9 @@ export function Resources() {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [showTypes, setShowTypes] = useState(false);
+  const [editingType, setEditingType] = useState<ResourceType | null>(null);
+  const [typeForm, setTypeForm] = useState({ name: '', category: '', description: '' });
 
   useEffect(() => { resourcesApi.getResourceTypes().then(setTypes).catch(() => {}); }, []);
 
@@ -45,6 +48,24 @@ export function Resources() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
+  const handleEditType = (type: ResourceType) => {
+    setEditingType(type);
+    setTypeForm({ name: type.name, category: type.category, description: type.description || '' });
+  };
+
+  const handleSaveType = async () => {
+    if (!editingType) return;
+    const updated = await resourcesApi.updateResourceType(editingType.id, typeForm);
+    setTypes(types.map((t) => t.id === editingType.id ? { ...t, ...updated } : t));
+    setEditingType(null);
+  };
+
+  const handleDeleteType = async (typeId: string) => {
+    if (!confirm('Delete this resource type? This cannot be undone.')) return;
+    await resourcesApi.deleteResourceType(typeId);
+    setTypes(types.filter((t) => t.id !== typeId));
+  };
+
   // Group by category
   const grouped = resources.reduce((acc, r) => {
     const cat = r.category || 'other';
@@ -57,8 +78,69 @@ export function Resources() {
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold">Resources</h1>
-        <Button onClick={() => navigate('/resources/new')}>Add Resource</Button>
+        <div className="flex gap-2">
+          <Button variant="ghost" onClick={() => setShowTypes(!showTypes)}>
+            {showTypes ? 'Hide Types' : 'Manage Types'}
+          </Button>
+          <Button onClick={() => navigate('/resources/new')}>Add Resource</Button>
+        </div>
       </div>
+
+      {showTypes && (
+        <div className="border rounded-lg p-4 mb-6">
+          <h2 className="font-medium mb-3">Resource Types</h2>
+          {editingType && (
+            <div className="border rounded p-4 mb-3 bg-gray-50">
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Name</label>
+                  <input type="text" className="border rounded px-3 py-2 text-sm w-full"
+                    value={typeForm.name} onChange={(e) => setTypeForm({ ...typeForm, name: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Category</label>
+                  <select className="border rounded px-3 py-2 text-sm w-full"
+                    value={typeForm.category} onChange={(e) => setTypeForm({ ...typeForm, category: e.target.value })}>
+                    <option value="room">Room</option>
+                    <option value="equipment">Equipment</option>
+                    <option value="facility">Facility</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Description</label>
+                  <input type="text" className="border rounded px-3 py-2 text-sm w-full"
+                    value={typeForm.description} onChange={(e) => setTypeForm({ ...typeForm, description: e.target.value })} />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={handleSaveType}>Save</Button>
+                <Button variant="ghost" onClick={() => setEditingType(null)}>Cancel</Button>
+              </div>
+            </div>
+          )}
+          <div className="space-y-2">
+            {types.map((t) => (
+              <div key={t.id} className="border rounded p-2 flex justify-between items-center">
+                <div>
+                  <span className="font-medium">{t.name}</span>
+                  <span className="text-sm text-gray-500 ml-2">({t.category})</span>
+                  {t.description && <span className="text-sm text-gray-400 ml-2">— {t.description}</span>}
+                  <span className="text-xs text-gray-400 ml-2">{t.resource_count} resources</span>
+                </div>
+                <div className="flex gap-2">
+                  {!t.is_system && (
+                    <>
+                      <Button variant="ghost" onClick={() => handleEditType(t)}>Edit</Button>
+                      <Button variant="destructive" onClick={() => handleDeleteType(t.id)}>Delete</Button>
+                    </>
+                  )}
+                  {t.is_system && <Badge variant="neutral">System</Badge>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-4 mb-4">
         <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search resources..." />

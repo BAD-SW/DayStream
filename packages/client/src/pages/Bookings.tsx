@@ -16,6 +16,8 @@ export function Bookings() {
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [seriesModal, setSeriesModal] = useState<{ seriesId: string; bookings: any[] } | null>(null);
+  const [seriesLoading, setSeriesLoading] = useState(false);
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -43,6 +45,38 @@ export function Bookings() {
     } catch { /* silent */ }
   };
 
+  const handleViewSeries = async (seriesId: string) => {
+    setSeriesLoading(true);
+    try {
+      const data = await bookingsApi.getRecurringSeries(seriesId, businessId);
+      setSeriesModal({ seriesId, bookings: data.bookings || data });
+    } catch {
+      alert('Failed to load recurring series');
+    } finally {
+      setSeriesLoading(false);
+    }
+  };
+
+  const handleCancelSeries = async (seriesId: string) => {
+    if (!confirm('Cancel all remaining bookings in this recurring series? This cannot be undone.')) return;
+    try {
+      await bookingsApi.cancelRecurringSeries(seriesId, businessId);
+      setSeriesModal(null);
+      fetchBookings();
+    } catch {
+      alert('Failed to cancel series');
+    }
+  };
+
+  const handleConfirmWaitlist = async (entryId: string) => {
+    try {
+      await bookingsApi.confirmWaitlistEntry(entryId, businessId);
+      fetchBookings();
+    } catch {
+      alert('Failed to confirm waitlist entry');
+    }
+  };
+
   const columns = [
     { key: 'booking_reference', header: 'Ref', width: '120px' },
     {
@@ -65,12 +99,14 @@ export function Bookings() {
     {
       key: 'actions', header: '',
       render: (_: any, row: Booking) => (
-        <div style={{ display: 'flex', gap: '4px' }}>
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
           {row.status === 'pending' && <ActionBtn label="Confirm" onClick={() => handleAction('confirm', row)} />}
           {row.status === 'confirmed' && <ActionBtn label="Check-in" onClick={() => handleAction('check-in', row)} />}
           {row.status === 'in_progress' && <ActionBtn label="Complete" onClick={() => handleAction('complete', row)} />}
           {['pending', 'confirmed'].includes(row.status) && <ActionBtn label="Cancel" onClick={() => handleAction('cancel', row)} />}
           {row.status === 'confirmed' && <ActionBtn label="No-show" onClick={() => handleAction('no-show', row)} />}
+          {row.recurring_series_id && <ActionBtn label="View Series" onClick={() => handleViewSeries(row.recurring_series_id!)} />}
+          {row.waitlist_entry_id && <ActionBtn label="Confirm Waitlist" onClick={() => handleConfirmWaitlist(row.waitlist_entry_id!)} />}
         </div>
       ),
     },
@@ -98,6 +134,34 @@ export function Bookings() {
       </div>
 
       <Table columns={columns} data={bookings} loading={loading} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No bookings found" mobileCardMode />
+
+      {/* Recurring Series Modal */}
+      {seriesModal && (
+        <div style={styles.modalOverlay} onClick={() => setSeriesModal(null)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>Recurring Series</h2>
+              <button style={styles.modalClose} onClick={() => setSeriesModal(null)}>×</button>
+            </div>
+            <div style={styles.modalBody}>
+              {seriesModal.bookings.length === 0 && <p style={styles.empty}>No bookings in this series</p>}
+              {seriesModal.bookings.map((bk: any) => (
+                <div key={bk.id} style={styles.seriesItem}>
+                  <span>{new Date(bk.start_time).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}</span>
+                  <Badge variant={STATUS_VARIANTS[bk.status] || 'neutral'}>{bk.status?.replace('_', ' ')}</Badge>
+                  <span style={styles.seriesRef}>{bk.booking_reference}</span>
+                </div>
+              ))}
+            </div>
+            <div style={styles.modalFooter}>
+              <button style={styles.cancelSeriesBtn} onClick={() => handleCancelSeries(seriesModal.seriesId)}>
+                Cancel Entire Series
+              </button>
+              <button style={styles.navBtn} onClick={() => setSeriesModal(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -114,4 +178,15 @@ const styles: Record<string, React.CSSProperties> = {
   select: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
   navBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 16px', color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
   actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  empty: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', textAlign: 'center', padding: 'var(--space-lg)' },
+  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
+  modal: { background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-lg)', maxWidth: '600px', width: '90%', maxHeight: '80vh', overflow: 'auto', border: '1px solid var(--color-border)' },
+  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' },
+  modalTitle: { margin: 0, fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
+  modalClose: { background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: 'var(--color-text-secondary)', padding: '4px' },
+  modalBody: { marginBottom: 'var(--space-md)' },
+  modalFooter: { display: 'flex', justifyContent: 'space-between', gap: 'var(--space-sm)' },
+  seriesItem: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) 0', borderBottom: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)' },
+  seriesRef: { color: 'var(--color-text-disabled)', fontSize: 'var(--font-size-xs)', marginLeft: 'auto' },
+  cancelSeriesBtn: { background: 'var(--color-error-light)', border: '1px solid var(--color-error-light)', borderRadius: 'var(--radius-md)', padding: '8px 16px', color: 'white', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-medium)' as any },
 };

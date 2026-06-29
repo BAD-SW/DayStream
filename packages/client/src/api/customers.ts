@@ -180,3 +180,9 @@ export function getExportUrl(businessId: string, filters?: { lifecycle_stage?: s
   if (filters?.search) params.set('search', filters.search);
   return `/api/v1/customers/export?${params}`;
 }
+
+// --- GDPR ---
+
+export async function anonymizeCustomer(customerId: string, businessId: string): Promise<void> {
+  await apiClient.post(`/v1/customers/${customerId}/anonymize?business_id=${businessId}`);
+}

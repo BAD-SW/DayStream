@@ -143,6 +143,11 @@ export async function createAvailabilityPattern(staffId: string, data: Record<st
   return res.data.data;
 }
 
+export async function copyAvailabilityPattern(staffId: string, patternId: string) {
+  const res = await apiClient.post(`/v1/staff/${staffId}/availability/patterns/${patternId}/copy`);
+  return res.data.data;
+}
+
 export async function deleteAvailabilityPattern(staffId: string, patternId: string) {
   await apiClient.delete(`/v1/staff/${staffId}/availability/patterns/${patternId}`);
 }
@@ -152,6 +157,34 @@ export async function getResolvedAvailability(staffId: string, startDate: string
     params: { start_date: startDate, end_date: endDate },
   });
   return res.data.data;
+}
+
+// ============================================================
+// Availability Overrides
+// ============================================================
+
+export interface AvailabilityOverride {
+  id: string;
+  staff_id: string;
+  override_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  is_unavailable: boolean;
+  reason: string | null;
+}
+
+export async function getAvailabilityOverrides(staffId: string) {
+  const res = await apiClient.get(`/v1/staff/${staffId}/availability/overrides`);
+  return res.data.data as AvailabilityOverride[];
+}
+
+export async function createAvailabilityOverride(staffId: string, data: Record<string, any>) {
+  const res = await apiClient.post(`/v1/staff/${staffId}/availability/overrides`, data);
+  return res.data.data;
+}
+
+export async function deleteAvailabilityOverride(staffId: string, overrideId: string) {
+  await apiClient.delete(`/v1/staff/${staffId}/availability/overrides/${overrideId}`);
 }
 
 // ============================================================
@@ -216,6 +249,10 @@ export async function assignLocations(staffId: string, assignments: Array<{ loca
   return res.data.data;
 }
 
+export async function removeLocationAssignment(staffId: string, locationId: string) {
+  await apiClient.delete(`/v1/staff/${staffId}/locations/${locationId}`);
+}
+
 // ============================================================
 // Capacity
 // ============================================================
@@ -227,6 +264,11 @@ export async function getCapacity(staffId: string) {
 
 export async function setCapacity(staffId: string, data: Record<string, any>) {
   const res = await apiClient.put(`/v1/staff/${staffId}/capacity`, data);
+  return res.data.data;
+}
+
+export async function overrideCapacity(staffId: string, data: Record<string, any>) {
+  const res = await apiClient.post(`/v1/staff/${staffId}/capacity/override`, data);
   return res.data.data;
 }
 
@@ -273,6 +315,27 @@ export async function getMyMetrics(startDate: string, endDate: string) {
   const res = await apiClient.get('/v1/staff/me/metrics', {
     params: { start_date: startDate, end_date: endDate },
   });
+  return res.data.data;
+}
+
+export interface NotificationPreferences {
+  booking_confirmed: boolean;
+  booking_cancelled: boolean;
+  booking_reminder: boolean;
+  schedule_changed: boolean;
+  leave_approved: boolean;
+  leave_rejected: boolean;
+  new_review: boolean;
+  payroll_ready: boolean;
+}
+
+export async function getNotificationPreferences(): Promise<NotificationPreferences> {
+  const res = await apiClient.get('/v1/staff/me/notifications/preferences');
+  return res.data.data;
+}
+
+export async function updateNotificationPreferences(data: Partial<NotificationPreferences>): Promise<NotificationPreferences> {
+  const res = await apiClient.put('/v1/staff/me/notifications/preferences', data);
   return res.data.data;
 }
 

@@ -13,6 +13,15 @@ export async function createCompensationRule(data: any) {
   return res.data.data;
 }
 
+export async function updateCompensationRule(id: string, data: any) {
+  const res = await apiClient.put(`/v1/payroll/compensation-rules/${id}`, data);
+  return res.data.data;
+}
+
+export async function deleteCompensationRule(id: string) {
+  await apiClient.delete(`/v1/payroll/compensation-rules/${id}`);
+}
+
 // --- Time Entries ---
 export async function getTimeEntries(businessId: string, filters?: { user_id?: string }) {
   const params = new URLSearchParams({ business_id: businessId });
@@ -23,6 +32,11 @@ export async function getTimeEntries(businessId: string, filters?: { user_id?: s
 
 export async function createTimeEntry(data: any) {
   const res = await apiClient.post('/v1/payroll/time-entries', data);
+  return res.data.data;
+}
+
+export async function approveTimeEntry(id: string) {
+  const res = await apiClient.put(`/v1/payroll/time-entries/${id}/approve`);
   return res.data.data;
 }
 
@@ -63,6 +77,15 @@ export async function getDeductions(businessId: string, userId?: string) {
 export async function createDeduction(data: any) {
   const res = await apiClient.post('/v1/payroll/deductions', data);
   return res.data.data;
+}
+
+export async function updateDeduction(id: string, data: any) {
+  const res = await apiClient.put(`/v1/payroll/deductions/${id}`, data);
+  return res.data.data;
+}
+
+export async function deleteDeduction(id: string) {
+  await apiClient.delete(`/v1/payroll/deductions/${id}`);
 }
 
 // --- Tax Documents ---

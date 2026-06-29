@@ -127,6 +127,7 @@ function OverviewTab({ customer, tags }: { customer: Customer; tags: any[] }) {
     country: customer.country || '',
   });
   const [statusChanging, setStatusChanging] = useState(false);
+  const [anonymizing, setAnonymizing] = useState(false);
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -157,6 +158,34 @@ function OverviewTab({ customer, tags }: { customer: Customer; tags: any[] }) {
       customer.status = 'active';
       setStatusChanging(false);
     } catch { alert('Failed to reactivate'); setStatusChanging(false); }
+  };
+
+  const handleAnonymize = async () => {
+    const confirmed = confirm(
+      '⚠️ GDPR Data Anonymization\n\n' +
+      'This will PERMANENTLY and IRREVERSIBLY anonymize all personal data for this customer including:\n' +
+      '• Name, email, phone, date of birth\n' +
+      '• Notes and activity history\n' +
+      '• All identifiable information\n\n' +
+      'This action cannot be undone. Are you sure you want to proceed?'
+    );
+    if (!confirmed) return;
+    const doubleConfirm = confirm(
+      'Final confirmation: Type OK to permanently anonymize this customer\'s data.\n\n' +
+      'Customer: ' + customer.first_name + ' ' + customer.last_name + '\n' +
+      'This is IRREVERSIBLE.'
+    );
+    if (!doubleConfirm) return;
+    setAnonymizing(true);
+    try {
+      await customersApi.anonymizeCustomer(customer.id, businessId);
+      alert('Customer data has been anonymized successfully.');
+      window.location.reload();
+    } catch {
+      alert('Failed to anonymize customer data.');
+    } finally {
+      setAnonymizing(false);
+    }
   };
 
   if (editing) {
@@ -194,6 +223,7 @@ function OverviewTab({ customer, tags }: { customer: Customer; tags: any[] }) {
         <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>Edit</Button>
         {customer.status === 'active' && <Button variant="destructive" size="sm" onClick={handleArchive} loading={statusChanging}>Archive</Button>}
         {customer.status === 'archived' && <Button variant="primary" size="sm" onClick={handleReactivate} loading={statusChanging}>Reactivate</Button>}
+        <Button variant="destructive" size="sm" onClick={handleAnonymize} loading={anonymizing}>GDPR Anonymize</Button>
       </div>
       <div style={styles.fieldGrid}>
         <Field label="Email" value={customer.email} />

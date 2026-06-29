@@ -256,22 +256,149 @@ function AvailabilityTab({ service }: { service: Service }) {
 
 function PolicyTab({ service, businessId }: { service: Service; businessId: string }) {
   const [policies, setPolicies] = useState<any[]>([]);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
+  const [taxCategories, setTaxCategories] = useState<any[]>([]);
+  const [editingTax, setEditingTax] = useState<string | null>(null);
+  const [taxForm, setTaxForm] = useState<any>({});
 
   useEffect(() => {
     servicesApi.getPolicies(businessId).then(setPolicies).catch(() => {});
+    servicesApi.getTaxCategories(businessId).then(setTaxCategories).catch(() => {});
   }, [businessId]);
+
+  const handleEditPolicy = (policy: any) => {
+    setEditing(policy.id);
+    setEditForm({
+      name: policy.name,
+      free_cancellation_hours: policy.free_cancellation_hours,
+      late_cancel_fee_type: policy.late_cancel_fee_type,
+      late_cancel_fee_value: policy.late_cancel_fee_value,
+      noshow_fee_type: policy.noshow_fee_type,
+      noshow_fee_value: policy.noshow_fee_value,
+    });
+  };
+
+  const handleSavePolicy = async (id: string) => {
+    try {
+      const updated = await servicesApi.updatePolicy(id, businessId, editForm);
+      setPolicies(policies.map((p) => (p.id === id ? updated : p)));
+      setEditing(null);
+    } catch {
+      alert('Failed to update policy');
+    }
+  };
+
+  const handleDeletePolicy = async (id: string) => {
+    if (!confirm('Delete this cancellation policy? Services using it will revert to the default policy.')) return;
+    try {
+      await servicesApi.deletePolicy(id, businessId);
+      setPolicies(policies.filter((p) => p.id !== id));
+    } catch {
+      alert('Failed to delete policy. It may be in use.');
+    }
+  };
+
+  const handleEditTax = (tax: any) => {
+    setEditingTax(tax.id);
+    setTaxForm({ name: tax.name, rate: tax.rate, is_default: tax.is_default });
+  };
+
+  const handleSaveTax = async (id: string) => {
+    try {
+      const updated = await servicesApi.updateTaxCategory(id, businessId, taxForm);
+      setTaxCategories(taxCategories.map((t) => (t.id === id ? updated : t)));
+      setEditingTax(null);
+    } catch {
+      alert('Failed to update tax category');
+    }
+  };
 
   return (
     <div style={styles.tabContent}>
+      {/* Cancellation Policies */}
+      <h3 style={{ fontSize: 'var(--font-size-md)', color: 'var(--color-text)', marginBottom: 'var(--space-sm)' }}>Cancellation Policies</h3>
       <p style={styles.label}>Assigned Policy: {(service as any).cancellation_policy_id ? 'Custom' : 'Business Default'}</p>
       <div style={styles.policyList}>
         {policies.map((p) => (
           <div key={p.id} style={styles.policyCard}>
-            <strong>{p.name}</strong>
-            {p.is_default && <Badge variant="info">Default</Badge>}
-            <span>Free cancel: {p.free_cancellation_hours}h | Late: {p.late_cancel_fee_value}% | No-show: {p.noshow_fee_value}%</span>
+            {editing === p.id ? (
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)', width: '100%' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-sm)' }}>
+                  <div style={styles.fieldWrapper}>
+                    <label style={styles.label}>Name</label>
+                    <input style={styles.input} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+                  </div>
+                  <div style={styles.fieldWrapper}>
+                    <label style={styles.label}>Free Cancel (hours)</label>
+                    <input type="number" style={styles.input} value={editForm.free_cancellation_hours} onChange={(e) => setEditForm({ ...editForm, free_cancellation_hours: parseInt(e.target.value) || 0 })} />
+                  </div>
+                  <div style={styles.fieldWrapper}>
+                    <label style={styles.label}>Late Cancel Fee (%)</label>
+                    <input type="number" style={styles.input} value={editForm.late_cancel_fee_value} onChange={(e) => setEditForm({ ...editForm, late_cancel_fee_value: parseInt(e.target.value) || 0 })} />
+                  </div>
+                  <div style={styles.fieldWrapper}>
+                    <label style={styles.label}>No-show Fee (%)</label>
+                    <input type="number" style={styles.input} value={editForm.noshow_fee_value} onChange={(e) => setEditForm({ ...editForm, noshow_fee_value: parseInt(e.target.value) || 0 })} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+                  <Button onClick={() => handleSavePolicy(p.id)}>Save</Button>
+                  <Button onClick={() => setEditing(null)}>Cancel</Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', flex: 1 }}>
+                  <strong>{p.name}</strong>
+                  {p.is_default && <Badge variant="info">Default</Badge>}
+                  <span>Free cancel: {p.free_cancellation_hours}h | Late: {p.late_cancel_fee_value}% | No-show: {p.noshow_fee_value}%</span>
+                </div>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button style={styles.deleteBtn} onClick={() => handleEditPolicy(p)} title="Edit">✎</button>
+                  {!p.is_default && <button style={styles.deleteBtn} onClick={() => handleDeletePolicy(p.id)} title="Delete">×</button>}
+                </div>
+              </>
+            )}
           </div>
         ))}
+      </div>
+
+      {/* Tax Categories */}
+      <h3 style={{ fontSize: 'var(--font-size-md)', color: 'var(--color-text)', marginTop: 'var(--space-xl)', marginBottom: 'var(--space-sm)' }}>Tax Categories</h3>
+      <div style={styles.policyList}>
+        {taxCategories.map((t) => (
+          <div key={t.id} style={styles.policyCard}>
+            {editingTax === t.id ? (
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)', width: '100%' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
+                  <div style={styles.fieldWrapper}>
+                    <label style={styles.label}>Name</label>
+                    <input style={styles.input} value={taxForm.name} onChange={(e) => setTaxForm({ ...taxForm, name: e.target.value })} />
+                  </div>
+                  <div style={styles.fieldWrapper}>
+                    <label style={styles.label}>Rate (%)</label>
+                    <input type="number" step="0.01" style={styles.input} value={taxForm.rate} onChange={(e) => setTaxForm({ ...taxForm, rate: parseFloat(e.target.value) || 0 })} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+                  <Button onClick={() => handleSaveTax(t.id)}>Save</Button>
+                  <Button onClick={() => setEditingTax(null)}>Cancel</Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', flex: 1 }}>
+                  <strong>{t.name}</strong>
+                  {t.is_default && <Badge variant="info">Default</Badge>}
+                  <span>{t.rate}%</span>
+                </div>
+                <button style={styles.deleteBtn} onClick={() => handleEditTax(t)} title="Edit">✎</button>
+              </>
+            )}
+          </div>
+        ))}
+        {taxCategories.length === 0 && <p style={styles.empty}>No tax categories configured</p>}
       </div>
     </div>
   );

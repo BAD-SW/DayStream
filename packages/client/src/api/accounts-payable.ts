@@ -42,6 +42,12 @@ export async function approveExpense(id: string, businessId: string) {
   await apiClient.put(`/v1/ap/expenses/${id}/approve?business_id=${businessId}`);
 }
 
+// --- Vendors (Update) ---
+export async function updateVendor(id: string, businessId: string, data: any) {
+  const res = await apiClient.put(`/v1/ap/vendors/${id}?business_id=${businessId}`, data);
+  return res.data.data;
+}
+
 // --- Chart of Accounts ---
 export async function getAccounts(businessId: string) {
   const res = await apiClient.get(`/v1/ap/accounts?business_id=${businessId}`);
@@ -49,6 +55,10 @@ export async function getAccounts(businessId: string) {
 }
 export async function createAccount(data: any) {
   const res = await apiClient.post('/v1/ap/accounts', data);
+  return res.data.data;
+}
+export async function archiveAccount(id: string, businessId: string) {
+  const res = await apiClient.put(`/v1/ap/accounts/${id}/archive?business_id=${businessId}`);
   return res.data.data;
 }
 export async function seedAccounts(businessId: string) {
@@ -64,6 +74,10 @@ export async function createJournalEntry(data: any) {
   const res = await apiClient.post('/v1/ap/journal', data);
   return res.data.data;
 }
+export async function voidJournalEntry(id: string, businessId: string) {
+  const res = await apiClient.put(`/v1/ap/journal/${id}/void?business_id=${businessId}`);
+  return res.data.data;
+}
 
 // --- Reports ---
 export async function getPnL(businessId: string, dateFrom: string, dateTo: string) {
@@ -76,5 +90,23 @@ export async function getStaffCosts(businessId: string, dateFrom: string, dateTo
 }
 export async function getAPAging(businessId: string) {
   const res = await apiClient.get(`/v1/ap/reports/ap-aging?business_id=${businessId}`);
+  return res.data.data;
+}
+export async function getExpenseReport(businessId: string, dateFrom: string, dateTo: string) {
+  const res = await apiClient.get(`/v1/ap/reports/expenses?business_id=${businessId}&date_from=${dateFrom}&date_to=${dateTo}`);
+  return res.data.data;
+}
+
+// --- Bank Reconciliation ---
+export async function importStatement(businessId: string, accountName: string, statementDate: string, lines: any[]) {
+  const res = await apiClient.post('/v1/ap/reconciliation/import', { business_id: businessId, account_name: accountName, statement_date: statementDate, lines });
+  return res.data.data;
+}
+export async function getStatementDetails(statementId: string) {
+  const res = await apiClient.get(`/v1/ap/reconciliation/${statementId}`);
+  return res.data.data;
+}
+export async function matchReconciliationLine(lineId: string, journalEntryId: string) {
+  const res = await apiClient.put(`/v1/ap/reconciliation/${lineId}/match`, { journal_entry_id: journalEntryId });
   return res.data.data;
 }

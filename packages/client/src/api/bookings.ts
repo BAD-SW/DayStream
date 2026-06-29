@@ -18,6 +18,8 @@ export interface Booking {
   price: number;
   notes?: string;
   created_at: string;
+  recurring_series_id?: string;
+  waitlist_entry_id?: string;
 }
 
 export interface AvailableSlot {
@@ -127,5 +129,24 @@ export async function getCalendar(businessId: string, view: 'day' | 'week' | 'mo
 
 export async function getBookingRules(businessId: string, serviceId: string) {
   const res = await apiClient.get(`/v1/bookings/rules?business_id=${businessId}&service_id=${serviceId}`);
+  return res.data.data;
+}
+
+// --- Recurring Series ---
+
+export async function getRecurringSeries(seriesId: string, businessId: string) {
+  const res = await apiClient.get(`/v1/bookings/recurring/${seriesId}?business_id=${businessId}`);
+  return res.data.data;
+}
+
+export async function cancelRecurringSeries(seriesId: string, businessId: string, reason?: string) {
+  const res = await apiClient.put(`/v1/bookings/recurring/${seriesId}/cancel?business_id=${businessId}`, { reason });
+  return res.data.data;
+}
+
+// --- Waitlist ---
+
+export async function confirmWaitlistEntry(entryId: string, businessId: string) {
+  const res = await apiClient.put(`/v1/bookings/waitlist/${entryId}/confirm?business_id=${businessId}`);
   return res.data.data;
 }

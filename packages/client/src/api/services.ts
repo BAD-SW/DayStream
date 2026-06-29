@@ -254,10 +254,24 @@ export async function createPolicy(data: any) {
   return res.data.data;
 }
 
+export async function updatePolicy(id: string, businessId: string, data: any): Promise<CancellationPolicy> {
+  const res = await apiClient.put(`/v1/services/cancellation-policies/${id}?business_id=${businessId}`, data);
+  return res.data.data;
+}
+
+export async function deletePolicy(id: string, businessId: string): Promise<void> {
+  await apiClient.delete(`/v1/services/cancellation-policies/${id}?business_id=${businessId}`);
+}
+
 // --- Tax Categories ---
 
 export async function getTaxCategories(businessId: string): Promise<TaxCategory[]> {
   const res = await apiClient.get(`/v1/services/tax-categories?business_id=${businessId}`);
+  return res.data.data;
+}
+
+export async function updateTaxCategory(id: string, businessId: string, data: { name?: string; rate?: number; is_default?: boolean }): Promise<TaxCategory> {
+  const res = await apiClient.put(`/v1/services/tax-categories/${id}?business_id=${businessId}`, data);
   return res.data.data;
 }
 

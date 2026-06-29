@@ -1,7 +1,36 @@
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import * as staffApi from '../api/staff';
+import type { NotificationPreferences } from '../api/staff';
 
 export function Profile() {
   const { user } = useAuth();
+  const [prefs, setPrefs] = useState<NotificationPreferences | null>(null);
+  const [loadingPrefs, setLoadingPrefs] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    staffApi.getNotificationPreferences().then(setPrefs).catch(() => {}).finally(() => setLoadingPrefs(false));
+  }, []);
+
+  const handleToggle = async (key: keyof NotificationPreferences) => {
+    if (!prefs) return;
+    setSaving(true);
+    const updated = await staffApi.updateNotificationPreferences({ [key]: !prefs[key] });
+    setPrefs(updated);
+    setSaving(false);
+  };
+
+  const prefLabels: Record<keyof NotificationPreferences, string> = {
+    booking_confirmed: 'Booking confirmed',
+    booking_cancelled: 'Booking cancelled',
+    booking_reminder: 'Booking reminder',
+    schedule_changed: 'Schedule changed',
+    leave_approved: 'Leave approved',
+    leave_rejected: 'Leave rejected',
+    new_review: 'New review received',
+    payroll_ready: 'Payroll ready',
+  };
 
   return (
     <div>
@@ -20,6 +49,31 @@ export function Profile() {
           <span style={styles.value}>{user?.role}</span>
         </div>
       </div>
+
+      <h2 style={{ ...styles.heading, marginTop: '32px' }}>Notification Preferences</h2>
+      <div style={styles.card}>
+        {loadingPrefs ? (
+          <p style={styles.hint}>Loading preferences...</p>
+        ) : prefs ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {(Object.keys(prefLabels) as Array<keyof NotificationPreferences>).map((key) => (
+              <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', color: 'var(--color-text)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={prefs[key]}
+                  disabled={saving}
+                  onChange={() => handleToggle(key)}
+                  style={{ width: '16px', height: '16px' }}
+                />
+                {prefLabels[key]}
+              </label>
+            ))}
+          </div>
+        ) : (
+          <p style={styles.hint}>Unable to load notification preferences.</p>
+        )}
+      </div>
+
       <p style={styles.hint}>Profile editing will be available in a future phase.</p>
     </div>
   );
