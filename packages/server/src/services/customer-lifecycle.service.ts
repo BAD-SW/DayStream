@@ -255,6 +255,9 @@ export async function evaluateScheduledTransitions(): Promise<{ processed: numbe
     const businessId = business.id;
     const config = await getLifecycleConfig(businessId);
 
+    // Skip if lifecycle automation is disabled for this business
+    if (config['lifecycle.enabled'] === 0) continue;
+
     const atRiskDays = config['lifecycle.at_risk_days'];
     const churnedDays = config['lifecycle.churned_days'];
 

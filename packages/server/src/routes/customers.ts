@@ -121,6 +121,110 @@ customersRouter.get('/lifecycle-summary', requirePermission('customers:read'), a
   }
 });
 
+// --- Lifecycle Config & Scheduled Jobs (must be before /:id) ---
+import { getAvailableJobTypes } from '../jobs/job-registry';
+
+customersRouter.get('/lifecycle-config', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { rows } = await adminPool.query(`SELECT key, value FROM business_configurations WHERE business_id = $1 AND key LIKE 'lifecycle.%'`, [businessId]);
+    const config: Record<string, any> = { enabled: true, at_risk_days: 30, churned_days: 60, run_time: '02:00' };
+    for (const row of rows) {
+      if (row.key === 'lifecycle.enabled') config.enabled = row.value === 'true';
+      if (row.key === 'lifecycle.at_risk_days') config.at_risk_days = parseInt(row.value);
+      if (row.key === 'lifecycle.churned_days') config.churned_days = parseInt(row.value);
+      if (row.key === 'lifecycle.run_time') config.run_time = row.value;
+    }
+    success(res, config);
+  } catch (err: any) { error(res, 'Failed to get lifecycle config', 'INTERNAL_ERROR', 500); }
+});
+
+customersRouter.put('/lifecycle-config', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { enabled, at_risk_days, churned_days, run_time } = req.body;
+    const entries = [
+      { key: 'lifecycle.enabled', value: String(enabled ?? true) },
+      { key: 'lifecycle.at_risk_days', value: String(at_risk_days ?? 30) },
+      { key: 'lifecycle.churned_days', value: String(churned_days ?? 60) },
+      { key: 'lifecycle.run_time', value: run_time || '02:00' },
+    ];
+    for (const entry of entries) {
+      await adminPool.query(
+        `INSERT INTO business_configurations (business_id, key, value, updated_by, updated_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (business_id, key) DO UPDATE SET value = $3, updated_by = $4, updated_at = NOW()`,
+        [businessId, entry.key, entry.value, authReq.user.sub],
+      );
+    }
+    success(res, { enabled, at_risk_days, churned_days, run_time });
+  } catch (err: any) { error(res, 'Failed to save lifecycle config', 'INTERNAL_ERROR', 500); }
+});
+
+customersRouter.get('/scheduled-jobs/types', requirePermission('settings:*'), async (_req: Request, res: Response) => {
+  success(res, getAvailableJobTypes());
+});
+
+customersRouter.get('/scheduled-jobs', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { rows } = await adminPool.query(
+      `SELECT id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled, next_run_at, last_run_at, last_run_status, last_run_duration_ms, last_error, consecutive_failures FROM scheduled_jobs WHERE business_id = $1 ORDER BY job_type`,
+      [businessId],
+    );
+    success(res, rows);
+  } catch (err: any) { error(res, 'Failed to get scheduled jobs', 'INTERNAL_ERROR', 500); }
+});
+
+customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled } = req.body;
+    if (!job_type) { error(res, 'job_type required', 'VALIDATION_ERROR', 400); return; }
+    const time = schedule_time || '02:00';
+    const [hours, minutes] = time.split(':').map(Number);
+    const nextRun = new Date(); nextRun.setHours(hours, minutes, 0, 0);
+    if (nextRun <= new Date()) nextRun.setDate(nextRun.getDate() + 1);
+    const { rows } = await adminPool.query(
+      `INSERT INTO scheduled_jobs (business_id, tenant_id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled, next_run_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       ON CONFLICT (business_id, job_type) DO UPDATE SET schedule_time = $4, schedule_timezone = $5, frequency = $6, day_of_week = $7, day_of_month = $8, enabled = $9, next_run_at = $10, updated_at = NOW() RETURNING *`,
+      [businessId, authReq.tenantId, job_type, time, schedule_timezone || 'UTC', frequency || 'daily', day_of_week ?? null, day_of_month ?? null, enabled !== false, nextRun.toISOString()],
+    );
+    success(res, rows[0], undefined, 201);
+  } catch (err: any) { error(res, 'Failed to create scheduled job', 'INTERNAL_ERROR', 500); }
+});
+
+customersRouter.put('/scheduled-jobs/:id/toggle', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const { rows } = await adminPool.query(`UPDATE scheduled_jobs SET enabled = NOT enabled, updated_at = NOW() WHERE id = $1 RETURNING id, enabled`, [req.params.id]);
+    if (rows.length === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
+    success(res, rows[0]);
+  } catch (err: any) { error(res, 'Failed to toggle job', 'INTERNAL_ERROR', 500); }
+});
+
+customersRouter.delete('/scheduled-jobs/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const { rowCount } = await adminPool.query('DELETE FROM scheduled_jobs WHERE id = $1', [req.params.id]);
+    if (rowCount === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
+    success(res, { deleted: true });
+  } catch (err: any) { error(res, 'Failed to delete job', 'INTERNAL_ERROR', 500); }
+});
+
+customersRouter.get('/scheduled-jobs/:id/history', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const { rows } = await adminPool.query(
+      `SELECT id, started_at, completed_at, status, duration_ms, result, error FROM job_executions WHERE job_id = $1 ORDER BY started_at DESC LIMIT 20`,
+      [req.params.id],
+    );
+    success(res, rows);
+  } catch (err: any) { error(res, 'Failed to get job history', 'INTERNAL_ERROR', 500); }
+});
+
 // GET /api/v1/customers/export — Export to CSV (must be before /:id)
 customersRouter.get('/export', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
@@ -720,5 +824,170 @@ customersRouter.put('/:id/lifecycle-stage', requirePermission('customers:*'), va
     success(res, { ...customer, lifecycle_stage: stage });
   } catch (err: any) {
     error(res, 'Failed to update lifecycle stage', 'INTERNAL_ERROR', 500);
+  }
+});
+
+
+// --- Lifecycle Settings ---
+
+// GET /api/v1/customers/lifecycle-config — Get lifecycle configuration for business
+customersRouter.get('/lifecycle-config', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const { rows } = await adminPool.query(
+      `SELECT key, value FROM business_configurations WHERE business_id = $1 AND key LIKE 'lifecycle.%'`,
+      [businessId],
+    );
+
+    const config: Record<string, any> = {
+      enabled: true,
+      at_risk_days: 30,
+      churned_days: 60,
+      run_time: '02:00',
+    };
+
+    for (const row of rows) {
+      if (row.key === 'lifecycle.enabled') config.enabled = row.value === 'true';
+      if (row.key === 'lifecycle.at_risk_days') config.at_risk_days = parseInt(row.value);
+      if (row.key === 'lifecycle.churned_days') config.churned_days = parseInt(row.value);
+      if (row.key === 'lifecycle.run_time') config.run_time = row.value;
+    }
+
+    success(res, config);
+  } catch (err: any) {
+    error(res, 'Failed to get lifecycle config', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/customers/lifecycle-config — Update lifecycle configuration
+customersRouter.put('/lifecycle-config', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const { enabled, at_risk_days, churned_days, run_time } = req.body;
+
+    const entries = [
+      { key: 'lifecycle.enabled', value: String(enabled ?? true) },
+      { key: 'lifecycle.at_risk_days', value: String(at_risk_days ?? 30) },
+      { key: 'lifecycle.churned_days', value: String(churned_days ?? 60) },
+      { key: 'lifecycle.run_time', value: run_time || '02:00' },
+    ];
+
+    for (const entry of entries) {
+      await adminPool.query(
+        `INSERT INTO business_configurations (business_id, key, value, updated_by, updated_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (business_id, key) DO UPDATE SET value = $3, updated_by = $4, updated_at = NOW()`,
+        [businessId, entry.key, entry.value, authReq.user.sub],
+      );
+    }
+
+    success(res, { enabled, at_risk_days, churned_days, run_time });
+  } catch (err: any) {
+    error(res, 'Failed to save lifecycle config', 'INTERNAL_ERROR', 500);
+  }
+});
+
+
+// --- Scheduled Jobs Management ---
+
+import { getAvailableJobTypes } from '../jobs/job-registry';
+
+// GET /api/v1/customers/scheduled-jobs/types — Get available job types
+customersRouter.get('/scheduled-jobs/types', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  success(res, getAvailableJobTypes());
+});
+
+// GET /api/v1/customers/scheduled-jobs — Get jobs for this business
+customersRouter.get('/scheduled-jobs', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const { rows } = await adminPool.query(
+      `SELECT id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month,
+              enabled, next_run_at, last_run_at, last_run_status, last_run_duration_ms, last_error, consecutive_failures
+       FROM scheduled_jobs WHERE business_id = $1 ORDER BY job_type`,
+      [businessId],
+    );
+    success(res, rows);
+  } catch (err: any) {
+    error(res, 'Failed to get scheduled jobs', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// POST /api/v1/customers/scheduled-jobs — Create/upsert a scheduled job
+customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const { job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled } = req.body;
+    if (!job_type) { error(res, 'job_type required', 'VALIDATION_ERROR', 400); return; }
+
+    // Calculate initial next_run_at
+    const tz = schedule_timezone || 'UTC';
+    const time = schedule_time || '02:00';
+    const [hours, minutes] = time.split(':').map(Number);
+    const now = new Date();
+    const nextRun = new Date();
+    nextRun.setHours(hours, minutes, 0, 0);
+    if (nextRun <= now) nextRun.setDate(nextRun.getDate() + 1);
+
+    const { rows } = await adminPool.query(
+      `INSERT INTO scheduled_jobs (business_id, tenant_id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled, next_run_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       ON CONFLICT (business_id, job_type)
+       DO UPDATE SET schedule_time = $4, schedule_timezone = $5, frequency = $6, day_of_week = $7, day_of_month = $8, enabled = $9, next_run_at = $10, updated_at = NOW()
+       RETURNING *`,
+      [businessId, authReq.tenantId, job_type, time, tz, frequency || 'daily', day_of_week ?? null, day_of_month ?? null, enabled !== false, nextRun.toISOString()],
+    );
+    success(res, rows[0], undefined, 201);
+  } catch (err: any) {
+    error(res, 'Failed to create scheduled job', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/customers/scheduled-jobs/:id/toggle — Enable/disable a job
+customersRouter.put('/scheduled-jobs/:id/toggle', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const { rows } = await adminPool.query(
+      `UPDATE scheduled_jobs SET enabled = NOT enabled, updated_at = NOW() WHERE id = $1 RETURNING id, enabled`,
+      [req.params.id],
+    );
+    if (rows.length === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
+    success(res, rows[0]);
+  } catch (err: any) {
+    error(res, 'Failed to toggle job', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// DELETE /api/v1/customers/scheduled-jobs/:id — Delete a scheduled job
+customersRouter.delete('/scheduled-jobs/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const { rowCount } = await adminPool.query('DELETE FROM scheduled_jobs WHERE id = $1', [req.params.id]);
+    if (rowCount === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
+    success(res, { deleted: true });
+  } catch (err: any) {
+    error(res, 'Failed to delete job', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/customers/scheduled-jobs/:id/history — Get execution history
+customersRouter.get('/scheduled-jobs/:id/history', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const { rows } = await adminPool.query(
+      `SELECT id, started_at, completed_at, status, duration_ms, result, error
+       FROM job_executions WHERE job_id = $1 ORDER BY started_at DESC LIMIT 20`,
+      [req.params.id],
+    );
+    success(res, rows);
+  } catch (err: any) {
+    error(res, 'Failed to get job history', 'INTERNAL_ERROR', 500);
   }
 });

@@ -19,17 +19,7 @@ export function startLifecycleScheduler(intervalMs?: number): void {
 
   logger.info(`Starting lifecycle scheduler (interval: ${interval}ms)`);
 
-  // Run once on startup (after a short delay to let the server stabilize)
-  setTimeout(async () => {
-    try {
-      const result = await evaluateScheduledTransitions();
-      logger.info('Initial lifecycle evaluation complete', result);
-    } catch (err: any) {
-      logger.error('Initial lifecycle evaluation failed', { error: err.message });
-    }
-  }, 5000);
-
-  // Schedule recurring runs
+  // Schedule recurring runs (no auto-run on startup to avoid unwanted transitions during development)
   intervalHandle = setInterval(async () => {
     try {
       const result = await evaluateScheduledTransitions();

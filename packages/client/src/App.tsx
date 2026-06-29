@@ -59,6 +59,7 @@ import { CMSMedia } from './pages/CMSMedia';
 import { CMSPageEditor } from './pages/CMSPageEditor';
 import { Integrations } from './pages/Integrations';
 import { Community } from './pages/Community';
+import { BusinessSettings } from './pages/BusinessSettings';
 
 export function App() {
   return (
@@ -150,6 +151,9 @@ export function App() {
 
         {/* Integrations */}
         <Route path="/integrations" element={<ProtectedRoute><Integrations /></ProtectedRoute>} />
+
+        {/* Business Settings */}
+        <Route path="/settings" element={<ProtectedRoute><BusinessSettings /></ProtectedRoute>} />
 
         {/* Community */}
         <Route path="/community" element={<ProtectedRoute><Community /></ProtectedRoute>} />

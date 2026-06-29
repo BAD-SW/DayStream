@@ -2,7 +2,7 @@ import { app } from './app';
 import { config } from './config';
 import { pool } from './db/pool';
 import { logger } from './middleware/logger';
-import { startLifecycleScheduler } from './jobs/lifecycle-scheduler';
+import { startJobScheduler } from './jobs/job-scheduler';
 
 const start = async () => {
   // Test database connection
@@ -15,8 +15,8 @@ const start = async () => {
     process.exit(1);
   }
 
-  // Start background jobs
-  startLifecycleScheduler();
+  // Start job scheduler
+  startJobScheduler();
 
   // Start server
   app.listen(config.port, () => {

@@ -62,6 +62,9 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   // Phase 20: Integrations
   { id: 'integrations', phase: 20, icon: '🔗', titleKey: 'Integrations', descriptionKey: 'Third-party connections', path: '/integrations', personas: ['business'], permission: 'settings:*' },
 
+  // Business Settings
+  { id: 'business-settings', phase: 0, icon: '⚙️', titleKey: 'Settings', descriptionKey: 'Business configuration', path: '/settings', personas: ['business'], permission: 'settings:*' },
+
   // Phase 22: Community Engagement
   { id: 'community', phase: 22, icon: '🤝', titleKey: 'Community', descriptionKey: 'Community and engagement', path: '/community', personas: ['business', 'customer'], featureFlag: 'feature.community' },
 
