@@ -25,6 +25,7 @@ import { reportsRouter } from './reports';
 import { cmsRouter } from './cms';
 import { integrationsRouter } from './integrations';
 import { communityRouter } from './community';
+import { locationsRouter } from './locations';
 import { authLimiter } from '../middleware/rate-limit';
 
 export const router = Router();
@@ -57,6 +58,7 @@ router.use('/v1/reports', reportsRouter);
 router.use('/v1/cms', cmsRouter);
 router.use('/v1/integrations', integrationsRouter);
 router.use('/v1/community', communityRouter);
+router.use('/v1/locations', locationsRouter);
 
 // Query Editor (authentication and authorization handled within the router)
 router.use('/v1/query-editor', queryEditorRouter);

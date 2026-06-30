@@ -60,6 +60,9 @@ import { CMSPageEditor } from './pages/CMSPageEditor';
 import { Integrations } from './pages/Integrations';
 import { Community } from './pages/Community';
 import { BusinessSettings } from './pages/BusinessSettings';
+import { Locations } from './pages/Locations';
+import { LocationDetail } from './pages/LocationDetail';
+import { LocationCreate } from './pages/LocationCreate';
 
 export function App() {
   return (
@@ -154,6 +157,9 @@ export function App() {
 
         {/* Business Settings */}
         <Route path="/settings" element={<ProtectedRoute><BusinessSettings /></ProtectedRoute>} />
+        <Route path="/settings/locations" element={<ProtectedRoute><Locations /></ProtectedRoute>} />
+        <Route path="/settings/locations/new" element={<ProtectedRoute><LocationCreate /></ProtectedRoute>} />
+        <Route path="/settings/locations/:id" element={<ProtectedRoute><LocationDetail /></ProtectedRoute>} />
 
         {/* Community */}
         <Route path="/community" element={<ProtectedRoute><Community /></ProtectedRoute>} />

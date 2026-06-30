@@ -37,22 +37,22 @@ interface GetActivitiesOptions {
  * Get paginated activity timeline for a customer, most recent first.
  */
 export async function getActivities(options: GetActivitiesOptions) {
-  const conditions = ['customer_id = $1', 'business_id = $2'];
+  const conditions = ['ca.customer_id = $1', 'ca.business_id = $2'];
   const params: any[] = [options.customerId, options.businessId];
   let paramIndex = 3;
 
   if (options.activityType) {
-    conditions.push(`activity_type = $${paramIndex++}`);
+    conditions.push(`ca.activity_type = $${paramIndex++}`);
     params.push(options.activityType);
   }
 
   if (options.startDate) {
-    conditions.push(`created_at >= $${paramIndex++}`);
+    conditions.push(`ca.created_at >= $${paramIndex++}`);
     params.push(options.startDate);
   }
 
   if (options.endDate) {
-    conditions.push(`created_at <= $${paramIndex++}`);
+    conditions.push(`ca.created_at <= $${paramIndex++}`);
     params.push(options.endDate);
   }
 
@@ -63,10 +63,17 @@ export async function getActivities(options: GetActivitiesOptions) {
 
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
-      `SELECT * FROM customer_activities WHERE ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+      `SELECT ca.*, 
+              CASE 
+                WHEN ca.created_by IS NULL THEN 'System'
+                ELSE COALESCE(u.first_name || ' ' || u.last_name, 'Unknown User')
+              END AS actor_name
+       FROM customer_activities ca
+       LEFT JOIN users u ON u.id = ca.created_by
+       WHERE ${where} ORDER BY ca.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
       params,
     ),
-    adminPool.query(`SELECT COUNT(*) AS total FROM customer_activities WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*) AS total FROM customer_activities ca WHERE ${where}`, params),
   ]);
 
   return {

@@ -895,8 +895,6 @@ customersRouter.put('/lifecycle-config', requirePermission('settings:*'), async 
 
 // --- Scheduled Jobs Management ---
 
-import { getAvailableJobTypes } from '../jobs/job-registry';
-
 // GET /api/v1/customers/scheduled-jobs/types — Get available job types
 customersRouter.get('/scheduled-jobs/types', requirePermission('settings:*'), async (req: Request, res: Response) => {
   success(res, getAvailableJobTypes());

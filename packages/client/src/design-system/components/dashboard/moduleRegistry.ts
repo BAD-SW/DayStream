@@ -65,6 +65,9 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   // Business Settings
   { id: 'business-settings', phase: 0, icon: '⚙️', titleKey: 'Settings', descriptionKey: 'Business configuration', path: '/settings', personas: ['business'], permission: 'settings:*' },
 
+  // Locations
+  { id: 'locations', phase: 0, icon: '📍', titleKey: 'Locations', descriptionKey: 'Manage business locations', path: '/settings/locations', personas: ['business'], permission: 'settings:*' },
+
   // Phase 22: Community Engagement
   { id: 'community', phase: 22, icon: '🤝', titleKey: 'Community', descriptionKey: 'Community and engagement', path: '/community', personas: ['business', 'customer'], featureFlag: 'feature.community' },
 

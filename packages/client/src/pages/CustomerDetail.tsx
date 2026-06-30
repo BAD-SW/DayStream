@@ -305,13 +305,22 @@ function TimelineTab({ activities, customerId, businessId }: { activities: any[]
         ))}
       </div>
       {items.length === 0 && <p style={styles.empty}>No activities</p>}
-      {items.map((act: any) => (
-        <div key={act.id} style={styles.activityItem}>
-          <Badge variant="neutral">{act.activity_type}</Badge>
-          <span style={styles.activityDesc}>{act.description}</span>
-          <span style={styles.activityDate}>{new Date(act.created_at).toLocaleString()}</span>
+      {items.length > 0 && (
+        <div style={styles.timelineGrid}>
+          <span style={styles.timelineHeaderCell}>Type</span>
+          <span style={styles.timelineHeaderCell}>Description</span>
+          <span style={styles.timelineHeaderCell}>By</span>
+          <span style={styles.timelineHeaderCell}>Date</span>
+          {items.map((act: any) => (
+            <div key={act.id} style={styles.timelineRow}>
+              <span style={styles.timelineCell}><Badge variant="neutral">{act.activity_type}</Badge></span>
+              <span style={styles.timelineDesc}>{act.description}</span>
+              <span style={styles.timelineActor}>{act.actor_name || 'System'}</span>
+              <span style={styles.timelineDate}>{new Date(act.created_at).toLocaleString()}</span>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -384,6 +393,14 @@ const styles: Record<string, React.CSSProperties> = {
   filterBtnActive: { borderColor: 'var(--color-primary)', color: 'var(--color-primary)', background: 'var(--color-surface-hover)' },
   activityItem: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) 0', borderBottom: '1px solid var(--color-border)' },
   activityDesc: { flex: 1, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
+  activityActor: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' as const, fontStyle: 'italic' as const },
   activityDate: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' as const },
+  timelineGrid: { display: 'grid', gridTemplateColumns: '120px 1fr 130px 170px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
+  timelineHeaderCell: { fontSize: 'var(--font-size-xs)', fontWeight: 'var(--font-weight-semibold)' as any, color: 'var(--color-text-secondary)', padding: 'var(--space-sm) var(--space-sm)', borderBottom: '2px solid var(--color-border)', background: 'var(--color-surface-hover)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
+  timelineRow: { display: 'contents' },
+  timelineCell: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', padding: 'var(--space-sm) var(--space-sm)', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center' },
+  timelineDesc: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', padding: 'var(--space-sm) var(--space-sm)', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', wordBreak: 'break-word' as const },
+  timelineActor: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', padding: 'var(--space-sm) var(--space-sm)', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center' },
+  timelineDate: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', padding: 'var(--space-sm) var(--space-sm)', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' as const },
   prefRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-md) 0', borderBottom: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
 };

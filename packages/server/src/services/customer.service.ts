@@ -148,12 +148,40 @@ export async function updateCustomer(id: string, businessId: string, updates: Re
     values,
   );
 
-  // Log activity
-  await adminPool.query(
-    `INSERT INTO customer_activities (customer_id, business_id, activity_type, description, metadata, created_by)
-     VALUES ($1, $2, 'profile_change', 'Profile updated', $3, $4)`,
-    [id, businessId, JSON.stringify({ fields: Object.keys(updates) }), userId],
-  );
+  // Build change descriptions with from → to values
+  const changes: { field: string; from: any; to: any }[] = [];
+  for (const [key, value] of Object.entries(updates)) {
+    if (!allowedFields.includes(key)) continue;
+    const oldVal = customer[key];
+    const newVal = value;
+
+    // Normalize for comparison: treat null/undefined/empty string as equivalent
+    const normalizeVal = (v: any): string => {
+      if (v === null || v === undefined || v === '') return '';
+      if (v instanceof Date) return v.toISOString();
+      return String(v).trim();
+    };
+
+    if (normalizeVal(oldVal) !== normalizeVal(newVal)) {
+      changes.push({ field: key, from: oldVal ?? null, to: newVal ?? null });
+    }
+  }
+
+  // Log activity only if something actually changed
+  if (changes.length > 0) {
+    const description = changes.map((c) => {
+      const label = c.field.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+      const fromVal = c.from || '(empty)';
+      const toVal = c.to || '(empty)';
+      return `${label}: ${fromVal} → ${toVal}`;
+    }).join('; ');
+
+    await adminPool.query(
+      `INSERT INTO customer_activities (customer_id, business_id, activity_type, description, metadata, created_by)
+       VALUES ($1, $2, 'profile_change', $3, $4, $5)`,
+      [id, businessId, description, JSON.stringify({ changes }), userId],
+    );
+  }
 
   return getCustomerById(id, businessId);
 }
