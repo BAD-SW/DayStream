@@ -72,6 +72,18 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
       [owner.id, roleIds['Business Owner'], tenant.id],
     );
 
+    // Create staff profile for the business owner
+    const { rows: staffRefRows } = await client.query(
+      `SELECT COUNT(*)::int AS cnt FROM staff_profiles WHERE tenant_id = $1`,
+      [tenant.id],
+    );
+    const staffRef = `STF-${String((staffRefRows[0].cnt || 0) + 1).padStart(3, '0')}`;
+    await client.query(
+      `INSERT INTO staff_profiles (tenant_id, user_id, staff_ref, first_name, last_name, email, employment_type, status, show_on_directory, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, 'full_time', 'active', true, $2)`,
+      [tenant.id, owner.id, staffRef, input.owner_first_name, input.owner_last_name, input.owner_email],
+    );
+
     // Apply default configuration values for new tenant
     const { rows: configDefs } = await client.query('SELECT key, default_value FROM configuration_definitions');
     for (const def of configDefs) {

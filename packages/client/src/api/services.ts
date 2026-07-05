@@ -287,3 +287,15 @@ export async function applyTemplate(businessId: string, businessType: string) {
   const res = await apiClient.post('/v1/services/templates/apply', { business_id: businessId, business_type: businessType });
   return res.data.data;
 }
+
+// --- Service Locations ---
+
+export async function getServiceLocations(serviceId: string): Promise<string[]> {
+  const res = await apiClient.get(`/v1/services/${serviceId}/locations`);
+  return res.data.data;
+}
+
+export async function setServiceLocations(serviceId: string, businessId: string, locationIds: string[]) {
+  const res = await apiClient.put(`/v1/services/${serviceId}/locations?business_id=${businessId}`, { location_ids: locationIds });
+  return res.data.data;
+}

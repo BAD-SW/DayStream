@@ -9,8 +9,10 @@ export function StaffCreate() {
     first_name: '',
     last_name: '',
     email: '',
+    password: '',
     mobile_phone: '',
     employment_type: 'full_time',
+    role: 'business_staff',
     hire_date: '',
     bio: '',
     languages: '',
@@ -25,10 +27,19 @@ export function StaffCreate() {
       setError('First and last name are required');
       return;
     }
+    if (!form.email) {
+      setError('Email is required');
+      return;
+    }
+    if (!form.password || form.password.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
-      const staff = await staffApi.createStaff(form);
+      const businessId = localStorage.getItem('business_id') || '';
+      const staff = await staffApi.createStaff({ ...form, business_id: businessId });
       navigate(`/staff/${staff.id}`);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create staff');
@@ -64,10 +75,18 @@ export function StaffCreate() {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Email</label>
+            <label className="block text-sm font-medium mb-1">Email *</label>
             <input type="email" className="border rounded w-full px-3 py-2" value={form.email}
-              onChange={(e) => updateField('email', e.target.value)} />
+              onChange={(e) => updateField('email', e.target.value)} required />
           </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Password *</label>
+            <input type="password" className="border rounded w-full px-3 py-2" value={form.password}
+              onChange={(e) => updateField('password', e.target.value)} required minLength={8} placeholder="Min 8 characters" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Mobile Phone</label>
             <input className="border rounded w-full px-3 py-2" value={form.mobile_phone}
@@ -85,6 +104,18 @@ export function StaffCreate() {
               <option value="contractor">Contractor</option>
             </select>
           </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Role</label>
+            <select className="border rounded w-full px-3 py-2" value={form.role}
+              onChange={(e) => updateField('role', e.target.value)}>
+              <option value="business_staff">Staff</option>
+              <option value="business_manager">Manager</option>
+              <option value="business_owner">Owner</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Hire Date</label>
             <input type="date" className="border rounded w-full px-3 py-2" value={form.hire_date}

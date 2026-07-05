@@ -12,11 +12,17 @@ export function ServiceCreate() {
   const [form, setForm] = useState({
     name: '',
     description: '',
-    booking_type: 'appointment',
+    short_description: '',
+    booking_type: 'individual',
     default_duration: 60,
+    buffer_before: 0,
+    buffer_after: 0,
     max_capacity: 1,
+    min_advance_booking_hours: 2,
+    max_advance_booking_days: 30,
     category_id: '',
     online_booking_enabled: true,
+    preparation_notes: '',
   });
 
   const businessId = localStorage.getItem('business_id') || '';
@@ -57,6 +63,10 @@ export function ServiceCreate() {
           <input style={styles.input} value={form.name} onChange={(e) => handleChange('name', e.target.value)} required />
         </div>
         <div style={styles.fieldWrapper}>
+          <label style={styles.label}>Short Description</label>
+          <input style={styles.input} value={form.short_description} onChange={(e) => handleChange('short_description', e.target.value)} />
+        </div>
+        <div style={styles.fieldWrapper}>
           <label style={styles.label}>Description</label>
           <textarea style={{ ...styles.input, minHeight: '80px' }} value={form.description} onChange={(e) => handleChange('description', e.target.value)} />
         </div>
@@ -64,14 +74,15 @@ export function ServiceCreate() {
           <div style={styles.fieldWrapper}>
             <label style={styles.label}>Booking Type</label>
             <select style={styles.input} value={form.booking_type} onChange={(e) => handleChange('booking_type', e.target.value)}>
-              <option value="appointment">Appointment</option>
-              <option value="class">Class</option>
+              <option value="individual">Individual</option>
+              <option value="shared">Shared</option>
+              <option value="group">Group</option>
               <option value="resource">Resource</option>
             </select>
           </div>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Category</label>
-            <select style={styles.input} value={form.category_id} onChange={(e) => handleChange('category_id', e.target.value)}>
+            <label style={styles.label}>Category *</label>
+            <select style={styles.input} value={form.category_id} onChange={(e) => handleChange('category_id', e.target.value)} required>
               <option value="">— Select —</option>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -86,6 +97,30 @@ export function ServiceCreate() {
             <label style={styles.label}>Max Capacity</label>
             <input style={styles.input} type="number" min={1} value={form.max_capacity} onChange={(e) => handleChange('max_capacity', Number(e.target.value))} />
           </div>
+        </div>
+        <div style={styles.row}>
+          <div style={styles.fieldWrapper}>
+            <label style={styles.label}>Buffer Before (min)</label>
+            <input style={styles.input} type="number" min={0} value={form.buffer_before} onChange={(e) => handleChange('buffer_before', Number(e.target.value))} />
+          </div>
+          <div style={styles.fieldWrapper}>
+            <label style={styles.label}>Buffer After (min)</label>
+            <input style={styles.input} type="number" min={0} value={form.buffer_after} onChange={(e) => handleChange('buffer_after', Number(e.target.value))} />
+          </div>
+        </div>
+        <div style={styles.row}>
+          <div style={styles.fieldWrapper}>
+            <label style={styles.label}>Min Advance Booking (hours)</label>
+            <input style={styles.input} type="number" min={0} value={form.min_advance_booking_hours} onChange={(e) => handleChange('min_advance_booking_hours', Number(e.target.value))} />
+          </div>
+          <div style={styles.fieldWrapper}>
+            <label style={styles.label}>Max Advance Booking (days)</label>
+            <input style={styles.input} type="number" min={1} value={form.max_advance_booking_days} onChange={(e) => handleChange('max_advance_booking_days', Number(e.target.value))} />
+          </div>
+        </div>
+        <div style={styles.fieldWrapper}>
+          <label style={styles.label}>Preparation Notes</label>
+          <textarea style={{ ...styles.input, minHeight: '60px' }} value={form.preparation_notes} onChange={(e) => handleChange('preparation_notes', e.target.value)} />
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--color-text)' }}>
           <input type="checkbox" checked={form.online_booking_enabled} onChange={(e) => handleChange('online_booking_enabled', e.target.checked)} />

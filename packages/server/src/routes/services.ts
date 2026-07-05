@@ -834,3 +834,60 @@ servicesRouter.delete('/:id/availability/:ruleId', requirePermission('services:*
 
 
 // (Templates routes registered in pre-/:id section above)
+
+
+// ============================================================
+// Service Locations
+// ============================================================
+
+import { adminPool } from '../db/pool';
+
+// GET /api/v1/services/:id/locations — Get assigned location IDs
+servicesRouter.get('/:id/locations', requirePermission('services:read'), async (req: Request, res: Response) => {
+  try {
+    const { rows } = await adminPool.query(
+      'SELECT location_id FROM service_locations WHERE service_id = $1',
+      [req.params.id],
+    );
+    success(res, rows.map((r: any) => r.location_id));
+  } catch (err: any) {
+    error(res, 'Failed to get service locations', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/services/:id/locations — Set assigned locations (replace all)
+servicesRouter.put('/:id/locations', requirePermission('services:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const locationIds: string[] = req.body.location_ids || [];
+
+    // Validate all location IDs belong to the business
+    if (locationIds.length > 0) {
+      const { rows } = await adminPool.query(
+        'SELECT id FROM locations WHERE business_id = $1 AND id = ANY($2)',
+        [businessId, locationIds],
+      );
+      if (rows.length !== locationIds.length) {
+        error(res, 'One or more location IDs are invalid', 'VALIDATION_ERROR', 400);
+        return;
+      }
+    }
+
+    // Replace: delete existing and insert new
+    await adminPool.query('DELETE FROM service_locations WHERE service_id = $1', [req.params.id]);
+
+    if (locationIds.length > 0) {
+      const values = locationIds.map((lid, idx) => `($1, $${idx + 2})`).join(', ');
+      await adminPool.query(
+        `INSERT INTO service_locations (service_id, location_id) VALUES ${values}`,
+        [req.params.id, ...locationIds],
+      );
+    }
+
+    success(res, locationIds);
+  } catch (err: any) {
+    error(res, 'Failed to update service locations', 'INTERNAL_ERROR', 500);
+  }
+});

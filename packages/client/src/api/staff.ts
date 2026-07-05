@@ -97,6 +97,16 @@ export async function deactivateStaff(id: string) {
   return res.data.data;
 }
 
+export async function resetStaffPassword(id: string, password: string) {
+  const res = await apiClient.post(`/v1/staff/${id}/reset-password`, { password });
+  return res.data.data;
+}
+
+export async function linkUserAccount(id: string, data: { email: string; password: string; role: string; business_id?: string }) {
+  const res = await apiClient.post(`/v1/staff/${id}/link-account`, data);
+  return res.data.data;
+}
+
 export async function uploadStaffPhoto(id: string, file: File) {
   const formData = new FormData();
   formData.append('photo', file);

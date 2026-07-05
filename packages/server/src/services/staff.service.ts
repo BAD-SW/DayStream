@@ -1,21 +1,25 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { hashPassword } from './auth.service';
 
 interface CreateStaffInput {
   tenantId: string;
   userId?: string;
   firstName: string;
   lastName: string;
-  email?: string;
+  email: string;
+  password?: string;
   mobilePhone?: string;
   dateOfBirth?: string;
   hireDate?: string;
   employmentType?: string;
+  role?: string;
   bio?: string;
   languages?: string;
   showOnDirectory?: boolean;
   primaryLocationId?: string;
   createdBy: string;
+  businessId?: string;
 }
 
 interface StaffFilters {
@@ -47,10 +51,46 @@ async function generateStaffRef(tenantId: string): Promise<string> {
 }
 
 /**
- * Create a staff profile.
+ * Create a staff profile and their user account.
+ * Staff always get a user account so they can log in and be assigned to services.
  */
 export async function createStaff(input: CreateStaffInput) {
   const staffRef = await generateStaffRef(input.tenantId);
+
+  let userId = input.userId || null;
+
+  // Create or link user account
+  if (!userId) {
+    if (!input.email) {
+      throw new Error('Email is required to create a staff member');
+    }
+
+    // Check if a user with this email already exists in this tenant
+    const { rows: existingUsers } = await adminPool.query(
+      'SELECT id FROM users WHERE email = $1 AND tenant_id = $2',
+      [input.email, input.tenantId],
+    );
+
+    if (existingUsers.length > 0) {
+      // Link to existing user
+      userId = existingUsers[0].id;
+    } else {
+      // Create a new user account
+      if (!input.password) {
+        throw new Error('Password is required when creating a new staff member');
+      }
+      const passwordHash = await hashPassword(input.password);
+      const role = input.role || 'business_staff';
+
+      const { rows: userRows } = await adminPool.query(
+        `INSERT INTO users (tenant_id, business_id, email, first_name, last_name, password_hash, role, persona, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'business', 'active')
+         RETURNING id`,
+        [input.tenantId, input.businessId || null, input.email, input.firstName, input.lastName, passwordHash, role],
+      );
+      userId = userRows[0].id;
+    }
+  }
 
   const { rows } = await adminPool.query(
     `INSERT INTO staff_profiles (
@@ -61,7 +101,7 @@ export async function createStaff(input: CreateStaffInput) {
      RETURNING *`,
     [
       input.tenantId,
-      input.userId || null,
+      userId,
       staffRef,
       input.firstName,
       input.lastName,
@@ -84,7 +124,7 @@ export async function createStaff(input: CreateStaffInput) {
     action: 'staff.created',
     resourceType: 'staff_profile',
     resourceId: rows[0].id,
-    details: { staffRef, name: `${input.firstName} ${input.lastName}` },
+    details: { staffRef, name: `${input.firstName} ${input.lastName}`, userCreated: !!userId },
   });
 
   return rows[0];
@@ -133,8 +173,9 @@ export async function getStaffList(tenantId: string, filters: StaffFilters) {
 
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
-      `SELECT sp.*
+      `SELECT sp.*, u.role AS user_role, u.id AS linked_user_id
        FROM staff_profiles sp
+       LEFT JOIN users u ON u.id = sp.user_id
        WHERE ${where}
        ORDER BY sp.last_name ASC, sp.first_name ASC
        LIMIT ${limit} OFFSET ${offset}`,
@@ -156,7 +197,10 @@ export async function getStaffList(tenantId: string, filters: StaffFilters) {
  */
 export async function getStaffById(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM staff_profiles WHERE id = $1 AND tenant_id = $2`,
+    `SELECT sp.*, u.role AS user_role, u.email AS user_email, u.status AS user_status
+     FROM staff_profiles sp
+     LEFT JOIN users u ON u.id = sp.user_id
+     WHERE sp.id = $1 AND sp.tenant_id = $2`,
     [id, tenantId],
   );
   return rows[0] || null;
@@ -265,4 +309,59 @@ export async function updateProfilePhoto(id: string, tenantId: string, photoPath
     [photoPath, id, tenantId],
   );
   return rows[0] || null;
+}
+
+/**
+ * Create/link a user account for a staff profile that doesn't have one.
+ * Used to retroactively give login access to staff created without email.
+ */
+export async function linkUserAccount(staffId: string, tenantId: string, email: string, role: string, password: string, businessId?: string): Promise<any> {
+  const staff = await getStaffById(staffId, tenantId);
+  if (!staff) throw new Error('Staff not found');
+  if (staff.user_id) throw new Error('Staff already has a linked user account');
+
+  if (!password) throw new Error('Password is required');
+
+  // Check email uniqueness within tenant
+  const { rows: existing } = await adminPool.query(
+    'SELECT id FROM users WHERE email = $1 AND tenant_id = $2',
+    [email, tenantId],
+  );
+  if (existing.length > 0) {
+    throw new Error('A user with this email already exists');
+  }
+
+  // Create user
+  const passwordHash = await hashPassword(password);
+
+  const { rows: userRows } = await adminPool.query(
+    `INSERT INTO users (tenant_id, business_id, email, first_name, last_name, password_hash, role, persona, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'business', 'active')
+     RETURNING id`,
+    [tenantId, businessId || null, email, staff.first_name, staff.last_name, passwordHash, role],
+  );
+
+  // Link to staff profile
+  await adminPool.query(
+    'UPDATE staff_profiles SET user_id = $1, email = $2, updated_at = NOW() WHERE id = $3',
+    [userRows[0].id, email, staffId],
+  );
+
+  return { user_id: userRows[0].id, email, role };
+}
+
+/**
+ * Reset password for a staff member's user account.
+ */
+export async function resetStaffPassword(staffId: string, tenantId: string, newPassword: string): Promise<boolean> {
+  const staff = await getStaffById(staffId, tenantId);
+  if (!staff || !staff.user_id) throw new Error('Staff not found or has no user account');
+
+  const passwordHash = await hashPassword(newPassword);
+  const { rowCount } = await adminPool.query(
+    'UPDATE users SET password_hash = $1 WHERE id = $2 AND tenant_id = $3',
+    [passwordHash, staff.user_id, tenantId],
+  );
+
+  return (rowCount ?? 0) > 0;
 }

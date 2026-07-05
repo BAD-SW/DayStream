@@ -259,16 +259,19 @@ staffRouter.get('/calendar/team', requirePermission('staff:read'), async (req: R
 const createStaffSchema = Joi.object({
   first_name: Joi.string().min(1).max(100).required(),
   last_name: Joi.string().min(1).max(100).required(),
-  email: Joi.string().email({ tlds: false }).allow('', null),
+  email: Joi.string().email({ tlds: false }).required(),
+  password: Joi.string().min(8).max(128).required(),
   mobile_phone: Joi.string().max(50).allow('', null),
   date_of_birth: Joi.string().isoDate().allow(null),
   hire_date: Joi.string().isoDate().allow(null),
   employment_type: Joi.string().valid('full_time', 'part_time', 'contractor').default('full_time'),
+  role: Joi.string().valid('business_owner', 'business_manager', 'business_staff').default('business_staff'),
   bio: Joi.string().max(2000).allow('', null),
   languages: Joi.string().max(200).allow('', null),
   show_on_directory: Joi.boolean().default(true),
   primary_location_id: Joi.string().uuid().allow(null),
   user_id: Joi.string().uuid().allow(null),
+  business_id: Joi.string().uuid().allow(null),
 });
 
 const updateStaffSchema = Joi.object({
@@ -315,14 +318,17 @@ staffRouter.post('/', requirePermission('staff:*'), validate(createStaffSchema),
       firstName: req.body.first_name,
       lastName: req.body.last_name,
       email: req.body.email,
+      password: req.body.password,
       mobilePhone: req.body.mobile_phone,
       dateOfBirth: req.body.date_of_birth,
       hireDate: req.body.hire_date,
       employmentType: req.body.employment_type,
+      role: req.body.role,
       bio: req.body.bio,
       languages: req.body.languages,
       showOnDirectory: req.body.show_on_directory,
       primaryLocationId: req.body.primary_location_id,
+      businessId: req.body.business_id || (req.headers['x-business-id'] as string),
       createdBy: authReq.user.sub,
     });
     success(res, staff, undefined, 201);
@@ -725,5 +731,55 @@ staffRouter.get('/:id/calendar', requirePermission('staff:read'), async (req: Re
     success(res, calendar);
   } catch (err: any) {
     error(res, 'Failed to get calendar', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// ============================================================
+// Link User Account (for staff without login access)
+// ============================================================
+
+staffRouter.post('/:id/link-account', requirePermission('staff:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const email = req.body.email as string;
+    const role = req.body.role as string || 'business_staff';
+    const password = req.body.password as string;
+
+    if (!email) { error(res, 'email is required', 'VALIDATION_ERROR', 400); return; }
+    if (!password) { error(res, 'password is required', 'VALIDATION_ERROR', 400); return; }
+
+    const result = await staffService.linkUserAccount(
+      req.params.id, authReq.tenantId, email, role, password, req.body.business_id,
+    );
+    success(res, result, undefined, 201);
+  } catch (err: any) {
+    if (err.message.includes('already')) {
+      error(res, err.message, 'VALIDATION_ERROR', 400);
+    } else {
+      error(res, 'Failed to link user account', 'INTERNAL_ERROR', 500);
+    }
+  }
+});
+
+
+// POST /api/v1/staff/:id/reset-password — Reset staff password
+staffRouter.post('/:id/reset-password', requirePermission('staff:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const newPassword = req.body.password as string;
+    if (!newPassword || newPassword.length < 8) {
+      error(res, 'Password must be at least 8 characters', 'VALIDATION_ERROR', 400);
+      return;
+    }
+
+    const result = await staffService.resetStaffPassword(req.params.id, authReq.tenantId, newPassword);
+    if (!result) { error(res, 'Staff not found', 'NOT_FOUND', 404); return; }
+    success(res, { reset: true });
+  } catch (err: any) {
+    if (err.message.includes('not found') || err.message.includes('no user')) {
+      error(res, err.message, 'VALIDATION_ERROR', 400);
+    } else {
+      error(res, 'Failed to reset password', 'INTERNAL_ERROR', 500);
+    }
   }
 });
