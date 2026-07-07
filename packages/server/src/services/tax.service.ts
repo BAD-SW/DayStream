@@ -48,7 +48,7 @@ export function calculateTax(amount: number, rateBasisPoints: number, displayMod
 export async function getTaxDisplayMode(businessId: string): Promise<'inclusive' | 'exclusive'> {
   // Check business_configurations for tax.display_mode
   const { rows } = await adminPool.query(
-    `SELECT value FROM business_configurations WHERE business_id = $1 AND key = 'tax.display_mode'`,
+    `SELECT value FROM sys_business_configurations WHERE business_id = $1 AND key = 'tax.display_mode'`,
     [businessId],
   );
 
@@ -65,9 +65,9 @@ export async function getTaxDisplayMode(businessId: string): Promise<'inclusive'
  */
 export async function getTaxRateForVariant(variantId: string, businessId: string): Promise<number> {
   const { rows } = await adminPool.query(
-    `SELECT tc.rate FROM service_variants sv
-     JOIN services s ON s.id = sv.service_id
-     LEFT JOIN tax_categories tc ON tc.id = s.tax_category_id
+    `SELECT tc.rate FROM svc_variants sv
+     JOIN svc_services s ON s.id = sv.service_id
+     LEFT JOIN svc_tax_categories tc ON tc.id = s.tax_category_id
      WHERE sv.id = $1`,
     [variantId],
   );
@@ -76,7 +76,7 @@ export async function getTaxRateForVariant(variantId: string, businessId: string
 
   // Fallback to business default
   const { rows: defRows } = await adminPool.query(
-    'SELECT rate FROM tax_categories WHERE business_id = $1 AND is_default = true', [businessId],
+    'SELECT rate FROM svc_tax_categories WHERE business_id = $1 AND is_default = true', [businessId],
   );
   return defRows.length > 0 ? defRows[0].rate : 0;
 }

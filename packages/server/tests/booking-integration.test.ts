@@ -60,7 +60,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Booking Engine — Integration Tests', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'BK Integration Biz', 'bk-integration-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'BK Integration Biz'
        RETURNING id`,
@@ -69,24 +69,24 @@ describe('Booking Engine — Integration Tests', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean
-    await adminPool.query('DELETE FROM bookings WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM slot_holds WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM waitlist_entries WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM notification_queue WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM recurring_booking_series WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM services WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM service_categories WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM staff_schedules WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_bookings WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_slot_holds WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_waitlist_entries WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_notification_queue WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_recurring_series WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_staff_schedules WHERE business_id = $1', [BUSINESS_ID]);
 
     // Create infrastructure
     const { rows: catRows } = await adminPool.query(
-      `INSERT INTO service_categories (business_id, name) VALUES ($1, 'BK Int Cat') RETURNING id`,
+      `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'BK Int Cat') RETURNING id`,
       [BUSINESS_ID],
     );
 
     // Individual service
     const { rows: svcRows } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, status, default_duration, buffer_after, min_advance_booking_hours, max_advance_booking_days, booking_type, max_capacity, online_booking_enabled, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, status, default_duration, buffer_after, min_advance_booking_hours, max_advance_booking_days, booking_type, max_capacity, online_booking_enabled, created_by)
        VALUES ($1, $2, 'BK Int Individual', 'bk-int-individual', 'active', 60, 15, 1, 30, 'individual', 1, true, '00000000-0000-0000-0000-000000000010')
        RETURNING id`,
       [BUSINESS_ID, catRows[0].id],
@@ -94,14 +94,14 @@ describe('Booking Engine — Integration Tests', () => {
     SERVICE_ID = svcRows[0].id;
 
     const { rows: varRows } = await adminPool.query(
-      `INSERT INTO service_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active') RETURNING id`,
+      `INSERT INTO svc_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active') RETURNING id`,
       [SERVICE_ID],
     );
     VARIANT_ID = varRows[0].id;
 
     // Shared service (capacity 2)
     const { rows: sharedSvc } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, status, default_duration, min_advance_booking_hours, booking_type, max_capacity, online_booking_enabled, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, status, default_duration, min_advance_booking_hours, booking_type, max_capacity, online_booking_enabled, created_by)
        VALUES ($1, $2, 'BK Int Shared', 'bk-int-shared', 'active', 45, 1, 'shared', 2, true, '00000000-0000-0000-0000-000000000010')
        RETURNING id`,
       [BUSINESS_ID, catRows[0].id],
@@ -109,7 +109,7 @@ describe('Booking Engine — Integration Tests', () => {
     SHARED_SERVICE_ID = sharedSvc[0].id;
 
     const { rows: sharedVar } = await adminPool.query(
-      `INSERT INTO service_variants (service_id, name, duration, price, status) VALUES ($1, '45 min', 45, 3500, 'active') RETURNING id`,
+      `INSERT INTO svc_variants (service_id, name, duration, price, status) VALUES ($1, '45 min', 45, 3500, 'active') RETURNING id`,
       [SHARED_SERVICE_ID],
     );
     SHARED_VARIANT_ID = sharedVar[0].id;
@@ -117,31 +117,31 @@ describe('Booking Engine — Integration Tests', () => {
     // Staff
     STAFF_ID = '00000000-0000-0000-0000-000000000098';
     await adminPool.query(
-      `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+      `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
        VALUES ($1, $2, 'bk-int-staff@example.com', 'IntTest', 'Staff', 'hashed', 'therapist', 'active')
        ON CONFLICT (id) DO UPDATE SET first_name = 'IntTest'`,
       [STAFF_ID, TENANT_ID],
     );
     await adminPool.query(
-      `INSERT INTO service_staff (service_id, user_id, is_primary) VALUES ($1, $2, true) ON CONFLICT (service_id, user_id, variant_id) DO NOTHING`,
+      `INSERT INTO svc_staff (service_id, user_id, is_primary) VALUES ($1, $2, true) ON CONFLICT (service_id, user_id, variant_id) DO NOTHING`,
       [SERVICE_ID, STAFF_ID],
     );
     await adminPool.query(
-      `INSERT INTO service_staff (service_id, user_id, is_primary) VALUES ($1, $2, true) ON CONFLICT (service_id, user_id, variant_id) DO NOTHING`,
+      `INSERT INTO svc_staff (service_id, user_id, is_primary) VALUES ($1, $2, true) ON CONFLICT (service_id, user_id, variant_id) DO NOTHING`,
       [SHARED_SERVICE_ID, STAFF_ID],
     );
 
     // Staff schedule Mon-Fri 8:00-18:00
     for (let day = 1; day <= 5; day++) {
       await adminPool.query(
-        `INSERT INTO staff_schedules (user_id, business_id, day_of_week, start_time, end_time) VALUES ($1, $2, $3, '08:00', '18:00')`,
+        `INSERT INTO apt_staff_schedules (user_id, business_id, day_of_week, start_time, end_time) VALUES ($1, $2, $3, '08:00', '18:00')`,
         [STAFF_ID, BUSINESS_ID, day],
       );
     }
 
     // Customers
     const { rows: c1 } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-INT01', 'bk-int-c1@example.com', 'Int', 'Cust1', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Int' RETURNING id`,
       [TENANT_ID, BUSINESS_ID],
@@ -149,7 +149,7 @@ describe('Booking Engine — Integration Tests', () => {
     CUSTOMER_ID = c1[0].id;
 
     const { rows: c2 } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-INT02', 'bk-int-c2@example.com', 'Int', 'Cust2', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Int' RETURNING id`,
       [TENANT_ID, BUSINESS_ID],
@@ -157,7 +157,7 @@ describe('Booking Engine — Integration Tests', () => {
     CUSTOMER_ID_2 = c2[0].id;
 
     const { rows: c3 } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-INT03', 'bk-int-c3@example.com', 'Int', 'Cust3', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Int' RETURNING id`,
       [TENANT_ID, BUSINESS_ID],
@@ -339,7 +339,7 @@ describe('Booking Engine — Integration Tests', () => {
 
     it('instances are on the correct day', async () => {
       const { rows } = await adminPool.query(
-        'SELECT start_time FROM bookings WHERE recurring_series_id = $1',
+        'SELECT start_time FROM apt_bookings WHERE recurring_series_id = $1',
         [seriesId],
       );
       for (const row of rows) {
@@ -361,7 +361,7 @@ describe('Booking Engine — Integration Tests', () => {
   describe('Business scoping', () => {
     it('cannot access bookings from another business', async () => {
       const { rows: otherBiz } = await adminPool.query(
-        `INSERT INTO businesses (tenant_id, name, slug, status)
+        `INSERT INTO sys_businesses (tenant_id, name, slug, status)
          VALUES ($1, 'Other BK Biz', 'other-bk-biz', 'active')
          ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Other BK Biz'
          RETURNING id`,
@@ -383,7 +383,7 @@ describe('Booking Engine — Integration Tests', () => {
     it('queues confirmation notification on booking creation', async () => {
       // Check notification queue has entries for our business
       const { rows } = await adminPool.query(
-        "SELECT * FROM notification_queue WHERE business_id = $1 AND type = 'booking.confirmation'",
+        "SELECT * FROM apt_notification_queue WHERE business_id = $1 AND type = 'booking.confirmation'",
         [BUSINESS_ID],
       );
       // We haven't wired auto-notification in createBooking yet, so this may be 0
@@ -399,7 +399,7 @@ describe('Booking Engine — Integration Tests', () => {
       }, 'bk-int-c1@example.com');
 
       const { rows: after } = await adminPool.query(
-        "SELECT * FROM notification_queue WHERE business_id = $1 AND type = 'booking.confirmation' AND data->>'booking_reference' = 'BK-INT-TEST'",
+        "SELECT * FROM apt_notification_queue WHERE business_id = $1 AND type = 'booking.confirmation' AND data->>'booking_reference' = 'BK-INT-TEST'",
         [BUSINESS_ID],
       );
       expect(after.length).toBe(1);

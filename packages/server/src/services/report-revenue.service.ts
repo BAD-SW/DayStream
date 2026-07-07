@@ -7,8 +7,8 @@ export async function getRevenueReport(tenantId: string, startDate: string, endD
   // Total revenue
   const { rows: totalRows } = await adminPool.query(
     `SELECT COALESCE(SUM(b.price), 0) AS total_revenue, COUNT(*)::int AS total_bookings
-     FROM bookings b
-     JOIN businesses bus ON bus.id = b.business_id
+     FROM apt_bookings b
+     JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE bus.tenant_id = $1
        AND b.status = 'completed'
        AND b.start_time >= $2::date
@@ -22,8 +22,8 @@ export async function getRevenueReport(tenantId: string, startDate: string, endD
   // Breakdown by service
   const { rows: byService } = await adminPool.query(
     `SELECT b.service_id, COALESCE(SUM(b.price), 0) AS revenue, COUNT(*)::int AS bookings
-     FROM bookings b
-     JOIN businesses bus ON bus.id = b.business_id
+     FROM apt_bookings b
+     JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE bus.tenant_id = $1
        AND b.status = 'completed'
        AND b.start_time >= $2::date
@@ -36,8 +36,8 @@ export async function getRevenueReport(tenantId: string, startDate: string, endD
   // Trend over time (daily)
   const { rows: trend } = await adminPool.query(
     `SELECT b.start_time::date AS date, COALESCE(SUM(b.price), 0) AS revenue, COUNT(*)::int AS bookings
-     FROM bookings b
-     JOIN businesses bus ON bus.id = b.business_id
+     FROM apt_bookings b
+     JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE bus.tenant_id = $1
        AND b.status = 'completed'
        AND b.start_time >= $2::date
@@ -51,8 +51,8 @@ export async function getRevenueReport(tenantId: string, startDate: string, endD
   const daysDiff = `($2::date - $3::date)`;
   const { rows: prevRows } = await adminPool.query(
     `SELECT COALESCE(SUM(b.price), 0) AS prev_revenue, COUNT(*)::int AS prev_bookings
-     FROM bookings b
-     JOIN businesses bus ON bus.id = b.business_id
+     FROM apt_bookings b
+     JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE bus.tenant_id = $1
        AND b.status = 'completed'
        AND b.start_time >= ($2::date - ($3::date - $2::date + 1))

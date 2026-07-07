@@ -25,10 +25,10 @@ export async function getSequences(
 
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
-      `SELECT * FROM sequences WHERE ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
+      `SELECT * FROM mkt_sequences WHERE ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, limit, offset],
     ),
-    adminPool.query(`SELECT COUNT(*)::int AS total FROM sequences WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*)::int AS total FROM mkt_sequences WHERE ${where}`, params),
   ]);
 
   return {
@@ -47,7 +47,7 @@ export async function createSequence(
   input: { name: string; description?: string; canvasData?: any },
 ) {
   const { rows } = await adminPool.query(
-    `INSERT INTO sequences (tenant_id, name, description, canvas_data)
+    `INSERT INTO mkt_sequences (tenant_id, name, description, canvas_data)
      VALUES ($1, $2, $3, $4) RETURNING *`,
     [tenantId, input.name, input.description || null, JSON.stringify(input.canvasData || {})],
   );
@@ -68,18 +68,18 @@ export async function createSequence(
  */
 export async function getSequenceById(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM sequences WHERE id = $1 AND tenant_id = $2`,
+    `SELECT * FROM mkt_sequences WHERE id = $1 AND tenant_id = $2`,
     [id, tenantId],
   );
   if (!rows[0]) return null;
 
   const [stepsResult, connectionsResult] = await Promise.all([
     adminPool.query(
-      `SELECT * FROM sequence_steps WHERE sequence_id = $1 ORDER BY created_at`,
+      `SELECT * FROM mkt_sequence_steps WHERE sequence_id = $1 ORDER BY created_at`,
       [id],
     ),
     adminPool.query(
-      `SELECT * FROM sequence_connections WHERE sequence_id = $1 ORDER BY sort_order`,
+      `SELECT * FROM mkt_sequence_connections WHERE sequence_id = $1 ORDER BY sort_order`,
       [id],
     ),
   ]);
@@ -110,7 +110,7 @@ export async function updateSequence(id: string, tenantId: string, updates: Reco
   values.push(id, tenantId);
 
   const { rows } = await adminPool.query(
-    `UPDATE sequences SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} AND status IN ('draft', 'paused') RETURNING *`,
+    `UPDATE mkt_sequences SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} AND status IN ('draft', 'paused') RETURNING *`,
     values,
   );
   return rows[0] || null;
@@ -121,7 +121,7 @@ export async function updateSequence(id: string, tenantId: string, updates: Reco
  */
 export async function activateSequence(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE sequences SET status = 'active', activated_at = NOW(), updated_at = NOW()
+    `UPDATE mkt_sequences SET status = 'active', activated_at = NOW(), updated_at = NOW()
      WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'paused') RETURNING *`,
     [id, tenantId],
   );
@@ -143,7 +143,7 @@ export async function activateSequence(id: string, tenantId: string) {
  */
 export async function pauseSequence(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE sequences SET status = 'paused', updated_at = NOW()
+    `UPDATE mkt_sequences SET status = 'paused', updated_at = NOW()
      WHERE id = $1 AND tenant_id = $2 AND status = 'active' RETURNING *`,
     [id, tenantId],
   );
@@ -165,7 +165,7 @@ export async function pauseSequence(id: string, tenantId: string) {
  */
 export async function archiveSequence(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE sequences SET status = 'archived', updated_at = NOW()
+    `UPDATE mkt_sequences SET status = 'archived', updated_at = NOW()
      WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'paused') RETURNING *`,
     [id, tenantId],
   );
@@ -245,7 +245,7 @@ export async function cloneSequence(id: string, tenantId: string) {
 
   // Create the new sequence
   const { rows: newSeqRows } = await adminPool.query(
-    `INSERT INTO sequences (tenant_id, name, description, canvas_data)
+    `INSERT INTO mkt_sequences (tenant_id, name, description, canvas_data)
      VALUES ($1, $2, $3, $4) RETURNING *`,
     [tenantId, `${sequence.name} (Copy)`, sequence.description, JSON.stringify(sequence.canvas_data)],
   );
@@ -255,7 +255,7 @@ export async function cloneSequence(id: string, tenantId: string) {
   const stepIdMap: Record<string, string> = {};
   for (const step of sequence.steps) {
     const { rows: newStepRows } = await adminPool.query(
-      `INSERT INTO sequence_steps (sequence_id, step_category, step_type, label, config, position_x, position_y)
+      `INSERT INTO mkt_sequence_steps (sequence_id, step_category, step_type, label, config, position_x, position_y)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
       [newSeqId, step.step_category, step.step_type, step.label, JSON.stringify(step.config), step.position_x, step.position_y],
     );
@@ -265,7 +265,7 @@ export async function cloneSequence(id: string, tenantId: string) {
   // Clone connections
   for (const conn of sequence.connections) {
     await adminPool.query(
-      `INSERT INTO sequence_connections (sequence_id, source_step_id, target_step_id, label, sort_order)
+      `INSERT INTO mkt_sequence_connections (sequence_id, source_step_id, target_step_id, label, sort_order)
        VALUES ($1, $2, $3, $4, $5)`,
       [newSeqId, stepIdMap[conn.source_step_id], stepIdMap[conn.target_step_id], conn.label, conn.sort_order],
     );
@@ -306,10 +306,10 @@ export async function getEnrollments(
 
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
-      `SELECT * FROM sequence_enrollments WHERE ${where} ORDER BY entered_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
+      `SELECT * FROM mkt_sequence_enrollments WHERE ${where} ORDER BY entered_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, limit, offset],
     ),
-    adminPool.query(`SELECT COUNT(*)::int AS total FROM sequence_enrollments WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*)::int AS total FROM mkt_sequence_enrollments WHERE ${where}`, params),
   ]);
 
   return {
@@ -325,7 +325,7 @@ export async function getEnrollments(
  */
 export async function getSequenceTemplates(tenantId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM sequences WHERE tenant_id = $1 AND is_template = true ORDER BY template_category, name`,
+    `SELECT * FROM mkt_sequences WHERE tenant_id = $1 AND is_template = true ORDER BY template_category, name`,
     [tenantId],
   );
   return rows;

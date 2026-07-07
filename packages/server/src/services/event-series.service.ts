@@ -17,8 +17,8 @@ interface CreateSeriesInput {
 export async function getSeries(tenantId: string) {
   const { rows } = await adminPool.query(
     `SELECT es.*,
-            (SELECT COUNT(*)::int FROM events WHERE series_id = es.id) AS event_count
-     FROM event_series es
+            (SELECT COUNT(*)::int FROM evt_events WHERE series_id = es.id) AS event_count
+     FROM evt_series es
      WHERE es.tenant_id = $1
      ORDER BY es.created_at DESC`,
     [tenantId],
@@ -31,7 +31,7 @@ export async function getSeries(tenantId: string) {
  */
 export async function createSeries(tenantId: string, input: CreateSeriesInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO event_series (
+    `INSERT INTO evt_series (
        tenant_id, title, description, total_sessions,
        pricing_model, series_price, allow_drop_in, require_sequential
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -65,8 +65,8 @@ export async function createSeries(tenantId: string, input: CreateSeriesInput) {
 export async function getSeriesById(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
     `SELECT es.*,
-            (SELECT COUNT(*)::int FROM events WHERE series_id = es.id) AS event_count
-     FROM event_series es
+            (SELECT COUNT(*)::int FROM evt_events WHERE series_id = es.id) AS event_count
+     FROM evt_series es
      WHERE es.id = $1 AND es.tenant_id = $2`,
     [id, tenantId],
   );
@@ -97,7 +97,7 @@ export async function updateSeries(id: string, tenantId: string, updates: Record
   values.push(id, tenantId);
 
   const { rows } = await adminPool.query(
-    `UPDATE event_series SET ${fields.join(', ')}
+    `UPDATE evt_series SET ${fields.join(', ')}
      WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
     values,
   );
@@ -120,15 +120,15 @@ export async function updateSeries(id: string, tenantId: string, updates: Record
  */
 export async function getSeriesProgress(seriesId: string, customerId: string) {
   const { rows: seriesRows } = await adminPool.query(
-    `SELECT total_sessions FROM event_series WHERE id = $1`,
+    `SELECT total_sessions FROM evt_series WHERE id = $1`,
     [seriesId],
   );
   if (seriesRows.length === 0) throw new Error('Series not found');
 
   const { rows: attendedRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS attended
-     FROM event_registrations er
-     JOIN events e ON e.id = er.event_id
+     FROM evt_registrations er
+     JOIN evt_events e ON e.id = er.event_id
      WHERE e.series_id = $1
        AND er.customer_id = $2
        AND er.status = 'confirmed'

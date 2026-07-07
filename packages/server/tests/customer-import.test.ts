@@ -44,7 +44,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Customer Import/Export', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Import Test Biz', 'import-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Import Test Biz'
        RETURNING id`,

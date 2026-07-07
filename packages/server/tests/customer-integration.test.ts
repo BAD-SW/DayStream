@@ -55,7 +55,7 @@ describe('Customer Management — Integration Tests', () => {
   beforeAll(async () => {
     // Create two businesses for scoping tests
     const { rows: biz1 } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Integration Biz 1', 'integration-biz-1', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Integration Biz 1'
        RETURNING id`,
@@ -64,7 +64,7 @@ describe('Customer Management — Integration Tests', () => {
     BUSINESS_ID = biz1[0].id;
 
     const { rows: biz2 } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Integration Biz 2', 'integration-biz-2', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Integration Biz 2'
        RETURNING id`,
@@ -74,7 +74,7 @@ describe('Customer Management — Integration Tests', () => {
 
     // Seed lifecycle config
     await adminPool.query(`
-      INSERT INTO configuration_definitions (key, category, data_type, default_value, description) VALUES
+      INSERT INTO sys_configuration_definitions (key, category, data_type, default_value, description) VALUES
         ('lifecycle.trial_after_bookings', 'lifecycle', 'number', '1', 'Bookings for Lead → Trial'),
         ('lifecycle.active_after_visits', 'lifecycle', 'number', '3', 'Visits for Trial → Active'),
         ('lifecycle.at_risk_days', 'lifecycle', 'number', '30', 'Days for Active → At-Risk'),
@@ -122,65 +122,65 @@ describe('Customer Management — Integration Tests', () => {
 
       await lifecycleService.evaluateOnBooking(customerId, BUSINESS_ID);
 
-      const { rows } = await adminPool.query('SELECT lifecycle_stage FROM customers WHERE id = $1', [customerId]);
+      const { rows } = await adminPool.query('SELECT lifecycle_stage FROM cus_customers WHERE id = $1', [customerId]);
       expect(rows[0].lifecycle_stage).toBe('trial');
     });
 
     it('transitions Trial → Active on membership purchase', async () => {
       await lifecycleService.evaluateOnMembership(customerId, BUSINESS_ID);
 
-      const { rows } = await adminPool.query('SELECT lifecycle_stage FROM customers WHERE id = $1', [customerId]);
+      const { rows } = await adminPool.query('SELECT lifecycle_stage FROM cus_customers WHERE id = $1', [customerId]);
       expect(rows[0].lifecycle_stage).toBe('active');
     });
 
     it('transitions Active → At-Risk after inactivity', async () => {
       // Remove recent activities
       await adminPool.query(
-        "DELETE FROM customer_activities WHERE customer_id = $1 AND activity_type IN ('booking', 'payment', 'membership')",
+        "DELETE FROM cus_activities WHERE customer_id = $1 AND activity_type IN ('booking', 'payment', 'membership')",
         [customerId],
       );
       // Add old activity (40 days ago)
       await adminPool.query(
-        `INSERT INTO customer_activities (customer_id, business_id, activity_type, description, created_at)
+        `INSERT INTO cus_activities (customer_id, business_id, activity_type, description, created_at)
          VALUES ($1, $2, 'booking', 'Old session', NOW() - INTERVAL '40 days')`,
         [customerId, BUSINESS_ID],
       );
 
       await lifecycleService.evaluateScheduledTransitions();
 
-      const { rows } = await adminPool.query('SELECT lifecycle_stage FROM customers WHERE id = $1', [customerId]);
+      const { rows } = await adminPool.query('SELECT lifecycle_stage FROM cus_customers WHERE id = $1', [customerId]);
       expect(rows[0].lifecycle_stage).toBe('at_risk');
     });
 
     it('transitions At-Risk → Churned after extended inactivity', async () => {
       // Remove all recent activities
       await adminPool.query(
-        "DELETE FROM customer_activities WHERE customer_id = $1 AND activity_type IN ('booking', 'payment', 'membership')",
+        "DELETE FROM cus_activities WHERE customer_id = $1 AND activity_type IN ('booking', 'payment', 'membership')",
         [customerId],
       );
       // Add very old activity (100 days ago)
       await adminPool.query(
-        `INSERT INTO customer_activities (customer_id, business_id, activity_type, description, created_at)
+        `INSERT INTO cus_activities (customer_id, business_id, activity_type, description, created_at)
          VALUES ($1, $2, 'booking', 'Very old session', NOW() - INTERVAL '100 days')`,
         [customerId, BUSINESS_ID],
       );
 
       await lifecycleService.evaluateScheduledTransitions();
 
-      const { rows } = await adminPool.query('SELECT lifecycle_stage FROM customers WHERE id = $1', [customerId]);
+      const { rows } = await adminPool.query('SELECT lifecycle_stage FROM cus_customers WHERE id = $1', [customerId]);
       expect(rows[0].lifecycle_stage).toBe('churned');
     });
 
     it('transitions Churned → Winback on new booking', async () => {
       await lifecycleService.evaluateOnBooking(customerId, BUSINESS_ID);
 
-      const { rows } = await adminPool.query('SELECT lifecycle_stage FROM customers WHERE id = $1', [customerId]);
+      const { rows } = await adminPool.query('SELECT lifecycle_stage FROM cus_customers WHERE id = $1', [customerId]);
       expect(rows[0].lifecycle_stage).toBe('winback');
     });
 
     it('records all transitions in activity timeline', async () => {
       const { rows } = await adminPool.query(
-        "SELECT * FROM customer_activities WHERE customer_id = $1 AND activity_type = 'lifecycle' ORDER BY created_at",
+        "SELECT * FROM cus_activities WHERE customer_id = $1 AND activity_type = 'lifecycle' ORDER BY created_at",
         [customerId],
       );
       expect(rows.length).toBeGreaterThanOrEqual(4); // lead→trial, trial→active, active→at_risk, at_risk→churned, churned→winback
@@ -218,7 +218,7 @@ describe('Customer Management — Integration Tests', () => {
     });
 
     it('verifies PII is removed', async () => {
-      const { rows } = await adminPool.query('SELECT * FROM customers WHERE id = $1', [customerId]);
+      const { rows } = await adminPool.query('SELECT * FROM cus_customers WHERE id = $1', [customerId]);
       const customer = rows[0];
 
       expect(customer.first_name).toBe('[deleted]');
@@ -233,7 +233,7 @@ describe('Customer Management — Integration Tests', () => {
 
     it('retains activity/transaction history (non-PII)', async () => {
       const { rows } = await adminPool.query(
-        'SELECT * FROM customer_activities WHERE customer_id = $1',
+        'SELECT * FROM cus_activities WHERE customer_id = $1',
         [customerId],
       );
       // Activities should still exist
@@ -243,7 +243,7 @@ describe('Customer Management — Integration Tests', () => {
 
     it('notes content is deleted', async () => {
       const { rows } = await adminPool.query(
-        'SELECT * FROM customer_notes WHERE customer_id = $1',
+        'SELECT * FROM cus_notes WHERE customer_id = $1',
         [customerId],
       );
       expect(rows.length).toBe(0);
@@ -313,14 +313,14 @@ describe('Customer Management — Integration Tests', () => {
       const portalEmail = 'portal-test@example.com';
 
       await adminPool.query(
-        `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+        `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
          VALUES ('00000000-0000-0000-0000-000000000040', $1, $2, 'Portal', 'User', 'hashed', 'customer', 'active')
          ON CONFLICT (id) DO UPDATE SET email = $2`,
         [TENANT_ID, portalEmail],
       );
 
       const { rows } = await adminPool.query(
-        `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
          VALUES ($1, $2, 'CUST-PORTAL', $3, 'Portal', 'User', '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Portal'
          RETURNING id`,
@@ -330,7 +330,7 @@ describe('Customer Management — Integration Tests', () => {
 
       // Create preferences
       await adminPool.query(
-        'INSERT INTO customer_preferences (customer_id) VALUES ($1) ON CONFLICT DO NOTHING',
+        'INSERT INTO cus_preferences (customer_id) VALUES ($1) ON CONFLICT DO NOTHING',
         [portalCustomerId],
       );
 
@@ -399,7 +399,7 @@ describe('Customer Management — Integration Tests', () => {
 
       // Check activity log records the request
       const { rows } = await adminPool.query(
-        "SELECT * FROM customer_activities WHERE customer_id = $1 AND description LIKE '%Deletion request%'",
+        "SELECT * FROM cus_activities WHERE customer_id = $1 AND description LIKE '%Deletion request%'",
         [portalCustomerId],
       );
       expect(rows.length).toBeGreaterThanOrEqual(1);
@@ -412,7 +412,7 @@ describe('Customer Management — Integration Tests', () => {
     beforeAll(async () => {
       // Create customer in business 1
       const { rows } = await adminPool.query(
-        `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
          VALUES ($1, $2, 'CUST-SCOPE1', 'scoped@example.com', 'Scoped', 'Customer', '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Scoped'
          RETURNING id`,
@@ -472,7 +472,7 @@ describe('Customer Management — Integration Tests', () => {
   describe('13.1.7 Duplicate Detection', () => {
     beforeAll(async () => {
       await adminPool.query(
-        `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, phone, created_by)
+        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, phone, created_by)
          VALUES ($1, $2, 'CUST-DUP-INT', 'dup-detect@example.com', 'Duplicate', 'Detect', '+34555666', '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, email) DO NOTHING`,
         [TENANT_ID, BUSINESS_ID],

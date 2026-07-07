@@ -61,7 +61,7 @@ export async function getCalendar(query: CalendarQuery) {
     const { rows } = await adminPool.query(
       `SELECT DATE(b.start_time AT TIME ZONE 'UTC') AS day, COUNT(*)::int AS count,
               json_agg(json_build_object('status', b.status)) AS statuses
-       FROM bookings b
+       FROM apt_bookings b
        WHERE ${where}
        GROUP BY DATE(b.start_time AT TIME ZONE 'UTC')
        ORDER BY day`,
@@ -87,10 +87,10 @@ export async function getCalendar(query: CalendarQuery) {
             s.name AS service_name,
             c.first_name || ' ' || c.last_name AS customer_name,
             COALESCE(u.first_name || ' ' || u.last_name, '') AS staff_name
-     FROM bookings b
-     JOIN services s ON s.id = b.service_id
-     JOIN customers c ON c.id = b.customer_id
-     LEFT JOIN users u ON u.id = b.staff_id
+     FROM apt_bookings b
+     JOIN svc_services s ON s.id = b.service_id
+     JOIN cus_customers c ON c.id = b.customer_id
+     LEFT JOIN usr_users u ON u.id = b.staff_id
      WHERE ${where}
      ORDER BY b.start_time`,
     params,
@@ -113,7 +113,7 @@ export async function getCalendar(query: CalendarQuery) {
 
     if (row.booking_type === 'shared' || row.booking_type === 'group') {
       const { rows: countRows } = await adminPool.query(
-        `SELECT COUNT(*)::int AS count FROM bookings
+        `SELECT COUNT(*)::int AS count FROM apt_bookings
          WHERE service_id = b.service_id AND start_time = $1 AND business_id = $2
            AND status IN ('pending', 'confirmed', 'in_progress')`,
         [row.start_time, businessId],

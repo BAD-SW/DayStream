@@ -24,7 +24,7 @@ interface CreateCodeInput {
  */
 export async function createCode(input: CreateCodeInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO discount_codes (business_id, code, discount_type, discount_value, valid_from, valid_to,
+    `INSERT INTO pri_discount_codes (business_id, code, discount_type, discount_value, valid_from, valid_to,
        max_total_uses, max_uses_per_customer, min_purchase_amount,
        applies_to_all_services, service_ids, category_ids, is_single_use)
      VALUES ($1, UPPER($2), $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -46,7 +46,7 @@ export async function createCode(input: CreateCodeInput) {
  */
 export async function getCodes(businessId: string) {
   const { rows } = await adminPool.query(
-    'SELECT * FROM discount_codes WHERE business_id = $1 ORDER BY created_at DESC',
+    'SELECT * FROM pri_discount_codes WHERE business_id = $1 ORDER BY created_at DESC',
     [businessId],
   );
   return rows;
@@ -59,7 +59,7 @@ export async function validateCode(
   code: string, businessId: string, customerId?: string, purchaseAmount?: number, serviceIds?: string[],
 ): Promise<{ valid: boolean; discount_type?: string; discount_value?: number; error?: string }> {
   const { rows } = await adminPool.query(
-    "SELECT * FROM discount_codes WHERE business_id = $1 AND UPPER(code) = UPPER($2) AND status = 'active'",
+    "SELECT * FROM pri_discount_codes WHERE business_id = $1 AND UPPER(code) = UPPER($2) AND status = 'active'",
     [businessId, code],
   );
 
@@ -76,7 +76,7 @@ export async function validateCode(
   // Per-customer uses
   if (customerId && dc.max_uses_per_customer) {
     const { rows: usageRows } = await adminPool.query(
-      'SELECT COUNT(*)::int AS count FROM discount_code_usage WHERE code_id = $1 AND customer_id = $2',
+      'SELECT COUNT(*)::int AS count FROM pri_discount_usage WHERE code_id = $1 AND customer_id = $2',
       [dc.id, customerId],
     );
     if (usageRows[0].count >= dc.max_uses_per_customer) return { valid: false, error: 'You have already used this code' };
@@ -105,7 +105,7 @@ export async function redeemCode(
   code: string, businessId: string, customerId: string, amountSaved: number, bookingId?: string,
 ): Promise<boolean> {
   const { rows } = await adminPool.query(
-    "SELECT id FROM discount_codes WHERE business_id = $1 AND UPPER(code) = UPPER($2) AND status = 'active'",
+    "SELECT id FROM pri_discount_codes WHERE business_id = $1 AND UPPER(code) = UPPER($2) AND status = 'active'",
     [businessId, code],
   );
   if (rows.length === 0) return false;
@@ -114,14 +114,14 @@ export async function redeemCode(
 
   // Record usage
   await adminPool.query(
-    `INSERT INTO discount_code_usage (code_id, customer_id, booking_id, amount_saved)
+    `INSERT INTO pri_discount_usage (code_id, customer_id, booking_id, amount_saved)
      VALUES ($1, $2, $3, $4)`,
     [codeId, customerId, bookingId || null, amountSaved],
   );
 
   // Increment counter
   await adminPool.query(
-    'UPDATE discount_codes SET current_uses = current_uses + 1 WHERE id = $1',
+    'UPDATE pri_discount_codes SET current_uses = current_uses + 1 WHERE id = $1',
     [codeId],
   );
 
@@ -147,7 +147,7 @@ export async function bulkGenerateCodes(
 
     try {
       await adminPool.query(
-        `INSERT INTO discount_codes (business_id, code, discount_type, discount_value, valid_to, max_uses_per_customer, is_single_use, max_total_uses)
+        `INSERT INTO pri_discount_codes (business_id, code, discount_type, discount_value, valid_to, max_uses_per_customer, is_single_use, max_total_uses)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [businessId, code, discountType, discountValue, options?.validTo || null, options?.maxUsesPerCustomer ?? 1, options?.isSingleUse ?? true, 1],
       );
@@ -167,7 +167,7 @@ export async function bulkGenerateCodes(
  */
 export async function updateCode(id: string, businessId: string, updates: Record<string, any>) {
   const { rows: existing } = await adminPool.query(
-    'SELECT * FROM discount_codes WHERE id = $1 AND business_id = $2', [id, businessId],
+    'SELECT * FROM pri_discount_codes WHERE id = $1 AND business_id = $2', [id, businessId],
   );
   if (existing.length === 0) return null;
 
@@ -187,7 +187,7 @@ export async function updateCode(id: string, businessId: string, updates: Record
   values.push(id); values.push(businessId);
 
   const { rows } = await adminPool.query(
-    `UPDATE discount_codes SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`,
+    `UPDATE pri_discount_codes SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`,
     values,
   );
   return rows[0];

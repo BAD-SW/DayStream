@@ -36,8 +36,8 @@ export async function createBooking(input: CreateBookingInput) {
   // Load service + variant
   const { rows: svcRows } = await adminPool.query(
     `SELECT s.*, sv.duration, sv.price, sv.pricing_model
-     FROM services s
-     JOIN service_variants sv ON sv.service_id = s.id AND sv.id = $2
+     FROM svc_services s
+     JOIN svc_variants sv ON sv.service_id = s.id AND sv.id = $2
      WHERE s.id = $1 AND s.business_id = $3`,
     [input.serviceId, input.variantId, input.businessId],
   );
@@ -84,7 +84,7 @@ export async function createBooking(input: CreateBookingInput) {
   if (bookingType === 'shared' || bookingType === 'group') {
     const capacity = service.max_capacity || 1;
     const { rows: countRows } = await adminPool.query(
-      `SELECT COUNT(*)::int AS count FROM bookings
+      `SELECT COUNT(*)::int AS count FROM apt_bookings
        WHERE service_id = $1 AND business_id = $2
          AND start_time = $3 AND status IN ('pending', 'confirmed', 'in_progress')`,
       [input.serviceId, input.businessId, startTime.toISOString()],
@@ -110,7 +110,7 @@ export async function createBooking(input: CreateBookingInput) {
 
   // Insert booking
   const { rows } = await adminPool.query(
-    `INSERT INTO bookings (business_id, customer_id, service_id, variant_id, staff_id, resource_id,
+    `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, staff_id, resource_id,
        start_time, end_time, buffer_before, buffer_after, status, booking_reference, booking_type, price, notes, created_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
      RETURNING *`,
@@ -127,7 +127,7 @@ export async function createBooking(input: CreateBookingInput) {
 
   // Record status history
   await adminPool.query(
-    `INSERT INTO booking_status_history (booking_id, from_status, to_status, changed_by)
+    `INSERT INTO apt_booking_status_history (booking_id, from_status, to_status, changed_by)
      VALUES ($1, NULL, $2, $3)`,
     [booking.id, status, input.createdBy],
   );
@@ -154,7 +154,7 @@ export async function createBooking(input: CreateBookingInput) {
 
   // Remove any slot hold for this time
   await adminPool.query(
-    `DELETE FROM slot_holds WHERE business_id = $1 AND service_id = $2 AND start_time = $3 AND held_by = $4`,
+    `DELETE FROM apt_slot_holds WHERE business_id = $1 AND service_id = $2 AND start_time = $3 AND held_by = $4`,
     [input.businessId, input.serviceId, startTime.toISOString(), input.createdBy],
   );
 
@@ -210,16 +210,16 @@ export async function getBookings(filters: BookingFilters) {
     adminPool.query(
       `SELECT b.*, s.name AS service_name, c.first_name AS customer_first_name, c.last_name AS customer_last_name,
               u.first_name AS staff_first_name, u.last_name AS staff_last_name
-       FROM bookings b
-       JOIN services s ON s.id = b.service_id
-       JOIN customers c ON c.id = b.customer_id
-       LEFT JOIN users u ON u.id = b.staff_id
+       FROM apt_bookings b
+       JOIN svc_services s ON s.id = b.service_id
+       JOIN cus_customers c ON c.id = b.customer_id
+       LEFT JOIN usr_users u ON u.id = b.staff_id
        WHERE ${where}
        ORDER BY b.start_time DESC
        LIMIT ${limit} OFFSET ${offset}`,
       params,
     ),
-    adminPool.query(`SELECT COUNT(*)::int AS total FROM bookings b WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*)::int AS total FROM apt_bookings b WHERE ${where}`, params),
   ]);
 
   return {
@@ -238,11 +238,11 @@ export async function getBookingById(id: string, businessId: string) {
     `SELECT b.*, s.name AS service_name, sv.name AS variant_name,
             c.first_name AS customer_first_name, c.last_name AS customer_last_name, c.email AS customer_email,
             u.first_name AS staff_first_name, u.last_name AS staff_last_name
-     FROM bookings b
-     JOIN services s ON s.id = b.service_id
-     JOIN service_variants sv ON sv.id = b.variant_id
-     JOIN customers c ON c.id = b.customer_id
-     LEFT JOIN users u ON u.id = b.staff_id
+     FROM apt_bookings b
+     JOIN svc_services s ON s.id = b.service_id
+     JOIN svc_variants sv ON sv.id = b.variant_id
+     JOIN cus_customers c ON c.id = b.customer_id
+     LEFT JOIN usr_users u ON u.id = b.staff_id
      WHERE b.id = $1 AND b.business_id = $2`,
     [id, businessId],
   );
@@ -251,7 +251,7 @@ export async function getBookingById(id: string, businessId: string) {
 
   // Load status history
   const { rows: history } = await adminPool.query(
-    'SELECT * FROM booking_status_history WHERE booking_id = $1 ORDER BY created_at',
+    'SELECT * FROM apt_booking_status_history WHERE booking_id = $1 ORDER BY created_at',
     [id],
   );
 
@@ -265,7 +265,7 @@ async function autoAssignStaff(
 ): Promise<string | null> {
   // Get all assigned staff, pick the one with the fewest bookings on that day (round-robin-ish)
   const { rows: staff } = await adminPool.query(
-    `SELECT ss.user_id FROM service_staff ss WHERE ss.service_id = $1`,
+    `SELECT ss.user_id FROM svc_staff ss WHERE ss.service_id = $1`,
     [serviceId],
   );
 
@@ -282,7 +282,7 @@ async function checkStaffConflict(staffId: string, startTime: Date, endTime: Dat
   const blockEnd = new Date(endTime.getTime() + bufferAfter * 60 * 1000);
 
   const { rows } = await adminPool.query(
-    `SELECT id FROM bookings
+    `SELECT id FROM apt_bookings
      WHERE staff_id = $1
        AND start_time < $3
        AND end_time > $2
@@ -295,7 +295,7 @@ async function checkStaffConflict(staffId: string, startTime: Date, endTime: Dat
 
   // Also check slot holds
   const { rows: holds } = await adminPool.query(
-    `SELECT id FROM slot_holds
+    `SELECT id FROM apt_slot_holds
      WHERE staff_id = $1
        AND start_time < $3
        AND end_time > $2
@@ -309,7 +309,7 @@ async function checkStaffConflict(staffId: string, startTime: Date, endTime: Dat
 
 async function checkResourceConflict(resourceId: string, startTime: Date, endTime: Date): Promise<boolean> {
   const { rows } = await adminPool.query(
-    `SELECT id FROM bookings
+    `SELECT id FROM apt_bookings
      WHERE resource_id = $1
        AND start_time < $3
        AND end_time > $2
@@ -322,7 +322,7 @@ async function checkResourceConflict(resourceId: string, startTime: Date, endTim
 
 async function checkCustomerConflict(customerId: string, startTime: Date, endTime: Date): Promise<boolean> {
   const { rows } = await adminPool.query(
-    `SELECT id FROM bookings
+    `SELECT id FROM apt_bookings
      WHERE customer_id = $1
        AND start_time < $3
        AND end_time > $2

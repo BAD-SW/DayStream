@@ -12,7 +12,7 @@ type NotificationEvent =
  */
 export async function getNotificationPreferences(staffId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM staff_notification_preferences WHERE staff_id = $1 ORDER BY event_type`,
+    `SELECT * FROM stf_notification_preferences WHERE staff_id = $1 ORDER BY event_type`,
     [staffId],
   );
   return rows;
@@ -31,7 +31,7 @@ export async function setNotificationPreferences(staffId: string, preferences: A
 
   for (const pref of preferences) {
     const { rows } = await adminPool.query(
-      `INSERT INTO staff_notification_preferences (staff_id, event_type, channel_email, channel_in_app, channel_sms)
+      `INSERT INTO stf_notification_preferences (staff_id, event_type, channel_email, channel_in_app, channel_sms)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (staff_id, event_type)
        DO UPDATE SET channel_email = $3, channel_in_app = $4, channel_sms = $5
@@ -55,7 +55,7 @@ export async function notifyStaff(staffId: string, event: NotificationEvent, dat
 }) {
   // Get preferences for this event type
   const { rows: prefs } = await adminPool.query(
-    `SELECT * FROM staff_notification_preferences WHERE staff_id = $1 AND event_type = $2`,
+    `SELECT * FROM stf_notification_preferences WHERE staff_id = $1 AND event_type = $2`,
     [staffId, event],
   );
 
@@ -64,7 +64,7 @@ export async function notifyStaff(staffId: string, event: NotificationEvent, dat
 
   // Get staff contact info
   const { rows: staffRows } = await adminPool.query(
-    `SELECT email, mobile_phone FROM staff_profiles WHERE id = $1`,
+    `SELECT email, mobile_phone FROM stf_profiles WHERE id = $1`,
     [staffId],
   );
   if (staffRows.length === 0) return;

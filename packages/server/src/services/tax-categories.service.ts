@@ -19,13 +19,13 @@ interface UpdateTaxCategoryInput {
 export async function createTaxCategory(input: CreateTaxCategoryInput) {
   if (input.isDefault) {
     await adminPool.query(
-      'UPDATE tax_categories SET is_default = false WHERE business_id = $1',
+      'UPDATE svc_tax_categories SET is_default = false WHERE business_id = $1',
       [input.businessId],
     );
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO tax_categories (business_id, name, rate, is_default)
+    `INSERT INTO svc_tax_categories (business_id, name, rate, is_default)
      VALUES ($1, $2, $3, $4)
      RETURNING *`,
     [input.businessId, input.name, input.rate, input.isDefault ?? false],
@@ -39,7 +39,7 @@ export async function createTaxCategory(input: CreateTaxCategoryInput) {
  */
 export async function getTaxCategories(businessId: string) {
   const { rows } = await adminPool.query(
-    'SELECT * FROM tax_categories WHERE business_id = $1 ORDER BY is_default DESC, name',
+    'SELECT * FROM svc_tax_categories WHERE business_id = $1 ORDER BY is_default DESC, name',
     [businessId],
   );
   return rows;
@@ -50,14 +50,14 @@ export async function getTaxCategories(businessId: string) {
  */
 export async function updateTaxCategory(id: string, businessId: string, updates: UpdateTaxCategoryInput) {
   const { rows: existing } = await adminPool.query(
-    'SELECT * FROM tax_categories WHERE id = $1 AND business_id = $2',
+    'SELECT * FROM svc_tax_categories WHERE id = $1 AND business_id = $2',
     [id, businessId],
   );
   if (existing.length === 0) return null;
 
   if (updates.isDefault) {
     await adminPool.query(
-      'UPDATE tax_categories SET is_default = false WHERE business_id = $1',
+      'UPDATE svc_tax_categories SET is_default = false WHERE business_id = $1',
       [businessId],
     );
   }
@@ -76,7 +76,7 @@ export async function updateTaxCategory(id: string, businessId: string, updates:
   values.push(businessId);
 
   const { rows } = await adminPool.query(
-    `UPDATE tax_categories SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx}
+    `UPDATE svc_tax_categories SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx}
      RETURNING *`,
     values,
   );

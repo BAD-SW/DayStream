@@ -6,7 +6,7 @@ import { adminPool } from '../db/pool';
 export async function runEngine(tenantId: string) {
   // Get all active sequences for the tenant
   const { rows: sequences } = await adminPool.query(
-    `SELECT id FROM sequences WHERE tenant_id = $1 AND status = 'active'`,
+    `SELECT id FROM mkt_sequences WHERE tenant_id = $1 AND status = 'active'`,
     [tenantId],
   );
 
@@ -19,8 +19,8 @@ export async function runEngine(tenantId: string) {
 
   // Advance all active enrollments for this tenant's sequences
   const { rows: enrollments } = await adminPool.query(
-    `SELECT se.id FROM sequence_enrollments se
-     JOIN sequences s ON s.id = se.sequence_id
+    `SELECT se.id FROM mkt_sequence_enrollments se
+     JOIN mkt_sequences s ON s.id = se.sequence_id
      WHERE s.tenant_id = $1 AND se.status = 'active'`,
     [tenantId],
   );
@@ -39,7 +39,7 @@ export async function runEngine(tenantId: string) {
 export async function evaluateTriggers(sequenceId: string, tenantId: string) {
   // Get trigger steps for this sequence
   const { rows: triggerSteps } = await adminPool.query(
-    `SELECT * FROM sequence_steps WHERE sequence_id = $1 AND step_category = 'trigger'`,
+    `SELECT * FROM mkt_sequence_steps WHERE sequence_id = $1 AND step_category = 'trigger'`,
     [sequenceId],
   );
 
@@ -54,8 +54,8 @@ export async function evaluateTriggers(sequenceId: string, tenantId: string) {
  */
 export async function advanceEnrollment(enrollmentId: string) {
   const { rows } = await adminPool.query(
-    `SELECT se.*, s.tenant_id FROM sequence_enrollments se
-     JOIN sequences s ON s.id = se.sequence_id
+    `SELECT se.*, s.tenant_id FROM mkt_sequence_enrollments se
+     JOIN mkt_sequences s ON s.id = se.sequence_id
      WHERE se.id = $1 AND se.status = 'active'`,
     [enrollmentId],
   );
@@ -66,13 +66,13 @@ export async function advanceEnrollment(enrollmentId: string) {
   if (!enrollment.current_step_id) {
     // Find the start step and set it as current
     const { rows: startSteps } = await adminPool.query(
-      `SELECT id FROM sequence_steps WHERE sequence_id = $1 AND step_category = 'start' LIMIT 1`,
+      `SELECT id FROM mkt_sequence_steps WHERE sequence_id = $1 AND step_category = 'start' LIMIT 1`,
       [enrollment.sequence_id],
     );
     if (startSteps.length === 0) return null;
 
     await adminPool.query(
-      `UPDATE sequence_enrollments SET current_step_id = $1, step_entered_at = NOW() WHERE id = $2`,
+      `UPDATE mkt_sequence_enrollments SET current_step_id = $1, step_entered_at = NOW() WHERE id = $2`,
       [startSteps[0].id, enrollmentId],
     );
     return advanceEnrollment(enrollmentId);
@@ -80,7 +80,7 @@ export async function advanceEnrollment(enrollmentId: string) {
 
   // Get current step
   const { rows: stepRows } = await adminPool.query(
-    `SELECT * FROM sequence_steps WHERE id = $1`,
+    `SELECT * FROM mkt_sequence_steps WHERE id = $1`,
     [enrollment.current_step_id],
   );
   const step = stepRows[0];
@@ -101,7 +101,7 @@ export async function advanceEnrollment(enrollmentId: string) {
 
   // Move to the next step
   const { rows: connections } = await adminPool.query(
-    `SELECT target_step_id FROM sequence_connections
+    `SELECT target_step_id FROM mkt_sequence_connections
      WHERE sequence_id = $1 AND source_step_id = $2
      ORDER BY sort_order LIMIT 1`,
     [enrollment.sequence_id, step.id],
@@ -110,7 +110,7 @@ export async function advanceEnrollment(enrollmentId: string) {
   if (connections.length === 0) {
     // No next step — complete the enrollment
     await adminPool.query(
-      `UPDATE sequence_enrollments SET status = 'completed', completed_at = NOW() WHERE id = $1`,
+      `UPDATE mkt_sequence_enrollments SET status = 'completed', completed_at = NOW() WHERE id = $1`,
       [enrollmentId],
     );
     await logStepExecution(enrollment.sequence_id, enrollment.customer_id, step.id, 'completed');
@@ -121,13 +121,13 @@ export async function advanceEnrollment(enrollmentId: string) {
 
   // Check if next step is an end step
   const { rows: nextStepRows } = await adminPool.query(
-    `SELECT step_category FROM sequence_steps WHERE id = $1`,
+    `SELECT step_category FROM mkt_sequence_steps WHERE id = $1`,
     [nextStepId],
   );
 
   if (nextStepRows[0]?.step_category === 'end') {
     await adminPool.query(
-      `UPDATE sequence_enrollments SET status = 'completed', current_step_id = $1, completed_at = NOW() WHERE id = $2`,
+      `UPDATE mkt_sequence_enrollments SET status = 'completed', current_step_id = $1, completed_at = NOW() WHERE id = $2`,
       [nextStepId, enrollmentId],
     );
     await logStepExecution(enrollment.sequence_id, enrollment.customer_id, nextStepId, 'completed');
@@ -136,7 +136,7 @@ export async function advanceEnrollment(enrollmentId: string) {
 
   // Move to next step
   await adminPool.query(
-    `UPDATE sequence_enrollments SET current_step_id = $1, step_entered_at = NOW() WHERE id = $2`,
+    `UPDATE mkt_sequence_enrollments SET current_step_id = $1, step_entered_at = NOW() WHERE id = $2`,
     [nextStepId, enrollmentId],
   );
 
@@ -206,8 +206,8 @@ export async function enrollCustomer(
 ) {
   // Check if already enrolled (unless allow_reentry is true)
   const { rows: existing } = await adminPool.query(
-    `SELECT se.id, se.status, s.allow_reentry FROM sequence_enrollments se
-     JOIN sequences s ON s.id = se.sequence_id
+    `SELECT se.id, se.status, s.allow_reentry FROM mkt_sequence_enrollments se
+     JOIN mkt_sequences s ON s.id = se.sequence_id
      WHERE se.sequence_id = $1 AND se.customer_id = $2`,
     [sequenceId, customerId],
   );
@@ -221,19 +221,19 @@ export async function enrollCustomer(
       throw new Error('Sequence does not allow re-entry');
     }
     // Remove old enrollment for re-entry
-    await adminPool.query(`DELETE FROM sequence_enrollments WHERE id = $1`, [enrollment.id]);
+    await adminPool.query(`DELETE FROM mkt_sequence_enrollments WHERE id = $1`, [enrollment.id]);
   }
 
   // Find the start step
   const { rows: startSteps } = await adminPool.query(
-    `SELECT id FROM sequence_steps WHERE sequence_id = $1 AND step_category = 'start' LIMIT 1`,
+    `SELECT id FROM mkt_sequence_steps WHERE sequence_id = $1 AND step_category = 'start' LIMIT 1`,
     [sequenceId],
   );
 
   const currentStepId = startSteps.length > 0 ? startSteps[0].id : null;
 
   const { rows } = await adminPool.query(
-    `INSERT INTO sequence_enrollments (sequence_id, customer_id, current_step_id, context)
+    `INSERT INTO mkt_sequence_enrollments (sequence_id, customer_id, current_step_id, context)
      VALUES ($1, $2, $3, $4) RETURNING *`,
     [sequenceId, customerId, currentStepId, JSON.stringify(context || {})],
   );
@@ -248,7 +248,7 @@ export async function enrollCustomer(
  */
 export async function exitCustomer(enrollmentId: string, reason: string) {
   const { rows } = await adminPool.query(
-    `UPDATE sequence_enrollments SET status = 'exited', exit_reason = $1, completed_at = NOW()
+    `UPDATE mkt_sequence_enrollments SET status = 'exited', exit_reason = $1, completed_at = NOW()
      WHERE id = $2 AND status = 'active' RETURNING *`,
     [reason, enrollmentId],
   );
@@ -273,7 +273,7 @@ export async function logStepExecution(
   if (!stepId) return;
 
   await adminPool.query(
-    `INSERT INTO sequence_history (sequence_id, customer_id, step_id, action, details)
+    `INSERT INTO mkt_sequence_history (sequence_id, customer_id, step_id, action, details)
      VALUES ($1, $2, $3, $4, $5)`,
     [sequenceId, customerId, stepId, action, details ? JSON.stringify(details) : null],
   );

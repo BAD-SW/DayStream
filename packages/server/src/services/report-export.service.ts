@@ -52,8 +52,8 @@ export async function getExportData(
     case 'revenue': {
       const { rows } = await adminPool.query(
         `SELECT b.start_time::date AS date, b.service_id, b.price, b.status
-         FROM bookings b
-         JOIN businesses bus ON bus.id = b.business_id
+         FROM apt_bookings b
+         JOIN sys_businesses bus ON bus.id = b.business_id
          WHERE bus.tenant_id = $1
            AND b.status = 'completed'
            AND b.start_time >= $2::date
@@ -70,8 +70,8 @@ export async function getExportData(
     case 'bookings': {
       const { rows } = await adminPool.query(
         `SELECT b.id, b.start_time, b.end_time, b.status, b.customer_id, b.service_id, b.price
-         FROM bookings b
-         JOIN businesses bus ON bus.id = b.business_id
+         FROM apt_bookings b
+         JOIN sys_businesses bus ON bus.id = b.business_id
          WHERE bus.tenant_id = $1
            AND b.start_time >= $2::date
            AND b.start_time < ($3::date + INTERVAL '1 day')
@@ -87,7 +87,7 @@ export async function getExportData(
     case 'memberships': {
       const { rows } = await adminPool.query(
         `SELECT m.id, m.customer_id, m.plan_id, m.status, m.started_at, m.cancelled_at
-         FROM memberships m
+         FROM mem_memberships m
          WHERE m.tenant_id = $1
            AND m.started_at <= $2::date
            AND (m.cancelled_at IS NULL OR m.cancelled_at >= $3::date)
@@ -103,7 +103,7 @@ export async function getExportData(
     case 'customers': {
       const { rows } = await adminPool.query(
         `SELECT c.id, c.status, c.created_at
-         FROM customers c
+         FROM cus_customers c
          WHERE c.tenant_id = $1
            AND c.created_at >= $2::date
            AND c.created_at < ($3::date + INTERVAL '1 day')
@@ -119,7 +119,7 @@ export async function getExportData(
     case 'metrics': {
       const { rows } = await adminPool.query(
         `SELECT metric_date, metric_category, metric_name, metric_value
-         FROM report_daily_metrics
+         FROM rpt_daily_metrics
          WHERE tenant_id = $1
            AND metric_date BETWEEN $2::date AND $3::date
          ORDER BY metric_date, metric_category, metric_name`,

@@ -23,7 +23,7 @@ export async function getResourceUtilization(resourceId: string, startDate: stri
   // Calculate booked hours
   const { rows } = await adminPool.query(
     `SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (end_time - start_time)) / 60), 0)::int AS booked_minutes
-     FROM resource_bookings
+     FROM res_bookings
      WHERE resource_id = $1 AND status = 'confirmed'
        AND start_time::date >= $2::date AND end_time::date <= $3::date`,
     [resourceId, startDate, endDate]);
@@ -36,7 +36,7 @@ export async function getResourceUtilization(resourceId: string, startDate: stri
   // Peak hours
   const { rows: peakRows } = await adminPool.query(
     `SELECT EXTRACT(HOUR FROM start_time)::int AS hour, COUNT(*)::int AS booking_count
-     FROM resource_bookings
+     FROM res_bookings
      WHERE resource_id = $1 AND status = 'confirmed'
        AND start_time::date >= $2::date AND start_time::date <= $3::date
      GROUP BY hour ORDER BY booking_count DESC LIMIT 5`,
@@ -44,7 +44,7 @@ export async function getResourceUtilization(resourceId: string, startDate: stri
 
   // Booking count
   const { rows: countRows } = await adminPool.query(
-    `SELECT COUNT(*)::int AS total_bookings FROM resource_bookings
+    `SELECT COUNT(*)::int AS total_bookings FROM res_bookings
      WHERE resource_id = $1 AND status = 'confirmed'
        AND start_time::date >= $2::date AND start_time::date <= $3::date`,
     [resourceId, startDate, endDate]);
@@ -68,7 +68,7 @@ export async function getUtilizationSummary(tenantId: string, startDate: string,
   resourceTypeId?: string;
   locationId?: string;
 }) {
-  let query = `SELECT id, name, resource_type_id FROM resources WHERE tenant_id = $1 AND status = 'active'`;
+  let query = `SELECT id, name, resource_type_id FROM res_resources WHERE tenant_id = $1 AND status = 'active'`;
   const params: any[] = [tenantId];
   let idx = 2;
 

@@ -6,7 +6,7 @@ import { logAudit } from './audit.service';
  */
 export async function getEventTypes(tenantId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM event_types WHERE tenant_id = $1 ORDER BY name`,
+    `SELECT * FROM evt_types WHERE tenant_id = $1 ORDER BY name`,
     [tenantId],
   );
   return rows;
@@ -20,7 +20,7 @@ export async function createEventType(
   input: { name: string; slug: string; description?: string },
 ) {
   const { rows } = await adminPool.query(
-    `INSERT INTO event_types (tenant_id, name, slug, description)
+    `INSERT INTO evt_types (tenant_id, name, slug, description)
      VALUES ($1, $2, $3, $4) RETURNING *`,
     [tenantId, input.name, input.slug, input.description || null],
   );
@@ -56,7 +56,7 @@ export async function updateEventType(
   values.push(id, tenantId);
 
   const { rows } = await adminPool.query(
-    `UPDATE event_types SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
+    `UPDATE evt_types SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
     values,
   );
 
@@ -88,7 +88,7 @@ export async function seedDefaultTypes(tenantId: string) {
 
   for (const d of defaults) {
     await adminPool.query(
-      `INSERT INTO event_types (tenant_id, name, slug, is_system)
+      `INSERT INTO evt_types (tenant_id, name, slug, is_system)
        VALUES ($1, $2, $3, true) ON CONFLICT (tenant_id, slug) DO NOTHING`,
       [tenantId, d.name, d.slug],
     );

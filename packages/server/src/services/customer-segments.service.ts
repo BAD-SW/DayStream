@@ -38,7 +38,7 @@ const FIELD_MAP: Record<string, string> = {
  */
 export async function createSegment(input: CreateSegmentInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO segments (business_id, name, rules, is_predefined, created_by)
+    `INSERT INTO cus_segments (business_id, name, rules, is_predefined, created_by)
      VALUES ($1, $2, $3, false, $4)
      RETURNING *`,
     [input.businessId, input.name, JSON.stringify(input.rules), input.createdBy],
@@ -51,7 +51,7 @@ export async function createSegment(input: CreateSegmentInput) {
  */
 export async function getSegments(businessId: string) {
   const { rows } = await adminPool.query(
-    'SELECT * FROM segments WHERE business_id = $1 ORDER BY created_at DESC',
+    'SELECT * FROM cus_segments WHERE business_id = $1 ORDER BY created_at DESC',
     [businessId],
   );
   return rows;
@@ -62,7 +62,7 @@ export async function getSegments(businessId: string) {
  */
 export async function deleteSegment(id: string, businessId: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    'DELETE FROM segments WHERE id = $1 AND business_id = $2 AND is_predefined = false',
+    'DELETE FROM cus_segments WHERE id = $1 AND business_id = $2 AND is_predefined = false',
     [id, businessId],
   );
   return (rowCount ?? 0) > 0;
@@ -73,7 +73,7 @@ export async function deleteSegment(id: string, businessId: string): Promise<boo
  */
 export async function evaluateSegment(segmentId: string, businessId: string, page = 1, limit = 20) {
   const { rows: segRows } = await adminPool.query(
-    'SELECT rules FROM segments WHERE id = $1 AND business_id = $2',
+    'SELECT rules FROM cus_segments WHERE id = $1 AND business_id = $2',
     [segmentId, businessId],
   );
 
@@ -102,11 +102,11 @@ export async function evaluateRules(
 
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
-      `SELECT c.* FROM customers c WHERE ${whereClause} ORDER BY c.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      `SELECT c.* FROM cus_customers c WHERE ${whereClause} ORDER BY c.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, safeLimit, offset],
     ),
     adminPool.query(
-      `SELECT COUNT(*)::int AS total FROM customers c WHERE ${whereClause}`,
+      `SELECT COUNT(*)::int AS total FROM cus_customers c WHERE ${whereClause}`,
       params,
     ),
   ]);
@@ -223,7 +223,7 @@ export async function seedPredefinedSegments(businessId: string): Promise<void> 
 
   for (const seg of predefined) {
     await adminPool.query(
-      `INSERT INTO segments (business_id, name, rules, is_predefined)
+      `INSERT INTO cus_segments (business_id, name, rules, is_predefined)
        VALUES ($1, $2, $3, true)
        ON CONFLICT DO NOTHING`,
       [businessId, seg.name, JSON.stringify(seg.rules)],

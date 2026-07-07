@@ -37,7 +37,7 @@ describe('QueryHistoryService', () => {
 
       expect(mockQuery).toHaveBeenCalledTimes(1);
       const [sql, params] = mockQuery.mock.calls[0];
-      expect(sql).toContain('INSERT INTO query_history');
+      expect(sql).toContain('INSERT INTO sys_query_history');
       expect(params).toEqual([
         'tenant-1',
         'user-1',
@@ -194,7 +194,7 @@ describe('QueryHistoryService', () => {
 
       expect(result).toBe(15);
       const [sql, params] = mockQuery.mock.calls[0];
-      expect(sql).toContain('DELETE FROM query_history');
+      expect(sql).toContain('DELETE FROM sys_query_history');
       expect(sql).toContain("INTERVAL '1 day' * $1");
       expect(params).toEqual([30]);
     });

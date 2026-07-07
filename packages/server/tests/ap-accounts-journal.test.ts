@@ -35,14 +35,14 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Chart of Accounts & Journal Entries', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status) VALUES ($1, 'CoA Test Biz', 'coa-test-biz', 'active')
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status) VALUES ($1, 'CoA Test Biz', 'coa-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'CoA Test Biz' RETURNING id`, [TENANT_ID],
     );
     BUSINESS_ID = bizRows[0].id;
 
-    await adminPool.query('DELETE FROM journal_entry_lines WHERE journal_entry_id IN (SELECT id FROM journal_entries WHERE business_id = $1)', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM journal_entries WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM chart_of_accounts WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_journal_entry_lines WHERE journal_entry_id IN (SELECT id FROM fin_journal_entries WHERE business_id = $1)', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_journal_entries WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_chart_of_accounts WHERE business_id = $1', [BUSINESS_ID]);
 
     ownerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',
@@ -188,7 +188,7 @@ describe('Chart of Accounts & Journal Entries', () => {
       expect(body.data.reversing_entry_id).toBeDefined();
 
       // Original marked as void
-      const { rows } = await adminPool.query('SELECT is_void FROM journal_entries WHERE id = $1', [JOURNAL_ENTRY_ID]);
+      const { rows } = await adminPool.query('SELECT is_void FROM fin_journal_entries WHERE id = $1', [JOURNAL_ENTRY_ID]);
       expect(rows[0].is_void).toBe(true);
     });
 

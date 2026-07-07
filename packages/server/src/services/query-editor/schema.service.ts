@@ -17,11 +17,11 @@ export interface TableInfo {
  */
 const DEFAULT_EXCLUDED_TABLES: string[] = [
   'migrations',
-  'audit_log',
-  'login_attempts',
-  'refresh_tokens',
-  'password_history',
-  'query_history',
+  'usr_audit_log',
+  'usr_login_attempts',
+  'usr_refresh_tokens',
+  'usr_password_history',
+  'sys_query_history',
 ];
 
 /**

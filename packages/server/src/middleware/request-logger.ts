@@ -25,7 +25,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
       || req.socket.remoteAddress || 'unknown';
 
     adminPool.query(
-      `INSERT INTO api_request_logs (method, path, status_code, duration_ms, ip_address, user_agent, request_id, user_email)
+      `INSERT INTO sys_api_request_logs (method, path, status_code, duration_ms, ip_address, user_agent, request_id, user_email)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [req.method, req.path, res.statusCode, duration, ip, req.headers['user-agent'] || null, requestId, userEmail],
     ).catch((err) => {

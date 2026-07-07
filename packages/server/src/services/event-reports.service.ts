@@ -6,8 +6,8 @@ import { adminPool } from '../db/pool';
 export async function getEventReport(eventId: string) {
   const { rows: eventRows } = await adminPool.query(
     `SELECT e.*, et.name AS event_type_name
-     FROM events e
-     LEFT JOIN event_types et ON et.id = e.event_type_id
+     FROM evt_events e
+     LEFT JOIN evt_types et ON et.id = e.event_type_id
      WHERE e.id = $1`,
     [eventId],
   );
@@ -24,15 +24,15 @@ export async function getEventReport(eventId: string) {
        COUNT(*) FILTER (WHERE status = 'no_show')::int AS no_shows,
        COUNT(*) FILTER (WHERE checked_in_at IS NOT NULL)::int AS checked_in,
        COUNT(*) FILTER (WHERE status IN ('confirmed','no_show'))::int AS total_registered
-     FROM event_registrations WHERE event_id = $1`,
+     FROM evt_registrations WHERE event_id = $1`,
     [eventId],
   );
 
   // Revenue (sum of tier prices for confirmed registrations)
   const { rows: revenueRows } = await adminPool.query(
     `SELECT COALESCE(SUM(tt.price * er.group_size), 0)::int AS total_revenue
-     FROM event_registrations er
-     JOIN event_ticket_tiers tt ON tt.id = er.ticket_tier_id
+     FROM evt_registrations er
+     JOIN evt_ticket_tiers tt ON tt.id = er.ticket_tier_id
      WHERE er.event_id = $1 AND er.status = 'confirmed'`,
     [eventId],
   );
@@ -40,7 +40,7 @@ export async function getEventReport(eventId: string) {
   // Waitlist size
   const { rows: waitlistRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS waitlist_size
-     FROM event_waitlist WHERE event_id = $1 AND status = 'waiting'`,
+     FROM evt_waitlist WHERE event_id = $1 AND status = 'waiting'`,
     [eventId],
   );
 
@@ -91,7 +91,7 @@ export async function getEventsSummary(tenantId: string, startDate: string, endD
        COUNT(*) FILTER (WHERE status = 'completed')::int AS completed_events,
        COUNT(*) FILTER (WHERE status = 'cancelled')::int AS cancelled_events,
        COUNT(*) FILTER (WHERE status = 'published')::int AS upcoming_events
-     FROM events
+     FROM evt_events
      WHERE tenant_id = $1 AND start_time >= $2::timestamptz AND start_time <= $3::timestamptz`,
     [tenantId, startDate, endDate],
   );
@@ -101,17 +101,17 @@ export async function getEventsSummary(tenantId: string, startDate: string, endD
        COUNT(*)::int AS total_registrations,
        COUNT(*) FILTER (WHERE er.status = 'confirmed')::int AS confirmed_registrations,
        COUNT(*) FILTER (WHERE er.checked_in_at IS NOT NULL)::int AS total_check_ins
-     FROM event_registrations er
-     JOIN events e ON e.id = er.event_id
+     FROM evt_registrations er
+     JOIN evt_events e ON e.id = er.event_id
      WHERE e.tenant_id = $1 AND e.start_time >= $2::timestamptz AND e.start_time <= $3::timestamptz`,
     [tenantId, startDate, endDate],
   );
 
   const { rows: revenueRows } = await adminPool.query(
     `SELECT COALESCE(SUM(tt.price * er.group_size), 0)::int AS total_revenue
-     FROM event_registrations er
-     JOIN events e ON e.id = er.event_id
-     JOIN event_ticket_tiers tt ON tt.id = er.ticket_tier_id
+     FROM evt_registrations er
+     JOIN evt_events e ON e.id = er.event_id
+     JOIN evt_ticket_tiers tt ON tt.id = er.ticket_tier_id
      WHERE e.tenant_id = $1 AND e.start_time >= $2::timestamptz AND e.start_time <= $3::timestamptz
        AND er.status = 'confirmed'`,
     [tenantId, startDate, endDate],
@@ -137,7 +137,7 @@ export async function getEventsSummary(tenantId: string, startDate: string, endD
  */
 export async function exportAttendeeList(eventId: string) {
   const { rows: eventRows } = await adminPool.query(
-    `SELECT title FROM events WHERE id = $1`, [eventId],
+    `SELECT title FROM evt_events WHERE id = $1`, [eventId],
   );
   if (eventRows.length === 0) throw new Error('Event not found');
 
@@ -148,9 +148,9 @@ export async function exportAttendeeList(eventId: string) {
        er.checked_in_at,
        tt.name AS ticket_tier,
        tt.price AS ticket_price
-     FROM event_registrations er
-     LEFT JOIN customers c ON c.id = er.customer_id
-     LEFT JOIN event_ticket_tiers tt ON tt.id = er.ticket_tier_id
+     FROM evt_registrations er
+     LEFT JOIN cus_customers c ON c.id = er.customer_id
+     LEFT JOIN evt_ticket_tiers tt ON tt.id = er.ticket_tier_id
      WHERE er.event_id = $1 AND er.status IN ('confirmed','no_show')
      ORDER BY c.last_name ASC, c.first_name ASC`,
     [eventId],

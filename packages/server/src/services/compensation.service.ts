@@ -19,7 +19,7 @@ interface CreateCompensationRuleInput {
  */
 export async function createRule(input: CreateCompensationRuleInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO compensation_rules (business_id, user_id, rule_type, rate, threshold_amount, overtime_multiplier, overtime_after_hours, holiday_multiplier, effective_from, effective_to)
+    `INSERT INTO fin_compensation_rules (business_id, user_id, rule_type, rate, threshold_amount, overtime_multiplier, overtime_after_hours, holiday_multiplier, effective_from, effective_to)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
     [
@@ -39,8 +39,8 @@ export async function getRules(businessId: string, userId?: string) {
   const userFilter = userId ? 'AND user_id = $2' : '';
   const params = userId ? [businessId, userId] : [businessId];
   const { rows } = await adminPool.query(
-    `SELECT cr.*, u.first_name, u.last_name FROM compensation_rules cr
-     JOIN users u ON u.id = cr.user_id
+    `SELECT cr.*, u.first_name, u.last_name FROM fin_compensation_rules cr
+     JOIN usr_users u ON u.id = cr.user_id
      WHERE cr.business_id = $1 ${userFilter}
      ORDER BY cr.user_id, cr.effective_from DESC`,
     params,
@@ -53,7 +53,7 @@ export async function getRules(businessId: string, userId?: string) {
  */
 export async function updateRule(id: string, businessId: string, updates: Record<string, any>) {
   const { rows: existing } = await adminPool.query(
-    'SELECT * FROM compensation_rules WHERE id = $1 AND business_id = $2', [id, businessId],
+    'SELECT * FROM fin_compensation_rules WHERE id = $1 AND business_id = $2', [id, businessId],
   );
   if (existing.length === 0) return null;
 
@@ -75,7 +75,7 @@ export async function updateRule(id: string, businessId: string, updates: Record
   values.push(id); values.push(businessId);
 
   const { rows } = await adminPool.query(
-    `UPDATE compensation_rules SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`,
+    `UPDATE fin_compensation_rules SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`,
     values,
   );
   return rows[0];
@@ -87,7 +87,7 @@ export async function updateRule(id: string, businessId: string, updates: Record
 export async function getEffectiveRules(userId: string, businessId: string, asOfDate?: string) {
   const date = asOfDate || new Date().toISOString().slice(0, 10);
   const { rows } = await adminPool.query(
-    `SELECT * FROM compensation_rules
+    `SELECT * FROM fin_compensation_rules
      WHERE user_id = $1 AND business_id = $2 AND status = 'active'
        AND effective_from <= $3
        AND (effective_to IS NULL OR effective_to >= $3)

@@ -46,7 +46,7 @@ describe('Customer Notes API', () => {
   beforeAll(async () => {
     // Ensure business exists
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Notes Test Biz', 'notes-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Notes Test Biz'
        RETURNING id`,
@@ -56,7 +56,7 @@ describe('Customer Notes API', () => {
 
     // Create a customer
     const { rows: custRows } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-9001', 'notes-test@example.com', 'Notes', 'Test', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Notes'
        RETURNING id`,
@@ -66,13 +66,13 @@ describe('Customer Notes API', () => {
 
     // Create note category
     await adminPool.query(
-      `INSERT INTO note_categories (business_id, name, is_sensitive, customer_visible)
+      `INSERT INTO cus_note_categories (business_id, name, is_sensitive, customer_visible)
        VALUES ($1, 'General', false, true)
        ON CONFLICT (business_id, name) DO NOTHING`,
       [BUSINESS_ID],
     );
     await adminPool.query(
-      `INSERT INTO note_categories (business_id, name, is_sensitive, customer_visible)
+      `INSERT INTO cus_note_categories (business_id, name, is_sensitive, customer_visible)
        VALUES ($1, 'Medical', true, false)
        ON CONFLICT (business_id, name) DO NOTHING`,
       [BUSINESS_ID],

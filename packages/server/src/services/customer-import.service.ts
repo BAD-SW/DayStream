@@ -170,7 +170,7 @@ export async function executeImport(
     try {
       // Check for duplicate email
       const { rows: existing } = await adminPool.query(
-        'SELECT id FROM customers WHERE business_id = $1 AND email = $2',
+        'SELECT id FROM cus_customers WHERE business_id = $1 AND email = $2',
         [businessId, mapped.email],
       );
 
@@ -187,7 +187,7 @@ export async function executeImport(
       );
 
       await adminPool.query(
-        `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, phone, date_of_birth, gender, preferred_language, country, created_by)
+        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, phone, date_of_birth, gender, preferred_language, country, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           tenantId, businessId, refRows[0].ref,
@@ -244,7 +244,7 @@ export async function exportCustomers(
 
   const where = conditions.join(' AND ');
   const { rows } = await adminPool.query(
-    `SELECT * FROM customers WHERE ${where} ORDER BY last_name, first_name`,
+    `SELECT * FROM cus_customers WHERE ${where} ORDER BY last_name, first_name`,
     params,
   );
 
@@ -276,7 +276,7 @@ export async function exportCustomers(
  */
 export async function exportGDPR(customerId: string, businessId: string): Promise<object | null> {
   const { rows: custRows } = await adminPool.query(
-    'SELECT * FROM customers WHERE id = $1 AND business_id = $2',
+    'SELECT * FROM cus_customers WHERE id = $1 AND business_id = $2',
     [customerId, businessId],
   );
 
@@ -286,25 +286,25 @@ export async function exportGDPR(customerId: string, businessId: string): Promis
 
   // Get notes
   const { rows: notes } = await adminPool.query(
-    'SELECT id, category, created_at FROM customer_notes WHERE customer_id = $1',
+    'SELECT id, category, created_at FROM cus_notes WHERE customer_id = $1',
     [customerId],
   );
 
   // Get activities
   const { rows: activities } = await adminPool.query(
-    'SELECT activity_type, description, created_at FROM customer_activities WHERE customer_id = $1 ORDER BY created_at DESC',
+    'SELECT activity_type, description, created_at FROM cus_activities WHERE customer_id = $1 ORDER BY created_at DESC',
     [customerId],
   );
 
   // Get preferences
   const { rows: prefs } = await adminPool.query(
-    'SELECT * FROM customer_preferences WHERE customer_id = $1',
+    'SELECT * FROM cus_preferences WHERE customer_id = $1',
     [customerId],
   );
 
   // Get tags
   const { rows: tags } = await adminPool.query(
-    `SELECT t.name FROM customer_tags ct JOIN tags t ON t.id = ct.tag_id WHERE ct.customer_id = $1`,
+    `SELECT t.name FROM cus_customer_tags ct JOIN cus_tags t ON t.id = ct.tag_id WHERE ct.customer_id = $1`,
     [customerId],
   );
 

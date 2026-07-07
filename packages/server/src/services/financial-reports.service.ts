@@ -15,9 +15,9 @@ export async function getProfitAndLoss(filters: ReportFilters) {
   // Revenue
   const { rows: revenue } = await adminPool.query(
     `SELECT coa.name, COALESCE(SUM(jel.credit - jel.debit), 0)::int AS amount
-     FROM journal_entry_lines jel
-     JOIN chart_of_accounts coa ON coa.id = jel.account_id
-     JOIN journal_entries je ON je.id = jel.journal_entry_id
+     FROM fin_journal_entry_lines jel
+     JOIN fin_chart_of_accounts coa ON coa.id = jel.account_id
+     JOIN fin_journal_entries je ON je.id = jel.journal_entry_id
      WHERE je.business_id = $1 AND je.entry_date >= $2 AND je.entry_date <= $3
        AND coa.account_type = 'revenue' AND je.is_void = false
      GROUP BY coa.name ORDER BY amount DESC`,
@@ -27,9 +27,9 @@ export async function getProfitAndLoss(filters: ReportFilters) {
   // Expenses
   const { rows: expenses } = await adminPool.query(
     `SELECT coa.name, COALESCE(SUM(jel.debit - jel.credit), 0)::int AS amount
-     FROM journal_entry_lines jel
-     JOIN chart_of_accounts coa ON coa.id = jel.account_id
-     JOIN journal_entries je ON je.id = jel.journal_entry_id
+     FROM fin_journal_entry_lines jel
+     JOIN fin_chart_of_accounts coa ON coa.id = jel.account_id
+     JOIN fin_journal_entries je ON je.id = jel.journal_entry_id
      WHERE je.business_id = $1 AND je.entry_date >= $2 AND je.entry_date <= $3
        AND coa.account_type = 'expense' AND je.is_void = false
      GROUP BY coa.name ORDER BY amount DESC`,
@@ -60,9 +60,9 @@ export async function getStaffCosts(filters: ReportFilters) {
             SUM(pe.gross_pay)::int AS total_gross,
             SUM(pe.total_deductions)::int AS total_deductions,
             SUM(pe.net_pay)::int AS total_net
-     FROM payroll_entries pe
-     JOIN pay_periods pp ON pp.id = pe.pay_period_id
-     JOIN users u ON u.id = pe.user_id
+     FROM fin_payroll_entries pe
+     JOIN fin_pay_periods pp ON pp.id = pe.pay_period_id
+     JOIN usr_users u ON u.id = pe.user_id
      WHERE pp.business_id = $1 AND pp.period_start >= $2 AND pp.period_end <= $3
      GROUP BY pe.user_id, u.first_name, u.last_name
      ORDER BY total_gross DESC`,
@@ -89,7 +89,7 @@ export async function getAPAging(businessId: string) {
        END AS aging_bucket,
        COUNT(*)::int AS count,
        COALESCE(SUM(amount - amount_paid), 0)::int AS total
-     FROM bills
+     FROM fin_bills
      WHERE business_id = $1 AND status NOT IN ('paid', 'void')
      GROUP BY aging_bucket`,
     [businessId],
@@ -115,8 +115,8 @@ export async function getExpenseBreakdown(filters: ReportFilters) {
 
   const { rows } = await adminPool.query(
     `SELECT coa.name AS category, coa.code, COALESCE(SUM(e.amount), 0)::int AS total, COUNT(*)::int AS count
-     FROM expenses e
-     LEFT JOIN chart_of_accounts coa ON coa.id = e.account_id
+     FROM fin_expenses e
+     LEFT JOIN fin_chart_of_accounts coa ON coa.id = e.account_id
      WHERE e.business_id = $1 AND e.date >= $2 AND e.date <= $3 AND e.status = 'approved'
      GROUP BY coa.name, coa.code ORDER BY total DESC`,
     [businessId, dateFrom, dateTo],

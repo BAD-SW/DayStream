@@ -65,7 +65,7 @@ checkInRouter.get('/validate/:bookingId', requirePermission('checkin:read'), asy
   try {
     const authReq = req as AuthenticatedRequest;
     const { rows } = await (await import('../db/pool')).adminPool.query(
-      `SELECT b.customer_id FROM bookings b JOIN businesses bus ON bus.id = b.business_id
+      `SELECT b.customer_id FROM apt_bookings b JOIN sys_businesses bus ON bus.id = b.business_id
        WHERE b.id = $1 AND bus.tenant_id = $2`, [req.params.bookingId, authReq.tenantId]);
     if (rows.length === 0) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
     const result = await validationService.validateSession(req.params.bookingId, rows[0].customer_id, authReq.tenantId);

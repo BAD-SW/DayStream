@@ -45,7 +45,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Customer Activity Timeline API', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Activity Test Biz', 'activity-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Activity Test Biz'
        RETURNING id`,
@@ -54,7 +54,7 @@ describe('Customer Activity Timeline API', () => {
     BUSINESS_ID = bizRows[0].id;
 
     const { rows: custRows } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-7001', 'activity-test@example.com', 'Activity', 'Test', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Activity'
        RETURNING id`,

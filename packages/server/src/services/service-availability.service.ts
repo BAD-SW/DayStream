@@ -39,7 +39,7 @@ export async function createRule(input: CreateRuleInput) {
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO service_availability_rules (service_id, rule_type, days_of_week, start_time, end_time, effective_from, effective_to, blocked_dates, description)
+    `INSERT INTO svc_availability_rules (service_id, rule_type, days_of_week, start_time, end_time, effective_from, effective_to, blocked_dates, description)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
     [
@@ -60,7 +60,7 @@ export async function createRule(input: CreateRuleInput) {
  */
 export async function getRules(serviceId: string) {
   const { rows } = await adminPool.query(
-    'SELECT * FROM service_availability_rules WHERE service_id = $1 ORDER BY rule_type, created_at',
+    'SELECT * FROM svc_availability_rules WHERE service_id = $1 ORDER BY rule_type, created_at',
     [serviceId],
   );
   return rows;
@@ -71,7 +71,7 @@ export async function getRules(serviceId: string) {
  */
 export async function deleteRule(ruleId: string, serviceId: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    'DELETE FROM service_availability_rules WHERE id = $1 AND service_id = $2',
+    'DELETE FROM svc_availability_rules WHERE id = $1 AND service_id = $2',
     [ruleId, serviceId],
   );
   return (rowCount ?? 0) > 0;

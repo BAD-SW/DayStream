@@ -34,13 +34,13 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Vendors, Bills & Expenses', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status) VALUES ($1, 'AP Test Biz', 'ap-test-biz', 'active')
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status) VALUES ($1, 'AP Test Biz', 'ap-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'AP Test Biz' RETURNING id`, [TENANT_ID],
     );
     BUSINESS_ID = bizRows[0].id;
-    await adminPool.query('DELETE FROM expenses WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM bills WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM vendors WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_expenses WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_bills WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_vendors WHERE business_id = $1', [BUSINESS_ID]);
 
     ownerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',
@@ -129,7 +129,7 @@ describe('Vendors, Bills & Expenses', () => {
     it('marks overdue bills', async () => {
       // Create a past-due bill
       await adminPool.query(
-        `INSERT INTO bills (business_id, vendor_id, amount, due_date, status) VALUES ($1, $2, 10000, '2025-01-01', 'pending')`,
+        `INSERT INTO fin_bills (business_id, vendor_id, amount, due_date, status) VALUES ($1, $2, 10000, '2025-01-01', 'pending')`,
         [BUSINESS_ID, VENDOR_ID],
       );
       const overdue = await billsService.markOverdueBills();

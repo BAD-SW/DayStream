@@ -162,25 +162,25 @@ reportsRouter.get('/business-kpis', requirePermission('reports:read'), async (re
 
     // Today's bookings
     const { rows: todayRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM bookings WHERE business_id = $1 AND DATE(start_time) = CURRENT_DATE`,
+      `SELECT COUNT(*) as count FROM apt_bookings WHERE business_id = $1 AND DATE(start_time) = CURRENT_DATE`,
       [businessId],
     );
 
     // This week's bookings
     const { rows: weekRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM bookings WHERE business_id = $1 AND start_time >= date_trunc('week', NOW()) AND start_time < date_trunc('week', NOW()) + INTERVAL '7 days'`,
+      `SELECT COUNT(*) as count FROM apt_bookings WHERE business_id = $1 AND start_time >= date_trunc('week', NOW()) AND start_time < date_trunc('week', NOW()) + INTERVAL '7 days'`,
       [businessId],
     );
 
     // Active customers (from customers table, scoped to business — all non-archived)
     const { rows: custRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM customers WHERE business_id = $1 AND status != 'archived' AND status != 'anonymized'`,
+      `SELECT COUNT(*) as count FROM cus_customers WHERE business_id = $1 AND status != 'archived' AND status != 'anonymized'`,
       [businessId],
     );
 
     // New customers this month
     const { rows: newCustRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM customers WHERE business_id = $1 AND status != 'archived' AND status != 'anonymized' AND created_at >= date_trunc('month', NOW())`,
+      `SELECT COUNT(*) as count FROM cus_customers WHERE business_id = $1 AND status != 'archived' AND status != 'anonymized' AND created_at >= date_trunc('month', NOW())`,
       [businessId],
     );
 
@@ -207,25 +207,25 @@ reportsRouter.get('/staff-kpis', async (req: Request, res: Response) => {
 
     // My bookings today
     const { rows: todayRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM bookings WHERE staff_id = $1 AND DATE(start_time) = CURRENT_DATE`,
+      `SELECT COUNT(*) as count FROM apt_bookings WHERE staff_id = $1 AND DATE(start_time) = CURRENT_DATE`,
       [userId],
     );
 
     // My bookings this week
     const { rows: weekRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM bookings WHERE staff_id = $1 AND start_time >= date_trunc('week', NOW()) AND start_time < date_trunc('week', NOW()) + INTERVAL '7 days'`,
+      `SELECT COUNT(*) as count FROM apt_bookings WHERE staff_id = $1 AND start_time >= date_trunc('week', NOW()) AND start_time < date_trunc('week', NOW()) + INTERVAL '7 days'`,
       [userId],
     );
 
     // My customers (unique customers from my bookings)
     const { rows: custRows } = await adminPool.query(
-      `SELECT COUNT(DISTINCT customer_id) as count FROM bookings WHERE staff_id = $1`,
+      `SELECT COUNT(DISTINCT customer_id) as count FROM apt_bookings WHERE staff_id = $1`,
       [userId],
     );
 
     // Next appointment
     const { rows: nextRows } = await adminPool.query(
-      `SELECT start_time FROM bookings WHERE staff_id = $1 AND start_time > NOW() AND status != 'cancelled' ORDER BY start_time LIMIT 1`,
+      `SELECT start_time FROM apt_bookings WHERE staff_id = $1 AND start_time > NOW() AND status != 'cancelled' ORDER BY start_time LIMIT 1`,
       [userId],
     );
     const nextAppt = nextRows.length > 0 ? new Date(nextRows[0].start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;

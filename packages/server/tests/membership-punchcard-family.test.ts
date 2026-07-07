@@ -54,7 +54,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Punch Cards, Intro Packages & Family Memberships', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'PunchFamily Test Biz', 'punchfamily-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'PunchFamily Test Biz'
        RETURNING id`,
@@ -68,7 +68,7 @@ describe('Punch Cards, Intro Packages & Family Memberships', () => {
     const customerIds: string[] = [];
     for (let i = 0; i < 3; i++) {
       const { rows } = await adminPool.query(
-        `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
          VALUES ($1, $2, $3, $4, 'PF', $5, '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'PF' RETURNING id`,
         [TENANT_ID, BUSINESS_ID, ids[i], emails[i], `Cust${i + 1}`],
@@ -81,28 +81,28 @@ describe('Punch Cards, Intro Packages & Family Memberships', () => {
 
     // Plans
     const { rows: punchRows } = await adminPool.query(
-      `INSERT INTO membership_plans (business_id, name, plan_type, billing_cycle, price, total_sessions, expiration_days)
+      `INSERT INTO mem_plans (business_id, name, plan_type, billing_cycle, price, total_sessions, expiration_days)
        VALUES ($1, '5 Session Pack', 'punch_card', 'one_time', 22500, 5, 90) RETURNING id`,
       [BUSINESS_ID],
     );
     PUNCH_PLAN_ID = punchRows[0].id;
 
     const { rows: introRows } = await adminPool.query(
-      `INSERT INTO membership_plans (business_id, name, plan_type, billing_cycle, price, total_sessions, expiration_days, is_intro_only)
+      `INSERT INTO mem_plans (business_id, name, plan_type, billing_cycle, price, total_sessions, expiration_days, is_intro_only)
        VALUES ($1, 'Intro 3 Pack', 'intro_package', 'one_time', 9900, 3, 30, true) RETURNING id`,
       [BUSINESS_ID],
     );
     INTRO_PLAN_ID = introRows[0].id;
 
     const { rows: familyRows } = await adminPool.query(
-      `INSERT INTO membership_plans (business_id, name, plan_type, billing_cycle, price, credits_per_cycle, max_additional_members, shared_credits)
+      `INSERT INTO mem_plans (business_id, name, plan_type, billing_cycle, price, credits_per_cycle, max_additional_members, shared_credits)
        VALUES ($1, 'Family Plan', 'credit', 'monthly', 19900, 20, 3, true) RETURNING id`,
       [BUSINESS_ID],
     );
     FAMILY_PLAN_ID = familyRows[0].id;
 
     const { rows: recurringRows } = await adminPool.query(
-      `INSERT INTO membership_plans (business_id, name, plan_type, billing_cycle, price, credits_per_cycle)
+      `INSERT INTO mem_plans (business_id, name, plan_type, billing_cycle, price, credits_per_cycle)
        VALUES ($1, 'Monthly Standard', 'credit', 'monthly', 9900, 10) RETURNING id`,
       [BUSINESS_ID],
     );
@@ -110,7 +110,7 @@ describe('Punch Cards, Intro Packages & Family Memberships', () => {
 
     // Create punch card membership
     const { rows: punchMbr } = await adminPool.query(
-      `INSERT INTO memberships (business_id, customer_id, plan_id, status, start_date, end_date, credit_balance, created_by)
+      `INSERT INTO mem_memberships (business_id, customer_id, plan_id, status, start_date, end_date, credit_balance, created_by)
        VALUES ($1, $2, $3, 'active', CURRENT_DATE, CURRENT_DATE + INTERVAL '90 days', 5, '00000000-0000-0000-0000-000000000010')
        RETURNING id`,
       [BUSINESS_ID, CUSTOMER_ID, PUNCH_PLAN_ID],
@@ -119,7 +119,7 @@ describe('Punch Cards, Intro Packages & Family Memberships', () => {
 
     // Create family membership
     const { rows: famMbr } = await adminPool.query(
-      `INSERT INTO memberships (business_id, customer_id, plan_id, status, start_date, next_billing_date, credit_balance, auto_renew, created_by)
+      `INSERT INTO mem_memberships (business_id, customer_id, plan_id, status, start_date, next_billing_date, credit_balance, auto_renew, created_by)
        VALUES ($1, $2, $3, 'active', CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', 20, true, '00000000-0000-0000-0000-000000000010')
        RETURNING id`,
       [BUSINESS_ID, CUSTOMER_ID, FAMILY_PLAN_ID],
@@ -147,7 +147,7 @@ describe('Punch Cards, Intro Packages & Family Memberships', () => {
         await punchcardService.deductPunchCardSession(PUNCH_MEMBERSHIP_ID);
       }
 
-      const { rows } = await adminPool.query('SELECT status, credit_balance FROM memberships WHERE id = $1', [PUNCH_MEMBERSHIP_ID]);
+      const { rows } = await adminPool.query('SELECT status, credit_balance FROM mem_memberships WHERE id = $1', [PUNCH_MEMBERSHIP_ID]);
       expect(rows[0].credit_balance).toBe(0);
       expect(rows[0].status).toBe('expired');
     });
@@ -161,7 +161,7 @@ describe('Punch Cards, Intro Packages & Family Memberships', () => {
     it('allows multiple active punch cards', async () => {
       // Customer can buy another punch card
       const { rows } = await adminPool.query(
-        `INSERT INTO memberships (business_id, customer_id, plan_id, status, start_date, credit_balance, created_by)
+        `INSERT INTO mem_memberships (business_id, customer_id, plan_id, status, start_date, credit_balance, created_by)
          VALUES ($1, $2, $3, 'active', CURRENT_DATE, 5, '00000000-0000-0000-0000-000000000010') RETURNING id`,
         [BUSINESS_ID, CUSTOMER_ID, PUNCH_PLAN_ID],
       );
@@ -181,7 +181,7 @@ describe('Punch Cards, Intro Packages & Family Memberships', () => {
     it('rejects re-purchase', async () => {
       // Create an intro membership for customer 2
       await adminPool.query(
-        `INSERT INTO memberships (business_id, customer_id, plan_id, status, start_date, credit_balance, created_by)
+        `INSERT INTO mem_memberships (business_id, customer_id, plan_id, status, start_date, credit_balance, created_by)
          VALUES ($1, $2, $3, 'active', CURRENT_DATE, 3, '00000000-0000-0000-0000-000000000010')`,
         [BUSINESS_ID, CUSTOMER_ID_2, INTRO_PLAN_ID],
       );
@@ -246,7 +246,7 @@ describe('Punch Cards, Intro Packages & Family Memberships', () => {
     it('deducts from shared credit pool', async () => {
       // Get member's membership id
       const { rows: memberMbr } = await adminPool.query(
-        "SELECT id FROM memberships WHERE primary_membership_id = $1 AND customer_id = $2 AND status = 'active'",
+        "SELECT id FROM mem_memberships WHERE primary_membership_id = $1 AND customer_id = $2 AND status = 'active'",
         [FAMILY_MEMBERSHIP_ID, CUSTOMER_ID_2],
       );
 
@@ -254,14 +254,14 @@ describe('Punch Cards, Intro Packages & Family Memberships', () => {
       expect(result.success).toBe(true);
 
       // Check primary's balance decreased
-      const { rows: primary } = await adminPool.query('SELECT credit_balance FROM memberships WHERE id = $1', [FAMILY_MEMBERSHIP_ID]);
+      const { rows: primary } = await adminPool.query('SELECT credit_balance FROM mem_memberships WHERE id = $1', [FAMILY_MEMBERSHIP_ID]);
       expect(primary[0].credit_balance).toBe(18); // 20 - 2
     });
 
     it('rejects when max members reached', async () => {
       // Plan allows 3 additional, already have 2. Add a 3rd.
       const { rows: c4 } = await adminPool.query(
-        `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
          VALUES ($1, $2, 'CUST-PF04', 'pf-cust4@example.com', 'PF', 'Cust4', '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'PF' RETURNING id`,
         [TENANT_ID, BUSINESS_ID],
@@ -271,7 +271,7 @@ describe('Punch Cards, Intro Packages & Family Memberships', () => {
 
       // 4th should fail (max is 3)
       const { rows: c5 } = await adminPool.query(
-        `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
          VALUES ($1, $2, 'CUST-PF05', 'pf-cust5@example.com', 'PF', 'Cust5', '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'PF' RETURNING id`,
         [TENANT_ID, BUSINESS_ID],

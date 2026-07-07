@@ -48,7 +48,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Compensation Rules & Time Tracking', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Payroll Test Biz', 'payroll-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Payroll Test Biz'
        RETURNING id`,
@@ -58,14 +58,14 @@ describe('Compensation Rules & Time Tracking', () => {
 
     STAFF_ID = '00000000-0000-0000-0000-000000000055';
     await adminPool.query(
-      `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+      `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
        VALUES ($1, $2, 'payroll-staff@example.com', 'Payroll', 'Staff', 'hashed', 'therapist', 'active')
        ON CONFLICT (id) DO UPDATE SET first_name = 'Payroll'`,
       [STAFF_ID, TENANT_ID],
     );
 
-    await adminPool.query('DELETE FROM compensation_rules WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM time_entries WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_compensation_rules WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_time_entries WHERE business_id = $1', [BUSINESS_ID]);
 
     ownerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',
@@ -155,7 +155,7 @@ describe('Compensation Rules & Time Tracking', () => {
     it('excludes expired rules', async () => {
       // Create an expired rule
       await adminPool.query(
-        `INSERT INTO compensation_rules (business_id, user_id, rule_type, rate, effective_from, effective_to)
+        `INSERT INTO fin_compensation_rules (business_id, user_id, rule_type, rate, effective_from, effective_to)
          VALUES ($1, $2, 'per_session', 5000, '2025-01-01', '2025-06-30')`,
         [BUSINESS_ID, STAFF_ID],
       );
@@ -230,7 +230,7 @@ describe('Compensation Rules & Time Tracking', () => {
   describe('User summary', () => {
     it('returns hours, sessions, and revenue for a period', async () => {
       // Approve both entries first
-      await adminPool.query('UPDATE time_entries SET approved = true WHERE business_id = $1', [BUSINESS_ID]);
+      await adminPool.query('UPDATE fin_time_entries SET approved = true WHERE business_id = $1', [BUSINESS_ID]);
 
       const summary = await timeService.getUserSummary(STAFF_ID, BUSINESS_ID, '2026-06-01', '2026-06-30');
       expect(summary.total_hours).toBeGreaterThanOrEqual(8);

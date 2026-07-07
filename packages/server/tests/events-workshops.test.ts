@@ -39,19 +39,19 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Events & Workshops', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status) VALUES ($1, 'Events Test Biz', 'events-test-biz', 'active')
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status) VALUES ($1, 'Events Test Biz', 'events-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Events Test Biz' RETURNING id`, [TENANT_ID]);
     BUSINESS_ID = bizRows[0].id;
 
     // Clean up
-    await adminPool.query('DELETE FROM event_registrations WHERE event_id IN (SELECT id FROM events WHERE tenant_id = $1)', [TENANT_ID]);
-    await adminPool.query('DELETE FROM event_ticket_tiers WHERE event_id IN (SELECT id FROM events WHERE tenant_id = $1)', [TENANT_ID]);
-    await adminPool.query('DELETE FROM events WHERE tenant_id = $1', [TENANT_ID]);
-    await adminPool.query('DELETE FROM event_types WHERE tenant_id = $1 AND is_system = false', [TENANT_ID]);
+    await adminPool.query('DELETE FROM evt_registrations WHERE event_id IN (SELECT id FROM evt_events WHERE tenant_id = $1)', [TENANT_ID]);
+    await adminPool.query('DELETE FROM evt_ticket_tiers WHERE event_id IN (SELECT id FROM evt_events WHERE tenant_id = $1)', [TENANT_ID]);
+    await adminPool.query('DELETE FROM evt_events WHERE tenant_id = $1', [TENANT_ID]);
+    await adminPool.query('DELETE FROM evt_types WHERE tenant_id = $1 AND is_system = false', [TENANT_ID]);
 
     // Create a test customer
     const { rows: custRows } = await adminPool.query(
-      `INSERT INTO customers (business_id, tenant_id, email, first_name, last_name, reference_number)
+      `INSERT INTO cus_customers (business_id, tenant_id, email, first_name, last_name, reference_number)
        VALUES ($1, $2, 'event-test@example.com', 'Event', 'Tester', 'CUST-EVT-001')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Event' RETURNING id`, [BUSINESS_ID, TENANT_ID]);
     CUSTOMER_ID = custRows[0].id;
@@ -191,7 +191,7 @@ describe('Events & Workshops', () => {
 
       // Create another customer for 2nd attempt
       const { rows: cust2 } = await adminPool.query(
-        `INSERT INTO customers (business_id, tenant_id, email, first_name, last_name, reference_number)
+        `INSERT INTO cus_customers (business_id, tenant_id, email, first_name, last_name, reference_number)
          VALUES ($1, $2, 'event-test2@example.com', 'Second', 'Person', 'CUST-EVT-002')
          ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Second' RETURNING id`, [BUSINESS_ID, TENANT_ID]);
 

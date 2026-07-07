@@ -29,7 +29,7 @@ interface CustomerFilters {
 export async function createCustomer(input: CreateCustomerInput) {
   // Check for duplicate email within business
   const { rows: existing } = await adminPool.query(
-    'SELECT id FROM customers WHERE business_id = $1 AND email = $2',
+    'SELECT id FROM cus_customers WHERE business_id = $1 AND email = $2',
     [input.businessId, input.email],
   );
 
@@ -46,7 +46,7 @@ export async function createCustomer(input: CreateCustomerInput) {
 
   // Insert customer
   const { rows } = await adminPool.query(
-    `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, phone, date_of_birth, gender, preferred_language, country, created_by)
+    `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, phone, date_of_birth, gender, preferred_language, country, created_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING *`,
     [input.tenantId, input.businessId, referenceNumber, input.email, input.firstName, input.lastName, input.phone || null, input.dateOfBirth || null, input.gender || null, input.preferredLanguage || 'en', input.country || null, input.createdBy],
@@ -56,7 +56,7 @@ export async function createCustomer(input: CreateCustomerInput) {
 
   // Create default preferences (opted out of marketing)
   await adminPool.query(
-    'INSERT INTO customer_preferences (customer_id) VALUES ($1)',
+    'INSERT INTO cus_preferences (customer_id) VALUES ($1)',
     [customer.id],
   );
 
@@ -99,10 +99,10 @@ export async function getCustomers(businessId: string, filters: CustomerFilters)
 
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
-      `SELECT * FROM customers WHERE ${where} ORDER BY ${sort} ${order} LIMIT ${limit} OFFSET ${offset}`,
+      `SELECT * FROM cus_customers WHERE ${where} ORDER BY ${sort} ${order} LIMIT ${limit} OFFSET ${offset}`,
       params,
     ),
-    adminPool.query(`SELECT COUNT(*) AS total FROM customers WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*) AS total FROM cus_customers WHERE ${where}`, params),
   ]);
 
   return {
@@ -115,7 +115,7 @@ export async function getCustomers(businessId: string, filters: CustomerFilters)
 
 export async function getCustomerById(id: string, businessId: string) {
   const { rows } = await adminPool.query(
-    'SELECT * FROM customers WHERE id = $1 AND business_id = $2',
+    'SELECT * FROM cus_customers WHERE id = $1 AND business_id = $2',
     [id, businessId],
   );
   return rows[0] || null;
@@ -144,7 +144,7 @@ export async function updateCustomer(id: string, businessId: string, updates: Re
   values.push(businessId);
 
   await adminPool.query(
-    `UPDATE customers SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx}`,
+    `UPDATE cus_customers SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx}`,
     values,
   );
 
@@ -177,7 +177,7 @@ export async function updateCustomer(id: string, businessId: string, updates: Re
     }).join('; ');
 
     await adminPool.query(
-      `INSERT INTO customer_activities (customer_id, business_id, activity_type, description, metadata, created_by)
+      `INSERT INTO cus_activities (customer_id, business_id, activity_type, description, metadata, created_by)
        VALUES ($1, $2, 'profile_change', $3, $4, $5)`,
       [id, businessId, description, JSON.stringify({ changes }), userId],
     );
@@ -191,7 +191,7 @@ export async function archiveCustomer(id: string, businessId: string, userId: st
   if (!customer) return null;
 
   await adminPool.query(
-    "UPDATE customers SET status = 'archived', updated_at = NOW() WHERE id = $1 AND business_id = $2",
+    "UPDATE cus_customers SET status = 'archived', updated_at = NOW() WHERE id = $1 AND business_id = $2",
     [id, businessId],
   );
 
@@ -205,7 +205,7 @@ export async function anonymizeCustomer(id: string, businessId: string, userId: 
   if (!customer) return null;
 
   await adminPool.query(
-    `UPDATE customers SET
+    `UPDATE cus_customers SET
        first_name = '[deleted]', last_name = '[deleted]', email = $3,
        phone = NULL, date_of_birth = NULL, gender = NULL, country = NULL, avatar_url = NULL,
        status = 'anonymized', anonymized_at = NOW(), anonymized_by = $4, updated_at = NOW()
@@ -214,7 +214,7 @@ export async function anonymizeCustomer(id: string, businessId: string, userId: 
   );
 
   // Delete notes content
-  await adminPool.query('DELETE FROM customer_notes WHERE customer_id = $1', [id]);
+  await adminPool.query('DELETE FROM cus_notes WHERE customer_id = $1', [id]);
 
   // Log
   await logAudit({ tenantId, userId, action: 'customer.anonymized', resourceType: 'customer', resourceId: id });

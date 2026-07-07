@@ -25,7 +25,7 @@ export async function getDashboardData(tenantId: string, userId: string, dateRan
     widgets.map(async (widget) => {
       const metrics = await adminPool.query(
         `SELECT metric_date, metric_name, metric_value
-         FROM report_daily_metrics
+         FROM rpt_daily_metrics
          WHERE tenant_id = $1
            AND metric_category = $2
            AND metric_date BETWEEN $3::date AND $4::date
@@ -48,7 +48,7 @@ export async function getDashboardData(tenantId: string, userId: string, dateRan
  */
 export async function getDashboardConfig(tenantId: string, userId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM dashboard_configs
+    `SELECT * FROM rpt_dashboard_configs
      WHERE tenant_id = $1 AND user_id = $2
      ORDER BY is_default DESC, updated_at DESC
      LIMIT 1`,
@@ -62,7 +62,7 @@ export async function getDashboardConfig(tenantId: string, userId: string) {
  */
 export async function saveDashboardConfig(tenantId: string, userId: string, widgets: Widget[]) {
   const { rows } = await adminPool.query(
-    `INSERT INTO dashboard_configs (tenant_id, user_id, widgets)
+    `INSERT INTO rpt_dashboard_configs (tenant_id, user_id, widgets)
      VALUES ($1, $2, $3)
      ON CONFLICT (id) DO UPDATE SET widgets = EXCLUDED.widgets, updated_at = NOW()
      RETURNING *`,
@@ -72,7 +72,7 @@ export async function saveDashboardConfig(tenantId: string, userId: string, widg
   // If no row was updated via conflict, try upsert by user
   if (rows.length === 0) {
     const { rows: updated } = await adminPool.query(
-      `UPDATE dashboard_configs SET widgets = $3, updated_at = NOW()
+      `UPDATE rpt_dashboard_configs SET widgets = $3, updated_at = NOW()
        WHERE tenant_id = $1 AND user_id = $2
        RETURNING *`,
       [tenantId, userId, JSON.stringify(widgets)],

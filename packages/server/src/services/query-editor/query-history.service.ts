@@ -31,7 +31,7 @@ export class QueryHistoryService {
 
     try {
       await adminPool.query(
-        `INSERT INTO query_history (tenant_id, user_id, query_text, execution_time_ms, row_count, status)
+        `INSERT INTO sys_query_history (tenant_id, user_id, query_text, execution_time_ms, row_count, status)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           entry.tenantId,
@@ -74,7 +74,7 @@ export class QueryHistoryService {
     const where = conditions.join(' AND ');
     const { rows } = await adminPool.query(
       `SELECT id, user_id, tenant_id, query_text, execution_time_ms, row_count, status, created_at
-       FROM query_history
+       FROM sys_query_history
        WHERE ${where}
        ORDER BY created_at DESC
        LIMIT $${paramIndex}`,
@@ -90,7 +90,7 @@ export class QueryHistoryService {
    */
   async purgeOlderThan(days: number = DEFAULT_PURGE_DAYS): Promise<number> {
     const { rowCount } = await adminPool.query(
-      `DELETE FROM query_history WHERE created_at < NOW() - INTERVAL '1 day' * $1`,
+      `DELETE FROM sys_query_history WHERE created_at < NOW() - INTERVAL '1 day' * $1`,
       [days],
     );
 

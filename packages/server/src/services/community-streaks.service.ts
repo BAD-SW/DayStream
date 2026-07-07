@@ -5,7 +5,7 @@ import { adminPool } from '../db/pool';
  */
 export async function getStreak(tenantId: string, customerId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM customer_streaks WHERE tenant_id = $1 AND customer_id = $2`,
+    `SELECT * FROM eng_customer_streaks WHERE tenant_id = $1 AND customer_id = $2`,
     [tenantId, customerId],
   );
   return rows[0] || null;
@@ -29,10 +29,10 @@ export async function updateStreak(tenantId: string, customerId: string) {
   if (!existing) {
     // First check-in ever
     const { rows } = await adminPool.query(
-      `INSERT INTO customer_streaks (tenant_id, customer_id, current_streak, longest_streak, last_activity_week)
+      `INSERT INTO eng_customer_streaks (tenant_id, customer_id, current_streak, longest_streak, last_activity_week)
        VALUES ($1, $2, 1, 1, $3)
        ON CONFLICT (tenant_id, customer_id) DO UPDATE
-         SET current_streak = 1, longest_streak = GREATEST(customer_streaks.longest_streak, 1), last_activity_week = $3
+         SET current_streak = 1, longest_streak = GREATEST(eng_customer_streaks.longest_streak, 1), last_activity_week = $3
        RETURNING *`,
       [tenantId, customerId, currentWeekStr],
     );
@@ -55,7 +55,7 @@ export async function updateStreak(tenantId: string, customerId: string) {
     // Consecutive week — increment
     const newStreak = existing.current_streak + 1;
     const { rows } = await adminPool.query(
-      `UPDATE customer_streaks
+      `UPDATE eng_customer_streaks
        SET current_streak = $3, longest_streak = GREATEST(longest_streak, $3), last_activity_week = $4
        WHERE tenant_id = $1 AND customer_id = $2
        RETURNING *`,
@@ -66,7 +66,7 @@ export async function updateStreak(tenantId: string, customerId: string) {
     // Gap but freeze available — use freeze and continue streak
     const newStreak = existing.current_streak + 1;
     const { rows } = await adminPool.query(
-      `UPDATE customer_streaks
+      `UPDATE eng_customer_streaks
        SET current_streak = $3, longest_streak = GREATEST(longest_streak, $3),
            last_activity_week = $4, streak_freezes_remaining = streak_freezes_remaining - 1
        WHERE tenant_id = $1 AND customer_id = $2
@@ -77,7 +77,7 @@ export async function updateStreak(tenantId: string, customerId: string) {
   } else {
     // Gap > 1 week, no freeze — reset
     const { rows } = await adminPool.query(
-      `UPDATE customer_streaks
+      `UPDATE eng_customer_streaks
        SET current_streak = 1, last_activity_week = $3
        WHERE tenant_id = $1 AND customer_id = $2
        RETURNING *`,
@@ -92,7 +92,7 @@ export async function updateStreak(tenantId: string, customerId: string) {
  */
 export async function useStreakFreeze(tenantId: string, customerId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE customer_streaks
+    `UPDATE eng_customer_streaks
      SET streak_freezes_remaining = GREATEST(streak_freezes_remaining - 1, 0)
      WHERE tenant_id = $1 AND customer_id = $2 AND streak_freezes_remaining > 0
      RETURNING *`,

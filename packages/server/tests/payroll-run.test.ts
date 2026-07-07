@@ -46,7 +46,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Payroll Processing & Deductions', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'PayRun Test Biz', 'payrun-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'PayRun Test Biz'
        RETURNING id`,
@@ -56,46 +56,46 @@ describe('Payroll Processing & Deductions', () => {
 
     STAFF_ID = '00000000-0000-0000-0000-000000000056';
     await adminPool.query(
-      `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+      `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
        VALUES ($1, $2, 'payrun-staff@example.com', 'PayRun', 'Staff', 'hashed', 'therapist', 'active')
        ON CONFLICT (id) DO UPDATE SET first_name = 'PayRun'`,
       [STAFF_ID, TENANT_ID],
     );
 
     // Clean
-    await adminPool.query('DELETE FROM payroll_entries WHERE pay_period_id IN (SELECT id FROM pay_periods WHERE business_id = $1)', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM pay_periods WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM compensation_rules WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM payroll_deductions WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM time_entries WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_payroll_entries WHERE pay_period_id IN (SELECT id FROM fin_pay_periods WHERE business_id = $1)', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_pay_periods WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_compensation_rules WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_payroll_deductions WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_time_entries WHERE business_id = $1', [BUSINESS_ID]);
 
     // Set up compensation: €25/hr + salary €2000/period
     await adminPool.query(
-      `INSERT INTO compensation_rules (business_id, user_id, rule_type, rate, effective_from, overtime_after_hours)
+      `INSERT INTO fin_compensation_rules (business_id, user_id, rule_type, rate, effective_from, overtime_after_hours)
        VALUES ($1, $2, 'hourly', 2500, '2026-01-01', 40)`,
       [BUSINESS_ID, STAFF_ID],
     );
     await adminPool.query(
-      `INSERT INTO compensation_rules (business_id, user_id, rule_type, rate, effective_from)
+      `INSERT INTO fin_compensation_rules (business_id, user_id, rule_type, rate, effective_from)
        VALUES ($1, $2, 'salary', 200000, '2026-01-01')`,
       [BUSINESS_ID, STAFF_ID],
     );
 
     // Set up deductions: 20% income tax + €50 insurance
     await adminPool.query(
-      `INSERT INTO payroll_deductions (business_id, user_id, name, deduction_type, calculation_type, value, effective_from)
+      `INSERT INTO fin_payroll_deductions (business_id, user_id, name, deduction_type, calculation_type, value, effective_from)
        VALUES ($1, $2, 'Income Tax', 'tax', 'percentage', 2000, '2026-01-01')`,
       [BUSINESS_ID, STAFF_ID],
     );
     await adminPool.query(
-      `INSERT INTO payroll_deductions (business_id, user_id, name, deduction_type, calculation_type, value, effective_from)
+      `INSERT INTO fin_payroll_deductions (business_id, user_id, name, deduction_type, calculation_type, value, effective_from)
        VALUES ($1, $2, 'Health Insurance', 'insurance', 'fixed', 5000, '2026-01-01')`,
       [BUSINESS_ID, STAFF_ID],
     );
 
     // Add time entries for June: 160 hours (no overtime)
     await adminPool.query(
-      `INSERT INTO time_entries (business_id, user_id, entry_type, start_time, end_time, hours, approved)
+      `INSERT INTO fin_time_entries (business_id, user_id, entry_type, start_time, end_time, hours, approved)
        VALUES ($1, $2, 'manual', '2026-06-01T09:00:00Z', '2026-06-01T17:00:00Z', 160, true)`,
       [BUSINESS_ID, STAFF_ID],
     );
@@ -189,7 +189,7 @@ describe('Payroll Processing & Deductions', () => {
       expect(body.data.finalized).toBe(true);
 
       // Verify period status
-      const { rows } = await adminPool.query('SELECT status FROM pay_periods WHERE id = $1', [PERIOD_ID]);
+      const { rows } = await adminPool.query('SELECT status FROM fin_pay_periods WHERE id = $1', [PERIOD_ID]);
       expect(rows[0].status).toBe('finalized');
     });
 
@@ -250,7 +250,7 @@ describe('Payroll Processing & Deductions', () => {
     it('deactivates a deduction', async () => {
       // Get one to deactivate
       const { rows } = await adminPool.query(
-        "SELECT id FROM payroll_deductions WHERE business_id = $1 AND name = 'Salary Advance Repayment'", [BUSINESS_ID],
+        "SELECT id FROM fin_payroll_deductions WHERE business_id = $1 AND name = 'Salary Advance Repayment'", [BUSINESS_ID],
       );
 
       const { statusCode, body } = await request(

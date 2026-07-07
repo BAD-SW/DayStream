@@ -29,7 +29,7 @@ export async function findDuplicates(
   // Email match (exact)
   if (email) {
     const { rows } = await adminPool.query(
-      `SELECT id, email, first_name, last_name, phone FROM customers
+      `SELECT id, email, first_name, last_name, phone FROM cus_customers
        WHERE business_id = $1 AND email = $2 AND status != 'anonymized'`,
       [businessId, email],
     );
@@ -41,7 +41,7 @@ export async function findDuplicates(
   // Phone match (exact)
   if (phone && phone.trim() !== '') {
     const { rows } = await adminPool.query(
-      `SELECT id, email, first_name, last_name, phone FROM customers
+      `SELECT id, email, first_name, last_name, phone FROM cus_customers
        WHERE business_id = $1 AND phone = $2 AND status != 'anonymized'
        AND id != ALL($3::uuid[])`,
       [businessId, phone, matches.map((m) => m.id)],
@@ -54,7 +54,7 @@ export async function findDuplicates(
   // Name similarity (first + last name match)
   if (firstName && lastName) {
     const { rows } = await adminPool.query(
-      `SELECT id, email, first_name, last_name, phone FROM customers
+      `SELECT id, email, first_name, last_name, phone FROM cus_customers
        WHERE business_id = $1
        AND LOWER(first_name) = LOWER($2)
        AND LOWER(last_name) = LOWER($3)
@@ -85,11 +85,11 @@ export async function mergeCustomers(
 ): Promise<{ success: boolean; customer?: any; error?: string }> {
   // Verify both customers exist and belong to the same business
   const { rows: primaryRows } = await adminPool.query(
-    'SELECT * FROM customers WHERE id = $1 AND business_id = $2',
+    'SELECT * FROM cus_customers WHERE id = $1 AND business_id = $2',
     [primaryId, businessId],
   );
   const { rows: secondaryRows } = await adminPool.query(
-    'SELECT * FROM customers WHERE id = $1 AND business_id = $2',
+    'SELECT * FROM cus_customers WHERE id = $1 AND business_id = $2',
     [secondaryId, businessId],
   );
 
@@ -118,46 +118,46 @@ export async function mergeCustomers(
     updateValues.push(primaryId);
     updateValues.push(businessId);
     await adminPool.query(
-      `UPDATE customers SET ${updates.join(', ')} WHERE id = $${paramIdx++} AND business_id = $${paramIdx}`,
+      `UPDATE cus_customers SET ${updates.join(', ')} WHERE id = $${paramIdx++} AND business_id = $${paramIdx}`,
       updateValues,
     );
   }
 
   // Reassign activities
   await adminPool.query(
-    'UPDATE customer_activities SET customer_id = $1 WHERE customer_id = $2',
+    'UPDATE cus_activities SET customer_id = $1 WHERE customer_id = $2',
     [primaryId, secondaryId],
   );
 
   // Reassign notes
   await adminPool.query(
-    'UPDATE customer_notes SET customer_id = $1 WHERE customer_id = $2',
+    'UPDATE cus_notes SET customer_id = $1 WHERE customer_id = $2',
     [primaryId, secondaryId],
   );
 
   // Reassign tags (skip duplicates)
   await adminPool.query(
-    `INSERT INTO customer_tags (customer_id, tag_id, assigned_at, assigned_by)
-     SELECT $1, tag_id, assigned_at, assigned_by FROM customer_tags WHERE customer_id = $2
+    `INSERT INTO cus_customer_tags (customer_id, tag_id, assigned_at, assigned_by)
+     SELECT $1, tag_id, assigned_at, assigned_by FROM cus_customer_tags WHERE customer_id = $2
      ON CONFLICT (customer_id, tag_id) DO NOTHING`,
     [primaryId, secondaryId],
   );
-  await adminPool.query('DELETE FROM customer_tags WHERE customer_id = $1', [secondaryId]);
+  await adminPool.query('DELETE FROM cus_customer_tags WHERE customer_id = $1', [secondaryId]);
 
   // Reassign custom fields (skip duplicates)
   await adminPool.query(
-    `INSERT INTO customer_custom_fields (customer_id, key, value)
-     SELECT $1, key, value FROM customer_custom_fields WHERE customer_id = $2
+    `INSERT INTO cus_custom_fields (customer_id, key, value)
+     SELECT $1, key, value FROM cus_custom_fields WHERE customer_id = $2
      ON CONFLICT (customer_id, key) DO NOTHING`,
     [primaryId, secondaryId],
   );
-  await adminPool.query('DELETE FROM customer_custom_fields WHERE customer_id = $1', [secondaryId]);
+  await adminPool.query('DELETE FROM cus_custom_fields WHERE customer_id = $1', [secondaryId]);
 
   // Delete secondary's preferences
-  await adminPool.query('DELETE FROM customer_preferences WHERE customer_id = $1', [secondaryId]);
+  await adminPool.query('DELETE FROM cus_preferences WHERE customer_id = $1', [secondaryId]);
 
   // Delete secondary customer
-  await adminPool.query('DELETE FROM customers WHERE id = $1 AND business_id = $2', [secondaryId, businessId]);
+  await adminPool.query('DELETE FROM cus_customers WHERE id = $1 AND business_id = $2', [secondaryId, businessId]);
 
   // Log in activity timeline
   await createActivity({
@@ -183,7 +183,7 @@ export async function mergeCustomers(
 
   // Return updated primary
   const { rows: updated } = await adminPool.query(
-    'SELECT * FROM customers WHERE id = $1',
+    'SELECT * FROM cus_customers WHERE id = $1',
     [primaryId],
   );
 

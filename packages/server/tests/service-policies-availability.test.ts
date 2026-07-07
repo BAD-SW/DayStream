@@ -47,7 +47,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Cancellation Policies & Availability Rules', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Policy Avail Test Biz', 'policy-avail-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Policy Avail Test Biz'
        RETURNING id`,
@@ -55,16 +55,16 @@ describe('Cancellation Policies & Availability Rules', () => {
     );
     BUSINESS_ID = bizRows[0].id;
 
-    await adminPool.query('DELETE FROM services WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM service_categories WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM cancellation_policies WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_cancellation_policies WHERE business_id = $1', [BUSINESS_ID]);
 
     const { rows: catRows } = await adminPool.query(
-      `INSERT INTO service_categories (business_id, name) VALUES ($1, 'Policy Test Cat') RETURNING id`,
+      `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'Policy Test Cat') RETURNING id`,
       [BUSINESS_ID],
     );
     const { rows: svcRows } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, created_by)
        VALUES ($1, $2, 'Policy Test Service', 'policy-test-service', '00000000-0000-0000-0000-000000000010')
        RETURNING id`,
       [BUSINESS_ID, catRows[0].id],

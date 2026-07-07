@@ -32,8 +32,8 @@ export async function getAvailableSlots(query: AvailabilityQuery): Promise<Avail
   // 1. Load service config
   const { rows: svcRows } = await adminPool.query(
     `SELECT s.*, sv.duration AS variant_duration
-     FROM services s
-     LEFT JOIN service_variants sv ON sv.id = $2
+     FROM svc_services s
+     LEFT JOIN svc_variants sv ON sv.id = $2
      WHERE s.id = $1 AND s.business_id = $3 AND s.status = 'active'`,
     [serviceId, variantId || serviceId, businessId], // if no variantId, join won't match but service loads
   );
@@ -52,7 +52,7 @@ export async function getAvailableSlots(query: AvailabilityQuery): Promise<Avail
 
   // 2. Load service availability rules
   const { rows: availRules } = await adminPool.query(
-    'SELECT * FROM service_availability_rules WHERE service_id = $1',
+    'SELECT * FROM svc_availability_rules WHERE service_id = $1',
     [serviceId],
   );
 
@@ -63,8 +63,8 @@ export async function getAvailableSlots(query: AvailabilityQuery): Promise<Avail
   const staffParams = staffId ? [serviceId, staffId] : [serviceId];
   const { rows: assignedStaff } = await adminPool.query(
     `SELECT DISTINCT ss.user_id, u.first_name, u.last_name
-     FROM service_staff ss
-     JOIN users u ON u.id = ss.user_id
+     FROM svc_staff ss
+     JOIN usr_users u ON u.id = ss.user_id
      WHERE ss.service_id = $1 ${staffCondition}`,
     staffParams,
   );
@@ -92,7 +92,7 @@ export async function getAvailableSlots(query: AvailabilityQuery): Promise<Avail
   const staffIds = assignedStaff.map((s: any) => s.user_id);
   const { rows: existingBookings } = await adminPool.query(
     `SELECT staff_id, start_time, end_time, buffer_before, buffer_after, status
-     FROM bookings
+     FROM apt_bookings
      WHERE business_id = $1
        AND start_time < $3
        AND end_time > $2
@@ -104,7 +104,7 @@ export async function getAvailableSlots(query: AvailabilityQuery): Promise<Avail
   // 5. Load active slot holds
   const { rows: activeHolds } = await adminPool.query(
     `SELECT staff_id, start_time, end_time
-     FROM slot_holds
+     FROM apt_slot_holds
      WHERE business_id = $1
        AND expires_at > NOW()
        AND start_time < $3
@@ -116,7 +116,7 @@ export async function getAvailableSlots(query: AvailabilityQuery): Promise<Avail
   // 6. Load staff schedules
   const { rows: staffSchedules } = await adminPool.query(
     `SELECT user_id, day_of_week, start_time, end_time, effective_from, effective_to
-     FROM staff_schedules
+     FROM apt_staff_schedules
      WHERE business_id = $1 AND is_available = true
        AND ($2::uuid[] IS NULL OR user_id = ANY($2))`,
     [businessId, staffIds.length > 0 ? staffIds : null],
@@ -125,7 +125,7 @@ export async function getAvailableSlots(query: AvailabilityQuery): Promise<Avail
   // 7. Load staff time off
   const { rows: timeOff } = await adminPool.query(
     `SELECT user_id, start_time, end_time
-     FROM staff_time_off
+     FROM apt_staff_time_off
      WHERE business_id = $1
        AND start_time < $3
        AND end_time > $2
@@ -138,7 +138,7 @@ export async function getAvailableSlots(query: AvailabilityQuery): Promise<Avail
   if (bookingType === 'shared' || bookingType === 'group') {
     const { rows: counts } = await adminPool.query(
       `SELECT start_time, COUNT(*)::int AS count
-       FROM bookings
+       FROM apt_bookings
        WHERE service_id = $1 AND business_id = $2
          AND start_time >= $3 AND start_time < $4
          AND status IN ('pending', 'confirmed', 'in_progress')

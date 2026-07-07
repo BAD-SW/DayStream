@@ -5,7 +5,7 @@ import { adminPool } from '../db/pool';
  */
 export async function getQualifications(staffId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM staff_qualifications WHERE staff_id = $1 ORDER BY created_at DESC`,
+    `SELECT * FROM stf_qualifications WHERE staff_id = $1 ORDER BY created_at DESC`,
     [staffId],
   );
   return rows;
@@ -24,7 +24,7 @@ export async function addQualification(staffId: string, input: {
   showOnDirectory?: boolean;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO staff_qualifications (
+    `INSERT INTO stf_qualifications (
        staff_id, name, issuing_body, date_obtained, expiry_date,
        certification_number, document_path, show_on_directory
      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -74,7 +74,7 @@ export async function updateQualification(id: string, staffId: string, updates: 
   values.push(staffId);
 
   const { rows } = await adminPool.query(
-    `UPDATE staff_qualifications SET ${fields.join(', ')}
+    `UPDATE stf_qualifications SET ${fields.join(', ')}
      WHERE id = $${idx++} AND staff_id = $${idx}
      RETURNING *`,
     values,
@@ -88,7 +88,7 @@ export async function updateQualification(id: string, staffId: string, updates: 
  */
 export async function deleteQualification(id: string, staffId: string) {
   const { rowCount } = await adminPool.query(
-    `DELETE FROM staff_qualifications WHERE id = $1 AND staff_id = $2`,
+    `DELETE FROM stf_qualifications WHERE id = $1 AND staff_id = $2`,
     [id, staffId],
   );
   return (rowCount ?? 0) > 0;
@@ -100,8 +100,8 @@ export async function deleteQualification(id: string, staffId: string) {
 export async function getExpiringQualifications(tenantId: string, daysAhead: number = 30) {
   const { rows } = await adminPool.query(
     `SELECT sq.*, sp.first_name, sp.last_name, sp.staff_ref
-     FROM staff_qualifications sq
-     JOIN staff_profiles sp ON sp.id = sq.staff_id
+     FROM stf_qualifications sq
+     JOIN stf_profiles sp ON sp.id = sq.staff_id
      WHERE sp.tenant_id = $1
        AND sq.expiry_date IS NOT NULL
        AND sq.expiry_date <= CURRENT_DATE + $2 * INTERVAL '1 day'
@@ -121,7 +121,7 @@ export async function validateQualificationsForService(staffId: string, serviceI
 }> {
   // Get required qualifications for the service
   const { rows: requirements } = await adminPool.query(
-    `SELECT qualification_name, is_mandatory FROM service_qualification_requirements WHERE service_id = $1`,
+    `SELECT qualification_name, is_mandatory FROM svc_qualification_requirements WHERE service_id = $1`,
     [serviceId],
   );
 
@@ -129,7 +129,7 @@ export async function validateQualificationsForService(staffId: string, serviceI
 
   // Get staff's current valid qualifications
   const { rows: staffQuals } = await adminPool.query(
-    `SELECT name FROM staff_qualifications
+    `SELECT name FROM stf_qualifications
      WHERE staff_id = $1
        AND (expiry_date IS NULL OR expiry_date > CURRENT_DATE)`,
     [staffId],
@@ -152,7 +152,7 @@ export async function validateQualificationsForService(staffId: string, serviceI
  */
 export async function getServiceQualificationRequirements(serviceId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM service_qualification_requirements WHERE service_id = $1 ORDER BY qualification_name`,
+    `SELECT * FROM svc_qualification_requirements WHERE service_id = $1 ORDER BY qualification_name`,
     [serviceId],
   );
   return rows;
@@ -160,7 +160,7 @@ export async function getServiceQualificationRequirements(serviceId: string) {
 
 export async function addServiceQualificationRequirement(serviceId: string, qualificationName: string, isMandatory: boolean = true) {
   const { rows } = await adminPool.query(
-    `INSERT INTO service_qualification_requirements (service_id, qualification_name, is_mandatory)
+    `INSERT INTO svc_qualification_requirements (service_id, qualification_name, is_mandatory)
      VALUES ($1, $2, $3)
      ON CONFLICT (service_id, qualification_name) DO UPDATE SET is_mandatory = $3
      RETURNING *`,
@@ -171,7 +171,7 @@ export async function addServiceQualificationRequirement(serviceId: string, qual
 
 export async function deleteServiceQualificationRequirement(id: string, serviceId: string) {
   const { rowCount } = await adminPool.query(
-    `DELETE FROM service_qualification_requirements WHERE id = $1 AND service_id = $2`,
+    `DELETE FROM svc_qualification_requirements WHERE id = $1 AND service_id = $2`,
     [id, serviceId],
   );
   return (rowCount ?? 0) > 0;

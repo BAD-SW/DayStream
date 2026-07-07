@@ -32,7 +32,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Financial Reports, Bank Reconciliation & Tax Documents', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status) VALUES ($1, 'Reports Test Biz', 'reports-test-biz', 'active')
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status) VALUES ($1, 'Reports Test Biz', 'reports-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Reports Test Biz' RETURNING id`, [TENANT_ID],
     );
     BUSINESS_ID = bizRows[0].id;
@@ -135,18 +135,18 @@ describe('Financial Reports, Bank Reconciliation & Tax Documents', () => {
       // Create a journal entry to match against
       await adminPool.query('SELECT seed_chart_of_accounts($1)', [BUSINESS_ID]);
       const { rows: acct } = await adminPool.query(
-        "SELECT id FROM chart_of_accounts WHERE business_id = $1 AND code = '1100'", [BUSINESS_ID],
+        "SELECT id FROM fin_chart_of_accounts WHERE business_id = $1 AND code = '1100'", [BUSINESS_ID],
       );
       const { rows: revAcct } = await adminPool.query(
-        "SELECT id FROM chart_of_accounts WHERE business_id = $1 AND code = '4100'", [BUSINESS_ID],
+        "SELECT id FROM fin_chart_of_accounts WHERE business_id = $1 AND code = '4100'", [BUSINESS_ID],
       );
 
       const { rows: je } = await adminPool.query(
-        `INSERT INTO journal_entries (business_id, entry_date, description) VALUES ($1, '2026-06-01', 'Client payment') RETURNING id`,
+        `INSERT INTO fin_journal_entries (business_id, entry_date, description) VALUES ($1, '2026-06-01', 'Client payment') RETURNING id`,
         [BUSINESS_ID],
       );
       await adminPool.query(
-        `INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit, credit) VALUES ($1, $2, 7500, 0), ($1, $3, 0, 7500)`,
+        `INSERT INTO fin_journal_entry_lines (journal_entry_id, account_id, debit, credit) VALUES ($1, $2, 7500, 0), ($1, $3, 0, 7500)`,
         [je[0].id, acct[0].id, revAcct[0].id],
       );
 
@@ -172,14 +172,14 @@ describe('Financial Reports, Bank Reconciliation & Tax Documents', () => {
       // Create a finalized payroll for tax document generation
       const STAFF_ID = '00000000-0000-0000-0000-000000000057';
       await adminPool.query(
-        `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+        `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
          VALUES ($1, $2, 'taxdoc-staff@example.com', 'TaxDoc', 'Staff', 'hashed', 'therapist', 'active')
          ON CONFLICT (id) DO UPDATE SET first_name = 'TaxDoc'`,
         [STAFF_ID, TENANT_ID],
       );
 
       const { rows: pp } = await adminPool.query(
-        `INSERT INTO pay_periods (business_id, period_start, period_end, status, finalized_at)
+        `INSERT INTO fin_pay_periods (business_id, period_start, period_end, status, finalized_at)
          VALUES ($1, '2025-01-01', '2025-12-31', 'finalized', NOW())
          ON CONFLICT (business_id, period_start, period_end) DO UPDATE SET status = 'finalized'
          RETURNING id`,
@@ -187,7 +187,7 @@ describe('Financial Reports, Bank Reconciliation & Tax Documents', () => {
       );
 
       await adminPool.query(
-        `INSERT INTO payroll_entries (pay_period_id, user_id, gross_pay, total_deductions, net_pay, status)
+        `INSERT INTO fin_payroll_entries (pay_period_id, user_id, gross_pay, total_deductions, net_pay, status)
          VALUES ($1, $2, 4200000, 840000, 3360000, 'finalized')
          ON CONFLICT DO NOTHING`,
         [pp[0].id, STAFF_ID],
@@ -195,7 +195,7 @@ describe('Financial Reports, Bank Reconciliation & Tax Documents', () => {
 
       // Add tax deduction config
       await adminPool.query(
-        `INSERT INTO payroll_deductions (business_id, user_id, name, deduction_type, calculation_type, value, effective_from)
+        `INSERT INTO fin_payroll_deductions (business_id, user_id, name, deduction_type, calculation_type, value, effective_from)
          VALUES ($1, $2, 'Federal Income Tax', 'tax', 'percentage', 2200, '2025-01-01')
          ON CONFLICT DO NOTHING`,
         [BUSINESS_ID, STAFF_ID],

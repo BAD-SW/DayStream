@@ -14,7 +14,7 @@ export async function getTemplates(tenantId: string, channel?: string) {
   }
 
   const { rows } = await adminPool.query(
-    `SELECT * FROM message_templates WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`,
+    `SELECT * FROM mkt_message_templates WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`,
     params,
   );
   return rows;
@@ -36,7 +36,7 @@ export async function createTemplate(
   },
 ) {
   const { rows } = await adminPool.query(
-    `INSERT INTO message_templates (tenant_id, name, channel, subject, html_content, text_content, blocks, category)
+    `INSERT INTO mkt_message_templates (tenant_id, name, channel, subject, html_content, text_content, blocks, category)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
     [
       tenantId,
@@ -66,7 +66,7 @@ export async function createTemplate(
  */
 export async function getTemplateById(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM message_templates WHERE id = $1 AND tenant_id = $2`,
+    `SELECT * FROM mkt_message_templates WHERE id = $1 AND tenant_id = $2`,
     [id, tenantId],
   );
   return rows[0] || null;
@@ -94,7 +94,7 @@ export async function updateTemplate(id: string, tenantId: string, updates: Reco
   values.push(id, tenantId);
 
   const { rows } = await adminPool.query(
-    `UPDATE message_templates SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
+    `UPDATE mkt_message_templates SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
     values,
   );
   return rows[0] || null;
@@ -105,7 +105,7 @@ export async function updateTemplate(id: string, tenantId: string, updates: Reco
  */
 export async function deleteTemplate(id: string, tenantId: string) {
   const { rowCount } = await adminPool.query(
-    `DELETE FROM message_templates WHERE id = $1 AND tenant_id = $2 AND is_system = false`,
+    `DELETE FROM mkt_message_templates WHERE id = $1 AND tenant_id = $2 AND is_system = false`,
     [id, tenantId],
   );
 

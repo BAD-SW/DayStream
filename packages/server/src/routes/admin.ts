@@ -97,7 +97,7 @@ adminRouter.get('/tenants/:id', requirePermission('*:*'), async (req: Request, r
     }
     // Fetch owner (first business_owner user for this tenant)
     const { rows: ownerRows } = await adminPool.query(
-      `SELECT id, email, first_name, last_name FROM users WHERE tenant_id = $1 AND role = 'business_owner' ORDER BY created_at ASC LIMIT 1`,
+      `SELECT id, email, first_name, last_name FROM usr_users WHERE tenant_id = $1 AND role = 'business_owner' ORDER BY created_at ASC LIMIT 1`,
       [req.params.id],
     );
     const owner = ownerRows[0] || null;
@@ -138,7 +138,7 @@ adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantS
     // Check slug uniqueness if changing
     if (tenantFields.slug && tenantFields.slug !== tenant.slug) {
       const { rows: existing } = await adminPool.query(
-        'SELECT id FROM tenants WHERE slug = $1 AND id != $2',
+        'SELECT id FROM sys_tenants WHERE slug = $1 AND id != $2',
         [tenantFields.slug, req.params.id],
       );
       if (existing.length > 0) {
@@ -171,7 +171,7 @@ adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantS
       fields.push('updated_at = NOW()');
       values.push(req.params.id);
       await adminPool.query(
-        `UPDATE tenants SET ${fields.join(', ')} WHERE id = $${idx}`,
+        `UPDATE sys_tenants SET ${fields.join(', ')} WHERE id = $${idx}`,
         values,
       );
     }
@@ -187,7 +187,7 @@ adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantS
       ownerFields.push(`updated_at = NOW()`);
       ownerValues.push(req.params.id);
       await adminPool.query(
-        `UPDATE users SET ${ownerFields.join(', ')} WHERE tenant_id = $${oidx} AND role = 'business_owner'`,
+        `UPDATE usr_users SET ${ownerFields.join(', ')} WHERE tenant_id = $${oidx} AND role = 'business_owner'`,
         ownerValues,
       );
     }
@@ -195,7 +195,7 @@ adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantS
     // Return updated tenant with owner
     const updated = await tenantService.getTenantById(req.params.id);
     const { rows: ownerRows } = await adminPool.query(
-      `SELECT id, email, first_name, last_name FROM users WHERE tenant_id = $1 AND role = 'business_owner' ORDER BY created_at ASC LIMIT 1`,
+      `SELECT id, email, first_name, last_name FROM usr_users WHERE tenant_id = $1 AND role = 'business_owner' ORDER BY created_at ASC LIMIT 1`,
       [req.params.id],
     );
     success(res, { ...updated, owner: ownerRows[0] || null });
@@ -245,7 +245,7 @@ adminRouter.get('/businesses', tenantContext, requirePermission('settings:*'), a
   try {
     const authReq = req as AuthenticatedRequest;
     const { rows } = await adminPool.query(
-      'SELECT id, name, slug, status, email, phone, address, default_language, currency, timezone, primary_color, billing_frequency, billing_amount, billing_method, created_at, updated_at FROM businesses WHERE tenant_id = $1 ORDER BY name',
+      'SELECT id, name, slug, status, email, phone, address, default_language, currency, timezone, primary_color, billing_frequency, billing_amount, billing_method, created_at, updated_at FROM sys_businesses WHERE tenant_id = $1 ORDER BY name',
       [authReq.tenantId],
     );
     success(res, rows);
@@ -265,7 +265,7 @@ adminRouter.post('/businesses', tenantContext, requirePermission('settings:*'), 
     const signupDt = signup_date || new Date().toISOString().split('T')[0];
     const nextBilling = next_billing_date || calculateNextBillingDate(null, signupDt, freq);
     const { rows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, email, phone, address, default_language, currency, timezone, primary_color, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, email, phone, address, default_language, currency, timezone, primary_color, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
       [authReq.tenantId, name, businessSlug, email || null, phone || null, address || null, default_language || 'en', currency || 'EUR', timezone || 'UTC', primary_color || '#C9A96E', freq, billing_amount ?? 0, billing_method || 'tbd', signupDt, nextBilling],
     );
@@ -305,7 +305,7 @@ adminRouter.put('/businesses/:id', tenantContext, requirePermission('settings:*'
     // Auto-calculate next_billing_date if frequency or signup_date changed but next_billing_date wasn't explicitly set
     if (req.body.next_billing_date === undefined && (req.body.billing_frequency || req.body.signup_date)) {
       // Fetch current record to get the full context
-      const { rows: currentRows } = await adminPool.query('SELECT signup_date, billing_frequency, last_billing_date FROM businesses WHERE id = $1 AND tenant_id = $2', [req.params.id, authReq.tenantId]);
+      const { rows: currentRows } = await adminPool.query('SELECT signup_date, billing_frequency, last_billing_date FROM sys_businesses WHERE id = $1 AND tenant_id = $2', [req.params.id, authReq.tenantId]);
       if (currentRows.length > 0) {
         const lastBilling = currentRows[0].last_billing_date;
         const signupDt = req.body.signup_date || currentRows[0].signup_date;
@@ -318,7 +318,7 @@ adminRouter.put('/businesses/:id', tenantContext, requirePermission('settings:*'
     fields.push('updated_at = NOW()');
     values.push(req.params.id, authReq.tenantId);
     const { rows } = await adminPool.query(
-      `UPDATE businesses SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
+      `UPDATE sys_businesses SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
       values,
     );
     if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
@@ -337,7 +337,7 @@ adminRouter.delete('/businesses/:id', tenantContext, requirePermission('settings
   try {
     const authReq = req as AuthenticatedRequest;
     const { rows } = await adminPool.query(
-      `UPDATE businesses SET status = 'archived', updated_at = NOW() WHERE id = $1 AND tenant_id = $2 RETURNING id, name, status`,
+      `UPDATE sys_businesses SET status = 'archived', updated_at = NOW() WHERE id = $1 AND tenant_id = $2 RETURNING id, name, status`,
       [req.params.id, authReq.tenantId],
     );
     if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
@@ -416,7 +416,7 @@ adminRouter.put('/feature-flags/:key', requirePermission('*:*'), validate(update
   try {
     const authReq = req as AuthenticatedRequest;
     await adminPool.query(
-      'UPDATE feature_flags SET enabled = $1, updated_at = NOW() WHERE key = $2',
+      'UPDATE sys_feature_flags SET enabled = $1, updated_at = NOW() WHERE key = $2',
       [req.body.enabled, req.params.key],
     );
     featureFlagService.invalidateFlagCache();
@@ -438,14 +438,14 @@ adminRouter.put('/feature-flags/:key/override', tenantContext, requirePermission
   try {
     const authReq = req as AuthenticatedRequest;
     // Get flag ID
-    const { rows } = await adminPool.query('SELECT id FROM feature_flags WHERE key = $1', [req.params.key]);
+    const { rows } = await adminPool.query('SELECT id FROM sys_feature_flags WHERE key = $1', [req.params.key]);
     if (rows.length === 0) {
       error(res, 'Feature flag not found', 'NOT_FOUND', 404);
       return;
     }
 
     await adminPool.query(
-      `INSERT INTO feature_flag_overrides (flag_id, tenant_id, enabled)
+      `INSERT INTO sys_feature_flag_overrides (flag_id, tenant_id, enabled)
        VALUES ($1, $2, $3)
        ON CONFLICT (flag_id, tenant_id) DO UPDATE SET enabled = $3`,
       [rows[0].id, authReq.tenantId, req.body.enabled],
@@ -496,7 +496,7 @@ adminRouter.get('/my-billing', tenantContext, requirePermission('settings:*'), a
       `SELECT billing_frequency, billing_amount, billing_method, currency, signup_date, next_billing_date, last_billing_date,
               payment_bank_name, payment_account_holder, payment_account_number, payment_routing_number, payment_iban,
               payment_card_last4, payment_card_brand, payment_card_exp
-       FROM tenants WHERE id = $1`,
+       FROM sys_tenants WHERE id = $1`,
       [authReq.tenantId],
     );
     if (rows.length === 0) { error(res, 'Tenant not found', 'NOT_FOUND', 404); return; }
@@ -525,7 +525,7 @@ adminRouter.put('/my-billing/payment-method', tenantContext, requirePermission('
     if (fields.length === 0) { error(res, 'No fields to update', 'VALIDATION_ERROR', 400); return; }
     fields.push('updated_at = NOW()');
     values.push(authReq.tenantId);
-    await adminPool.query(`UPDATE tenants SET ${fields.join(', ')} WHERE id = $${idx}`, values);
+    await adminPool.query(`UPDATE sys_tenants SET ${fields.join(', ')} WHERE id = $${idx}`, values);
     success(res, { message: 'Payment method updated' });
   } catch (err: any) {
     error(res, 'Failed to update payment method', 'INTERNAL_ERROR', 500);
@@ -540,7 +540,7 @@ adminRouter.get('/reports/tenant-revenue', tenantContext, requirePermission('set
   try {
     const authReq = req as AuthenticatedRequest;
     const { rows: bizRows } = await adminPool.query(
-      "SELECT COUNT(*) as count FROM businesses WHERE tenant_id = $1 AND status = 'active'",
+      "SELECT COUNT(*) as count FROM sys_businesses WHERE tenant_id = $1 AND status = 'active'",
       [authReq.tenantId],
     );
     // Placeholder: real revenue would come from payment/billing ledger
@@ -548,7 +548,7 @@ adminRouter.get('/reports/tenant-revenue', tenantContext, requirePermission('set
     // Businesses whose next_billing_date is this month (haven't been billed yet)
     const { rows: expectedMtdRows } = await adminPool.query(
       `SELECT COALESCE(SUM(billing_amount), 0) as expected_remaining_mtd
-       FROM businesses WHERE tenant_id = $1 AND status = 'active' AND billing_amount > 0
+       FROM sys_businesses WHERE tenant_id = $1 AND status = 'active' AND billing_amount > 0
        AND next_billing_date >= date_trunc('month', NOW())
        AND next_billing_date < date_trunc('month', NOW()) + INTERVAL '1 month'`,
       [authReq.tenantId],
@@ -566,7 +566,7 @@ adminRouter.get('/reports/tenant-revenue', tenantContext, requirePermission('set
           END
         )
       ), 0) as expected_remaining
-       FROM businesses WHERE tenant_id = $1 AND status = 'active' AND billing_amount > 0`,
+       FROM sys_businesses WHERE tenant_id = $1 AND status = 'active' AND billing_amount > 0`,
       [authReq.tenantId],
     );
     success(res, {
@@ -589,32 +589,32 @@ adminRouter.get('/reports/tenant-customers', tenantContext, requirePermission('s
     const authReq = req as AuthenticatedRequest;
     // Active businesses
     const { rows: activeRows } = await adminPool.query(
-      "SELECT COUNT(*) as count FROM businesses WHERE tenant_id = $1 AND status = 'active'",
+      "SELECT COUNT(*) as count FROM sys_businesses WHERE tenant_id = $1 AND status = 'active'",
       [authReq.tenantId],
     );
     // Active businesses same time prior year
     const { rows: activePriorRows } = await adminPool.query(
-      "SELECT COUNT(*) as count FROM businesses WHERE tenant_id = $1 AND status = 'active' AND created_at <= (NOW() - INTERVAL '1 year')",
+      "SELECT COUNT(*) as count FROM sys_businesses WHERE tenant_id = $1 AND status = 'active' AND created_at <= (NOW() - INTERVAL '1 year')",
       [authReq.tenantId],
     );
     // New this month
     const { rows: newRows } = await adminPool.query(
-      "SELECT COUNT(*) as count FROM businesses WHERE tenant_id = $1 AND created_at >= date_trunc('month', NOW())",
+      "SELECT COUNT(*) as count FROM sys_businesses WHERE tenant_id = $1 AND created_at >= date_trunc('month', NOW())",
       [authReq.tenantId],
     );
     // New same month prior year
     const { rows: newPriorRows } = await adminPool.query(
-      "SELECT COUNT(*) as count FROM businesses WHERE tenant_id = $1 AND created_at >= date_trunc('month', NOW() - INTERVAL '1 year') AND created_at < date_trunc('month', NOW() - INTERVAL '1 year') + INTERVAL '1 month'",
+      "SELECT COUNT(*) as count FROM sys_businesses WHERE tenant_id = $1 AND created_at >= date_trunc('month', NOW() - INTERVAL '1 year') AND created_at < date_trunc('month', NOW() - INTERVAL '1 year') + INTERVAL '1 month'",
       [authReq.tenantId],
     );
     // Churned this month (status changed to archived/suspended this month)
     const { rows: churnedRows } = await adminPool.query(
-      "SELECT COUNT(*) as count FROM businesses WHERE tenant_id = $1 AND status != 'active' AND updated_at >= date_trunc('month', NOW())",
+      "SELECT COUNT(*) as count FROM sys_businesses WHERE tenant_id = $1 AND status != 'active' AND updated_at >= date_trunc('month', NOW())",
       [authReq.tenantId],
     );
     // Churned same month prior year
     const { rows: churnedPriorRows } = await adminPool.query(
-      "SELECT COUNT(*) as count FROM businesses WHERE tenant_id = $1 AND status != 'active' AND updated_at >= date_trunc('month', NOW() - INTERVAL '1 year') AND updated_at < date_trunc('month', NOW() - INTERVAL '1 year') + INTERVAL '1 month'",
+      "SELECT COUNT(*) as count FROM sys_businesses WHERE tenant_id = $1 AND status != 'active' AND updated_at >= date_trunc('month', NOW() - INTERVAL '1 year') AND updated_at < date_trunc('month', NOW() - INTERVAL '1 year') + INTERVAL '1 month'",
       [authReq.tenantId],
     );
     success(res, {
@@ -636,7 +636,7 @@ adminRouter.get('/reports/tenant-bookings', tenantContext, requirePermission('se
     const authReq = req as AuthenticatedRequest;
     // Get business IDs for this tenant
     const { rows: bizRows } = await adminPool.query(
-      'SELECT id FROM businesses WHERE tenant_id = $1',
+      'SELECT id FROM sys_businesses WHERE tenant_id = $1',
       [authReq.tenantId],
     );
     const bizIds = bizRows.map((r: any) => r.id);
@@ -645,19 +645,19 @@ adminRouter.get('/reports/tenant-bookings', tenantContext, requirePermission('se
       return;
     }
     const { rows: totalRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM bookings WHERE business_id = ANY($1)`,
+      `SELECT COUNT(*) as count FROM apt_bookings WHERE business_id = ANY($1)`,
       [bizIds],
     );
     const { rows: monthRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM bookings WHERE business_id = ANY($1) AND created_at >= date_trunc('month', NOW())`,
+      `SELECT COUNT(*) as count FROM apt_bookings WHERE business_id = ANY($1) AND created_at >= date_trunc('month', NOW())`,
       [bizIds],
     );
     const { rows: completedRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM bookings WHERE business_id = ANY($1) AND status = 'completed'`,
+      `SELECT COUNT(*) as count FROM apt_bookings WHERE business_id = ANY($1) AND status = 'completed'`,
       [bizIds],
     );
     const { rows: cancelledRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM bookings WHERE business_id = ANY($1) AND status = 'cancelled'`,
+      `SELECT COUNT(*) as count FROM apt_bookings WHERE business_id = ANY($1) AND status = 'cancelled'`,
       [bizIds],
     );
     const total = parseInt(totalRows[0].count);
@@ -678,7 +678,7 @@ adminRouter.get('/reports/tenant-memberships', tenantContext, requirePermission(
   try {
     const authReq = req as AuthenticatedRequest;
     const { rows: bizRows } = await adminPool.query(
-      'SELECT id FROM businesses WHERE tenant_id = $1',
+      'SELECT id FROM sys_businesses WHERE tenant_id = $1',
       [authReq.tenantId],
     );
     const bizIds = bizRows.map((r: any) => r.id);
@@ -687,11 +687,11 @@ adminRouter.get('/reports/tenant-memberships', tenantContext, requirePermission(
       return;
     }
     const { rows: activeRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM memberships WHERE business_id = ANY($1) AND status = 'active'`,
+      `SELECT COUNT(*) as count FROM mem_memberships WHERE business_id = ANY($1) AND status = 'active'`,
       [bizIds],
     );
     const { rows: newRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM memberships WHERE business_id = ANY($1) AND status = 'active' AND created_at >= date_trunc('month', NOW())`,
+      `SELECT COUNT(*) as count FROM mem_memberships WHERE business_id = ANY($1) AND status = 'active' AND created_at >= date_trunc('month', NOW())`,
       [bizIds],
     );
     success(res, {
@@ -715,7 +715,7 @@ adminRouter.get('/reports/tenant-revenue/detail', tenantContext, requirePermissi
     const type = req.query.type as string;
     if (type === 'businesses') {
       const { rows } = await adminPool.query(
-        "SELECT name, status, created_at FROM businesses WHERE tenant_id = $1 AND status = 'active' ORDER BY name",
+        "SELECT name, status, created_at FROM sys_businesses WHERE tenant_id = $1 AND status = 'active' ORDER BY name",
         [authReq.tenantId],
       );
       success(res, rows);
@@ -731,7 +731,7 @@ adminRouter.get('/reports/tenant-revenue/detail', tenantContext, requirePermissi
               ELSE 0
             END
           ) as expected_remaining
-         FROM businesses WHERE tenant_id = $1 AND status = 'active' AND billing_amount > 0
+         FROM sys_businesses WHERE tenant_id = $1 AND status = 'active' AND billing_amount > 0
          ORDER BY expected_remaining DESC`,
         [authReq.tenantId],
       );
@@ -739,7 +739,7 @@ adminRouter.get('/reports/tenant-revenue/detail', tenantContext, requirePermissi
     } else if (type === 'expected_mtd') {
       const { rows } = await adminPool.query(
         `SELECT name, billing_amount, next_billing_date
-         FROM businesses WHERE tenant_id = $1 AND status = 'active' AND billing_amount > 0
+         FROM sys_businesses WHERE tenant_id = $1 AND status = 'active' AND billing_amount > 0
          AND next_billing_date >= date_trunc('month', NOW())
          AND next_billing_date < date_trunc('month', NOW()) + INTERVAL '1 month'
          ORDER BY next_billing_date`,
@@ -749,7 +749,7 @@ adminRouter.get('/reports/tenant-revenue/detail', tenantContext, requirePermissi
     } else {
       // Revenue per business YTD - placeholder until payment ledger exists
       const { rows } = await adminPool.query(
-        "SELECT name, 0 as revenue FROM businesses WHERE tenant_id = $1 AND status = 'active' ORDER BY name",
+        "SELECT name, 0 as revenue FROM sys_businesses WHERE tenant_id = $1 AND status = 'active' ORDER BY name",
         [authReq.tenantId],
       );
       success(res, rows);
@@ -764,7 +764,7 @@ adminRouter.get('/reports/tenant-customers/detail', tenantContext, requirePermis
   try {
     const authReq = req as AuthenticatedRequest;
     const type = req.query.type as string;
-    let query = 'SELECT name, status, created_at, updated_at FROM businesses WHERE tenant_id = $1';
+    let query = 'SELECT name, status, created_at, updated_at FROM sys_businesses WHERE tenant_id = $1';
     if (type === 'active') {
       query += " AND status = 'active'";
     } else if (type === 'new') {
@@ -785,16 +785,16 @@ adminRouter.get('/reports/tenant-bookings/detail', tenantContext, requirePermiss
   try {
     const authReq = req as AuthenticatedRequest;
     const type = req.query.type as string;
-    const { rows: bizRows } = await adminPool.query('SELECT id FROM businesses WHERE tenant_id = $1', [authReq.tenantId]);
+    const { rows: bizRows } = await adminPool.query('SELECT id FROM sys_businesses WHERE tenant_id = $1', [authReq.tenantId]);
     const bizIds = bizRows.map((r: any) => r.id);
     if (bizIds.length === 0) { success(res, []); return; }
 
     let query = `SELECT b.id, b.status, b.start_time, b.created_at,
                    COALESCE(u.first_name || ' ' || u.last_name, 'Unknown') as customer_name,
                    COALESCE(s.name, 'Unknown') as service_name
-                 FROM bookings b
-                 LEFT JOIN users u ON b.customer_id = u.id
-                 LEFT JOIN services s ON b.service_id = s.id
+                 FROM apt_bookings b
+                 LEFT JOIN usr_users u ON b.customer_id = u.id
+                 LEFT JOIN svc_services s ON b.service_id = s.id
                  WHERE b.business_id = ANY($1)`;
     if (type === 'month') {
       query += " AND b.created_at >= date_trunc('month', NOW())";
@@ -812,16 +812,16 @@ adminRouter.get('/reports/tenant-memberships/detail', tenantContext, requirePerm
   try {
     const authReq = req as AuthenticatedRequest;
     const type = req.query.type as string;
-    const { rows: bizRows } = await adminPool.query('SELECT id FROM businesses WHERE tenant_id = $1', [authReq.tenantId]);
+    const { rows: bizRows } = await adminPool.query('SELECT id FROM sys_businesses WHERE tenant_id = $1', [authReq.tenantId]);
     const bizIds = bizRows.map((r: any) => r.id);
     if (bizIds.length === 0) { success(res, []); return; }
 
     let query = `SELECT m.id, m.status, m.created_at,
                    COALESCE(u.first_name || ' ' || u.last_name, 'Unknown') as customer_name,
                    COALESCE(mp.name, 'Unknown') as plan_name
-                 FROM memberships m
-                 LEFT JOIN users u ON m.customer_id = u.id
-                 LEFT JOIN membership_plans mp ON m.plan_id = mp.id
+                 FROM mem_memberships m
+                 LEFT JOIN usr_users u ON m.customer_id = u.id
+                 LEFT JOIN mem_plans mp ON m.plan_id = mp.id
                  WHERE m.business_id = ANY($1)`;
     if (type === 'active') {
       query += " AND m.status = 'active'";
@@ -843,15 +843,15 @@ adminRouter.get('/reports/tenant-memberships/detail', tenantContext, requirePerm
 adminRouter.get('/reports/system-kpis', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
     const { rows: tenantRows } = await adminPool.query(
-      "SELECT COUNT(*) as count FROM tenants WHERE status = 'active'",
+      "SELECT COUNT(*) as count FROM sys_tenants WHERE status = 'active'",
     );
     const { rows: bizRows } = await adminPool.query(
-      "SELECT COUNT(*) as count FROM businesses WHERE status = 'active'",
+      "SELECT COUNT(*) as count FROM sys_businesses WHERE status = 'active'",
     );
     // Expected MTD: tenants whose next_billing_date is this month
     const { rows: expectedMtdRows } = await adminPool.query(
       `SELECT COALESCE(SUM(billing_amount), 0) as total
-       FROM tenants WHERE status = 'active' AND billing_amount > 0
+       FROM sys_tenants WHERE status = 'active' AND billing_amount > 0
        AND next_billing_date >= date_trunc('month', NOW())
        AND next_billing_date < date_trunc('month', NOW()) + INTERVAL '1 month'`,
     );
@@ -877,13 +877,13 @@ adminRouter.get('/reports/system-revenue/detail', requirePermission('*:*'), asyn
     if (type === 'ytd' || type === 'mtd') {
       // Revenue per tenant - placeholder until payment ledger exists
       const { rows } = await adminPool.query(
-        "SELECT name, 0 as revenue FROM tenants WHERE status = 'active' ORDER BY name",
+        "SELECT name, 0 as revenue FROM sys_tenants WHERE status = 'active' ORDER BY name",
       );
       success(res, rows);
     } else if (type === 'expected_mtd') {
       const { rows } = await adminPool.query(
         `SELECT name, billing_amount, next_billing_date
-         FROM tenants WHERE status = 'active' AND billing_amount > 0
+         FROM sys_tenants WHERE status = 'active' AND billing_amount > 0
          AND next_billing_date >= date_trunc('month', NOW())
          AND next_billing_date < date_trunc('month', NOW()) + INTERVAL '1 month'
          ORDER BY next_billing_date`,

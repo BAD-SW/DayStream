@@ -6,7 +6,7 @@ import { logAudit } from './audit.service';
  */
 export async function getCapacityConfig(staffId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM staff_capacity_config WHERE staff_id = $1`,
+    `SELECT * FROM stf_capacity_config WHERE staff_id = $1`,
     [staffId],
   );
   return rows[0] || null;
@@ -21,7 +21,7 @@ export async function setCapacityConfig(staffId: string, config: {
   maxConsecutiveHours?: number | null;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO staff_capacity_config (staff_id, max_bookings_per_day, max_bookings_per_week, max_consecutive_hours)
+    `INSERT INTO stf_capacity_config (staff_id, max_bookings_per_day, max_bookings_per_week, max_consecutive_hours)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (staff_id)
      DO UPDATE SET
@@ -46,7 +46,7 @@ export async function createCapacityOverride(staffId: string, input: {
   tenantId: string;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO staff_capacity_overrides (staff_id, override_date, max_bookings, reason, created_by)
+    `INSERT INTO stf_capacity_overrides (staff_id, override_date, max_bookings, reason, created_by)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
     [staffId, input.overrideDate, input.maxBookings, input.reason, input.createdBy],
@@ -75,13 +75,13 @@ export async function checkDailyCapacity(staffId: string, date: string): Promise
 }> {
   // Check for date-specific override first
   const { rows: overrideRows } = await adminPool.query(
-    `SELECT max_bookings FROM staff_capacity_overrides WHERE staff_id = $1 AND override_date = $2::date`,
+    `SELECT max_bookings FROM stf_capacity_overrides WHERE staff_id = $1 AND override_date = $2::date`,
     [staffId, date],
   );
 
   // Get base config
   const { rows: configRows } = await adminPool.query(
-    `SELECT max_bookings_per_day FROM staff_capacity_config WHERE staff_id = $1`,
+    `SELECT max_bookings_per_day FROM stf_capacity_config WHERE staff_id = $1`,
     [staffId],
   );
 
@@ -93,7 +93,7 @@ export async function checkDailyCapacity(staffId: string, date: string): Promise
 
   // Count current bookings for this date
   const { rows: countRows } = await adminPool.query(
-    `SELECT COUNT(*)::int AS count FROM bookings
+    `SELECT COUNT(*)::int AS count FROM apt_bookings
      WHERE staff_id = $1
        AND start_time::date = $2::date
        AND status IN ('confirmed', 'checked_in')`,
@@ -113,7 +113,7 @@ export async function checkWeeklyCapacity(staffId: string, date: string): Promis
   max: number | null;
 }> {
   const { rows: configRows } = await adminPool.query(
-    `SELECT max_bookings_per_week FROM staff_capacity_config WHERE staff_id = $1`,
+    `SELECT max_bookings_per_week FROM stf_capacity_config WHERE staff_id = $1`,
     [staffId],
   );
 
@@ -122,7 +122,7 @@ export async function checkWeeklyCapacity(staffId: string, date: string): Promis
 
   // Get the week boundaries (Monday to Sunday)
   const { rows: countRows } = await adminPool.query(
-    `SELECT COUNT(*)::int AS count FROM bookings
+    `SELECT COUNT(*)::int AS count FROM apt_bookings
      WHERE staff_id = $1
        AND start_time::date >= date_trunc('week', $2::date)
        AND start_time::date < date_trunc('week', $2::date) + INTERVAL '7 days'

@@ -5,8 +5,8 @@ import { adminPool } from '../db/pool';
  */
 export async function getResourceTypes(tenantId: string) {
   const { rows } = await adminPool.query(
-    `SELECT rt.*, (SELECT COUNT(*)::int FROM resources WHERE resource_type_id = rt.id) AS resource_count
-     FROM resource_types rt WHERE rt.tenant_id = $1 ORDER BY rt.category, rt.name`,
+    `SELECT rt.*, (SELECT COUNT(*)::int FROM res_resources WHERE resource_type_id = rt.id) AS resource_count
+     FROM res_types rt WHERE rt.tenant_id = $1 ORDER BY rt.category, rt.name`,
     [tenantId],
   );
   return rows;
@@ -21,7 +21,7 @@ export async function createResourceType(tenantId: string, input: {
   description?: string;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO resource_types (tenant_id, name, category, description)
+    `INSERT INTO res_types (tenant_id, name, category, description)
      VALUES ($1, $2, $3, $4) RETURNING *`,
     [tenantId, input.name, input.category, input.description || null],
   );
@@ -44,7 +44,7 @@ export async function updateResourceType(id: string, tenantId: string, updates: 
   values.push(id, tenantId);
 
   const { rows } = await adminPool.query(
-    `UPDATE resource_types SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
+    `UPDATE res_types SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
     values,
   );
   return rows[0] || null;
@@ -55,12 +55,12 @@ export async function updateResourceType(id: string, tenantId: string, updates: 
  */
 export async function deleteResourceType(id: string, tenantId: string) {
   const { rows: used } = await adminPool.query(
-    `SELECT id FROM resources WHERE resource_type_id = $1 LIMIT 1`, [id],
+    `SELECT id FROM res_resources WHERE resource_type_id = $1 LIMIT 1`, [id],
   );
   if (used.length > 0) throw new Error('Cannot delete type with existing resources');
 
   const { rowCount } = await adminPool.query(
-    `DELETE FROM resource_types WHERE id = $1 AND tenant_id = $2 AND is_system = false`,
+    `DELETE FROM res_types WHERE id = $1 AND tenant_id = $2 AND is_system = false`,
     [id, tenantId],
   );
   return (rowCount ?? 0) > 0;
@@ -86,7 +86,7 @@ export async function seedDefaultTypes(tenantId: string) {
 
   for (const d of defaults) {
     await adminPool.query(
-      `INSERT INTO resource_types (tenant_id, name, category, is_system)
+      `INSERT INTO res_types (tenant_id, name, category, is_system)
        VALUES ($1, $2, $3, true) ON CONFLICT (tenant_id, name) DO NOTHING`,
       [tenantId, d.name, d.category],
     );

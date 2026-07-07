@@ -46,7 +46,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Customer Duplicate Detection & Merge', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Duplicates Test Biz', 'duplicates-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Duplicates Test Biz'
        RETURNING id`,
@@ -56,7 +56,7 @@ describe('Customer Duplicate Detection & Merge', () => {
 
     // Create two customers to merge
     const { rows: a } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, phone, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, phone, created_by)
        VALUES ($1, $2, 'CUST-DUP-A', 'dup-a@example.com', 'Alice', 'Primary', '+1111111', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Alice', phone = '+1111111'
        RETURNING id`,
@@ -65,7 +65,7 @@ describe('Customer Duplicate Detection & Merge', () => {
     CUSTOMER_A_ID = a[0].id;
 
     const { rows: b } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, phone, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, phone, created_by)
        VALUES ($1, $2, 'CUST-DUP-B', 'dup-b@example.com', 'Alice', 'Secondary', '+2222222', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Alice', phone = '+2222222'
        RETURNING id`,
@@ -75,7 +75,7 @@ describe('Customer Duplicate Detection & Merge', () => {
 
     // Add activities to secondary
     await adminPool.query(
-      `INSERT INTO customer_activities (customer_id, business_id, activity_type, description)
+      `INSERT INTO cus_activities (customer_id, business_id, activity_type, description)
        VALUES ($1, $2, 'booking', 'Secondary booking')`,
       [CUSTOMER_B_ID, BUSINESS_ID],
     );
@@ -132,7 +132,7 @@ describe('Customer Duplicate Detection & Merge', () => {
 
     it('reassigns activities from secondary to primary', async () => {
       const { rows } = await adminPool.query(
-        "SELECT * FROM customer_activities WHERE customer_id = $1 AND description = 'Secondary booking'",
+        "SELECT * FROM cus_activities WHERE customer_id = $1 AND description = 'Secondary booking'",
         [CUSTOMER_A_ID],
       );
       expect(rows.length).toBeGreaterThanOrEqual(1);
@@ -140,7 +140,7 @@ describe('Customer Duplicate Detection & Merge', () => {
 
     it('deletes secondary customer after merge', async () => {
       const { rows } = await adminPool.query(
-        'SELECT * FROM customers WHERE id = $1',
+        'SELECT * FROM cus_customers WHERE id = $1',
         [CUSTOMER_B_ID],
       );
       expect(rows.length).toBe(0);

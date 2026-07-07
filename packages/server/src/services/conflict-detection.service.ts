@@ -41,7 +41,7 @@ export async function detectConflicts(input: ConflictCheckInput): Promise<Confli
   if (input.staffId) {
     try {
       const { rows } = await adminPool.query(
-        `SELECT id, booking_reference, start_time, end_time FROM bookings
+        `SELECT id, booking_reference, start_time, end_time FROM apt_bookings
          WHERE staff_id = $1
            AND start_time < $3
            AND end_time > $2
@@ -79,7 +79,7 @@ export async function detectConflicts(input: ConflictCheckInput): Promise<Confli
   // Resource conflict check
   if (input.resourceId) {
     const { rows } = await adminPool.query(
-      `SELECT id, booking_reference, start_time, end_time FROM bookings
+      `SELECT id, booking_reference, start_time, end_time FROM apt_bookings
        WHERE resource_id = $1
          AND start_time < $3
          AND end_time > $2
@@ -102,7 +102,7 @@ export async function detectConflicts(input: ConflictCheckInput): Promise<Confli
   // Customer conflict check
   if (input.customerId) {
     const { rows } = await adminPool.query(
-      `SELECT id, booking_reference, start_time, end_time FROM bookings
+      `SELECT id, booking_reference, start_time, end_time FROM apt_bookings
        WHERE customer_id = $1
          AND start_time < $3
          AND end_time > $2
@@ -125,7 +125,7 @@ export async function detectConflicts(input: ConflictCheckInput): Promise<Confli
   // Also check slot holds for staff
   if (input.staffId && conflicts.length === 0) {
     const { rows: holds } = await adminPool.query(
-      `SELECT id, start_time, end_time FROM slot_holds
+      `SELECT id, start_time, end_time FROM apt_slot_holds
        WHERE staff_id = $1
          AND start_time < $3
          AND end_time > $2
@@ -178,7 +178,7 @@ export async function suggestAlternatives(
     if (candidateStart <= new Date()) continue;
 
     const { rows } = await adminPool.query(
-      `SELECT id FROM bookings
+      `SELECT id FROM apt_bookings
        WHERE staff_id = $1
          AND start_time < $3
          AND end_time > $2

@@ -25,7 +25,7 @@ export async function getMedia(tenantId: string, filters?: {
   const where = conditions.join(' AND ');
 
   const { rows } = await adminPool.query(
-    `SELECT * FROM media_files WHERE ${where} ORDER BY created_at DESC`,
+    `SELECT * FROM web_media_files WHERE ${where} ORDER BY created_at DESC`,
     params,
   );
   return rows;
@@ -47,7 +47,7 @@ export async function uploadMedia(tenantId: string, input: {
   folder?: string;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO media_files (tenant_id, filename, original_filename, mime_type, file_size, file_path, thumbnail_path, medium_path, large_path, alt_text, folder)
+    `INSERT INTO web_media_files (tenant_id, filename, original_filename, mime_type, file_size, file_path, thumbnail_path, medium_path, large_path, alt_text, folder)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
     [
       tenantId,
@@ -80,7 +80,7 @@ export async function uploadMedia(tenantId: string, input: {
  */
 export async function deleteMedia(id: string, tenantId: string) {
   const { rowCount } = await adminPool.query(
-    `DELETE FROM media_files WHERE id = $1 AND tenant_id = $2`,
+    `DELETE FROM web_media_files WHERE id = $1 AND tenant_id = $2`,
     [id, tenantId],
   );
 
@@ -101,7 +101,7 @@ export async function deleteMedia(id: string, tenantId: string) {
  */
 export async function updateMediaAlt(id: string, tenantId: string, altText: string) {
   const { rows } = await adminPool.query(
-    `UPDATE media_files SET alt_text = $1 WHERE id = $2 AND tenant_id = $3 RETURNING *`,
+    `UPDATE web_media_files SET alt_text = $1 WHERE id = $2 AND tenant_id = $3 RETURNING *`,
     [altText, id, tenantId],
   );
   return rows[0] || null;

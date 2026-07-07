@@ -12,7 +12,7 @@ export async function getCampaignAnalytics(campaignId: string) {
        COUNT(*) FILTER (WHERE status = 'clicked')::int AS clicked,
        COUNT(*) FILTER (WHERE status = 'bounced')::int AS bounced,
        COUNT(*) FILTER (WHERE status = 'unsubscribed')::int AS unsubscribed
-     FROM campaign_recipients
+     FROM mkt_campaign_recipients
      WHERE campaign_id = $1 AND status != 'pending'`,
     [campaignId],
   );
@@ -59,15 +59,15 @@ export async function getRecipientList(
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
       `SELECT cr.*, c.first_name, c.last_name
-       FROM campaign_recipients cr
-       LEFT JOIN customers c ON c.id = cr.customer_id
+       FROM mkt_campaign_recipients cr
+       LEFT JOIN cus_customers c ON c.id = cr.customer_id
        WHERE ${where}
        ORDER BY cr.sent_at DESC NULLS LAST
        LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, limit, offset],
     ),
     adminPool.query(
-      `SELECT COUNT(*)::int AS total FROM campaign_recipients cr WHERE ${where}`,
+      `SELECT COUNT(*)::int AS total FROM mkt_campaign_recipients cr WHERE ${where}`,
       params,
     ),
   ]);
@@ -86,7 +86,7 @@ export async function getRecipientList(
 export async function getEngagementTimeline(campaignId: string) {
   const { rows: opens } = await adminPool.query(
     `SELECT date_trunc('hour', opened_at) AS hour, COUNT(*)::int AS count
-     FROM campaign_recipients
+     FROM mkt_campaign_recipients
      WHERE campaign_id = $1 AND opened_at IS NOT NULL
      GROUP BY hour ORDER BY hour`,
     [campaignId],
@@ -94,7 +94,7 @@ export async function getEngagementTimeline(campaignId: string) {
 
   const { rows: clicks } = await adminPool.query(
     `SELECT date_trunc('hour', clicked_at) AS hour, COUNT(*)::int AS count
-     FROM campaign_recipients
+     FROM mkt_campaign_recipients
      WHERE campaign_id = $1 AND clicked_at IS NOT NULL
      GROUP BY hour ORDER BY hour`,
     [campaignId],

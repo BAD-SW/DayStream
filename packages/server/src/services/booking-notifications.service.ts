@@ -16,7 +16,7 @@ interface NotificationData {
  */
 export async function queueNotification(input: NotificationData): Promise<any> {
   const { rows } = await adminPool.query(
-    `INSERT INTO notification_queue (business_id, type, channel, recipient_id, recipient_email, data, scheduled_for)
+    `INSERT INTO apt_notification_queue (business_id, type, channel, recipient_id, recipient_email, data, scheduled_for)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
     [
@@ -141,7 +141,7 @@ export async function queueWaitlistPromotion(entry: any, customerEmail: string, 
  */
 export async function processNotificationQueue(): Promise<{ sent: number; failed: number }> {
   const { rows } = await adminPool.query(
-    `SELECT * FROM notification_queue
+    `SELECT * FROM apt_notification_queue
      WHERE status = 'pending' AND scheduled_for <= NOW()
      ORDER BY scheduled_for
      LIMIT 50`,
@@ -158,14 +158,14 @@ export async function processNotificationQueue(): Promise<{ sent: number; failed
       }
       // Mark as sent
       await adminPool.query(
-        "UPDATE notification_queue SET status = 'sent', sent_at = NOW() WHERE id = $1",
+        "UPDATE apt_notification_queue SET status = 'sent', sent_at = NOW() WHERE id = $1",
         [notification.id],
       );
       sent++;
     } catch (err: any) {
       // Mark as failed, increment attempts
       await adminPool.query(
-        "UPDATE notification_queue SET status = CASE WHEN attempts >= 3 THEN 'failed' ELSE 'pending' END, attempts = attempts + 1, error = $2 WHERE id = $1",
+        "UPDATE apt_notification_queue SET status = CASE WHEN attempts >= 3 THEN 'failed' ELSE 'pending' END, attempts = attempts + 1, error = $2 WHERE id = $1",
         [notification.id, err.message],
       );
       failed++;
@@ -241,15 +241,15 @@ export async function scheduleUpcomingReminders(): Promise<number> {
     `SELECT b.id, b.business_id, b.customer_id, b.booking_reference, b.start_time, b.end_time,
             s.name AS service_name, c.email AS customer_email,
             u.first_name AS staff_first_name, u.last_name AS staff_last_name
-     FROM bookings b
-     JOIN services s ON s.id = b.service_id
-     JOIN customers c ON c.id = b.customer_id
-     LEFT JOIN users u ON u.id = b.staff_id
+     FROM apt_bookings b
+     JOIN svc_services s ON s.id = b.service_id
+     JOIN cus_customers c ON c.id = b.customer_id
+     LEFT JOIN usr_users u ON u.id = b.staff_id
      WHERE b.status = 'confirmed'
        AND b.start_time > NOW()
        AND b.start_time <= $1
        AND NOT EXISTS (
-         SELECT 1 FROM notification_queue nq
+         SELECT 1 FROM apt_notification_queue nq
          WHERE nq.type = 'booking.reminder'
            AND nq.recipient_id = b.customer_id
            AND nq.data->>'booking_reference' = b.booking_reference

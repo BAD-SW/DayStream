@@ -21,7 +21,7 @@ class DatabaseTransport extends Transport {
       const { adminPool } = await import('../db/pool');
       this.pool = adminPool;
       // Test if table exists
-      await this.pool.query('SELECT 1 FROM server_logs LIMIT 0');
+      await this.pool.query('SELECT 1 FROM sys_server_logs LIMIT 0');
       this.ready = true;
     } catch {
       // Table doesn't exist yet or pool not ready — disable this transport
@@ -41,7 +41,7 @@ class DatabaseTransport extends Transport {
     const metaObj = Object.keys(meta).length > 0 ? meta : null;
 
     this.pool.query(
-      'INSERT INTO server_logs (level, message, meta, created_at) VALUES ($1, $2, $3, $4)',
+      'INSERT INTO sys_server_logs (level, message, meta, created_at) VALUES ($1, $2, $3, $4)',
       [level.replace(/\x1B\[[0-9;]*m/g, ''), cleanMessage, metaObj ? JSON.stringify(metaObj) : null, timestamp || new Date()],
     ).catch(() => {
       // Silently fail

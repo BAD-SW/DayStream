@@ -7,11 +7,11 @@ export async function getAttendanceRate(tenantId: string, startDate: string, end
   const { rows } = await adminPool.query(
     `SELECT
        COUNT(DISTINCT cr.booking_id)::int AS checked_in_count,
-       (SELECT COUNT(*)::int FROM bookings b JOIN businesses bus ON bus.id = b.business_id
+       (SELECT COUNT(*)::int FROM apt_bookings b JOIN sys_businesses bus ON bus.id = b.business_id
         WHERE bus.tenant_id = $1 AND b.start_time >= $2 AND b.start_time <= $3
           AND b.status IN ('confirmed', 'checked_in', 'completed', 'no_show')
        ) AS total_bookings
-     FROM check_in_records cr
+     FROM apt_check_in_records cr
      WHERE cr.tenant_id = $1 AND cr.check_in_time >= $2 AND cr.check_in_time <= $3
        AND cr.status != 'cancelled'`,
     [tenantId, startDate, endDate],
@@ -34,10 +34,10 @@ export async function getAttendanceRate(tenantId: string, startDate: string, end
 export async function getNoShowRate(tenantId: string, startDate: string, endDate: string) {
   const { rows } = await adminPool.query(
     `SELECT
-       (SELECT COUNT(*)::int FROM no_show_records
+       (SELECT COUNT(*)::int FROM apt_no_show_records
         WHERE tenant_id = $1 AND detected_at >= $2 AND detected_at <= $3
        ) AS no_show_count,
-       (SELECT COUNT(*)::int FROM bookings b JOIN businesses bus ON bus.id = b.business_id
+       (SELECT COUNT(*)::int FROM apt_bookings b JOIN sys_businesses bus ON bus.id = b.business_id
         WHERE bus.tenant_id = $1 AND b.start_time >= $2 AND b.start_time <= $3
           AND b.status IN ('confirmed', 'checked_in', 'completed', 'no_show')
        ) AS total_bookings`,
@@ -61,7 +61,7 @@ export async function getNoShowRate(tenantId: string, startDate: string, endDate
 export async function getWalkInVolume(tenantId: string, startDate: string, endDate: string) {
   const { rows } = await adminPool.query(
     `SELECT COUNT(*)::int AS walk_in_count
-     FROM check_in_records
+     FROM apt_check_in_records
      WHERE tenant_id = $1 AND check_in_time >= $2 AND check_in_time <= $3
        AND check_in_method = 'walk_in' AND status != 'cancelled'`,
     [tenantId, startDate, endDate],
@@ -78,7 +78,7 @@ export async function getPeakTimes(tenantId: string, startDate: string, endDate:
     `SELECT
        EXTRACT(HOUR FROM check_in_time)::int AS hour,
        COUNT(*)::int AS count
-     FROM check_in_records
+     FROM apt_check_in_records
      WHERE tenant_id = $1 AND check_in_time >= $2 AND check_in_time <= $3
        AND status != 'cancelled'
      GROUP BY EXTRACT(HOUR FROM check_in_time)
@@ -97,7 +97,7 @@ export async function getMethodBreakdown(tenantId: string, startDate: string, en
     `SELECT
        check_in_method AS method,
        COUNT(*)::int AS count
-     FROM check_in_records
+     FROM apt_check_in_records
      WHERE tenant_id = $1 AND check_in_time >= $2 AND check_in_time <= $3
        AND status != 'cancelled'
      GROUP BY check_in_method
@@ -118,8 +118,8 @@ export async function getHighNoShowCustomers(tenantId: string, limit = 10) {
        c.first_name, c.last_name, c.email,
        COUNT(*)::int AS no_show_count,
        MAX(ns.detected_at) AS last_no_show
-     FROM no_show_records ns
-     JOIN customers c ON c.id = ns.customer_id
+     FROM apt_no_show_records ns
+     JOIN cus_customers c ON c.id = ns.customer_id
      WHERE ns.tenant_id = $1 AND ns.waived = false
      GROUP BY ns.customer_id, c.first_name, c.last_name, c.email
      ORDER BY no_show_count DESC

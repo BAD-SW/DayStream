@@ -7,8 +7,8 @@ export async function getBookingsReport(tenantId: string, startDate: string, end
   // Total by status
   const { rows: byStatus } = await adminPool.query(
     `SELECT b.status, COUNT(*)::int AS count
-     FROM bookings b
-     JOIN businesses bus ON bus.id = b.business_id
+     FROM apt_bookings b
+     JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE bus.tenant_id = $1
        AND b.start_time >= $2::date
        AND b.start_time < ($3::date + INTERVAL '1 day')
@@ -31,8 +31,8 @@ export async function getBookingsReport(tenantId: string, startDate: string, end
     `SELECT EXTRACT(DOW FROM b.start_time)::int AS day_of_week,
             EXTRACT(HOUR FROM b.start_time)::int AS hour,
             COUNT(*)::int AS count
-     FROM bookings b
-     JOIN businesses bus ON bus.id = b.business_id
+     FROM apt_bookings b
+     JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE bus.tenant_id = $1
        AND b.start_time >= $2::date
        AND b.start_time < ($3::date + INTERVAL '1 day')
@@ -44,8 +44,8 @@ export async function getBookingsReport(tenantId: string, startDate: string, end
   // Lead time (avg hours between created_at and start_time)
   const { rows: leadTimeRows } = await adminPool.query(
     `SELECT AVG(EXTRACT(EPOCH FROM (b.start_time - b.created_at)) / 3600)::numeric(10,1) AS avg_lead_hours
-     FROM bookings b
-     JOIN businesses bus ON bus.id = b.business_id
+     FROM apt_bookings b
+     JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE bus.tenant_id = $1
        AND b.start_time >= $2::date
        AND b.start_time < ($3::date + INTERVAL '1 day')

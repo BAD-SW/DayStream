@@ -38,11 +38,11 @@ export async function getPosts(siteId: string, filters?: {
 
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
-      `SELECT * FROM blog_posts WHERE ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
+      `SELECT * FROM web_blog_posts WHERE ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, limit, offset],
     ),
     adminPool.query(
-      `SELECT COUNT(*)::int AS total FROM blog_posts WHERE ${where}`,
+      `SELECT COUNT(*)::int AS total FROM web_blog_posts WHERE ${where}`,
       params,
     ),
   ]);
@@ -70,7 +70,7 @@ export async function createPost(siteId: string, input: {
   const slug = generateSlug(input.title);
 
   const { rows } = await adminPool.query(
-    `INSERT INTO blog_posts (site_id, title, slug, content, excerpt, featured_image_path, author_name, tags, category)
+    `INSERT INTO web_blog_posts (site_id, title, slug, content, excerpt, featured_image_path, author_name, tags, category)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
     [
       siteId,
@@ -92,7 +92,7 @@ export async function createPost(siteId: string, input: {
  */
 export async function getPostById(id: string, siteId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM blog_posts WHERE id = $1 AND site_id = $2`,
+    `SELECT * FROM web_blog_posts WHERE id = $1 AND site_id = $2`,
     [id, siteId],
   );
   return rows[0] || null;
@@ -103,7 +103,7 @@ export async function getPostById(id: string, siteId: string) {
  */
 export async function getPostBySlug(siteId: string, slug: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM blog_posts WHERE site_id = $1 AND slug = $2`,
+    `SELECT * FROM web_blog_posts WHERE site_id = $1 AND slug = $2`,
     [siteId, slug],
   );
   return rows[0] || null;
@@ -134,7 +134,7 @@ export async function updatePost(id: string, siteId: string, updates: Record<str
   values.push(id, siteId);
 
   const { rows } = await adminPool.query(
-    `UPDATE blog_posts SET ${fields.join(', ')} WHERE id = $${idx++} AND site_id = $${idx} RETURNING *`,
+    `UPDATE web_blog_posts SET ${fields.join(', ')} WHERE id = $${idx++} AND site_id = $${idx} RETURNING *`,
     values,
   );
   return rows[0] || null;
@@ -145,7 +145,7 @@ export async function updatePost(id: string, siteId: string, updates: Record<str
  */
 export async function publishPost(id: string, siteId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE blog_posts SET status = 'published', published_at = NOW(), updated_at = NOW()
+    `UPDATE web_blog_posts SET status = 'published', published_at = NOW(), updated_at = NOW()
      WHERE id = $1 AND site_id = $2 RETURNING *`,
     [id, siteId],
   );
@@ -157,7 +157,7 @@ export async function publishPost(id: string, siteId: string) {
  */
 export async function deletePost(id: string, siteId: string) {
   const { rowCount } = await adminPool.query(
-    `DELETE FROM blog_posts WHERE id = $1 AND site_id = $2`,
+    `DELETE FROM web_blog_posts WHERE id = $1 AND site_id = $2`,
     [id, siteId],
   );
   return (rowCount ?? 0) > 0;

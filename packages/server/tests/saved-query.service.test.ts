@@ -263,7 +263,7 @@ describe('SavedQueryService', () => {
 
       await expect(service.delete(QUERY_ID, USER_ID)).resolves.toBeUndefined();
       expect(mockQuery).toHaveBeenCalledWith(
-        'DELETE FROM saved_queries WHERE id = $1 AND user_id = $2',
+        'DELETE FROM sys_saved_queries WHERE id = $1 AND user_id = $2',
         [QUERY_ID, USER_ID],
       );
     });

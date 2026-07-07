@@ -7,8 +7,8 @@ export async function getFinancialReport(tenantId: string, startDate: string, en
   // Revenue (from completed bookings)
   const { rows: revenueRows } = await adminPool.query(
     `SELECT COALESCE(SUM(b.price), 0) AS total_revenue
-     FROM bookings b
-     JOIN businesses bus ON bus.id = b.business_id
+     FROM apt_bookings b
+     JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE bus.tenant_id = $1
        AND b.status = 'completed'
        AND b.start_time >= $2::date
@@ -19,8 +19,8 @@ export async function getFinancialReport(tenantId: string, startDate: string, en
   // Expenses
   const { rows: expenseRows } = await adminPool.query(
     `SELECT COALESCE(SUM(e.amount), 0) AS total_expenses
-     FROM expenses e
-     JOIN businesses bus ON bus.id = e.business_id
+     FROM fin_expenses e
+     JOIN sys_businesses bus ON bus.id = e.business_id
      WHERE bus.tenant_id = $1
        AND e.date >= $2::date
        AND e.date <= $3::date`,
@@ -43,8 +43,8 @@ export async function getFinancialReport(tenantId: string, startDate: string, en
        END AS bucket,
        COUNT(*)::int AS count,
        COALESCE(SUM(bi.amount - bi.amount_paid), 0) AS outstanding
-     FROM bills bi
-     JOIN businesses bus ON bus.id = bi.business_id
+     FROM fin_bills bi
+     JOIN sys_businesses bus ON bus.id = bi.business_id
      WHERE bus.tenant_id = $1
        AND bi.status != 'paid'
      GROUP BY bucket
@@ -67,8 +67,8 @@ export async function getFinancialReport(tenantId: string, startDate: string, en
        END AS bucket,
        COUNT(*)::int AS count,
        COALESCE(SUM(b.price), 0) AS outstanding
-     FROM bookings b
-     JOIN businesses bus ON bus.id = b.business_id
+     FROM apt_bookings b
+     JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE bus.tenant_id = $1
        AND b.status = 'completed'
        AND b.payment_status = 'unpaid'
@@ -83,8 +83,8 @@ export async function getFinancialReport(tenantId: string, startDate: string, en
   // Payroll costs in period
   const { rows: payrollRows } = await adminPool.query(
     `SELECT COALESCE(SUM(pe.amount), 0) AS total_payroll
-     FROM payroll_entries pe
-     JOIN businesses bus ON bus.id = pe.business_id
+     FROM fin_payroll_entries pe
+     JOIN sys_businesses bus ON bus.id = pe.business_id
      WHERE bus.tenant_id = $1
        AND pe.pay_date >= $2::date
        AND pe.pay_date <= $3::date`,
@@ -94,8 +94,8 @@ export async function getFinancialReport(tenantId: string, startDate: string, en
   // Refunds in period
   const { rows: refundRows } = await adminPool.query(
     `SELECT COALESCE(SUM(b.price), 0) AS total_refunds, COUNT(*)::int AS refund_count
-     FROM bookings b
-     JOIN businesses bus ON bus.id = b.business_id
+     FROM apt_bookings b
+     JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE bus.tenant_id = $1
        AND b.status = 'refunded'
        AND b.start_time >= $2::date

@@ -11,7 +11,7 @@ export async function getOrCreateFeed(tenantId: string, input: {
 }) {
   // Check for existing active feed
   const { rows: existing } = await adminPool.query(
-    `SELECT * FROM ical_feeds
+    `SELECT * FROM int_ical_feeds
      WHERE tenant_id = $1 AND feed_type = $2 AND is_active = true
        AND user_id IS NOT DISTINCT FROM $3
        AND customer_id IS NOT DISTINCT FROM $4`,
@@ -22,7 +22,7 @@ export async function getOrCreateFeed(tenantId: string, input: {
 
   const feedToken = crypto.randomBytes(32).toString('hex');
   const { rows } = await adminPool.query(
-    `INSERT INTO ical_feeds (tenant_id, user_id, customer_id, feed_token, feed_type)
+    `INSERT INTO int_ical_feeds (tenant_id, user_id, customer_id, feed_token, feed_type)
      VALUES ($1, $2, $3, $4, $5) RETURNING *`,
     [tenantId, input.userId || null, input.customerId || null, feedToken, input.feedType],
   );
@@ -34,7 +34,7 @@ export async function getOrCreateFeed(tenantId: string, input: {
  */
 export async function regenerateFeed(tenantId: string, feedId: string) {
   const { rows: old } = await adminPool.query(
-    `UPDATE ical_feeds SET is_active = false WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+    `UPDATE int_ical_feeds SET is_active = false WHERE id = $1 AND tenant_id = $2 RETURNING *`,
     [feedId, tenantId],
   );
   if (old.length === 0) return null;
@@ -52,7 +52,7 @@ export async function regenerateFeed(tenantId: string, feedId: string) {
  */
 export async function generateIcalContent(feedToken: string) {
   const { rows: feeds } = await adminPool.query(
-    `SELECT * FROM ical_feeds WHERE feed_token = $1 AND is_active = true`,
+    `SELECT * FROM int_ical_feeds WHERE feed_token = $1 AND is_active = true`,
     [feedToken],
   );
   if (feeds.length === 0) return null;
@@ -64,9 +64,9 @@ export async function generateIcalContent(feedToken: string) {
   if (feed.feed_type === 'staff' && feed.user_id) {
     const { rows } = await adminPool.query(
       `SELECT b.*, s.name AS service_name, c.first_name, c.last_name
-       FROM bookings b
-       LEFT JOIN services s ON s.id = b.service_id
-       LEFT JOIN customers c ON c.id = b.customer_id
+       FROM apt_bookings b
+       LEFT JOIN svc_services s ON s.id = b.service_id
+       LEFT JOIN cus_customers c ON c.id = b.customer_id
        WHERE b.staff_id = $1 AND b.tenant_id = $2
          AND b.start_time >= NOW() - INTERVAL '30 days'
        ORDER BY b.start_time`,
@@ -76,8 +76,8 @@ export async function generateIcalContent(feedToken: string) {
   } else if (feed.feed_type === 'customer' && feed.customer_id) {
     const { rows } = await adminPool.query(
       `SELECT b.*, s.name AS service_name
-       FROM bookings b
-       LEFT JOIN services s ON s.id = b.service_id
+       FROM apt_bookings b
+       LEFT JOIN svc_services s ON s.id = b.service_id
        WHERE b.customer_id = $1 AND b.tenant_id = $2
          AND b.start_time >= NOW() - INTERVAL '30 days'
        ORDER BY b.start_time`,

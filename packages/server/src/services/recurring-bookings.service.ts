@@ -39,7 +39,7 @@ export async function createRecurringSeries(input: CreateRecurringInput): Promis
 
   // Create series record
   const { rows } = await adminPool.query(
-    `INSERT INTO recurring_booking_series (business_id, customer_id, service_id, variant_id, staff_id, recurrence_pattern, day_of_week, day_of_month, start_time, end_type, end_count, end_date, created_by)
+    `INSERT INTO apt_recurring_series (business_id, customer_id, service_id, variant_id, staff_id, recurrence_pattern, day_of_week, day_of_month, start_time, end_type, end_count, end_date, created_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING *`,
     [
@@ -71,7 +71,7 @@ export async function generateInstances(series: any, tenantId: string, weeksAhea
   for (const date of dates) {
     // Check if instance already exists
     const { rows: existing } = await adminPool.query(
-      `SELECT id FROM bookings WHERE recurring_series_id = $1 AND start_time::date = $2::date`,
+      `SELECT id FROM apt_bookings WHERE recurring_series_id = $1 AND start_time::date = $2::date`,
       [series.id, date.toISOString()],
     );
     if (existing.length > 0) {
@@ -94,7 +94,7 @@ export async function generateInstances(series: any, tenantId: string, weeksAhea
 
       // Link to series
       await adminPool.query(
-        `UPDATE bookings SET recurring_series_id = $1
+        `UPDATE apt_bookings SET recurring_series_id = $1
          WHERE business_id = $2 AND customer_id = $3 AND service_id = $4
            AND start_time = $5 AND recurring_series_id IS NULL`,
         [series.id, series.business_id, series.customer_id, series.service_id, date.toISOString()],
@@ -169,7 +169,7 @@ function calculateOccurrenceDates(series: any, weeksAhead: number): Date[] {
  */
 export async function getSeriesById(seriesId: string, businessId: string) {
   const { rows } = await adminPool.query(
-    'SELECT * FROM recurring_booking_series WHERE id = $1 AND business_id = $2',
+    'SELECT * FROM apt_recurring_series WHERE id = $1 AND business_id = $2',
     [seriesId, businessId],
   );
   if (rows.length === 0) return null;
@@ -178,7 +178,7 @@ export async function getSeriesById(seriesId: string, businessId: string) {
 
   const { rows: instances } = await adminPool.query(
     `SELECT id, start_time, end_time, status, booking_reference
-     FROM bookings WHERE recurring_series_id = $1 ORDER BY start_time`,
+     FROM apt_bookings WHERE recurring_series_id = $1 ORDER BY start_time`,
     [seriesId],
   );
 
@@ -191,13 +191,13 @@ export async function getSeriesById(seriesId: string, businessId: string) {
 export async function cancelSeries(seriesId: string, businessId: string, userId: string, tenantId: string): Promise<{ cancelled: number }> {
   // Cancel the series itself
   await adminPool.query(
-    "UPDATE recurring_booking_series SET status = 'cancelled' WHERE id = $1 AND business_id = $2",
+    "UPDATE apt_recurring_series SET status = 'cancelled' WHERE id = $1 AND business_id = $2",
     [seriesId, businessId],
   );
 
   // Cancel future bookings in the series
   const { rowCount } = await adminPool.query(
-    `UPDATE bookings SET status = 'cancelled', cancelled_by = $3, cancelled_at = NOW(), cancellation_reason = 'Series cancelled'
+    `UPDATE apt_bookings SET status = 'cancelled', cancelled_by = $3, cancelled_at = NOW(), cancellation_reason = 'Series cancelled'
      WHERE recurring_series_id = $1 AND business_id = $2
        AND start_time > NOW()
        AND status IN ('pending', 'confirmed')`,
@@ -212,7 +212,7 @@ export async function cancelSeries(seriesId: string, businessId: string, userId:
  */
 export async function cancelSingleOccurrence(bookingId: string, businessId: string, userId: string, tenantId: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    `UPDATE bookings SET status = 'cancelled', cancelled_by = $3, cancelled_at = NOW(), cancellation_reason = 'Single occurrence cancelled'
+    `UPDATE apt_bookings SET status = 'cancelled', cancelled_by = $3, cancelled_at = NOW(), cancellation_reason = 'Single occurrence cancelled'
      WHERE id = $1 AND business_id = $2 AND recurring_series_id IS NOT NULL
        AND status IN ('pending', 'confirmed')`,
     [bookingId, businessId, userId],

@@ -6,7 +6,7 @@ import { logAudit } from './audit.service';
  */
 export async function getPreferences(tenantId: string, customerId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM communication_preferences
+    `SELECT * FROM mkt_communication_preferences
      WHERE tenant_id = $1 AND customer_id = $2
      ORDER BY channel, category`,
     [tenantId, customerId],
@@ -26,13 +26,13 @@ export async function updatePreferences(
 
   for (const pref of prefs) {
     const { rows } = await adminPool.query(
-      `INSERT INTO communication_preferences (tenant_id, customer_id, channel, category, opted_in, opted_in_at, opted_out_at, source)
+      `INSERT INTO mkt_communication_preferences (tenant_id, customer_id, channel, category, opted_in, opted_in_at, opted_out_at, source)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'user_preference')
        ON CONFLICT (tenant_id, customer_id, channel, category)
        DO UPDATE SET
          opted_in = EXCLUDED.opted_in,
-         opted_in_at = CASE WHEN EXCLUDED.opted_in = true THEN NOW() ELSE communication_preferences.opted_in_at END,
-         opted_out_at = CASE WHEN EXCLUDED.opted_in = false THEN NOW() ELSE communication_preferences.opted_out_at END
+         opted_in_at = CASE WHEN EXCLUDED.opted_in = true THEN NOW() ELSE mkt_communication_preferences.opted_in_at END,
+         opted_out_at = CASE WHEN EXCLUDED.opted_in = false THEN NOW() ELSE mkt_communication_preferences.opted_out_at END
        RETURNING *`,
       [
         tenantId,
@@ -70,7 +70,7 @@ export async function processUnsubscribe(
   if (category) {
     // Unsubscribe from a specific category
     await adminPool.query(
-      `INSERT INTO communication_preferences (tenant_id, customer_id, channel, category, opted_in, opted_out_at, source)
+      `INSERT INTO mkt_communication_preferences (tenant_id, customer_id, channel, category, opted_in, opted_out_at, source)
        VALUES ($1, $2, $3, $4, false, NOW(), 'unsubscribe')
        ON CONFLICT (tenant_id, customer_id, channel, category)
        DO UPDATE SET opted_in = false, opted_out_at = NOW()`,
@@ -79,7 +79,7 @@ export async function processUnsubscribe(
   } else {
     // Unsubscribe from all categories for the channel
     await adminPool.query(
-      `UPDATE communication_preferences
+      `UPDATE mkt_communication_preferences
        SET opted_in = false, opted_out_at = NOW()
        WHERE tenant_id = $1 AND customer_id = $2 AND channel = $3`,
       [tenantId, customerId, channel],
@@ -87,7 +87,7 @@ export async function processUnsubscribe(
 
     // Also insert a global marketing opt-out record
     await adminPool.query(
-      `INSERT INTO communication_preferences (tenant_id, customer_id, channel, category, opted_in, opted_out_at, source)
+      `INSERT INTO mkt_communication_preferences (tenant_id, customer_id, channel, category, opted_in, opted_out_at, source)
        VALUES ($1, $2, $3, 'marketing', false, NOW(), 'unsubscribe')
        ON CONFLICT (tenant_id, customer_id, channel, category)
        DO UPDATE SET opted_in = false, opted_out_at = NOW()`,
@@ -114,7 +114,7 @@ export async function isOptedIn(
   category: string,
 ): Promise<boolean> {
   const { rows } = await adminPool.query(
-    `SELECT opted_in FROM communication_preferences
+    `SELECT opted_in FROM mkt_communication_preferences
      WHERE tenant_id = $1 AND customer_id = $2 AND channel = $3 AND category = $4`,
     [tenantId, customerId, channel, category],
   );

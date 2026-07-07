@@ -6,7 +6,7 @@ import { logAudit } from './audit.service';
  */
 export async function getPages(siteId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM site_pages WHERE site_id = $1 ORDER BY display_order, created_at`,
+    `SELECT * FROM web_pages WHERE site_id = $1 ORDER BY display_order, created_at`,
     [siteId],
   );
   return rows;
@@ -24,7 +24,7 @@ export async function createPage(siteId: string, input: {
   displayOrder?: number;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO site_pages (site_id, slug, title, page_type, content_blocks, seo_config, display_order)
+    `INSERT INTO web_pages (site_id, slug, title, page_type, content_blocks, seo_config, display_order)
      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
     [
       siteId,
@@ -44,7 +44,7 @@ export async function createPage(siteId: string, input: {
  */
 export async function getPageById(id: string, siteId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM site_pages WHERE id = $1 AND site_id = $2`,
+    `SELECT * FROM web_pages WHERE id = $1 AND site_id = $2`,
     [id, siteId],
   );
   return rows[0] || null;
@@ -55,7 +55,7 @@ export async function getPageById(id: string, siteId: string) {
  */
 export async function getPageBySlug(siteId: string, slug: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM site_pages WHERE site_id = $1 AND slug = $2`,
+    `SELECT * FROM web_pages WHERE site_id = $1 AND slug = $2`,
     [siteId, slug],
   );
   return rows[0] || null;
@@ -84,7 +84,7 @@ export async function updatePage(id: string, siteId: string, updates: Record<str
   values.push(id, siteId);
 
   const { rows } = await adminPool.query(
-    `UPDATE site_pages SET ${fields.join(', ')} WHERE id = $${idx++} AND site_id = $${idx} RETURNING *`,
+    `UPDATE web_pages SET ${fields.join(', ')} WHERE id = $${idx++} AND site_id = $${idx} RETURNING *`,
     values,
   );
   return rows[0] || null;
@@ -95,7 +95,7 @@ export async function updatePage(id: string, siteId: string, updates: Record<str
  */
 export async function publishPage(id: string, siteId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE site_pages SET status = 'published', published_at = NOW(), updated_at = NOW()
+    `UPDATE web_pages SET status = 'published', published_at = NOW(), updated_at = NOW()
      WHERE id = $1 AND site_id = $2 RETURNING *`,
     [id, siteId],
   );
@@ -107,7 +107,7 @@ export async function publishPage(id: string, siteId: string) {
  */
 export async function deletePage(id: string, siteId: string) {
   const { rowCount } = await adminPool.query(
-    `DELETE FROM site_pages WHERE id = $1 AND site_id = $2`,
+    `DELETE FROM web_pages WHERE id = $1 AND site_id = $2`,
     [id, siteId],
   );
   return (rowCount ?? 0) > 0;

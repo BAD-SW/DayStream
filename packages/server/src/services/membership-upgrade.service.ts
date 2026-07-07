@@ -21,8 +21,8 @@ export async function upgradeMembership(
 ): Promise<UpgradeResult> {
   const { rows } = await adminPool.query(
     `SELECT m.*, mp.price AS current_price, mp.billing_cycle, mp.name AS current_plan_name
-     FROM memberships m
-     JOIN membership_plans mp ON mp.id = m.plan_id
+     FROM mem_memberships m
+     JOIN mem_plans mp ON mp.id = m.plan_id
      WHERE m.id = $1 AND m.business_id = $2`,
     [membershipId, businessId],
   );
@@ -35,7 +35,7 @@ export async function upgradeMembership(
 
   // Validate upgrade path exists
   const { rows: pathRows } = await adminPool.query(
-    "SELECT * FROM plan_upgrade_paths WHERE from_plan_id = $1 AND to_plan_id = $2 AND direction = 'upgrade'",
+    "SELECT * FROM mem_plan_upgrade_paths WHERE from_plan_id = $1 AND to_plan_id = $2 AND direction = 'upgrade'",
     [membership.plan_id, newPlanId],
   );
   if (pathRows.length === 0) {
@@ -44,7 +44,7 @@ export async function upgradeMembership(
 
   // Load new plan
   const { rows: newPlanRows } = await adminPool.query(
-    "SELECT * FROM membership_plans WHERE id = $1 AND business_id = $2 AND status = 'active'",
+    "SELECT * FROM mem_plans WHERE id = $1 AND business_id = $2 AND status = 'active'",
     [newPlanId, businessId],
   );
   if (newPlanRows.length === 0) return { success: false, error: 'Target plan not found or not active' };
@@ -60,7 +60,7 @@ export async function upgradeMembership(
 
   // Switch plan immediately
   await adminPool.query(
-    `UPDATE memberships SET plan_id = $3, updated_at = NOW() WHERE id = $1 AND business_id = $2`,
+    `UPDATE mem_memberships SET plan_id = $3, updated_at = NOW() WHERE id = $1 AND business_id = $2`,
     [membershipId, businessId, newPlanId],
   );
 
@@ -74,7 +74,7 @@ export async function upgradeMembership(
 
   // Log
   await adminPool.query(
-    `INSERT INTO membership_status_history (membership_id, from_status, to_status, changed_by, reason)
+    `INSERT INTO mem_status_history (membership_id, from_status, to_status, changed_by, reason)
      VALUES ($1, 'active', 'active', $2, $3)`,
     [membershipId, userId, `Upgraded: ${membership.current_plan_name} → ${newPlan.name}`],
   );
@@ -85,7 +85,7 @@ export async function upgradeMembership(
   await createActivity({ customerId: membership.customer_id, businessId, activityType: 'membership',
     description: `Membership upgraded to ${newPlan.name}`, metadata: { membership_id: membershipId, proration: prorationAmount }, createdBy: userId });
 
-  const { rows: updated } = await adminPool.query('SELECT * FROM memberships WHERE id = $1', [membershipId]);
+  const { rows: updated } = await adminPool.query('SELECT * FROM mem_memberships WHERE id = $1', [membershipId]);
   return { success: true, membership: updated[0], proration_amount: prorationAmount };
 }
 
@@ -98,8 +98,8 @@ export async function downgradeMembership(
 ): Promise<UpgradeResult> {
   const { rows } = await adminPool.query(
     `SELECT m.*, mp.name AS current_plan_name
-     FROM memberships m
-     JOIN membership_plans mp ON mp.id = m.plan_id
+     FROM mem_memberships m
+     JOIN mem_plans mp ON mp.id = m.plan_id
      WHERE m.id = $1 AND m.business_id = $2`,
     [membershipId, businessId],
   );
@@ -112,7 +112,7 @@ export async function downgradeMembership(
 
   // Validate downgrade path
   const { rows: pathRows } = await adminPool.query(
-    "SELECT * FROM plan_upgrade_paths WHERE from_plan_id = $1 AND to_plan_id = $2 AND direction = 'downgrade'",
+    "SELECT * FROM mem_plan_upgrade_paths WHERE from_plan_id = $1 AND to_plan_id = $2 AND direction = 'downgrade'",
     [membership.plan_id, newPlanId],
   );
   if (pathRows.length === 0) {
@@ -121,7 +121,7 @@ export async function downgradeMembership(
 
   // Load new plan
   const { rows: newPlanRows } = await adminPool.query(
-    "SELECT * FROM membership_plans WHERE id = $1 AND business_id = $2 AND status = 'active'",
+    "SELECT * FROM mem_plans WHERE id = $1 AND business_id = $2 AND status = 'active'",
     [newPlanId, businessId],
   );
   if (newPlanRows.length === 0) return { success: false, error: 'Target plan not found or not active' };
@@ -136,12 +136,12 @@ export async function downgradeMembership(
   // In production, you'd use a `pending_plan_id` column. For this implementation,
   // we apply immediately since the financial impact is: no refund, continues at current rate until cycle end.
   await adminPool.query(
-    `UPDATE memberships SET plan_id = $3, updated_at = NOW() WHERE id = $1 AND business_id = $2`,
+    `UPDATE mem_memberships SET plan_id = $3, updated_at = NOW() WHERE id = $1 AND business_id = $2`,
     [membershipId, businessId, newPlanId],
   );
 
   await adminPool.query(
-    `INSERT INTO membership_status_history (membership_id, from_status, to_status, changed_by, reason)
+    `INSERT INTO mem_status_history (membership_id, from_status, to_status, changed_by, reason)
      VALUES ($1, 'active', 'active', $2, $3)`,
     [membershipId, userId, `Downgraded: ${membership.current_plan_name} → ${newPlan.name} (effective at next renewal)`],
   );
@@ -152,6 +152,6 @@ export async function downgradeMembership(
   await createActivity({ customerId: membership.customer_id, businessId, activityType: 'membership',
     description: `Membership downgraded to ${newPlan.name}`, metadata: { membership_id: membershipId }, createdBy: userId });
 
-  const { rows: updated } = await adminPool.query('SELECT * FROM memberships WHERE id = $1', [membershipId]);
+  const { rows: updated } = await adminPool.query('SELECT * FROM mem_memberships WHERE id = $1', [membershipId]);
   return { success: true, membership: updated[0], proration_amount: 0 };
 }

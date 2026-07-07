@@ -9,7 +9,7 @@ let CUSTOMER_ID: string;
 describe('Booking Notifications', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Notif Test Biz', 'notif-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Notif Test Biz'
        RETURNING id`,
@@ -18,7 +18,7 @@ describe('Booking Notifications', () => {
     BUSINESS_ID = bizRows[0].id;
 
     const { rows: custRows } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-NTF01', 'notif-cust@example.com', 'Notif', 'Cust', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Notif'
        RETURNING id`,
@@ -27,7 +27,7 @@ describe('Booking Notifications', () => {
     CUSTOMER_ID = custRows[0].id;
 
     // Clean
-    await adminPool.query("DELETE FROM notification_queue WHERE business_id = $1", [BUSINESS_ID]);
+    await adminPool.query("DELETE FROM apt_notification_queue WHERE business_id = $1", [BUSINESS_ID]);
   });
 
   describe('Notification queueing', () => {
@@ -48,7 +48,7 @@ describe('Booking Notifications', () => {
       await notificationService.queueBookingConfirmation(booking, 'notif-cust@example.com');
 
       const { rows } = await adminPool.query(
-        "SELECT * FROM notification_queue WHERE business_id = $1 AND type = 'booking.confirmation'",
+        "SELECT * FROM apt_notification_queue WHERE business_id = $1 AND type = 'booking.confirmation'",
         [BUSINESS_ID],
       );
 
@@ -72,7 +72,7 @@ describe('Booking Notifications', () => {
       await notificationService.queueBookingCancellation(booking, 'notif-cust@example.com', 'Customer requested');
 
       const { rows } = await adminPool.query(
-        "SELECT * FROM notification_queue WHERE business_id = $1 AND type = 'booking.cancellation'",
+        "SELECT * FROM apt_notification_queue WHERE business_id = $1 AND type = 'booking.cancellation'",
         [BUSINESS_ID],
       );
 
@@ -93,7 +93,7 @@ describe('Booking Notifications', () => {
       await notificationService.queueBookingReschedule(booking, 'notif-cust@example.com', '2026-07-03T14:00:00Z');
 
       const { rows } = await adminPool.query(
-        "SELECT * FROM notification_queue WHERE business_id = $1 AND type = 'booking.reschedule'",
+        "SELECT * FROM apt_notification_queue WHERE business_id = $1 AND type = 'booking.reschedule'",
         [BUSINESS_ID],
       );
 
@@ -117,7 +117,7 @@ describe('Booking Notifications', () => {
       await notificationService.queueBookingReminder(futureBooking, 'notif-cust@example.com', [24, 2]);
 
       const { rows } = await adminPool.query(
-        "SELECT * FROM notification_queue WHERE business_id = $1 AND type = 'booking.reminder' ORDER BY scheduled_for",
+        "SELECT * FROM apt_notification_queue WHERE business_id = $1 AND type = 'booking.reminder' ORDER BY scheduled_for",
         [BUSINESS_ID],
       );
 
@@ -133,7 +133,7 @@ describe('Booking Notifications', () => {
     it('processes pending notifications', async () => {
       // Insert a notification that's due now
       await adminPool.query(
-        `INSERT INTO notification_queue (business_id, type, channel, recipient_id, recipient_email, data, scheduled_for)
+        `INSERT INTO apt_notification_queue (business_id, type, channel, recipient_id, recipient_email, data, scheduled_for)
          VALUES ($1, 'test.immediate', 'email', $2, 'notif-cust@example.com', '{"test": true}', NOW() - INTERVAL '1 minute')`,
         [BUSINESS_ID, CUSTOMER_ID],
       );
@@ -144,7 +144,7 @@ describe('Booking Notifications', () => {
 
     it('does not process future-scheduled notifications', async () => {
       await adminPool.query(
-        `INSERT INTO notification_queue (business_id, type, channel, recipient_id, recipient_email, data, scheduled_for, status)
+        `INSERT INTO apt_notification_queue (business_id, type, channel, recipient_id, recipient_email, data, scheduled_for, status)
          VALUES ($1, 'test.future', 'email', $2, 'notif-cust@example.com', '{"test": true}', NOW() + INTERVAL '1 hour', 'pending')`,
         [BUSINESS_ID, CUSTOMER_ID],
       );
@@ -153,7 +153,7 @@ describe('Booking Notifications', () => {
       await notificationService.processNotificationQueue();
 
       const { rows } = await adminPool.query(
-        "SELECT status FROM notification_queue WHERE business_id = $1 AND type = 'test.future'",
+        "SELECT status FROM apt_notification_queue WHERE business_id = $1 AND type = 'test.future'",
         [BUSINESS_ID],
       );
       expect(rows[0].status).toBe('pending');

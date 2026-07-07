@@ -11,9 +11,9 @@ import { validateQualificationsForService } from './staff-qualifications.service
 export async function getServiceAssignments(staffId: string) {
   const { rows } = await adminPool.query(
     `SELECT ssa.*, s.name AS service_name, sv.name AS variant_name
-     FROM staff_service_assignments ssa
-     JOIN services s ON s.id = ssa.service_id
-     LEFT JOIN service_variants sv ON sv.id = ssa.variant_id
+     FROM stf_service_assignments ssa
+     JOIN svc_services s ON s.id = ssa.service_id
+     LEFT JOIN svc_variants sv ON sv.id = ssa.variant_id
      WHERE ssa.staff_id = $1
      ORDER BY s.name`,
     [staffId],
@@ -42,7 +42,7 @@ export async function assignServices(staffId: string, assignments: Array<{
     }
 
     const { rows } = await adminPool.query(
-      `INSERT INTO staff_service_assignments (staff_id, service_id, variant_id, is_primary)
+      `INSERT INTO stf_service_assignments (staff_id, service_id, variant_id, is_primary)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (staff_id, service_id, COALESCE(variant_id, '00000000-0000-0000-0000-000000000000'))
        DO UPDATE SET is_primary = $4
@@ -59,7 +59,7 @@ export async function assignServices(staffId: string, assignments: Array<{
  * Remove a service assignment.
  */
 export async function removeServiceAssignment(staffId: string, serviceId: string, variantId?: string) {
-  let query = `DELETE FROM staff_service_assignments WHERE staff_id = $1 AND service_id = $2`;
+  let query = `DELETE FROM stf_service_assignments WHERE staff_id = $1 AND service_id = $2`;
   const params: any[] = [staffId, serviceId];
 
   if (variantId) {
@@ -79,8 +79,8 @@ export async function removeServiceAssignment(staffId: string, serviceId: string
 export async function getStaffForService(serviceId: string, variantId?: string) {
   let query = `
     SELECT sp.*, ssa.is_primary, ssa.variant_id
-    FROM staff_service_assignments ssa
-    JOIN staff_profiles sp ON sp.id = ssa.staff_id
+    FROM stf_service_assignments ssa
+    JOIN stf_profiles sp ON sp.id = ssa.staff_id
     WHERE ssa.service_id = $1 AND sp.status = 'active'
   `;
   const params: any[] = [serviceId];
@@ -105,7 +105,7 @@ export async function getStaffForService(serviceId: string, variantId?: string) 
  */
 export async function getLocationAssignments(staffId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM staff_location_assignments WHERE staff_id = $1 ORDER BY is_primary DESC`,
+    `SELECT * FROM stf_location_assignments WHERE staff_id = $1 ORDER BY is_primary DESC`,
     [staffId],
   );
   return rows;
@@ -122,7 +122,7 @@ export async function assignLocations(staffId: string, assignments: Array<{
 
   for (const assignment of assignments) {
     const { rows } = await adminPool.query(
-      `INSERT INTO staff_location_assignments (staff_id, location_id, is_primary)
+      `INSERT INTO stf_location_assignments (staff_id, location_id, is_primary)
        VALUES ($1, $2, $3)
        ON CONFLICT (staff_id, location_id) DO UPDATE SET is_primary = $3
        RETURNING *`,
@@ -139,7 +139,7 @@ export async function assignLocations(staffId: string, assignments: Array<{
  */
 export async function removeLocationAssignment(staffId: string, locationId: string) {
   const { rowCount } = await adminPool.query(
-    `DELETE FROM staff_location_assignments WHERE staff_id = $1 AND location_id = $2`,
+    `DELETE FROM stf_location_assignments WHERE staff_id = $1 AND location_id = $2`,
     [staffId, locationId],
   );
   return (rowCount ?? 0) > 0;
@@ -151,8 +151,8 @@ export async function removeLocationAssignment(staffId: string, locationId: stri
 export async function getStaffForLocation(locationId: string) {
   const { rows } = await adminPool.query(
     `SELECT sp.*
-     FROM staff_location_assignments sla
-     JOIN staff_profiles sp ON sp.id = sla.staff_id
+     FROM stf_location_assignments sla
+     JOIN stf_profiles sp ON sp.id = sla.staff_id
      WHERE sla.location_id = $1 AND sp.status = 'active'
      ORDER BY sp.last_name`,
     [locationId],

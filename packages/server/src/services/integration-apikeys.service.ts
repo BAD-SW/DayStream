@@ -8,7 +8,7 @@ export async function getApiKeys(tenantId: string) {
   const { rows } = await adminPool.query(
     `SELECT id, tenant_id, name, key_prefix, scopes, rate_limit, is_active,
             last_used_at, expires_at, created_by, created_at
-     FROM api_keys WHERE tenant_id = $1 ORDER BY created_at DESC`,
+     FROM int_api_keys WHERE tenant_id = $1 ORDER BY created_at DESC`,
     [tenantId],
   );
   return rows;
@@ -28,7 +28,7 @@ export async function createApiKey(tenantId: string, input: {
   const keyPrefix = rawKey.substring(0, 12);
 
   const { rows } = await adminPool.query(
-    `INSERT INTO api_keys (tenant_id, name, key_hash, key_prefix, scopes, rate_limit, created_by)
+    `INSERT INTO int_api_keys (tenant_id, name, key_hash, key_prefix, scopes, rate_limit, created_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, name, key_prefix, scopes, rate_limit, created_at`,
     [
       tenantId,
@@ -49,7 +49,7 @@ export async function createApiKey(tenantId: string, input: {
  */
 export async function deleteApiKey(id: string, tenantId: string) {
   const { rowCount } = await adminPool.query(
-    `DELETE FROM api_keys WHERE id = $1 AND tenant_id = $2`,
+    `DELETE FROM int_api_keys WHERE id = $1 AND tenant_id = $2`,
     [id, tenantId],
   );
   return (rowCount ?? 0) > 0;
@@ -63,7 +63,7 @@ export async function validateApiKey(rawKey: string) {
 
   const { rows } = await adminPool.query(
     `SELECT id, tenant_id, scopes, rate_limit, is_active, expires_at
-     FROM api_keys WHERE key_hash = $1`,
+     FROM int_api_keys WHERE key_hash = $1`,
     [keyHash],
   );
 
@@ -83,7 +83,7 @@ export async function validateApiKey(rawKey: string) {
  */
 export async function recordUsage(keyId: string) {
   await adminPool.query(
-    `UPDATE api_keys SET last_used_at = NOW() WHERE id = $1`,
+    `UPDATE int_api_keys SET last_used_at = NOW() WHERE id = $1`,
     [keyId],
   );
 }

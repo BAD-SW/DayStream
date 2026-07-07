@@ -7,14 +7,14 @@ import { logAudit } from './audit.service';
 export async function getTemplates(businessType?: string) {
   if (businessType) {
     const { rows } = await adminPool.query(
-      `SELECT * FROM page_templates WHERE is_active = true AND business_type = $1 ORDER BY name`,
+      `SELECT * FROM web_page_templates WHERE is_active = true AND business_type = $1 ORDER BY name`,
       [businessType],
     );
     return rows;
   }
 
   const { rows } = await adminPool.query(
-    `SELECT * FROM page_templates WHERE is_active = true ORDER BY business_type, name`,
+    `SELECT * FROM web_page_templates WHERE is_active = true ORDER BY business_type, name`,
   );
   return rows;
 }
@@ -24,7 +24,7 @@ export async function getTemplates(businessType?: string) {
  */
 export async function getTemplateById(id: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM page_templates WHERE id = $1`,
+    `SELECT * FROM web_page_templates WHERE id = $1`,
     [id],
   );
   return rows[0] || null;
@@ -39,7 +39,7 @@ export async function applyTemplate(tenantId: string, templateId: string) {
 
   // Get the tenant's site
   const { rows: siteRows } = await adminPool.query(
-    `SELECT id FROM tenant_sites WHERE tenant_id = $1`,
+    `SELECT id FROM web_sites WHERE tenant_id = $1`,
     [tenantId],
   );
   if (siteRows.length === 0) throw new Error('Site not found for tenant');
@@ -51,7 +51,7 @@ export async function applyTemplate(tenantId: string, templateId: string) {
   for (let i = 0; i < pages.length; i++) {
     const page = pages[i];
     const { rows } = await adminPool.query(
-      `INSERT INTO site_pages (site_id, slug, title, page_type, content_blocks, seo_config, display_order)
+      `INSERT INTO web_pages (site_id, slug, title, page_type, content_blocks, seo_config, display_order)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (site_id, slug) DO UPDATE SET
          content_blocks = EXCLUDED.content_blocks,
@@ -73,7 +73,7 @@ export async function applyTemplate(tenantId: string, templateId: string) {
 
   // Update the site's template reference
   await adminPool.query(
-    `UPDATE tenant_sites SET template_id = $1, updated_at = NOW() WHERE tenant_id = $2`,
+    `UPDATE web_sites SET template_id = $1, updated_at = NOW() WHERE tenant_id = $2`,
     [templateId, tenantId],
   );
 
@@ -133,7 +133,7 @@ export async function seedDefaultTemplates() {
 
   for (const tmpl of defaults) {
     await adminPool.query(
-      `INSERT INTO page_templates (name, business_type, description, pages)
+      `INSERT INTO web_page_templates (name, business_type, description, pages)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT DO NOTHING`,
       [tmpl.name, tmpl.businessType, tmpl.description, JSON.stringify(tmpl.pages)],

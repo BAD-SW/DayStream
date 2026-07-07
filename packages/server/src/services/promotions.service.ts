@@ -6,7 +6,7 @@ import { logger } from '../middleware/logger';
  */
 export async function getActivePromotions(businessId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM pricing_rules
+    `SELECT * FROM pri_rules
      WHERE business_id = $1 AND rule_type = 'promotion' AND status = 'active'
        AND (effective_from IS NULL OR effective_from <= NOW())
        AND (effective_to IS NULL OR effective_to >= NOW())
@@ -22,7 +22,7 @@ export async function getActivePromotions(businessId: string) {
  */
 export async function recordRedemption(ruleId: string): Promise<void> {
   await adminPool.query(
-    'UPDATE pricing_rules SET current_redemptions = current_redemptions + 1 WHERE id = $1',
+    'UPDATE pri_rules SET current_redemptions = current_redemptions + 1 WHERE id = $1',
     [ruleId],
   );
 }
@@ -32,7 +32,7 @@ export async function recordRedemption(ruleId: string): Promise<void> {
  */
 export async function expirePromotions(): Promise<number> {
   const { rowCount } = await adminPool.query(
-    `UPDATE pricing_rules SET status = 'expired'
+    `UPDATE pri_rules SET status = 'expired'
      WHERE rule_type = 'promotion' AND status = 'active'
        AND effective_to IS NOT NULL AND effective_to < NOW()`,
   );
@@ -48,7 +48,7 @@ export async function expirePromotions(): Promise<number> {
  */
 export async function activateScheduledPromotions(): Promise<number> {
   const { rowCount } = await adminPool.query(
-    `UPDATE pricing_rules SET status = 'active'
+    `UPDATE pri_rules SET status = 'active'
      WHERE rule_type = 'promotion' AND status = 'inactive'
        AND effective_from IS NOT NULL AND effective_from <= NOW()
        AND (effective_to IS NULL OR effective_to >= NOW())`,

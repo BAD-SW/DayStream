@@ -17,8 +17,8 @@ export async function pauseMembership(
 ): Promise<PauseResult> {
   const { rows } = await adminPool.query(
     `SELECT m.*, mp.max_pause_days_per_year, mp.max_pauses_per_year
-     FROM memberships m
-     JOIN membership_plans mp ON mp.id = m.plan_id
+     FROM mem_memberships m
+     JOIN mem_plans mp ON mp.id = m.plan_id
      WHERE m.id = $1 AND m.business_id = $2`,
     [membershipId, businessId],
   );
@@ -59,7 +59,7 @@ export async function pauseMembership(
   }
 
   await adminPool.query(
-    `UPDATE memberships SET
+    `UPDATE mem_memberships SET
        status = 'paused', paused_at = NOW(), pause_end_date = $3,
        total_paused_days = total_paused_days + $4, pause_count = pause_count + 1,
        end_date = $5, next_billing_date = $6, updated_at = NOW()
@@ -69,14 +69,14 @@ export async function pauseMembership(
 
   // Status history
   await adminPool.query(
-    `INSERT INTO membership_status_history (membership_id, from_status, to_status, changed_by, reason)
+    `INSERT INTO mem_status_history (membership_id, from_status, to_status, changed_by, reason)
      VALUES ($1, 'active', 'paused', $2, $3)`,
     [membershipId, userId, `Paused for ${pauseDays} days`],
   );
 
   await logAudit({ tenantId, userId, action: 'membership.paused', resourceType: 'membership', resourceId: membershipId, details: { pause_days: pauseDays } });
 
-  const { rows: updated } = await adminPool.query('SELECT * FROM memberships WHERE id = $1', [membershipId]);
+  const { rows: updated } = await adminPool.query('SELECT * FROM mem_memberships WHERE id = $1', [membershipId]);
   return { success: true, membership: updated[0] };
 }
 
@@ -87,7 +87,7 @@ export async function resumeMembership(
   membershipId: string, businessId: string, userId: string, tenantId: string,
 ): Promise<PauseResult> {
   const { rows } = await adminPool.query(
-    'SELECT * FROM memberships WHERE id = $1 AND business_id = $2',
+    'SELECT * FROM mem_memberships WHERE id = $1 AND business_id = $2',
     [membershipId, businessId],
   );
 
@@ -99,20 +99,20 @@ export async function resumeMembership(
   }
 
   await adminPool.query(
-    `UPDATE memberships SET status = 'active', paused_at = NULL, pause_end_date = NULL, updated_at = NOW()
+    `UPDATE mem_memberships SET status = 'active', paused_at = NULL, pause_end_date = NULL, updated_at = NOW()
      WHERE id = $1 AND business_id = $2`,
     [membershipId, businessId],
   );
 
   await adminPool.query(
-    `INSERT INTO membership_status_history (membership_id, from_status, to_status, changed_by, reason)
+    `INSERT INTO mem_status_history (membership_id, from_status, to_status, changed_by, reason)
      VALUES ($1, $2, 'active', $3, 'Resumed')`,
     [membershipId, membership.status, userId],
   );
 
   await logAudit({ tenantId, userId, action: 'membership.resumed', resourceType: 'membership', resourceId: membershipId });
 
-  const { rows: updated } = await adminPool.query('SELECT * FROM memberships WHERE id = $1', [membershipId]);
+  const { rows: updated } = await adminPool.query('SELECT * FROM mem_memberships WHERE id = $1', [membershipId]);
   return { success: true, membership: updated[0] };
 }
 
@@ -121,16 +121,16 @@ export async function resumeMembership(
  */
 export async function autoResumePaused(): Promise<number> {
   const { rows } = await adminPool.query(
-    "SELECT id, business_id FROM memberships WHERE status = 'paused' AND pause_end_date <= CURRENT_DATE",
+    "SELECT id, business_id FROM mem_memberships WHERE status = 'paused' AND pause_end_date <= CURRENT_DATE",
   );
 
   for (const m of rows) {
     await adminPool.query(
-      "UPDATE memberships SET status = 'active', paused_at = NULL, pause_end_date = NULL, updated_at = NOW() WHERE id = $1",
+      "UPDATE mem_memberships SET status = 'active', paused_at = NULL, pause_end_date = NULL, updated_at = NOW() WHERE id = $1",
       [m.id],
     );
     await adminPool.query(
-      `INSERT INTO membership_status_history (membership_id, from_status, to_status, reason)
+      `INSERT INTO mem_status_history (membership_id, from_status, to_status, reason)
        VALUES ($1, 'paused', 'active', 'Auto-resumed (pause period ended)')`,
       [m.id],
     );

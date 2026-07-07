@@ -36,7 +36,7 @@ export async function createVariant(input: CreateVariantInput) {
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO service_variants (service_id, name, duration, price, pricing_model, billing_interval, included_sessions, sessions_rollover, capacity_override, display_order)
+    `INSERT INTO svc_variants (service_id, name, duration, price, pricing_model, billing_interval, included_sessions, sessions_rollover, capacity_override, display_order)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
     [
@@ -61,7 +61,7 @@ export async function createVariant(input: CreateVariantInput) {
  */
 export async function getVariants(serviceId: string) {
   const { rows } = await adminPool.query(
-    'SELECT * FROM service_variants WHERE service_id = $1 ORDER BY display_order, created_at',
+    'SELECT * FROM svc_variants WHERE service_id = $1 ORDER BY display_order, created_at',
     [serviceId],
   );
   return rows;
@@ -73,7 +73,7 @@ export async function getVariants(serviceId: string) {
 export async function updateVariant(variantId: string, serviceId: string, updates: UpdateVariantInput) {
   // Verify variant belongs to service
   const { rows: existing } = await adminPool.query(
-    'SELECT * FROM service_variants WHERE id = $1 AND service_id = $2',
+    'SELECT * FROM svc_variants WHERE id = $1 AND service_id = $2',
     [variantId, serviceId],
   );
   if (existing.length === 0) return null;
@@ -111,7 +111,7 @@ export async function updateVariant(variantId: string, serviceId: string, update
   values.push(serviceId);
 
   const { rows } = await adminPool.query(
-    `UPDATE service_variants SET ${fields.join(', ')} WHERE id = $${idx++} AND service_id = $${idx}
+    `UPDATE svc_variants SET ${fields.join(', ')} WHERE id = $${idx++} AND service_id = $${idx}
      RETURNING *`,
     values,
   );
@@ -125,19 +125,19 @@ export async function updateVariant(variantId: string, serviceId: string, update
 export async function deleteVariant(variantId: string, serviceId: string): Promise<{ deleted: boolean; error?: string }> {
   // Check if this is the last active variant of an active service
   const { rows: serviceRows } = await adminPool.query(
-    'SELECT status FROM services WHERE id = $1',
+    'SELECT status FROM svc_services WHERE id = $1',
     [serviceId],
   );
 
   if (serviceRows.length > 0 && serviceRows[0].status === 'active') {
     const { rows: activeVariants } = await adminPool.query(
-      "SELECT id FROM service_variants WHERE service_id = $1 AND status = 'active'",
+      "SELECT id FROM svc_variants WHERE service_id = $1 AND status = 'active'",
       [serviceId],
     );
 
     // Check if the variant we're deleting is active and the last one
     const { rows: targetVariant } = await adminPool.query(
-      'SELECT status FROM service_variants WHERE id = $1',
+      'SELECT status FROM svc_variants WHERE id = $1',
       [variantId],
     );
 
@@ -147,7 +147,7 @@ export async function deleteVariant(variantId: string, serviceId: string): Promi
   }
 
   const { rowCount } = await adminPool.query(
-    'DELETE FROM service_variants WHERE id = $1 AND service_id = $2',
+    'DELETE FROM svc_variants WHERE id = $1 AND service_id = $2',
     [variantId, serviceId],
   );
 

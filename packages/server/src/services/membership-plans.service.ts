@@ -36,7 +36,7 @@ export async function createPlan(input: CreatePlanInput) {
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO membership_plans (business_id, name, description, plan_type, billing_cycle, price,
+    `INSERT INTO mem_plans (business_id, name, description, plan_type, billing_cycle, price,
        credits_per_cycle, credit_validity_days, rollover_policy, max_rollover_credits,
        total_sessions, expiration_days, is_intro_only, max_frequency_per_day,
        trial_days, max_pause_days_per_year, max_pauses_per_year,
@@ -64,7 +64,7 @@ export async function createPlan(input: CreatePlanInput) {
 export async function getPlans(businessId: string, includeArchived = false) {
   const statusFilter = includeArchived ? '' : "AND status = 'active'";
   const { rows } = await adminPool.query(
-    `SELECT * FROM membership_plans WHERE business_id = $1 ${statusFilter} ORDER BY display_order, name`,
+    `SELECT * FROM mem_plans WHERE business_id = $1 ${statusFilter} ORDER BY display_order, name`,
     [businessId],
   );
   return rows;
@@ -75,7 +75,7 @@ export async function getPlans(businessId: string, includeArchived = false) {
  */
 export async function getPlanById(id: string, businessId: string) {
   const { rows } = await adminPool.query(
-    'SELECT * FROM membership_plans WHERE id = $1 AND business_id = $2',
+    'SELECT * FROM mem_plans WHERE id = $1 AND business_id = $2',
     [id, businessId],
   );
   if (rows.length === 0) return null;
@@ -84,22 +84,22 @@ export async function getPlanById(id: string, businessId: string) {
 
   const { rows: access } = await adminPool.query(
     `SELECT psa.*, s.name AS service_name, sc.name AS category_name
-     FROM plan_service_access psa
-     LEFT JOIN services s ON s.id = psa.service_id
+     FROM mem_plan_service_access psa
+     LEFT JOIN svc_services s ON s.id = psa.service_id
      LEFT JOIN service_categories sc ON sc.id = psa.category_id
      WHERE psa.plan_id = $1`,
     [id],
   );
 
   const { rows: benefits } = await adminPool.query(
-    'SELECT * FROM plan_benefits WHERE plan_id = $1',
+    'SELECT * FROM mem_plan_benefits WHERE plan_id = $1',
     [id],
   );
 
   const { rows: upgradePaths } = await adminPool.query(
     `SELECT pup.*, mp.name AS to_plan_name
-     FROM plan_upgrade_paths pup
-     JOIN membership_plans mp ON mp.id = pup.to_plan_id
+     FROM mem_plan_upgrade_paths pup
+     JOIN mem_plans mp ON mp.id = pup.to_plan_id
      WHERE pup.from_plan_id = $1`,
     [id],
   );
@@ -112,7 +112,7 @@ export async function getPlanById(id: string, businessId: string) {
  */
 export async function updatePlan(id: string, businessId: string, updates: Record<string, any>) {
   const { rows: existing } = await adminPool.query(
-    'SELECT * FROM membership_plans WHERE id = $1 AND business_id = $2',
+    'SELECT * FROM mem_plans WHERE id = $1 AND business_id = $2',
     [id, businessId],
   );
   if (existing.length === 0) return null;
@@ -144,7 +144,7 @@ export async function updatePlan(id: string, businessId: string, updates: Record
   values.push(id); values.push(businessId);
 
   const { rows } = await adminPool.query(
-    `UPDATE membership_plans SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`,
+    `UPDATE mem_plans SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`,
     values,
   );
   return rows[0];
@@ -155,7 +155,7 @@ export async function updatePlan(id: string, businessId: string, updates: Record
  */
 export async function archivePlan(id: string, businessId: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    "UPDATE membership_plans SET status = 'archived', updated_at = NOW() WHERE id = $1 AND business_id = $2",
+    "UPDATE mem_plans SET status = 'archived', updated_at = NOW() WHERE id = $1 AND business_id = $2",
     [id, businessId],
   );
   return (rowCount ?? 0) > 0;
@@ -165,7 +165,7 @@ export async function archivePlan(id: string, businessId: string): Promise<boole
 
 export async function addServiceAccess(planId: string, data: { service_id?: string; category_id?: string; credit_cost?: number; access_type?: string; discount_percentage?: number }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO plan_service_access (plan_id, service_id, category_id, credit_cost, access_type, discount_percentage)
+    `INSERT INTO mem_plan_service_access (plan_id, service_id, category_id, credit_cost, access_type, discount_percentage)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
     [planId, data.service_id || null, data.category_id || null, data.credit_cost ?? 1, data.access_type || 'included', data.discount_percentage ?? null],
   );
@@ -175,8 +175,8 @@ export async function addServiceAccess(planId: string, data: { service_id?: stri
 export async function getServiceAccess(planId: string) {
   const { rows } = await adminPool.query(
     `SELECT psa.*, s.name AS service_name, sc.name AS category_name
-     FROM plan_service_access psa
-     LEFT JOIN services s ON s.id = psa.service_id
+     FROM mem_plan_service_access psa
+     LEFT JOIN svc_services s ON s.id = psa.service_id
      LEFT JOIN service_categories sc ON sc.id = psa.category_id
      WHERE psa.plan_id = $1`,
     [planId],
@@ -186,7 +186,7 @@ export async function getServiceAccess(planId: string) {
 
 export async function removeServiceAccess(accessId: string, planId: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    'DELETE FROM plan_service_access WHERE id = $1 AND plan_id = $2',
+    'DELETE FROM mem_plan_service_access WHERE id = $1 AND plan_id = $2',
     [accessId, planId],
   );
   return (rowCount ?? 0) > 0;
@@ -196,7 +196,7 @@ export async function removeServiceAccess(accessId: string, planId: string): Pro
 
 export async function addBenefit(planId: string, data: { benefit_type: string; value?: number; description?: string; per_cycle?: boolean }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO plan_benefits (plan_id, benefit_type, value, description, per_cycle)
+    `INSERT INTO mem_plan_benefits (plan_id, benefit_type, value, description, per_cycle)
      VALUES ($1, $2, $3, $4, $5) RETURNING *`,
     [planId, data.benefit_type, data.value ?? null, data.description || null, data.per_cycle ?? true],
   );
@@ -204,13 +204,13 @@ export async function addBenefit(planId: string, data: { benefit_type: string; v
 }
 
 export async function getBenefits(planId: string) {
-  const { rows } = await adminPool.query('SELECT * FROM plan_benefits WHERE plan_id = $1', [planId]);
+  const { rows } = await adminPool.query('SELECT * FROM mem_plan_benefits WHERE plan_id = $1', [planId]);
   return rows;
 }
 
 export async function removeBenefit(benefitId: string, planId: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    'DELETE FROM plan_benefits WHERE id = $1 AND plan_id = $2',
+    'DELETE FROM mem_plan_benefits WHERE id = $1 AND plan_id = $2',
     [benefitId, planId],
   );
   return (rowCount ?? 0) > 0;

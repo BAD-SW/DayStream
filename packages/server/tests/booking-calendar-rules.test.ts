@@ -49,7 +49,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Calendar & Rules APIs', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'CalRules Test Biz', 'calrules-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'CalRules Test Biz'
        RETURNING id`,
@@ -57,16 +57,16 @@ describe('Calendar & Rules APIs', () => {
     );
     BUSINESS_ID = bizRows[0].id;
 
-    await adminPool.query('DELETE FROM bookings WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM services WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM service_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_bookings WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
 
     const { rows: catRows } = await adminPool.query(
-      `INSERT INTO service_categories (business_id, name) VALUES ($1, 'CalRules Cat') RETURNING id`,
+      `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'CalRules Cat') RETURNING id`,
       [BUSINESS_ID],
     );
     const { rows: svcRows } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, status, default_duration, min_advance_booking_hours, max_advance_booking_days, booking_type, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, status, default_duration, min_advance_booking_hours, max_advance_booking_days, booking_type, created_by)
        VALUES ($1, $2, 'CalRules Service', 'calrules-service', 'active', 60, 2, 30, 'individual', '00000000-0000-0000-0000-000000000010')
        RETURNING id`,
       [BUSINESS_ID, catRows[0].id],
@@ -74,21 +74,21 @@ describe('Calendar & Rules APIs', () => {
     SERVICE_ID = svcRows[0].id;
 
     const { rows: varRows } = await adminPool.query(
-      `INSERT INTO service_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active') RETURNING id`,
+      `INSERT INTO svc_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active') RETURNING id`,
       [SERVICE_ID],
     );
     VARIANT_ID = varRows[0].id;
 
     STAFF_ID = '00000000-0000-0000-0000-000000000097';
     await adminPool.query(
-      `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+      `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
        VALUES ($1, $2, 'calrules-staff@example.com', 'Cal', 'Staff', 'hashed', 'therapist', 'active')
        ON CONFLICT (id) DO UPDATE SET first_name = 'Cal'`,
       [STAFF_ID, TENANT_ID],
     );
 
     const { rows: custRows } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-CR01', 'calrules-cust@example.com', 'Cal', 'Customer', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Cal'
        RETURNING id`,
@@ -102,7 +102,7 @@ describe('Calendar & Rules APIs', () => {
     const todayEnd = new Date(today.getTime() + 60 * 60 * 1000);
 
     const { rows: bk } = await adminPool.query(
-      `INSERT INTO bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
+      `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', 'BK-CR-0001', 'individual', 7500, '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, booking_reference) DO UPDATE SET start_time = $6, end_time = $7
        RETURNING id`,
@@ -115,7 +115,7 @@ describe('Calendar & Rules APIs', () => {
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     tomorrow.setUTCHours(14, 0, 0, 0);
     await adminPool.query(
-      `INSERT INTO bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
+      `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', 'BK-CR-0002', 'individual', 7500, '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, booking_reference) DO NOTHING`,
       [BUSINESS_ID, CUSTOMER_ID, SERVICE_ID, VARIANT_ID, STAFF_ID, tomorrow.toISOString(), new Date(tomorrow.getTime() + 60*60*1000).toISOString()],

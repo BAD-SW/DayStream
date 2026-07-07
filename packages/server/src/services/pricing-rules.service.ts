@@ -32,7 +32,7 @@ interface CreateRuleInput {
  */
 export async function createRule(input: CreateRuleInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO pricing_rules (business_id, name, description, rule_type, discount_type, discount_value,
+    `INSERT INTO pri_rules (business_id, name, description, rule_type, discount_type, discount_value,
        priority, stacking_mode, applies_to_all_services, service_ids, category_ids, variant_ids,
        applies_to_all_customers, customer_segment, membership_plan_ids, corporate_account_id,
        min_purchase_amount, max_redemptions, first_time_booking_limit,
@@ -58,7 +58,7 @@ export async function createRule(input: CreateRuleInput) {
 export async function getRules(businessId: string, ruleType?: string) {
   const typeFilter = ruleType ? `AND rule_type = '${ruleType}'` : '';
   const { rows } = await adminPool.query(
-    `SELECT * FROM pricing_rules WHERE business_id = $1 ${typeFilter} ORDER BY priority, name`,
+    `SELECT * FROM pri_rules WHERE business_id = $1 ${typeFilter} ORDER BY priority, name`,
     [businessId],
   );
   return rows;
@@ -69,7 +69,7 @@ export async function getRules(businessId: string, ruleType?: string) {
  */
 export async function updateRule(id: string, businessId: string, updates: Record<string, any>) {
   const { rows: existing } = await adminPool.query(
-    'SELECT * FROM pricing_rules WHERE id = $1 AND business_id = $2', [id, businessId],
+    'SELECT * FROM pri_rules WHERE id = $1 AND business_id = $2', [id, businessId],
   );
   if (existing.length === 0) return null;
 
@@ -96,7 +96,7 @@ export async function updateRule(id: string, businessId: string, updates: Record
   values.push(id); values.push(businessId);
 
   const { rows } = await adminPool.query(
-    `UPDATE pricing_rules SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`,
+    `UPDATE pri_rules SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`,
     values,
   );
   return rows[0];
@@ -107,7 +107,7 @@ export async function updateRule(id: string, businessId: string, updates: Record
  */
 export async function deleteRule(id: string, businessId: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    'DELETE FROM pricing_rules WHERE id = $1 AND business_id = $2', [id, businessId],
+    'DELETE FROM pri_rules WHERE id = $1 AND business_id = $2', [id, businessId],
   );
   return (rowCount ?? 0) > 0;
 }

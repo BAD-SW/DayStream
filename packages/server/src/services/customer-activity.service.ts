@@ -15,7 +15,7 @@ interface CreateActivityInput {
  */
 export async function createActivity(input: CreateActivityInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO customer_activities (customer_id, business_id, activity_type, description, metadata, created_by)
+    `INSERT INTO cus_activities (customer_id, business_id, activity_type, description, metadata, created_by)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
     [input.customerId, input.businessId, input.activityType, input.description, input.metadata ? JSON.stringify(input.metadata) : null, input.createdBy || null],
@@ -68,12 +68,12 @@ export async function getActivities(options: GetActivitiesOptions) {
                 WHEN ca.created_by IS NULL THEN 'System'
                 ELSE COALESCE(u.first_name || ' ' || u.last_name, 'Unknown User')
               END AS actor_name
-       FROM customer_activities ca
-       LEFT JOIN users u ON u.id = ca.created_by
+       FROM cus_activities ca
+       LEFT JOIN usr_users u ON u.id = ca.created_by
        WHERE ${where} ORDER BY ca.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
       params,
     ),
-    adminPool.query(`SELECT COUNT(*) AS total FROM customer_activities ca WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*) AS total FROM cus_activities ca WHERE ${where}`, params),
   ]);
 
   return {

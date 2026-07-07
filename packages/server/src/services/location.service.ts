@@ -66,8 +66,8 @@ async function generateSlug(name: string, businessId: string, existingId?: strin
   let counter = 1;
   while (true) {
     const query = existingId
-      ? 'SELECT id FROM locations WHERE business_id = $1 AND slug = $2 AND id != $3'
-      : 'SELECT id FROM locations WHERE business_id = $1 AND slug = $2';
+      ? 'SELECT id FROM sys_locations WHERE business_id = $1 AND slug = $2 AND id != $3'
+      : 'SELECT id FROM sys_locations WHERE business_id = $1 AND slug = $2';
     const params = existingId ? [businessId, candidate, existingId] : [businessId, candidate];
     const { rows } = await adminPool.query(query, params);
     if (rows.length === 0) break;
@@ -86,20 +86,20 @@ export async function createLocation(input: CreateLocationInput): Promise<Locati
   // If this is marked as primary, unset any existing primary
   if (input.isPrimary) {
     await adminPool.query(
-      'UPDATE locations SET is_primary = false WHERE business_id = $1 AND is_primary = true',
+      'UPDATE sys_locations SET is_primary = false WHERE business_id = $1 AND is_primary = true',
       [input.businessId],
     );
   }
 
   // If this is the first location for the business, make it primary
   const { rows: existing } = await adminPool.query(
-    'SELECT COUNT(*)::int AS cnt FROM locations WHERE business_id = $1',
+    'SELECT COUNT(*)::int AS cnt FROM sys_locations WHERE business_id = $1',
     [input.businessId],
   );
   const isPrimary = input.isPrimary || existing[0].cnt === 0;
 
   const { rows } = await adminPool.query(
-    `INSERT INTO locations (
+    `INSERT INTO sys_locations (
        business_id, name, slug, is_primary,
        address_line1, address_line2, city, state_province, postal_code, country,
        phone, email, latitude, longitude, timezone,
@@ -149,7 +149,7 @@ export async function getLocations(businessId: string, filters: LocationFilters 
 
   const where = conditions.join(' AND ');
   const { rows } = await adminPool.query(
-    `SELECT * FROM locations WHERE ${where} ORDER BY is_primary DESC, display_order, name`,
+    `SELECT * FROM sys_locations WHERE ${where} ORDER BY is_primary DESC, display_order, name`,
     params,
   );
 
@@ -161,7 +161,7 @@ export async function getLocations(businessId: string, filters: LocationFilters 
  */
 export async function getLocationById(id: string, businessId: string): Promise<Location | null> {
   const { rows } = await adminPool.query(
-    'SELECT * FROM locations WHERE id = $1 AND business_id = $2',
+    'SELECT * FROM sys_locations WHERE id = $1 AND business_id = $2',
     [id, businessId],
   );
   return rows[0] || null;
@@ -213,7 +213,7 @@ export async function updateLocation(
   // If setting as primary, unset others
   if (updates.is_primary === true) {
     await adminPool.query(
-      'UPDATE locations SET is_primary = false WHERE business_id = $1 AND id != $2',
+      'UPDATE sys_locations SET is_primary = false WHERE business_id = $1 AND id != $2',
       [businessId, id],
     );
   }
@@ -230,7 +230,7 @@ export async function updateLocation(
   values.push(businessId);
 
   const { rows } = await adminPool.query(
-    `UPDATE locations SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx}
+    `UPDATE sys_locations SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx}
      RETURNING *`,
     values,
   );
@@ -255,7 +255,7 @@ export async function updateLocation(
 export async function deactivateLocation(id: string, businessId: string, userId: string, tenantId: string): Promise<boolean> {
   // Don't allow deactivating the primary location if it's the only active one
   const { rows: activeLocations } = await adminPool.query(
-    "SELECT id, is_primary FROM locations WHERE business_id = $1 AND status = 'active'",
+    "SELECT id, is_primary FROM sys_locations WHERE business_id = $1 AND status = 'active'",
     [businessId],
   );
 
@@ -267,7 +267,7 @@ export async function deactivateLocation(id: string, businessId: string, userId:
   }
 
   const { rowCount } = await adminPool.query(
-    "UPDATE locations SET status = 'inactive', updated_at = NOW() WHERE id = $1 AND business_id = $2",
+    "UPDATE sys_locations SET status = 'inactive', updated_at = NOW() WHERE id = $1 AND business_id = $2",
     [id, businessId],
   );
 
@@ -282,9 +282,9 @@ export async function deactivateLocation(id: string, businessId: string, userId:
  */
 export async function getLocationSummary(locationId: string): Promise<{ staff_count: number; service_count: number; resource_count: number }> {
   const [staffResult, serviceResult, resourceResult] = await Promise.all([
-    adminPool.query('SELECT COUNT(*)::int AS cnt FROM staff_location_assignments WHERE location_id = $1', [locationId]),
-    adminPool.query('SELECT COUNT(*)::int AS cnt FROM service_locations WHERE location_id = $1', [locationId]),
-    adminPool.query("SELECT COUNT(*)::int AS cnt FROM resources WHERE location_id = $1 AND status = 'active'", [locationId]),
+    adminPool.query('SELECT COUNT(*)::int AS cnt FROM stf_location_assignments WHERE location_id = $1', [locationId]),
+    adminPool.query('SELECT COUNT(*)::int AS cnt FROM svc_locations WHERE location_id = $1', [locationId]),
+    adminPool.query("SELECT COUNT(*)::int AS cnt FROM res_resources WHERE location_id = $1 AND status = 'active'", [locationId]),
   ]);
 
   return {

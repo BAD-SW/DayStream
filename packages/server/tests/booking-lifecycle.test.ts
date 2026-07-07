@@ -49,7 +49,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Booking Lifecycle', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Lifecycle BK Test Biz', 'lifecycle-bk-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Lifecycle BK Test Biz'
        RETURNING id`,
@@ -59,12 +59,12 @@ describe('Booking Lifecycle', () => {
 
     // Create service infrastructure
     const { rows: catRows } = await adminPool.query(
-      `INSERT INTO service_categories (business_id, name) VALUES ($1, 'LC BK Cat')
+      `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'LC BK Cat')
        ON CONFLICT (business_id, name, parent_id) DO UPDATE SET name = 'LC BK Cat' RETURNING id`,
       [BUSINESS_ID],
     );
     const { rows: svcRows } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, status, default_duration, booking_type, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, status, default_duration, booking_type, created_by)
        VALUES ($1, $2, 'LC BK Service', 'lc-bk-service', 'active', 60, 'individual', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, slug) DO UPDATE SET name = 'LC BK Service' RETURNING id`,
       [BUSINESS_ID, catRows[0].id],
@@ -72,24 +72,24 @@ describe('Booking Lifecycle', () => {
     const serviceId = svcRows[0].id;
 
     const { rows: varRows } = await adminPool.query(
-      `INSERT INTO service_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active')
+      `INSERT INTO svc_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active')
        ON CONFLICT DO NOTHING RETURNING id`,
       [serviceId],
     );
     const variantId = varRows.length > 0 ? varRows[0].id : (await adminPool.query(
-      "SELECT id FROM service_variants WHERE service_id = $1 LIMIT 1", [serviceId]
+      "SELECT id FROM svc_variants WHERE service_id = $1 LIMIT 1", [serviceId]
     )).rows[0].id;
 
     STAFF_ID = '00000000-0000-0000-0000-000000000080';
     await adminPool.query(
-      `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+      `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
        VALUES ($1, $2, 'lc-bk-staff@example.com', 'LC', 'Staff', 'hashed', 'therapist', 'active')
        ON CONFLICT (id) DO UPDATE SET first_name = 'LC'`,
       [STAFF_ID, TENANT_ID],
     );
 
     const { rows: custRows } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-LCBK', 'lc-bk-cust@example.com', 'LC', 'Customer', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'LC'
        RETURNING id`,
@@ -104,7 +104,7 @@ describe('Booking Lifecycle', () => {
     // Booking 1: confirmed (for full lifecycle test)
     const t1 = new Date(baseTime); t1.setUTCHours(10, 0, 0, 0);
     const { rows: bk1 } = await adminPool.query(
-      `INSERT INTO bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
+      `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', 'BK-LC-0001', 'individual', 7500, '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, booking_reference) DO UPDATE SET status = 'confirmed'
        RETURNING id`,
@@ -115,7 +115,7 @@ describe('Booking Lifecycle', () => {
     // Booking 2: confirmed (for cancel test)
     const t2 = new Date(baseTime); t2.setUTCHours(12, 0, 0, 0);
     const { rows: bk2 } = await adminPool.query(
-      `INSERT INTO bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
+      `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', 'BK-LC-0002', 'individual', 7500, '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, booking_reference) DO UPDATE SET status = 'confirmed'
        RETURNING id`,
@@ -126,7 +126,7 @@ describe('Booking Lifecycle', () => {
     // Booking 3: confirmed, start time in the past (for no-show test)
     const pastTime = new Date(Date.now() - 30 * 60 * 1000); // 30 min ago
     const { rows: bk3 } = await adminPool.query(
-      `INSERT INTO bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
+      `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', 'BK-LC-0003', 'individual', 7500, '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, booking_reference) DO UPDATE SET status = 'confirmed', start_time = $6
        RETURNING id`,
@@ -206,10 +206,10 @@ describe('Booking Lifecycle', () => {
       // Create another past booking
       const pastTime = new Date(Date.now() - 20 * 60 * 1000);
       await adminPool.query(
-        `INSERT INTO bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
+        `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
          VALUES ($1, $2,
-           (SELECT id FROM services WHERE business_id = $1 LIMIT 1),
-           (SELECT sv.id FROM service_variants sv JOIN services s ON s.id = sv.service_id WHERE s.business_id = $1 LIMIT 1),
+           (SELECT id FROM svc_services WHERE business_id = $1 LIMIT 1),
+           (SELECT sv.id FROM svc_variants sv JOIN svc_services s ON s.id = sv.service_id WHERE s.business_id = $1 LIMIT 1),
            $3, $4, $5, 'confirmed', 'BK-LC-0004', 'individual', 7500, '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, booking_reference) DO UPDATE SET status = 'confirmed', start_time = $4`,
         [BUSINESS_ID, CUSTOMER_ID, STAFF_ID, pastTime.toISOString(), new Date(pastTime.getTime() + 60*60*1000).toISOString()],
@@ -227,10 +227,10 @@ describe('Booking Lifecycle', () => {
       futureTime.setUTCDate(futureTime.getUTCDate() + 12);
       futureTime.setUTCHours(9, 0, 0, 0);
       const { rows: bk } = await adminPool.query(
-        `INSERT INTO bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
+        `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
          VALUES ($1, $2,
-           (SELECT id FROM services WHERE business_id = $1 LIMIT 1),
-           (SELECT sv.id FROM service_variants sv JOIN services s ON s.id = sv.service_id WHERE s.business_id = $1 LIMIT 1),
+           (SELECT id FROM svc_services WHERE business_id = $1 LIMIT 1),
+           (SELECT sv.id FROM svc_variants sv JOIN svc_services s ON s.id = sv.service_id WHERE s.business_id = $1 LIMIT 1),
            $3, $4, $5, 'confirmed', 'BK-LC-0005', 'individual', 7500, '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, booking_reference) DO UPDATE SET status = 'confirmed', start_time = $4
          RETURNING id`,
@@ -262,10 +262,10 @@ describe('Booking Lifecycle', () => {
       otherTime.setUTCDate(otherTime.getUTCDate() + 13);
       otherTime.setUTCHours(11, 0, 0, 0);
       const { rows: bk } = await adminPool.query(
-        `INSERT INTO bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
+        `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
          VALUES ($1, $2,
-           (SELECT id FROM services WHERE business_id = $1 LIMIT 1),
-           (SELECT sv.id FROM service_variants sv JOIN services s ON s.id = sv.service_id WHERE s.business_id = $1 LIMIT 1),
+           (SELECT id FROM svc_services WHERE business_id = $1 LIMIT 1),
+           (SELECT sv.id FROM svc_variants sv JOIN svc_services s ON s.id = sv.service_id WHERE s.business_id = $1 LIMIT 1),
            $3, $4, $5, 'confirmed', 'BK-LC-0006', 'individual', 7500, '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, booking_reference) DO UPDATE SET status = 'confirmed'
          RETURNING id`,

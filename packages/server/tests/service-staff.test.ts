@@ -47,7 +47,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Service Staff Assignment API', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Staff Assign Test Biz', 'staff-assign-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Staff Assign Test Biz'
        RETURNING id`,
@@ -56,16 +56,16 @@ describe('Service Staff Assignment API', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean up
-    await adminPool.query('DELETE FROM services WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM service_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
 
     // Create category + service + variant
     const { rows: catRows } = await adminPool.query(
-      `INSERT INTO service_categories (business_id, name) VALUES ($1, 'Staff Test Cat') RETURNING id`,
+      `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'Staff Test Cat') RETURNING id`,
       [BUSINESS_ID],
     );
     const { rows: svcRows } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, created_by)
        VALUES ($1, $2, 'Staff Test Service', 'staff-test-service', '00000000-0000-0000-0000-000000000010')
        RETURNING id`,
       [BUSINESS_ID, catRows[0].id],
@@ -73,14 +73,14 @@ describe('Service Staff Assignment API', () => {
     SERVICE_ID = svcRows[0].id;
 
     const { rows: varRows } = await adminPool.query(
-      `INSERT INTO service_variants (service_id, name, duration, price) VALUES ($1, '60 min', 60, 7500) RETURNING id`,
+      `INSERT INTO svc_variants (service_id, name, duration, price) VALUES ($1, '60 min', 60, 7500) RETURNING id`,
       [SERVICE_ID],
     );
     VARIANT_ID = varRows[0].id;
 
     // Create staff users
     const { rows: staff1 } = await adminPool.query(
-      `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+      `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
        VALUES ('00000000-0000-0000-0000-000000000050', $1, 'staff1-assign@example.com', 'Sarah', 'Therapist', 'hashed', 'therapist', 'active')
        ON CONFLICT (id) DO UPDATE SET first_name = 'Sarah'
        RETURNING id`,
@@ -89,7 +89,7 @@ describe('Service Staff Assignment API', () => {
     STAFF_USER_ID = staff1[0].id;
 
     const { rows: staff2 } = await adminPool.query(
-      `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+      `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
        VALUES ('00000000-0000-0000-0000-000000000051', $1, 'staff2-assign@example.com', 'Mike', 'Trainer', 'hashed', 'trainer', 'active')
        ON CONFLICT (id) DO UPDATE SET first_name = 'Mike'
        RETURNING id`,

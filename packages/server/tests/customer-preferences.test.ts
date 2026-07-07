@@ -44,7 +44,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Customer Communication Preferences API', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Prefs Test Biz', 'prefs-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Prefs Test Biz'
        RETURNING id`,
@@ -53,7 +53,7 @@ describe('Customer Communication Preferences API', () => {
     BUSINESS_ID = bizRows[0].id;
 
     const { rows: custRows } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-PREF01', 'prefs-test@example.com', 'Prefs', 'Test', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Prefs'
        RETURNING id`,
@@ -63,7 +63,7 @@ describe('Customer Communication Preferences API', () => {
 
     // Ensure default preferences exist
     await adminPool.query(
-      'INSERT INTO customer_preferences (customer_id) VALUES ($1) ON CONFLICT DO NOTHING',
+      'INSERT INTO cus_preferences (customer_id) VALUES ($1) ON CONFLICT DO NOTHING',
       [CUSTOMER_ID],
     );
 

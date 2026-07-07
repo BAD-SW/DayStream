@@ -16,7 +16,7 @@ export async function walkInCheckIn(tenantId: string, input: WalkInInput) {
 
   // Check walk-in is enabled
   const { rows: configRows } = await adminPool.query(
-    `SELECT walk_in_enabled FROM check_in_config WHERE tenant_id = $1`,
+    `SELECT walk_in_enabled FROM apt_check_in_config WHERE tenant_id = $1`,
     [tenantId],
   );
 
@@ -27,8 +27,8 @@ export async function walkInCheckIn(tenantId: string, input: WalkInInput) {
   // Check service exists and get duration
   const { rows: serviceRows } = await adminPool.query(
     `SELECT s.id, s.name, sv.duration, sv.price, sv.id AS variant_id
-     FROM services s
-     JOIN service_variants sv ON sv.service_id = s.id AND sv.is_default = true
+     FROM svc_services s
+     JOIN svc_variants sv ON sv.service_id = s.id AND sv.is_default = true
      WHERE s.id = $1 AND s.tenant_id = $2 AND s.is_active = true
      LIMIT 1`,
     [serviceId, tenantId],
@@ -42,7 +42,7 @@ export async function walkInCheckIn(tenantId: string, input: WalkInInput) {
 
   // Check customer doesn't already have an active check-in
   const { rows: activeCheckins } = await adminPool.query(
-    `SELECT id FROM check_in_records
+    `SELECT id FROM apt_check_in_records
      WHERE customer_id = $1 AND tenant_id = $2
        AND status IN ('checked_in', 'in_progress')
        AND check_in_time::date = CURRENT_DATE
@@ -56,7 +56,7 @@ export async function walkInCheckIn(tenantId: string, input: WalkInInput) {
 
   // Create instant booking
   const { rows: bookingRows } = await adminPool.query(
-    `INSERT INTO bookings
+    `INSERT INTO apt_bookings
        (tenant_id, customer_id, service_id, variant_id, start_time, end_time, status, booking_type, price, notes)
      VALUES ($1, $2, $3, $4, $5, $6, 'confirmed', 'individual', $7, 'Walk-in')
      RETURNING *`,
@@ -70,7 +70,7 @@ export async function walkInCheckIn(tenantId: string, input: WalkInInput) {
 
   // Create check-in record
   const { rows: checkinRows } = await adminPool.query(
-    `INSERT INTO check_in_records
+    `INSERT INTO apt_check_in_records
        (tenant_id, booking_id, customer_id, check_in_method, validated, validation_warnings, location_id)
      VALUES ($1, $2, $3, 'walk_in', $4, $5, $6)
      RETURNING *`,
@@ -89,7 +89,7 @@ export async function walkInCheckIn(tenantId: string, input: WalkInInput) {
   // Update booking status to checked_in
   if (validation.pass) {
     await adminPool.query(
-      `UPDATE bookings SET status = 'checked_in' WHERE id = $1`,
+      `UPDATE apt_bookings SET status = 'checked_in' WHERE id = $1`,
       [booking.id],
     );
   }

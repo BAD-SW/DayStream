@@ -47,7 +47,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Pricing Bundles', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Bundle Test Biz', 'bundle-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Bundle Test Biz'
        RETURNING id`,
@@ -55,33 +55,33 @@ describe('Pricing Bundles', () => {
     );
     BUSINESS_ID = bizRows[0].id;
 
-    await adminPool.query('DELETE FROM pricing_bundles WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM services WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM service_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM pri_bundles WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
 
     // Create 2 services with variants
     const { rows: catRows } = await adminPool.query(
-      `INSERT INTO service_categories (business_id, name) VALUES ($1, 'Bundle Cat') RETURNING id`, [BUSINESS_ID],
+      `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'Bundle Cat') RETURNING id`, [BUSINESS_ID],
     );
     const { rows: svc1 } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, status, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, status, created_by)
        VALUES ($1, $2, 'Massage', 'massage', 'active', '00000000-0000-0000-0000-000000000010') RETURNING id`,
       [BUSINESS_ID, catRows[0].id],
     );
     const { rows: svc2 } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, status, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, status, created_by)
        VALUES ($1, $2, 'Sauna', 'sauna', 'active', '00000000-0000-0000-0000-000000000010') RETURNING id`,
       [BUSINESS_ID, catRows[0].id],
     );
 
     const { rows: v1 } = await adminPool.query(
-      `INSERT INTO service_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active') RETURNING id`,
+      `INSERT INTO svc_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active') RETURNING id`,
       [svc1[0].id],
     );
     VARIANT_ID_1 = v1[0].id;
 
     const { rows: v2 } = await adminPool.query(
-      `INSERT INTO service_variants (service_id, name, duration, price, status) VALUES ($1, '45 min', 45, 3500, 'active') RETURNING id`,
+      `INSERT INTO svc_variants (service_id, name, duration, price, status) VALUES ($1, '45 min', 45, 3500, 'active') RETURNING id`,
       [svc2[0].id],
     );
     VARIANT_ID_2 = v2[0].id;

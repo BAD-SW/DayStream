@@ -103,17 +103,17 @@ async function seed() {
     await client.query('BEGIN');
 
     // Clear existing seed data
-    await client.query('DELETE FROM login_attempts WHERE tenant_id = $1', [SEED_TENANT_ID]);
-    await client.query('DELETE FROM refresh_tokens WHERE user_id IN (SELECT id FROM users WHERE tenant_id = $1)', [SEED_TENANT_ID]);
-    await client.query('DELETE FROM password_history WHERE user_id IN (SELECT id FROM users WHERE tenant_id = $1)', [SEED_TENANT_ID]);
-    await client.query('DELETE FROM tenant_configurations WHERE tenant_id = $1', [SEED_TENANT_ID]);
-    await client.query('DELETE FROM user_roles WHERE tenant_id = $1', [SEED_TENANT_ID]);
-    await client.query('DELETE FROM users WHERE tenant_id = $1', [SEED_TENANT_ID]);
-    await client.query('DELETE FROM tenants WHERE id = $1', [SEED_TENANT_ID]);
+    await client.query('DELETE FROM usr_login_attempts WHERE tenant_id = $1', [SEED_TENANT_ID]);
+    await client.query('DELETE FROM usr_refresh_tokens WHERE user_id IN (SELECT id FROM usr_users WHERE tenant_id = $1)', [SEED_TENANT_ID]);
+    await client.query('DELETE FROM usr_password_history WHERE user_id IN (SELECT id FROM usr_users WHERE tenant_id = $1)', [SEED_TENANT_ID]);
+    await client.query('DELETE FROM sys_tenant_configurations WHERE tenant_id = $1', [SEED_TENANT_ID]);
+    await client.query('DELETE FROM usr_user_roles WHERE tenant_id = $1', [SEED_TENANT_ID]);
+    await client.query('DELETE FROM usr_users WHERE tenant_id = $1', [SEED_TENANT_ID]);
+    await client.query('DELETE FROM sys_tenants WHERE id = $1', [SEED_TENANT_ID]);
 
     // Insert test tenant
     await client.query(
-      `INSERT INTO tenants (id, name, slug, status)
+      `INSERT INTO sys_tenants (id, name, slug, status)
        VALUES ($1, $2, $3, $4)`,
       [SEED_TENANT_ID, 'Transcend Health Mallorca', 'transcend', 'active'],
     );
@@ -138,7 +138,7 @@ async function seed() {
 
     for (const [, user] of Object.entries(SEED_USERS)) {
       await client.query(
-        `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, persona, status)
+        `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, persona, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')`,
         [user.id, SEED_TENANT_ID, user.email, user.firstName, user.lastName, passwordHash, user.role, user.persona],
       );
@@ -147,7 +147,7 @@ async function seed() {
       const roleId = roleMap[user.role];
       if (roleId) {
         await client.query(
-          `INSERT INTO user_roles (user_id, role_id, tenant_id) VALUES ($1, $2, $3)`,
+          `INSERT INTO usr_user_roles (user_id, role_id, tenant_id) VALUES ($1, $2, $3)`,
           [user.id, roleId, SEED_TENANT_ID],
         );
       }

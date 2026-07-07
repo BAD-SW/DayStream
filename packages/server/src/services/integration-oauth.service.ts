@@ -26,7 +26,7 @@ export async function initiateOAuth(tenantId: string, provider: string, redirect
 
   // Store state temporarily in a pending connection
   await adminPool.query(
-    `INSERT INTO integration_connections (tenant_id, integration_type, provider, status, config)
+    `INSERT INTO int_connections (tenant_id, integration_type, provider, status, config)
      VALUES ($1, 'oauth', $2, 'disconnected', $3)`,
     [tenantId, provider, JSON.stringify({ state, redirectUri })],
   );
@@ -52,7 +52,7 @@ export async function initiateOAuth(tenantId: string, provider: string, redirect
 export async function handleCallback(state: string, code: string) {
   // Find the pending connection by state
   const { rows } = await adminPool.query(
-    `SELECT * FROM integration_connections
+    `SELECT * FROM int_connections
      WHERE status = 'disconnected' AND config->>'state' = $1`,
     [state],
   );
@@ -73,7 +73,7 @@ export async function handleCallback(state: string, code: string) {
   const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
 
   await adminPool.query(
-    `UPDATE integration_connections
+    `UPDATE int_connections
      SET status = 'connected', oauth_access_token = $1, oauth_refresh_token = $2,
          oauth_expires_at = $3, config = config - 'state', updated_at = NOW()
      WHERE id = $4`,
@@ -88,7 +88,7 @@ export async function handleCallback(state: string, code: string) {
  */
 export async function refreshToken(connectionId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM integration_connections WHERE id = $1`,
+    `SELECT * FROM int_connections WHERE id = $1`,
     [connectionId],
   );
   if (rows.length === 0) throw new Error('Connection not found');
@@ -106,7 +106,7 @@ export async function refreshToken(connectionId: string) {
   const expiresAt = new Date(Date.now() + newTokens.expires_in * 1000);
 
   await adminPool.query(
-    `UPDATE integration_connections
+    `UPDATE int_connections
      SET oauth_access_token = $1, oauth_expires_at = $2, status = 'connected', updated_at = NOW()
      WHERE id = $3`,
     [newTokens.access_token, expiresAt.toISOString(), connectionId],

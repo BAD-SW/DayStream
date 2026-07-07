@@ -23,7 +23,7 @@ export async function createTimeEntry(input: CreateTimeEntryInput) {
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO time_entries (business_id, user_id, entry_type, start_time, end_time, hours, description, booking_id)
+    `INSERT INTO fin_time_entries (business_id, user_id, entry_type, start_time, end_time, hours, description, booking_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
     [input.businessId, input.userId, input.entryType, input.startTime, input.endTime || null, hours || null, input.description || null, input.bookingId || null],
@@ -47,8 +47,8 @@ export async function getTimeEntries(businessId: string, filters?: { userId?: st
 
   const where = conditions.join(' AND ');
   const { rows } = await adminPool.query(
-    `SELECT te.*, u.first_name, u.last_name FROM time_entries te
-     JOIN users u ON u.id = te.user_id
+    `SELECT te.*, u.first_name, u.last_name FROM fin_time_entries te
+     JOIN usr_users u ON u.id = te.user_id
      WHERE ${where} ORDER BY te.start_time DESC`,
     params,
   );
@@ -60,7 +60,7 @@ export async function getTimeEntries(businessId: string, filters?: { userId?: st
  */
 export async function approveTimeEntry(id: string, businessId: string, approvedBy: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    'UPDATE time_entries SET approved = true, approved_by = $3 WHERE id = $1 AND business_id = $2',
+    'UPDATE fin_time_entries SET approved = true, approved_by = $3 WHERE id = $1 AND business_id = $2',
     [id, businessId, approvedBy],
   );
   return (rowCount ?? 0) > 0;
@@ -71,7 +71,7 @@ export async function approveTimeEntry(id: string, businessId: string, approvedB
  */
 export async function rejectTimeEntry(id: string, businessId: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    'DELETE FROM time_entries WHERE id = $1 AND business_id = $2 AND approved = false',
+    'DELETE FROM fin_time_entries WHERE id = $1 AND business_id = $2 AND approved = false',
     [id, businessId],
   );
   return (rowCount ?? 0) > 0;
@@ -84,11 +84,11 @@ export async function generateFromBookings(businessId: string, periodStart: stri
   // Find completed bookings that don't already have a time entry
   const { rows: bookings } = await adminPool.query(
     `SELECT b.id, b.staff_id, b.start_time, b.end_time
-     FROM bookings b
+     FROM apt_bookings b
      WHERE b.business_id = $1 AND b.status = 'completed'
        AND b.start_time >= $2 AND b.start_time <= $3
        AND b.staff_id IS NOT NULL
-       AND NOT EXISTS (SELECT 1 FROM time_entries te WHERE te.booking_id = b.id)`,
+       AND NOT EXISTS (SELECT 1 FROM fin_time_entries te WHERE te.booking_id = b.id)`,
     [businessId, periodStart, periodEnd],
   );
 
@@ -98,7 +98,7 @@ export async function generateFromBookings(businessId: string, periodStart: stri
     const hours = Math.round((diff / (60 * 60 * 1000)) * 100) / 100;
 
     await adminPool.query(
-      `INSERT INTO time_entries (business_id, user_id, entry_type, start_time, end_time, hours, booking_id, approved)
+      `INSERT INTO fin_time_entries (business_id, user_id, entry_type, start_time, end_time, hours, booking_id, approved)
        VALUES ($1, $2, 'booking', $3, $4, $5, $6, true)`,
       [businessId, booking.staff_id, booking.start_time, booking.end_time, hours, booking.id],
     );
@@ -113,19 +113,19 @@ export async function generateFromBookings(businessId: string, periodStart: stri
  */
 export async function getUserSummary(userId: string, businessId: string, periodStart: string, periodEnd: string) {
   const { rows: hourRows } = await adminPool.query(
-    `SELECT COALESCE(SUM(hours), 0)::numeric AS total_hours FROM time_entries
+    `SELECT COALESCE(SUM(hours), 0)::numeric AS total_hours FROM fin_time_entries
      WHERE user_id = $1 AND business_id = $2 AND start_time >= $3 AND start_time <= $4 AND approved = true`,
     [userId, businessId, periodStart, periodEnd],
   );
 
   const { rows: sessionRows } = await adminPool.query(
-    `SELECT COUNT(*)::int AS total_sessions FROM time_entries
+    `SELECT COUNT(*)::int AS total_sessions FROM fin_time_entries
      WHERE user_id = $1 AND business_id = $2 AND entry_type = 'booking' AND start_time >= $3 AND start_time <= $4`,
     [userId, businessId, periodStart, periodEnd],
   );
 
   const { rows: revenueRows } = await adminPool.query(
-    `SELECT COALESCE(SUM(b.price), 0)::int AS total_revenue FROM bookings b
+    `SELECT COALESCE(SUM(b.price), 0)::int AS total_revenue FROM apt_bookings b
      WHERE b.staff_id = $1 AND b.business_id = $2 AND b.status = 'completed'
        AND b.start_time >= $3 AND b.start_time <= $4`,
     [userId, businessId, periodStart, periodEnd],

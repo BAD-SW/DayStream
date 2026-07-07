@@ -7,7 +7,7 @@ import { adminPool } from '../db/pool';
 export async function getPublicSite(identifier: string) {
   // Try slug first, then custom domain
   const { rows } = await adminPool.query(
-    `SELECT * FROM tenant_sites
+    `SELECT * FROM web_sites
      WHERE is_published = true
        AND (slug = $1 OR (custom_domain = $1 AND domain_status = 'active'))`,
     [identifier],
@@ -19,7 +19,7 @@ export async function getPublicSite(identifier: string) {
 
   // Fetch navigation
   const { rows: navRows } = await adminPool.query(
-    `SELECT * FROM site_navigation WHERE site_id = $1`,
+    `SELECT * FROM web_navigation WHERE site_id = $1`,
     [site.id],
   );
 
@@ -41,7 +41,7 @@ export async function getPublicSite(identifier: string) {
  */
 export async function getPublicPage(siteId: string, pageSlug: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM site_pages
+    `SELECT * FROM web_pages
      WHERE site_id = $1 AND slug = $2 AND is_enabled = true AND status = 'published'`,
     [siteId, pageSlug],
   );
@@ -59,14 +59,14 @@ export async function getPublicBlogListing(siteId: string, page?: number, limit?
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
       `SELECT id, title, slug, excerpt, featured_image_path, author_name, tags, category, published_at
-       FROM blog_posts
+       FROM web_blog_posts
        WHERE site_id = $1 AND status = 'published'
        ORDER BY published_at DESC
        LIMIT $2 OFFSET $3`,
       [siteId, l, offset],
     ),
     adminPool.query(
-      `SELECT COUNT(*)::int AS total FROM blog_posts WHERE site_id = $1 AND status = 'published'`,
+      `SELECT COUNT(*)::int AS total FROM web_blog_posts WHERE site_id = $1 AND status = 'published'`,
       [siteId],
     ),
   ]);
@@ -84,7 +84,7 @@ export async function getPublicBlogListing(siteId: string, page?: number, limit?
  */
 export async function getPublicBlogPost(siteId: string, slug: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM blog_posts WHERE site_id = $1 AND slug = $2 AND status = 'published'`,
+    `SELECT * FROM web_blog_posts WHERE site_id = $1 AND slug = $2 AND status = 'published'`,
     [siteId, slug],
   );
   return rows[0] || null;
@@ -96,7 +96,7 @@ export async function getPublicBlogPost(siteId: string, slug: string) {
 export async function generateSitemap(siteId: string): Promise<string> {
   // Get site info for base URL
   const { rows: siteRows } = await adminPool.query(
-    `SELECT slug, custom_domain, domain_status FROM tenant_sites WHERE id = $1`,
+    `SELECT slug, custom_domain, domain_status FROM web_sites WHERE id = $1`,
     [siteId],
   );
   if (siteRows.length === 0) return '';
@@ -108,7 +108,7 @@ export async function generateSitemap(siteId: string): Promise<string> {
 
   // Fetch published pages
   const { rows: pages } = await adminPool.query(
-    `SELECT slug, updated_at FROM site_pages
+    `SELECT slug, updated_at FROM web_pages
      WHERE site_id = $1 AND is_enabled = true AND status = 'published'
      ORDER BY display_order`,
     [siteId],
@@ -116,7 +116,7 @@ export async function generateSitemap(siteId: string): Promise<string> {
 
   // Fetch published blog posts
   const { rows: posts } = await adminPool.query(
-    `SELECT slug, updated_at FROM blog_posts
+    `SELECT slug, updated_at FROM web_blog_posts
      WHERE site_id = $1 AND status = 'published'
      ORDER BY published_at DESC`,
     [siteId],

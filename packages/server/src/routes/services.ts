@@ -846,7 +846,7 @@ import { adminPool } from '../db/pool';
 servicesRouter.get('/:id/locations', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const { rows } = await adminPool.query(
-      'SELECT location_id FROM service_locations WHERE service_id = $1',
+      'SELECT location_id FROM svc_locations WHERE service_id = $1',
       [req.params.id],
     );
     success(res, rows.map((r: any) => r.location_id));
@@ -866,7 +866,7 @@ servicesRouter.put('/:id/locations', requirePermission('services:*'), async (req
     // Validate all location IDs belong to the business
     if (locationIds.length > 0) {
       const { rows } = await adminPool.query(
-        'SELECT id FROM locations WHERE business_id = $1 AND id = ANY($2)',
+        'SELECT id FROM sys_locations WHERE business_id = $1 AND id = ANY($2)',
         [businessId, locationIds],
       );
       if (rows.length !== locationIds.length) {
@@ -876,12 +876,12 @@ servicesRouter.put('/:id/locations', requirePermission('services:*'), async (req
     }
 
     // Replace: delete existing and insert new
-    await adminPool.query('DELETE FROM service_locations WHERE service_id = $1', [req.params.id]);
+    await adminPool.query('DELETE FROM svc_locations WHERE service_id = $1', [req.params.id]);
 
     if (locationIds.length > 0) {
       const values = locationIds.map((lid, idx) => `($1, $${idx + 2})`).join(', ');
       await adminPool.query(
-        `INSERT INTO service_locations (service_id, location_id) VALUES ${values}`,
+        `INSERT INTO svc_locations (service_id, location_id) VALUES ${values}`,
         [req.params.id, ...locationIds],
       );
     }

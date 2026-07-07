@@ -6,7 +6,7 @@ import crypto from 'crypto';
  */
 export async function getSubscriptions(tenantId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM webhook_subscriptions WHERE tenant_id = $1 ORDER BY created_at DESC`,
+    `SELECT * FROM int_webhook_subscriptions WHERE tenant_id = $1 ORDER BY created_at DESC`,
     [tenantId],
   );
   return rows;
@@ -22,7 +22,7 @@ export async function createSubscription(tenantId: string, input: {
 }) {
   const secret = input.secret || crypto.randomBytes(32).toString('hex');
   const { rows } = await adminPool.query(
-    `INSERT INTO webhook_subscriptions (tenant_id, url, secret, event_types)
+    `INSERT INTO int_webhook_subscriptions (tenant_id, url, secret, event_types)
      VALUES ($1, $2, $3, $4) RETURNING *`,
     [tenantId, input.url, secret, JSON.stringify(input.eventTypes)],
   );
@@ -45,7 +45,7 @@ export async function updateSubscription(id: string, tenantId: string, updates: 
   values.push(id, tenantId);
 
   const { rows } = await adminPool.query(
-    `UPDATE webhook_subscriptions SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
+    `UPDATE int_webhook_subscriptions SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
     values,
   );
   return rows[0] || null;
@@ -56,7 +56,7 @@ export async function updateSubscription(id: string, tenantId: string, updates: 
  */
 export async function deleteSubscription(id: string, tenantId: string) {
   const { rowCount } = await adminPool.query(
-    `DELETE FROM webhook_subscriptions WHERE id = $1 AND tenant_id = $2`,
+    `DELETE FROM int_webhook_subscriptions WHERE id = $1 AND tenant_id = $2`,
     [id, tenantId],
   );
   return (rowCount ?? 0) > 0;
@@ -67,7 +67,7 @@ export async function deleteSubscription(id: string, tenantId: string) {
  */
 export async function deliverWebhook(tenantId: string, eventType: string, data: any) {
   const { rows: subs } = await adminPool.query(
-    `SELECT * FROM webhook_subscriptions
+    `SELECT * FROM int_webhook_subscriptions
      WHERE tenant_id = $1 AND is_active = true
        AND event_types @> $2::jsonb`,
     [tenantId, JSON.stringify([eventType])],
@@ -79,7 +79,7 @@ export async function deliverWebhook(tenantId: string, eventType: string, data: 
     const signature = crypto.createHmac('sha256', sub.secret).update(JSON.stringify(payload)).digest('hex');
 
     const { rows } = await adminPool.query(
-      `INSERT INTO webhook_deliveries (subscription_id, event_type, payload, status)
+      `INSERT INTO int_webhook_deliveries (subscription_id, event_type, payload, status)
        VALUES ($1, $2, $3, 'pending') RETURNING *`,
       [sub.id, eventType, JSON.stringify(payload)],
     );
@@ -93,8 +93,8 @@ export async function deliverWebhook(tenantId: string, eventType: string, data: 
  */
 export async function sendDelivery(deliveryId: string) {
   const { rows } = await adminPool.query(
-    `SELECT d.*, s.url, s.secret FROM webhook_deliveries d
-     JOIN webhook_subscriptions s ON s.id = d.subscription_id
+    `SELECT d.*, s.url, s.secret FROM int_webhook_deliveries d
+     JOIN int_webhook_subscriptions s ON s.id = d.subscription_id
      WHERE d.id = $1`,
     [deliveryId],
   );
@@ -115,19 +115,19 @@ export async function sendDelivery(deliveryId: string) {
     });
 
     await adminPool.query(
-      `UPDATE webhook_deliveries SET status = $1, response_status = $2, attempt_count = attempt_count + 1
+      `UPDATE int_webhook_deliveries SET status = $1, response_status = $2, attempt_count = attempt_count + 1
        WHERE id = $3`,
       [response.ok ? 'sent' : 'failed', response.status, deliveryId],
     );
 
     if (response.ok) {
       await adminPool.query(
-        `UPDATE webhook_subscriptions SET last_delivery_at = NOW(), failure_count = 0 WHERE id = $1`,
+        `UPDATE int_webhook_subscriptions SET last_delivery_at = NOW(), failure_count = 0 WHERE id = $1`,
         [delivery.subscription_id],
       );
     } else {
       await adminPool.query(
-        `UPDATE webhook_subscriptions SET failure_count = failure_count + 1, last_failure_at = NOW() WHERE id = $1`,
+        `UPDATE int_webhook_subscriptions SET failure_count = failure_count + 1, last_failure_at = NOW() WHERE id = $1`,
         [delivery.subscription_id],
       );
     }
@@ -135,12 +135,12 @@ export async function sendDelivery(deliveryId: string) {
     return { success: response.ok, status: response.status };
   } catch (error: any) {
     await adminPool.query(
-      `UPDATE webhook_deliveries SET status = 'retrying', attempt_count = attempt_count + 1,
+      `UPDATE int_webhook_deliveries SET status = 'retrying', attempt_count = attempt_count + 1,
        next_retry_at = NOW() + INTERVAL '5 minutes' WHERE id = $1`,
       [deliveryId],
     );
     await adminPool.query(
-      `UPDATE webhook_subscriptions SET failure_count = failure_count + 1, last_failure_at = NOW() WHERE id = $1`,
+      `UPDATE int_webhook_subscriptions SET failure_count = failure_count + 1, last_failure_at = NOW() WHERE id = $1`,
       [delivery.subscription_id],
     );
     return { success: false, error: error.message };
@@ -152,7 +152,7 @@ export async function sendDelivery(deliveryId: string) {
  */
 export async function retryFailedDeliveries() {
   const { rows } = await adminPool.query(
-    `SELECT id FROM webhook_deliveries
+    `SELECT id FROM int_webhook_deliveries
      WHERE status = 'retrying' AND next_retry_at <= NOW() AND attempt_count < 5`,
   );
   const results = [];
@@ -167,7 +167,7 @@ export async function retryFailedDeliveries() {
  */
 export async function testWebhook(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM webhook_subscriptions WHERE id = $1 AND tenant_id = $2`,
+    `SELECT * FROM int_webhook_subscriptions WHERE id = $1 AND tenant_id = $2`,
     [id, tenantId],
   );
   if (rows.length === 0) return null;
@@ -177,7 +177,7 @@ export async function testWebhook(id: string, tenantId: string) {
   const signature = crypto.createHmac('sha256', sub.secret).update(JSON.stringify(payload)).digest('hex');
 
   const { rows: deliveries } = await adminPool.query(
-    `INSERT INTO webhook_deliveries (subscription_id, event_type, payload, status)
+    `INSERT INTO int_webhook_deliveries (subscription_id, event_type, payload, status)
      VALUES ($1, 'test.ping', $2, 'pending') RETURNING *`,
     [sub.id, JSON.stringify(payload)],
   );
@@ -190,7 +190,7 @@ export async function testWebhook(id: string, tenantId: string) {
  */
 export async function getDeliveries(subscriptionId: string, limit = 50) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM webhook_deliveries WHERE subscription_id = $1 ORDER BY created_at DESC LIMIT $2`,
+    `SELECT * FROM int_webhook_deliveries WHERE subscription_id = $1 ORDER BY created_at DESC LIMIT $2`,
     [subscriptionId, limit],
   );
   return rows;

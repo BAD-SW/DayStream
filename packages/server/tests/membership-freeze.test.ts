@@ -47,7 +47,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Membership Freeze/Pause', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Freeze Test Biz', 'freeze-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Freeze Test Biz'
        RETURNING id`,
@@ -56,7 +56,7 @@ describe('Membership Freeze/Pause', () => {
     BUSINESS_ID = bizRows[0].id;
 
     const { rows: custRows } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-FRZ01', 'freeze-cust@example.com', 'Freeze', 'Cust', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Freeze' RETURNING id`,
       [TENANT_ID, BUSINESS_ID],
@@ -64,7 +64,7 @@ describe('Membership Freeze/Pause', () => {
     CUSTOMER_ID = custRows[0].id;
 
     const { rows: planRows } = await adminPool.query(
-      `INSERT INTO membership_plans (business_id, name, plan_type, billing_cycle, price, max_pause_days_per_year, max_pauses_per_year)
+      `INSERT INTO mem_plans (business_id, name, plan_type, billing_cycle, price, max_pause_days_per_year, max_pauses_per_year)
        VALUES ($1, 'Freeze Test Plan', 'unlimited', 'monthly', 12900, 30, 2)
        RETURNING id`,
       [BUSINESS_ID],
@@ -72,7 +72,7 @@ describe('Membership Freeze/Pause', () => {
     PLAN_ID = planRows[0].id;
 
     const { rows: mbrRows } = await adminPool.query(
-      `INSERT INTO memberships (business_id, customer_id, plan_id, status, start_date, next_billing_date, credit_balance, created_by)
+      `INSERT INTO mem_memberships (business_id, customer_id, plan_id, status, start_date, next_billing_date, credit_balance, created_by)
        VALUES ($1, $2, $3, 'active', CURRENT_DATE, CURRENT_DATE + INTERVAL '25 days', 0, '00000000-0000-0000-0000-000000000010')
        RETURNING id`,
       [BUSINESS_ID, CUSTOMER_ID, PLAN_ID],
@@ -164,14 +164,14 @@ describe('Membership Freeze/Pause', () => {
     it('auto-resumes memberships past pause_end_date', async () => {
       // Set pause_end_date to yesterday
       await adminPool.query(
-        "UPDATE memberships SET pause_end_date = CURRENT_DATE - 1 WHERE id = $1",
+        "UPDATE mem_memberships SET pause_end_date = CURRENT_DATE - 1 WHERE id = $1",
         [MEMBERSHIP_ID],
       );
 
       const resumed = await freezeService.autoResumePaused();
       expect(resumed).toBeGreaterThanOrEqual(1);
 
-      const { rows } = await adminPool.query('SELECT status FROM memberships WHERE id = $1', [MEMBERSHIP_ID]);
+      const { rows } = await adminPool.query('SELECT status FROM mem_memberships WHERE id = $1', [MEMBERSHIP_ID]);
       expect(rows[0].status).toBe('active');
     });
   });

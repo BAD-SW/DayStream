@@ -15,7 +15,7 @@ export async function isResourceAvailable(
 ): Promise<AvailabilityResult> {
   // 1. Check resource status
   const { rows: resRows } = await adminPool.query(
-    `SELECT status, capacity, buffer_minutes, is_24_7 FROM resources WHERE id = $1`, [resourceId]);
+    `SELECT status, capacity, buffer_minutes, is_24_7 FROM res_resources WHERE id = $1`, [resourceId]);
   if (resRows.length === 0) return { available: false, reason: 'Resource not found' };
   const resource = resRows[0];
   if (resource.status !== 'active') return { available: false, reason: `Resource is ${resource.status}` };
@@ -36,7 +36,7 @@ export async function isResourceAvailable(
   // 3. Check date blocks
   const date = startTime.split('T')[0];
   const { rows: blocks } = await adminPool.query(
-    `SELECT * FROM resource_schedule_blocks WHERE resource_id = $1 AND block_date = $2::date`, [resourceId, date]);
+    `SELECT * FROM res_schedule_blocks WHERE resource_id = $1 AND block_date = $2::date`, [resourceId, date]);
   for (const block of blocks) {
     if (!block.start_time) return { available: false, reason: `Blocked: ${block.reason || 'closure'}` };
     const reqStart = startTime.includes('T') ? startTime.split('T')[1].slice(0, 8) : '00:00:00';
@@ -50,7 +50,7 @@ export async function isResourceAvailable(
   const [year, month, day] = date.split('-').map(Number);
   const dayOfWeek = new Date(year, month - 1, day).getDay();
   const { rows: maint } = await adminPool.query(
-    `SELECT * FROM resource_maintenance WHERE resource_id = $1
+    `SELECT * FROM res_maintenance WHERE resource_id = $1
      AND ((maintenance_type = 'recurring' AND day_of_week = $2)
        OR (maintenance_type = 'one_time' AND specific_date = $3::date))`,
     [resourceId, dayOfWeek, date]);
@@ -67,7 +67,7 @@ export async function isResourceAvailable(
 
   // 5. Check capacity (count overlapping confirmed bookings)
   const { rows: overlapCount } = await adminPool.query(
-    `SELECT COUNT(*)::int AS count FROM resource_bookings
+    `SELECT COUNT(*)::int AS count FROM res_bookings
      WHERE resource_id = $1 AND status = 'confirmed'
        AND start_time < $3::timestamptz AND end_time > $2::timestamptz`,
     [resourceId, startTime, endTime]);
@@ -83,7 +83,7 @@ export async function isResourceAvailable(
     const bufferEnd = new Date(new Date(endTime).getTime() + bufferMs).toISOString();
 
     const { rows: bufferConflicts } = await adminPool.query(
-      `SELECT id FROM resource_bookings
+      `SELECT id FROM res_bookings
        WHERE resource_id = $1 AND status = 'confirmed'
          AND start_time < $3::timestamptz AND end_time > $2::timestamptz
        LIMIT 1`,
@@ -127,12 +127,12 @@ export async function findAvailableResource(
         return { resources: [], error: `Required resource unavailable: ${result.reason}` };
       }
       if (result.available) {
-        const { rows } = await adminPool.query(`SELECT id, name FROM resources WHERE id = $1`, [req.resource_id]);
+        const { rows } = await adminPool.query(`SELECT id, name FROM res_resources WHERE id = $1`, [req.resource_id]);
         if (rows.length > 0) selectedResources.push(rows[0]);
       }
     } else if (req.resource_type_id) {
       // "Any of type" — find first available
-      let query = `SELECT id, name FROM resources WHERE resource_type_id = $1 AND status = 'active'`;
+      let query = `SELECT id, name FROM res_resources WHERE resource_type_id = $1 AND status = 'active'`;
       const params: any[] = [req.resource_type_id];
       if (locationId) { query += ` AND location_id = $2`; params.push(locationId); }
       query += ` ORDER BY display_order, name`;

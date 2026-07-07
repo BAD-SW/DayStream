@@ -37,7 +37,7 @@ interface StaffFilters {
  */
 async function generateStaffRef(tenantId: string): Promise<string> {
   const { rows } = await adminPool.query(
-    `SELECT staff_ref FROM staff_profiles WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    `SELECT staff_ref FROM stf_profiles WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 1`,
     [tenantId],
   );
 
@@ -67,7 +67,7 @@ export async function createStaff(input: CreateStaffInput) {
 
     // Check if a user with this email already exists in this tenant
     const { rows: existingUsers } = await adminPool.query(
-      'SELECT id FROM users WHERE email = $1 AND tenant_id = $2',
+      'SELECT id FROM usr_users WHERE email = $1 AND tenant_id = $2',
       [input.email, input.tenantId],
     );
 
@@ -83,7 +83,7 @@ export async function createStaff(input: CreateStaffInput) {
       const role = input.role || 'business_staff';
 
       const { rows: userRows } = await adminPool.query(
-        `INSERT INTO users (tenant_id, business_id, email, first_name, last_name, password_hash, role, persona, status)
+        `INSERT INTO usr_users (tenant_id, business_id, email, first_name, last_name, password_hash, role, persona, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'business', 'active')
          RETURNING id`,
         [input.tenantId, input.businessId || null, input.email, input.firstName, input.lastName, passwordHash, role],
@@ -93,7 +93,7 @@ export async function createStaff(input: CreateStaffInput) {
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO staff_profiles (
+    `INSERT INTO stf_profiles (
        tenant_id, user_id, staff_ref, first_name, last_name, email,
        mobile_phone, date_of_birth, hire_date, employment_type,
        bio, languages, show_on_directory, primary_location_id, created_by
@@ -151,12 +151,12 @@ export async function getStaffList(tenantId: string, filters: StaffFilters) {
   }
 
   if (filters.locationId) {
-    conditions.push(`sp.id IN (SELECT staff_id FROM staff_location_assignments WHERE location_id = $${paramIndex++})`);
+    conditions.push(`sp.id IN (SELECT staff_id FROM stf_location_assignments WHERE location_id = $${paramIndex++})`);
     params.push(filters.locationId);
   }
 
   if (filters.serviceId) {
-    conditions.push(`sp.id IN (SELECT staff_id FROM staff_service_assignments WHERE service_id = $${paramIndex++})`);
+    conditions.push(`sp.id IN (SELECT staff_id FROM stf_service_assignments WHERE service_id = $${paramIndex++})`);
     params.push(filters.serviceId);
   }
 
@@ -174,14 +174,14 @@ export async function getStaffList(tenantId: string, filters: StaffFilters) {
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
       `SELECT sp.*, u.role AS user_role, u.id AS linked_user_id
-       FROM staff_profiles sp
-       LEFT JOIN users u ON u.id = sp.user_id
+       FROM stf_profiles sp
+       LEFT JOIN usr_users u ON u.id = sp.user_id
        WHERE ${where}
        ORDER BY sp.last_name ASC, sp.first_name ASC
        LIMIT ${limit} OFFSET ${offset}`,
       params,
     ),
-    adminPool.query(`SELECT COUNT(*)::int AS total FROM staff_profiles sp WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*)::int AS total FROM stf_profiles sp WHERE ${where}`, params),
   ]);
 
   return {
@@ -198,8 +198,8 @@ export async function getStaffList(tenantId: string, filters: StaffFilters) {
 export async function getStaffById(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
     `SELECT sp.*, u.role AS user_role, u.email AS user_email, u.status AS user_status
-     FROM staff_profiles sp
-     LEFT JOIN users u ON u.id = sp.user_id
+     FROM stf_profiles sp
+     LEFT JOIN usr_users u ON u.id = sp.user_id
      WHERE sp.id = $1 AND sp.tenant_id = $2`,
     [id, tenantId],
   );
@@ -211,7 +211,7 @@ export async function getStaffById(id: string, tenantId: string) {
  */
 export async function getStaffByUserId(userId: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM staff_profiles WHERE user_id = $1 AND tenant_id = $2`,
+    `SELECT * FROM stf_profiles WHERE user_id = $1 AND tenant_id = $2`,
     [userId, tenantId],
   );
   return rows[0] || null;
@@ -255,7 +255,7 @@ export async function updateStaff(id: string, tenantId: string, updates: Record<
   values.push(tenantId);
 
   const { rows } = await adminPool.query(
-    `UPDATE staff_profiles SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx}
+    `UPDATE stf_profiles SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx}
      RETURNING *`,
     values,
   );
@@ -279,7 +279,7 @@ export async function updateStaff(id: string, tenantId: string, updates: Record<
  */
 export async function deactivateStaff(id: string, tenantId: string, userId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE staff_profiles SET status = 'inactive', updated_at = NOW()
+    `UPDATE stf_profiles SET status = 'inactive', updated_at = NOW()
      WHERE id = $1 AND tenant_id = $2 AND status != 'inactive'
      RETURNING *`,
     [id, tenantId],
@@ -303,7 +303,7 @@ export async function deactivateStaff(id: string, tenantId: string, userId: stri
  */
 export async function updateProfilePhoto(id: string, tenantId: string, photoPath: string) {
   const { rows } = await adminPool.query(
-    `UPDATE staff_profiles SET profile_photo_path = $1, updated_at = NOW()
+    `UPDATE stf_profiles SET profile_photo_path = $1, updated_at = NOW()
      WHERE id = $2 AND tenant_id = $3
      RETURNING *`,
     [photoPath, id, tenantId],
@@ -324,7 +324,7 @@ export async function linkUserAccount(staffId: string, tenantId: string, email: 
 
   // Check email uniqueness within tenant
   const { rows: existing } = await adminPool.query(
-    'SELECT id FROM users WHERE email = $1 AND tenant_id = $2',
+    'SELECT id FROM usr_users WHERE email = $1 AND tenant_id = $2',
     [email, tenantId],
   );
   if (existing.length > 0) {
@@ -335,7 +335,7 @@ export async function linkUserAccount(staffId: string, tenantId: string, email: 
   const passwordHash = await hashPassword(password);
 
   const { rows: userRows } = await adminPool.query(
-    `INSERT INTO users (tenant_id, business_id, email, first_name, last_name, password_hash, role, persona, status)
+    `INSERT INTO usr_users (tenant_id, business_id, email, first_name, last_name, password_hash, role, persona, status)
      VALUES ($1, $2, $3, $4, $5, $6, $7, 'business', 'active')
      RETURNING id`,
     [tenantId, businessId || null, email, staff.first_name, staff.last_name, passwordHash, role],
@@ -343,7 +343,7 @@ export async function linkUserAccount(staffId: string, tenantId: string, email: 
 
   // Link to staff profile
   await adminPool.query(
-    'UPDATE staff_profiles SET user_id = $1, email = $2, updated_at = NOW() WHERE id = $3',
+    'UPDATE stf_profiles SET user_id = $1, email = $2, updated_at = NOW() WHERE id = $3',
     [userRows[0].id, email, staffId],
   );
 
@@ -359,7 +359,7 @@ export async function resetStaffPassword(staffId: string, tenantId: string, newP
 
   const passwordHash = await hashPassword(newPassword);
   const { rowCount } = await adminPool.query(
-    'UPDATE users SET password_hash = $1 WHERE id = $2 AND tenant_id = $3',
+    'UPDATE usr_users SET password_hash = $1 WHERE id = $2 AND tenant_id = $3',
     [passwordHash, staff.user_id, tenantId],
   );
 

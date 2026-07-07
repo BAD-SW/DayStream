@@ -49,7 +49,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Recurring Bookings', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Recurring Test Biz', 'recurring-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Recurring Test Biz'
        RETURNING id`,
@@ -58,17 +58,17 @@ describe('Recurring Bookings', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean
-    await adminPool.query('DELETE FROM bookings WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM recurring_booking_series WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM services WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM service_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_bookings WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_recurring_series WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
 
     const { rows: catRows } = await adminPool.query(
-      `INSERT INTO service_categories (business_id, name) VALUES ($1, 'Recurring Cat') RETURNING id`,
+      `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'Recurring Cat') RETURNING id`,
       [BUSINESS_ID],
     );
     const { rows: svcRows } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, status, default_duration, booking_type, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, status, default_duration, booking_type, created_by)
        VALUES ($1, $2, 'Recurring Service', 'recurring-service', 'active', 60, 'individual', '00000000-0000-0000-0000-000000000010')
        RETURNING id`,
       [BUSINESS_ID, catRows[0].id],
@@ -76,26 +76,26 @@ describe('Recurring Bookings', () => {
     SERVICE_ID = svcRows[0].id;
 
     const { rows: varRows } = await adminPool.query(
-      `INSERT INTO service_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active') RETURNING id`,
+      `INSERT INTO svc_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active') RETURNING id`,
       [SERVICE_ID],
     );
     VARIANT_ID = varRows[0].id;
 
     STAFF_ID = '00000000-0000-0000-0000-000000000095';
     await adminPool.query(
-      `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+      `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
        VALUES ($1, $2, 'recurring-staff@example.com', 'Recurring', 'Staff', 'hashed', 'therapist', 'active')
        ON CONFLICT (id) DO UPDATE SET first_name = 'Recurring'`,
       [STAFF_ID, TENANT_ID],
     );
     await adminPool.query(
-      `INSERT INTO service_staff (service_id, user_id, is_primary) VALUES ($1, $2, true)
+      `INSERT INTO svc_staff (service_id, user_id, is_primary) VALUES ($1, $2, true)
        ON CONFLICT (service_id, user_id, variant_id) DO NOTHING`,
       [SERVICE_ID, STAFF_ID],
     );
 
     const { rows: custRows } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-REC01', 'recurring-cust@example.com', 'Recurring', 'Cust', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Recurring'
        RETURNING id`,
@@ -133,7 +133,7 @@ describe('Recurring Bookings', () => {
 
     it('generates booking instances', async () => {
       const { rows } = await adminPool.query(
-        'SELECT * FROM bookings WHERE recurring_series_id = $1 ORDER BY start_time',
+        'SELECT * FROM apt_bookings WHERE recurring_series_id = $1 ORDER BY start_time',
         [SERIES_ID],
       );
 
@@ -200,7 +200,7 @@ describe('Recurring Bookings', () => {
 
       // Verify series status
       const { rows } = await adminPool.query(
-        'SELECT status FROM recurring_booking_series WHERE id = $1',
+        'SELECT status FROM apt_recurring_series WHERE id = $1',
         [SERIES_ID],
       );
       expect(rows[0].status).toBe('cancelled');
@@ -227,7 +227,7 @@ describe('Recurring Bookings', () => {
 
       // Get one instance
       const { rows: instances } = await adminPool.query(
-        "SELECT id FROM bookings WHERE recurring_series_id = $1 AND status = 'confirmed' LIMIT 1",
+        "SELECT id FROM apt_bookings WHERE recurring_series_id = $1 AND status = 'confirmed' LIMIT 1",
         [seriesId],
       );
 
@@ -237,14 +237,14 @@ describe('Recurring Bookings', () => {
 
         // Series should still be active
         const { rows: seriesRows } = await adminPool.query(
-          'SELECT status FROM recurring_booking_series WHERE id = $1',
+          'SELECT status FROM apt_recurring_series WHERE id = $1',
           [seriesId],
         );
         expect(seriesRows[0].status).toBe('active');
 
         // Other instances still confirmed
         const { rows: remaining } = await adminPool.query(
-          "SELECT COUNT(*)::int AS count FROM bookings WHERE recurring_series_id = $1 AND status = 'confirmed'",
+          "SELECT COUNT(*)::int AS count FROM apt_bookings WHERE recurring_series_id = $1 AND status = 'confirmed'",
           [seriesId],
         );
         expect(remaining[0].count).toBeGreaterThan(0);

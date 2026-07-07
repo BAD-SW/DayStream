@@ -27,7 +27,7 @@ export const jobRegistry: Record<string, JobHandler> = {
 
     // Check if lifecycle is enabled for this business
     const { rows } = await adminPool.query(
-      `SELECT value FROM business_configurations WHERE business_id = $1 AND key = 'lifecycle.enabled'`,
+      `SELECT value FROM sys_business_configurations WHERE business_id = $1 AND key = 'lifecycle.enabled'`,
       [ctx.businessId],
     );
     const enabled = rows.length === 0 || rows[0].value !== 'false';
@@ -35,7 +35,7 @@ export const jobRegistry: Record<string, JobHandler> = {
 
     // Get config
     const { rows: configRows } = await adminPool.query(
-      `SELECT key, value FROM business_configurations WHERE business_id = $1 AND key LIKE 'lifecycle.%'`,
+      `SELECT key, value FROM sys_business_configurations WHERE business_id = $1 AND key LIKE 'lifecycle.%'`,
       [ctx.businessId],
     );
     const config: Record<string, number> = { 'lifecycle.at_risk_days': 30, 'lifecycle.churned_days': 60 };
@@ -49,10 +49,10 @@ export const jobRegistry: Record<string, JobHandler> = {
 
     // Active → At-Risk (batch processing, 50 at a time)
     const { rows: atRiskCandidates } = await adminPool.query(
-      `SELECT c.id FROM customers c
+      `SELECT c.id FROM cus_customers c
        WHERE c.business_id = $1 AND c.lifecycle_stage = 'active' AND c.status = 'active'
        AND NOT EXISTS (
-         SELECT 1 FROM customer_activities ca
+         SELECT 1 FROM cus_activities ca
          WHERE ca.customer_id = c.id AND ca.business_id = $1
          AND ca.activity_type IN ('booking', 'payment', 'membership')
          AND ca.created_at > NOW() - INTERVAL '1 day' * $2
@@ -62,7 +62,7 @@ export const jobRegistry: Record<string, JobHandler> = {
 
     for (const cust of atRiskCandidates) {
       await adminPool.query(
-        `UPDATE customers SET lifecycle_stage = 'at_risk', updated_at = NOW() WHERE id = $1`,
+        `UPDATE cus_customers SET lifecycle_stage = 'at_risk', updated_at = NOW() WHERE id = $1`,
         [cust.id],
       );
       transitioned++;
@@ -70,10 +70,10 @@ export const jobRegistry: Record<string, JobHandler> = {
 
     // At-Risk → Churned (batch processing, 50 at a time)
     const { rows: churnedCandidates } = await adminPool.query(
-      `SELECT c.id FROM customers c
+      `SELECT c.id FROM cus_customers c
        WHERE c.business_id = $1 AND c.lifecycle_stage = 'at_risk' AND c.status = 'active'
        AND NOT EXISTS (
-         SELECT 1 FROM customer_activities ca
+         SELECT 1 FROM cus_activities ca
          WHERE ca.customer_id = c.id AND ca.business_id = $1
          AND ca.activity_type IN ('booking', 'payment', 'membership')
          AND ca.created_at > NOW() - INTERVAL '1 day' * $2
@@ -83,7 +83,7 @@ export const jobRegistry: Record<string, JobHandler> = {
 
     for (const cust of churnedCandidates) {
       await adminPool.query(
-        `UPDATE customers SET lifecycle_stage = 'churned', updated_at = NOW() WHERE id = $1`,
+        `UPDATE cus_customers SET lifecycle_stage = 'churned', updated_at = NOW() WHERE id = $1`,
         [cust.id],
       );
       transitioned++;

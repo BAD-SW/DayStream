@@ -37,13 +37,13 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Check-In System', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status) VALUES ($1, 'CheckIn Test Biz', 'checkin-test-biz', 'active')
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status) VALUES ($1, 'CheckIn Test Biz', 'checkin-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'CheckIn Test Biz' RETURNING id`, [TENANT_ID]);
     BUSINESS_ID = bizRows[0].id;
 
     // Create customer
     const { rows: custRows } = await adminPool.query(
-      `INSERT INTO customers (business_id, tenant_id, email, first_name, last_name, reference_number)
+      `INSERT INTO cus_customers (business_id, tenant_id, email, first_name, last_name, reference_number)
        VALUES ($1, $2, 'checkin-test@example.com', 'Check', 'Tester', 'CUST-CI-001')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Check' RETURNING id`, [BUSINESS_ID, TENANT_ID]);
     CUSTOMER_ID = custRows[0].id;
@@ -54,48 +54,48 @@ describe('Check-In System', () => {
     const end = new Date(start.getTime() + 60 * 60000); // 1 hour session
 
     // Need a service with variant
-    const { rows: svcRows } = await adminPool.query(`SELECT id FROM services WHERE business_id = $1 LIMIT 1`, [BUSINESS_ID]);
+    const { rows: svcRows } = await adminPool.query(`SELECT id FROM svc_services WHERE business_id = $1 LIMIT 1`, [BUSINESS_ID]);
     let serviceId: string;
     let variantId: string;
     if (svcRows.length > 0) {
       serviceId = svcRows[0].id;
-      const { rows: varRows } = await adminPool.query(`SELECT id FROM service_variants WHERE service_id = $1 LIMIT 1`, [serviceId]);
+      const { rows: varRows } = await adminPool.query(`SELECT id FROM svc_variants WHERE service_id = $1 LIMIT 1`, [serviceId]);
       if (varRows.length > 0) { variantId = varRows[0].id; }
       else {
         const { rows: newVar } = await adminPool.query(
-          `INSERT INTO service_variants (service_id, name, duration, price) VALUES ($1, 'Default', 60, 5000) RETURNING id`, [serviceId]);
+          `INSERT INTO svc_variants (service_id, name, duration, price) VALUES ($1, 'Default', 60, 5000) RETURNING id`, [serviceId]);
         variantId = newVar[0].id;
       }
     } else {
       // Create minimal service + variant
-      const { rows: catRows } = await adminPool.query(`SELECT id FROM service_categories WHERE business_id = $1 LIMIT 1`, [BUSINESS_ID]);
+      const { rows: catRows } = await adminPool.query(`SELECT id FROM svc_categories WHERE business_id = $1 LIMIT 1`, [BUSINESS_ID]);
       let catId: string;
       if (catRows.length > 0) { catId = catRows[0].id; }
       else {
         const { rows: newCat } = await adminPool.query(
-          `INSERT INTO service_categories (business_id, name) VALUES ($1, 'General') RETURNING id`, [BUSINESS_ID]);
+          `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'General') RETURNING id`, [BUSINESS_ID]);
         catId = newCat[0].id;
       }
       const { rows: newSvc } = await adminPool.query(
-        `INSERT INTO services (business_id, category_id, name, slug, status) VALUES ($1, $2, 'Test Service CI', $3, 'active') RETURNING id`, [BUSINESS_ID, catId, 'test-svc-ci-' + Date.now()]);
+        `INSERT INTO svc_services (business_id, category_id, name, slug, status) VALUES ($1, $2, 'Test Service CI', $3, 'active') RETURNING id`, [BUSINESS_ID, catId, 'test-svc-ci-' + Date.now()]);
       serviceId = newSvc[0].id;
       const { rows: newVar } = await adminPool.query(
-        `INSERT INTO service_variants (service_id, name, duration, price) VALUES ($1, 'Default', 60, 5000) RETURNING id`, [serviceId]);
+        `INSERT INTO svc_variants (service_id, name, duration, price) VALUES ($1, 'Default', 60, 5000) RETURNING id`, [serviceId]);
       variantId = newVar[0].id;
     }
 
     const bookingRef = `BK-CI-${Date.now().toString(36)}`;
     const { rows: bookingRows } = await adminPool.query(
-      `INSERT INTO bookings (business_id, customer_id, service_id, variant_id, start_time, end_time, status, booking_type, booking_reference, price)
+      `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, start_time, end_time, status, booking_type, booking_reference, price)
        VALUES ($1, $2, $3, $4, $5, $6, 'confirmed', 'individual', $7, 5000) RETURNING id`,
       [BUSINESS_ID, CUSTOMER_ID, serviceId, variantId, start.toISOString(), end.toISOString(), bookingRef]);
     BOOKING_ID = bookingRows[0].id;
 
     // Clean old check-in data
-    await adminPool.query('DELETE FROM check_in_records WHERE tenant_id = $1', [TENANT_ID]);
-    await adminPool.query('DELETE FROM check_in_qr_codes WHERE tenant_id = $1', [TENANT_ID]);
-    await adminPool.query('DELETE FROM no_show_records WHERE tenant_id = $1', [TENANT_ID]);
-    await adminPool.query('DELETE FROM bookings WHERE business_id = $1 AND booking_reference LIKE $2', [BUSINESS_ID, 'BK-CI-%']);
+    await adminPool.query('DELETE FROM apt_check_in_records WHERE tenant_id = $1', [TENANT_ID]);
+    await adminPool.query('DELETE FROM apt_check_in_qr_codes WHERE tenant_id = $1', [TENANT_ID]);
+    await adminPool.query('DELETE FROM apt_no_show_records WHERE tenant_id = $1', [TENANT_ID]);
+    await adminPool.query('DELETE FROM apt_bookings WHERE business_id = $1 AND booking_reference LIKE $2', [BUSINESS_ID, 'BK-CI-%']);
 
     ownerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',
@@ -154,10 +154,10 @@ describe('Check-In System', () => {
       const now = new Date();
       const start = new Date(now.getTime() + 10 * 60000); // 10 min from now (within 15-min early window)
       const end = new Date(start.getTime() + 60 * 60000);
-      const { rows: svcRows } = await adminPool.query(`SELECT id FROM services WHERE business_id = $1 LIMIT 1`, [BUSINESS_ID]);
-      const { rows: varRows } = await adminPool.query(`SELECT id FROM service_variants WHERE service_id = $1 LIMIT 1`, [svcRows[0].id]);
+      const { rows: svcRows } = await adminPool.query(`SELECT id FROM svc_services WHERE business_id = $1 LIMIT 1`, [BUSINESS_ID]);
+      const { rows: varRows } = await adminPool.query(`SELECT id FROM svc_variants WHERE service_id = $1 LIMIT 1`, [svcRows[0].id]);
       const { rows: bkRows } = await adminPool.query(
-        `INSERT INTO bookings (business_id, customer_id, service_id, variant_id, start_time, end_time, status, booking_type, booking_reference, price)
+        `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, start_time, end_time, status, booking_type, booking_reference, price)
          VALUES ($1, $2, $3, $4, $5, $6, 'confirmed', 'individual', $7, 5000) RETURNING id`,
         [BUSINESS_ID, CUSTOMER_ID, svcRows[0].id, varRows[0].id, start.toISOString(), end.toISOString(), `BK-CI-${Date.now().toString(36)}`]);
 

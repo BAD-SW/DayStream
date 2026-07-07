@@ -17,7 +17,7 @@ export async function enforceTenantStatus(req: Request, res: Response, next: Nex
   }
 
   try {
-    const { rows } = await adminPool.query('SELECT status FROM tenants WHERE id = $1', [tenantId]);
+    const { rows } = await adminPool.query('SELECT status FROM sys_tenants WHERE id = $1', [tenantId]);
 
     if (rows.length === 0) {
       res.status(404).json({ error: 'Not found', code: 'TENANT_NOT_FOUND' });

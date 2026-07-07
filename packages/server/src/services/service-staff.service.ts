@@ -13,8 +13,8 @@ interface AssignStaffInput {
 export async function assignStaff(input: AssignStaffInput) {
   // Check if assignment already exists
   const checkQuery = input.variantId
-    ? 'SELECT id FROM service_staff WHERE service_id = $1 AND user_id = $2 AND variant_id = $3'
-    : 'SELECT id FROM service_staff WHERE service_id = $1 AND user_id = $2 AND variant_id IS NULL';
+    ? 'SELECT id FROM svc_staff WHERE service_id = $1 AND user_id = $2 AND variant_id = $3'
+    : 'SELECT id FROM svc_staff WHERE service_id = $1 AND user_id = $2 AND variant_id IS NULL';
   const checkParams = input.variantId
     ? [input.serviceId, input.userId, input.variantId]
     : [input.serviceId, input.userId];
@@ -27,13 +27,13 @@ export async function assignStaff(input: AssignStaffInput) {
   // If marking as primary, unset current primary for this service
   if (input.isPrimary) {
     await adminPool.query(
-      'UPDATE service_staff SET is_primary = false WHERE service_id = $1',
+      'UPDATE svc_staff SET is_primary = false WHERE service_id = $1',
       [input.serviceId],
     );
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO service_staff (service_id, user_id, variant_id, is_primary)
+    `INSERT INTO svc_staff (service_id, user_id, variant_id, is_primary)
      VALUES ($1, $2, $3, $4)
      RETURNING *`,
     [input.serviceId, input.userId, input.variantId || null, input.isPrimary ?? false],
@@ -48,8 +48,8 @@ export async function assignStaff(input: AssignStaffInput) {
 export async function getStaff(serviceId: string) {
   const { rows } = await adminPool.query(
     `SELECT ss.*, u.first_name, u.last_name, u.email
-     FROM service_staff ss
-     JOIN users u ON u.id = ss.user_id
+     FROM svc_staff ss
+     JOIN usr_users u ON u.id = ss.user_id
      WHERE ss.service_id = $1
      ORDER BY ss.is_primary DESC, u.last_name, u.first_name`,
     [serviceId],
@@ -65,10 +65,10 @@ export async function removeStaff(serviceId: string, userId: string, variantId?:
   let params: any[];
 
   if (variantId) {
-    query = 'DELETE FROM service_staff WHERE service_id = $1 AND user_id = $2 AND variant_id = $3';
+    query = 'DELETE FROM svc_staff WHERE service_id = $1 AND user_id = $2 AND variant_id = $3';
     params = [serviceId, userId, variantId];
   } else {
-    query = 'DELETE FROM service_staff WHERE service_id = $1 AND user_id = $2 AND variant_id IS NULL';
+    query = 'DELETE FROM svc_staff WHERE service_id = $1 AND user_id = $2 AND variant_id IS NULL';
     params = [serviceId, userId];
   }
 
@@ -82,13 +82,13 @@ export async function removeStaff(serviceId: string, userId: string, variantId?:
 export async function setPrimary(serviceId: string, userId: string): Promise<boolean> {
   // Unset current primary
   await adminPool.query(
-    'UPDATE service_staff SET is_primary = false WHERE service_id = $1',
+    'UPDATE svc_staff SET is_primary = false WHERE service_id = $1',
     [serviceId],
   );
 
   // Set new primary
   const { rowCount } = await adminPool.query(
-    'UPDATE service_staff SET is_primary = true WHERE service_id = $1 AND user_id = $2',
+    'UPDATE svc_staff SET is_primary = true WHERE service_id = $1 AND user_id = $2',
     [serviceId, userId],
   );
 

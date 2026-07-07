@@ -6,7 +6,7 @@ import { logAudit } from './audit.service';
  */
 export async function checkInByReference(referenceNumber: string) {
   const { rows } = await adminPool.query(
-    `UPDATE event_registrations
+    `UPDATE evt_registrations
      SET checked_in_at = NOW()
      WHERE reference_number = $1 AND status = 'confirmed' AND checked_in_at IS NULL
      RETURNING *`,
@@ -16,7 +16,7 @@ export async function checkInByReference(referenceNumber: string) {
 
   // Get tenant for audit
   const { rows: eventRows } = await adminPool.query(
-    `SELECT tenant_id FROM events WHERE id = $1`, [rows[0].event_id],
+    `SELECT tenant_id FROM evt_events WHERE id = $1`, [rows[0].event_id],
   );
 
   if (eventRows[0]) {
@@ -37,7 +37,7 @@ export async function checkInByReference(referenceNumber: string) {
  */
 export async function checkInManual(registrationId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE event_registrations
+    `UPDATE evt_registrations
      SET checked_in_at = NOW()
      WHERE id = $1 AND status = 'confirmed' AND checked_in_at IS NULL
      RETURNING *`,
@@ -46,7 +46,7 @@ export async function checkInManual(registrationId: string) {
   if (!rows[0]) throw new Error('Registration not found, not confirmed, or already checked in');
 
   const { rows: eventRows } = await adminPool.query(
-    `SELECT tenant_id FROM events WHERE id = $1`, [rows[0].event_id],
+    `SELECT tenant_id FROM evt_events WHERE id = $1`, [rows[0].event_id],
   );
 
   if (eventRows[0]) {
@@ -67,7 +67,7 @@ export async function checkInManual(registrationId: string) {
  */
 export async function markNoShows(eventId: string) {
   const { rows: eventRows } = await adminPool.query(
-    `SELECT end_time, tenant_id FROM events WHERE id = $1`, [eventId],
+    `SELECT end_time, tenant_id FROM evt_events WHERE id = $1`, [eventId],
   );
   if (eventRows.length === 0) throw new Error('Event not found');
 
@@ -77,7 +77,7 @@ export async function markNoShows(eventId: string) {
   }
 
   const { rowCount } = await adminPool.query(
-    `UPDATE event_registrations
+    `UPDATE evt_registrations
      SET status = 'no_show'
      WHERE event_id = $1 AND status = 'confirmed' AND checked_in_at IS NULL`,
     [eventId],
@@ -103,9 +103,9 @@ export async function getAttendees(eventId: string) {
             er.checked_in_at, er.created_at,
             c.id AS customer_id, c.first_name, c.last_name, c.email, c.phone,
             tt.name AS tier_name
-     FROM event_registrations er
-     LEFT JOIN customers c ON c.id = er.customer_id
-     LEFT JOIN event_ticket_tiers tt ON tt.id = er.ticket_tier_id
+     FROM evt_registrations er
+     LEFT JOIN cus_customers c ON c.id = er.customer_id
+     LEFT JOIN evt_ticket_tiers tt ON tt.id = er.ticket_tier_id
      WHERE er.event_id = $1 AND er.status IN ('confirmed','no_show')
      ORDER BY c.last_name ASC, c.first_name ASC`,
     [eventId],
@@ -122,7 +122,7 @@ export async function getAttendanceRate(eventId: string) {
        COUNT(*) FILTER (WHERE status IN ('confirmed','no_show'))::int AS total_registered,
        COUNT(*) FILTER (WHERE checked_in_at IS NOT NULL)::int AS checked_in,
        COUNT(*) FILTER (WHERE status = 'no_show')::int AS no_shows
-     FROM event_registrations
+     FROM evt_registrations
      WHERE event_id = $1`,
     [eventId],
   );

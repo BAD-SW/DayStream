@@ -5,7 +5,7 @@ import { adminPool } from '../db/pool';
  */
 export async function getScheduledReports(tenantId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM scheduled_reports WHERE tenant_id = $1 ORDER BY created_at DESC`,
+    `SELECT * FROM rpt_scheduled_reports WHERE tenant_id = $1 ORDER BY created_at DESC`,
     [tenantId],
   );
   return rows;
@@ -25,7 +25,7 @@ export async function createScheduledReport(tenantId: string, input: {
   next_run_at?: string;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO scheduled_reports
+    `INSERT INTO rpt_scheduled_reports
        (tenant_id, name, schedule_type, cron_expression, report_types, recipients, format, created_by, next_run_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
@@ -65,7 +65,7 @@ export async function updateScheduledReport(id: string, tenantId: string, update
   values.push(id, tenantId);
 
   const { rows } = await adminPool.query(
-    `UPDATE scheduled_reports SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
+    `UPDATE rpt_scheduled_reports SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
     values,
   );
   return rows[0] || null;
@@ -76,7 +76,7 @@ export async function updateScheduledReport(id: string, tenantId: string, update
  */
 export async function deleteScheduledReport(id: string, tenantId: string) {
   const { rowCount } = await adminPool.query(
-    `DELETE FROM scheduled_reports WHERE id = $1 AND tenant_id = $2`,
+    `DELETE FROM rpt_scheduled_reports WHERE id = $1 AND tenant_id = $2`,
     [id, tenantId],
   );
   return (rowCount ?? 0) > 0;
@@ -87,7 +87,7 @@ export async function deleteScheduledReport(id: string, tenantId: string) {
  */
 export async function getDueReports() {
   const { rows } = await adminPool.query(
-    `SELECT * FROM scheduled_reports WHERE is_active = true AND next_run_at <= NOW()`,
+    `SELECT * FROM rpt_scheduled_reports WHERE is_active = true AND next_run_at <= NOW()`,
   );
   return rows;
 }
@@ -97,7 +97,7 @@ export async function getDueReports() {
  */
 export async function processScheduledReport(reportId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM scheduled_reports WHERE id = $1`,
+    `SELECT * FROM rpt_scheduled_reports WHERE id = $1`,
     [reportId],
   );
 
@@ -107,7 +107,7 @@ export async function processScheduledReport(reportId: string) {
 
   // Log delivery
   await adminPool.query(
-    `INSERT INTO report_delivery_log (scheduled_report_id, recipients_count, status)
+    `INSERT INTO rpt_delivery_log (scheduled_report_id, recipients_count, status)
      VALUES ($1, $2, 'sent')`,
     [reportId, recipientsCount],
   );
@@ -119,7 +119,7 @@ export async function processScheduledReport(reportId: string) {
 
   // Update last_sent_at and next_run_at
   await adminPool.query(
-    `UPDATE scheduled_reports
+    `UPDATE rpt_scheduled_reports
      SET last_sent_at = NOW(), next_run_at = NOW() + $2::interval
      WHERE id = $1`,
     [reportId, interval],

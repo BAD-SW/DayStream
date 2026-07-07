@@ -24,7 +24,7 @@ async function loadFlags(): Promise<FlagRow[]> {
   if (flagCache && Date.now() < flagCacheExpiry) {
     return flagCache;
   }
-  const { rows } = await adminPool.query('SELECT id, key, scope, enabled, percentage FROM feature_flags');
+  const { rows } = await adminPool.query('SELECT id, key, scope, enabled, percentage FROM sys_feature_flags');
   flagCache = rows;
   flagCacheExpiry = Date.now() + FLAG_CACHE_TTL;
   return rows;
@@ -55,7 +55,7 @@ export async function isFeatureEnabled(flagKey: string, context: FlagContext): P
     case 'tenant': {
       // Check for tenant-specific override
       const { rows } = await adminPool.query(
-        'SELECT enabled FROM feature_flag_overrides WHERE flag_id = $1 AND tenant_id = $2',
+        'SELECT enabled FROM sys_feature_flag_overrides WHERE flag_id = $1 AND tenant_id = $2',
         [flag.id, context.tenantId],
       );
       if (rows.length > 0) return rows[0].enabled;

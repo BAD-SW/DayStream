@@ -27,8 +27,8 @@ export async function getConfig(tenantId: string, key: string): Promise<unknown>
 
   // Check tenant override
   const { rows: overrideRows } = await adminPool.query(
-    `SELECT tc.value, cd.data_type FROM tenant_configurations tc
-     JOIN configuration_definitions cd ON cd.key = tc.key
+    `SELECT tc.value, cd.data_type FROM sys_tenant_configurations tc
+     JOIN sys_configuration_definitions cd ON cd.key = tc.key
      WHERE tc.tenant_id = $1 AND tc.key = $2`,
     [tenantId, key],
   );
@@ -41,7 +41,7 @@ export async function getConfig(tenantId: string, key: string): Promise<unknown>
 
   // Fall back to default
   const { rows: defaultRows } = await adminPool.query(
-    'SELECT default_value, data_type FROM configuration_definitions WHERE key = $1',
+    'SELECT default_value, data_type FROM sys_configuration_definitions WHERE key = $1',
     [key],
   );
 
@@ -62,7 +62,7 @@ export async function setConfig(
 ): Promise<void> {
   // Validate the key exists
   const { rows: defRows } = await adminPool.query(
-    'SELECT data_type FROM configuration_definitions WHERE key = $1',
+    'SELECT data_type FROM sys_configuration_definitions WHERE key = $1',
     [key],
   );
   if (defRows.length === 0) {
@@ -73,7 +73,7 @@ export async function setConfig(
 
   // Upsert tenant override
   await adminPool.query(
-    `INSERT INTO tenant_configurations (tenant_id, key, value, updated_by, updated_at)
+    `INSERT INTO sys_tenant_configurations (tenant_id, key, value, updated_by, updated_at)
      VALUES ($1, $2, $3, $4, NOW())
      ON CONFLICT (tenant_id, key) DO UPDATE SET value = $3, updated_by = $4, updated_at = NOW()`,
     [tenantId, key, stringValue, userId],
@@ -101,8 +101,8 @@ export async function getAllConfig(tenantId: string): Promise<Record<string, unk
   const { rows } = await adminPool.query(
     `SELECT cd.key, cd.data_type, cd.category, cd.description,
             COALESCE(tc.value, cd.default_value) AS value
-     FROM configuration_definitions cd
-     LEFT JOIN tenant_configurations tc ON tc.key = cd.key AND tc.tenant_id = $1
+     FROM sys_configuration_definitions cd
+     LEFT JOIN sys_tenant_configurations tc ON tc.key = cd.key AND tc.tenant_id = $1
      ORDER BY cd.category, cd.key`,
     [tenantId],
   );

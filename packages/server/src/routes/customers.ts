@@ -128,7 +128,7 @@ customersRouter.get('/lifecycle-config', requirePermission('settings:*'), async 
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    const { rows } = await adminPool.query(`SELECT key, value FROM business_configurations WHERE business_id = $1 AND key LIKE 'lifecycle.%'`, [businessId]);
+    const { rows } = await adminPool.query(`SELECT key, value FROM sys_business_configurations WHERE business_id = $1 AND key LIKE 'lifecycle.%'`, [businessId]);
     const config: Record<string, any> = { enabled: true, at_risk_days: 30, churned_days: 60, run_time: '02:00' };
     for (const row of rows) {
       if (row.key === 'lifecycle.enabled') config.enabled = row.value === 'true';
@@ -154,7 +154,7 @@ customersRouter.put('/lifecycle-config', requirePermission('settings:*'), async 
     ];
     for (const entry of entries) {
       await adminPool.query(
-        `INSERT INTO business_configurations (business_id, key, value, updated_by, updated_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (business_id, key) DO UPDATE SET value = $3, updated_by = $4, updated_at = NOW()`,
+        `INSERT INTO sys_business_configurations (business_id, key, value, updated_by, updated_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (business_id, key) DO UPDATE SET value = $3, updated_by = $4, updated_at = NOW()`,
         [businessId, entry.key, entry.value, authReq.user.sub],
       );
     }
@@ -171,7 +171,7 @@ customersRouter.get('/scheduled-jobs', requirePermission('settings:*'), async (r
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     const { rows } = await adminPool.query(
-      `SELECT id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled, next_run_at, last_run_at, last_run_status, last_run_duration_ms, last_error, consecutive_failures FROM scheduled_jobs WHERE business_id = $1 ORDER BY job_type`,
+      `SELECT id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled, next_run_at, last_run_at, last_run_status, last_run_duration_ms, last_error, consecutive_failures FROM sys_scheduled_jobs WHERE business_id = $1 ORDER BY job_type`,
       [businessId],
     );
     success(res, rows);
@@ -190,7 +190,7 @@ customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (
     const nextRun = new Date(); nextRun.setHours(hours, minutes, 0, 0);
     if (nextRun <= new Date()) nextRun.setDate(nextRun.getDate() + 1);
     const { rows } = await adminPool.query(
-      `INSERT INTO scheduled_jobs (business_id, tenant_id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled, next_run_at)
+      `INSERT INTO sys_scheduled_jobs (business_id, tenant_id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled, next_run_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (business_id, job_type) DO UPDATE SET schedule_time = $4, schedule_timezone = $5, frequency = $6, day_of_week = $7, day_of_month = $8, enabled = $9, next_run_at = $10, updated_at = NOW() RETURNING *`,
       [businessId, authReq.tenantId, job_type, time, schedule_timezone || 'UTC', frequency || 'daily', day_of_week ?? null, day_of_month ?? null, enabled !== false, nextRun.toISOString()],
@@ -201,7 +201,7 @@ customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (
 
 customersRouter.put('/scheduled-jobs/:id/toggle', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
-    const { rows } = await adminPool.query(`UPDATE scheduled_jobs SET enabled = NOT enabled, updated_at = NOW() WHERE id = $1 RETURNING id, enabled`, [req.params.id]);
+    const { rows } = await adminPool.query(`UPDATE sys_scheduled_jobs SET enabled = NOT enabled, updated_at = NOW() WHERE id = $1 RETURNING id, enabled`, [req.params.id]);
     if (rows.length === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
   } catch (err: any) { error(res, 'Failed to toggle job', 'INTERNAL_ERROR', 500); }
@@ -209,7 +209,7 @@ customersRouter.put('/scheduled-jobs/:id/toggle', requirePermission('settings:*'
 
 customersRouter.delete('/scheduled-jobs/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
-    const { rowCount } = await adminPool.query('DELETE FROM scheduled_jobs WHERE id = $1', [req.params.id]);
+    const { rowCount } = await adminPool.query('DELETE FROM sys_scheduled_jobs WHERE id = $1', [req.params.id]);
     if (rowCount === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) { error(res, 'Failed to delete job', 'INTERNAL_ERROR', 500); }
@@ -218,7 +218,7 @@ customersRouter.delete('/scheduled-jobs/:id', requirePermission('settings:*'), a
 customersRouter.get('/scheduled-jobs/:id/history', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const { rows } = await adminPool.query(
-      `SELECT id, started_at, completed_at, status, duration_ms, result, error FROM job_executions WHERE job_id = $1 ORDER BY started_at DESC LIMIT 20`,
+      `SELECT id, started_at, completed_at, status, duration_ms, result, error FROM sys_job_executions WHERE job_id = $1 ORDER BY started_at DESC LIMIT 20`,
       [req.params.id],
     );
     success(res, rows);
@@ -332,7 +332,7 @@ customersRouter.put('/:id/reactivate', requirePermission('customers:*'), async (
     }
 
     const { rows } = await adminPool.query(
-      "UPDATE customers SET status = 'active', updated_at = NOW() WHERE id = $1 AND business_id = $2 AND status = 'archived' RETURNING *",
+      "UPDATE cus_customers SET status = 'active', updated_at = NOW() WHERE id = $1 AND business_id = $2 AND status = 'archived' RETURNING *",
       [req.params.id, businessId],
     );
 
@@ -542,7 +542,7 @@ customersRouter.post('/:id/tags', requirePermission('customers:*'), validate(ass
     const businessId = req.query.business_id as string;
     if (businessId) {
       await adminPool.query(
-        `INSERT INTO customer_activities (customer_id, business_id, activity_type, description, metadata, created_by)
+        `INSERT INTO cus_activities (customer_id, business_id, activity_type, description, metadata, created_by)
          VALUES ($1, $2, 'profile_change', 'Tag assigned', $3, $4)`,
         [req.params.id, businessId, JSON.stringify({ tag_id: req.body.tag_id }), authReq.user.sub],
       );
@@ -724,7 +724,7 @@ customersRouter.get('/:id/preferences', requirePermission('customers:read'), asy
     if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
 
     const { rows } = await adminPool.query(
-      'SELECT * FROM customer_preferences WHERE customer_id = $1',
+      'SELECT * FROM cus_preferences WHERE customer_id = $1',
       [req.params.id],
     );
 
@@ -759,7 +759,7 @@ customersRouter.put('/:id/preferences', requirePermission('customers:*'), valida
     values.push(req.params.id);
 
     await adminPool.query(
-      `INSERT INTO customer_preferences (customer_id) VALUES ($${idx})
+      `INSERT INTO cus_preferences (customer_id) VALUES ($${idx})
        ON CONFLICT (customer_id) DO UPDATE SET ${fields.join(', ')}`,
       values,
     );
@@ -776,7 +776,7 @@ customersRouter.put('/:id/preferences', requirePermission('customers:*'), valida
 
     // Get updated preferences
     const { rows } = await adminPool.query(
-      'SELECT * FROM customer_preferences WHERE customer_id = $1',
+      'SELECT * FROM cus_preferences WHERE customer_id = $1',
       [req.params.id],
     );
 
@@ -808,7 +808,7 @@ customersRouter.put('/:id/lifecycle-stage', requirePermission('customers:*'), va
 
     // Update lifecycle stage
     await adminPool.query(
-      'UPDATE customers SET lifecycle_stage = $1, updated_at = NOW() WHERE id = $2 AND business_id = $3',
+      'UPDATE cus_customers SET lifecycle_stage = $1, updated_at = NOW() WHERE id = $2 AND business_id = $3',
       [stage, customerId, business_id],
     );
 
@@ -837,7 +837,7 @@ customersRouter.get('/lifecycle-config', requirePermission('settings:*'), async 
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
 
     const { rows } = await adminPool.query(
-      `SELECT key, value FROM business_configurations WHERE business_id = $1 AND key LIKE 'lifecycle.%'`,
+      `SELECT key, value FROM sys_business_configurations WHERE business_id = $1 AND key LIKE 'lifecycle.%'`,
       [businessId],
     );
 
@@ -879,7 +879,7 @@ customersRouter.put('/lifecycle-config', requirePermission('settings:*'), async 
 
     for (const entry of entries) {
       await adminPool.query(
-        `INSERT INTO business_configurations (business_id, key, value, updated_by, updated_at)
+        `INSERT INTO sys_business_configurations (business_id, key, value, updated_by, updated_at)
          VALUES ($1, $2, $3, $4, NOW())
          ON CONFLICT (business_id, key) DO UPDATE SET value = $3, updated_by = $4, updated_at = NOW()`,
         [businessId, entry.key, entry.value, authReq.user.sub],
@@ -909,7 +909,7 @@ customersRouter.get('/scheduled-jobs', requirePermission('settings:*'), async (r
     const { rows } = await adminPool.query(
       `SELECT id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month,
               enabled, next_run_at, last_run_at, last_run_status, last_run_duration_ms, last_error, consecutive_failures
-       FROM scheduled_jobs WHERE business_id = $1 ORDER BY job_type`,
+       FROM sys_scheduled_jobs WHERE business_id = $1 ORDER BY job_type`,
       [businessId],
     );
     success(res, rows);
@@ -938,7 +938,7 @@ customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (
     if (nextRun <= now) nextRun.setDate(nextRun.getDate() + 1);
 
     const { rows } = await adminPool.query(
-      `INSERT INTO scheduled_jobs (business_id, tenant_id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled, next_run_at)
+      `INSERT INTO sys_scheduled_jobs (business_id, tenant_id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled, next_run_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (business_id, job_type)
        DO UPDATE SET schedule_time = $4, schedule_timezone = $5, frequency = $6, day_of_week = $7, day_of_month = $8, enabled = $9, next_run_at = $10, updated_at = NOW()
@@ -955,7 +955,7 @@ customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (
 customersRouter.put('/scheduled-jobs/:id/toggle', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const { rows } = await adminPool.query(
-      `UPDATE scheduled_jobs SET enabled = NOT enabled, updated_at = NOW() WHERE id = $1 RETURNING id, enabled`,
+      `UPDATE sys_scheduled_jobs SET enabled = NOT enabled, updated_at = NOW() WHERE id = $1 RETURNING id, enabled`,
       [req.params.id],
     );
     if (rows.length === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
@@ -968,7 +968,7 @@ customersRouter.put('/scheduled-jobs/:id/toggle', requirePermission('settings:*'
 // DELETE /api/v1/customers/scheduled-jobs/:id — Delete a scheduled job
 customersRouter.delete('/scheduled-jobs/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
-    const { rowCount } = await adminPool.query('DELETE FROM scheduled_jobs WHERE id = $1', [req.params.id]);
+    const { rowCount } = await adminPool.query('DELETE FROM sys_scheduled_jobs WHERE id = $1', [req.params.id]);
     if (rowCount === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
@@ -981,7 +981,7 @@ customersRouter.get('/scheduled-jobs/:id/history', requirePermission('settings:*
   try {
     const { rows } = await adminPool.query(
       `SELECT id, started_at, completed_at, status, duration_ms, result, error
-       FROM job_executions WHERE job_id = $1 ORDER BY started_at DESC LIMIT 20`,
+       FROM sys_job_executions WHERE job_id = $1 ORDER BY started_at DESC LIMIT 20`,
       [req.params.id],
     );
     success(res, rows);

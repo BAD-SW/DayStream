@@ -5,7 +5,7 @@ import { adminPool } from '../db/pool';
  */
 export async function getConfig(tenantId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM check_in_config WHERE tenant_id = $1`,
+    `SELECT * FROM apt_check_in_config WHERE tenant_id = $1`,
     [tenantId],
   );
 
@@ -13,7 +13,7 @@ export async function getConfig(tenantId: string) {
 
   // Create default config
   const { rows: newRows } = await adminPool.query(
-    `INSERT INTO check_in_config (tenant_id)
+    `INSERT INTO apt_check_in_config (tenant_id)
      VALUES ($1)
      ON CONFLICT (tenant_id) DO UPDATE SET tenant_id = $1
      RETURNING *`,
@@ -55,7 +55,7 @@ export async function updateConfig(tenantId: string, updates: Record<string, any
   values.push(tenantId);
 
   const { rows } = await adminPool.query(
-    `UPDATE check_in_config SET ${fields.join(', ')} WHERE tenant_id = $${idx} RETURNING *`,
+    `UPDATE apt_check_in_config SET ${fields.join(', ')} WHERE tenant_id = $${idx} RETURNING *`,
     values,
   );
 

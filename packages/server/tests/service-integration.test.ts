@@ -50,7 +50,7 @@ describe('Service Management — Integration Tests', () => {
   beforeAll(async () => {
     BUSINESS_SLUG = 'svc-integration-test-biz';
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Service Integration Test Biz', $2, 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Service Integration Test Biz'
        RETURNING id`,
@@ -59,10 +59,10 @@ describe('Service Management — Integration Tests', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean slate
-    await adminPool.query('DELETE FROM services WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM service_categories WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM cancellation_policies WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM tax_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_cancellation_policies WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_tax_categories WHERE business_id = $1', [BUSINESS_ID]);
 
     ownerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',
@@ -196,7 +196,7 @@ describe('Service Management — Integration Tests', () => {
 
     beforeAll(async () => {
       const { rows } = await adminPool.query(
-        `INSERT INTO businesses (tenant_id, name, slug, status)
+        `INSERT INTO sys_businesses (tenant_id, name, slug, status)
          VALUES ($1, 'Other Biz', 'other-svc-biz', 'active')
          ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Other Biz'
          RETURNING id`,
@@ -231,13 +231,13 @@ describe('Service Management — Integration Tests', () => {
 
     beforeAll(async () => {
       const { rows: catRows } = await adminPool.query(
-        `INSERT INTO service_categories (business_id, name) VALUES ($1, 'Sub Validation Cat')
+        `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'Sub Validation Cat')
          ON CONFLICT (business_id, name, parent_id) DO UPDATE SET name = 'Sub Validation Cat'
          RETURNING id`,
         [BUSINESS_ID],
       );
       const { rows: svcRows } = await adminPool.query(
-        `INSERT INTO services (business_id, category_id, name, slug, created_by)
+        `INSERT INTO svc_services (business_id, category_id, name, slug, created_by)
          VALUES ($1, $2, 'Sub Validation Service', 'sub-validation-service', '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, slug) DO UPDATE SET name = 'Sub Validation Service'
          RETURNING id`,
@@ -284,7 +284,7 @@ describe('Service Management — Integration Tests', () => {
   describe('Slug generation', () => {
     it('auto-generates unique slugs', async () => {
       const { rows: catRows } = await adminPool.query(
-        `INSERT INTO service_categories (business_id, name) VALUES ($1, 'Slug Test Cat')
+        `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'Slug Test Cat')
          ON CONFLICT (business_id, name, parent_id) DO UPDATE SET name = 'Slug Test Cat'
          RETURNING id`,
         [BUSINESS_ID],
@@ -296,7 +296,7 @@ describe('Service Management — Integration Tests', () => {
 
       // Different category to avoid name uniqueness within category
       const { rows: catRows2 } = await adminPool.query(
-        `INSERT INTO service_categories (business_id, name) VALUES ($1, 'Slug Test Cat 2')
+        `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'Slug Test Cat 2')
          ON CONFLICT (business_id, name, parent_id) DO UPDATE SET name = 'Slug Test Cat 2'
          RETURNING id`,
         [BUSINESS_ID],
@@ -312,7 +312,7 @@ describe('Service Management — Integration Tests', () => {
 
     it('regenerates slug on name update', async () => {
       const { rows: catRows } = await adminPool.query(
-        "SELECT id FROM service_categories WHERE business_id = $1 LIMIT 1",
+        "SELECT id FROM svc_categories WHERE business_id = $1 LIMIT 1",
         [BUSINESS_ID],
       );
       const { body: created } = await request('POST', '/api/v1/services', {

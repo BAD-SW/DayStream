@@ -23,8 +23,8 @@ export async function getLifecycleConfig(businessId: string): Promise<Record<str
 
   const { rows } = await adminPool.query(
     `SELECT cd.key, COALESCE(bc.value, cd.default_value) AS value
-     FROM configuration_definitions cd
-     LEFT JOIN business_configurations bc ON bc.key = cd.key AND bc.business_id = $1
+     FROM sys_configuration_definitions cd
+     LEFT JOIN sys_business_configurations bc ON bc.key = cd.key AND bc.business_id = $1
      WHERE cd.key = ANY($2)`,
     [businessId, keys],
   );
@@ -49,7 +49,7 @@ export async function transitionLifecycle(
 ): Promise<{ success: boolean; from?: string; to?: string; error?: string }> {
   // Get current stage
   const { rows } = await adminPool.query(
-    'SELECT lifecycle_stage, status FROM customers WHERE id = $1 AND business_id = $2',
+    'SELECT lifecycle_stage, status FROM cus_customers WHERE id = $1 AND business_id = $2',
     [customerId, businessId],
   );
 
@@ -71,7 +71,7 @@ export async function transitionLifecycle(
 
   // Update lifecycle stage
   await adminPool.query(
-    'UPDATE customers SET lifecycle_stage = $1, updated_at = NOW() WHERE id = $2 AND business_id = $3',
+    'UPDATE cus_customers SET lifecycle_stage = $1, updated_at = NOW() WHERE id = $2 AND business_id = $3',
     [newStage, customerId, businessId],
   );
 
@@ -112,7 +112,7 @@ export async function manualOverride(
 export async function getLifecycleSummary(businessId: string): Promise<Record<string, number>> {
   const { rows } = await adminPool.query(
     `SELECT lifecycle_stage, COUNT(*)::int AS count
-     FROM customers
+     FROM cus_customers
      WHERE business_id = $1 AND status != 'anonymized'
      GROUP BY lifecycle_stage`,
     [businessId],
@@ -140,7 +140,7 @@ export async function evaluateOnBooking(customerId: string, businessId: string):
   const config = await getLifecycleConfig(businessId);
 
   const { rows } = await adminPool.query(
-    'SELECT lifecycle_stage FROM customers WHERE id = $1 AND business_id = $2',
+    'SELECT lifecycle_stage FROM cus_customers WHERE id = $1 AND business_id = $2',
     [customerId, businessId],
   );
 
@@ -157,7 +157,7 @@ export async function evaluateOnBooking(customerId: string, businessId: string):
   // Lead → Trial: first booking made
   if (currentStage === 'lead') {
     const { rows: bookingCount } = await adminPool.query(
-      `SELECT COUNT(*)::int AS count FROM customer_activities
+      `SELECT COUNT(*)::int AS count FROM cus_activities
        WHERE customer_id = $1 AND business_id = $2 AND activity_type = 'booking'`,
       [customerId, businessId],
     );
@@ -171,7 +171,7 @@ export async function evaluateOnBooking(customerId: string, businessId: string):
   // Trial → Active: 3+ visits (attendance)
   if (currentStage === 'trial') {
     const { rows: visitCount } = await adminPool.query(
-      `SELECT COUNT(*)::int AS count FROM customer_activities
+      `SELECT COUNT(*)::int AS count FROM cus_activities
        WHERE customer_id = $1 AND business_id = $2 AND activity_type = 'booking'
        AND (metadata->>'status' = 'attended' OR metadata->>'attended' = 'true')`,
       [customerId, businessId],
@@ -192,9 +192,9 @@ export async function evaluateOnBooking(customerId: string, businessId: string):
   // Winback → Active: continued activity
   if (currentStage === 'winback') {
     const { rows: recentVisits } = await adminPool.query(
-      `SELECT COUNT(*)::int AS count FROM customer_activities
+      `SELECT COUNT(*)::int AS count FROM cus_activities
        WHERE customer_id = $1 AND business_id = $2 AND activity_type = 'booking'
-       AND created_at > (SELECT updated_at FROM customers WHERE id = $1)`,
+       AND created_at > (SELECT updated_at FROM cus_customers WHERE id = $1)`,
       [customerId, businessId],
     );
 
@@ -210,7 +210,7 @@ export async function evaluateOnBooking(customerId: string, businessId: string):
  */
 export async function evaluateOnMembership(customerId: string, businessId: string): Promise<void> {
   const { rows } = await adminPool.query(
-    'SELECT lifecycle_stage FROM customers WHERE id = $1 AND business_id = $2',
+    'SELECT lifecycle_stage FROM cus_customers WHERE id = $1 AND business_id = $2',
     [customerId, businessId],
   );
 
@@ -248,7 +248,7 @@ export async function evaluateScheduledTransitions(): Promise<{ processed: numbe
 
   // Get all active businesses
   const { rows: businesses } = await adminPool.query(
-    "SELECT id FROM businesses WHERE status = 'active'",
+    "SELECT id FROM sys_businesses WHERE status = 'active'",
   );
 
   for (const business of businesses) {
@@ -263,12 +263,12 @@ export async function evaluateScheduledTransitions(): Promise<{ processed: numbe
 
     // Active → At-Risk: no activity in atRiskDays
     const { rows: atRiskCandidates } = await adminPool.query(
-      `SELECT c.id FROM customers c
+      `SELECT c.id FROM cus_customers c
        WHERE c.business_id = $1
          AND c.lifecycle_stage = 'active'
          AND c.status = 'active'
          AND NOT EXISTS (
-           SELECT 1 FROM customer_activities ca
+           SELECT 1 FROM cus_activities ca
            WHERE ca.customer_id = c.id
              AND ca.business_id = $1
              AND ca.activity_type IN ('booking', 'payment', 'membership')
@@ -285,12 +285,12 @@ export async function evaluateScheduledTransitions(): Promise<{ processed: numbe
 
     // At-Risk → Churned: no activity in churnedDays
     const { rows: churnedCandidates } = await adminPool.query(
-      `SELECT c.id FROM customers c
+      `SELECT c.id FROM cus_customers c
        WHERE c.business_id = $1
          AND c.lifecycle_stage = 'at_risk'
          AND c.status = 'active'
          AND NOT EXISTS (
-           SELECT 1 FROM customer_activities ca
+           SELECT 1 FROM cus_activities ca
            WHERE ca.customer_id = c.id
              AND ca.business_id = $1
              AND ca.activity_type IN ('booking', 'payment', 'membership')

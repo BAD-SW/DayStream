@@ -6,9 +6,9 @@ import { adminPool } from '../db/pool';
 export async function getServiceRequirements(serviceId: string) {
   const { rows } = await adminPool.query(
     `SELECT srr.*, r.name AS resource_name, rt.name AS type_name
-     FROM service_resource_requirements srr
-     LEFT JOIN resources r ON r.id = srr.resource_id
-     LEFT JOIN resource_types rt ON rt.id = srr.resource_type_id
+     FROM svc_resource_requirements srr
+     LEFT JOIN res_resources r ON r.id = srr.resource_id
+     LEFT JOIN res_types rt ON rt.id = srr.resource_type_id
      WHERE srr.service_id = $1 ORDER BY srr.requirement_type, r.name, rt.name`,
     [serviceId]);
   return rows;
@@ -30,7 +30,7 @@ export async function createRequirement(input: {
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO service_resource_requirements (service_id, variant_id, resource_id, resource_type_id, requirement_type, buffer_minutes)
+    `INSERT INTO svc_resource_requirements (service_id, variant_id, resource_id, resource_type_id, requirement_type, buffer_minutes)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
     [input.serviceId, input.variantId || null, input.resourceId || null,
      input.resourceTypeId || null, input.requirementType || 'required', input.bufferMinutes ?? null]);
@@ -54,7 +54,7 @@ export async function updateRequirement(id: string, updates: Record<string, any>
   values.push(id);
 
   const { rows } = await adminPool.query(
-    `UPDATE service_resource_requirements SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`, values);
+    `UPDATE svc_resource_requirements SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`, values);
   return rows[0] || null;
 }
 
@@ -63,6 +63,6 @@ export async function updateRequirement(id: string, updates: Record<string, any>
  */
 export async function deleteRequirement(id: string) {
   const { rowCount } = await adminPool.query(
-    `DELETE FROM service_resource_requirements WHERE id = $1`, [id]);
+    `DELETE FROM svc_resource_requirements WHERE id = $1`, [id]);
   return (rowCount ?? 0) > 0;
 }

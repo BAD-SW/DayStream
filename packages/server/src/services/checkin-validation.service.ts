@@ -27,8 +27,8 @@ export async function validateSession(
   // 1. Check booking exists and is confirmed
   const { rows: bookingRows } = await adminPool.query(
     `SELECT b.id, b.status, b.start_time, b.end_time, b.customer_id, b.service_id, bus.tenant_id
-     FROM bookings b
-     JOIN businesses bus ON bus.id = b.business_id
+     FROM apt_bookings b
+     JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE b.id = $1 AND bus.tenant_id = $2`,
     [bookingId, tenantId],
   );
@@ -71,7 +71,7 @@ export async function validateSession(
 
   // 3. Check not already checked in
   const { rows: existingCheckin } = await adminPool.query(
-    `SELECT id FROM check_in_records WHERE booking_id = $1 AND status != 'cancelled' LIMIT 1`,
+    `SELECT id FROM apt_check_in_records WHERE booking_id = $1 AND status != 'cancelled' LIMIT 1`,
     [bookingId],
   );
 

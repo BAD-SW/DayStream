@@ -34,18 +34,18 @@ staffRouter.get('/directory', async (req: Request, res: Response) => {
 
     let query = `
       SELECT sp.id, sp.first_name, sp.last_name, sp.bio, sp.profile_photo_path, sp.languages
-      FROM staff_profiles sp
+      FROM stf_profiles sp
       WHERE sp.tenant_id = $1 AND sp.status = 'active' AND sp.show_on_directory = true
     `;
     const params: any[] = [tenantId];
     let idx = 2;
 
     if (locationId) {
-      query += ` AND sp.id IN (SELECT staff_id FROM staff_location_assignments WHERE location_id = $${idx++})`;
+      query += ` AND sp.id IN (SELECT staff_id FROM stf_location_assignments WHERE location_id = $${idx++})`;
       params.push(locationId);
     }
     if (serviceId) {
-      query += ` AND sp.id IN (SELECT staff_id FROM staff_service_assignments WHERE service_id = $${idx++})`;
+      query += ` AND sp.id IN (SELECT staff_id FROM stf_service_assignments WHERE service_id = $${idx++})`;
       params.push(serviceId);
     }
     query += ` ORDER BY sp.last_name, sp.first_name`;
@@ -55,7 +55,7 @@ staffRouter.get('/directory', async (req: Request, res: Response) => {
     // Load qualifications for display
     for (const s of staff) {
       const { rows: quals } = await (await import('../db/pool')).adminPool.query(
-        `SELECT name, issuing_body FROM staff_qualifications WHERE staff_id = $1 AND show_on_directory = true`,
+        `SELECT name, issuing_body FROM stf_qualifications WHERE staff_id = $1 AND show_on_directory = true`,
         [s.id],
       );
       (s as any).qualifications = quals;

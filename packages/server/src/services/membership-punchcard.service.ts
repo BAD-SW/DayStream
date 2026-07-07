@@ -12,8 +12,8 @@ export async function deductPunchCardSession(
   description?: string,
 ): Promise<{ success: boolean; sessions_remaining?: number; error?: string }> {
   const { rows } = await adminPool.query(
-    `SELECT m.*, mp.plan_type FROM memberships m
-     JOIN membership_plans mp ON mp.id = m.plan_id
+    `SELECT m.*, mp.plan_type FROM mem_memberships m
+     JOIN mem_plans mp ON mp.id = m.plan_id
      WHERE m.id = $1 AND m.status = 'active'`,
     [membershipId],
   );
@@ -32,12 +32,12 @@ export async function deductPunchCardSession(
   const newBalance = membership.credit_balance - 1;
 
   await adminPool.query(
-    'UPDATE memberships SET credit_balance = $2, updated_at = NOW() WHERE id = $1',
+    'UPDATE mem_memberships SET credit_balance = $2, updated_at = NOW() WHERE id = $1',
     [membershipId, newBalance],
   );
 
   await adminPool.query(
-    `INSERT INTO credit_transactions (membership_id, type, amount, balance_after, description, booking_id)
+    `INSERT INTO mem_credit_transactions (membership_id, type, amount, balance_after, description, booking_id)
      VALUES ($1, 'deducted', -1, $2, $3, $4)`,
     [membershipId, newBalance, description || 'Session used', bookingId || null],
   );
@@ -45,11 +45,11 @@ export async function deductPunchCardSession(
   // Auto-expire if zero remaining
   if (newBalance === 0) {
     await adminPool.query(
-      "UPDATE memberships SET status = 'expired', updated_at = NOW() WHERE id = $1",
+      "UPDATE mem_memberships SET status = 'expired', updated_at = NOW() WHERE id = $1",
       [membershipId],
     );
     await adminPool.query(
-      `INSERT INTO membership_status_history (membership_id, from_status, to_status, reason)
+      `INSERT INTO mem_status_history (membership_id, from_status, to_status, reason)
        VALUES ($1, 'active', 'expired', 'All sessions used')`,
       [membershipId],
     );
@@ -64,7 +64,7 @@ export async function deductPunchCardSession(
  */
 export async function validateIntroEligibility(customerId: string, businessId: string, planId: string): Promise<{ eligible: boolean; reason?: string }> {
   const { rows } = await adminPool.query(
-    'SELECT id FROM memberships WHERE customer_id = $1 AND business_id = $2 AND plan_id = $3',
+    'SELECT id FROM mem_memberships WHERE customer_id = $1 AND business_id = $2 AND plan_id = $3',
     [customerId, businessId, planId],
   );
 
@@ -81,8 +81,8 @@ export async function validateIntroEligibility(customerId: string, businessId: s
 export async function getActivePunchCards(customerId: string, businessId: string) {
   const { rows } = await adminPool.query(
     `SELECT m.*, mp.name AS plan_name, mp.total_sessions
-     FROM memberships m
-     JOIN membership_plans mp ON mp.id = m.plan_id
+     FROM mem_memberships m
+     JOIN mem_plans mp ON mp.id = m.plan_id
      WHERE m.customer_id = $1 AND m.business_id = $2 AND m.status = 'active'
        AND mp.plan_type IN ('punch_card', 'intro_package')
      ORDER BY m.end_date NULLS LAST`,
@@ -101,7 +101,7 @@ export async function convertToRecurring(
 ): Promise<{ success: boolean; membership?: any; error?: string }> {
   // Validate new plan is recurring
   const { rows: planRows } = await adminPool.query(
-    "SELECT * FROM membership_plans WHERE id = $1 AND business_id = $2 AND status = 'active' AND billing_cycle != 'one_time'",
+    "SELECT * FROM mem_plans WHERE id = $1 AND business_id = $2 AND status = 'active' AND billing_cycle != 'one_time'",
     [newPlanId, businessId],
   );
   if (planRows.length === 0) {
@@ -110,7 +110,7 @@ export async function convertToRecurring(
 
   // Check no duplicate
   const { rows: existing } = await adminPool.query(
-    "SELECT id FROM memberships WHERE customer_id = $1 AND plan_id = $2 AND status IN ('active', 'pending')",
+    "SELECT id FROM mem_memberships WHERE customer_id = $1 AND plan_id = $2 AND status IN ('active', 'pending')",
     [customerId, newPlanId],
   );
   if (existing.length > 0) {
@@ -129,7 +129,7 @@ export async function convertToRecurring(
   const initialCredits = plan.credits_per_cycle || 0;
 
   const { rows: mbrRows } = await adminPool.query(
-    `INSERT INTO memberships (business_id, customer_id, plan_id, status, start_date, next_billing_date, auto_renew, credit_balance, created_by)
+    `INSERT INTO mem_memberships (business_id, customer_id, plan_id, status, start_date, next_billing_date, auto_renew, credit_balance, created_by)
      VALUES ($1, $2, $3, 'active', $4, $5, true, $6, $7)
      RETURNING *`,
     [businessId, customerId, newPlanId, startDate.toISOString().slice(0, 10), nextBilling.toISOString().slice(0, 10), initialCredits, userId],
@@ -139,7 +139,7 @@ export async function convertToRecurring(
 
   if (initialCredits > 0) {
     await adminPool.query(
-      `INSERT INTO credit_transactions (membership_id, type, amount, balance_after, description)
+      `INSERT INTO mem_credit_transactions (membership_id, type, amount, balance_after, description)
        VALUES ($1, 'allocated', $2, $2, 'Initial allocation (converted from punch card)')`,
       [membership.id, initialCredits],
     );

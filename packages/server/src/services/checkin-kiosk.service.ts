@@ -9,7 +9,7 @@ export async function registerKiosk(tenantId: string, locationId: string, device
   const token = crypto.randomBytes(32).toString('hex');
 
   const { rows } = await adminPool.query(
-    `INSERT INTO kiosk_sessions (tenant_id, location_id, device_name, token, last_activity_at)
+    `INSERT INTO apt_kiosk_sessions (tenant_id, location_id, device_name, token, last_activity_at)
      VALUES ($1, $2, $3, $4, NOW())
      RETURNING *`,
     [tenantId, locationId, deviceName, token],
@@ -32,7 +32,7 @@ export async function registerKiosk(tenantId: string, locationId: string, device
  */
 export async function getKioskStatus(token: string) {
   const { rows } = await adminPool.query(
-    `UPDATE kiosk_sessions
+    `UPDATE apt_kiosk_sessions
      SET last_activity_at = NOW()
      WHERE token = $1 AND is_active = true
      RETURNING *`,
@@ -47,7 +47,7 @@ export async function getKioskStatus(token: string) {
  */
 export async function deactivateKiosk(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE kiosk_sessions SET is_active = false
+    `UPDATE apt_kiosk_sessions SET is_active = false
      WHERE id = $1 AND tenant_id = $2
      RETURNING *`,
     [id, tenantId],

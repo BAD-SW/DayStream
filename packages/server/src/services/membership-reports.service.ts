@@ -18,7 +18,7 @@ export async function getSummaryReport(filters: ReportFilters) {
 
   const { rows: byType } = await adminPool.query(
     `SELECT mp.plan_type, COUNT(*)::int AS count
-     FROM memberships m JOIN membership_plans mp ON mp.id = m.plan_id
+     FROM mem_memberships m JOIN mem_plans mp ON mp.id = m.plan_id
      WHERE m.business_id = $1 AND m.status = 'active' ${planCondition}
      GROUP BY mp.plan_type`,
     [businessId],
@@ -27,7 +27,7 @@ export async function getSummaryReport(filters: ReportFilters) {
   // Active count by plan
   const { rows: byPlan } = await adminPool.query(
     `SELECT mp.name, mp.id AS plan_id, COUNT(*)::int AS count
-     FROM memberships m JOIN membership_plans mp ON mp.id = m.plan_id
+     FROM mem_memberships m JOIN mem_plans mp ON mp.id = m.plan_id
      WHERE m.business_id = $1 AND m.status = 'active' ${planCondition}
      GROUP BY mp.id, mp.name ORDER BY count DESC`,
     [businessId],
@@ -35,28 +35,28 @@ export async function getSummaryReport(filters: ReportFilters) {
 
   // Total active
   const { rows: totalRows } = await adminPool.query(
-    `SELECT COUNT(*)::int AS total FROM memberships WHERE business_id = $1 AND status = 'active'`,
+    `SELECT COUNT(*)::int AS total FROM mem_memberships WHERE business_id = $1 AND status = 'active'`,
     [businessId],
   );
 
   // New this month
   const { rows: newRows } = await adminPool.query(
-    `SELECT COUNT(*)::int AS count FROM memberships
+    `SELECT COUNT(*)::int AS count FROM mem_memberships
      WHERE business_id = $1 AND created_at >= DATE_TRUNC('month', NOW()) ${planCondition}`,
     [businessId],
   );
 
   // Cancelled this month
   const { rows: cancelledRows } = await adminPool.query(
-    `SELECT COUNT(*)::int AS count FROM memberships
+    `SELECT COUNT(*)::int AS count FROM mem_memberships
      WHERE business_id = $1 AND status = 'cancelled' AND cancelled_at >= DATE_TRUNC('month', NOW()) ${planCondition}`,
     [businessId],
   );
 
   // Renewal rate (renewed / (renewed + cancelled) this month)
   const { rows: renewedRows } = await adminPool.query(
-    `SELECT COUNT(DISTINCT ct.membership_id)::int AS count FROM credit_transactions ct
-     JOIN memberships m ON m.id = ct.membership_id
+    `SELECT COUNT(DISTINCT ct.membership_id)::int AS count FROM mem_credit_transactions ct
+     JOIN mem_memberships m ON m.id = ct.membership_id
      WHERE m.business_id = $1 AND ct.type = 'allocated' AND ct.description LIKE 'Cycle%'
        AND ct.created_at >= DATE_TRUNC('month', NOW())`,
     [businessId],
@@ -90,7 +90,7 @@ export async function getChurnReport(filters: ReportFilters) {
   const { rows: cancellations } = await adminPool.query(
     `SELECT mp.name AS plan_name, COUNT(*)::int AS count, 
             json_agg(DISTINCT m.cancellation_reason) FILTER (WHERE m.cancellation_reason IS NOT NULL) AS reasons
-     FROM memberships m JOIN membership_plans mp ON mp.id = m.plan_id
+     FROM mem_memberships m JOIN mem_plans mp ON mp.id = m.plan_id
      WHERE m.business_id = $1 AND m.status = 'cancelled' ${dateCondition}
      GROUP BY mp.name ORDER BY count DESC`,
     [businessId],
@@ -99,7 +99,7 @@ export async function getChurnReport(filters: ReportFilters) {
   // Average duration before cancellation
   const { rows: avgDuration } = await adminPool.query(
     `SELECT ROUND(AVG(EXTRACT(DAY FROM (cancelled_at - start_date::timestamp))))::int AS avg_days
-     FROM memberships WHERE business_id = $1 AND status = 'cancelled' AND cancelled_at IS NOT NULL`,
+     FROM mem_memberships WHERE business_id = $1 AND status = 'cancelled' AND cancelled_at IS NOT NULL`,
     [businessId],
   );
 
@@ -123,21 +123,21 @@ export async function getCreditReport(filters: ReportFilters) {
   // Total allocated vs deducted
   const { rows: allocated } = await adminPool.query(
     `SELECT COALESCE(SUM(ct.amount), 0)::int AS total
-     FROM credit_transactions ct JOIN memberships m ON m.id = ct.membership_id
+     FROM mem_credit_transactions ct JOIN mem_memberships m ON m.id = ct.membership_id
      WHERE m.business_id = $1 AND ct.type = 'allocated' ${dateCondition}`,
     [businessId],
   );
 
   const { rows: deducted } = await adminPool.query(
     `SELECT COALESCE(SUM(ABS(ct.amount)), 0)::int AS total
-     FROM credit_transactions ct JOIN memberships m ON m.id = ct.membership_id
+     FROM mem_credit_transactions ct JOIN mem_memberships m ON m.id = ct.membership_id
      WHERE m.business_id = $1 AND ct.type = 'deducted' ${dateCondition}`,
     [businessId],
   );
 
   const { rows: expired } = await adminPool.query(
     `SELECT COALESCE(SUM(ABS(ct.amount)), 0)::int AS total
-     FROM credit_transactions ct JOIN memberships m ON m.id = ct.membership_id
+     FROM mem_credit_transactions ct JOIN mem_memberships m ON m.id = ct.membership_id
      WHERE m.business_id = $1 AND ct.type = 'expired' ${dateCondition}`,
     [businessId],
   );

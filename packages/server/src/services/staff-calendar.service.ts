@@ -18,9 +18,9 @@ export async function getStaffCalendar(staffId: string, startDate: string, endDa
   const { rows: bookings } = await adminPool.query(
     `SELECT b.id, b.start_time, b.end_time, b.status, b.service_id,
             s.name AS service_name, c.first_name AS customer_first_name, c.last_name AS customer_last_name
-     FROM bookings b
-     LEFT JOIN services s ON s.id = b.service_id
-     LEFT JOIN customers c ON c.id = b.customer_id
+     FROM apt_bookings b
+     LEFT JOIN svc_services s ON s.id = b.service_id
+     LEFT JOIN cus_customers c ON c.id = b.customer_id
      WHERE b.staff_id = $1
        AND b.start_time::date >= $2::date
        AND b.start_time::date <= $3::date
@@ -31,7 +31,7 @@ export async function getStaffCalendar(staffId: string, startDate: string, endDa
 
   // Get approved leave in range
   const { rows: leaveRequests } = await adminPool.query(
-    `SELECT * FROM leave_requests
+    `SELECT * FROM stf_leave_requests
      WHERE staff_id = $1 AND status = 'approved'
        AND start_date <= $2::date AND end_date >= $3::date
      ORDER BY start_date`,
@@ -43,7 +43,7 @@ export async function getStaffCalendar(staffId: string, startDate: string, endDa
 
   // Get overrides (blocked time)
   const { rows: overrides } = await adminPool.query(
-    `SELECT * FROM availability_overrides
+    `SELECT * FROM stf_availability_overrides
      WHERE staff_id = $1 AND override_date BETWEEN $2::date AND $3::date
      ORDER BY override_date`,
     [staffId, startDate, endDate],
@@ -90,17 +90,17 @@ export async function getTeamCalendar(tenantId: string, startDate: string, endDa
   staffIds?: string[];
 }) {
   // Get applicable staff
-  let staffQuery = `SELECT id, first_name, last_name, staff_ref, profile_photo_path FROM staff_profiles WHERE tenant_id = $1 AND status = 'active'`;
+  let staffQuery = `SELECT id, first_name, last_name, staff_ref, profile_photo_path FROM stf_profiles WHERE tenant_id = $1 AND status = 'active'`;
   const staffParams: any[] = [tenantId];
   let paramIdx = 2;
 
   if (filters?.locationId) {
-    staffQuery += ` AND id IN (SELECT staff_id FROM staff_location_assignments WHERE location_id = $${paramIdx++})`;
+    staffQuery += ` AND id IN (SELECT staff_id FROM stf_location_assignments WHERE location_id = $${paramIdx++})`;
     staffParams.push(filters.locationId);
   }
 
   if (filters?.serviceId) {
-    staffQuery += ` AND id IN (SELECT staff_id FROM staff_service_assignments WHERE service_id = $${paramIdx++})`;
+    staffQuery += ` AND id IN (SELECT staff_id FROM stf_service_assignments WHERE service_id = $${paramIdx++})`;
     staffParams.push(filters.serviceId);
   }
 
@@ -141,7 +141,7 @@ export async function getStaffMetrics(staffId: string, startDate: string, endDat
     `SELECT
        COUNT(*)::int AS sessions_delivered,
        COUNT(DISTINCT start_time::date)::int AS days_worked
-     FROM bookings
+     FROM apt_bookings
      WHERE staff_id = $1
        AND start_time::date BETWEEN $1 AND $2
        AND status = 'completed'`,

@@ -13,17 +13,17 @@ export async function detectNoShows(tenantId: string) {
   // Find confirmed bookings whose start_time + grace_period has passed with no check-in
   const { rows: overdueBookings } = await adminPool.query(
     `SELECT b.id, b.customer_id, b.start_time
-     FROM bookings b
-     JOIN businesses bus ON bus.id = b.business_id
+     FROM apt_bookings b
+     JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE bus.tenant_id = $1
        AND b.status = 'confirmed'
        AND b.start_time < $2
        AND NOT EXISTS (
-         SELECT 1 FROM check_in_records cr
+         SELECT 1 FROM apt_check_in_records cr
          WHERE cr.booking_id = b.id AND cr.status != 'cancelled'
        )
        AND NOT EXISTS (
-         SELECT 1 FROM no_show_records ns
+         SELECT 1 FROM apt_no_show_records ns
          WHERE ns.booking_id = b.id
        )`,
     [tenantId, cutoff.toISOString()],
@@ -34,13 +34,13 @@ export async function detectNoShows(tenantId: string) {
   for (const booking of overdueBookings) {
     // Mark booking as no_show
     await adminPool.query(
-      `UPDATE bookings SET status = 'no_show' WHERE id = $1`,
+      `UPDATE apt_bookings SET status = 'no_show' WHERE id = $1`,
       [booking.id],
     );
 
     // Create no_show_record
     const { rows } = await adminPool.query(
-      `INSERT INTO no_show_records (tenant_id, booking_id, customer_id)
+      `INSERT INTO apt_no_show_records (tenant_id, booking_id, customer_id)
        VALUES ($1, $2, $3)
        RETURNING *`,
       [tenantId, booking.id, booking.customer_id],
@@ -88,9 +88,9 @@ export async function getNoShows(
   const { rows } = await adminPool.query(
     `SELECT ns.*, b.start_time AS booking_start_time, b.service_id,
             c.first_name AS customer_first_name, c.last_name AS customer_last_name
-     FROM no_show_records ns
-     JOIN bookings b ON b.id = ns.booking_id
-     JOIN customers c ON c.id = ns.customer_id
+     FROM apt_no_show_records ns
+     JOIN apt_bookings b ON b.id = ns.booking_id
+     JOIN cus_customers c ON c.id = ns.customer_id
      WHERE ${conditions.join(' AND ')}
      ORDER BY ns.detected_at DESC`,
     params,
@@ -104,7 +104,7 @@ export async function getNoShows(
  */
 export async function waiveNoShow(id: string, tenantId: string, waivedBy: string, reason: string) {
   const { rows } = await adminPool.query(
-    `UPDATE no_show_records
+    `UPDATE apt_no_show_records
      SET waived = true, waived_by = $1, waive_reason = $2
      WHERE id = $3 AND tenant_id = $4
      RETURNING *`,
@@ -130,7 +130,7 @@ export async function waiveNoShow(id: string, tenantId: string, waivedBy: string
  */
 export async function getCustomerNoShowCount(customerId: string, tenantId: string): Promise<number> {
   const { rows } = await adminPool.query(
-    `SELECT COUNT(*)::int AS count FROM no_show_records
+    `SELECT COUNT(*)::int AS count FROM apt_no_show_records
      WHERE customer_id = $1 AND tenant_id = $2 AND waived = false`,
     [customerId, tenantId],
   );
@@ -143,9 +143,9 @@ export async function getCustomerNoShowCount(customerId: string, tenantId: strin
 export async function getCustomerNoShowHistory(customerId: string, tenantId: string) {
   const { rows } = await adminPool.query(
     `SELECT ns.*, b.start_time AS booking_start_time, s.name AS service_name
-     FROM no_show_records ns
-     JOIN bookings b ON b.id = ns.booking_id
-     LEFT JOIN services s ON s.id = b.service_id
+     FROM apt_no_show_records ns
+     JOIN apt_bookings b ON b.id = ns.booking_id
+     LEFT JOIN svc_services s ON s.id = b.service_id
      WHERE ns.customer_id = $1 AND ns.tenant_id = $2
      ORDER BY ns.detected_at DESC`,
     [customerId, tenantId],

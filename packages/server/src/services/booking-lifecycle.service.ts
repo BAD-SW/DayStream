@@ -31,7 +31,7 @@ async function transitionStatus(
   options?: { reason?: string },
 ): Promise<TransitionResult> {
   const { rows } = await adminPool.query(
-    'SELECT * FROM bookings WHERE id = $1 AND business_id = $2',
+    'SELECT * FROM apt_bookings WHERE id = $1 AND business_id = $2',
     [bookingId, businessId],
   );
 
@@ -62,13 +62,13 @@ async function transitionStatus(
   }
 
   await adminPool.query(
-    `UPDATE bookings SET ${updateFields.join(', ')} WHERE id = $1 AND business_id = $2`,
+    `UPDATE apt_bookings SET ${updateFields.join(', ')} WHERE id = $1 AND business_id = $2`,
     updateParams,
   );
 
   // Record in status history
   await adminPool.query(
-    `INSERT INTO booking_status_history (booking_id, from_status, to_status, changed_by, reason)
+    `INSERT INTO apt_booking_status_history (booking_id, from_status, to_status, changed_by, reason)
      VALUES ($1, $2, $3, $4, $5)`,
     [bookingId, currentStatus, newStatus, userId, options?.reason || null],
   );
@@ -94,7 +94,7 @@ async function transitionStatus(
   });
 
   // Return updated booking
-  const { rows: updated } = await adminPool.query('SELECT * FROM bookings WHERE id = $1', [bookingId]);
+  const { rows: updated } = await adminPool.query('SELECT * FROM apt_bookings WHERE id = $1', [bookingId]);
   return { success: true, booking: updated[0] };
 }
 
@@ -113,8 +113,8 @@ export async function cancelBooking(
 ): Promise<TransitionResult> {
   // Load booking to calculate fee
   const { rows } = await adminPool.query(
-    `SELECT b.*, s.cancellation_policy_id FROM bookings b
-     JOIN services s ON s.id = b.service_id
+    `SELECT b.*, s.cancellation_policy_id FROM apt_bookings b
+     JOIN svc_services s ON s.id = b.service_id
      WHERE b.id = $1 AND b.business_id = $2`,
     [bookingId, businessId],
   );
@@ -128,7 +128,7 @@ export async function cancelBooking(
   const policyId = booking.cancellation_policy_id;
   if (policyId) {
     const { rows: polRows } = await adminPool.query(
-      'SELECT * FROM cancellation_policies WHERE id = $1',
+      'SELECT * FROM svc_cancellation_policies WHERE id = $1',
       [policyId],
     );
     if (polRows.length > 0) {
@@ -138,7 +138,7 @@ export async function cancelBooking(
   } else {
     // Check business default policy
     const { rows: defPol } = await adminPool.query(
-      'SELECT * FROM cancellation_policies WHERE business_id = $1 AND is_default = true',
+      'SELECT * FROM svc_cancellation_policies WHERE business_id = $1 AND is_default = true',
       [businessId],
     );
     if (defPol.length > 0) {
@@ -181,8 +181,8 @@ export async function rescheduleBooking(
   userId?: string, tenantId?: string,
 ): Promise<TransitionResult> {
   const { rows } = await adminPool.query(
-    `SELECT b.*, sv.duration FROM bookings b
-     JOIN service_variants sv ON sv.id = b.variant_id
+    `SELECT b.*, sv.duration FROM apt_bookings b
+     JOIN svc_variants sv ON sv.id = b.variant_id
      WHERE b.id = $1 AND b.business_id = $2`,
     [bookingId, businessId],
   );
@@ -202,7 +202,7 @@ export async function rescheduleBooking(
   // Conflict check for new time
   if (staffId) {
     const { rows: conflicts } = await adminPool.query(
-      `SELECT id FROM bookings
+      `SELECT id FROM apt_bookings
        WHERE staff_id = $1 AND id != $4
          AND start_time < $3 AND end_time > $2
          AND status IN ('pending', 'confirmed', 'in_progress')
@@ -216,7 +216,7 @@ export async function rescheduleBooking(
 
   // Customer conflict check
   const { rows: custConflicts } = await adminPool.query(
-    `SELECT id FROM bookings
+    `SELECT id FROM apt_bookings
      WHERE customer_id = $1 AND id != $4
        AND start_time < $3 AND end_time > $2
        AND status IN ('pending', 'confirmed', 'in_progress')
@@ -229,14 +229,14 @@ export async function rescheduleBooking(
 
   // Update booking
   await adminPool.query(
-    `UPDATE bookings SET start_time = $3, end_time = $4, staff_id = $5, updated_at = NOW()
+    `UPDATE apt_bookings SET start_time = $3, end_time = $4, staff_id = $5, updated_at = NOW()
      WHERE id = $1 AND business_id = $2`,
     [bookingId, businessId, startTime.toISOString(), endTime.toISOString(), staffId],
   );
 
   // Log
   await adminPool.query(
-    `INSERT INTO booking_status_history (booking_id, from_status, to_status, changed_by, reason)
+    `INSERT INTO apt_booking_status_history (booking_id, from_status, to_status, changed_by, reason)
      VALUES ($1, $2, $2, $3, 'Rescheduled')`,
     [bookingId, booking.status, userId],
   );
@@ -261,7 +261,7 @@ export async function rescheduleBooking(
     });
   }
 
-  const { rows: updated } = await adminPool.query('SELECT * FROM bookings WHERE id = $1', [bookingId]);
+  const { rows: updated } = await adminPool.query('SELECT * FROM apt_bookings WHERE id = $1', [bookingId]);
   return { success: true, booking: updated[0] };
 }
 
@@ -273,8 +273,8 @@ export async function evaluateNoShows(windowMinutes = 15): Promise<{ processed: 
 
   const { rows } = await adminPool.query(
     `SELECT b.id, b.business_id, b.customer_id, b.booking_reference
-     FROM bookings b
-     JOIN businesses biz ON biz.id = b.business_id
+     FROM apt_bookings b
+     JOIN sys_businesses biz ON biz.id = b.business_id
      WHERE b.status = 'confirmed'
        AND b.start_time < $1`,
     [cutoff.toISOString()],
@@ -283,12 +283,12 @@ export async function evaluateNoShows(windowMinutes = 15): Promise<{ processed: 
   let processed = 0;
   for (const booking of rows) {
     await adminPool.query(
-      "UPDATE bookings SET status = 'no_show', updated_at = NOW() WHERE id = $1",
+      "UPDATE apt_bookings SET status = 'no_show', updated_at = NOW() WHERE id = $1",
       [booking.id],
     );
 
     await adminPool.query(
-      `INSERT INTO booking_status_history (booking_id, from_status, to_status, reason)
+      `INSERT INTO apt_booking_status_history (booking_id, from_status, to_status, reason)
        VALUES ($1, 'confirmed', 'no_show', 'Auto no-show: not checked in within window')`,
       [booking.id],
     );

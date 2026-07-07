@@ -19,7 +19,7 @@ export async function generateBookingQrCode(tenantId: string, bookingId: string)
 
   // Get booking date to set expiry at end of day
   const { rows: bookingRows } = await adminPool.query(
-    `SELECT b.start_time FROM bookings b JOIN businesses bus ON bus.id = b.business_id
+    `SELECT b.start_time FROM apt_bookings b JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE b.id = $1 AND bus.tenant_id = $2`,
     [bookingId, tenantId],
   );
@@ -30,7 +30,7 @@ export async function generateBookingQrCode(tenantId: string, bookingId: string)
   expiresAt.setHours(23, 59, 59, 999);
 
   const { rows } = await adminPool.query(
-    `INSERT INTO check_in_qr_codes (tenant_id, booking_id, code, code_type, expires_at)
+    `INSERT INTO apt_check_in_qr_codes (tenant_id, booking_id, code, code_type, expires_at)
      VALUES ($1, $2, $3, 'booking', $4)
      RETURNING *`,
     [tenantId, bookingId, code, expiresAt.toISOString()],
@@ -46,7 +46,7 @@ export async function generateCustomerQrCode(tenantId: string, customerId: strin
   const code = generateCode('DSCC');
 
   const { rows } = await adminPool.query(
-    `INSERT INTO check_in_qr_codes (tenant_id, customer_id, code, code_type)
+    `INSERT INTO apt_check_in_qr_codes (tenant_id, customer_id, code, code_type)
      VALUES ($1, $2, $3, 'customer')
      RETURNING *`,
     [tenantId, customerId, code],
@@ -61,7 +61,7 @@ export async function generateCustomerQrCode(tenantId: string, customerId: strin
 export async function regenerateCustomerQrCode(tenantId: string, customerId: string) {
   // Deactivate existing codes
   await adminPool.query(
-    `UPDATE check_in_qr_codes SET is_active = false
+    `UPDATE apt_check_in_qr_codes SET is_active = false
      WHERE tenant_id = $1 AND customer_id = $2 AND code_type = 'customer' AND is_active = true`,
     [tenantId, customerId],
   );
@@ -84,7 +84,7 @@ export async function regenerateCustomerQrCode(tenantId: string, customerId: str
  */
 export async function validateQrCode(code: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM check_in_qr_codes
+    `SELECT * FROM apt_check_in_qr_codes
      WHERE code = $1 AND is_active = true
        AND (expires_at IS NULL OR expires_at > NOW())`,
     [code],
@@ -99,7 +99,7 @@ export async function validateQrCode(code: string) {
  */
 export async function getBookingQrCode(tenantId: string, bookingId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM check_in_qr_codes
+    `SELECT * FROM apt_check_in_qr_codes
      WHERE tenant_id = $1 AND booking_id = $2 AND code_type = 'booking'
        AND is_active = true AND (expires_at IS NULL OR expires_at > NOW())
      LIMIT 1`,
@@ -115,7 +115,7 @@ export async function getBookingQrCode(tenantId: string, bookingId: string) {
  */
 export async function getCustomerQrCode(tenantId: string, customerId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM check_in_qr_codes
+    `SELECT * FROM apt_check_in_qr_codes
      WHERE tenant_id = $1 AND customer_id = $2 AND code_type = 'customer'
        AND is_active = true
      LIMIT 1`,

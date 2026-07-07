@@ -16,7 +16,7 @@ export async function joinWaitlist(
 ): Promise<any> {
   // Check if already on waitlist
   const { rows: existing } = await adminPool.query(
-    `SELECT id FROM waitlist_entries
+    `SELECT id FROM apt_waitlist_entries
      WHERE service_id = $1 AND slot_start_time = $2 AND customer_id = $3 AND status = 'waiting'`,
     [serviceId, slotStartTime, customerId],
   );
@@ -26,7 +26,7 @@ export async function joinWaitlist(
 
   // Check waitlist size
   const { rows: countRows } = await adminPool.query(
-    `SELECT COUNT(*)::int AS count FROM waitlist_entries
+    `SELECT COUNT(*)::int AS count FROM apt_waitlist_entries
      WHERE service_id = $1 AND slot_start_time = $2 AND status IN ('waiting', 'notified')`,
     [serviceId, slotStartTime],
   );
@@ -40,7 +40,7 @@ export async function joinWaitlist(
   const position = countRows[0].count + 1;
 
   const { rows } = await adminPool.query(
-    `INSERT INTO waitlist_entries (business_id, service_id, slot_start_time, slot_end_time, customer_id, position)
+    `INSERT INTO apt_waitlist_entries (business_id, service_id, slot_start_time, slot_end_time, customer_id, position)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
     [businessId, serviceId, slotStartTime, slotEndTime, customerId, position],
@@ -54,7 +54,7 @@ export async function joinWaitlist(
  */
 export async function leaveWaitlist(serviceId: string, slotStartTime: string, customerId: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    `UPDATE waitlist_entries SET status = 'removed'
+    `UPDATE apt_waitlist_entries SET status = 'removed'
      WHERE service_id = $1 AND slot_start_time = $2 AND customer_id = $3 AND status = 'waiting'`,
     [serviceId, slotStartTime, customerId],
   );
@@ -67,8 +67,8 @@ export async function leaveWaitlist(serviceId: string, slotStartTime: string, cu
 export async function getWaitlist(serviceId: string, slotStartTime: string) {
   const { rows } = await adminPool.query(
     `SELECT we.*, c.first_name, c.last_name, c.email
-     FROM waitlist_entries we
-     JOIN customers c ON c.id = we.customer_id
+     FROM apt_waitlist_entries we
+     JOIN cus_customers c ON c.id = we.customer_id
      WHERE we.service_id = $1 AND we.slot_start_time = $2 AND we.status IN ('waiting', 'notified')
      ORDER BY we.position`,
     [serviceId, slotStartTime],
@@ -83,7 +83,7 @@ export async function getWaitlist(serviceId: string, slotStartTime: string) {
 export async function promoteNext(serviceId: string, slotStartTime: string): Promise<any | null> {
   // Find next waiting entry
   const { rows } = await adminPool.query(
-    `SELECT * FROM waitlist_entries
+    `SELECT * FROM apt_waitlist_entries
      WHERE service_id = $1 AND slot_start_time = $2 AND status = 'waiting'
      ORDER BY position
      LIMIT 1`,
@@ -98,7 +98,7 @@ export async function promoteNext(serviceId: string, slotStartTime: string): Pro
 
   // Update to notified
   await adminPool.query(
-    `UPDATE waitlist_entries SET status = 'notified', notified_at = NOW(), expires_at = $2
+    `UPDATE apt_waitlist_entries SET status = 'notified', notified_at = NOW(), expires_at = $2
      WHERE id = $1`,
     [entry.id, expiresAt.toISOString()],
   );
@@ -115,7 +115,7 @@ export async function promoteNext(serviceId: string, slotStartTime: string): Pro
  */
 export async function confirmPromotion(entryId: string, customerId: string): Promise<{ confirmed: boolean; error?: string }> {
   const { rows } = await adminPool.query(
-    `SELECT * FROM waitlist_entries WHERE id = $1 AND customer_id = $2 AND status = 'notified'`,
+    `SELECT * FROM apt_waitlist_entries WHERE id = $1 AND customer_id = $2 AND status = 'notified'`,
     [entryId, customerId],
   );
 
@@ -128,7 +128,7 @@ export async function confirmPromotion(entryId: string, customerId: string): Pro
   // Check if expired
   if (entry.expires_at && new Date(entry.expires_at) < new Date()) {
     await adminPool.query(
-      "UPDATE waitlist_entries SET status = 'expired' WHERE id = $1",
+      "UPDATE apt_waitlist_entries SET status = 'expired' WHERE id = $1",
       [entryId],
     );
     return { confirmed: false, error: 'Confirmation window has expired' };
@@ -136,7 +136,7 @@ export async function confirmPromotion(entryId: string, customerId: string): Pro
 
   // Mark as confirmed
   await adminPool.query(
-    "UPDATE waitlist_entries SET status = 'confirmed' WHERE id = $1",
+    "UPDATE apt_waitlist_entries SET status = 'confirmed' WHERE id = $1",
     [entryId],
   );
 
@@ -148,14 +148,14 @@ export async function confirmPromotion(entryId: string, customerId: string): Pro
  */
 export async function processExpiredNotifications(): Promise<number> {
   const { rows: expired } = await adminPool.query(
-    `SELECT * FROM waitlist_entries
+    `SELECT * FROM apt_waitlist_entries
      WHERE status = 'notified' AND expires_at <= NOW()`,
   );
 
   let processed = 0;
   for (const entry of expired) {
     await adminPool.query(
-      "UPDATE waitlist_entries SET status = 'expired' WHERE id = $1",
+      "UPDATE apt_waitlist_entries SET status = 'expired' WHERE id = $1",
       [entry.id],
     );
 

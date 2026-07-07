@@ -75,10 +75,10 @@ describe('Tenant Provisioning API', () => {
     expect(body.data.owner.email).toContain('@test.example');
 
     // Clean up
-    await pool.query('DELETE FROM user_roles WHERE tenant_id = $1', [body.data.tenant.id]);
-    await pool.query('DELETE FROM roles WHERE tenant_id = $1', [body.data.tenant.id]);
-    await pool.query('DELETE FROM users WHERE tenant_id = $1', [body.data.tenant.id]);
-    await pool.query('DELETE FROM tenants WHERE id = $1', [body.data.tenant.id]);
+    await pool.query('DELETE FROM usr_user_roles WHERE tenant_id = $1', [body.data.tenant.id]);
+    await pool.query('DELETE FROM usr_roles WHERE tenant_id = $1', [body.data.tenant.id]);
+    await pool.query('DELETE FROM usr_users WHERE tenant_id = $1', [body.data.tenant.id]);
+    await pool.query('DELETE FROM sys_tenants WHERE id = $1', [body.data.tenant.id]);
   });
 
   it('rejects duplicate slug', async () => {

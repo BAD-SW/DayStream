@@ -49,16 +49,16 @@ async function pollAndExecute(): Promise<void> {
   try {
     // Release stale claims (jobs that were claimed but never completed)
     await adminPool.query(
-      `UPDATE scheduled_jobs SET claimed_at = NULL, claimed_by = NULL, last_run_status = 'failed'
+      `UPDATE sys_scheduled_jobs SET claimed_at = NULL, claimed_by = NULL, last_run_status = 'failed'
        WHERE claimed_at IS NOT NULL AND claimed_at < NOW() - INTERVAL '${CLAIM_TIMEOUT_MS} milliseconds'`,
     );
 
     // Pick up due jobs using SKIP LOCKED (non-blocking, no contention)
     const { rows: dueJobs } = await adminPool.query(
-      `UPDATE scheduled_jobs
+      `UPDATE sys_scheduled_jobs
        SET claimed_at = NOW(), claimed_by = $1, last_run_status = 'running'
        WHERE id IN (
-         SELECT id FROM scheduled_jobs
+         SELECT id FROM sys_scheduled_jobs
          WHERE enabled = true
            AND next_run_at <= NOW()
            AND claimed_at IS NULL
@@ -96,7 +96,7 @@ async function executeJob(job: any): Promise<void> {
   try {
     // Record execution start
     const { rows } = await adminPool.query(
-      `INSERT INTO job_executions (job_id, business_id, job_type, started_at, status)
+      `INSERT INTO sys_job_executions (job_id, business_id, job_type, started_at, status)
        VALUES ($1, $2, $3, NOW(), 'running') RETURNING id`,
       [job.id, job.business_id, job.job_type],
     );
@@ -120,7 +120,7 @@ async function executeJob(job: any): Promise<void> {
     // Mark success
     const nextRun = calculateNextRun(job);
     await adminPool.query(
-      `UPDATE scheduled_jobs
+      `UPDATE sys_scheduled_jobs
        SET last_run_at = NOW(), last_run_status = 'success', last_run_duration_ms = $1,
            last_error = NULL, consecutive_failures = 0,
            claimed_at = NULL, claimed_by = NULL,
@@ -132,7 +132,7 @@ async function executeJob(job: any): Promise<void> {
     // Update execution record
     if (executionId) {
       await adminPool.query(
-        `UPDATE job_executions SET completed_at = NOW(), status = 'success', duration_ms = $1, result = $2 WHERE id = $3`,
+        `UPDATE sys_job_executions SET completed_at = NOW(), status = 'success', duration_ms = $1, result = $2 WHERE id = $3`,
         [durationMs, JSON.stringify(result || {}), executionId],
       );
     }
@@ -144,7 +144,7 @@ async function executeJob(job: any): Promise<void> {
     // Mark failure
     const nextRun = calculateNextRun(job);
     await adminPool.query(
-      `UPDATE scheduled_jobs
+      `UPDATE sys_scheduled_jobs
        SET last_run_at = NOW(), last_run_status = 'failed', last_run_duration_ms = $1,
            last_error = $2, consecutive_failures = consecutive_failures + 1,
            claimed_at = NULL, claimed_by = NULL,
@@ -156,7 +156,7 @@ async function executeJob(job: any): Promise<void> {
     // Update execution record
     if (executionId) {
       await adminPool.query(
-        `UPDATE job_executions SET completed_at = NOW(), status = 'failed', duration_ms = $1, error = $2 WHERE id = $3`,
+        `UPDATE sys_job_executions SET completed_at = NOW(), status = 'failed', duration_ms = $1, error = $2 WHERE id = $3`,
         [durationMs, err.message, executionId],
       ).catch(() => {});
     }

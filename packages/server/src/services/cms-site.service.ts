@@ -6,7 +6,7 @@ import { logAudit } from './audit.service';
  */
 export async function getSite(tenantId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM tenant_sites WHERE tenant_id = $1`,
+    `SELECT * FROM web_sites WHERE tenant_id = $1`,
     [tenantId],
   );
 
@@ -15,7 +15,7 @@ export async function getSite(tenantId: string) {
   // Auto-create site with a slug derived from tenant id
   const slug = `site-${tenantId.slice(0, 8)}`;
   const { rows: created } = await adminPool.query(
-    `INSERT INTO tenant_sites (tenant_id, slug)
+    `INSERT INTO web_sites (tenant_id, slug)
      VALUES ($1, $2)
      ON CONFLICT (tenant_id) DO UPDATE SET updated_at = NOW()
      RETURNING *`,
@@ -43,7 +43,7 @@ export async function updateSite(tenantId: string, updates: Record<string, any>)
   values.push(tenantId);
 
   const { rows } = await adminPool.query(
-    `UPDATE tenant_sites SET ${fields.join(', ')} WHERE tenant_id = $${idx} RETURNING *`,
+    `UPDATE web_sites SET ${fields.join(', ')} WHERE tenant_id = $${idx} RETURNING *`,
     values,
   );
 
@@ -65,7 +65,7 @@ export async function updateSite(tenantId: string, updates: Record<string, any>)
  */
 export async function configureDomain(tenantId: string, domain: string) {
   const { rows } = await adminPool.query(
-    `UPDATE tenant_sites
+    `UPDATE web_sites
      SET custom_domain = $1, domain_status = 'verifying', updated_at = NOW()
      WHERE tenant_id = $2 RETURNING *`,
     [domain, tenantId],
@@ -90,7 +90,7 @@ export async function configureDomain(tenantId: string, domain: string) {
 export async function checkDomainStatus(tenantId: string) {
   const { rows } = await adminPool.query(
     `SELECT domain_status, custom_domain, domain_verified_at, ssl_provisioned
-     FROM tenant_sites WHERE tenant_id = $1`,
+     FROM web_sites WHERE tenant_id = $1`,
     [tenantId],
   );
   return rows[0] || null;
@@ -101,7 +101,7 @@ export async function checkDomainStatus(tenantId: string) {
  */
 export async function publishSite(tenantId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE tenant_sites SET is_published = true, updated_at = NOW()
+    `UPDATE web_sites SET is_published = true, updated_at = NOW()
      WHERE tenant_id = $1 RETURNING *`,
     [tenantId],
   );
@@ -123,7 +123,7 @@ export async function publishSite(tenantId: string) {
  */
 export async function getSiteBySlug(slug: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM tenant_sites WHERE slug = $1 AND is_published = true`,
+    `SELECT * FROM web_sites WHERE slug = $1 AND is_published = true`,
     [slug],
   );
   return rows[0] || null;
@@ -134,7 +134,7 @@ export async function getSiteBySlug(slug: string) {
  */
 export async function getSiteByDomain(domain: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM tenant_sites WHERE custom_domain = $1 AND domain_status = 'active' AND is_published = true`,
+    `SELECT * FROM web_sites WHERE custom_domain = $1 AND domain_status = 'active' AND is_published = true`,
     [domain],
   );
   return rows[0] || null;

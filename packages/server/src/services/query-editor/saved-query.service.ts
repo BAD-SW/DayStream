@@ -92,7 +92,7 @@ export class SavedQueryService {
 
     // Enforce max count
     const { rows: countRows } = await adminPool.query(
-      'SELECT COUNT(*)::int AS count FROM saved_queries WHERE user_id = $1',
+      'SELECT COUNT(*)::int AS count FROM sys_saved_queries WHERE user_id = $1',
       [userId],
     );
     if (countRows[0].count >= MAX_SAVED_QUERIES) {
@@ -104,7 +104,7 @@ export class SavedQueryService {
 
     // Check name uniqueness for this user
     const { rows: existing } = await adminPool.query(
-      'SELECT id FROM saved_queries WHERE user_id = $1 AND LOWER(name) = LOWER($2)',
+      'SELECT id FROM sys_saved_queries WHERE user_id = $1 AND LOWER(name) = LOWER($2)',
       [userId, input.name],
     );
     if (existing.length > 0) {
@@ -115,7 +115,7 @@ export class SavedQueryService {
     }
 
     const { rows } = await adminPool.query(
-      `INSERT INTO saved_queries (tenant_id, user_id, name, description, query_text)
+      `INSERT INTO sys_saved_queries (tenant_id, user_id, name, description, query_text)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
       [tenantId, userId, input.name, input.description || null, input.queryText],
@@ -148,7 +148,7 @@ export class SavedQueryService {
     // Check name uniqueness if name is being changed
     if (input.name !== undefined && input.name !== existing.name) {
       const { rows: duplicates } = await adminPool.query(
-        'SELECT id FROM saved_queries WHERE user_id = $1 AND LOWER(name) = LOWER($2) AND id != $3',
+        'SELECT id FROM sys_saved_queries WHERE user_id = $1 AND LOWER(name) = LOWER($2) AND id != $3',
         [userId, input.name, id],
       );
       if (duplicates.length > 0) {
@@ -186,7 +186,7 @@ export class SavedQueryService {
     values.push(userId);
 
     const { rows } = await adminPool.query(
-      `UPDATE saved_queries SET ${fields.join(', ')} WHERE id = $${paramIndex++} AND user_id = $${paramIndex} RETURNING *`,
+      `UPDATE sys_saved_queries SET ${fields.join(', ')} WHERE id = $${paramIndex++} AND user_id = $${paramIndex} RETURNING *`,
       values,
     );
 
@@ -195,7 +195,7 @@ export class SavedQueryService {
 
   async delete(id: string, userId: string): Promise<void> {
     const { rowCount } = await adminPool.query(
-      'DELETE FROM saved_queries WHERE id = $1 AND user_id = $2',
+      'DELETE FROM sys_saved_queries WHERE id = $1 AND user_id = $2',
       [id, userId],
     );
 
@@ -208,7 +208,7 @@ export class SavedQueryService {
   }
 
   async list(userId: string, tenantId: string, options: { search?: string } = {}): Promise<SavedQuery[]> {
-    let query = 'SELECT * FROM saved_queries WHERE user_id = $1 AND tenant_id = $2';
+    let query = 'SELECT * FROM sys_saved_queries WHERE user_id = $1 AND tenant_id = $2';
     const params: any[] = [userId, tenantId];
 
     if (options.search && options.search.trim().length > 0) {
@@ -224,7 +224,7 @@ export class SavedQueryService {
 
   async getById(id: string, userId: string): Promise<SavedQuery | null> {
     const { rows } = await adminPool.query(
-      'SELECT * FROM saved_queries WHERE id = $1 AND user_id = $2',
+      'SELECT * FROM sys_saved_queries WHERE id = $1 AND user_id = $2',
       [id, userId],
     );
 

@@ -4,7 +4,7 @@ import { adminPool } from '../db/pool';
  * Get challenges for a tenant, optionally filtered by status.
  */
 export async function getChallenges(tenantId: string, status?: string) {
-  let query = `SELECT * FROM challenges WHERE tenant_id = $1`;
+  let query = `SELECT * FROM eng_challenges WHERE tenant_id = $1`;
   const params: any[] = [tenantId];
 
   if (status) {
@@ -34,7 +34,7 @@ export async function createChallenge(tenantId: string, input: {
   status?: string;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO challenges (tenant_id, title, description, challenge_type, goal_config, start_date, end_date, reward_config, capacity, image_path, is_recurring, status)
+    `INSERT INTO eng_challenges (tenant_id, title, description, challenge_type, goal_config, start_date, end_date, reward_config, capacity, image_path, is_recurring, status)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
     [
       tenantId,
@@ -59,7 +59,7 @@ export async function createChallenge(tenantId: string, input: {
  */
 export async function joinChallenge(challengeId: string, customerId: string, goalTarget: number) {
   const { rows } = await adminPool.query(
-    `INSERT INTO challenge_participants (challenge_id, customer_id, goal_target)
+    `INSERT INTO eng_challenge_participants (challenge_id, customer_id, goal_target)
      VALUES ($1, $2, $3) RETURNING *`,
     [challengeId, customerId, goalTarget],
   );
@@ -71,7 +71,7 @@ export async function joinChallenge(challengeId: string, customerId: string, goa
  */
 export async function updateProgress(challengeId: string, customerId: string, increment: number) {
   const { rows } = await adminPool.query(
-    `UPDATE challenge_participants
+    `UPDATE eng_challenge_participants
      SET progress = progress + $3,
          status = CASE WHEN progress + $3 >= goal_target THEN 'completed' ELSE status END,
          completed_at = CASE WHEN progress + $3 >= goal_target AND completed_at IS NULL THEN NOW() ELSE completed_at END
@@ -88,8 +88,8 @@ export async function updateProgress(challengeId: string, customerId: string, in
 export async function getChallengeLeaderboard(challengeId: string) {
   const { rows } = await adminPool.query(
     `SELECT cp.*, c.first_name, c.last_name
-     FROM challenge_participants cp
-     JOIN customers c ON c.id = cp.customer_id
+     FROM eng_challenge_participants cp
+     JOIN cus_customers c ON c.id = cp.customer_id
      WHERE cp.challenge_id = $1
      ORDER BY cp.progress DESC, cp.joined_at ASC`,
     [challengeId],
@@ -103,8 +103,8 @@ export async function getChallengeLeaderboard(challengeId: string) {
 export async function getMyActiveChallenges(tenantId: string, customerId: string) {
   const { rows } = await adminPool.query(
     `SELECT ch.*, cp.progress, cp.goal_target, cp.status AS participant_status, cp.joined_at
-     FROM challenge_participants cp
-     JOIN challenges ch ON ch.id = cp.challenge_id
+     FROM eng_challenge_participants cp
+     JOIN eng_challenges ch ON ch.id = cp.challenge_id
      WHERE ch.tenant_id = $1 AND cp.customer_id = $2 AND cp.status = 'active'
      ORDER BY ch.end_date ASC`,
     [tenantId, customerId],

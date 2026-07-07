@@ -39,7 +39,7 @@ export async function registerForEvent(
 
     // Check event capacity
     const { rows: eventRows } = await client.query(
-      `SELECT e.*, e.tenant_id FROM events e WHERE e.id = $1 AND e.status = 'published' FOR UPDATE`,
+      `SELECT e.*, e.tenant_id FROM evt_events e WHERE e.id = $1 AND e.status = 'published' FOR UPDATE`,
       [eventId],
     );
     if (eventRows.length === 0) throw new Error('Event not found or not open for registration');
@@ -49,7 +49,7 @@ export async function registerForEvent(
 
     // Check current registration count
     const { rows: countRows } = await client.query(
-      `SELECT COUNT(*)::int AS count FROM event_registrations
+      `SELECT COUNT(*)::int AS count FROM evt_registrations
        WHERE event_id = $1 AND status IN ('confirmed','pending')`,
       [eventId],
     );
@@ -62,7 +62,7 @@ export async function registerForEvent(
     let isFree = true;
     if (input.ticketTierId) {
       const { rows: tierRows } = await client.query(
-        `SELECT * FROM event_ticket_tiers WHERE id = $1 AND event_id = $2 FOR UPDATE`,
+        `SELECT * FROM evt_ticket_tiers WHERE id = $1 AND event_id = $2 FOR UPDATE`,
         [input.ticketTierId, eventId],
       );
       if (tierRows.length === 0) {
@@ -74,7 +74,7 @@ export async function registerForEvent(
       isFree = tier.price === 0;
 
       const { rows: soldRows } = await client.query(
-        `SELECT COALESCE(SUM(group_size), 0)::int AS sold FROM event_registrations
+        `SELECT COALESCE(SUM(group_size), 0)::int AS sold FROM evt_registrations
          WHERE ticket_tier_id = $1 AND status IN ('confirmed','pending')`,
         [input.ticketTierId],
       );
@@ -89,7 +89,7 @@ export async function registerForEvent(
     const holdExpiresAt = isFree ? null : new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
     const { rows } = await client.query(
-      `INSERT INTO event_registrations (
+      `INSERT INTO evt_registrations (
          event_id, customer_id, ticket_tier_id, reference_number,
          status, group_size, attendee_info, hold_expires_at
        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -130,7 +130,7 @@ export async function registerForEvent(
  */
 export async function confirmRegistration(id: string) {
   const { rows } = await adminPool.query(
-    `UPDATE event_registrations
+    `UPDATE evt_registrations
      SET status = 'confirmed', hold_expires_at = NULL
      WHERE id = $1 AND status = 'pending' RETURNING *`,
     [id],
@@ -144,9 +144,9 @@ export async function confirmRegistration(id: string) {
  */
 export async function cancelRegistration(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE event_registrations er
+    `UPDATE evt_registrations er
      SET status = 'cancelled'
-     FROM events e
+     FROM evt_events e
      WHERE er.id = $1 AND er.event_id = e.id AND e.tenant_id = $2
        AND er.status IN ('confirmed','pending')
      RETURNING er.*`,
@@ -169,9 +169,9 @@ export async function cancelRegistration(id: string, tenantId: string) {
  */
 export async function transferRegistration(id: string, newCustomerId: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE event_registrations er
+    `UPDATE evt_registrations er
      SET customer_id = $2
-     FROM events e
+     FROM evt_events e
      WHERE er.id = $1 AND er.event_id = e.id AND e.tenant_id = $3
        AND er.status = 'confirmed'
      RETURNING er.*`,
@@ -217,9 +217,9 @@ export async function getRegistrations(eventId: string, filters: RegistrationFil
     `SELECT er.*,
             c.first_name, c.last_name, c.email,
             tt.name AS tier_name, tt.price AS tier_price
-     FROM event_registrations er
-     LEFT JOIN customers c ON c.id = er.customer_id
-     LEFT JOIN event_ticket_tiers tt ON tt.id = er.ticket_tier_id
+     FROM evt_registrations er
+     LEFT JOIN cus_customers c ON c.id = er.customer_id
+     LEFT JOIN evt_ticket_tiers tt ON tt.id = er.ticket_tier_id
      WHERE ${where}
      ORDER BY er.created_at DESC
      LIMIT $${idx++} OFFSET $${idx++}`,
@@ -227,7 +227,7 @@ export async function getRegistrations(eventId: string, filters: RegistrationFil
   );
 
   const { rows: countRows } = await adminPool.query(
-    `SELECT COUNT(*)::int AS total FROM event_registrations er WHERE ${where}`,
+    `SELECT COUNT(*)::int AS total FROM evt_registrations er WHERE ${where}`,
     params,
   );
 

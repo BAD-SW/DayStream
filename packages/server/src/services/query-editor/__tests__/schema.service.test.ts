@@ -96,11 +96,11 @@ describe('SchemaService', () => {
           rows: [
             { table_name: 'customers' },
             { table_name: 'migrations' },
-            { table_name: 'audit_log' },
-            { table_name: 'login_attempts' },
-            { table_name: 'refresh_tokens' },
-            { table_name: 'password_history' },
-            { table_name: 'query_history' },
+            { table_name: 'usr_audit_log' },
+            { table_name: 'usr_login_attempts' },
+            { table_name: 'usr_refresh_tokens' },
+            { table_name: 'usr_password_history' },
+            { table_name: 'sys_query_history' },
             { table_name: 'bookings' },
           ],
         })
@@ -117,11 +117,11 @@ describe('SchemaService', () => {
       expect(tableNames).toContain('customers');
       expect(tableNames).toContain('bookings');
       expect(tableNames).not.toContain('migrations');
-      expect(tableNames).not.toContain('audit_log');
-      expect(tableNames).not.toContain('login_attempts');
-      expect(tableNames).not.toContain('refresh_tokens');
-      expect(tableNames).not.toContain('password_history');
-      expect(tableNames).not.toContain('query_history');
+      expect(tableNames).not.toContain('usr_audit_log');
+      expect(tableNames).not.toContain('usr_login_attempts');
+      expect(tableNames).not.toContain('usr_refresh_tokens');
+      expect(tableNames).not.toContain('usr_password_history');
+      expect(tableNames).not.toContain('sys_query_history');
     });
 
     it('should exclude tables starting with pg_ prefix', async () => {

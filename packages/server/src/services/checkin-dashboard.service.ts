@@ -40,12 +40,12 @@ export async function getDashboard(
             s.name AS service_name,
             u.first_name AS staff_first_name, u.last_name AS staff_last_name,
             cr.id AS checkin_id, cr.check_in_time, cr.status AS checkin_status
-     FROM bookings b
-     JOIN businesses bus ON bus.id = b.business_id
-     JOIN customers c ON c.id = b.customer_id
-     JOIN services s ON s.id = b.service_id
-     LEFT JOIN users u ON u.id = b.staff_id
-     LEFT JOIN check_in_records cr ON cr.booking_id = b.id AND cr.status != 'cancelled'
+     FROM apt_bookings b
+     JOIN sys_businesses bus ON bus.id = b.business_id
+     JOIN cus_customers c ON c.id = b.customer_id
+     JOIN svc_services s ON s.id = b.service_id
+     LEFT JOIN usr_users u ON u.id = b.staff_id
+     LEFT JOIN apt_check_in_records cr ON cr.booking_id = b.id AND cr.status != 'cancelled'
      WHERE ${where}
      ORDER BY b.start_time ASC`,
     params,
@@ -101,11 +101,11 @@ export async function getUpcoming(tenantId: string, limit = 10) {
             c.first_name AS customer_first_name, c.last_name AS customer_last_name,
             s.name AS service_name,
             u.first_name AS staff_first_name, u.last_name AS staff_last_name
-     FROM bookings b
-     JOIN businesses bus ON bus.id = b.business_id
-     JOIN customers c ON c.id = b.customer_id
-     JOIN services s ON s.id = b.service_id
-     LEFT JOIN users u ON u.id = b.staff_id
+     FROM apt_bookings b
+     JOIN sys_businesses bus ON bus.id = b.business_id
+     JOIN cus_customers c ON c.id = b.customer_id
+     JOIN svc_services s ON s.id = b.service_id
+     LEFT JOIN usr_users u ON u.id = b.staff_id
      WHERE bus.tenant_id = $1
        AND b.status = 'confirmed'
        AND b.start_time::date = CURRENT_DATE

@@ -47,7 +47,7 @@ describe('Service Categories API', () => {
 
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Service Cat Test Biz', 'service-cat-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Service Cat Test Biz'
        RETURNING id`,
@@ -57,7 +57,7 @@ describe('Service Categories API', () => {
 
     // Clean up any leftover test categories
     await adminPool.query(
-      "DELETE FROM service_categories WHERE business_id = $1",
+      "DELETE FROM svc_categories WHERE business_id = $1",
       [BUSINESS_ID],
     );
 

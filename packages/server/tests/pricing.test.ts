@@ -49,7 +49,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Pricing Engine — Calculation & Rules', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Pricing Test Biz', 'pricing-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Pricing Test Biz'
        RETURNING id`,
@@ -58,38 +58,38 @@ describe('Pricing Engine — Calculation & Rules', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean
-    await adminPool.query('DELETE FROM pricing_rules WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM discount_codes WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM services WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM service_categories WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM tax_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM pri_rules WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM pri_discount_codes WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_tax_categories WHERE business_id = $1', [BUSINESS_ID]);
 
     // Tax category
     const { rows: taxRows } = await adminPool.query(
-      `INSERT INTO tax_categories (business_id, name, rate, is_default) VALUES ($1, 'Standard', 2100, true) RETURNING id`,
+      `INSERT INTO svc_tax_categories (business_id, name, rate, is_default) VALUES ($1, 'Standard', 2100, true) RETURNING id`,
       [BUSINESS_ID],
     );
 
     // Service + variant
     const { rows: catRows } = await adminPool.query(
-      `INSERT INTO service_categories (business_id, name) VALUES ($1, 'Pricing Cat') RETURNING id`, [BUSINESS_ID],
+      `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'Pricing Cat') RETURNING id`, [BUSINESS_ID],
     );
     const { rows: svcRows } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, status, tax_category_id, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, status, tax_category_id, created_by)
        VALUES ($1, $2, 'Pricing Service', 'pricing-service', 'active', $3, '00000000-0000-0000-0000-000000000010') RETURNING id`,
       [BUSINESS_ID, catRows[0].id, taxRows[0].id],
     );
     SERVICE_ID = svcRows[0].id;
 
     const { rows: varRows } = await adminPool.query(
-      `INSERT INTO service_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 10000, 'active') RETURNING id`,
+      `INSERT INTO svc_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 10000, 'active') RETURNING id`,
       [SERVICE_ID],
     );
     VARIANT_ID = varRows[0].id;
 
     // Customer
     const { rows: custRows } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-PRC01', 'pricing-cust@example.com', 'Pricing', 'Cust', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Pricing' RETURNING id`,
       [TENANT_ID, BUSINESS_ID],
@@ -98,13 +98,13 @@ describe('Pricing Engine — Calculation & Rules', () => {
 
     // Membership plan + active membership
     const { rows: planRows } = await adminPool.query(
-      `INSERT INTO membership_plans (business_id, name, plan_type, billing_cycle, price) VALUES ($1, 'Gold', 'unlimited', 'monthly', 12900) RETURNING id`,
+      `INSERT INTO mem_plans (business_id, name, plan_type, billing_cycle, price) VALUES ($1, 'Gold', 'unlimited', 'monthly', 12900) RETURNING id`,
       [BUSINESS_ID],
     );
     PLAN_ID = planRows[0].id;
 
     const { rows: mbrRows } = await adminPool.query(
-      `INSERT INTO memberships (business_id, customer_id, plan_id, status, start_date, credit_balance, created_by)
+      `INSERT INTO mem_memberships (business_id, customer_id, plan_id, status, start_date, credit_balance, created_by)
        VALUES ($1, $2, $3, 'active', CURRENT_DATE, 0, '00000000-0000-0000-0000-000000000010') RETURNING id`,
       [BUSINESS_ID, CUSTOMER_ID, PLAN_ID],
     );
@@ -112,7 +112,7 @@ describe('Pricing Engine — Calculation & Rules', () => {
 
     // Discount code
     await adminPool.query(
-      `INSERT INTO discount_codes (business_id, code, discount_type, discount_value, max_total_uses, max_uses_per_customer)
+      `INSERT INTO pri_discount_codes (business_id, code, discount_type, discount_value, max_total_uses, max_uses_per_customer)
        VALUES ($1, 'SAVE10', 'percentage', 10, 100, 1)`,
       [BUSINESS_ID],
     );
@@ -143,7 +143,7 @@ describe('Pricing Engine — Calculation & Rules', () => {
     it('applies a percentage discount rule', async () => {
       // Create a 20% rule
       await adminPool.query(
-        `INSERT INTO pricing_rules (business_id, name, rule_type, discount_type, discount_value, priority, stacking_mode)
+        `INSERT INTO pri_rules (business_id, name, rule_type, discount_type, discount_value, priority, stacking_mode)
          VALUES ($1, '20% Off All', 'promotion', 'percentage', 20, 50, 'stackable')`,
         [BUSINESS_ID],
       );
@@ -176,7 +176,7 @@ describe('Pricing Engine — Calculation & Rules', () => {
     it('applies membership-based rule', async () => {
       // Create membership rule
       await adminPool.query(
-        `INSERT INTO pricing_rules (business_id, name, rule_type, discount_type, discount_value, priority, stacking_mode, applies_to_all_customers, membership_plan_ids)
+        `INSERT INTO pri_rules (business_id, name, rule_type, discount_type, discount_value, priority, stacking_mode, applies_to_all_customers, membership_plan_ids)
          VALUES ($1, 'Gold Member 15%', 'membership', 'percentage', 15, 30, 'stackable', false, $2)`,
         [BUSINESS_ID, [PLAN_ID]],
       );
@@ -196,7 +196,7 @@ describe('Pricing Engine — Calculation & Rules', () => {
     it('exclusive rule overrides stackable rules', async () => {
       // Create exclusive 30% rule
       await adminPool.query(
-        `INSERT INTO pricing_rules (business_id, name, rule_type, discount_type, discount_value, priority, stacking_mode)
+        `INSERT INTO pri_rules (business_id, name, rule_type, discount_type, discount_value, priority, stacking_mode)
          VALUES ($1, 'Flash Sale 30%', 'promotion', 'percentage', 30, 10, 'exclusive')`,
         [BUSINESS_ID],
       );
@@ -215,9 +215,9 @@ describe('Pricing Engine — Calculation & Rules', () => {
 
     it('enforces max discount cap (50%)', async () => {
       // Remove exclusive rule, add a huge discount
-      await adminPool.query("DELETE FROM pricing_rules WHERE business_id = $1 AND name = 'Flash Sale 30%'", [BUSINESS_ID]);
+      await adminPool.query("DELETE FROM pri_rules WHERE business_id = $1 AND name = 'Flash Sale 30%'", [BUSINESS_ID]);
       await adminPool.query(
-        `INSERT INTO pricing_rules (business_id, name, rule_type, discount_type, discount_value, priority, stacking_mode)
+        `INSERT INTO pri_rules (business_id, name, rule_type, discount_type, discount_value, priority, stacking_mode)
          VALUES ($1, 'Huge 60%', 'promotion', 'percentage', 60, 20, 'stackable')`,
         [BUSINESS_ID],
       );
@@ -289,16 +289,16 @@ describe('Pricing Engine — Calculation & Rules', () => {
     it('first_time rule applies for new customers', async () => {
       // Create a customer with 0 bookings
       const { rows: newCust } = await adminPool.query(
-        `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
          VALUES ($1, $2, 'CUST-PRC02', 'pricing-new@example.com', 'New', 'Customer', '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'New' RETURNING id`,
         [TENANT_ID, BUSINESS_ID],
       );
 
       // Clean rules, add first-time rule only
-      await adminPool.query("DELETE FROM pricing_rules WHERE business_id = $1", [BUSINESS_ID]);
+      await adminPool.query("DELETE FROM pri_rules WHERE business_id = $1", [BUSINESS_ID]);
       await adminPool.query(
-        `INSERT INTO pricing_rules (business_id, name, rule_type, discount_type, discount_value, first_time_booking_limit)
+        `INSERT INTO pri_rules (business_id, name, rule_type, discount_type, discount_value, first_time_booking_limit)
          VALUES ($1, 'First Visit 25%', 'first_time', 'percentage', 25, 3)`,
         [BUSINESS_ID],
       );
@@ -313,9 +313,9 @@ describe('Pricing Engine — Calculation & Rules', () => {
     });
 
     it('time_of_day rule applies at matching time', async () => {
-      await adminPool.query("DELETE FROM pricing_rules WHERE business_id = $1", [BUSINESS_ID]);
+      await adminPool.query("DELETE FROM pri_rules WHERE business_id = $1", [BUSINESS_ID]);
       await adminPool.query(
-        `INSERT INTO pricing_rules (business_id, name, rule_type, discount_type, discount_value, time_from, time_to)
+        `INSERT INTO pri_rules (business_id, name, rule_type, discount_type, discount_value, time_from, time_to)
          VALUES ($1, 'Off-Peak €10 off', 'time_of_day', 'fixed', 1000, '06:00', '10:00')`,
         [BUSINESS_ID],
       );

@@ -30,14 +30,14 @@ interface CreatePatternInput {
  */
 export async function getPatterns(staffId: string) {
   const { rows: patterns } = await adminPool.query(
-    `SELECT * FROM availability_patterns WHERE staff_id = $1 ORDER BY effective_from DESC`,
+    `SELECT * FROM stf_availability_patterns WHERE staff_id = $1 ORDER BY effective_from DESC`,
     [staffId],
   );
 
   // Load slots for each pattern
   for (const pattern of patterns) {
     const { rows: slots } = await adminPool.query(
-      `SELECT * FROM availability_pattern_slots WHERE pattern_id = $1 ORDER BY day_of_week, start_time`,
+      `SELECT * FROM stf_availability_pattern_slots WHERE pattern_id = $1 ORDER BY day_of_week, start_time`,
       [pattern.id],
     );
     pattern.slots = slots;
@@ -55,7 +55,7 @@ export async function createPattern(input: CreatePatternInput) {
     await client.query('BEGIN');
 
     const { rows } = await client.query(
-      `INSERT INTO availability_patterns (staff_id, name, effective_from, effective_to, is_default, location_id)
+      `INSERT INTO stf_availability_patterns (staff_id, name, effective_from, effective_to, is_default, location_id)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
       [
@@ -73,7 +73,7 @@ export async function createPattern(input: CreatePatternInput) {
     // Insert slots
     for (const slot of input.slots) {
       await client.query(
-        `INSERT INTO availability_pattern_slots (pattern_id, day_of_week, start_time, end_time)
+        `INSERT INTO stf_availability_pattern_slots (pattern_id, day_of_week, start_time, end_time)
          VALUES ($1, $2, $3, $4)`,
         [pattern.id, slot.dayOfWeek, slot.startTime, slot.endTime],
       );
@@ -83,7 +83,7 @@ export async function createPattern(input: CreatePatternInput) {
 
     // Load slots
     const { rows: slots } = await adminPool.query(
-      `SELECT * FROM availability_pattern_slots WHERE pattern_id = $1 ORDER BY day_of_week, start_time`,
+      `SELECT * FROM stf_availability_pattern_slots WHERE pattern_id = $1 ORDER BY day_of_week, start_time`,
       [pattern.id],
     );
     pattern.slots = slots;
@@ -127,7 +127,7 @@ export async function updatePattern(id: string, staffId: string, updates: {
       values.push(id);
       values.push(staffId);
       const { rowCount } = await client.query(
-        `UPDATE availability_patterns SET ${fields.join(', ')} WHERE id = $${idx++} AND staff_id = $${idx}`,
+        `UPDATE stf_availability_patterns SET ${fields.join(', ')} WHERE id = $${idx++} AND staff_id = $${idx}`,
         values,
       );
       if ((rowCount ?? 0) === 0) {
@@ -138,10 +138,10 @@ export async function updatePattern(id: string, staffId: string, updates: {
 
     // Replace slots if provided
     if (updates.slots !== undefined) {
-      await client.query(`DELETE FROM availability_pattern_slots WHERE pattern_id = $1`, [id]);
+      await client.query(`DELETE FROM stf_availability_pattern_slots WHERE pattern_id = $1`, [id]);
       for (const slot of updates.slots) {
         await client.query(
-          `INSERT INTO availability_pattern_slots (pattern_id, day_of_week, start_time, end_time)
+          `INSERT INTO stf_availability_pattern_slots (pattern_id, day_of_week, start_time, end_time)
            VALUES ($1, $2, $3, $4)`,
           [id, slot.dayOfWeek, slot.startTime, slot.endTime],
         );
@@ -152,13 +152,13 @@ export async function updatePattern(id: string, staffId: string, updates: {
 
     // Return updated pattern with slots
     const { rows } = await adminPool.query(
-      `SELECT * FROM availability_patterns WHERE id = $1`,
+      `SELECT * FROM stf_availability_patterns WHERE id = $1`,
       [id],
     );
     if (rows.length === 0) return null;
 
     const { rows: slots } = await adminPool.query(
-      `SELECT * FROM availability_pattern_slots WHERE pattern_id = $1 ORDER BY day_of_week, start_time`,
+      `SELECT * FROM stf_availability_pattern_slots WHERE pattern_id = $1 ORDER BY day_of_week, start_time`,
       [id],
     );
     rows[0].slots = slots;
@@ -176,7 +176,7 @@ export async function updatePattern(id: string, staffId: string, updates: {
  */
 export async function deletePattern(id: string, staffId: string) {
   const { rowCount } = await adminPool.query(
-    `DELETE FROM availability_patterns WHERE id = $1 AND staff_id = $2`,
+    `DELETE FROM stf_availability_patterns WHERE id = $1 AND staff_id = $2`,
     [id, staffId],
   );
   return (rowCount ?? 0) > 0;
@@ -187,7 +187,7 @@ export async function deletePattern(id: string, staffId: string) {
  */
 export async function copyPattern(id: string, staffId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM availability_patterns WHERE id = $1 AND staff_id = $2`,
+    `SELECT * FROM stf_availability_patterns WHERE id = $1 AND staff_id = $2`,
     [id, staffId],
   );
   if (rows.length === 0) return null;
@@ -195,7 +195,7 @@ export async function copyPattern(id: string, staffId: string) {
   const original = rows[0];
 
   const { rows: slots } = await adminPool.query(
-    `SELECT day_of_week, start_time, end_time FROM availability_pattern_slots WHERE pattern_id = $1`,
+    `SELECT day_of_week, start_time, end_time FROM stf_availability_pattern_slots WHERE pattern_id = $1`,
     [id],
   );
 
@@ -223,7 +223,7 @@ export async function copyPattern(id: string, staffId: string) {
  */
 export async function getOverrides(staffId: string, startDate: string, endDate: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM availability_overrides
+    `SELECT * FROM stf_availability_overrides
      WHERE staff_id = $1 AND override_date BETWEEN $2 AND $3
      ORDER BY override_date`,
     [staffId, startDate, endDate],
@@ -243,7 +243,7 @@ export async function createOverride(staffId: string, input: {
   locationId?: string;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO availability_overrides (staff_id, override_date, override_type, start_time, end_time, reason, location_id)
+    `INSERT INTO stf_availability_overrides (staff_id, override_date, override_type, start_time, end_time, reason, location_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
     [
@@ -264,7 +264,7 @@ export async function createOverride(staffId: string, input: {
  */
 export async function deleteOverride(id: string, staffId: string) {
   const { rowCount } = await adminPool.query(
-    `DELETE FROM availability_overrides WHERE id = $1 AND staff_id = $2`,
+    `DELETE FROM stf_availability_overrides WHERE id = $1 AND staff_id = $2`,
     [id, staffId],
   );
   return (rowCount ?? 0) > 0;
@@ -281,7 +281,7 @@ export async function deleteOverride(id: string, staffId: string) {
 export async function getEffectiveAvailability(staffId: string, date: string, locationId?: string): Promise<TimeBlock[]> {
   // 1. Check for approved leave on this date
   const { rows: leaveRows } = await adminPool.query(
-    `SELECT id FROM leave_requests
+    `SELECT id FROM stf_leave_requests
      WHERE staff_id = $1 AND status = 'approved'
        AND start_date <= $2::date AND end_date >= $2::date`,
     [staffId, date],
@@ -290,7 +290,7 @@ export async function getEffectiveAvailability(staffId: string, date: string, lo
 
   // 2. Check for overrides on this date
   const { rows: overrides } = await adminPool.query(
-    `SELECT * FROM availability_overrides
+    `SELECT * FROM stf_availability_overrides
      WHERE staff_id = $1 AND override_date = $2::date
      ORDER BY start_time`,
     [staffId, date],
@@ -302,7 +302,7 @@ export async function getEffectiveAvailability(staffId: string, date: string, lo
 
   // 3. Find active pattern for this date
   let patternQuery = `
-    SELECT * FROM availability_patterns
+    SELECT * FROM stf_availability_patterns
     WHERE staff_id = $1
       AND effective_from <= $2::date
       AND (effective_to IS NULL OR effective_to >= $2::date)
@@ -336,7 +336,7 @@ export async function getEffectiveAvailability(staffId: string, date: string, lo
   const [year, month, day] = date.split('-').map(Number);
   const dayOfWeek = new Date(year, month - 1, day).getDay(); // 0=Sunday
   const { rows: slots } = await adminPool.query(
-    `SELECT start_time, end_time FROM availability_pattern_slots
+    `SELECT start_time, end_time FROM stf_availability_pattern_slots
      WHERE pattern_id = $1 AND day_of_week = $2
      ORDER BY start_time`,
     [pattern.id, dayOfWeek],

@@ -44,13 +44,13 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Resource Management', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status) VALUES ($1, 'Resource Test Biz', 'resource-test-biz', 'active')
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status) VALUES ($1, 'Resource Test Biz', 'resource-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Resource Test Biz' RETURNING id`, [TENANT_ID]);
     BUSINESS_ID = bizRows[0].id;
 
     // Clean up
-    await adminPool.query('DELETE FROM resources WHERE tenant_id = $1', [TENANT_ID]);
-    await adminPool.query('DELETE FROM resource_types WHERE tenant_id = $1 AND is_system = false', [TENANT_ID]);
+    await adminPool.query('DELETE FROM res_resources WHERE tenant_id = $1', [TENANT_ID]);
+    await adminPool.query('DELETE FROM res_types WHERE tenant_id = $1 AND is_system = false', [TENANT_ID]);
 
     ownerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',

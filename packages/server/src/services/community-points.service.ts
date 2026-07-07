@@ -11,7 +11,7 @@ export async function awardPoints(
   description?: string,
 ) {
   const { rows } = await adminPool.query(
-    `INSERT INTO customer_points (tenant_id, customer_id, points, action, description)
+    `INSERT INTO eng_customer_points (tenant_id, customer_id, points, action, description)
      VALUES ($1, $2, $3, $4, $5) RETURNING *`,
     [tenantId, customerId, points, action, description || null],
   );
@@ -24,7 +24,7 @@ export async function awardPoints(
 export async function getBalance(tenantId: string, customerId: string) {
   const { rows } = await adminPool.query(
     `SELECT COALESCE(SUM(points), 0)::int AS balance
-     FROM customer_points
+     FROM eng_customer_points
      WHERE tenant_id = $1 AND customer_id = $2
        AND (expires_at IS NULL OR expires_at > NOW())`,
     [tenantId, customerId],
@@ -37,7 +37,7 @@ export async function getBalance(tenantId: string, customerId: string) {
  */
 export async function getHistory(tenantId: string, customerId: string, limit = 50) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM customer_points
+    `SELECT * FROM eng_customer_points
      WHERE tenant_id = $1 AND customer_id = $2
      ORDER BY created_at DESC
      LIMIT $3`,
@@ -61,7 +61,7 @@ export async function redeemPoints(
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO customer_points (tenant_id, customer_id, points, action, description)
+    `INSERT INTO eng_customer_points (tenant_id, customer_id, points, action, description)
      VALUES ($1, $2, $3, 'redeem', $4) RETURNING *`,
     [tenantId, customerId, -points, description || null],
   );

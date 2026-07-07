@@ -230,8 +230,8 @@ payrollRouter.get('/deductions', requirePermission('staff:read'), async (req: Re
     const userId = req.query.user_id as string;
     const userFilter = userId ? `AND user_id = '${userId}'` : '';
     const { rows } = await adminPool.query(
-      `SELECT pd.*, u.first_name, u.last_name FROM payroll_deductions pd
-       JOIN users u ON u.id = pd.user_id
+      `SELECT pd.*, u.first_name, u.last_name FROM fin_payroll_deductions pd
+       JOIN usr_users u ON u.id = pd.user_id
        WHERE pd.business_id = $1 ${userFilter} ORDER BY pd.user_id, pd.deduction_type`,
       [businessId],
     );
@@ -243,7 +243,7 @@ payrollRouter.get('/deductions', requirePermission('staff:read'), async (req: Re
 payrollRouter.post('/deductions', requirePermission('staff:*'), validate(createDeductionSchema), async (req: Request, res: Response) => {
   try {
     const { rows } = await adminPool.query(
-      `INSERT INTO payroll_deductions (business_id, user_id, name, deduction_type, calculation_type, value, is_recurring, effective_from, effective_to)
+      `INSERT INTO fin_payroll_deductions (business_id, user_id, name, deduction_type, calculation_type, value, is_recurring, effective_from, effective_to)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [req.body.business_id, req.body.user_id, req.body.name, req.body.deduction_type, req.body.calculation_type, req.body.value, req.body.is_recurring, req.body.effective_from, req.body.effective_to || null],
     );
@@ -268,7 +268,7 @@ payrollRouter.put('/deductions/:id', requirePermission('staff:*'), validate(upda
     values.push(req.params.id); values.push(businessId);
 
     const { rows } = await adminPool.query(
-      `UPDATE payroll_deductions SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`, values,
+      `UPDATE fin_payroll_deductions SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`, values,
     );
     if (rows.length === 0) { error(res, 'Deduction not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);

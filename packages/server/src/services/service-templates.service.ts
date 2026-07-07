@@ -7,7 +7,7 @@ import { logger } from '../middleware/logger';
 export async function getTemplates(businessType?: string) {
   if (businessType) {
     const { rows } = await adminPool.query(
-      'SELECT * FROM service_templates WHERE business_type = $1 ORDER BY category_name, display_order',
+      'SELECT * FROM svc_templates WHERE business_type = $1 ORDER BY category_name, display_order',
       [businessType],
     );
     return rows;
@@ -15,7 +15,7 @@ export async function getTemplates(businessType?: string) {
 
   // Return grouped by business type
   const { rows } = await adminPool.query(
-    'SELECT * FROM service_templates ORDER BY business_type, category_name, display_order',
+    'SELECT * FROM svc_templates ORDER BY business_type, category_name, display_order',
   );
   return rows;
 }
@@ -25,7 +25,7 @@ export async function getTemplates(businessType?: string) {
  */
 export async function getBusinessTypes(): Promise<string[]> {
   const { rows } = await adminPool.query(
-    'SELECT DISTINCT business_type FROM service_templates ORDER BY business_type',
+    'SELECT DISTINCT business_type FROM svc_templates ORDER BY business_type',
   );
   return rows.map((r) => r.business_type);
 }
@@ -52,7 +52,7 @@ export async function applyTemplate(businessId: string, businessType: string, us
   for (const catName of uniqueCategories) {
     // Check if category already exists
     const { rows: existing } = await adminPool.query(
-      "SELECT id FROM service_categories WHERE business_id = $1 AND name = $2 AND parent_id IS NULL AND status = 'active'",
+      "SELECT id FROM svc_categories WHERE business_id = $1 AND name = $2 AND parent_id IS NULL AND status = 'active'",
       [businessId, catName],
     );
 
@@ -60,7 +60,7 @@ export async function applyTemplate(businessId: string, businessType: string, us
       categoryIdMap.set(catName, existing[0].id);
     } else {
       const { rows } = await adminPool.query(
-        'INSERT INTO service_categories (business_id, name) VALUES ($1, $2) RETURNING id',
+        'INSERT INTO svc_categories (business_id, name) VALUES ($1, $2) RETURNING id',
         [businessId, catName],
       );
       categoryIdMap.set(catName, rows[0].id);
@@ -79,7 +79,7 @@ export async function applyTemplate(businessId: string, businessType: string, us
     let counter = 1;
     while (true) {
       const { rows: slugCheck } = await adminPool.query(
-        'SELECT id FROM services WHERE business_id = $1 AND slug = $2',
+        'SELECT id FROM svc_services WHERE business_id = $1 AND slug = $2',
         [businessId, candidate],
       );
       if (slugCheck.length === 0) break;
@@ -88,13 +88,13 @@ export async function applyTemplate(businessId: string, businessType: string, us
 
     // Check if service with same name already exists in this category
     const { rows: nameCheck } = await adminPool.query(
-      "SELECT id FROM services WHERE business_id = $1 AND category_id = $2 AND name = $3 AND status != 'archived'",
+      "SELECT id FROM svc_services WHERE business_id = $1 AND category_id = $2 AND name = $3 AND status != 'archived'",
       [businessId, categoryId, template.name],
     );
     if (nameCheck.length > 0) continue; // Skip existing
 
     const { rows: svcRows } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, description, short_description, booking_type, default_duration, status, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, description, short_description, booking_type, default_duration, status, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft', $9)
        RETURNING id`,
       [businessId, categoryId, template.name, candidate, template.description, template.short_description, template.booking_type, template.default_duration, userId],
@@ -106,7 +106,7 @@ export async function applyTemplate(businessId: string, businessType: string, us
     // Create default variant with suggested price
     if (template.suggested_price) {
       await adminPool.query(
-        `INSERT INTO service_variants (service_id, name, duration, price)
+        `INSERT INTO svc_variants (service_id, name, duration, price)
          VALUES ($1, $2, $3, $4)`,
         [serviceId, `${template.default_duration} min`, template.default_duration, template.suggested_price],
       );
@@ -115,7 +115,7 @@ export async function applyTemplate(businessId: string, businessType: string, us
 
   // Create default cancellation policy if none exists
   const { rows: policyCheck } = await adminPool.query(
-    'SELECT id FROM cancellation_policies WHERE business_id = $1',
+    'SELECT id FROM svc_cancellation_policies WHERE business_id = $1',
     [businessId],
   );
 
@@ -123,7 +123,7 @@ export async function applyTemplate(businessId: string, businessType: string, us
   if (policyCheck.length === 0) {
     const hours = templates[0]?.cancellation_hours || 24;
     await adminPool.query(
-      `INSERT INTO cancellation_policies (business_id, name, is_default, free_cancellation_hours)
+      `INSERT INTO svc_cancellation_policies (business_id, name, is_default, free_cancellation_hours)
        VALUES ($1, 'Standard Policy', true, $2)`,
       [businessId, hours],
     );

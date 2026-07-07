@@ -17,7 +17,7 @@ systemConfigRouter.use(authenticate);
 
 async function getSystemConfig(category: string): Promise<Record<string, any> | null> {
   const { rows } = await adminPool.query(
-    `SELECT config_data FROM system_configurations WHERE category = $1`,
+    `SELECT config_data FROM sys_system_configurations WHERE category = $1`,
     [category],
   );
   return rows[0]?.config_data || null;
@@ -25,7 +25,7 @@ async function getSystemConfig(category: string): Promise<Record<string, any> | 
 
 async function upsertSystemConfig(category: string, data: Record<string, any>, userId: string) {
   await adminPool.query(
-    `INSERT INTO system_configurations (category, config_data, updated_by, updated_at)
+    `INSERT INTO sys_system_configurations (category, config_data, updated_by, updated_at)
      VALUES ($1, $2, $3, NOW())
      ON CONFLICT (category) DO UPDATE SET config_data = $2, updated_by = $3, updated_at = NOW()`,
     [category, JSON.stringify(data), userId],
@@ -235,7 +235,7 @@ systemConfigRouter.get('/logs', requirePermission('*:*'), async (req: Request, r
     const level = req.query.level as string;
     const limit = parseInt(req.query.limit as string) || 100;
 
-    let query = 'SELECT id, level, message, meta, created_at as timestamp FROM server_logs';
+    let query = 'SELECT id, level, message, meta, created_at as timestamp FROM sys_server_logs';
     const conditions: string[] = [];
     const params: any[] = [];
     let idx = 1;
@@ -286,7 +286,7 @@ systemConfigRouter.get('/query-history', requirePermission('*:*'), async (req: R
 
     // Count
     const countRes = await adminPool.query(
-      `SELECT COUNT(*) FROM api_request_logs r LEFT JOIN users u ON r.user_id::uuid = u.id ${where}`,
+      `SELECT COUNT(*) FROM sys_api_request_logs r LEFT JOIN usr_users u ON r.user_id::uuid = u.id ${where}`,
       params,
     );
     const total = parseInt(countRes.rows[0].count, 10);
@@ -296,9 +296,9 @@ systemConfigRouter.get('/query-history', requirePermission('*:*'), async (req: R
     const { rows } = await adminPool.query(
       `SELECT r.id, r.method, r.path, r.status_code, r.duration_ms, r.ip_address, r.user_agent, r.request_id, r.created_at,
               u.email as user_email, t.name as tenant_name
-       FROM api_request_logs r
-       LEFT JOIN users u ON r.user_id::uuid = u.id
-       LEFT JOIN tenants t ON r.tenant_id::uuid = t.id
+       FROM sys_api_request_logs r
+       LEFT JOIN usr_users u ON r.user_id::uuid = u.id
+       LEFT JOIN sys_tenants t ON r.tenant_id::uuid = t.id
        ${where}
        ORDER BY r.created_at DESC
        LIMIT $${idx++} OFFSET $${idx}`,

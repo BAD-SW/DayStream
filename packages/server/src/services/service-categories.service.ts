@@ -26,7 +26,7 @@ export async function createCategory(input: CreateCategoryInput) {
   // Validate parent exists and belongs to same business (if provided)
   if (input.parentId) {
     const { rows: parentRows } = await adminPool.query(
-      'SELECT id, parent_id FROM service_categories WHERE id = $1 AND business_id = $2',
+      'SELECT id, parent_id FROM svc_categories WHERE id = $1 AND business_id = $2',
       [input.parentId, input.businessId],
     );
     if (parentRows.length === 0) {
@@ -40,8 +40,8 @@ export async function createCategory(input: CreateCategoryInput) {
 
   // Check for duplicate name within same business + parent
   const dupQuery = input.parentId
-    ? 'SELECT id FROM service_categories WHERE business_id = $1 AND name = $2 AND parent_id = $3 AND status = \'active\''
-    : 'SELECT id FROM service_categories WHERE business_id = $1 AND name = $2 AND parent_id IS NULL AND status = \'active\'';
+    ? 'SELECT id FROM svc_categories WHERE business_id = $1 AND name = $2 AND parent_id = $3 AND status = \'active\''
+    : 'SELECT id FROM svc_categories WHERE business_id = $1 AND name = $2 AND parent_id IS NULL AND status = \'active\'';
   const dupParams = input.parentId
     ? [input.businessId, input.name, input.parentId]
     : [input.businessId, input.name];
@@ -51,7 +51,7 @@ export async function createCategory(input: CreateCategoryInput) {
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO service_categories (business_id, parent_id, name, description, icon, display_order)
+    `INSERT INTO svc_categories (business_id, parent_id, name, description, icon, display_order)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
     [
@@ -73,8 +73,8 @@ export async function createCategory(input: CreateCategoryInput) {
 export async function getCategories(businessId: string) {
   const { rows } = await adminPool.query(
     `SELECT sc.*,
-       (SELECT COUNT(*)::int FROM services s WHERE s.category_id = sc.id AND s.status != 'archived') AS service_count
-     FROM service_categories sc
+       (SELECT COUNT(*)::int FROM svc_services s WHERE s.category_id = sc.id AND s.status != 'archived') AS service_count
+     FROM svc_categories sc
      WHERE sc.business_id = $1 AND sc.status = 'active'
      ORDER BY sc.display_order, sc.name`,
     [businessId],
@@ -87,7 +87,7 @@ export async function getCategories(businessId: string) {
  */
 export async function getCategoryById(id: string, businessId: string) {
   const { rows } = await adminPool.query(
-    'SELECT * FROM service_categories WHERE id = $1 AND business_id = $2',
+    'SELECT * FROM svc_categories WHERE id = $1 AND business_id = $2',
     [id, businessId],
   );
   return rows[0] || null;
@@ -103,7 +103,7 @@ export async function updateCategory(id: string, businessId: string, updates: Up
   // Validate parent change
   if (updates.parentId !== undefined && updates.parentId !== null) {
     const { rows: parentRows } = await adminPool.query(
-      'SELECT id, parent_id FROM service_categories WHERE id = $1 AND business_id = $2',
+      'SELECT id, parent_id FROM svc_categories WHERE id = $1 AND business_id = $2',
       [updates.parentId, businessId],
     );
     if (parentRows.length === 0) {
@@ -136,7 +136,7 @@ export async function updateCategory(id: string, businessId: string, updates: Up
   values.push(businessId);
 
   const { rows } = await adminPool.query(
-    `UPDATE service_categories SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx}
+    `UPDATE svc_categories SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx}
      RETURNING *`,
     values,
   );
@@ -150,7 +150,7 @@ export async function updateCategory(id: string, businessId: string, updates: Up
  */
 export async function archiveCategory(id: string, businessId: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    "UPDATE service_categories SET status = 'archived', updated_at = NOW() WHERE id = $1 AND business_id = $2",
+    "UPDATE svc_categories SET status = 'archived', updated_at = NOW() WHERE id = $1 AND business_id = $2",
     [id, businessId],
   );
   return (rowCount ?? 0) > 0;

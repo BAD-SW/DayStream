@@ -48,7 +48,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Booking CRUD API', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Booking CRUD Test Biz', 'booking-crud-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Booking CRUD Test Biz'
        RETURNING id`,
@@ -57,17 +57,17 @@ describe('Booking CRUD API', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean up
-    await adminPool.query('DELETE FROM bookings WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM services WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM service_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_bookings WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
 
     // Create category + service + variant
     const { rows: catRows } = await adminPool.query(
-      `INSERT INTO service_categories (business_id, name) VALUES ($1, 'Booking Test Cat') RETURNING id`,
+      `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'Booking Test Cat') RETURNING id`,
       [BUSINESS_ID],
     );
     const { rows: svcRows } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, status, default_duration, buffer_after, min_advance_booking_hours, booking_type, max_capacity, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, status, default_duration, buffer_after, min_advance_booking_hours, booking_type, max_capacity, created_by)
        VALUES ($1, $2, 'Booking Test Service', 'booking-test-service', 'active', 60, 15, 1, 'individual', 1, '00000000-0000-0000-0000-000000000010')
        RETURNING id`,
       [BUSINESS_ID, catRows[0].id],
@@ -75,7 +75,7 @@ describe('Booking CRUD API', () => {
     SERVICE_ID = svcRows[0].id;
 
     const { rows: varRows } = await adminPool.query(
-      `INSERT INTO service_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active') RETURNING id`,
+      `INSERT INTO svc_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active') RETURNING id`,
       [SERVICE_ID],
     );
     VARIANT_ID = varRows[0].id;
@@ -83,20 +83,20 @@ describe('Booking CRUD API', () => {
     // Create staff
     STAFF_ID = '00000000-0000-0000-0000-000000000070';
     await adminPool.query(
-      `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+      `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
        VALUES ($1, $2, 'booking-staff@example.com', 'Booking', 'Staff', 'hashed', 'therapist', 'active')
        ON CONFLICT (id) DO UPDATE SET first_name = 'Booking'`,
       [STAFF_ID, TENANT_ID],
     );
     await adminPool.query(
-      `INSERT INTO service_staff (service_id, user_id, is_primary) VALUES ($1, $2, true)
+      `INSERT INTO svc_staff (service_id, user_id, is_primary) VALUES ($1, $2, true)
        ON CONFLICT (service_id, user_id, variant_id) DO NOTHING`,
       [SERVICE_ID, STAFF_ID],
     );
 
     // Create customer
     const { rows: custRows } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-BK01', 'booking-cust@example.com', 'Booking', 'Customer', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Booking'
        RETURNING id`,
@@ -182,13 +182,13 @@ describe('Booking CRUD API', () => {
       // Create a second staff member
       const staffId2 = '00000000-0000-0000-0000-000000000071';
       await adminPool.query(
-        `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+        `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
          VALUES ($1, $2, 'booking-staff2@example.com', 'Booking', 'Staff2', 'hashed', 'therapist', 'active')
          ON CONFLICT (id) DO UPDATE SET first_name = 'Booking'`,
         [staffId2, TENANT_ID],
       );
       await adminPool.query(
-        `INSERT INTO service_staff (service_id, user_id, is_primary) VALUES ($1, $2, false)
+        `INSERT INTO svc_staff (service_id, user_id, is_primary) VALUES ($1, $2, false)
          ON CONFLICT (service_id, user_id, variant_id) DO NOTHING`,
         [SERVICE_ID, staffId2],
       );
@@ -224,7 +224,7 @@ describe('Booking CRUD API', () => {
     it('allows override_rules for staff-initiated booking', async () => {
       // Create a second customer to avoid conflict
       const { rows: cust2 } = await adminPool.query(
-        `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
          VALUES ($1, $2, 'CUST-BK02', 'booking-cust2@example.com', 'Second', 'Customer', '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Second'
          RETURNING id`,
@@ -250,7 +250,7 @@ describe('Booking CRUD API', () => {
 
     it('generates sequential booking references', async () => {
       const { rows } = await adminPool.query(
-        'SELECT booking_reference FROM bookings WHERE business_id = $1 ORDER BY created_at',
+        'SELECT booking_reference FROM apt_bookings WHERE business_id = $1 ORDER BY created_at',
         [BUSINESS_ID],
       );
 

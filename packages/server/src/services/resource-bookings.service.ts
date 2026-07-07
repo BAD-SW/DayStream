@@ -8,10 +8,10 @@ export async function getResourceBookings(resourceId: string, startDate: string,
   const { rows } = await adminPool.query(
     `SELECT rb.*, b.service_id, s.name AS service_name,
             c.first_name AS customer_first_name, c.last_name AS customer_last_name
-     FROM resource_bookings rb
-     LEFT JOIN bookings b ON b.id = rb.booking_id
-     LEFT JOIN services s ON s.id = b.service_id
-     LEFT JOIN customers c ON c.id = b.customer_id
+     FROM res_bookings rb
+     LEFT JOIN apt_bookings b ON b.id = rb.booking_id
+     LEFT JOIN svc_services s ON s.id = b.service_id
+     LEFT JOIN cus_customers c ON c.id = b.customer_id
      WHERE rb.resource_id = $1
        AND rb.start_time::date >= $2::date AND rb.start_time::date <= $3::date
        AND rb.status = 'confirmed'
@@ -38,7 +38,7 @@ export async function createResourceBooking(input: {
     // Lock overlapping bookings to prevent race conditions
     try {
       await client.query(
-        `SELECT id FROM resource_bookings
+        `SELECT id FROM res_bookings
          WHERE resource_id = $1 AND status = 'confirmed'
            AND start_time < $3::timestamptz AND end_time > $2::timestamptz
          FOR UPDATE NOWAIT`,
@@ -53,11 +53,11 @@ export async function createResourceBooking(input: {
 
     // Check availability (capacity check)
     const { rows: resRows } = await client.query(
-      `SELECT capacity FROM resources WHERE id = $1`, [input.resourceId]);
+      `SELECT capacity FROM res_resources WHERE id = $1`, [input.resourceId]);
     if (resRows.length === 0) { await client.query('ROLLBACK'); throw new Error('Resource not found'); }
 
     const { rows: overlap } = await client.query(
-      `SELECT COUNT(*)::int AS count FROM resource_bookings
+      `SELECT COUNT(*)::int AS count FROM res_bookings
        WHERE resource_id = $1 AND status = 'confirmed'
          AND start_time < $3::timestamptz AND end_time > $2::timestamptz`,
       [input.resourceId, input.startTime, input.endTime]);
@@ -69,7 +69,7 @@ export async function createResourceBooking(input: {
 
     // Insert booking
     const { rows } = await client.query(
-      `INSERT INTO resource_bookings (resource_id, booking_id, start_time, end_time, booking_type, notes)
+      `INSERT INTO res_bookings (resource_id, booking_id, start_time, end_time, booking_type, notes)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
       [input.resourceId, input.bookingId || null, input.startTime, input.endTime, input.bookingType, input.notes || null]);
 
@@ -88,7 +88,7 @@ export async function createResourceBooking(input: {
  */
 export async function cancelResourceBooking(id: string, resourceId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE resource_bookings SET status = 'cancelled'
+    `UPDATE res_bookings SET status = 'cancelled'
      WHERE id = $1 AND resource_id = $2 AND status = 'confirmed' RETURNING *`,
     [id, resourceId]);
   return rows[0] || null;
@@ -99,7 +99,7 @@ export async function cancelResourceBooking(id: string, resourceId: string) {
  */
 export async function cancelResourceBookingsByBookingId(bookingId: string) {
   const { rowCount } = await adminPool.query(
-    `UPDATE resource_bookings SET status = 'cancelled'
+    `UPDATE res_bookings SET status = 'cancelled'
      WHERE booking_id = $1 AND status = 'confirmed'`, [bookingId]);
   return rowCount ?? 0;
 }
@@ -121,7 +121,7 @@ export async function reserveResourcesForBooking(
 
     // Resolve and reserve dependencies
     const { rows: deps } = await adminPool.query(
-      `SELECT * FROM resource_dependencies WHERE resource_id = $1`, [resource.id]);
+      `SELECT * FROM res_dependencies WHERE resource_id = $1`, [resource.id]);
 
     for (const dep of deps) {
       const depStart = new Date(new Date(startTime).getTime() + dep.offset_minutes * 60000).toISOString();

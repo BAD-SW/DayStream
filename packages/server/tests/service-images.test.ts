@@ -105,7 +105,7 @@ function uploadImage(path: string, imageBuffer: Buffer, token: string, altText?:
 describe('Service Images API', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Images Test Biz', 'images-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Images Test Biz'
        RETURNING id`,
@@ -114,15 +114,15 @@ describe('Service Images API', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean up
-    await adminPool.query('DELETE FROM services WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM service_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
 
     const { rows: catRows } = await adminPool.query(
-      `INSERT INTO service_categories (business_id, name) VALUES ($1, 'Image Test Cat') RETURNING id`,
+      `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'Image Test Cat') RETURNING id`,
       [BUSINESS_ID],
     );
     const { rows: svcRows } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, created_by)
        VALUES ($1, $2, 'Image Test Service', 'image-test-service', '00000000-0000-0000-0000-000000000010')
        RETURNING id`,
       [BUSINESS_ID, catRows[0].id],

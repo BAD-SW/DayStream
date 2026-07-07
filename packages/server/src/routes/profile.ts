@@ -18,7 +18,7 @@ profileRouter.get('/', async (req: Request, res: Response) => {
     const authReq = req as AuthenticatedRequest;
     const { rows } = await adminPool.query(
       `SELECT id, email, first_name, last_name, role, status, created_at, updated_at
-       FROM users WHERE id = $1 AND tenant_id = $2`,
+       FROM usr_users WHERE id = $1 AND tenant_id = $2`,
       [authReq.user.sub, authReq.tenantId],
     );
 
@@ -55,14 +55,14 @@ profileRouter.put('/', validate(updateProfileSchema), async (req: Request, res: 
     values.push(authReq.tenantId);
 
     await adminPool.query(
-      `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx}`,
+      `UPDATE usr_users SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx}`,
       values,
     );
 
     // Return updated profile
     const { rows } = await adminPool.query(
       `SELECT id, email, first_name, last_name, role, status, created_at, updated_at
-       FROM users WHERE id = $1 AND tenant_id = $2`,
+       FROM usr_users WHERE id = $1 AND tenant_id = $2`,
       [authReq.user.sub, authReq.tenantId],
     );
 

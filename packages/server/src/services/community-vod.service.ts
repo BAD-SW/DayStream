@@ -4,7 +4,7 @@ import { adminPool } from '../db/pool';
  * Get VOD library for a tenant with optional filters.
  */
 export async function getLibrary(tenantId: string, filters?: { category?: string; difficulty?: string }) {
-  let query = `SELECT * FROM vod_content WHERE tenant_id = $1 AND status = 'published'`;
+  let query = `SELECT * FROM eng_vod_content WHERE tenant_id = $1 AND status = 'published'`;
   const params: any[] = [tenantId];
 
   if (filters?.category) {
@@ -26,7 +26,7 @@ export async function getLibrary(tenantId: string, filters?: { category?: string
  */
 export async function getContent(id: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM vod_content WHERE id = $1`,
+    `SELECT * FROM eng_vod_content WHERE id = $1`,
     [id],
   );
   return rows[0] || null;
@@ -50,7 +50,7 @@ export async function createContent(tenantId: string, input: {
   displayOrder?: number;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO vod_content (tenant_id, title, description, video_url, thumbnail_path, duration_seconds, category, tags, instructor_name, difficulty, access_level, plan_ids, display_order)
+    `INSERT INTO eng_vod_content (tenant_id, title, description, video_url, thumbnail_path, duration_seconds, category, tags, instructor_name, difficulty, access_level, plan_ids, display_order)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
     [
       tenantId,
@@ -81,11 +81,11 @@ export async function updateProgress(
   completed?: boolean,
 ) {
   const { rows } = await adminPool.query(
-    `INSERT INTO vod_progress (customer_id, content_id, watched_seconds, completed, last_watched_at)
+    `INSERT INTO eng_vod_progress (customer_id, content_id, watched_seconds, completed, last_watched_at)
      VALUES ($1, $2, $3, $4, NOW())
      ON CONFLICT (customer_id, content_id) DO UPDATE
-       SET watched_seconds = GREATEST(vod_progress.watched_seconds, $3),
-           completed = COALESCE($4, vod_progress.completed),
+       SET watched_seconds = GREATEST(eng_vod_progress.watched_seconds, $3),
+           completed = COALESCE($4, eng_vod_progress.completed),
            last_watched_at = NOW()
      RETURNING *`,
     [customerId, contentId, watchedSeconds, completed ?? false],
@@ -98,7 +98,7 @@ export async function updateProgress(
  */
 export async function getProgress(customerId: string, contentId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM vod_progress WHERE customer_id = $1 AND content_id = $2`,
+    `SELECT * FROM eng_vod_progress WHERE customer_id = $1 AND content_id = $2`,
     [customerId, contentId],
   );
   return rows[0] || null;

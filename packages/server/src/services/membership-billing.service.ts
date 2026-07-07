@@ -12,8 +12,8 @@ export async function processRenewals(): Promise<{ processed: number; renewed: n
     `SELECT m.id, m.business_id, m.customer_id, m.plan_id, m.credit_balance,
             mp.price, mp.billing_cycle, mp.credits_per_cycle, mp.credit_validity_days,
             mp.rollover_policy, mp.max_rollover_credits
-     FROM memberships m
-     JOIN membership_plans mp ON mp.id = m.plan_id
+     FROM mem_memberships m
+     JOIN mem_plans mp ON mp.id = m.plan_id
      WHERE m.status = 'active' AND m.auto_renew = true AND m.next_billing_date <= CURRENT_DATE`,
   );
 
@@ -39,7 +39,7 @@ export async function processRenewals(): Promise<{ processed: number; renewed: n
         // Extend billing date
         const nextBilling = calculateNextBillingDate(new Date(), membership.billing_cycle);
         await adminPool.query(
-          'UPDATE memberships SET next_billing_date = $2, updated_at = NOW() WHERE id = $1',
+          'UPDATE mem_memberships SET next_billing_date = $2, updated_at = NOW() WHERE id = $1',
           [membership.id, nextBilling.toISOString().slice(0, 10)],
         );
 
@@ -71,7 +71,7 @@ export async function processDunning(): Promise<{ retried: number; expired: numb
   // For now, check memberships that are active but past their billing date by > 7 days
   const { rows: pastDue } = await adminPool.query(
     `SELECT id, business_id, customer_id, next_billing_date
-     FROM memberships
+     FROM mem_memberships
      WHERE status = 'active' AND auto_renew = true
        AND next_billing_date < CURRENT_DATE - INTERVAL '7 days'`,
   );
@@ -80,11 +80,11 @@ export async function processDunning(): Promise<{ retried: number; expired: numb
   for (const m of pastDue) {
     // Max retries exhausted — expire
     await adminPool.query(
-      "UPDATE memberships SET status = 'expired', updated_at = NOW() WHERE id = $1",
+      "UPDATE mem_memberships SET status = 'expired', updated_at = NOW() WHERE id = $1",
       [m.id],
     );
     await adminPool.query(
-      `INSERT INTO membership_status_history (membership_id, from_status, to_status, reason)
+      `INSERT INTO mem_status_history (membership_id, from_status, to_status, reason)
        VALUES ($1, 'active', 'expired', 'Payment failed after dunning retries')`,
       [m.id],
     );
@@ -151,12 +151,12 @@ async function initiatePayment(businessId: string, customerId: string, amount: n
 async function enterDunning(membershipId: string, businessId: string): Promise<void> {
   // Queue a notification about failed payment
   await adminPool.query(
-    `INSERT INTO notification_queue (business_id, type, channel, recipient_id, data, scheduled_for)
+    `INSERT INTO apt_notification_queue (business_id, type, channel, recipient_id, data, scheduled_for)
      SELECT $1, 'membership.payment_failed', 'email', m.customer_id,
        json_build_object('membership_id', m.id, 'plan_name', mp.name)::jsonb,
        NOW()
-     FROM memberships m
-     JOIN membership_plans mp ON mp.id = m.plan_id
+     FROM mem_memberships m
+     JOIN mem_plans mp ON mp.id = m.plan_id
      WHERE m.id = $2`,
     [businessId, membershipId],
   );

@@ -43,8 +43,8 @@ eventsRouter.get('/calendar/:slug', async (req: Request, res: Response) => {
     const tenantId = req.query.tenant_id as string;
     if (!tenantId) { error(res, 'tenant_id required', 'VALIDATION_ERROR', 400); return; }
     const { rows } = await (await import('../db/pool')).adminPool.query(
-      `SELECT e.*, et.name AS event_type_name FROM events e
-       LEFT JOIN event_types et ON et.id = e.event_type_id
+      `SELECT e.*, et.name AS event_type_name FROM evt_events e
+       LEFT JOIN evt_types et ON et.id = e.event_type_id
        WHERE e.slug = $1 AND e.tenant_id = $2 AND e.status = 'published'`, [req.params.slug, tenantId]);
     if (rows.length === 0) { error(res, 'Event not found', 'NOT_FOUND', 404); return; }
     // Load tiers

@@ -21,24 +21,24 @@ let VENDOR_ID: string;
 describe('Accounts Payable — Integration Tests', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status) VALUES ($1, 'AP Integration Biz', 'ap-integration-biz', 'active')
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status) VALUES ($1, 'AP Integration Biz', 'ap-integration-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'AP Integration Biz' RETURNING id`, [TENANT_ID],
     );
     BUSINESS_ID = bizRows[0].id;
 
     // Clean
-    await adminPool.query('DELETE FROM payroll_entries WHERE pay_period_id IN (SELECT id FROM pay_periods WHERE business_id = $1)', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM pay_periods WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM journal_entry_lines WHERE journal_entry_id IN (SELECT id FROM journal_entries WHERE business_id = $1)', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM journal_entries WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM expenses WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM bills WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM vendors WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM compensation_rules WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM payroll_deductions WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM time_entries WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM tax_documents WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM chart_of_accounts WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_payroll_entries WHERE pay_period_id IN (SELECT id FROM fin_pay_periods WHERE business_id = $1)', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_pay_periods WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_journal_entry_lines WHERE journal_entry_id IN (SELECT id FROM fin_journal_entries WHERE business_id = $1)', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_journal_entries WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_expenses WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_bills WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_vendors WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_compensation_rules WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_payroll_deductions WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_time_entries WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_tax_documents WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM fin_chart_of_accounts WHERE business_id = $1', [BUSINESS_ID]);
 
     // Seed chart of accounts
     await coaService.seedDefaults(BUSINESS_ID);
@@ -46,32 +46,32 @@ describe('Accounts Payable — Integration Tests', () => {
     // Staff
     STAFF_ID = '00000000-0000-0000-0000-000000000058';
     await adminPool.query(
-      `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+      `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
        VALUES ($1, $2, 'ap-int-staff@example.com', 'APInt', 'Staff', 'hashed', 'therapist', 'active')
        ON CONFLICT (id) DO UPDATE SET first_name = 'APInt'`, [STAFF_ID, TENANT_ID],
     );
 
     // Compensation: salary €3000/month
     await adminPool.query(
-      `INSERT INTO compensation_rules (business_id, user_id, rule_type, rate, effective_from)
+      `INSERT INTO fin_compensation_rules (business_id, user_id, rule_type, rate, effective_from)
        VALUES ($1, $2, 'salary', 300000, '2026-01-01')`, [BUSINESS_ID, STAFF_ID],
     );
 
     // Deduction: 22% income tax
     await adminPool.query(
-      `INSERT INTO payroll_deductions (business_id, user_id, name, deduction_type, calculation_type, value, effective_from)
+      `INSERT INTO fin_payroll_deductions (business_id, user_id, name, deduction_type, calculation_type, value, effective_from)
        VALUES ($1, $2, 'Federal Income Tax', 'tax', 'percentage', 2200, '2026-01-01')`, [BUSINESS_ID, STAFF_ID],
     );
 
     // Time entry for June
     await adminPool.query(
-      `INSERT INTO time_entries (business_id, user_id, entry_type, start_time, hours, approved)
+      `INSERT INTO fin_time_entries (business_id, user_id, entry_type, start_time, hours, approved)
        VALUES ($1, $2, 'manual', '2026-06-01T09:00:00Z', 160, true)`, [BUSINESS_ID, STAFF_ID],
     );
 
     // Vendor
     const { rows: vendorRows } = await adminPool.query(
-      `INSERT INTO vendors (business_id, name, category, payment_terms) VALUES ($1, 'Supplies Inc', 'supplies', 30) RETURNING id`, [BUSINESS_ID],
+      `INSERT INTO fin_vendors (business_id, name, category, payment_terms) VALUES ($1, 'Supplies Inc', 'supplies', 30) RETURNING id`, [BUSINESS_ID],
     );
     VENDOR_ID = vendorRows[0].id;
   });
@@ -130,7 +130,7 @@ describe('Accounts Payable — Integration Tests', () => {
 
     it('creates an expense', async () => {
       const { rows: acct } = await adminPool.query(
-        "SELECT id FROM chart_of_accounts WHERE business_id = $1 AND code = '6500'", [BUSINESS_ID],
+        "SELECT id FROM fin_chart_of_accounts WHERE business_id = $1 AND code = '6500'", [BUSINESS_ID],
       );
 
       const expense = await expensesService.createExpense({
@@ -149,8 +149,8 @@ describe('Accounts Payable — Integration Tests', () => {
 
   describe('Journal entries maintain balance', () => {
     it('creates a balanced entry', async () => {
-      const { rows: cashAcct } = await adminPool.query("SELECT id FROM chart_of_accounts WHERE business_id = $1 AND code = '1100'", [BUSINESS_ID]);
-      const { rows: revAcct } = await adminPool.query("SELECT id FROM chart_of_accounts WHERE business_id = $1 AND code = '4100'", [BUSINESS_ID]);
+      const { rows: cashAcct } = await adminPool.query("SELECT id FROM fin_chart_of_accounts WHERE business_id = $1 AND code = '1100'", [BUSINESS_ID]);
+      const { rows: revAcct } = await adminPool.query("SELECT id FROM fin_chart_of_accounts WHERE business_id = $1 AND code = '4100'", [BUSINESS_ID]);
 
       const entry = await journalService.createEntry({
         businessId: BUSINESS_ID, entryDate: '2026-06-15', description: 'Integration test entry',
@@ -163,8 +163,8 @@ describe('Accounts Payable — Integration Tests', () => {
     });
 
     it('rejects unbalanced entry', async () => {
-      const { rows: cashAcct } = await adminPool.query("SELECT id FROM chart_of_accounts WHERE business_id = $1 AND code = '1100'", [BUSINESS_ID]);
-      const { rows: revAcct } = await adminPool.query("SELECT id FROM chart_of_accounts WHERE business_id = $1 AND code = '4100'", [BUSINESS_ID]);
+      const { rows: cashAcct } = await adminPool.query("SELECT id FROM fin_chart_of_accounts WHERE business_id = $1 AND code = '1100'", [BUSINESS_ID]);
+      const { rows: revAcct } = await adminPool.query("SELECT id FROM fin_chart_of_accounts WHERE business_id = $1 AND code = '4100'", [BUSINESS_ID]);
 
       await expect(journalService.createEntry({
         businessId: BUSINESS_ID, entryDate: '2026-06-15', description: 'Bad entry',
@@ -180,12 +180,12 @@ describe('Accounts Payable — Integration Tests', () => {
     it('generates W-2 for employee with payroll data', async () => {
       // Create a finalized year of payroll
       const { rows: pp } = await adminPool.query(
-        `INSERT INTO pay_periods (business_id, period_start, period_end, status, finalized_at)
+        `INSERT INTO fin_pay_periods (business_id, period_start, period_end, status, finalized_at)
          VALUES ($1, '2025-01-01', '2025-12-31', 'finalized', NOW())
          ON CONFLICT (business_id, period_start, period_end) DO UPDATE SET status = 'finalized' RETURNING id`, [BUSINESS_ID],
       );
       await adminPool.query(
-        `INSERT INTO payroll_entries (pay_period_id, user_id, gross_pay, total_deductions, net_pay, status)
+        `INSERT INTO fin_payroll_entries (pay_period_id, user_id, gross_pay, total_deductions, net_pay, status)
          VALUES ($1, $2, 3600000, 792000, 2808000, 'finalized') ON CONFLICT DO NOTHING`, [pp[0].id, STAFF_ID],
       );
 
@@ -199,7 +199,7 @@ describe('Accounts Payable — Integration Tests', () => {
   describe('Business scoping', () => {
     it('cannot access other business financial data', async () => {
       const { rows: otherBiz } = await adminPool.query(
-        `INSERT INTO businesses (tenant_id, name, slug, status) VALUES ($1, 'Other AP Biz', 'other-ap-biz', 'active')
+        `INSERT INTO sys_businesses (tenant_id, name, slug, status) VALUES ($1, 'Other AP Biz', 'other-ap-biz', 'active')
          ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Other AP Biz' RETURNING id`, [TENANT_ID],
       );
 

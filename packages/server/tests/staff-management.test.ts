@@ -43,13 +43,13 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Staff Management', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status) VALUES ($1, 'Staff Test Biz', 'staff-test-biz', 'active')
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status) VALUES ($1, 'Staff Test Biz', 'staff-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Staff Test Biz' RETURNING id`, [TENANT_ID],
     );
     BUSINESS_ID = bizRows[0].id;
 
     // Clean up any existing test data
-    await adminPool.query('DELETE FROM staff_profiles WHERE tenant_id = $1', [TENANT_ID]);
+    await adminPool.query('DELETE FROM stf_profiles WHERE tenant_id = $1', [TENANT_ID]);
 
     ownerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',
@@ -413,7 +413,7 @@ describe('Staff Management', () => {
     it('does not include inactive staff in directory', async () => {
       // Create an inactive staff
       await adminPool.query(
-        `INSERT INTO staff_profiles (tenant_id, staff_ref, first_name, last_name, status, show_on_directory)
+        `INSERT INTO stf_profiles (tenant_id, staff_ref, first_name, last_name, status, show_on_directory)
          VALUES ($1, 'STF-999', 'Hidden', 'Person', 'inactive', true)`,
         [TENANT_ID],
       );

@@ -29,11 +29,11 @@ usersRouter.get('/', requirePermission('customers:*'), async (req: Request, res:
     const [dataResult, countResult] = await Promise.all([
       adminPool.query(
         `SELECT id, email, first_name, last_name, role, status, created_at
-         FROM users WHERE tenant_id = $1 ${clause}`,
+         FROM usr_users WHERE tenant_id = $1 ${clause}`,
         [authReq.tenantId],
       ),
       adminPool.query(
-        'SELECT COUNT(*) AS total FROM users WHERE tenant_id = $1',
+        'SELECT COUNT(*) AS total FROM usr_users WHERE tenant_id = $1',
         [authReq.tenantId],
       ),
     ]);
@@ -51,7 +51,7 @@ usersRouter.get('/:id', requirePermission('customers:*'), async (req: Request, r
     const authReq = req as AuthenticatedRequest;
     const { rows } = await adminPool.query(
       `SELECT id, email, first_name, last_name, role, status, created_at, updated_at
-       FROM users WHERE id = $1 AND tenant_id = $2`,
+       FROM usr_users WHERE id = $1 AND tenant_id = $2`,
       [req.params.id, authReq.tenantId],
     );
 

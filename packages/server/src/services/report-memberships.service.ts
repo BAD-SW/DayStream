@@ -7,7 +7,7 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
   // Active memberships at end of period
   const { rows: activeRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS active_count
-     FROM memberships
+     FROM mem_memberships
      WHERE tenant_id = $1
        AND status = 'active'
        AND started_at <= $2::date`,
@@ -17,7 +17,7 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
   // New memberships in period
   const { rows: newRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS new_count
-     FROM memberships
+     FROM mem_memberships
      WHERE tenant_id = $1
        AND started_at >= $2::date
        AND started_at < ($3::date + INTERVAL '1 day')`,
@@ -27,7 +27,7 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
   // Cancelled in period
   const { rows: cancelledRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS cancelled_count
-     FROM memberships
+     FROM mem_memberships
      WHERE tenant_id = $1
        AND cancelled_at >= $2::date
        AND cancelled_at < ($3::date + INTERVAL '1 day')`,
@@ -37,7 +37,7 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
   // Active at start of period (for churn calculation)
   const { rows: startRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS start_count
-     FROM memberships
+     FROM mem_memberships
      WHERE tenant_id = $1
        AND status IN ('active', 'cancelled')
        AND started_at < $2::date
@@ -57,8 +57,8 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
   // MRR calculation (sum of plan prices for active memberships)
   const { rows: mrrRows } = await adminPool.query(
     `SELECT COALESCE(SUM(mp.price), 0) AS mrr
-     FROM memberships m
-     JOIN membership_plans mp ON mp.id = m.plan_id
+     FROM mem_memberships m
+     JOIN mem_plans mp ON mp.id = m.plan_id
      WHERE m.tenant_id = $1
        AND m.status = 'active'`,
     [tenantId],

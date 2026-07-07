@@ -19,9 +19,9 @@ interface CreateTierInput {
 export async function getTiers(eventId: string) {
   const { rows } = await adminPool.query(
     `SELECT tt.*,
-            (SELECT COALESCE(SUM(group_size), 0)::int FROM event_registrations
+            (SELECT COALESCE(SUM(group_size), 0)::int FROM evt_registrations
              WHERE ticket_tier_id = tt.id AND status IN ('confirmed','pending')) AS sold_count
-     FROM event_ticket_tiers tt
+     FROM evt_ticket_tiers tt
      WHERE tt.event_id = $1
      ORDER BY tt.display_order ASC, tt.created_at ASC`,
     [eventId],
@@ -34,7 +34,7 @@ export async function getTiers(eventId: string) {
  */
 export async function createTier(eventId: string, input: CreateTierInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO event_ticket_tiers (
+    `INSERT INTO evt_ticket_tiers (
        event_id, name, description, price, quantity_available,
        availability_start, availability_end,
        eligibility_type, eligibility_config, display_order
@@ -83,7 +83,7 @@ export async function updateTier(id: string, eventId: string, updates: Record<st
   values.push(id, eventId);
 
   const { rows } = await adminPool.query(
-    `UPDATE event_ticket_tiers SET ${fields.join(', ')}
+    `UPDATE evt_ticket_tiers SET ${fields.join(', ')}
      WHERE id = $${idx++} AND event_id = $${idx} RETURNING *`,
     values,
   );
@@ -96,13 +96,13 @@ export async function updateTier(id: string, eventId: string, updates: Record<st
  */
 export async function deleteTier(id: string, eventId: string) {
   const { rows: used } = await adminPool.query(
-    `SELECT id FROM event_registrations WHERE ticket_tier_id = $1 LIMIT 1`,
+    `SELECT id FROM evt_registrations WHERE ticket_tier_id = $1 LIMIT 1`,
     [id],
   );
   if (used.length > 0) throw new Error('Cannot delete tier with existing registrations');
 
   const { rowCount } = await adminPool.query(
-    `DELETE FROM event_ticket_tiers WHERE id = $1 AND event_id = $2`,
+    `DELETE FROM evt_ticket_tiers WHERE id = $1 AND event_id = $2`,
     [id, eventId],
   );
   return (rowCount ?? 0) > 0;
@@ -114,9 +114,9 @@ export async function deleteTier(id: string, eventId: string) {
 export async function checkTierAvailability(tierId: string) {
   const { rows } = await adminPool.query(
     `SELECT tt.*,
-            (SELECT COALESCE(SUM(group_size), 0)::int FROM event_registrations
+            (SELECT COALESCE(SUM(group_size), 0)::int FROM evt_registrations
              WHERE ticket_tier_id = tt.id AND status IN ('confirmed','pending')) AS sold_count
-     FROM event_ticket_tiers tt
+     FROM evt_ticket_tiers tt
      WHERE tt.id = $1`,
     [tierId],
   );

@@ -53,8 +53,8 @@ async function generateSlug(name: string, businessId: string, existingId?: strin
   let counter = 1;
   while (true) {
     const query = existingId
-      ? 'SELECT id FROM services WHERE business_id = $1 AND slug = $2 AND id != $3'
-      : 'SELECT id FROM services WHERE business_id = $1 AND slug = $2';
+      ? 'SELECT id FROM svc_services WHERE business_id = $1 AND slug = $2 AND id != $3'
+      : 'SELECT id FROM svc_services WHERE business_id = $1 AND slug = $2';
     const params = existingId ? [businessId, candidate, existingId] : [businessId, candidate];
     const { rows } = await adminPool.query(query, params);
     if (rows.length === 0) break;
@@ -70,7 +70,7 @@ async function generateSlug(name: string, businessId: string, existingId?: strin
 export async function createService(input: CreateServiceInput) {
   // Validate category belongs to business
   const { rows: catRows } = await adminPool.query(
-    'SELECT id FROM service_categories WHERE id = $1 AND business_id = $2',
+    'SELECT id FROM svc_categories WHERE id = $1 AND business_id = $2',
     [input.categoryId, input.businessId],
   );
   if (catRows.length === 0) {
@@ -79,7 +79,7 @@ export async function createService(input: CreateServiceInput) {
 
   // Check name uniqueness within category
   const { rows: nameRows } = await adminPool.query(
-    "SELECT id FROM services WHERE business_id = $1 AND category_id = $2 AND name = $3 AND status != 'archived'",
+    "SELECT id FROM svc_services WHERE business_id = $1 AND category_id = $2 AND name = $3 AND status != 'archived'",
     [input.businessId, input.categoryId, input.name],
   );
   if (nameRows.length > 0) {
@@ -89,7 +89,7 @@ export async function createService(input: CreateServiceInput) {
   const slug = await generateSlug(input.name, input.businessId);
 
   const { rows } = await adminPool.query(
-    `INSERT INTO services (
+    `INSERT INTO svc_services (
        business_id, category_id, name, slug, description, short_description,
        booking_type, default_duration, buffer_before, buffer_after,
        max_capacity, min_advance_booking_hours, max_advance_booking_days,
@@ -168,14 +168,14 @@ export async function getServices(businessId: string, filters: ServiceFilters) {
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
       `SELECT s.*, sc.name AS category_name
-       FROM services s
-       JOIN service_categories sc ON sc.id = s.category_id
+       FROM svc_services s
+       JOIN svc_categories sc ON sc.id = s.category_id
        WHERE ${where}
        ORDER BY s.${sort} ${order}
        LIMIT ${limit} OFFSET ${offset}`,
       params,
     ),
-    adminPool.query(`SELECT COUNT(*)::int AS total FROM services s WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*)::int AS total FROM svc_services s WHERE ${where}`, params),
   ]);
 
   return {
@@ -192,8 +192,8 @@ export async function getServices(businessId: string, filters: ServiceFilters) {
 export async function getServiceById(id: string, businessId: string) {
   const { rows } = await adminPool.query(
     `SELECT s.*, sc.name AS category_name
-     FROM services s
-     JOIN service_categories sc ON sc.id = s.category_id
+     FROM svc_services s
+     JOIN svc_categories sc ON sc.id = s.category_id
      WHERE s.id = $1 AND s.business_id = $2`,
     [id, businessId],
   );
@@ -204,28 +204,28 @@ export async function getServiceById(id: string, businessId: string) {
 
   // Load variants
   const { rows: variants } = await adminPool.query(
-    'SELECT * FROM service_variants WHERE service_id = $1 ORDER BY display_order',
+    'SELECT * FROM svc_variants WHERE service_id = $1 ORDER BY display_order',
     [id],
   );
 
   // Load images
   const { rows: images } = await adminPool.query(
-    'SELECT * FROM service_images WHERE service_id = $1 ORDER BY display_order',
+    'SELECT * FROM svc_images WHERE service_id = $1 ORDER BY display_order',
     [id],
   );
 
   // Load staff
   const { rows: staff } = await adminPool.query(
     `SELECT ss.*, u.first_name, u.last_name, u.email
-     FROM service_staff ss
-     JOIN users u ON u.id = ss.user_id
+     FROM svc_staff ss
+     JOIN usr_users u ON u.id = ss.user_id
      WHERE ss.service_id = $1`,
     [id],
   );
 
   // Load availability rules
   const { rows: availability } = await adminPool.query(
-    'SELECT * FROM service_availability_rules WHERE service_id = $1',
+    'SELECT * FROM svc_availability_rules WHERE service_id = $1',
     [id],
   );
 
@@ -291,7 +291,7 @@ export async function updateService(id: string, businessId: string, updates: Rec
   values.push(businessId);
 
   const { rows } = await adminPool.query(
-    `UPDATE services SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx}
+    `UPDATE svc_services SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx}
      RETURNING *`,
     values,
   );
@@ -304,7 +304,7 @@ export async function updateService(id: string, businessId: string, updates: Rec
  */
 export async function archiveService(id: string, businessId: string, userId: string, tenantId: string) {
   const { rowCount } = await adminPool.query(
-    "UPDATE services SET status = 'archived', updated_at = NOW() WHERE id = $1 AND business_id = $2",
+    "UPDATE svc_services SET status = 'archived', updated_at = NOW() WHERE id = $1 AND business_id = $2",
     [id, businessId],
   );
 
@@ -319,7 +319,7 @@ export async function archiveService(id: string, businessId: string, userId: str
  */
 export async function restoreService(id: string, businessId: string) {
   const { rowCount } = await adminPool.query(
-    "UPDATE services SET status = 'draft', updated_at = NOW() WHERE id = $1 AND business_id = $2 AND status = 'archived'",
+    "UPDATE svc_services SET status = 'draft', updated_at = NOW() WHERE id = $1 AND business_id = $2 AND status = 'archived'",
     [id, businessId],
   );
   return (rowCount ?? 0) > 0;
@@ -330,7 +330,7 @@ export async function restoreService(id: string, businessId: string) {
  */
 export async function pauseService(id: string, businessId: string) {
   const { rowCount } = await adminPool.query(
-    "UPDATE services SET status = 'paused', updated_at = NOW() WHERE id = $1 AND business_id = $2 AND status = 'active'",
+    "UPDATE svc_services SET status = 'paused', updated_at = NOW() WHERE id = $1 AND business_id = $2 AND status = 'active'",
     [id, businessId],
   );
   return (rowCount ?? 0) > 0;
@@ -342,7 +342,7 @@ export async function pauseService(id: string, businessId: string) {
 export async function activateService(id: string, businessId: string) {
   // Check for active variants
   const { rows: variants } = await adminPool.query(
-    "SELECT id FROM service_variants WHERE service_id = $1 AND status = 'active'",
+    "SELECT id FROM svc_variants WHERE service_id = $1 AND status = 'active'",
     [id],
   );
 
@@ -351,7 +351,7 @@ export async function activateService(id: string, businessId: string) {
   }
 
   const { rowCount } = await adminPool.query(
-    "UPDATE services SET status = 'active', updated_at = NOW() WHERE id = $1 AND business_id = $2 AND status IN ('draft', 'paused')",
+    "UPDATE svc_services SET status = 'active', updated_at = NOW() WHERE id = $1 AND business_id = $2 AND status IN ('draft', 'paused')",
     [id, businessId],
   );
   return (rowCount ?? 0) > 0;

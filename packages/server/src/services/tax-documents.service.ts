@@ -20,9 +20,9 @@ export async function generateTaxDocuments(businessId: string, taxYear: number, 
     `SELECT pe.user_id, u.first_name, u.last_name, u.email, u.role,
             SUM(pe.gross_pay)::int AS total_compensation,
             SUM(pe.total_deductions)::int AS total_deductions
-     FROM payroll_entries pe
-     JOIN pay_periods pp ON pp.id = pe.pay_period_id
-     JOIN users u ON u.id = pe.user_id
+     FROM fin_payroll_entries pe
+     JOIN fin_pay_periods pp ON pp.id = pe.pay_period_id
+     JOIN usr_users u ON u.id = pe.user_id
      WHERE pp.business_id = $1 AND pp.period_start >= $2 AND pp.period_end <= $3 AND pp.status = 'finalized'
      GROUP BY pe.user_id, u.first_name, u.last_name, u.email, u.role`,
     [businessId, yearStart, yearEnd],
@@ -33,7 +33,7 @@ export async function generateTaxDocuments(businessId: string, taxYear: number, 
   for (const staff of staffData) {
     // Skip if already generated for this year
     const { rows: existing } = await adminPool.query(
-      "SELECT id FROM tax_documents WHERE business_id = $1 AND user_id = $2 AND tax_year = $3 AND status != 'corrected'",
+      "SELECT id FROM fin_tax_documents WHERE business_id = $1 AND user_id = $2 AND tax_year = $3 AND status != 'corrected'",
       [businessId, staff.user_id, taxYear],
     );
     if (existing.length > 0) { result.skipped++; continue; }
@@ -50,7 +50,7 @@ export async function generateTaxDocuments(businessId: string, taxYear: number, 
     if (!isContractor) {
       const { rows: deductions } = await adminPool.query(
         `SELECT pd.name, pd.deduction_type, pd.calculation_type, pd.value
-         FROM payroll_deductions pd
+         FROM fin_payroll_deductions pd
          WHERE pd.user_id = $1 AND pd.business_id = $2 AND pd.deduction_type = 'tax' AND pd.status = 'active'`,
         [staff.user_id, businessId],
       );
@@ -79,7 +79,7 @@ export async function generateTaxDocuments(businessId: string, taxYear: number, 
     };
 
     const { rows: docRows } = await adminPool.query(
-      `INSERT INTO tax_documents (business_id, user_id, tax_year, document_type, total_compensation, total_federal_tax, total_state_tax, total_social_security, total_medicare, data)
+      `INSERT INTO fin_tax_documents (business_id, user_id, tax_year, document_type, total_compensation, total_federal_tax, total_state_tax, total_social_security, total_medicare, data)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
       [businessId, staff.user_id, taxYear, documentType, staff.total_compensation, federalTax, stateTax, socialSecurity, medicare, JSON.stringify(docData)],
     );
@@ -106,8 +106,8 @@ export async function getTaxDocuments(businessId: string, filters?: { taxYear?: 
 
   const where = conditions.join(' AND ');
   const { rows } = await adminPool.query(
-    `SELECT td.*, u.first_name, u.last_name FROM tax_documents td
-     JOIN users u ON u.id = td.user_id WHERE ${where} ORDER BY td.tax_year DESC, u.last_name`,
+    `SELECT td.*, u.first_name, u.last_name FROM fin_tax_documents td
+     JOIN usr_users u ON u.id = td.user_id WHERE ${where} ORDER BY td.tax_year DESC, u.last_name`,
     params,
   );
   return rows;
@@ -118,18 +118,18 @@ export async function getTaxDocuments(businessId: string, filters?: { taxYear?: 
  */
 export async function issueCorrection(originalId: string, businessId: string, correctedData: Record<string, any>): Promise<any> {
   const { rows: original } = await adminPool.query(
-    'SELECT * FROM tax_documents WHERE id = $1 AND business_id = $2', [originalId, businessId],
+    'SELECT * FROM fin_tax_documents WHERE id = $1 AND business_id = $2', [originalId, businessId],
   );
   if (original.length === 0) return null;
 
   const orig = original[0];
 
   // Mark original as corrected
-  await adminPool.query("UPDATE tax_documents SET status = 'corrected' WHERE id = $1", [originalId]);
+  await adminPool.query("UPDATE fin_tax_documents SET status = 'corrected' WHERE id = $1", [originalId]);
 
   // Create corrected version
   const { rows } = await adminPool.query(
-    `INSERT INTO tax_documents (business_id, user_id, tax_year, document_type, total_compensation, total_federal_tax, total_state_tax, total_social_security, total_medicare, data, corrects_id)
+    `INSERT INTO fin_tax_documents (business_id, user_id, tax_year, document_type, total_compensation, total_federal_tax, total_state_tax, total_social_security, total_medicare, data, corrects_id)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
     [businessId, orig.user_id, orig.tax_year, orig.document_type,
      correctedData.total_compensation ?? orig.total_compensation,

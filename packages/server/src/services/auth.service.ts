@@ -54,7 +54,7 @@ export function hashToken(token: string): string {
 
 export async function findUserByEmail(email: string, tenantId: string) {
   const { rows } = await tenantQuery(tenantId,
-    'SELECT * FROM users WHERE email = $1 AND tenant_id = $2',
+    'SELECT * FROM usr_users WHERE email = $1 AND tenant_id = $2',
     [email, tenantId],
   );
   return rows[0] || null;
@@ -63,7 +63,7 @@ export async function findUserByEmail(email: string, tenantId: string) {
 export async function findUserById(userId: string) {
   // This needs to work without tenant context for refresh token flow
   // Use adminPool since we're looking up by PK
-  const { rows } = await adminPool.query('SELECT * FROM users WHERE id = $1', [userId]);
+  const { rows } = await adminPool.query('SELECT * FROM usr_users WHERE id = $1', [userId]);
   return rows[0] || null;
 }
 
@@ -72,8 +72,8 @@ export async function findUserById(userId: string) {
 export async function getUserPermissions(userId: string, tenantId: string): Promise<string[]> {
   const { rows } = await adminPool.query(
     `SELECT DISTINCT jsonb_array_elements_text(r.permissions) AS permission
-     FROM user_roles ur
-     JOIN roles r ON ur.role_id = r.id
+     FROM usr_user_roles ur
+     JOIN usr_roles r ON ur.role_id = r.id
      WHERE ur.user_id = $1 AND ur.tenant_id = $2`,
     [userId, tenantId],
   );
@@ -82,8 +82,8 @@ export async function getUserPermissions(userId: string, tenantId: string): Prom
 
 export async function getUserRole(userId: string, tenantId: string): Promise<string> {
   const { rows } = await adminPool.query(
-    `SELECT r.name FROM user_roles ur
-     JOIN roles r ON ur.role_id = r.id
+    `SELECT r.name FROM usr_user_roles ur
+     JOIN usr_roles r ON ur.role_id = r.id
      WHERE ur.user_id = $1 AND ur.tenant_id = $2
      ORDER BY r.created_at ASC LIMIT 1`,
     [userId, tenantId],
@@ -96,7 +96,7 @@ export async function getUserRole(userId: string, tenantId: string): Promise<str
 export async function isAccountLocked(email: string, tenantId: string): Promise<boolean> {
   const cutoff = new Date(Date.now() - LOCKOUT_DURATION_MINUTES * 60 * 1000);
   const { rows } = await adminPool.query(
-    `SELECT COUNT(*) AS count FROM login_attempts
+    `SELECT COUNT(*) AS count FROM usr_login_attempts
      WHERE email = $1 AND tenant_id = $2 AND success = false AND attempted_at > $3`,
     [email, tenantId, cutoff.toISOString()],
   );
@@ -105,7 +105,7 @@ export async function isAccountLocked(email: string, tenantId: string): Promise<
 
 export async function recordLoginAttempt(email: string, tenantId: string, ip: string, success: boolean): Promise<void> {
   await adminPool.query(
-    'INSERT INTO login_attempts (email, tenant_id, ip_address, success) VALUES ($1, $2, $3, $4)',
+    'INSERT INTO usr_login_attempts (email, tenant_id, ip_address, success) VALUES ($1, $2, $3, $4)',
     [email, tenantId, ip, success],
   );
 }
@@ -113,7 +113,7 @@ export async function recordLoginAttempt(email: string, tenantId: string, ip: st
 export async function clearLoginAttempts(email: string, tenantId: string): Promise<void> {
   const cutoff = new Date(Date.now() - LOCKOUT_DURATION_MINUTES * 60 * 1000);
   await adminPool.query(
-    'DELETE FROM login_attempts WHERE email = $1 AND tenant_id = $2 AND attempted_at > $3',
+    'DELETE FROM usr_login_attempts WHERE email = $1 AND tenant_id = $2 AND attempted_at > $3',
     [email, tenantId, cutoff.toISOString()],
   );
 }
@@ -125,7 +125,7 @@ export async function storeRefreshToken(
 ): Promise<void> {
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
   await adminPool.query(
-    `INSERT INTO refresh_tokens (user_id, token_hash, device_info, ip_address, expires_at)
+    `INSERT INTO usr_refresh_tokens (user_id, token_hash, device_info, ip_address, expires_at)
      VALUES ($1, $2, $3, $4, $5)`,
     [userId, hashToken(token), deviceInfo || null, ip || null, expiresAt.toISOString()],
   );
@@ -134,7 +134,7 @@ export async function storeRefreshToken(
 export async function validateRefreshToken(token: string) {
   const hash = hashToken(token);
   const { rows } = await adminPool.query(
-    `SELECT * FROM refresh_tokens
+    `SELECT * FROM usr_refresh_tokens
      WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > NOW()`,
     [hash],
   );
@@ -144,14 +144,14 @@ export async function validateRefreshToken(token: string) {
 export async function revokeRefreshToken(token: string): Promise<void> {
   const hash = hashToken(token);
   await adminPool.query(
-    'UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = $1',
+    'UPDATE usr_refresh_tokens SET revoked_at = NOW() WHERE token_hash = $1',
     [hash],
   );
 }
 
 export async function revokeAllUserTokens(userId: string): Promise<void> {
   await adminPool.query(
-    'UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL',
+    'UPDATE usr_refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL',
     [userId],
   );
 }
@@ -160,14 +160,14 @@ export async function revokeAllUserTokens(userId: string): Promise<void> {
 
 export async function addToPasswordHistory(userId: string, passwordHash: string): Promise<void> {
   await adminPool.query(
-    'INSERT INTO password_history (user_id, password_hash) VALUES ($1, $2)',
+    'INSERT INTO usr_password_history (user_id, password_hash) VALUES ($1, $2)',
     [userId, passwordHash],
   );
 }
 
 export async function isPasswordInHistory(userId: string, password: string): Promise<boolean> {
   const { rows } = await adminPool.query(
-    `SELECT password_hash FROM password_history
+    `SELECT password_hash FROM usr_password_history
      WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,
     [userId, PASSWORD_HISTORY_COUNT],
   );
@@ -198,7 +198,7 @@ export async function registerUser(
 
   // Use adminPool for writes (RLS requires tenant context for select but admin for insert)
   const { rows } = await adminPool.query(
-    `INSERT INTO users (tenant_id, email, first_name, last_name, password_hash, role, status)
+    `INSERT INTO usr_users (tenant_id, email, first_name, last_name, password_hash, role, status)
      VALUES ($1, $2, $3, $4, $5, 'customer', 'active')
      RETURNING id, tenant_id, email, first_name, last_name, role, status, created_at`,
     [tenantId, email, firstName, lastName, passwordHash],
@@ -211,7 +211,7 @@ export async function registerUser(
 
   // Assign default Customer role
   await adminPool.query(
-    `INSERT INTO user_roles (user_id, role_id, tenant_id)
+    `INSERT INTO usr_user_roles (user_id, role_id, tenant_id)
      VALUES ($1, '00000000-0000-0000-0000-000000000104', $2)`,
     [user.id, tenantId],
   );
@@ -261,7 +261,7 @@ export async function loginUser(
 
   // Check MFA status
   const { rows: mfaRows } = await adminPool.query(
-    'SELECT * FROM user_mfa WHERE user_id = $1 AND enabled = true',
+    'SELECT * FROM usr_user_mfa WHERE user_id = $1 AND enabled = true',
     [user.id],
   );
 
@@ -282,7 +282,7 @@ export async function loginUser(
   let defaultBusinessId: string | null = null;
   if (!user.business_id) {
     const { rows: bizRows } = await adminPool.query(
-      "SELECT id FROM businesses WHERE tenant_id = $1 AND status = 'active' ORDER BY created_at LIMIT 1",
+      "SELECT id FROM sys_businesses WHERE tenant_id = $1 AND status = 'active' ORDER BY created_at LIMIT 1",
       [tenantId],
     );
     if (bizRows.length > 0) {

@@ -44,7 +44,7 @@ export async function createEvent(input: CreateEventInput) {
   const slug = generateSlug(input.title) + '-' + Date.now().toString(36);
 
   const { rows } = await adminPool.query(
-    `INSERT INTO events (
+    `INSERT INTO evt_events (
        tenant_id, event_type_id, title, slug, description,
        start_time, end_time, location_id, location_name,
        capacity, min_attendees, tags, custom_fields,
@@ -122,10 +122,10 @@ export async function getEvents(tenantId: string, filters: EventFilters = {}) {
   const { rows } = await adminPool.query(
     `SELECT e.*,
             et.name AS event_type_name,
-            (SELECT COUNT(*)::int FROM event_registrations er
+            (SELECT COUNT(*)::int FROM evt_registrations er
              WHERE er.event_id = e.id AND er.status IN ('confirmed','pending')) AS registrations_count
-     FROM events e
-     LEFT JOIN event_types et ON et.id = e.event_type_id
+     FROM evt_events e
+     LEFT JOIN evt_types et ON et.id = e.event_type_id
      WHERE ${where}
      ORDER BY e.start_time ASC
      LIMIT $${idx++} OFFSET $${idx++}`,
@@ -133,7 +133,7 @@ export async function getEvents(tenantId: string, filters: EventFilters = {}) {
   );
 
   const { rows: countRows } = await adminPool.query(
-    `SELECT COUNT(*)::int AS total FROM events e WHERE ${where}`,
+    `SELECT COUNT(*)::int AS total FROM evt_events e WHERE ${where}`,
     params,
   );
 
@@ -147,10 +147,10 @@ export async function getEventById(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
     `SELECT e.*,
             et.name AS event_type_name,
-            (SELECT COUNT(*)::int FROM event_registrations er
+            (SELECT COUNT(*)::int FROM evt_registrations er
              WHERE er.event_id = e.id AND er.status IN ('confirmed','pending')) AS registrations_count
-     FROM events e
-     LEFT JOIN event_types et ON et.id = e.event_type_id
+     FROM evt_events e
+     LEFT JOIN evt_types et ON et.id = e.event_type_id
      WHERE e.id = $1 AND e.tenant_id = $2`,
     [id, tenantId],
   );
@@ -189,7 +189,7 @@ export async function updateEvent(
   values.push(id, tenantId);
 
   const { rows } = await adminPool.query(
-    `UPDATE events SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
+    `UPDATE evt_events SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
     values,
   );
 
@@ -212,7 +212,7 @@ export async function updateEvent(
  */
 export async function publishEvent(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE events SET status = 'published', updated_at = NOW()
+    `UPDATE evt_events SET status = 'published', updated_at = NOW()
      WHERE id = $1 AND tenant_id = $2 AND status = 'draft' RETURNING *`,
     [id, tenantId],
   );
@@ -233,7 +233,7 @@ export async function publishEvent(id: string, tenantId: string) {
  */
 export async function cancelEvent(id: string, tenantId: string, userId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE events SET status = 'cancelled', updated_at = NOW()
+    `UPDATE evt_events SET status = 'cancelled', updated_at = NOW()
      WHERE id = $1 AND tenant_id = $2 AND status IN ('draft','published') RETURNING *`,
     [id, tenantId],
   );
@@ -255,7 +255,7 @@ export async function cancelEvent(id: string, tenantId: string, userId: string) 
  */
 export async function completeEvent(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE events SET status = 'completed', updated_at = NOW()
+    `UPDATE evt_events SET status = 'completed', updated_at = NOW()
      WHERE id = $1 AND tenant_id = $2 AND status = 'published' RETURNING *`,
     [id, tenantId],
   );
@@ -276,7 +276,7 @@ export async function completeEvent(id: string, tenantId: string) {
  */
 export async function addFacilitator(eventId: string, staffId: string, role: string) {
   const { rows } = await adminPool.query(
-    `INSERT INTO event_facilitators (event_id, staff_id, role)
+    `INSERT INTO evt_facilitators (event_id, staff_id, role)
      VALUES ($1, $2, $3)
      ON CONFLICT (event_id, staff_id) DO UPDATE SET role = $3
      RETURNING *`,
@@ -290,7 +290,7 @@ export async function addFacilitator(eventId: string, staffId: string, role: str
  */
 export async function removeFacilitator(id: string, eventId: string) {
   const { rowCount } = await adminPool.query(
-    `DELETE FROM event_facilitators WHERE id = $1 AND event_id = $2`,
+    `DELETE FROM evt_facilitators WHERE id = $1 AND event_id = $2`,
     [id, eventId],
   );
   return (rowCount ?? 0) > 0;

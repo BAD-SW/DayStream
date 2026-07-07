@@ -51,7 +51,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Slot Holds & Waitlist', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Hold Wait Test Biz', 'hold-wait-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Hold Wait Test Biz'
        RETURNING id`,
@@ -60,18 +60,18 @@ describe('Slot Holds & Waitlist', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean
-    await adminPool.query('DELETE FROM slot_holds WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM waitlist_entries WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM bookings WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM services WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM service_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_slot_holds WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_waitlist_entries WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_bookings WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
 
     const { rows: catRows } = await adminPool.query(
-      `INSERT INTO service_categories (business_id, name) VALUES ($1, 'HW Cat') RETURNING id`,
+      `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'HW Cat') RETURNING id`,
       [BUSINESS_ID],
     );
     const { rows: svcRows } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, status, default_duration, booking_type, max_capacity, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, status, default_duration, booking_type, max_capacity, created_by)
        VALUES ($1, $2, 'HW Service', 'hw-service', 'active', 60, 'shared', 2, '00000000-0000-0000-0000-000000000010')
        RETURNING id`,
       [BUSINESS_ID, catRows[0].id],
@@ -79,21 +79,21 @@ describe('Slot Holds & Waitlist', () => {
     SERVICE_ID = svcRows[0].id;
 
     const { rows: varRows } = await adminPool.query(
-      `INSERT INTO service_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 5000, 'active') RETURNING id`,
+      `INSERT INTO svc_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 5000, 'active') RETURNING id`,
       [SERVICE_ID],
     );
     VARIANT_ID = varRows[0].id;
 
     STAFF_ID = '00000000-0000-0000-0000-000000000090';
     await adminPool.query(
-      `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+      `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
        VALUES ($1, $2, 'hw-staff@example.com', 'HW', 'Staff', 'hashed', 'therapist', 'active')
        ON CONFLICT (id) DO UPDATE SET first_name = 'HW'`,
       [STAFF_ID, TENANT_ID],
     );
 
     const { rows: c1 } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-HW01', 'hw-cust1@example.com', 'HW', 'Cust1', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'HW' RETURNING id`,
       [TENANT_ID, BUSINESS_ID],
@@ -101,7 +101,7 @@ describe('Slot Holds & Waitlist', () => {
     CUSTOMER_ID = c1[0].id;
 
     const { rows: c2 } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-HW02', 'hw-cust2@example.com', 'HW', 'Cust2', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'HW' RETURNING id`,
       [TENANT_ID, BUSINESS_ID],
@@ -170,7 +170,7 @@ describe('Slot Holds & Waitlist', () => {
     it('cleanup removes expired holds', async () => {
       // Insert an expired hold
       await adminPool.query(
-        `INSERT INTO slot_holds (business_id, service_id, variant_id, start_time, end_time, held_by, expires_at)
+        `INSERT INTO apt_slot_holds (business_id, service_id, variant_id, start_time, end_time, held_by, expires_at)
          VALUES ($1, $2, $3, NOW(), NOW() + INTERVAL '1 hour', '00000000-0000-0000-0000-000000000010', NOW() - INTERVAL '1 minute')`,
         [BUSINESS_ID, SERVICE_ID, VARIANT_ID],
       );
@@ -249,7 +249,7 @@ describe('Slot Holds & Waitlist', () => {
     it('processes expired notifications', async () => {
       // Create a third customer for this test
       const { rows: c3 } = await adminPool.query(
-        `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
          VALUES ($1, $2, 'CUST-HW03', 'hw-cust3@example.com', 'HW', 'Cust3', '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'HW' RETURNING id`,
         [TENANT_ID, BUSINESS_ID],
@@ -260,7 +260,7 @@ describe('Slot Holds & Waitlist', () => {
       const diffSlotEnd = new Date(diffSlot.getTime() + 60 * 60 * 1000);
 
       await adminPool.query(
-        `INSERT INTO waitlist_entries (business_id, service_id, slot_start_time, slot_end_time, customer_id, position, status, notified_at, expires_at)
+        `INSERT INTO apt_waitlist_entries (business_id, service_id, slot_start_time, slot_end_time, customer_id, position, status, notified_at, expires_at)
          VALUES ($1, $2, $3, $4, $5, 1, 'notified', NOW() - INTERVAL '3 hours', NOW() - INTERVAL '1 hour')`,
         [BUSINESS_ID, SERVICE_ID, diffSlot.toISOString(), diffSlotEnd.toISOString(), c3[0].id],
       );

@@ -29,10 +29,10 @@ export async function getCampaigns(
 
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
-      `SELECT * FROM campaigns WHERE ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
+      `SELECT * FROM mkt_campaigns WHERE ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, limit, offset],
     ),
-    adminPool.query(`SELECT COUNT(*)::int AS total FROM campaigns WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*)::int AS total FROM mkt_campaigns WHERE ${where}`, params),
   ]);
 
   return {
@@ -62,7 +62,7 @@ export async function createCampaign(
   },
 ) {
   const { rows } = await adminPool.query(
-    `INSERT INTO campaigns (tenant_id, name, channel, segment_id, subject, sender_name, sender_email, content, html_content, template_id, created_by)
+    `INSERT INTO mkt_campaigns (tenant_id, name, channel, segment_id, subject, sender_name, sender_email, content, html_content, template_id, created_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
     [
       tenantId,
@@ -95,7 +95,7 @@ export async function createCampaign(
  */
 export async function getCampaignById(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM campaigns WHERE id = $1 AND tenant_id = $2`,
+    `SELECT * FROM mkt_campaigns WHERE id = $1 AND tenant_id = $2`,
     [id, tenantId],
   );
   return rows[0] || null;
@@ -125,7 +125,7 @@ export async function updateCampaign(id: string, tenantId: string, updates: Reco
   values.push(id, tenantId);
 
   const { rows } = await adminPool.query(
-    `UPDATE campaigns SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} AND status IN ('draft', 'scheduled') RETURNING *`,
+    `UPDATE mkt_campaigns SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} AND status IN ('draft', 'scheduled') RETURNING *`,
     values,
   );
   return rows[0] || null;
@@ -136,7 +136,7 @@ export async function updateCampaign(id: string, tenantId: string, updates: Reco
  */
 export async function scheduleCampaign(id: string, tenantId: string, scheduledAt: string) {
   const { rows } = await adminPool.query(
-    `UPDATE campaigns SET status = 'scheduled', scheduled_at = $1, updated_at = NOW()
+    `UPDATE mkt_campaigns SET status = 'scheduled', scheduled_at = $1, updated_at = NOW()
      WHERE id = $2 AND tenant_id = $3 AND status = 'draft' RETURNING *`,
     [scheduledAt, id, tenantId],
   );
@@ -166,14 +166,14 @@ export async function sendCampaign(id: string, tenantId: string) {
 
   // Resolve segment recipients (placeholder: fetch all customers with email for the tenant)
   const { rows: customers } = await adminPool.query(
-    `SELECT id, email, phone FROM customers WHERE tenant_id = $1 AND status = 'active'`,
+    `SELECT id, email, phone FROM cus_customers WHERE tenant_id = $1 AND status = 'active'`,
     [tenantId],
   );
 
   // Create recipient records
   for (const customer of customers) {
     await adminPool.query(
-      `INSERT INTO campaign_recipients (campaign_id, customer_id, email, phone, status)
+      `INSERT INTO mkt_campaign_recipients (campaign_id, customer_id, email, phone, status)
        VALUES ($1, $2, $3, $4, 'pending')
        ON CONFLICT DO NOTHING`,
       [id, customer.id, customer.email || null, customer.phone || null],
@@ -182,7 +182,7 @@ export async function sendCampaign(id: string, tenantId: string) {
 
   // Mark campaign as sending
   const { rows } = await adminPool.query(
-    `UPDATE campaigns SET status = 'sending', total_recipients = $1, updated_at = NOW()
+    `UPDATE mkt_campaigns SET status = 'sending', total_recipients = $1, updated_at = NOW()
      WHERE id = $2 AND tenant_id = $3 RETURNING *`,
     [customers.length, id, tenantId],
   );

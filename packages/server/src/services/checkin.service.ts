@@ -23,7 +23,7 @@ export async function checkInByQr(
     bookingId = qrRecord.booking_id;
     // Look up customer from booking
     const { rows } = await adminPool.query(
-      `SELECT b.customer_id FROM bookings b JOIN businesses bus ON bus.id = b.business_id
+      `SELECT b.customer_id FROM apt_bookings b JOIN sys_businesses bus ON bus.id = b.business_id
        WHERE b.id = $1 AND bus.tenant_id = $2`,
       [bookingId, tenantId],
     );
@@ -33,7 +33,7 @@ export async function checkInByQr(
     // Customer QR — find their next confirmed booking for today
     customerId = qrRecord.customer_id;
     const { rows } = await adminPool.query(
-      `SELECT b.id FROM bookings b JOIN businesses bus ON bus.id = b.business_id
+      `SELECT b.id FROM apt_bookings b JOIN sys_businesses bus ON bus.id = b.business_id
        WHERE b.customer_id = $1 AND bus.tenant_id = $2
          AND b.status = 'confirmed'
          AND b.start_time::date = CURRENT_DATE
@@ -62,7 +62,7 @@ export async function checkInByQr(
   // Update booking status
   if (validation.pass) {
     await adminPool.query(
-      `UPDATE bookings SET status = 'checked_in' WHERE id = $1`,
+      `UPDATE apt_bookings SET status = 'checked_in' WHERE id = $1`,
       [bookingId],
     );
   }
@@ -89,7 +89,7 @@ export async function checkInByBookingId(
 ) {
   // Look up booking
   const { rows } = await adminPool.query(
-    `SELECT b.customer_id FROM bookings b JOIN businesses bus ON bus.id = b.business_id
+    `SELECT b.customer_id FROM apt_bookings b JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE b.id = $1 AND bus.tenant_id = $2`,
     [bookingId, tenantId],
   );
@@ -114,7 +114,7 @@ export async function checkInByBookingId(
   // Update booking status
   if (validation.pass) {
     await adminPool.query(
-      `UPDATE bookings SET status = 'checked_in' WHERE id = $1`,
+      `UPDATE apt_bookings SET status = 'checked_in' WHERE id = $1`,
       [bookingId],
     );
   }
@@ -157,7 +157,7 @@ export async function checkInKiosk(
   // Try booking reference
   if (!bookingId && !customerId && input.reference) {
     const { rows } = await adminPool.query(
-      `SELECT b.id, b.customer_id FROM bookings b JOIN businesses bus ON bus.id = b.business_id
+      `SELECT b.id, b.customer_id FROM apt_bookings b JOIN sys_businesses bus ON bus.id = b.business_id
        WHERE b.booking_reference = $1 AND bus.tenant_id = $2
          AND b.status = 'confirmed' AND b.start_time::date = CURRENT_DATE
        LIMIT 1`,
@@ -185,7 +185,7 @@ export async function checkInKiosk(
     }
 
     const { rows: customers } = await adminPool.query(
-      `SELECT c.id FROM customers c WHERE ${conditions.join(' AND ')} LIMIT 1`,
+      `SELECT c.id FROM cus_customers c WHERE ${conditions.join(' AND ')} LIMIT 1`,
       params,
     );
 
@@ -197,7 +197,7 @@ export async function checkInKiosk(
   // Resolve booking from customer if we only have customerId
   if (!bookingId && customerId) {
     const { rows } = await adminPool.query(
-      `SELECT b.id FROM bookings b JOIN businesses bus ON bus.id = b.business_id
+      `SELECT b.id FROM apt_bookings b JOIN sys_businesses bus ON bus.id = b.business_id
        WHERE b.customer_id = $1 AND bus.tenant_id = $2
          AND b.status = 'confirmed' AND b.start_time::date = CURRENT_DATE
        ORDER BY b.start_time ASC
@@ -230,7 +230,7 @@ export async function checkInKiosk(
   // Update booking status
   if (validation.pass) {
     await adminPool.query(
-      `UPDATE bookings SET status = 'checked_in' WHERE id = $1`,
+      `UPDATE apt_bookings SET status = 'checked_in' WHERE id = $1`,
       [bookingId],
     );
   }
@@ -251,7 +251,7 @@ export async function checkInKiosk(
  */
 export async function getCheckInRecord(bookingId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM check_in_records WHERE booking_id = $1 AND status != 'cancelled' LIMIT 1`,
+    `SELECT * FROM apt_check_in_records WHERE booking_id = $1 AND status != 'cancelled' LIMIT 1`,
     [bookingId],
   );
   return rows[0] || null;
@@ -270,7 +270,7 @@ async function createCheckInRecord(input: {
   locationId?: string;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO check_in_records
+    `INSERT INTO apt_check_in_records
        (tenant_id, booking_id, customer_id, check_in_method, validated, validation_warnings, processed_by, location_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,

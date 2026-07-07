@@ -12,7 +12,7 @@ export async function submitReview(tenantId: string, input: {
   content?: string;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO reviews (tenant_id, customer_id, booking_id, service_id, staff_id, rating, content)
+    `INSERT INTO eng_reviews (tenant_id, customer_id, booking_id, service_id, staff_id, rating, content)
      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
     [
       tenantId,
@@ -31,7 +31,7 @@ export async function submitReview(tenantId: string, input: {
  * Get reviews for a service, optionally filtered by status.
  */
 export async function getServiceReviews(serviceId: string, status?: string) {
-  let query = `SELECT * FROM reviews WHERE service_id = $1`;
+  let query = `SELECT * FROM eng_reviews WHERE service_id = $1`;
   const params: any[] = [serviceId];
 
   if (status) {
@@ -49,7 +49,7 @@ export async function getServiceReviews(serviceId: string, status?: string) {
  */
 export async function moderateReview(id: string, tenantId: string, status: string) {
   const { rows } = await adminPool.query(
-    `UPDATE reviews SET status = $3 WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+    `UPDATE eng_reviews SET status = $3 WHERE id = $1 AND tenant_id = $2 RETURNING *`,
     [id, tenantId, status],
   );
   return rows[0] || null;
@@ -60,7 +60,7 @@ export async function moderateReview(id: string, tenantId: string, status: strin
  */
 export async function respondToReview(id: string, tenantId: string, response: string) {
   const { rows } = await adminPool.query(
-    `UPDATE reviews SET business_response = $3, responded_at = NOW() WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+    `UPDATE eng_reviews SET business_response = $3, responded_at = NOW() WHERE id = $1 AND tenant_id = $2 RETURNING *`,
     [id, tenantId, response],
   );
   return rows[0] || null;
@@ -72,7 +72,7 @@ export async function respondToReview(id: string, tenantId: string, response: st
 export async function getAverageRating(serviceId: string) {
   const { rows } = await adminPool.query(
     `SELECT COALESCE(AVG(rating), 0)::numeric(3,2) AS average_rating, COUNT(*)::int AS review_count
-     FROM reviews
+     FROM eng_reviews
      WHERE service_id = $1 AND status = 'published'`,
     [serviceId],
   );

@@ -32,7 +32,7 @@ export async function logAudit(entry: AuditEntry): Promise<void> {
     const signature = signEntry(entry, lastSignature);
 
     await adminPool.query(
-      `INSERT INTO audit_log (tenant_id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, signature, previous_signature)
+      `INSERT INTO usr_audit_log (tenant_id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, signature, previous_signature)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         entry.tenantId,
@@ -65,7 +65,7 @@ export async function logAuditStrict(entry: AuditEntry): Promise<void> {
   const signature = signEntry(entry, lastSignature);
 
   await adminPool.query(
-    `INSERT INTO audit_log (tenant_id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, signature, previous_signature)
+    `INSERT INTO usr_audit_log (tenant_id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, signature, previous_signature)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
     [
       entry.tenantId,
@@ -134,15 +134,15 @@ export async function queryAuditLog(
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
       `SELECT a.*, u.email as user_email, u.first_name as user_first_name, u.last_name as user_last_name, t.name as tenant_name
-       FROM audit_log a
-       LEFT JOIN users u ON a.user_id::uuid = u.id
-       LEFT JOIN tenants t ON a.tenant_id::uuid = t.id
+       FROM usr_audit_log a
+       LEFT JOIN usr_users u ON a.user_id::uuid = u.id
+       LEFT JOIN sys_tenants t ON a.tenant_id::uuid = t.id
        WHERE ${where}
        ORDER BY a.created_at DESC
        LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
       [...params, limit, offset],
     ),
-    adminPool.query(`SELECT COUNT(*) AS total FROM audit_log a WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*) AS total FROM usr_audit_log a WHERE ${where}`, params),
   ]);
 
   return {

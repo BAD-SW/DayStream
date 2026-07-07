@@ -65,7 +65,7 @@ export function getMarketplaceCatalog() {
  */
 export async function getMarketplaceWithStatus(tenantId: string) {
   const { rows: connections } = await adminPool.query(
-    `SELECT provider, status FROM integration_connections WHERE tenant_id = $1`,
+    `SELECT provider, status FROM int_connections WHERE tenant_id = $1`,
     [tenantId],
   );
 

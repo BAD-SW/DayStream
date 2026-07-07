@@ -20,8 +20,8 @@ export async function evaluateBenefitsForBooking(
   // Find active memberships for this customer
   const { rows: memberships } = await adminPool.query(
     `SELECT m.id, m.plan_id, m.credit_balance, mp.plan_type
-     FROM memberships m
-     JOIN membership_plans mp ON mp.id = m.plan_id
+     FROM mem_memberships m
+     JOIN mem_plans mp ON mp.id = m.plan_id
      WHERE m.customer_id = $1 AND m.business_id = $2 AND m.status = 'active'`,
     [customerId, businessId],
   );
@@ -39,8 +39,8 @@ export async function evaluateBenefitsForBooking(
   for (const membership of memberships) {
     // Check plan_service_access for this service
     const { rows: accessRows } = await adminPool.query(
-      `SELECT * FROM plan_service_access
-       WHERE plan_id = $1 AND (service_id = $2 OR category_id IN (SELECT category_id FROM services WHERE id = $2))`,
+      `SELECT * FROM mem_plan_service_access
+       WHERE plan_id = $1 AND (service_id = $2 OR category_id IN (SELECT category_id FROM svc_services WHERE id = $2))`,
       [membership.plan_id, serviceId],
     );
 
@@ -67,7 +67,7 @@ export async function evaluateBenefitsForBooking(
 
     // Check plan benefits for general discounts
     const { rows: benefits } = await adminPool.query(
-      "SELECT * FROM plan_benefits WHERE plan_id = $1 AND benefit_type = 'discount'",
+      "SELECT * FROM mem_plan_benefits WHERE plan_id = $1 AND benefit_type = 'discount'",
       [membership.plan_id],
     );
     for (const b of benefits) {
@@ -91,8 +91,8 @@ export async function evaluateBenefitsForBooking(
  */
 export async function isServiceExclusive(serviceId: string, businessId: string): Promise<boolean> {
   const { rows } = await adminPool.query(
-    `SELECT 1 FROM plan_service_access psa
-     JOIN membership_plans mp ON mp.id = psa.plan_id
+    `SELECT 1 FROM mem_plan_service_access psa
+     JOIN mem_plans mp ON mp.id = psa.plan_id
      WHERE psa.service_id = $1 AND mp.business_id = $2 AND psa.access_type = 'exclusive'
      LIMIT 1`,
     [serviceId, businessId],
@@ -105,8 +105,8 @@ export async function isServiceExclusive(serviceId: string, businessId: string):
  */
 export async function getGuestPassUsage(membershipId: string): Promise<{ used: number; total: number }> {
   const { rows: benefits } = await adminPool.query(
-    `SELECT pb.value FROM plan_benefits pb
-     JOIN memberships m ON m.plan_id = pb.plan_id
+    `SELECT pb.value FROM mem_plan_benefits pb
+     JOIN mem_memberships m ON m.plan_id = pb.plan_id
      WHERE m.id = $1 AND pb.benefit_type = 'guest_pass' AND pb.per_cycle = true`,
     [membershipId],
   );
@@ -117,9 +117,9 @@ export async function getGuestPassUsage(membershipId: string): Promise<{ used: n
 
   // Count guest bookings this cycle (simplified: this month)
   const { rows: usage } = await adminPool.query(
-    `SELECT COUNT(*)::int AS count FROM bookings b
+    `SELECT COUNT(*)::int AS count FROM apt_bookings b
      WHERE b.customer_id IN (
-       SELECT customer_id FROM memberships WHERE primary_membership_id = $1
+       SELECT customer_id FROM mem_memberships WHERE primary_membership_id = $1
      )
      AND b.created_at >= DATE_TRUNC('month', NOW())
      AND b.status IN ('confirmed', 'completed')`,
@@ -135,9 +135,9 @@ export async function getGuestPassUsage(membershipId: string): Promise<{ used: n
 export async function getCustomerBenefits(customerId: string, businessId: string) {
   const { rows } = await adminPool.query(
     `SELECT pb.*, mp.name AS plan_name
-     FROM plan_benefits pb
-     JOIN membership_plans mp ON mp.id = pb.plan_id
-     JOIN memberships m ON m.plan_id = mp.id
+     FROM mem_plan_benefits pb
+     JOIN mem_plans mp ON mp.id = pb.plan_id
+     JOIN mem_memberships m ON m.plan_id = mp.id
      WHERE m.customer_id = $1 AND m.business_id = $2 AND m.status = 'active'`,
     [customerId, businessId],
   );

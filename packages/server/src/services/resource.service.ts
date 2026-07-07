@@ -28,7 +28,7 @@ interface ResourceFilters {
 
 export async function createResource(input: CreateResourceInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO resources (tenant_id, resource_type_id, location_id, name, description,
+    `INSERT INTO res_resources (tenant_id, resource_type_id, location_id, name, description,
        capacity, buffer_minutes, is_24_7, photo_path, display_order, custom_attributes)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
     [
@@ -69,9 +69,9 @@ export async function getResources(tenantId: string, filters: ResourceFilters) {
   const [data, count] = await Promise.all([
     adminPool.query(
       `SELECT r.*, rt.name AS type_name, rt.category
-       FROM resources r JOIN resource_types rt ON rt.id = r.resource_type_id
+       FROM res_resources r JOIN res_types rt ON rt.id = r.resource_type_id
        WHERE ${where} ORDER BY r.display_order, r.name LIMIT ${limit} OFFSET ${offset}`, params),
-    adminPool.query(`SELECT COUNT(*)::int AS total FROM resources r JOIN resource_types rt ON rt.id = r.resource_type_id WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*)::int AS total FROM res_resources r JOIN res_types rt ON rt.id = r.resource_type_id WHERE ${where}`, params),
   ]);
 
   return { resources: data.rows, total: count.rows[0].total, page, limit };
@@ -80,7 +80,7 @@ export async function getResources(tenantId: string, filters: ResourceFilters) {
 export async function getResourceById(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
     `SELECT r.*, rt.name AS type_name, rt.category
-     FROM resources r JOIN resource_types rt ON rt.id = r.resource_type_id
+     FROM res_resources r JOIN res_types rt ON rt.id = r.resource_type_id
      WHERE r.id = $1 AND r.tenant_id = $2`, [id, tenantId]);
   return rows[0] || null;
 }
@@ -108,13 +108,13 @@ export async function updateResource(id: string, tenantId: string, updates: Reco
   values.push(id, tenantId);
 
   const { rows } = await adminPool.query(
-    `UPDATE resources SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`, values);
+    `UPDATE res_resources SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`, values);
   return rows[0] || null;
 }
 
 export async function deactivateResource(id: string, tenantId: string, userId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE resources SET status = 'inactive', updated_at = NOW()
+    `UPDATE res_resources SET status = 'inactive', updated_at = NOW()
      WHERE id = $1 AND tenant_id = $2 AND status != 'inactive' RETURNING *`, [id, tenantId]);
   if (rows.length === 0) return null;
   await logAudit({ tenantId, userId, action: 'resource.deactivated', resourceType: 'resource', resourceId: id });

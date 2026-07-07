@@ -45,7 +45,7 @@ describe('Service Catalog & Templates', () => {
   beforeAll(async () => {
     BUSINESS_SLUG = 'catalog-template-test-biz';
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Catalog Template Test Biz', $2, 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Catalog Template Test Biz'
        RETURNING id`,
@@ -54,9 +54,9 @@ describe('Service Catalog & Templates', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean up
-    await adminPool.query('DELETE FROM services WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM service_categories WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM cancellation_policies WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_cancellation_policies WHERE business_id = $1', [BUSINESS_ID]);
 
     ownerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',
@@ -120,7 +120,7 @@ describe('Service Catalog & Templates', () => {
 
     it('services are created in draft status', async () => {
       const { rows } = await adminPool.query(
-        "SELECT DISTINCT status FROM services WHERE business_id = $1",
+        "SELECT DISTINCT status FROM svc_services WHERE business_id = $1",
         [BUSINESS_ID],
       );
       expect(rows.every((r: any) => r.status === 'draft')).toBe(true);
@@ -142,25 +142,25 @@ describe('Service Catalog & Templates', () => {
     beforeAll(async () => {
       // Activate some services + add variants for catalog to return
       const { rows: draftServices } = await adminPool.query(
-        "SELECT id FROM services WHERE business_id = $1 AND status = 'draft' LIMIT 3",
+        "SELECT id FROM svc_services WHERE business_id = $1 AND status = 'draft' LIMIT 3",
         [BUSINESS_ID],
       );
 
       for (const svc of draftServices) {
         // Ensure variant exists
         const { rows: varCheck } = await adminPool.query(
-          "SELECT id FROM service_variants WHERE service_id = $1 AND status = 'active'",
+          "SELECT id FROM svc_variants WHERE service_id = $1 AND status = 'active'",
           [svc.id],
         );
         if (varCheck.length === 0) {
           await adminPool.query(
-            'INSERT INTO service_variants (service_id, name, duration, price) VALUES ($1, $2, 60, 5000)',
+            'INSERT INTO svc_variants (service_id, name, duration, price) VALUES ($1, $2, 60, 5000)',
             [svc.id, '60 min'],
           );
         }
         // Activate
         await adminPool.query(
-          "UPDATE services SET status = 'active', online_booking_enabled = true WHERE id = $1",
+          "UPDATE svc_services SET status = 'active', online_booking_enabled = true WHERE id = $1",
           [svc.id],
         );
       }
@@ -230,12 +230,12 @@ describe('Service Catalog & Templates', () => {
       // We only activated 3, so total in catalog should be <= 3
       // Draft services should not appear
       const { rows: draftCount } = await adminPool.query(
-        "SELECT COUNT(*)::int AS count FROM services WHERE business_id = $1 AND status = 'draft'",
+        "SELECT COUNT(*)::int AS count FROM svc_services WHERE business_id = $1 AND status = 'draft'",
         [BUSINESS_ID],
       );
       // Catalog should have fewer services than total (since most are draft)
       const { rows: totalCount } = await adminPool.query(
-        "SELECT COUNT(*)::int AS count FROM services WHERE business_id = $1",
+        "SELECT COUNT(*)::int AS count FROM svc_services WHERE business_id = $1",
         [BUSINESS_ID],
       );
       expect(allServices.length).toBeLessThan(totalCount[0].count);

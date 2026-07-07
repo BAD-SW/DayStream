@@ -15,7 +15,7 @@ interface CommunicationRecord {
  */
 async function logCommunication(record: CommunicationRecord) {
   const { rows } = await adminPool.query(
-    `INSERT INTO event_communications (event_id, communication_type, recipient_type, recipient_id, subject, content, sent_at)
+    `INSERT INTO evt_communications (event_id, communication_type, recipient_type, recipient_id, subject, content, sent_at)
      VALUES ($1, $2, $3, $4, $5, $6, NOW())
      RETURNING *`,
     [
@@ -37,9 +37,9 @@ export async function sendConfirmation(registrationId: string) {
   const { rows } = await adminPool.query(
     `SELECT er.*, e.title AS event_title, e.start_time, e.location_name, e.tenant_id,
             c.first_name, c.last_name, c.email
-     FROM event_registrations er
-     JOIN events e ON e.id = er.event_id
-     JOIN customers c ON c.id = er.customer_id
+     FROM evt_registrations er
+     JOIN evt_events e ON e.id = er.event_id
+     JOIN cus_customers c ON c.id = er.customer_id
      WHERE er.id = $1`,
     [registrationId],
   );
@@ -67,15 +67,15 @@ export async function sendConfirmation(registrationId: string) {
  */
 export async function sendReminder(eventId: string, daysBefore: number) {
   const { rows: eventRows } = await adminPool.query(
-    `SELECT * FROM events WHERE id = $1`, [eventId],
+    `SELECT * FROM evt_events WHERE id = $1`, [eventId],
   );
   if (eventRows.length === 0) throw new Error('Event not found');
 
   const event = eventRows[0];
   const { rows: registrants } = await adminPool.query(
     `SELECT er.*, c.first_name, c.email
-     FROM event_registrations er
-     JOIN customers c ON c.id = er.customer_id
+     FROM evt_registrations er
+     JOIN cus_customers c ON c.id = er.customer_id
      WHERE er.event_id = $1 AND er.status = 'confirmed'`,
     [eventId],
   );
@@ -100,13 +100,13 @@ export async function sendReminder(eventId: string, daysBefore: number) {
  */
 export async function sendPreparation(eventId: string) {
   const { rows: eventRows } = await adminPool.query(
-    `SELECT * FROM events WHERE id = $1`, [eventId],
+    `SELECT * FROM evt_events WHERE id = $1`, [eventId],
   );
   if (eventRows.length === 0) throw new Error('Event not found');
 
   const event = eventRows[0];
   const { rows: registrants } = await adminPool.query(
-    `SELECT er.id FROM event_registrations er WHERE er.event_id = $1 AND er.status = 'confirmed'`,
+    `SELECT er.id FROM evt_registrations er WHERE er.event_id = $1 AND er.status = 'confirmed'`,
     [eventId],
   );
 
@@ -130,13 +130,13 @@ export async function sendPreparation(eventId: string) {
  */
 export async function sendFollowUp(eventId: string) {
   const { rows: eventRows } = await adminPool.query(
-    `SELECT * FROM events WHERE id = $1`, [eventId],
+    `SELECT * FROM evt_events WHERE id = $1`, [eventId],
   );
   if (eventRows.length === 0) throw new Error('Event not found');
 
   const event = eventRows[0];
   const { rows: attendees } = await adminPool.query(
-    `SELECT er.id FROM event_registrations er
+    `SELECT er.id FROM evt_registrations er
      WHERE er.event_id = $1 AND er.checked_in_at IS NOT NULL`,
     [eventId],
   );
@@ -162,7 +162,7 @@ export async function sendFollowUp(eventId: string) {
  */
 export async function sendCancellationNotice(eventId: string, registrationId?: string) {
   const { rows: eventRows } = await adminPool.query(
-    `SELECT * FROM events WHERE id = $1`, [eventId],
+    `SELECT * FROM evt_events WHERE id = $1`, [eventId],
   );
   if (eventRows.length === 0) throw new Error('Event not found');
 
@@ -171,7 +171,7 @@ export async function sendCancellationNotice(eventId: string, registrationId?: s
 
   if (!registrationId) {
     const { rows: regs } = await adminPool.query(
-      `SELECT id FROM event_registrations WHERE event_id = $1 AND status IN ('confirmed','pending')`,
+      `SELECT id FROM evt_registrations WHERE event_id = $1 AND status IN ('confirmed','pending')`,
       [eventId],
     );
     recipientCount = regs.length;
@@ -197,7 +197,7 @@ export async function sendCancellationNotice(eventId: string, registrationId?: s
  */
 export async function sendAdHoc(eventId: string, subject: string, content: string) {
   const { rows: registrants } = await adminPool.query(
-    `SELECT id FROM event_registrations WHERE event_id = $1 AND status = 'confirmed'`,
+    `SELECT id FROM evt_registrations WHERE event_id = $1 AND status = 'confirmed'`,
     [eventId],
   );
 
@@ -218,7 +218,7 @@ export async function sendAdHoc(eventId: string, subject: string, content: strin
  */
 export async function getCommunicationHistory(eventId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM event_communications
+    `SELECT * FROM evt_communications
      WHERE event_id = $1
      ORDER BY sent_at DESC`,
     [eventId],

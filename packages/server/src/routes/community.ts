@@ -73,7 +73,7 @@ communityRouter.get('/streaks', async (req: Request, res: Response) => {
 
 // --- Leaderboard ---
 communityRouter.get('/leaderboard', async (req: Request, res: Response) => {
-  try { const a = req as AuthenticatedRequest; const type = req.query.type as string || 'points'; if (type === 'points') { const { rows } = await (await import('../db/pool')).adminPool.query(`SELECT customer_id, SUM(points)::int AS total_points FROM customer_points WHERE tenant_id = $1 AND (expires_at IS NULL OR expires_at > NOW()) GROUP BY customer_id ORDER BY total_points DESC LIMIT 10`, [a.tenantId]); success(res, rows); } else { success(res, []); } } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const a = req as AuthenticatedRequest; const type = req.query.type as string || 'points'; if (type === 'points') { const { rows } = await (await import('../db/pool')).adminPool.query(`SELECT customer_id, SUM(points)::int AS total_points FROM eng_customer_points WHERE tenant_id = $1 AND (expires_at IS NULL OR expires_at > NOW()) GROUP BY customer_id ORDER BY total_points DESC LIMIT 10`, [a.tenantId]); success(res, rows); } else { success(res, []); } } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 // --- VOD ---

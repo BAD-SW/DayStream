@@ -44,7 +44,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Tax Categories API', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Tax Test Biz', 'tax-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Tax Test Biz'
        RETURNING id`,
@@ -52,7 +52,7 @@ describe('Tax Categories API', () => {
     );
     BUSINESS_ID = bizRows[0].id;
 
-    await adminPool.query('DELETE FROM tax_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_tax_categories WHERE business_id = $1', [BUSINESS_ID]);
 
     ownerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',

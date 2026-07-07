@@ -9,8 +9,8 @@ export async function getStaffReport(tenantId: string, startDate: string, endDat
     `SELECT b.staff_id,
             COUNT(*)::int AS sessions_delivered,
             COALESCE(SUM(b.price), 0) AS revenue
-     FROM bookings b
-     JOIN businesses bus ON bus.id = b.business_id
+     FROM apt_bookings b
+     JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE bus.tenant_id = $1
        AND b.status = 'completed'
        AND b.start_time >= $2::date

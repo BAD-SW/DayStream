@@ -25,7 +25,7 @@ let PUNCH_PLAN_ID: string;
 describe('Membership Engine — Integration Tests', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'MBR Integration Biz', 'mbr-integration-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'MBR Integration Biz'
        RETURNING id`,
@@ -34,12 +34,12 @@ describe('Membership Engine — Integration Tests', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean
-    await adminPool.query('DELETE FROM memberships WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM membership_plans WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM mem_memberships WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM mem_plans WHERE business_id = $1', [BUSINESS_ID]);
 
     // Customers
     const { rows: c1 } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-MINT01', 'mbr-int1@example.com', 'MbrInt', 'Cust1', $3)
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'MbrInt' RETURNING id`,
       [TENANT_ID, BUSINESS_ID, USER_ID],
@@ -47,7 +47,7 @@ describe('Membership Engine — Integration Tests', () => {
     CUSTOMER_ID = c1[0].id;
 
     const { rows: c2 } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-MINT02', 'mbr-int2@example.com', 'MbrInt', 'Cust2', $3)
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'MbrInt' RETURNING id`,
       [TENANT_ID, BUSINESS_ID, USER_ID],
@@ -56,7 +56,7 @@ describe('Membership Engine — Integration Tests', () => {
 
     // Plans: Basic (€99, 10 credits), Premium (€149, 20 credits, family)
     const { rows: basic } = await adminPool.query(
-      `INSERT INTO membership_plans (business_id, name, plan_type, billing_cycle, price, credits_per_cycle, credit_validity_days, rollover_policy, max_rollover_credits)
+      `INSERT INTO mem_plans (business_id, name, plan_type, billing_cycle, price, credits_per_cycle, credit_validity_days, rollover_policy, max_rollover_credits)
        VALUES ($1, 'Integration Basic', 'credit', 'monthly', 9900, 10, 30, 'limited', 3)
        RETURNING id`,
       [BUSINESS_ID],
@@ -64,7 +64,7 @@ describe('Membership Engine — Integration Tests', () => {
     BASIC_PLAN_ID = basic[0].id;
 
     const { rows: premium } = await adminPool.query(
-      `INSERT INTO membership_plans (business_id, name, plan_type, billing_cycle, price, credits_per_cycle, credit_validity_days, rollover_policy, max_additional_members, shared_credits)
+      `INSERT INTO mem_plans (business_id, name, plan_type, billing_cycle, price, credits_per_cycle, credit_validity_days, rollover_policy, max_additional_members, shared_credits)
        VALUES ($1, 'Integration Premium', 'credit', 'monthly', 14900, 20, 45, 'unlimited', 2, true)
        RETURNING id`,
       [BUSINESS_ID],
@@ -73,17 +73,17 @@ describe('Membership Engine — Integration Tests', () => {
 
     // Upgrade path
     await adminPool.query(
-      `INSERT INTO plan_upgrade_paths (from_plan_id, to_plan_id, direction) VALUES ($1, $2, 'upgrade') ON CONFLICT DO NOTHING`,
+      `INSERT INTO mem_plan_upgrade_paths (from_plan_id, to_plan_id, direction) VALUES ($1, $2, 'upgrade') ON CONFLICT DO NOTHING`,
       [BASIC_PLAN_ID, PREMIUM_PLAN_ID],
     );
     await adminPool.query(
-      `INSERT INTO plan_upgrade_paths (from_plan_id, to_plan_id, direction) VALUES ($1, $2, 'downgrade') ON CONFLICT DO NOTHING`,
+      `INSERT INTO mem_plan_upgrade_paths (from_plan_id, to_plan_id, direction) VALUES ($1, $2, 'downgrade') ON CONFLICT DO NOTHING`,
       [PREMIUM_PLAN_ID, BASIC_PLAN_ID],
     );
 
     // Punch card plan
     const { rows: punch } = await adminPool.query(
-      `INSERT INTO membership_plans (business_id, name, plan_type, billing_cycle, price, total_sessions, expiration_days)
+      `INSERT INTO mem_plans (business_id, name, plan_type, billing_cycle, price, total_sessions, expiration_days)
        VALUES ($1, 'Integration 5-Pack', 'punch_card', 'one_time', 22500, 5, 60)
        RETURNING id`,
       [BUSINESS_ID],
@@ -130,7 +130,7 @@ describe('Membership Engine — Integration Tests', () => {
     it('renews: processes rollover and allocates new credits', async () => {
       // Simulate billing date reached
       await adminPool.query(
-        'UPDATE memberships SET next_billing_date = CURRENT_DATE WHERE id = $1',
+        'UPDATE mem_memberships SET next_billing_date = CURRENT_DATE WHERE id = $1',
         [membershipId],
       );
 
@@ -148,7 +148,7 @@ describe('Membership Engine — Integration Tests', () => {
       expect(result.proration_amount).toBeGreaterThanOrEqual(0);
 
       // Plan changed
-      const { rows } = await adminPool.query('SELECT plan_id FROM memberships WHERE id = $1', [membershipId]);
+      const { rows } = await adminPool.query('SELECT plan_id FROM mem_memberships WHERE id = $1', [membershipId]);
       expect(rows[0].plan_id).toBe(PREMIUM_PLAN_ID);
     });
 
@@ -156,7 +156,7 @@ describe('Membership Engine — Integration Tests', () => {
       const result = await membershipService.cancelMembership(membershipId, BUSINESS_ID, USER_ID, TENANT_ID, 'Test complete');
       expect(result.success).toBe(true);
 
-      const { rows } = await adminPool.query('SELECT status FROM memberships WHERE id = $1', [membershipId]);
+      const { rows } = await adminPool.query('SELECT status FROM mem_memberships WHERE id = $1', [membershipId]);
       expect(rows[0].status).toBe('cancelled');
     });
   });
@@ -166,7 +166,7 @@ describe('Membership Engine — Integration Tests', () => {
 
     beforeAll(async () => {
       const { rows } = await adminPool.query(
-        `INSERT INTO memberships (business_id, customer_id, plan_id, status, start_date, next_billing_date, credit_balance, created_by)
+        `INSERT INTO mem_memberships (business_id, customer_id, plan_id, status, start_date, next_billing_date, credit_balance, created_by)
          VALUES ($1, $2, $3, 'active', CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', 0, $4) RETURNING id`,
         [BUSINESS_ID, CUSTOMER_ID_2, BASIC_PLAN_ID, USER_ID],
       );
@@ -191,7 +191,7 @@ describe('Membership Engine — Integration Tests', () => {
     it('expires via scheduled job', async () => {
       // Insert an expired allocation
       await adminPool.query(
-        `INSERT INTO credit_transactions (membership_id, type, amount, balance_after, description, expires_at)
+        `INSERT INTO mem_credit_transactions (membership_id, type, amount, balance_after, description, expires_at)
          VALUES ($1, 'allocated', 8, 8, 'Test allocation', NOW() - INTERVAL '1 day')`,
         [membershipId],
       );
@@ -206,7 +206,7 @@ describe('Membership Engine — Integration Tests', () => {
 
     beforeAll(async () => {
       const { rows } = await adminPool.query(
-        `INSERT INTO memberships (business_id, customer_id, plan_id, status, start_date, next_billing_date, credit_balance, created_by)
+        `INSERT INTO mem_memberships (business_id, customer_id, plan_id, status, start_date, next_billing_date, credit_balance, created_by)
          VALUES ($1, $2, $3, 'active', CURRENT_DATE - INTERVAL '10 days', CURRENT_DATE + INTERVAL '20 days', 5, $4) RETURNING id`,
         [BUSINESS_ID, CUSTOMER_ID_2, BASIC_PLAN_ID, USER_ID],
       );
@@ -220,7 +220,7 @@ describe('Membership Engine — Integration Tests', () => {
     });
 
     it('billing date extended by pause days', async () => {
-      const { rows } = await adminPool.query('SELECT next_billing_date FROM memberships WHERE id = $1', [membershipId]);
+      const { rows } = await adminPool.query('SELECT next_billing_date FROM mem_memberships WHERE id = $1', [membershipId]);
       const billing = new Date(rows[0].next_billing_date);
       // Should be ~34 days from now (20 original + 14 pause)
       const daysFromNow = Math.ceil((billing.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
@@ -239,7 +239,7 @@ describe('Membership Engine — Integration Tests', () => {
 
     beforeAll(async () => {
       const { rows } = await adminPool.query(
-        `INSERT INTO memberships (business_id, customer_id, plan_id, status, start_date, next_billing_date, credit_balance, auto_renew, created_by)
+        `INSERT INTO mem_memberships (business_id, customer_id, plan_id, status, start_date, next_billing_date, credit_balance, auto_renew, created_by)
          VALUES ($1, $2, $3, 'active', CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', 20, true, $4) RETURNING id`,
         [BUSINESS_ID, CUSTOMER_ID, PREMIUM_PLAN_ID, USER_ID],
       );
@@ -256,7 +256,7 @@ describe('Membership Engine — Integration Tests', () => {
 
     it('deducts from shared pool when member books', async () => {
       const { rows: memberMbr } = await adminPool.query(
-        "SELECT id FROM memberships WHERE primary_membership_id = $1 AND customer_id = $2 AND status = 'active'",
+        "SELECT id FROM mem_memberships WHERE primary_membership_id = $1 AND customer_id = $2 AND status = 'active'",
         [familyMembershipId, CUSTOMER_ID_2],
       );
 
@@ -264,7 +264,7 @@ describe('Membership Engine — Integration Tests', () => {
       expect(result.success).toBe(true);
 
       // Primary balance reduced
-      const { rows } = await adminPool.query('SELECT credit_balance FROM memberships WHERE id = $1', [familyMembershipId]);
+      const { rows } = await adminPool.query('SELECT credit_balance FROM mem_memberships WHERE id = $1', [familyMembershipId]);
       expect(rows[0].credit_balance).toBe(17); // 20 - 3
     });
 
@@ -283,7 +283,7 @@ describe('Membership Engine — Integration Tests', () => {
   describe('Business scoping', () => {
     it('cannot access memberships from another business', async () => {
       const { rows: otherBiz } = await adminPool.query(
-        `INSERT INTO businesses (tenant_id, name, slug, status)
+        `INSERT INTO sys_businesses (tenant_id, name, slug, status)
          VALUES ($1, 'Other MBR Biz', 'other-mbr-biz', 'active')
          ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Other MBR Biz'
          RETURNING id`,

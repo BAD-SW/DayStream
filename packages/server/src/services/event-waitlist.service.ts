@@ -8,13 +8,13 @@ export async function addToWaitlist(eventId: string, customerId: string, ticketT
   // Determine position (next in line)
   const { rows: posRows } = await adminPool.query(
     `SELECT COALESCE(MAX(position), 0) + 1 AS next_position
-     FROM event_waitlist WHERE event_id = $1 AND status = 'waiting'`,
+     FROM evt_waitlist WHERE event_id = $1 AND status = 'waiting'`,
     [eventId],
   );
   const position = posRows[0].next_position;
 
   const { rows } = await adminPool.query(
-    `INSERT INTO event_waitlist (event_id, customer_id, ticket_tier_id, position, status)
+    `INSERT INTO evt_waitlist (event_id, customer_id, ticket_tier_id, position, status)
      VALUES ($1, $2, $3, $4, 'waiting')
      RETURNING *`,
     [eventId, customerId, ticketTierId || null, position],
@@ -30,8 +30,8 @@ export async function getWaitlist(eventId: string) {
   const { rows } = await adminPool.query(
     `SELECT ew.*,
             c.first_name, c.last_name, c.email
-     FROM event_waitlist ew
-     LEFT JOIN customers c ON c.id = ew.customer_id
+     FROM evt_waitlist ew
+     LEFT JOIN cus_customers c ON c.id = ew.customer_id
      WHERE ew.event_id = $1
      ORDER BY ew.position ASC`,
     [eventId],
@@ -45,11 +45,11 @@ export async function getWaitlist(eventId: string) {
  */
 export async function promoteFromWaitlist(eventId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE event_waitlist
+    `UPDATE evt_waitlist
      SET status = 'notified', notified_at = NOW(),
          expires_at = NOW() + INTERVAL '4 hours'
      WHERE id = (
-       SELECT id FROM event_waitlist
+       SELECT id FROM evt_waitlist
        WHERE event_id = $1 AND status = 'waiting'
        ORDER BY position ASC LIMIT 1
      )
@@ -66,7 +66,7 @@ export async function promoteFromWaitlist(eventId: string) {
  */
 export async function confirmWaitlistSpot(waitlistId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE event_waitlist
+    `UPDATE evt_waitlist
      SET status = 'confirmed'
      WHERE id = $1 AND status = 'notified' AND (expires_at IS NULL OR expires_at > NOW())
      RETURNING *`,
@@ -81,7 +81,7 @@ export async function confirmWaitlistSpot(waitlistId: string) {
  */
 export async function expireWaitlistEntry(waitlistId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE event_waitlist
+    `UPDATE evt_waitlist
      SET status = 'expired'
      WHERE id = $1 AND status = 'notified'
      RETURNING *`,
@@ -96,7 +96,7 @@ export async function expireWaitlistEntry(waitlistId: string) {
  */
 export async function getWaitlistPosition(eventId: string, customerId: string) {
   const { rows } = await adminPool.query(
-    `SELECT position, status FROM event_waitlist
+    `SELECT position, status FROM evt_waitlist
      WHERE event_id = $1 AND customer_id = $2 AND status IN ('waiting','notified')`,
     [eventId, customerId],
   );

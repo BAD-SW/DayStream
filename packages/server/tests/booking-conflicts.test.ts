@@ -14,7 +14,7 @@ let BOOKING_ID: string;
 describe('Conflict Detection Service', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Conflict Test Biz', 'conflict-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Conflict Test Biz'
        RETURNING id`,
@@ -23,17 +23,17 @@ describe('Conflict Detection Service', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean
-    await adminPool.query('DELETE FROM bookings WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM slot_holds WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM services WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM service_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_bookings WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_slot_holds WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
 
     const { rows: catRows } = await adminPool.query(
-      `INSERT INTO service_categories (business_id, name) VALUES ($1, 'Conflict Cat') RETURNING id`,
+      `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'Conflict Cat') RETURNING id`,
       [BUSINESS_ID],
     );
     const { rows: svcRows } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, status, default_duration, buffer_after, booking_type, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, status, default_duration, buffer_after, booking_type, created_by)
        VALUES ($1, $2, 'Conflict Service', 'conflict-service', 'active', 60, 15, 'individual', '00000000-0000-0000-0000-000000000010')
        RETURNING id`,
       [BUSINESS_ID, catRows[0].id],
@@ -41,21 +41,21 @@ describe('Conflict Detection Service', () => {
     SERVICE_ID = svcRows[0].id;
 
     const { rows: varRows } = await adminPool.query(
-      `INSERT INTO service_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active') RETURNING id`,
+      `INSERT INTO svc_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active') RETURNING id`,
       [SERVICE_ID],
     );
     VARIANT_ID = varRows[0].id;
 
     STAFF_ID = '00000000-0000-0000-0000-000000000096';
     await adminPool.query(
-      `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+      `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
        VALUES ($1, $2, 'conflict-staff@example.com', 'Conflict', 'Staff', 'hashed', 'therapist', 'active')
        ON CONFLICT (id) DO UPDATE SET first_name = 'Conflict'`,
       [STAFF_ID, TENANT_ID],
     );
 
     const { rows: c1 } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-CON01', 'conflict-cust1@example.com', 'Conflict', 'Cust1', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Conflict' RETURNING id`,
       [TENANT_ID, BUSINESS_ID],
@@ -63,7 +63,7 @@ describe('Conflict Detection Service', () => {
     CUSTOMER_ID = c1[0].id;
 
     const { rows: c2 } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-CON02', 'conflict-cust2@example.com', 'Conflict', 'Cust2', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Conflict' RETURNING id`,
       [TENANT_ID, BUSINESS_ID],
@@ -77,7 +77,7 @@ describe('Conflict Detection Service', () => {
     const tomorrowEnd = new Date(tomorrow.getTime() + 60 * 60 * 1000);
 
     const { rows: bk } = await adminPool.query(
-      `INSERT INTO bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, buffer_after, created_by)
+      `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, buffer_after, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', 'BK-CON-0001', 'individual', 7500, 15, '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, booking_reference) DO UPDATE SET status = 'confirmed', start_time = $6, end_time = $7
        RETURNING id`,
@@ -146,7 +146,7 @@ describe('Conflict Detection Service', () => {
 
       // Create a slot hold
       await adminPool.query(
-        `INSERT INTO slot_holds (business_id, service_id, variant_id, staff_id, start_time, end_time, held_by, expires_at)
+        `INSERT INTO apt_slot_holds (business_id, service_id, variant_id, staff_id, start_time, end_time, held_by, expires_at)
          VALUES ($1, $2, $3, $4, $5, $6, '00000000-0000-0000-0000-000000000010', NOW() + INTERVAL '5 minutes')`,
         [BUSINESS_ID, SERVICE_ID, VARIANT_ID, STAFF_ID, holdStart.toISOString(), holdEnd.toISOString()],
       );
@@ -172,7 +172,7 @@ describe('Conflict Detection Service', () => {
 
       // Create a resource booking
       await adminPool.query(
-        `INSERT INTO bookings (business_id, customer_id, service_id, variant_id, resource_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
+        `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, resource_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', 'BK-CON-0002', 'resource', 5000, '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, booking_reference) DO UPDATE SET resource_id = $5, start_time = $6, end_time = $7`,
         [BUSINESS_ID, CUSTOMER_ID_2, SERVICE_ID, VARIANT_ID, resourceId, start.toISOString(), end.toISOString()],

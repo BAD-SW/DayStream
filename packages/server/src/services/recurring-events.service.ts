@@ -7,8 +7,8 @@ import { logAudit } from './audit.service';
 export async function getTemplates(tenantId: string) {
   const { rows } = await adminPool.query(
     `SELECT rt.*, et.name AS event_type_name
-     FROM recurring_event_templates rt
-     LEFT JOIN event_types et ON et.id = rt.event_type_id
+     FROM evt_recurring_templates rt
+     LEFT JOIN evt_types et ON et.id = rt.event_type_id
      WHERE rt.tenant_id = $1 AND rt.status != 'cancelled'
      ORDER BY rt.created_at DESC`,
     [tenantId],
@@ -21,7 +21,7 @@ export async function getTemplates(tenantId: string) {
  */
 export async function createTemplate(input: any) {
   const { rows } = await adminPool.query(
-    `INSERT INTO recurring_event_templates (
+    `INSERT INTO evt_recurring_templates (
        tenant_id, event_type_id, title, description,
        recurrence_pattern, day_of_week, day_of_month, custom_interval_days,
        start_time, duration_minutes,
@@ -77,7 +77,7 @@ export async function updateTemplate(id: string, tenantId: string, updates: Reco
   values.push(id, tenantId);
 
   const { rows } = await adminPool.query(
-    `UPDATE recurring_event_templates SET ${fields.join(', ')}
+    `UPDATE evt_recurring_templates SET ${fields.join(', ')}
      WHERE id = $${idx++} AND tenant_id = $${idx} AND status = 'active' RETURNING *`,
     values,
   );
@@ -90,7 +90,7 @@ export async function updateTemplate(id: string, tenantId: string, updates: Reco
  */
 export async function cancelTemplate(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE recurring_event_templates SET status = 'cancelled', updated_at = NOW()
+    `UPDATE evt_recurring_templates SET status = 'cancelled', updated_at = NOW()
      WHERE id = $1 AND tenant_id = $2 AND status = 'active' RETURNING *`,
     [id, tenantId],
   );
@@ -111,7 +111,7 @@ export async function cancelTemplate(id: string, tenantId: string) {
  */
 export async function generateInstances(templateId: string, tenantId: string) {
   const { rows: templates } = await adminPool.query(
-    `SELECT * FROM recurring_event_templates WHERE id = $1 AND tenant_id = $2 AND status = 'active'`,
+    `SELECT * FROM evt_recurring_templates WHERE id = $1 AND tenant_id = $2 AND status = 'active'`,
     [templateId, tenantId],
   );
   if (templates.length === 0) throw new Error('Template not found or inactive');
@@ -122,7 +122,7 @@ export async function generateInstances(templateId: string, tenantId: string) {
 
   // Find the last generated instance to avoid duplicates
   const { rows: lastInstance } = await adminPool.query(
-    `SELECT MAX(start_time) AS last_start FROM events WHERE recurrence_id = $1 AND tenant_id = $2`,
+    `SELECT MAX(start_time) AS last_start FROM evt_events WHERE recurrence_id = $1 AND tenant_id = $2`,
     [templateId, tenantId],
   );
   const generateFrom = lastInstance[0]?.last_start
@@ -142,7 +142,7 @@ export async function generateInstances(templateId: string, tenantId: string) {
       + '-' + startTime.toISOString().slice(0, 10);
 
     const { rows } = await adminPool.query(
-      `INSERT INTO events (
+      `INSERT INTO evt_events (
          tenant_id, event_type_id, title, slug, description,
          start_time, end_time, location_id, location_name,
          capacity, recurrence_id, status

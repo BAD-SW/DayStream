@@ -23,7 +23,7 @@ export async function createHold(input: CreateHoldInput) {
 
   // Check if slot is already held
   const { rows: existing } = await adminPool.query(
-    `SELECT id FROM slot_holds
+    `SELECT id FROM apt_slot_holds
      WHERE business_id = $1 AND service_id = $2 AND start_time = $3 AND expires_at > NOW()
        AND ($4::uuid IS NULL OR staff_id = $4)`,
     [input.businessId, input.serviceId, input.startTime, input.staffId || null],
@@ -36,7 +36,7 @@ export async function createHold(input: CreateHoldInput) {
   // Check if staff has a conflict (booking or hold)
   if (input.staffId) {
     const { rows: conflicts } = await adminPool.query(
-      `SELECT id FROM bookings
+      `SELECT id FROM apt_bookings
        WHERE staff_id = $1 AND start_time < $3 AND end_time > $2
          AND status IN ('pending', 'confirmed', 'in_progress')
        LIMIT 1`,
@@ -48,7 +48,7 @@ export async function createHold(input: CreateHoldInput) {
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO slot_holds (business_id, service_id, variant_id, staff_id, resource_id, start_time, end_time, held_by, expires_at)
+    `INSERT INTO apt_slot_holds (business_id, service_id, variant_id, staff_id, resource_id, start_time, end_time, held_by, expires_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
     [
@@ -66,7 +66,7 @@ export async function createHold(input: CreateHoldInput) {
  */
 export async function releaseHold(holdId: string, userId: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    'DELETE FROM slot_holds WHERE id = $1 AND held_by = $2',
+    'DELETE FROM apt_slot_holds WHERE id = $1 AND held_by = $2',
     [holdId, userId],
   );
   return (rowCount ?? 0) > 0;
@@ -77,7 +77,7 @@ export async function releaseHold(holdId: string, userId: string): Promise<boole
  */
 export async function cleanupExpiredHolds(): Promise<number> {
   const { rowCount } = await adminPool.query(
-    'DELETE FROM slot_holds WHERE expires_at <= NOW()',
+    'DELETE FROM apt_slot_holds WHERE expires_at <= NOW()',
   );
   const count = rowCount ?? 0;
   if (count > 0) {
@@ -91,7 +91,7 @@ export async function cleanupExpiredHolds(): Promise<number> {
  */
 export async function getUserHolds(userId: string, businessId: string) {
   const { rows } = await adminPool.query(
-    'SELECT * FROM slot_holds WHERE held_by = $1 AND business_id = $2 AND expires_at > NOW()',
+    'SELECT * FROM apt_slot_holds WHERE held_by = $1 AND business_id = $2 AND expires_at > NOW()',
     [userId, businessId],
   );
   return rows;

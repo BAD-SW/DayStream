@@ -9,7 +9,7 @@ export async function submitForm(tenantId: string, input: {
   ipAddress?: string;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO form_submissions (tenant_id, form_name, data, ip_address)
+    `INSERT INTO web_form_submissions (tenant_id, form_name, data, ip_address)
      VALUES ($1, $2, $3, $4) RETURNING *`,
     [
       tenantId,
@@ -51,11 +51,11 @@ export async function getSubmissions(tenantId: string, filters?: {
 
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
-      `SELECT * FROM form_submissions WHERE ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
+      `SELECT * FROM web_form_submissions WHERE ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, limit, offset],
     ),
     adminPool.query(
-      `SELECT COUNT(*)::int AS total FROM form_submissions WHERE ${where}`,
+      `SELECT COUNT(*)::int AS total FROM web_form_submissions WHERE ${where}`,
       params,
     ),
   ]);
@@ -73,7 +73,7 @@ export async function getSubmissions(tenantId: string, filters?: {
  */
 export async function markAsRead(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE form_submissions SET read = true WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+    `UPDATE web_form_submissions SET read = true WHERE id = $1 AND tenant_id = $2 RETURNING *`,
     [id, tenantId],
   );
   return rows[0] || null;

@@ -55,14 +55,14 @@ export async function getLeaveRequests(tenantId: string, filters: LeaveFilters) 
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
       `SELECT lr.*, sp.first_name, sp.last_name, sp.staff_ref
-       FROM leave_requests lr
-       JOIN staff_profiles sp ON sp.id = lr.staff_id
+       FROM stf_leave_requests lr
+       JOIN stf_profiles sp ON sp.id = lr.staff_id
        WHERE ${where}
        ORDER BY lr.created_at DESC
        LIMIT ${limit} OFFSET ${offset}`,
       params,
     ),
-    adminPool.query(`SELECT COUNT(*)::int AS total FROM leave_requests lr WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*)::int AS total FROM stf_leave_requests lr WHERE ${where}`, params),
   ]);
 
   return {
@@ -78,7 +78,7 @@ export async function getLeaveRequests(tenantId: string, filters: LeaveFilters) 
  */
 export async function submitLeaveRequest(input: CreateLeaveInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO leave_requests (staff_id, tenant_id, leave_type, start_date, end_date, notes)
+    `INSERT INTO stf_leave_requests (staff_id, tenant_id, leave_type, start_date, end_date, notes)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
     [input.staffId, input.tenantId, input.leaveType, input.startDate, input.endDate, input.notes || null],
@@ -93,7 +93,7 @@ export async function submitLeaveRequest(input: CreateLeaveInput) {
 export async function approveLeave(id: string, tenantId: string, reviewedBy: string) {
   // Get the leave request
   const { rows: reqRows } = await adminPool.query(
-    `SELECT * FROM leave_requests WHERE id = $1 AND tenant_id = $2 AND status = 'pending'`,
+    `SELECT * FROM stf_leave_requests WHERE id = $1 AND tenant_id = $2 AND status = 'pending'`,
     [id, tenantId],
   );
   if (reqRows.length === 0) return null;
@@ -102,7 +102,7 @@ export async function approveLeave(id: string, tenantId: string, reviewedBy: str
 
   // Check for conflicting bookings
   const { rows: conflicts } = await adminPool.query(
-    `SELECT id, start_time, end_time FROM bookings
+    `SELECT id, start_time, end_time FROM apt_bookings
      WHERE staff_id = $1
        AND status IN ('confirmed', 'checked_in')
        AND start_time::date BETWEEN $2 AND $3`,
@@ -111,7 +111,7 @@ export async function approveLeave(id: string, tenantId: string, reviewedBy: str
 
   // Approve regardless (conflicts are warnings, not blockers)
   const { rows } = await adminPool.query(
-    `UPDATE leave_requests SET status = 'approved', reviewed_by = $1, reviewed_at = NOW()
+    `UPDATE stf_leave_requests SET status = 'approved', reviewed_by = $1, reviewed_at = NOW()
      WHERE id = $2
      RETURNING *`,
     [reviewedBy, id],
@@ -137,7 +137,7 @@ export async function approveLeave(id: string, tenantId: string, reviewedBy: str
  */
 export async function rejectLeave(id: string, tenantId: string, reviewedBy: string) {
   const { rows } = await adminPool.query(
-    `UPDATE leave_requests SET status = 'rejected', reviewed_by = $1, reviewed_at = NOW()
+    `UPDATE stf_leave_requests SET status = 'rejected', reviewed_by = $1, reviewed_at = NOW()
      WHERE id = $2 AND tenant_id = $3 AND status = 'pending'
      RETURNING *`,
     [reviewedBy, id, tenantId],
@@ -162,7 +162,7 @@ export async function rejectLeave(id: string, tenantId: string, reviewedBy: stri
 export async function cancelLeave(id: string, tenantId: string, userId: string) {
   // Get current request
   const { rows: reqRows } = await adminPool.query(
-    `SELECT * FROM leave_requests WHERE id = $1 AND tenant_id = $2 AND status IN ('pending', 'approved')`,
+    `SELECT * FROM stf_leave_requests WHERE id = $1 AND tenant_id = $2 AND status IN ('pending', 'approved')`,
     [id, tenantId],
   );
   if (reqRows.length === 0) return null;
@@ -170,7 +170,7 @@ export async function cancelLeave(id: string, tenantId: string, userId: string) 
   const leaveReq = reqRows[0];
 
   const { rows } = await adminPool.query(
-    `UPDATE leave_requests SET status = 'cancelled'
+    `UPDATE stf_leave_requests SET status = 'cancelled'
      WHERE id = $1
      RETURNING *`,
     [id],
@@ -202,7 +202,7 @@ export async function cancelLeave(id: string, tenantId: string, userId: string) 
 export async function getLeaveBalances(staffId: string, year?: number) {
   const targetYear = year || new Date().getFullYear();
   const { rows } = await adminPool.query(
-    `SELECT * FROM leave_balances WHERE staff_id = $1 AND year = $2 ORDER BY leave_type`,
+    `SELECT * FROM stf_leave_balances WHERE staff_id = $1 AND year = $2 ORDER BY leave_type`,
     [staffId, targetYear],
   );
   return rows;
@@ -213,7 +213,7 @@ export async function getLeaveBalances(staffId: string, year?: number) {
  */
 export async function setLeaveBalance(staffId: string, leaveType: string, year: number, totalDays: number) {
   const { rows } = await adminPool.query(
-    `INSERT INTO leave_balances (staff_id, leave_type, year, total_days)
+    `INSERT INTO stf_leave_balances (staff_id, leave_type, year, total_days)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (staff_id, leave_type, year)
      DO UPDATE SET total_days = $4
@@ -245,10 +245,10 @@ async function deductLeaveBalance(staffId: string, leaveType: string, startDate:
   const year = new Date(startDate).getFullYear();
 
   await adminPool.query(
-    `INSERT INTO leave_balances (staff_id, leave_type, year, total_days, used_days)
+    `INSERT INTO stf_leave_balances (staff_id, leave_type, year, total_days, used_days)
      VALUES ($1, $2, $3, 0, $4)
      ON CONFLICT (staff_id, leave_type, year)
-     DO UPDATE SET used_days = leave_balances.used_days + $4`,
+     DO UPDATE SET used_days = stf_leave_balances.used_days + $4`,
     [staffId, leaveType, year, days],
   );
 }
@@ -261,7 +261,7 @@ async function restoreLeaveBalance(staffId: string, leaveType: string, startDate
   const year = new Date(startDate).getFullYear();
 
   await adminPool.query(
-    `UPDATE leave_balances SET used_days = GREATEST(used_days - $1, 0)
+    `UPDATE stf_leave_balances SET used_days = GREATEST(used_days - $1, 0)
      WHERE staff_id = $2 AND leave_type = $3 AND year = $4`,
     [days, staffId, leaveType, year],
   );

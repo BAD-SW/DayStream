@@ -15,7 +15,7 @@ interface CreateExpenseInput {
 
 export async function createExpense(input: CreateExpenseInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO expenses (business_id, date, amount, account_id, description, vendor_id, payment_method, receipt_path, is_recurring, submitted_by)
+    `INSERT INTO fin_expenses (business_id, date, amount, account_id, description, vendor_id, payment_method, receipt_path, is_recurring, submitted_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
     [input.businessId, input.date, input.amount, input.accountId||null, input.description||null, input.vendorId||null, input.paymentMethod||null, input.receiptPath||null, input.isRecurring??false, input.submittedBy||null],
   );
@@ -33,9 +33,9 @@ export async function getExpenses(businessId: string, filters?: { status?: strin
   const where = conditions.join(' AND ');
   const { rows } = await adminPool.query(
     `SELECT e.*, coa.name AS account_name, v.name AS vendor_name
-     FROM expenses e
-     LEFT JOIN chart_of_accounts coa ON coa.id = e.account_id
-     LEFT JOIN vendors v ON v.id = e.vendor_id
+     FROM fin_expenses e
+     LEFT JOIN fin_chart_of_accounts coa ON coa.id = e.account_id
+     LEFT JOIN fin_vendors v ON v.id = e.vendor_id
      WHERE ${where} ORDER BY e.date DESC`,
     params,
   );
@@ -44,7 +44,7 @@ export async function getExpenses(businessId: string, filters?: { status?: strin
 
 export async function approveExpense(id: string, businessId: string, approvedBy: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    "UPDATE expenses SET status = 'approved', approved_by = $3 WHERE id = $1 AND business_id = $2 AND status = 'pending'",
+    "UPDATE fin_expenses SET status = 'approved', approved_by = $3 WHERE id = $1 AND business_id = $2 AND status = 'pending'",
     [id, businessId, approvedBy],
   );
   return (rowCount ?? 0) > 0;
@@ -52,7 +52,7 @@ export async function approveExpense(id: string, businessId: string, approvedBy:
 
 export async function rejectExpense(id: string, businessId: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    "UPDATE expenses SET status = 'rejected' WHERE id = $1 AND business_id = $2 AND status = 'pending'",
+    "UPDATE fin_expenses SET status = 'rejected' WHERE id = $1 AND business_id = $2 AND status = 'pending'",
     [id, businessId],
   );
   return (rowCount ?? 0) > 0;
@@ -61,8 +61,8 @@ export async function rejectExpense(id: string, businessId: string): Promise<boo
 export async function getExpenseTotals(businessId: string, dateFrom: string, dateTo: string) {
   const { rows } = await adminPool.query(
     `SELECT coa.name AS category, COALESCE(SUM(e.amount), 0)::int AS total
-     FROM expenses e
-     LEFT JOIN chart_of_accounts coa ON coa.id = e.account_id
+     FROM fin_expenses e
+     LEFT JOIN fin_chart_of_accounts coa ON coa.id = e.account_id
      WHERE e.business_id = $1 AND e.date >= $2 AND e.date <= $3 AND e.status = 'approved'
      GROUP BY coa.name ORDER BY total DESC`,
     [businessId, dateFrom, dateTo],

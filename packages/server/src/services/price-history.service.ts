@@ -13,7 +13,7 @@ export async function recordPriceChange(
   effectiveFrom?: string,
 ): Promise<void> {
   await adminPool.query(
-    `INSERT INTO price_history (business_id, entity_type, entity_id, old_price, new_price, effective_from, changed_by)
+    `INSERT INTO pri_history (business_id, entity_type, entity_id, old_price, new_price, effective_from, changed_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [businessId, entityType, entityId, oldPrice, newPrice, effectiveFrom || new Date().toISOString(), changedBy || null],
   );
@@ -25,8 +25,8 @@ export async function recordPriceChange(
 export async function getEntityHistory(entityType: string, entityId: string) {
   const { rows } = await adminPool.query(
     `SELECT ph.*, u.first_name, u.last_name
-     FROM price_history ph
-     LEFT JOIN users u ON u.id = ph.changed_by
+     FROM pri_history ph
+     LEFT JOIN usr_users u ON u.id = ph.changed_by
      WHERE ph.entity_type = $1 AND ph.entity_id = $2
      ORDER BY ph.created_at DESC`,
     [entityType, entityId],
@@ -53,12 +53,12 @@ export async function getBusinessHistory(businessId: string, filters?: { entityT
 
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
-      `SELECT ph.*, u.first_name, u.last_name FROM price_history ph
-       LEFT JOIN users u ON u.id = ph.changed_by
+      `SELECT ph.*, u.first_name, u.last_name FROM pri_history ph
+       LEFT JOIN usr_users u ON u.id = ph.changed_by
        WHERE ${where} ORDER BY ph.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
       params,
     ),
-    adminPool.query(`SELECT COUNT(*)::int AS total FROM price_history ph WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*)::int AS total FROM pri_history ph WHERE ${where}`, params),
   ]);
 
   return { entries: dataResult.rows, total: countResult.rows[0].total, page, limit };
@@ -72,7 +72,7 @@ export async function getEffectivePrice(entityType: string, entityId: string, at
   const date = atDate || new Date().toISOString();
 
   const { rows } = await adminPool.query(
-    `SELECT new_price FROM price_history
+    `SELECT new_price FROM pri_history
      WHERE entity_type = $1 AND entity_id = $2 AND effective_from <= $3
      ORDER BY effective_from DESC LIMIT 1`,
     [entityType, entityId, date],

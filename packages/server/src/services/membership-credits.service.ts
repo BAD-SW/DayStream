@@ -6,13 +6,13 @@ import { logger } from '../middleware/logger';
  */
 export async function getCreditInfo(membershipId: string) {
   const { rows: membershipRows } = await adminPool.query(
-    'SELECT credit_balance FROM memberships WHERE id = $1',
+    'SELECT credit_balance FROM mem_memberships WHERE id = $1',
     [membershipId],
   );
   if (membershipRows.length === 0) return null;
 
   const { rows: transactions } = await adminPool.query(
-    'SELECT * FROM credit_transactions WHERE membership_id = $1 ORDER BY created_at DESC LIMIT 50',
+    'SELECT * FROM mem_credit_transactions WHERE membership_id = $1 ORDER BY created_at DESC LIMIT 50',
     [membershipId],
   );
 
@@ -34,7 +34,7 @@ export async function deductCredits(
 ): Promise<{ success: boolean; balance_after?: number; error?: string }> {
   // Get current balance
   const { rows } = await adminPool.query(
-    'SELECT credit_balance FROM memberships WHERE id = $1',
+    'SELECT credit_balance FROM mem_memberships WHERE id = $1',
     [membershipId],
   );
   if (rows.length === 0) return { success: false, error: 'Membership not found' };
@@ -48,13 +48,13 @@ export async function deductCredits(
 
   // Update balance
   await adminPool.query(
-    'UPDATE memberships SET credit_balance = $2, updated_at = NOW() WHERE id = $1',
+    'UPDATE mem_memberships SET credit_balance = $2, updated_at = NOW() WHERE id = $1',
     [membershipId, newBalance],
   );
 
   // Record transaction
   await adminPool.query(
-    `INSERT INTO credit_transactions (membership_id, type, amount, balance_after, description, booking_id)
+    `INSERT INTO mem_credit_transactions (membership_id, type, amount, balance_after, description, booking_id)
      VALUES ($1, 'deducted', $2, $3, $4, $5)`,
     [membershipId, -amount, newBalance, description || 'Credit deduction', bookingId || null],
   );
@@ -73,7 +73,7 @@ export async function restoreCredits(
   description?: string,
 ): Promise<{ success: boolean; balance_after?: number; error?: string }> {
   const { rows } = await adminPool.query(
-    'SELECT credit_balance FROM memberships WHERE id = $1',
+    'SELECT credit_balance FROM mem_memberships WHERE id = $1',
     [membershipId],
   );
   if (rows.length === 0) return { success: false, error: 'Membership not found' };
@@ -81,12 +81,12 @@ export async function restoreCredits(
   const newBalance = rows[0].credit_balance + amount;
 
   await adminPool.query(
-    'UPDATE memberships SET credit_balance = $2, updated_at = NOW() WHERE id = $1',
+    'UPDATE mem_memberships SET credit_balance = $2, updated_at = NOW() WHERE id = $1',
     [membershipId, newBalance],
   );
 
   await adminPool.query(
-    `INSERT INTO credit_transactions (membership_id, type, amount, balance_after, description, booking_id)
+    `INSERT INTO mem_credit_transactions (membership_id, type, amount, balance_after, description, booking_id)
      VALUES ($1, 'restored', $2, $3, $4, $5)`,
     [membershipId, amount, newBalance, description || 'Credit restored (booking cancelled)', bookingId || null],
   );
@@ -103,7 +103,7 @@ export async function adjustCredits(
   description: string,
 ): Promise<{ success: boolean; balance_after?: number; error?: string }> {
   const { rows } = await adminPool.query(
-    'SELECT credit_balance FROM memberships WHERE id = $1',
+    'SELECT credit_balance FROM mem_memberships WHERE id = $1',
     [membershipId],
   );
   if (rows.length === 0) return { success: false, error: 'Membership not found' };
@@ -112,12 +112,12 @@ export async function adjustCredits(
   if (newBalance < 0) return { success: false, error: 'Adjustment would result in negative balance' };
 
   await adminPool.query(
-    'UPDATE memberships SET credit_balance = $2, updated_at = NOW() WHERE id = $1',
+    'UPDATE mem_memberships SET credit_balance = $2, updated_at = NOW() WHERE id = $1',
     [membershipId, newBalance],
   );
 
   await adminPool.query(
-    `INSERT INTO credit_transactions (membership_id, type, amount, balance_after, description)
+    `INSERT INTO mem_credit_transactions (membership_id, type, amount, balance_after, description)
      VALUES ($1, 'adjusted', $2, $3, $4)`,
     [membershipId, amount, newBalance, description],
   );
@@ -130,7 +130,7 @@ export async function adjustCredits(
  */
 export async function allocateCredits(membershipId: string, amount: number, validityDays?: number): Promise<number> {
   const { rows } = await adminPool.query(
-    'SELECT credit_balance FROM memberships WHERE id = $1',
+    'SELECT credit_balance FROM mem_memberships WHERE id = $1',
     [membershipId],
   );
   if (rows.length === 0) return 0;
@@ -138,7 +138,7 @@ export async function allocateCredits(membershipId: string, amount: number, vali
   const newBalance = rows[0].credit_balance + amount;
 
   await adminPool.query(
-    'UPDATE memberships SET credit_balance = $2, updated_at = NOW() WHERE id = $1',
+    'UPDATE mem_memberships SET credit_balance = $2, updated_at = NOW() WHERE id = $1',
     [membershipId, newBalance],
   );
 
@@ -147,7 +147,7 @@ export async function allocateCredits(membershipId: string, amount: number, vali
     : null;
 
   await adminPool.query(
-    `INSERT INTO credit_transactions (membership_id, type, amount, balance_after, description, expires_at)
+    `INSERT INTO mem_credit_transactions (membership_id, type, amount, balance_after, description, expires_at)
      VALUES ($1, 'allocated', $2, $3, 'Cycle credit allocation', $4)`,
     [membershipId, amount, newBalance, expiresAt ? expiresAt.toISOString() : null],
   );
@@ -165,7 +165,7 @@ export async function processRollover(
   maxRollover: number | null,
 ): Promise<{ expired: number; rolled_over: number }> {
   const { rows } = await adminPool.query(
-    'SELECT credit_balance FROM memberships WHERE id = $1',
+    'SELECT credit_balance FROM mem_memberships WHERE id = $1',
     [membershipId],
   );
   if (rows.length === 0) return { expired: 0, rolled_over: 0 };
@@ -176,11 +176,11 @@ export async function processRollover(
     // Expire all remaining credits
     if (currentBalance > 0) {
       await adminPool.query(
-        'UPDATE memberships SET credit_balance = 0, updated_at = NOW() WHERE id = $1',
+        'UPDATE mem_memberships SET credit_balance = 0, updated_at = NOW() WHERE id = $1',
         [membershipId],
       );
       await adminPool.query(
-        `INSERT INTO credit_transactions (membership_id, type, amount, balance_after, description)
+        `INSERT INTO mem_credit_transactions (membership_id, type, amount, balance_after, description)
          VALUES ($1, 'expired', $2, 0, 'End of cycle - no rollover')`,
         [membershipId, -currentBalance],
       );
@@ -193,17 +193,17 @@ export async function processRollover(
     if (toExpire > 0) {
       const newBalance = currentBalance - toExpire;
       await adminPool.query(
-        'UPDATE memberships SET credit_balance = $2, updated_at = NOW() WHERE id = $1',
+        'UPDATE mem_memberships SET credit_balance = $2, updated_at = NOW() WHERE id = $1',
         [membershipId, newBalance],
       );
       await adminPool.query(
-        `INSERT INTO credit_transactions (membership_id, type, amount, balance_after, description)
+        `INSERT INTO mem_credit_transactions (membership_id, type, amount, balance_after, description)
          VALUES ($1, 'expired', $2, $3, 'Rollover limit exceeded')`,
         [membershipId, -toExpire, newBalance],
       );
       // Record rollover
       await adminPool.query(
-        `INSERT INTO credit_transactions (membership_id, type, amount, balance_after, description)
+        `INSERT INTO mem_credit_transactions (membership_id, type, amount, balance_after, description)
          VALUES ($1, 'rollover', $2, $2, 'Credits rolled over to new cycle')`,
         [membershipId, newBalance],
       );
@@ -212,7 +212,7 @@ export async function processRollover(
     // All fit within limit
     if (currentBalance > 0) {
       await adminPool.query(
-        `INSERT INTO credit_transactions (membership_id, type, amount, balance_after, description)
+        `INSERT INTO mem_credit_transactions (membership_id, type, amount, balance_after, description)
          VALUES ($1, 'rollover', $2, $2, 'Credits rolled over to new cycle')`,
         [membershipId, currentBalance],
       );
@@ -223,7 +223,7 @@ export async function processRollover(
   // Unlimited rollover — just log it
   if (currentBalance > 0) {
     await adminPool.query(
-      `INSERT INTO credit_transactions (membership_id, type, amount, balance_after, description)
+      `INSERT INTO mem_credit_transactions (membership_id, type, amount, balance_after, description)
        VALUES ($1, 'rollover', $2, $2, 'Credits rolled over (unlimited)')`,
       [membershipId, currentBalance],
     );
@@ -238,10 +238,10 @@ export async function expireStaleCredits(): Promise<number> {
   // Find allocated credits that have expired
   const { rows: expiredAllocations } = await adminPool.query(
     `SELECT ct.membership_id, ct.amount, ct.id
-     FROM credit_transactions ct
+     FROM mem_credit_transactions ct
      WHERE ct.type = 'allocated' AND ct.expires_at IS NOT NULL AND ct.expires_at < NOW()
        AND NOT EXISTS (
-         SELECT 1 FROM credit_transactions ct2
+         SELECT 1 FROM mem_credit_transactions ct2
          WHERE ct2.membership_id = ct.membership_id AND ct2.type = 'expired'
            AND ct2.description LIKE '%expired allocation%' AND ct2.created_at > ct.created_at
        )`,
@@ -251,7 +251,7 @@ export async function expireStaleCredits(): Promise<number> {
   for (const alloc of expiredAllocations) {
     // Only expire if balance is positive
     const { rows: mbr } = await adminPool.query(
-      'SELECT credit_balance FROM memberships WHERE id = $1 AND credit_balance > 0',
+      'SELECT credit_balance FROM mem_memberships WHERE id = $1 AND credit_balance > 0',
       [alloc.membership_id],
     );
     if (mbr.length === 0) continue;
@@ -261,11 +261,11 @@ export async function expireStaleCredits(): Promise<number> {
 
     const newBalance = mbr[0].credit_balance - toExpire;
     await adminPool.query(
-      'UPDATE memberships SET credit_balance = $2, updated_at = NOW() WHERE id = $1',
+      'UPDATE mem_memberships SET credit_balance = $2, updated_at = NOW() WHERE id = $1',
       [alloc.membership_id, newBalance],
     );
     await adminPool.query(
-      `INSERT INTO credit_transactions (membership_id, type, amount, balance_after, description)
+      `INSERT INTO mem_credit_transactions (membership_id, type, amount, balance_after, description)
        VALUES ($1, 'expired', $2, $3, 'Expired allocation (validity period passed)')`,
       [alloc.membership_id, -toExpire, newBalance],
     );

@@ -7,9 +7,9 @@ export async function getFeed(tenantId: string, page = 1, limit = 20) {
   const offset = (page - 1) * limit;
   const { rows } = await adminPool.query(
     `SELECT p.*,
-       (SELECT COUNT(*)::int FROM community_reactions WHERE post_id = p.id) AS reaction_count,
-       (SELECT COUNT(*)::int FROM community_comments WHERE post_id = p.id AND is_deleted = false) AS comment_count
-     FROM community_posts p
+       (SELECT COUNT(*)::int FROM eng_reactions WHERE post_id = p.id) AS reaction_count,
+       (SELECT COUNT(*)::int FROM eng_comments WHERE post_id = p.id AND is_deleted = false) AS comment_count
+     FROM eng_posts p
      WHERE p.tenant_id = $1 AND p.is_deleted = false
      ORDER BY p.is_pinned DESC, p.created_at DESC
      LIMIT $2 OFFSET $3`,
@@ -30,7 +30,7 @@ export async function createPost(tenantId: string, input: {
   metadata?: Record<string, any>;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO community_posts (tenant_id, author_id, author_type, post_type, content, image_path, metadata)
+    `INSERT INTO eng_posts (tenant_id, author_id, author_type, post_type, content, image_path, metadata)
      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
     [
       tenantId,
@@ -50,7 +50,7 @@ export async function createPost(tenantId: string, input: {
  */
 export async function reactToPost(postId: string, customerId: string, reactionType: string) {
   const { rows } = await adminPool.query(
-    `INSERT INTO community_reactions (post_id, customer_id, reaction_type)
+    `INSERT INTO eng_reactions (post_id, customer_id, reaction_type)
      VALUES ($1, $2, $3)
      ON CONFLICT (post_id, customer_id) DO UPDATE SET reaction_type = $3
      RETURNING *`,
@@ -68,7 +68,7 @@ export async function addComment(postId: string, input: {
   content: string;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO community_comments (post_id, author_id, author_type, content)
+    `INSERT INTO eng_comments (post_id, author_id, author_type, content)
      VALUES ($1, $2, $3, $4) RETURNING *`,
     [postId, input.authorId, input.authorType, input.content],
   );
@@ -80,7 +80,7 @@ export async function addComment(postId: string, input: {
  */
 export async function deletePost(id: string, tenantId: string) {
   const { rowCount } = await adminPool.query(
-    `UPDATE community_posts SET is_deleted = true WHERE id = $1 AND tenant_id = $2`,
+    `UPDATE eng_posts SET is_deleted = true WHERE id = $1 AND tenant_id = $2`,
     [id, tenantId],
   );
   return (rowCount ?? 0) > 0;
@@ -91,7 +91,7 @@ export async function deletePost(id: string, tenantId: string) {
  */
 export async function getComments(postId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM community_comments
+    `SELECT * FROM eng_comments
      WHERE post_id = $1 AND is_deleted = false
      ORDER BY created_at ASC`,
     [postId],

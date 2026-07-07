@@ -28,7 +28,7 @@ export async function validateBookingRules(input: BookingRulesCheck): Promise<Ru
 
   // Load service config
   const { rows: svcRows } = await adminPool.query(
-    'SELECT min_advance_booking_hours, max_advance_booking_days FROM services WHERE id = $1',
+    'SELECT min_advance_booking_hours, max_advance_booking_days FROM svc_services WHERE id = $1',
     [input.serviceId],
   );
 
@@ -54,7 +54,7 @@ export async function validateBookingRules(input: BookingRulesCheck): Promise<Ru
   // 3. Max active bookings per customer
   const maxActive = await getConfig(input.tenantId, 'booking.max_active_per_customer') as number || 10;
   const { rows: activeCount } = await adminPool.query(
-    `SELECT COUNT(*)::int AS count FROM bookings
+    `SELECT COUNT(*)::int AS count FROM apt_bookings
      WHERE customer_id = $1 AND business_id = $2
        AND status IN ('pending', 'confirmed')
        AND start_time > NOW()`,
@@ -77,8 +77,8 @@ export async function validateBookingRules(input: BookingRulesCheck): Promise<Ru
 export async function calculateBookingCancellationFee(bookingId: string, businessId: string): Promise<{ fee: number; policy_name: string | null }> {
   const { rows } = await adminPool.query(
     `SELECT b.price, b.start_time, s.cancellation_policy_id
-     FROM bookings b
-     JOIN services s ON s.id = b.service_id
+     FROM apt_bookings b
+     JOIN svc_services s ON s.id = b.service_id
      WHERE b.id = $1 AND b.business_id = $2`,
     [bookingId, businessId],
   );
@@ -93,10 +93,10 @@ export async function calculateBookingCancellationFee(bookingId: string, busines
   let policyParams: any[];
 
   if (booking.cancellation_policy_id) {
-    policyQuery = 'SELECT * FROM cancellation_policies WHERE id = $1';
+    policyQuery = 'SELECT * FROM svc_cancellation_policies WHERE id = $1';
     policyParams = [booking.cancellation_policy_id];
   } else {
-    policyQuery = 'SELECT * FROM cancellation_policies WHERE business_id = $1 AND is_default = true';
+    policyQuery = 'SELECT * FROM svc_cancellation_policies WHERE business_id = $1 AND is_default = true';
     policyParams = [businessId];
   }
 
@@ -116,8 +116,8 @@ export async function getBookingRulesSummary(serviceId: string, businessId: stri
   const { rows } = await adminPool.query(
     `SELECT s.min_advance_booking_hours, s.max_advance_booking_days, s.cancellation_policy_id,
             cp.name AS policy_name, cp.free_cancellation_hours, cp.late_cancel_fee_type, cp.late_cancel_fee_value
-     FROM services s
-     LEFT JOIN cancellation_policies cp ON cp.id = s.cancellation_policy_id
+     FROM svc_services s
+     LEFT JOIN svc_cancellation_policies cp ON cp.id = s.cancellation_policy_id
      WHERE s.id = $1 AND s.business_id = $2`,
     [serviceId, businessId],
   );
@@ -137,7 +137,7 @@ export async function getBookingRulesSummary(serviceId: string, businessId: stri
     };
   } else {
     const { rows: defPol } = await adminPool.query(
-      'SELECT name, free_cancellation_hours, late_cancel_fee_type, late_cancel_fee_value FROM cancellation_policies WHERE business_id = $1 AND is_default = true',
+      'SELECT name, free_cancellation_hours, late_cancel_fee_type, late_cancel_fee_value FROM svc_cancellation_policies WHERE business_id = $1 AND is_default = true',
       [businessId],
     );
     if (defPol.length > 0) cancellationPolicy = defPol[0];

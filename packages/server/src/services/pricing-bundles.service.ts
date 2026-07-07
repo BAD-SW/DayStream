@@ -23,7 +23,7 @@ export async function createBundle(input: CreateBundleInput) {
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO pricing_bundles (business_id, name, description, bundle_type, bundle_price, discount_percentage, expiration_days)
+    `INSERT INTO pri_bundles (business_id, name, description, bundle_type, bundle_price, discount_percentage, expiration_days)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
     [input.businessId, input.name, input.description || null, input.bundleType, input.bundlePrice ?? null, input.discountPercentage ?? null, input.expirationDays ?? null],
@@ -34,7 +34,7 @@ export async function createBundle(input: CreateBundleInput) {
   // Insert items
   for (const item of input.items) {
     await adminPool.query(
-      'INSERT INTO bundle_items (bundle_id, variant_id, quantity) VALUES ($1, $2, $3)',
+      'INSERT INTO pri_bundle_items (bundle_id, variant_id, quantity) VALUES ($1, $2, $3)',
       [bundle.id, item.variant_id, item.quantity || 1],
     );
   }
@@ -47,7 +47,7 @@ export async function createBundle(input: CreateBundleInput) {
  */
 export async function getBundles(businessId: string) {
   const { rows: bundles } = await adminPool.query(
-    "SELECT * FROM pricing_bundles WHERE business_id = $1 AND status = 'active' ORDER BY name",
+    "SELECT * FROM pri_bundles WHERE business_id = $1 AND status = 'active' ORDER BY name",
     [businessId],
   );
 
@@ -55,8 +55,8 @@ export async function getBundles(businessId: string) {
   for (const bundle of bundles) {
     const { rows: items } = await adminPool.query(
       `SELECT bi.variant_id, bi.quantity, sv.name AS variant_name, sv.price, sv.duration
-       FROM bundle_items bi
-       JOIN service_variants sv ON sv.id = bi.variant_id
+       FROM pri_bundle_items bi
+       JOIN svc_variants sv ON sv.id = bi.variant_id
        WHERE bi.bundle_id = $1`,
       [bundle.id],
     );
@@ -71,7 +71,7 @@ export async function getBundles(businessId: string) {
  */
 export async function getBundleById(id: string, businessId: string) {
   const { rows } = await adminPool.query(
-    'SELECT * FROM pricing_bundles WHERE id = $1 AND business_id = $2', [id, businessId],
+    'SELECT * FROM pri_bundles WHERE id = $1 AND business_id = $2', [id, businessId],
   );
   if (rows.length === 0) return null;
 
@@ -79,8 +79,8 @@ export async function getBundleById(id: string, businessId: string) {
 
   const { rows: items } = await adminPool.query(
     `SELECT bi.variant_id, bi.quantity, sv.name AS variant_name, sv.price, sv.duration
-     FROM bundle_items bi
-     JOIN service_variants sv ON sv.id = bi.variant_id
+     FROM pri_bundle_items bi
+     JOIN svc_variants sv ON sv.id = bi.variant_id
      WHERE bi.bundle_id = $1`,
     [id],
   );
@@ -125,7 +125,7 @@ export function calculateBundlePrice(bundle: any): { bundle_price: number; indiv
  */
 export async function updateBundle(id: string, businessId: string, updates: Record<string, any>) {
   const { rows: existing } = await adminPool.query(
-    'SELECT * FROM pricing_bundles WHERE id = $1 AND business_id = $2', [id, businessId],
+    'SELECT * FROM pri_bundles WHERE id = $1 AND business_id = $2', [id, businessId],
   );
   if (existing.length === 0) return null;
 
@@ -143,7 +143,7 @@ export async function updateBundle(id: string, businessId: string, updates: Reco
   values.push(id); values.push(businessId);
 
   const { rows } = await adminPool.query(
-    `UPDATE pricing_bundles SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`, values,
+    `UPDATE pri_bundles SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`, values,
   );
   return rows[0];
 }
@@ -153,7 +153,7 @@ export async function updateBundle(id: string, businessId: string, updates: Reco
  */
 export async function archiveBundle(id: string, businessId: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    "UPDATE pricing_bundles SET status = 'archived', updated_at = NOW() WHERE id = $1 AND business_id = $2",
+    "UPDATE pri_bundles SET status = 'archived', updated_at = NOW() WHERE id = $1 AND business_id = $2",
     [id, businessId],
   );
   return (rowCount ?? 0) > 0;

@@ -5,7 +5,7 @@ import { adminPool } from '../db/pool';
  */
 export async function getNavigation(siteId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM site_navigation WHERE site_id = $1`,
+    `SELECT * FROM web_navigation WHERE site_id = $1`,
     [siteId],
   );
 
@@ -27,7 +27,7 @@ export async function updateNavigation(
   settings?: Record<string, any>,
 ) {
   const { rows } = await adminPool.query(
-    `INSERT INTO site_navigation (site_id, nav_type, items, settings)
+    `INSERT INTO web_navigation (site_id, nav_type, items, settings)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (site_id, nav_type) DO UPDATE SET
        items = EXCLUDED.items,

@@ -23,8 +23,8 @@ async function resolveCustomer(req: Request): Promise<any | null> {
 
   // Look up by user ID first (if linked), then by email
   const { rows } = await adminPool.query(
-    `SELECT c.* FROM customers c
-     JOIN users u ON u.email = c.email
+    `SELECT c.* FROM cus_customers c
+     JOIN usr_users u ON u.email = c.email
      WHERE u.id = $1 AND c.status != 'anonymized'
      LIMIT 1`,
     [authReq.user.sub],
@@ -90,7 +90,7 @@ customerPortalRouter.put('/', validate(updateProfileSchema), async (req: Request
     values.push(customer.id);
 
     await adminPool.query(
-      `UPDATE customers SET ${fields.join(', ')} WHERE id = $${idx}`,
+      `UPDATE cus_customers SET ${fields.join(', ')} WHERE id = $${idx}`,
       values,
     );
 
@@ -103,7 +103,7 @@ customerPortalRouter.put('/', validate(updateProfileSchema), async (req: Request
       createdBy: authReq.user.sub,
     });
 
-    const { rows } = await adminPool.query('SELECT * FROM customers WHERE id = $1', [customer.id]);
+    const { rows } = await adminPool.query('SELECT * FROM cus_customers WHERE id = $1', [customer.id]);
     success(res, rows[0]);
   } catch (err: any) {
     error(res, 'Failed to update profile', 'INTERNAL_ERROR', 500);
@@ -117,8 +117,8 @@ customerPortalRouter.get('/notes', async (req: Request, res: Response) => {
     if (!customer) { error(res, 'Customer profile not found', 'NOT_FOUND', 404); return; }
 
     const { rows } = await adminPool.query(
-      `SELECT cn.id, cn.category, cn.created_at FROM customer_notes cn
-       JOIN note_categories nc ON nc.business_id = cn.business_id AND nc.name = cn.category
+      `SELECT cn.id, cn.category, cn.created_at FROM cus_notes cn
+       JOIN cus_note_categories nc ON nc.business_id = cn.business_id AND nc.name = cn.category
        WHERE cn.customer_id = $1 AND nc.customer_visible = true
        ORDER BY cn.created_at DESC`,
       [customer.id],
@@ -218,7 +218,7 @@ customerPortalRouter.get('/preferences', async (req: Request, res: Response) => 
     if (!customer) { error(res, 'Customer profile not found', 'NOT_FOUND', 404); return; }
 
     const { rows } = await adminPool.query(
-      'SELECT email_marketing, sms_marketing, push_notifications, booking_reminders, updated_at FROM customer_preferences WHERE customer_id = $1',
+      'SELECT email_marketing, sms_marketing, push_notifications, booking_reminders, updated_at FROM cus_preferences WHERE customer_id = $1',
       [customer.id],
     );
 
@@ -250,7 +250,7 @@ customerPortalRouter.put('/preferences', validate(updatePreferencesSchema), asyn
     values.push(customer.id);
 
     await adminPool.query(
-      `INSERT INTO customer_preferences (customer_id) VALUES ($${idx})
+      `INSERT INTO cus_preferences (customer_id) VALUES ($${idx})
        ON CONFLICT (customer_id) DO UPDATE SET ${fields.join(', ')}`,
       values,
     );
@@ -265,7 +265,7 @@ customerPortalRouter.put('/preferences', validate(updatePreferencesSchema), asyn
     });
 
     const { rows } = await adminPool.query(
-      'SELECT email_marketing, sms_marketing, push_notifications, booking_reminders, updated_at FROM customer_preferences WHERE customer_id = $1',
+      'SELECT email_marketing, sms_marketing, push_notifications, booking_reminders, updated_at FROM cus_preferences WHERE customer_id = $1',
       [customer.id],
     );
 

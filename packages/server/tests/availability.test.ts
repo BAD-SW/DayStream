@@ -47,7 +47,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Availability Engine', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Availability Test Biz', 'availability-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Availability Test Biz'
        RETURNING id`,
@@ -56,20 +56,20 @@ describe('Availability Engine', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean up
-    await adminPool.query('DELETE FROM bookings WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM slot_holds WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM services WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM service_categories WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM staff_schedules WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM staff_time_off WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_bookings WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_slot_holds WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_staff_schedules WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM apt_staff_time_off WHERE business_id = $1', [BUSINESS_ID]);
 
     // Create category + service + variant
     const { rows: catRows } = await adminPool.query(
-      `INSERT INTO service_categories (business_id, name) VALUES ($1, 'Avail Test Cat') RETURNING id`,
+      `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'Avail Test Cat') RETURNING id`,
       [BUSINESS_ID],
     );
     const { rows: svcRows } = await adminPool.query(
-      `INSERT INTO services (business_id, category_id, name, slug, status, default_duration, buffer_before, buffer_after, min_advance_booking_hours, max_advance_booking_days, online_booking_enabled, created_by)
+      `INSERT INTO svc_services (business_id, category_id, name, slug, status, default_duration, buffer_before, buffer_after, min_advance_booking_hours, max_advance_booking_days, online_booking_enabled, created_by)
        VALUES ($1, $2, 'Avail Test Service', 'avail-test-service', 'active', 60, 0, 15, 2, 30, true, '00000000-0000-0000-0000-000000000010')
        RETURNING id`,
       [BUSINESS_ID, catRows[0].id],
@@ -77,7 +77,7 @@ describe('Availability Engine', () => {
     SERVICE_ID = svcRows[0].id;
 
     const { rows: varRows } = await adminPool.query(
-      `INSERT INTO service_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active') RETURNING id`,
+      `INSERT INTO svc_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 7500, 'active') RETURNING id`,
       [SERVICE_ID],
     );
     VARIANT_ID = varRows[0].id;
@@ -85,7 +85,7 @@ describe('Availability Engine', () => {
     // Create a staff user
     STAFF_ID = '00000000-0000-0000-0000-000000000060';
     await adminPool.query(
-      `INSERT INTO users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
+      `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
        VALUES ($1, $2, 'avail-staff@example.com', 'Avail', 'Staff', 'hashed', 'therapist', 'active')
        ON CONFLICT (id) DO UPDATE SET first_name = 'Avail'`,
       [STAFF_ID, TENANT_ID],
@@ -93,7 +93,7 @@ describe('Availability Engine', () => {
 
     // Assign staff to service
     await adminPool.query(
-      `INSERT INTO service_staff (service_id, user_id, is_primary) VALUES ($1, $2, true)
+      `INSERT INTO svc_staff (service_id, user_id, is_primary) VALUES ($1, $2, true)
        ON CONFLICT (service_id, user_id, variant_id) DO NOTHING`,
       [SERVICE_ID, STAFF_ID],
     );
@@ -101,7 +101,7 @@ describe('Availability Engine', () => {
     // Create staff schedule: Mon-Fri 9:00-17:00
     for (let day = 1; day <= 5; day++) {
       await adminPool.query(
-        `INSERT INTO staff_schedules (user_id, business_id, day_of_week, start_time, end_time)
+        `INSERT INTO apt_staff_schedules (user_id, business_id, day_of_week, start_time, end_time)
          VALUES ($1, $2, $3, '09:00', '17:00')`,
         [STAFF_ID, BUSINESS_ID, day],
       );
@@ -139,7 +139,7 @@ describe('Availability Engine', () => {
     it('excludes slots blocked by existing bookings', async () => {
       // Create a test customer
       await adminPool.query(
-        `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
          VALUES ($1, $2, 'CUST-AVAIL', 'avail-test-cust@example.com', 'Avail', 'Customer', '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, email) DO NOTHING`,
         [TENANT_ID, BUSINESS_ID],
@@ -152,8 +152,8 @@ describe('Availability Engine', () => {
       const tomorrowEnd = new Date(tomorrow.getTime() + 60 * 60 * 1000);
 
       await adminPool.query(
-        `INSERT INTO bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
-         VALUES ($1, (SELECT id FROM customers WHERE business_id = $1 LIMIT 1), $2, $3, $4, $5, $6, 'confirmed', 'BK-TEST-0001', 'individual', 7500, '00000000-0000-0000-0000-000000000010')
+        `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
+         VALUES ($1, (SELECT id FROM cus_customers WHERE business_id = $1 LIMIT 1), $2, $3, $4, $5, $6, 'confirmed', 'BK-TEST-0001', 'individual', 7500, '00000000-0000-0000-0000-000000000010')
          ON CONFLICT (business_id, booking_reference) DO NOTHING`,
         [BUSINESS_ID, SERVICE_ID, VARIANT_ID, STAFF_ID, tomorrow.toISOString(), tomorrowEnd.toISOString()],
       );
@@ -185,7 +185,7 @@ describe('Availability Engine', () => {
       dayAfterEnd.setUTCHours(23, 59, 59, 999);
 
       await adminPool.query(
-        `INSERT INTO staff_time_off (user_id, business_id, start_time, end_time, reason)
+        `INSERT INTO apt_staff_time_off (user_id, business_id, start_time, end_time, reason)
          VALUES ($1, $2, $3, $4, 'Test time off')`,
         [STAFF_ID, BUSINESS_ID, dayAfter.toISOString(), dayAfterEnd.toISOString()],
       );
@@ -246,10 +246,10 @@ describe('Availability Engine', () => {
     it('returns empty for inactive service', async () => {
       // Create an inactive service
       const { rows: catRows } = await adminPool.query(
-        `SELECT id FROM service_categories WHERE business_id = $1 LIMIT 1`, [BUSINESS_ID],
+        `SELECT id FROM svc_categories WHERE business_id = $1 LIMIT 1`, [BUSINESS_ID],
       );
       const { rows: inactiveSvc } = await adminPool.query(
-        `INSERT INTO services (business_id, category_id, name, slug, status, created_by)
+        `INSERT INTO svc_services (business_id, category_id, name, slug, status, created_by)
          VALUES ($1, $2, 'Inactive Service', 'inactive-service', 'draft', '00000000-0000-0000-0000-000000000010')
          RETURNING id`,
         [BUSINESS_ID, catRows[0].id],

@@ -20,7 +20,7 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
   const slug = input.slug || generateSlug(input.name);
 
   // Check slug uniqueness
-  const { rows: existing } = await adminPool.query('SELECT id FROM tenants WHERE slug = $1', [slug]);
+  const { rows: existing } = await adminPool.query('SELECT id FROM sys_tenants WHERE slug = $1', [slug]);
   if (existing.length > 0) {
     throw new Error('A tenant with this slug already exists');
   }
@@ -31,7 +31,7 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
 
     // Create tenant
     const { rows: tenantRows } = await client.query(
-      `INSERT INTO tenants (name, slug, status, default_language, currency, timezone)
+      `INSERT INTO sys_tenants (name, slug, status, default_language, currency, timezone)
        VALUES ($1, $2, 'active', $3, $4, $5)
        RETURNING *`,
       [input.name, slug, input.default_language || 'en', input.currency || 'EUR', input.timezone || 'UTC'],
@@ -49,7 +49,7 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
 
     for (const role of systemRoles) {
       const { rows } = await client.query(
-        `INSERT INTO roles (tenant_id, name, permissions, is_system)
+        `INSERT INTO usr_roles (tenant_id, name, permissions, is_system)
          VALUES ($1, $2, $3, true) RETURNING id`,
         [tenant.id, role.name, role.permissions],
       );
@@ -59,7 +59,7 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
     // Create owner user
     const passwordHash = await hashPassword(input.owner_password);
     const { rows: userRows } = await client.query(
-      `INSERT INTO users (tenant_id, email, first_name, last_name, password_hash, role, status)
+      `INSERT INTO usr_users (tenant_id, email, first_name, last_name, password_hash, role, status)
        VALUES ($1, $2, $3, $4, $5, 'business_owner', 'active')
        RETURNING id, email, first_name, last_name, role`,
       [tenant.id, input.owner_email, input.owner_first_name, input.owner_last_name, passwordHash],
@@ -68,27 +68,27 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
 
     // Assign Business Owner role
     await client.query(
-      'INSERT INTO user_roles (user_id, role_id, tenant_id) VALUES ($1, $2, $3)',
+      'INSERT INTO usr_user_roles (user_id, role_id, tenant_id) VALUES ($1, $2, $3)',
       [owner.id, roleIds['Business Owner'], tenant.id],
     );
 
     // Create staff profile for the business owner
     const { rows: staffRefRows } = await client.query(
-      `SELECT COUNT(*)::int AS cnt FROM staff_profiles WHERE tenant_id = $1`,
+      `SELECT COUNT(*)::int AS cnt FROM stf_profiles WHERE tenant_id = $1`,
       [tenant.id],
     );
     const staffRef = `STF-${String((staffRefRows[0].cnt || 0) + 1).padStart(3, '0')}`;
     await client.query(
-      `INSERT INTO staff_profiles (tenant_id, user_id, staff_ref, first_name, last_name, email, employment_type, status, show_on_directory, created_by)
+      `INSERT INTO stf_profiles (tenant_id, user_id, staff_ref, first_name, last_name, email, employment_type, status, show_on_directory, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, 'full_time', 'active', true, $2)`,
       [tenant.id, owner.id, staffRef, input.owner_first_name, input.owner_last_name, input.owner_email],
     );
 
     // Apply default configuration values for new tenant
-    const { rows: configDefs } = await client.query('SELECT key, default_value FROM configuration_definitions');
+    const { rows: configDefs } = await client.query('SELECT key, default_value FROM sys_configuration_definitions');
     for (const def of configDefs) {
       await client.query(
-        'INSERT INTO tenant_configurations (tenant_id, key, value, updated_by) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+        'INSERT INTO sys_tenant_configurations (tenant_id, key, value, updated_by) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
         [tenant.id, def.key, def.default_value, owner.id],
       );
     }
@@ -118,13 +118,13 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
 
 export async function getTenants() {
   const { rows } = await adminPool.query(
-    'SELECT id, name, slug, status, default_language, currency, timezone, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date, created_at, updated_at FROM tenants ORDER BY created_at DESC',
+    'SELECT id, name, slug, status, default_language, currency, timezone, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date, created_at, updated_at FROM sys_tenants ORDER BY created_at DESC',
   );
   return rows;
 }
 
 export async function getTenantById(id: string) {
-  const { rows } = await adminPool.query('SELECT * FROM tenants WHERE id = $1', [id]);
+  const { rows } = await adminPool.query('SELECT * FROM sys_tenants WHERE id = $1', [id]);
   return rows[0] || null;
 }
 
@@ -143,7 +143,7 @@ export async function updateTenantStatus(id: string, status: 'active' | 'suspend
     throw new Error(`Cannot transition from ${tenant.status} to ${status}`);
   }
 
-  await adminPool.query('UPDATE tenants SET status = $1, updated_at = NOW() WHERE id = $2', [status, id]);
+  await adminPool.query('UPDATE sys_tenants SET status = $1, updated_at = NOW() WHERE id = $2', [status, id]);
 
   await logAudit({
     tenantId: id,

@@ -38,8 +38,8 @@ export async function calculatePrice(input: PriceCalculationInput): Promise<Pric
   const variantIds = items.map((i) => i.variant_id);
   const { rows: variants } = await adminPool.query(
     `SELECT sv.id, sv.price, sv.service_id, s.tax_category_id
-     FROM service_variants sv
-     JOIN services s ON s.id = sv.service_id
+     FROM svc_variants sv
+     JOIN svc_services s ON s.id = sv.service_id
      WHERE sv.id = ANY($1)`,
     [variantIds],
   );
@@ -57,21 +57,21 @@ export async function calculatePrice(input: PriceCalculationInput): Promise<Pric
 
   if (customerId) {
     const { rows: memberships } = await adminPool.query(
-      "SELECT plan_id FROM memberships WHERE customer_id = $1 AND business_id = $2 AND status = 'active'",
+      "SELECT plan_id FROM mem_memberships WHERE customer_id = $1 AND business_id = $2 AND status = 'active'",
       [customerId, businessId],
     );
     customerMembershipPlanIds = memberships.map((m) => m.plan_id);
 
     const { rows: corpMembers } = await adminPool.query(
-      `SELECT cam.account_id FROM corporate_account_members cam
-       JOIN corporate_accounts ca ON ca.id = cam.account_id
+      `SELECT cam.account_id FROM pri_corporate_members cam
+       JOIN pri_corporate_accounts ca ON ca.id = cam.account_id
        WHERE cam.customer_id = $1 AND ca.business_id = $2 AND ca.status = 'active'`,
       [customerId, businessId],
     );
     if (corpMembers.length > 0) corporateAccountId = corpMembers[0].account_id;
 
     const { rows: bookingCount } = await adminPool.query(
-      "SELECT COUNT(*)::int AS count FROM bookings WHERE customer_id = $1 AND business_id = $2 AND status IN ('confirmed', 'completed')",
+      "SELECT COUNT(*)::int AS count FROM apt_bookings WHERE customer_id = $1 AND business_id = $2 AND status IN ('confirmed', 'completed')",
       [customerId, businessId],
     );
     customerBookingCount = bookingCount[0].count;
@@ -80,7 +80,7 @@ export async function calculatePrice(input: PriceCalculationInput): Promise<Pric
   // 3. Load applicable rules
   const serviceIds = variants.map((v) => v.service_id);
   const { rows: rules } = await adminPool.query(
-    `SELECT * FROM pricing_rules
+    `SELECT * FROM pri_rules
      WHERE business_id = $1 AND status = 'active'
        AND (effective_from IS NULL OR effective_from <= NOW())
        AND (effective_to IS NULL OR effective_to >= NOW())
@@ -234,7 +234,7 @@ function calculateDiscountAmount(rule: any, currentPrice: number): number {
 
 async function applyDiscountCode(code: string, businessId: string, customerId: string | undefined, currentPrice: number, serviceIds: string[]): Promise<number> {
   const { rows } = await adminPool.query(
-    "SELECT * FROM discount_codes WHERE business_id = $1 AND UPPER(code) = UPPER($2) AND status = 'active'",
+    "SELECT * FROM pri_discount_codes WHERE business_id = $1 AND UPPER(code) = UPPER($2) AND status = 'active'",
     [businessId, code],
   );
 
@@ -251,7 +251,7 @@ async function applyDiscountCode(code: string, businessId: string, customerId: s
   // Per-customer check
   if (customerId && dc.max_uses_per_customer) {
     const { rows: usageRows } = await adminPool.query(
-      'SELECT COUNT(*)::int AS count FROM discount_code_usage WHERE code_id = $1 AND customer_id = $2',
+      'SELECT COUNT(*)::int AS count FROM pri_discount_usage WHERE code_id = $1 AND customer_id = $2',
       [dc.id, customerId],
     );
     if (usageRows[0].count >= dc.max_uses_per_customer) return 0;

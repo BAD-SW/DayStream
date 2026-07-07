@@ -6,7 +6,7 @@ import { logAudit } from './audit.service';
  */
 export async function getFunnels(tenantId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM lead_funnels WHERE tenant_id = $1 ORDER BY created_at DESC`,
+    `SELECT * FROM mkt_lead_funnels WHERE tenant_id = $1 ORDER BY created_at DESC`,
     [tenantId],
   );
   return rows;
@@ -30,7 +30,7 @@ export async function createFunnel(
   },
 ) {
   const { rows } = await adminPool.query(
-    `INSERT INTO lead_funnels (tenant_id, name, slug, headline, description, image_path, form_fields, cta_text, discount_code, sequence_id)
+    `INSERT INTO mkt_lead_funnels (tenant_id, name, slug, headline, description, image_path, form_fields, cta_text, discount_code, sequence_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
     [
       tenantId,
@@ -62,7 +62,7 @@ export async function createFunnel(
  */
 export async function getFunnelBySlug(tenantId: string, slug: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM lead_funnels WHERE tenant_id = $1 AND slug = $2 AND status = 'active'`,
+    `SELECT * FROM mkt_lead_funnels WHERE tenant_id = $1 AND slug = $2 AND status = 'active'`,
     [tenantId, slug],
   );
   return rows[0] || null;
@@ -73,7 +73,7 @@ export async function getFunnelBySlug(tenantId: string, slug: string) {
  */
 export async function incrementPageViews(funnelId: string) {
   await adminPool.query(
-    `UPDATE lead_funnels SET page_views = page_views + 1 WHERE id = $1`,
+    `UPDATE mkt_lead_funnels SET page_views = page_views + 1 WHERE id = $1`,
     [funnelId],
   );
 }
@@ -85,7 +85,7 @@ export async function incrementPageViews(funnelId: string) {
 export async function submitForm(funnelId: string, formData: Record<string, any>) {
   // Get the funnel
   const { rows: funnels } = await adminPool.query(
-    `SELECT * FROM lead_funnels WHERE id = $1`,
+    `SELECT * FROM mkt_lead_funnels WHERE id = $1`,
     [funnelId],
   );
   const funnel = funnels[0];
@@ -104,7 +104,7 @@ export async function submitForm(funnelId: string, formData: Record<string, any>
   if (email) {
     // Try to find existing customer by email
     const { rows: existing } = await adminPool.query(
-      `SELECT id FROM customers WHERE tenant_id = $1 AND email = $2 LIMIT 1`,
+      `SELECT id FROM cus_customers WHERE tenant_id = $1 AND email = $2 LIMIT 1`,
       [tenantId, email],
     );
 
@@ -113,7 +113,7 @@ export async function submitForm(funnelId: string, formData: Record<string, any>
     } else {
       // Create new customer
       const { rows: newCustomer } = await adminPool.query(
-        `INSERT INTO customers (tenant_id, email, first_name, last_name, phone, source, status)
+        `INSERT INTO cus_customers (tenant_id, email, first_name, last_name, phone, source, status)
          VALUES ($1, $2, $3, $4, $5, 'funnel', 'active') RETURNING id`,
         [tenantId, email, firstName, lastName, phone],
       );
@@ -122,7 +122,7 @@ export async function submitForm(funnelId: string, formData: Record<string, any>
   } else {
     // Create anonymous lead
     const { rows: newCustomer } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, first_name, last_name, phone, source, status)
+      `INSERT INTO cus_customers (tenant_id, first_name, last_name, phone, source, status)
        VALUES ($1, $2, $3, $4, 'funnel', 'active') RETURNING id`,
       [tenantId, firstName, lastName, phone],
     );
@@ -131,7 +131,7 @@ export async function submitForm(funnelId: string, formData: Record<string, any>
 
   // Increment submissions
   await adminPool.query(
-    `UPDATE lead_funnels SET submissions = submissions + 1 WHERE id = $1`,
+    `UPDATE mkt_lead_funnels SET submissions = submissions + 1 WHERE id = $1`,
     [funnelId],
   );
 
@@ -139,7 +139,7 @@ export async function submitForm(funnelId: string, formData: Record<string, any>
   let enrollmentId: string | null = null;
   if (funnel.sequence_id) {
     const { rows: enrollmentRows } = await adminPool.query(
-      `INSERT INTO sequence_enrollments (sequence_id, customer_id, context)
+      `INSERT INTO mkt_sequence_enrollments (sequence_id, customer_id, context)
        VALUES ($1, $2, $3)
        ON CONFLICT (sequence_id, customer_id) DO NOTHING
        RETURNING id`,
@@ -164,7 +164,7 @@ export async function submitForm(funnelId: string, formData: Record<string, any>
  */
 export async function getFunnelAnalytics(funnelId: string) {
   const { rows } = await adminPool.query(
-    `SELECT page_views, submissions FROM lead_funnels WHERE id = $1`,
+    `SELECT page_views, submissions FROM mkt_lead_funnels WHERE id = $1`,
     [funnelId],
   );
 

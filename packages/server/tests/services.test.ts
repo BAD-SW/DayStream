@@ -45,7 +45,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Service CRUD API', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Service CRUD Test Biz', 'service-crud-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Service CRUD Test Biz'
        RETURNING id`,
@@ -54,12 +54,12 @@ describe('Service CRUD API', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean up
-    await adminPool.query('DELETE FROM services WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM service_categories WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
 
     // Create a category
     const { rows: catRows } = await adminPool.query(
-      `INSERT INTO service_categories (business_id, name) VALUES ($1, 'Test Category') RETURNING id`,
+      `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'Test Category') RETURNING id`,
       [BUSINESS_ID],
     );
     CATEGORY_ID = catRows[0].id;
@@ -93,7 +93,7 @@ describe('Service CRUD API', () => {
     it('auto-generates unique slug on name collision', async () => {
       // Create second service with different category to avoid name uniqueness check
       const { rows: cat2 } = await adminPool.query(
-        `INSERT INTO service_categories (business_id, name) VALUES ($1, 'Another Category') RETURNING id`,
+        `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'Another Category') RETURNING id`,
         [BUSINESS_ID],
       );
 
@@ -247,7 +247,7 @@ describe('Service CRUD API', () => {
     it('activates after adding a variant', async () => {
       // Add a variant directly
       await adminPool.query(
-        `INSERT INTO service_variants (service_id, name, duration, price) VALUES ($1, '60 min', 60, 7500)`,
+        `INSERT INTO svc_variants (service_id, name, duration, price) VALUES ($1, '60 min', 60, 7500)`,
         [SERVICE_ID],
       );
 

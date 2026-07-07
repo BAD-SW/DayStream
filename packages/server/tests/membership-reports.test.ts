@@ -44,7 +44,7 @@ describe('Membership Reports API', () => {
   beforeAll(async () => {
     // Use a business that already has memberships from prior tests
     const { rows } = await adminPool.query(
-      `SELECT id FROM businesses WHERE tenant_id = $1 AND slug = 'membership-test-biz'`,
+      `SELECT id FROM sys_businesses WHERE tenant_id = $1 AND slug = 'membership-test-biz'`,
       [TENANT_ID],
     );
     BUSINESS_ID = rows.length > 0 ? rows[0].id : '00000000-0000-0000-0000-000000000001';

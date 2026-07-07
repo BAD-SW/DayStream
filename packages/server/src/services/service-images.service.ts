@@ -54,7 +54,7 @@ export async function uploadImage(
 ): Promise<any> {
   // Check image count
   const { rows: countRows } = await adminPool.query(
-    'SELECT COUNT(*)::int AS count FROM service_images WHERE service_id = $1',
+    'SELECT COUNT(*)::int AS count FROM svc_images WHERE service_id = $1',
     [serviceId],
   );
   if (countRows[0].count >= MAX_IMAGES_PER_SERVICE) {
@@ -100,7 +100,7 @@ export async function uploadImage(
 
   // Store metadata
   const { rows } = await adminPool.query(
-    `INSERT INTO service_images (service_id, file_path, filename, alt_text, is_primary, display_order, width, height, file_size, mime_type)
+    `INSERT INTO svc_images (service_id, file_path, filename, alt_text, is_primary, display_order, width, height, file_size, mime_type)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
     [
@@ -129,7 +129,7 @@ export async function uploadImage(
  */
 export async function getImages(serviceId: string) {
   const { rows } = await adminPool.query(
-    'SELECT * FROM service_images WHERE service_id = $1 ORDER BY display_order',
+    'SELECT * FROM svc_images WHERE service_id = $1 ORDER BY display_order',
     [serviceId],
   );
 
@@ -149,7 +149,7 @@ export async function getImages(serviceId: string) {
  */
 export async function updateImage(imageId: string, serviceId: string, updates: { alt_text?: string; display_order?: number; is_primary?: boolean }) {
   const { rows: existing } = await adminPool.query(
-    'SELECT * FROM service_images WHERE id = $1 AND service_id = $2',
+    'SELECT * FROM svc_images WHERE id = $1 AND service_id = $2',
     [imageId, serviceId],
   );
   if (existing.length === 0) return null;
@@ -165,7 +165,7 @@ export async function updateImage(imageId: string, serviceId: string, updates: {
   if (updates.is_primary === true) {
     // Unset current primary
     await adminPool.query(
-      'UPDATE service_images SET is_primary = false WHERE service_id = $1',
+      'UPDATE svc_images SET is_primary = false WHERE service_id = $1',
       [serviceId],
     );
     fields.push(`is_primary = $${idx++}`);
@@ -178,7 +178,7 @@ export async function updateImage(imageId: string, serviceId: string, updates: {
   values.push(serviceId);
 
   const { rows } = await adminPool.query(
-    `UPDATE service_images SET ${fields.join(', ')} WHERE id = $${idx++} AND service_id = $${idx}
+    `UPDATE svc_images SET ${fields.join(', ')} WHERE id = $${idx++} AND service_id = $${idx}
      RETURNING *`,
     values,
   );
@@ -191,7 +191,7 @@ export async function updateImage(imageId: string, serviceId: string, updates: {
  */
 export async function deleteImage(imageId: string, serviceId: string): Promise<boolean> {
   const { rows } = await adminPool.query(
-    'SELECT * FROM service_images WHERE id = $1 AND service_id = $2',
+    'SELECT * FROM svc_images WHERE id = $1 AND service_id = $2',
     [imageId, serviceId],
   );
   if (rows.length === 0) return false;
@@ -214,13 +214,13 @@ export async function deleteImage(imageId: string, serviceId: string): Promise<b
   }
 
   // Delete database record
-  await adminPool.query('DELETE FROM service_images WHERE id = $1', [imageId]);
+  await adminPool.query('DELETE FROM svc_images WHERE id = $1', [imageId]);
 
   // If deleted image was primary, promote the next one
   if (image.is_primary) {
     await adminPool.query(
-      `UPDATE service_images SET is_primary = true
-       WHERE service_id = $1 AND id = (SELECT id FROM service_images WHERE service_id = $1 ORDER BY display_order LIMIT 1)`,
+      `UPDATE svc_images SET is_primary = true
+       WHERE service_id = $1 AND id = (SELECT id FROM svc_images WHERE service_id = $1 ORDER BY display_order LIMIT 1)`,
       [serviceId],
     );
   }

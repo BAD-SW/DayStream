@@ -48,7 +48,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Customer Lifecycle Tracking', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Lifecycle Test Biz', 'lifecycle-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Lifecycle Test Biz'
        RETURNING id`,
@@ -58,7 +58,7 @@ describe('Customer Lifecycle Tracking', () => {
 
     // Seed lifecycle config keys if not present
     await adminPool.query(`
-      INSERT INTO configuration_definitions (key, category, data_type, default_value, description) VALUES
+      INSERT INTO sys_configuration_definitions (key, category, data_type, default_value, description) VALUES
         ('lifecycle.trial_after_bookings', 'lifecycle', 'number', '1', 'Bookings to transition Lead → Trial'),
         ('lifecycle.active_after_visits', 'lifecycle', 'number', '3', 'Visits to transition Trial → Active'),
         ('lifecycle.at_risk_days', 'lifecycle', 'number', '30', 'Days inactivity for Active → At-Risk'),
@@ -68,7 +68,7 @@ describe('Customer Lifecycle Tracking', () => {
 
     // Create test customers
     const { rows: cust1 } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, lifecycle_stage, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, lifecycle_stage, created_by)
        VALUES ($1, $2, 'CUST-LC01', 'lifecycle1@example.com', 'Lead', 'Customer', 'lead', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET lifecycle_stage = 'lead', first_name = 'Lead'
        RETURNING id`,
@@ -77,7 +77,7 @@ describe('Customer Lifecycle Tracking', () => {
     CUSTOMER_ID = cust1[0].id;
 
     const { rows: cust2 } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, lifecycle_stage, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, lifecycle_stage, created_by)
        VALUES ($1, $2, 'CUST-LC02', 'lifecycle2@example.com', 'Trial', 'Customer', 'trial', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET lifecycle_stage = 'trial', first_name = 'Trial'
        RETURNING id`,
@@ -86,7 +86,7 @@ describe('Customer Lifecycle Tracking', () => {
     CUSTOMER_ID_2 = cust2[0].id;
 
     const { rows: cust3 } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, lifecycle_stage, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, lifecycle_stage, created_by)
        VALUES ($1, $2, 'CUST-LC03', 'lifecycle3@example.com', 'Active', 'Customer', 'active', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET lifecycle_stage = 'active', first_name = 'Active'
        RETURNING id`,
@@ -187,7 +187,7 @@ describe('Customer Lifecycle Tracking', () => {
     it('transitions Lead → Trial on first booking', async () => {
       // Reset to lead
       await adminPool.query(
-        "UPDATE customers SET lifecycle_stage = 'lead' WHERE id = $1",
+        "UPDATE cus_customers SET lifecycle_stage = 'lead' WHERE id = $1",
         [CUSTOMER_ID],
       );
 
@@ -202,7 +202,7 @@ describe('Customer Lifecycle Tracking', () => {
       await lifecycleService.evaluateOnBooking(CUSTOMER_ID, BUSINESS_ID);
 
       const { rows } = await adminPool.query(
-        'SELECT lifecycle_stage FROM customers WHERE id = $1',
+        'SELECT lifecycle_stage FROM cus_customers WHERE id = $1',
         [CUSTOMER_ID],
       );
       expect(rows[0].lifecycle_stage).toBe('trial');
@@ -210,14 +210,14 @@ describe('Customer Lifecycle Tracking', () => {
 
     it('transitions Churned → Winback on new booking', async () => {
       await adminPool.query(
-        "UPDATE customers SET lifecycle_stage = 'churned' WHERE id = $1",
+        "UPDATE cus_customers SET lifecycle_stage = 'churned' WHERE id = $1",
         [CUSTOMER_ID],
       );
 
       await lifecycleService.evaluateOnBooking(CUSTOMER_ID, BUSINESS_ID);
 
       const { rows } = await adminPool.query(
-        'SELECT lifecycle_stage FROM customers WHERE id = $1',
+        'SELECT lifecycle_stage FROM cus_customers WHERE id = $1',
         [CUSTOMER_ID],
       );
       expect(rows[0].lifecycle_stage).toBe('winback');
@@ -225,14 +225,14 @@ describe('Customer Lifecycle Tracking', () => {
 
     it('transitions At-Risk → Active on new booking', async () => {
       await adminPool.query(
-        "UPDATE customers SET lifecycle_stage = 'at_risk' WHERE id = $1",
+        "UPDATE cus_customers SET lifecycle_stage = 'at_risk' WHERE id = $1",
         [CUSTOMER_ID],
       );
 
       await lifecycleService.evaluateOnBooking(CUSTOMER_ID, BUSINESS_ID);
 
       const { rows } = await adminPool.query(
-        'SELECT lifecycle_stage FROM customers WHERE id = $1',
+        'SELECT lifecycle_stage FROM cus_customers WHERE id = $1',
         [CUSTOMER_ID],
       );
       expect(rows[0].lifecycle_stage).toBe('active');
@@ -242,14 +242,14 @@ describe('Customer Lifecycle Tracking', () => {
   describe('Lifecycle Service - evaluateOnMembership', () => {
     it('transitions Trial → Active on membership purchase', async () => {
       await adminPool.query(
-        "UPDATE customers SET lifecycle_stage = 'trial' WHERE id = $1",
+        "UPDATE cus_customers SET lifecycle_stage = 'trial' WHERE id = $1",
         [CUSTOMER_ID_2],
       );
 
       await lifecycleService.evaluateOnMembership(CUSTOMER_ID_2, BUSINESS_ID);
 
       const { rows } = await adminPool.query(
-        'SELECT lifecycle_stage FROM customers WHERE id = $1',
+        'SELECT lifecycle_stage FROM cus_customers WHERE id = $1',
         [CUSTOMER_ID_2],
       );
       expect(rows[0].lifecycle_stage).toBe('active');
@@ -257,14 +257,14 @@ describe('Customer Lifecycle Tracking', () => {
 
     it('transitions Lead → Active on membership purchase', async () => {
       await adminPool.query(
-        "UPDATE customers SET lifecycle_stage = 'lead' WHERE id = $1",
+        "UPDATE cus_customers SET lifecycle_stage = 'lead' WHERE id = $1",
         [CUSTOMER_ID_2],
       );
 
       await lifecycleService.evaluateOnMembership(CUSTOMER_ID_2, BUSINESS_ID);
 
       const { rows } = await adminPool.query(
-        'SELECT lifecycle_stage FROM customers WHERE id = $1',
+        'SELECT lifecycle_stage FROM cus_customers WHERE id = $1',
         [CUSTOMER_ID_2],
       );
       expect(rows[0].lifecycle_stage).toBe('active');
@@ -275,19 +275,19 @@ describe('Customer Lifecycle Tracking', () => {
     it('transitions Active → At-Risk when no recent activity', async () => {
       // Set customer to active with no recent activity
       await adminPool.query(
-        "UPDATE customers SET lifecycle_stage = 'active' WHERE id = $1",
+        "UPDATE cus_customers SET lifecycle_stage = 'active' WHERE id = $1",
         [CUSTOMER_ID_3],
       );
 
       // Remove recent activities for this customer
       await adminPool.query(
-        "DELETE FROM customer_activities WHERE customer_id = $1 AND activity_type IN ('booking', 'payment', 'membership')",
+        "DELETE FROM cus_activities WHERE customer_id = $1 AND activity_type IN ('booking', 'payment', 'membership')",
         [CUSTOMER_ID_3],
       );
 
       // Add an old activity (40 days ago)
       await adminPool.query(
-        `INSERT INTO customer_activities (customer_id, business_id, activity_type, description, created_at)
+        `INSERT INTO cus_activities (customer_id, business_id, activity_type, description, created_at)
          VALUES ($1, $2, 'booking', 'Old booking', NOW() - INTERVAL '40 days')`,
         [CUSTOMER_ID_3, BUSINESS_ID],
       );
@@ -295,7 +295,7 @@ describe('Customer Lifecycle Tracking', () => {
       const result = await lifecycleService.evaluateScheduledTransitions();
 
       const { rows } = await adminPool.query(
-        'SELECT lifecycle_stage FROM customers WHERE id = $1',
+        'SELECT lifecycle_stage FROM cus_customers WHERE id = $1',
         [CUSTOMER_ID_3],
       );
       expect(rows[0].lifecycle_stage).toBe('at_risk');
@@ -305,19 +305,19 @@ describe('Customer Lifecycle Tracking', () => {
     it('transitions At-Risk → Churned when no activity in churned_days', async () => {
       // Set customer to at_risk
       await adminPool.query(
-        "UPDATE customers SET lifecycle_stage = 'at_risk' WHERE id = $1",
+        "UPDATE cus_customers SET lifecycle_stage = 'at_risk' WHERE id = $1",
         [CUSTOMER_ID_3],
       );
 
       // Remove recent activities
       await adminPool.query(
-        "DELETE FROM customer_activities WHERE customer_id = $1 AND activity_type IN ('booking', 'payment', 'membership')",
+        "DELETE FROM cus_activities WHERE customer_id = $1 AND activity_type IN ('booking', 'payment', 'membership')",
         [CUSTOMER_ID_3],
       );
 
       // Add an old activity (100 days ago)
       await adminPool.query(
-        `INSERT INTO customer_activities (customer_id, business_id, activity_type, description, created_at)
+        `INSERT INTO cus_activities (customer_id, business_id, activity_type, description, created_at)
          VALUES ($1, $2, 'booking', 'Very old booking', NOW() - INTERVAL '100 days')`,
         [CUSTOMER_ID_3, BUSINESS_ID],
       );
@@ -325,7 +325,7 @@ describe('Customer Lifecycle Tracking', () => {
       const result = await lifecycleService.evaluateScheduledTransitions();
 
       const { rows } = await adminPool.query(
-        'SELECT lifecycle_stage FROM customers WHERE id = $1',
+        'SELECT lifecycle_stage FROM cus_customers WHERE id = $1',
         [CUSTOMER_ID_3],
       );
       expect(rows[0].lifecycle_stage).toBe('churned');
@@ -346,7 +346,7 @@ describe('Customer Lifecycle Tracking', () => {
     it('respects business-level overrides', async () => {
       // Set a business override
       await adminPool.query(
-        `INSERT INTO business_configurations (business_id, key, value)
+        `INSERT INTO sys_business_configurations (business_id, key, value)
          VALUES ($1, 'lifecycle.at_risk_days', '45')
          ON CONFLICT (business_id, key) DO UPDATE SET value = '45'`,
         [BUSINESS_ID],
@@ -357,7 +357,7 @@ describe('Customer Lifecycle Tracking', () => {
 
       // Clean up
       await adminPool.query(
-        "DELETE FROM business_configurations WHERE business_id = $1 AND key = 'lifecycle.at_risk_days'",
+        "DELETE FROM sys_business_configurations WHERE business_id = $1 AND key = 'lifecycle.at_risk_days'",
         [BUSINESS_ID],
       );
     });
@@ -366,7 +366,7 @@ describe('Customer Lifecycle Tracking', () => {
   describe('Activity Timeline Logging', () => {
     it('logs lifecycle transitions in activity timeline', async () => {
       await adminPool.query(
-        "UPDATE customers SET lifecycle_stage = 'lead' WHERE id = $1",
+        "UPDATE cus_customers SET lifecycle_stage = 'lead' WHERE id = $1",
         [CUSTOMER_ID],
       );
 
@@ -375,7 +375,7 @@ describe('Customer Lifecycle Tracking', () => {
       );
 
       const { rows } = await adminPool.query(
-        `SELECT * FROM customer_activities
+        `SELECT * FROM cus_activities
          WHERE customer_id = $1 AND activity_type = 'lifecycle'
          ORDER BY created_at DESC LIMIT 1`,
         [CUSTOMER_ID],

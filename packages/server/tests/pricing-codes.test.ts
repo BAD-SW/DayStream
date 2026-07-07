@@ -46,7 +46,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Discount Codes', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Codes Test Biz', 'codes-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Codes Test Biz'
        RETURNING id`,
@@ -54,10 +54,10 @@ describe('Discount Codes', () => {
     );
     BUSINESS_ID = bizRows[0].id;
 
-    await adminPool.query('DELETE FROM discount_codes WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM pri_discount_codes WHERE business_id = $1', [BUSINESS_ID]);
 
     const { rows: custRows } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-CODE01', 'codes-cust@example.com', 'Code', 'Cust', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Code' RETURNING id`,
       [TENANT_ID, BUSINESS_ID],
@@ -118,7 +118,7 @@ describe('Discount Codes', () => {
 
     it('rejects expired code', async () => {
       await adminPool.query(
-        `INSERT INTO discount_codes (business_id, code, discount_type, discount_value, valid_to)
+        `INSERT INTO pri_discount_codes (business_id, code, discount_type, discount_value, valid_to)
          VALUES ($1, 'EXPIRED10', 'percentage', 10, '2020-01-01')`,
         [BUSINESS_ID],
       );
@@ -134,7 +134,7 @@ describe('Discount Codes', () => {
 
     it('rejects code at max uses', async () => {
       await adminPool.query(
-        `INSERT INTO discount_codes (business_id, code, discount_type, discount_value, max_total_uses, current_uses)
+        `INSERT INTO pri_discount_codes (business_id, code, discount_type, discount_value, max_total_uses, current_uses)
          VALUES ($1, 'MAXED', 'fixed', 500, 5, 5)`,
         [BUSINESS_ID],
       );

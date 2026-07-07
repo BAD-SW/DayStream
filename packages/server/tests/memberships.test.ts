@@ -49,7 +49,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 describe('Membership Engine — Plans, Purchase & Lifecycle', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Membership Test Biz', 'membership-test-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Membership Test Biz'
        RETURNING id`,
@@ -58,11 +58,11 @@ describe('Membership Engine — Plans, Purchase & Lifecycle', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean
-    await adminPool.query('DELETE FROM memberships WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM membership_plans WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM mem_memberships WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM mem_plans WHERE business_id = $1', [BUSINESS_ID]);
 
     const { rows: custRows } = await adminPool.query(
-      `INSERT INTO customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
        VALUES ($1, $2, 'CUST-MBR01', 'mbr-cust@example.com', 'Member', 'Cust', '00000000-0000-0000-0000-000000000010')
        ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Member' RETURNING id`,
       [TENANT_ID, BUSINESS_ID],
@@ -178,16 +178,16 @@ describe('Membership Engine — Plans, Purchase & Lifecycle', () => {
     it('adds service access to a plan', async () => {
       // Get a service id
       const { rows: svcRows } = await adminPool.query(
-        "SELECT id FROM services WHERE business_id = $1 LIMIT 1", [BUSINESS_ID],
+        "SELECT id FROM svc_services WHERE business_id = $1 LIMIT 1", [BUSINESS_ID],
       );
       if (svcRows.length === 0) {
         // Create minimal service infra
         const { rows: catRows } = await adminPool.query(
-          `INSERT INTO service_categories (business_id, name) VALUES ($1, 'MBR Cat')
+          `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'MBR Cat')
            ON CONFLICT (business_id, name, parent_id) DO UPDATE SET name = 'MBR Cat' RETURNING id`, [BUSINESS_ID],
         );
         const { rows: newSvc } = await adminPool.query(
-          `INSERT INTO services (business_id, category_id, name, slug, status, created_by)
+          `INSERT INTO svc_services (business_id, category_id, name, slug, status, created_by)
            VALUES ($1, $2, 'MBR Service', 'mbr-service', 'active', '00000000-0000-0000-0000-000000000010') RETURNING id`,
           [BUSINESS_ID, catRows[0].id],
         );
@@ -292,7 +292,7 @@ describe('Membership Engine — Plans, Purchase & Lifecycle', () => {
       expect(body.data.cancelled).toBe(true);
 
       // Verify status
-      const { rows } = await adminPool.query('SELECT status FROM memberships WHERE id = $1', [MEMBERSHIP_ID]);
+      const { rows } = await adminPool.query('SELECT status FROM mem_memberships WHERE id = $1', [MEMBERSHIP_ID]);
       expect(rows[0].status).toBe('cancelled');
     });
 
@@ -309,7 +309,7 @@ describe('Membership Engine — Plans, Purchase & Lifecycle', () => {
     it('auto-expires memberships past end date', async () => {
       // Create a membership with a past end date
       await adminPool.query(
-        `INSERT INTO memberships (business_id, customer_id, plan_id, status, start_date, end_date, credit_balance, created_by)
+        `INSERT INTO mem_memberships (business_id, customer_id, plan_id, status, start_date, end_date, credit_balance, created_by)
          VALUES ($1, $2, $3, 'active', '2025-01-01', '2025-02-01', 0, '00000000-0000-0000-0000-000000000010')`,
         [BUSINESS_ID, CUSTOMER_ID, INTRO_PLAN_ID],
       );

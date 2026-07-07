@@ -45,7 +45,7 @@ describe('Customer CRUD API', () => {
   beforeAll(async () => {
     // Create a test business for customers
     const { rows } = await adminPool.query(
-      `INSERT INTO businesses (tenant_id, name, slug, status)
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
        VALUES ($1, 'Test CRM Business', 'test-crm-biz', 'active')
        ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Test CRM Business'
        RETURNING id`,
