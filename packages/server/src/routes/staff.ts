@@ -298,6 +298,7 @@ staffRouter.get('/', requirePermission('staff:read'), async (req: Request, res: 
       employmentType: req.query.employment_type as string,
       locationId: req.query.location_id as string,
       serviceId: req.query.service_id as string,
+      businessId: req.query.business_id as string,
       search: req.query.search as string,
       page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,

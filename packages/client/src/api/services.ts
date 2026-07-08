@@ -238,6 +238,11 @@ export async function createAvailabilityRule(serviceId: string, data: any) {
   return res.data.data;
 }
 
+export async function updateAvailabilityRule(serviceId: string, ruleId: string, data: any) {
+  const res = await apiClient.put(`/v1/services/${serviceId}/availability/${ruleId}`, data);
+  return res.data.data;
+}
+
 export async function deleteAvailabilityRule(serviceId: string, ruleId: string) {
   await apiClient.delete(`/v1/services/${serviceId}/availability/${ruleId}`);
 }

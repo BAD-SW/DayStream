@@ -76,3 +76,36 @@ export async function deleteRule(ruleId: string, serviceId: string): Promise<boo
   );
   return (rowCount ?? 0) > 0;
 }
+
+/**
+ * Update an availability rule.
+ */
+export async function updateRule(ruleId: string, serviceId: string, updates: Partial<CreateRuleInput>) {
+  const { rows: existing } = await adminPool.query(
+    'SELECT * FROM svc_availability_rules WHERE id = $1 AND service_id = $2',
+    [ruleId, serviceId],
+  );
+  if (existing.length === 0) return null;
+
+  const fields: string[] = [];
+  const values: any[] = [];
+  let idx = 1;
+
+  if (updates.ruleType !== undefined) { fields.push(`rule_type = $${idx++}`); values.push(updates.ruleType); }
+  if (updates.daysOfWeek !== undefined) { fields.push(`days_of_week = $${idx++}`); values.push(updates.daysOfWeek); }
+  if (updates.startTime !== undefined) { fields.push(`start_time = $${idx++}`); values.push(updates.startTime); }
+  if (updates.endTime !== undefined) { fields.push(`end_time = $${idx++}`); values.push(updates.endTime); }
+  if (updates.effectiveFrom !== undefined) { fields.push(`effective_from = $${idx++}`); values.push(updates.effectiveFrom || null); }
+  if (updates.effectiveTo !== undefined) { fields.push(`effective_to = $${idx++}`); values.push(updates.effectiveTo || null); }
+  if (updates.blockedDates !== undefined) { fields.push(`blocked_dates = $${idx++}`); values.push(updates.blockedDates || null); }
+  if (updates.description !== undefined) { fields.push(`description = $${idx++}`); values.push(updates.description || null); }
+
+  if (fields.length === 0) return existing[0];
+
+  values.push(ruleId, serviceId);
+  const { rows } = await adminPool.query(
+    `UPDATE svc_availability_rules SET ${fields.join(', ')} WHERE id = $${idx++} AND service_id = $${idx} RETURNING *`,
+    values,
+  );
+  return rows[0];
+}

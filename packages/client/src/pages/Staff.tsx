@@ -32,7 +32,9 @@ export function Staff() {
   const fetchStaff = useCallback(async () => {
     setLoading(true);
     try {
+      const businessId = localStorage.getItem('business_id') || '';
       const result = await staffApi.getStaffList({
+        business_id: businessId || undefined,
         search: search || undefined,
         status: statusFilter || undefined,
         page,

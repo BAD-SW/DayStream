@@ -56,7 +56,7 @@ export async function getAvailableSlots(query: AvailabilityQuery): Promise<Avail
     [serviceId],
   );
 
-  // 3. Load assigned staff
+  // 3. Load eligible staff (assigned to service, or all business staff if none assigned)
   const staffCondition = staffId
     ? 'AND ss.user_id = $2'
     : '';
@@ -69,10 +69,23 @@ export async function getAvailableSlots(query: AvailabilityQuery): Promise<Avail
     staffParams,
   );
 
+  // If no staff explicitly assigned, fall back to all active staff in the business
+  let eligibleStaff = assignedStaff;
+  if (assignedStaff.length === 0 && !staffId) {
+    const { rows: allBusinessStaff } = await adminPool.query(
+      `SELECT DISTINCT sp.user_id, sp.first_name, sp.last_name
+       FROM stf_profiles sp
+       JOIN usr_users u ON u.id = sp.user_id
+       WHERE u.business_id = $1 AND sp.status = 'active' AND sp.user_id IS NOT NULL`,
+      [businessId],
+    );
+    eligibleStaff = allBusinessStaff;
+  }
+
   // For resource-only bookings, staff is not required
   const needsStaff = bookingType !== 'resource';
 
-  if (needsStaff && assignedStaff.length === 0) return [];
+  if (needsStaff && eligibleStaff.length === 0) return [];
 
   // Calculate date boundaries
   const now = new Date();
@@ -89,7 +102,7 @@ export async function getAvailableSlots(query: AvailabilityQuery): Promise<Avail
   if (effectiveStart >= effectiveEnd) return [];
 
   // 4. Load existing bookings for the date range (for all relevant staff)
-  const staffIds = assignedStaff.map((s: any) => s.user_id);
+  const staffIds = eligibleStaff.map((s: any) => s.user_id);
   const { rows: existingBookings } = await adminPool.query(
     `SELECT staff_id, start_time, end_time, buffer_before, buffer_after, status
      FROM apt_bookings
@@ -192,7 +205,7 @@ export async function getAvailableSlots(query: AvailabilityQuery): Promise<Avail
             start_time: slotStart.toISOString(),
             end_time: slotEnd.toISOString(),
             duration,
-            available_staff: assignedStaff.map((s: any) => ({ id: s.user_id, first_name: s.first_name, last_name: s.last_name })),
+            available_staff: eligibleStaff.map((s: any) => ({ id: s.user_id, first_name: s.first_name, last_name: s.last_name })),
             capacity_remaining: capacity - currentCount,
           });
           continue;
@@ -201,10 +214,10 @@ export async function getAvailableSlots(query: AvailabilityQuery): Promise<Avail
         // For individual/resource: find at least one available staff member
         const availableStaffForSlot = needsStaff
           ? getAvailableStaffForSlot(
-              assignedStaff, slotStart, slotEnd, bufferBefore, bufferAfter,
+              eligibleStaff, slotStart, slotEnd, bufferBefore, bufferAfter,
               staffSchedules, timeOff, existingBookings, activeHolds, dayOfWeek, dateStr,
             )
-          : assignedStaff;
+          : eligibleStaff;
 
         if (availableStaffForSlot.length === 0 && needsStaff) continue;
 

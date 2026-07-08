@@ -45,7 +45,7 @@ export function ServiceDetail() {
         { id: 'variants', label: 'Variants', content: <VariantsTab service={service} /> },
         { id: 'locations', label: 'Locations', content: <LocationsTab service={service} businessId={businessId} /> },
         { id: 'images', label: 'Images', content: <ImagesTab service={service} businessId={businessId} /> },
-        { id: 'staff', label: 'Staff', content: <StaffTab service={service} /> },
+        { id: 'staff', label: 'Staff', content: <StaffTab service={service} businessId={businessId} /> },
         { id: 'availability', label: 'Availability', content: <AvailabilityTab service={service} /> },
         { id: 'policy', label: 'Policy', content: <PolicyTab service={service} businessId={businessId} /> },
       ]} />
@@ -146,7 +146,9 @@ function DetailsTab({ service, businessId, onUpdate }: { service: Service; busin
 function VariantsTab({ service }: { service: Service }) {
   const [variants, setVariants] = useState<ServiceVariant[]>(service.variants || []);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', duration: 60, price: 0, pricing_model: 'per_session', billing_interval: 'monthly', included_sessions: '' });
+  const [priceDisplay, setPriceDisplay] = useState('0.00');
 
   const handleAdd = async () => {
     const data: any = { name: form.name, duration: form.duration, price: form.price, pricing_model: form.pricing_model };
@@ -158,6 +160,48 @@ function VariantsTab({ service }: { service: Service }) {
     setVariants([...variants, variant]);
     setShowAdd(false);
     setForm({ name: '', duration: 60, price: 0, pricing_model: 'per_session', billing_interval: 'monthly', included_sessions: '' });
+    setPriceDisplay('0.00');
+  };
+
+  const handleEdit = (v: ServiceVariant) => {
+    setEditingId(v.id);
+    setForm({
+      name: v.name,
+      duration: v.duration,
+      price: v.price,
+      pricing_model: v.pricing_model,
+      billing_interval: v.billing_interval || 'monthly',
+      included_sessions: v.included_sessions ? String(v.included_sessions) : '',
+    });
+    setPriceDisplay((v.price / 100).toFixed(2));
+    setShowAdd(false);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingId) return;
+    const data: any = { name: form.name, duration: form.duration, price: form.price, pricing_model: form.pricing_model };
+    if (form.pricing_model === 'subscription') {
+      data.billing_interval = form.billing_interval;
+      data.included_sessions = form.included_sessions ? parseInt(form.included_sessions) : null;
+    }
+    const updated = await servicesApi.updateVariant(service.id, editingId, data);
+    setVariants(variants.map((v) => v.id === editingId ? updated : v));
+    setEditingId(null);
+    setForm({ name: '', duration: 60, price: 0, pricing_model: 'per_session', billing_interval: 'monthly', included_sessions: '' });
+    setPriceDisplay('0.00');
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setForm({ name: '', duration: 60, price: 0, pricing_model: 'per_session', billing_interval: 'monthly', included_sessions: '' });
+    setPriceDisplay('0.00');
+  };
+
+  const openAdd = () => {
+    setShowAdd(true);
+    setEditingId(null);
+    setForm({ name: '', duration: 60, price: 0, pricing_model: 'per_session', billing_interval: 'monthly', included_sessions: '' });
+    setPriceDisplay('0.00');
   };
 
   const handleDelete = async (variantId: string) => {
@@ -169,12 +213,27 @@ function VariantsTab({ service }: { service: Service }) {
 
   return (
     <div style={styles.tabContent}>
-      <Button onClick={() => setShowAdd(!showAdd)}>{showAdd ? 'Cancel' : 'Add Variant'}</Button>
-      {showAdd && (
+      {!editingId && <Button onClick={() => showAdd ? setShowAdd(false) : openAdd()}>{showAdd ? 'Cancel' : 'Add Variant'}</Button>}
+      {(showAdd || editingId) && (
         <div style={styles.addForm}>
           <FormField label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
           <FormField label="Duration (min)" type="number" value={String(form.duration)} onChange={(v) => setForm({ ...form, duration: parseInt(v) || 60 })} />
-          <FormField label="Price (cents)" type="number" value={String(form.price)} onChange={(v) => setForm({ ...form, price: parseInt(v) || 0 })} />
+          <div style={styles.fieldWrapper}>
+            <label style={styles.label}>Price</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              style={styles.input}
+              value={priceDisplay}
+              onChange={(e) => setPriceDisplay(e.target.value)}
+              onBlur={() => {
+                const cents = Math.round(parseFloat(priceDisplay || '0') * 100);
+                setForm({ ...form, price: cents });
+                setPriceDisplay((cents / 100).toFixed(2));
+              }}
+            />
+          </div>
           <div style={styles.fieldWrapper}>
             <label style={styles.label}>Pricing Model</label>
             <select value={form.pricing_model} onChange={(e) => setForm({ ...form, pricing_model: e.target.value })} style={styles.input}>
@@ -197,17 +256,27 @@ function VariantsTab({ service }: { service: Service }) {
               <FormField label="Included Sessions (blank = unlimited)" value={form.included_sessions} onChange={(v) => setForm({ ...form, included_sessions: v })} />
             </>
           )}
-          <Button onClick={handleAdd}>Save Variant</Button>
+          {editingId ? (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <Button onClick={handleSaveEdit}>Save Changes</Button>
+              <Button variant="secondary" onClick={handleCancelEdit}>Cancel</Button>
+            </div>
+          ) : (
+            <Button onClick={handleAdd}>Save Variant</Button>
+          )}
         </div>
       )}
       <div style={styles.variantList}>
         {variants.map((v) => (
-          <div key={v.id} style={styles.variantCard}>
-            <div>
+          <div key={v.id} style={{ ...styles.variantCard, ...(editingId === v.id ? { borderColor: 'var(--color-primary)' } : {}) }}>
+            <div style={{ cursor: 'pointer', flex: 1 }} onClick={() => handleEdit(v)}>
               <strong>{v.name}</strong> — {v.duration} min — €{(v.price / 100).toFixed(2)}
               {v.pricing_model === 'subscription' && <Badge variant="info">Sub: {v.billing_interval}</Badge>}
             </div>
-            <button style={styles.deleteBtn} onClick={() => handleDelete(v.id)}>×</button>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <button style={styles.editBtn} onClick={() => handleEdit(v)} title="Edit">✏️</button>
+              <button style={styles.deleteBtn} onClick={() => handleDelete(v.id)} title="Delete">×</button>
+            </div>
           </div>
         ))}
         {variants.length === 0 && <p style={styles.empty}>No variants yet</p>}
@@ -317,7 +386,7 @@ function LocationsTab({ service, businessId }: { service: Service; businessId: s
   );
 }
 
-function StaffTab({ service }: { service: Service }) {
+function StaffTab({ service, businessId }: { service: Service; businessId: string }) {
   const [staff, setStaff] = useState<any[]>(service.staff || []);
   const [availableStaff, setAvailableStaff] = useState<any[]>([]);
   const [showAdd, setShowAdd] = useState(false);
@@ -327,7 +396,7 @@ function StaffTab({ service }: { service: Service }) {
   useEffect(() => {
     if (showAdd && availableStaff.length === 0) {
       import('../api/staff').then((staffApi) => {
-        staffApi.getStaffList({ status: 'active' }).then((result) => {
+        staffApi.getStaffList({ status: 'active', business_id: businessId }).then((result) => {
           // Filter out already assigned staff (by user_id)
           const assignedUserIds = staff.map((s) => s.user_id);
           setAvailableStaff(result.data.filter((s: any) => !assignedUserIds.includes(s.user_id)));
@@ -399,6 +468,7 @@ function StaffTab({ service }: { service: Service }) {
 function AvailabilityTab({ service }: { service: Service }) {
   const [rules, setRules] = useState<AvailabilityRule[]>(service.availability || []);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({
     rule_type: 'recurring' as string,
     days_of_week: [] as number[],
@@ -420,6 +490,30 @@ function AvailabilityTab({ service }: { service: Service }) {
     });
   };
 
+  const resetForm = () => {
+    setForm({ rule_type: 'recurring', days_of_week: [], start_time: '09:00', end_time: '17:00', effective_from: '', effective_to: '', description: '' });
+  };
+
+  const openAdd = () => {
+    setEditingId(null);
+    resetForm();
+    setShowAdd(true);
+  };
+
+  const openEdit = (rule: AvailabilityRule) => {
+    setShowAdd(false);
+    setEditingId(rule.id);
+    setForm({
+      rule_type: rule.rule_type,
+      days_of_week: rule.days_of_week || [],
+      start_time: rule.start_time || '09:00',
+      end_time: rule.end_time || '17:00',
+      effective_from: rule.effective_from ? rule.effective_from.split('T')[0] : '',
+      effective_to: rule.effective_to ? rule.effective_to.split('T')[0] : '',
+      description: rule.description || '',
+    });
+  };
+
   const handleAdd = async () => {
     try {
       const data: any = { rule_type: form.rule_type, description: form.description || undefined };
@@ -437,8 +531,30 @@ function AvailabilityTab({ service }: { service: Service }) {
       const rule = await servicesApi.createAvailabilityRule(service.id, data);
       setRules([...rules, rule]);
       setShowAdd(false);
-      setForm({ rule_type: 'recurring', days_of_week: [], start_time: '09:00', end_time: '17:00', effective_from: '', effective_to: '', description: '' });
+      resetForm();
     } catch { alert('Failed to create rule'); }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingId) return;
+    try {
+      const data: any = { rule_type: form.rule_type, description: form.description || undefined };
+      if (form.rule_type === 'recurring') {
+        data.days_of_week = form.days_of_week;
+        data.start_time = form.start_time;
+        data.end_time = form.end_time;
+      } else if (form.rule_type === 'seasonal') {
+        data.days_of_week = form.days_of_week.length > 0 ? form.days_of_week : undefined;
+        data.start_time = form.start_time;
+        data.end_time = form.end_time;
+        data.effective_from = form.effective_from;
+        data.effective_to = form.effective_to;
+      }
+      const updated = await servicesApi.updateAvailabilityRule(service.id, editingId, data);
+      setRules(rules.map((r) => r.id === editingId ? updated : r));
+      setEditingId(null);
+      resetForm();
+    } catch { alert('Failed to update rule'); }
   };
 
   const handleDelete = async (ruleId: string) => {
@@ -449,10 +565,12 @@ function AvailabilityTab({ service }: { service: Service }) {
     } catch { alert('Failed to delete rule'); }
   };
 
+  const isFormOpen = showAdd || editingId;
+
   return (
     <div style={styles.tabContent}>
-      <Button onClick={() => setShowAdd(!showAdd)}>{showAdd ? 'Cancel' : 'Add Rule'}</Button>
-      {showAdd && (
+      {!isFormOpen && <Button onClick={openAdd}>Add Rule</Button>}
+      {isFormOpen && (
         <div style={styles.addForm}>
           <div style={styles.fieldWrapper}>
             <label style={styles.label}>Rule Type</label>
@@ -499,24 +617,39 @@ function AvailabilityTab({ service }: { service: Service }) {
             </div>
           )}
           <FormField label="Description (optional)" value={form.description} onChange={(v) => setForm({ ...form, description: v })} />
-          <Button onClick={handleAdd}>Save Rule</Button>
+          {editingId ? (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <Button onClick={handleSaveEdit}>Save Changes</Button>
+              <Button variant="secondary" onClick={() => { setEditingId(null); resetForm(); }}>Cancel</Button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <Button onClick={handleAdd}>Save Rule</Button>
+              <Button variant="secondary" onClick={() => { setShowAdd(false); resetForm(); }}>Cancel</Button>
+            </div>
+          )}
         </div>
       )}
-      {rules.length === 0 && !showAdd && <p style={styles.empty}>No availability rules. Service uses business operating hours.</p>}
+      {rules.length === 0 && !isFormOpen && <p style={styles.empty}>No availability rules. Service is available anytime.</p>}
       {rules.map((rule: AvailabilityRule) => (
-        <div key={rule.id} style={styles.ruleCard}>
-          <Badge variant="neutral">{rule.rule_type}</Badge>
-          {rule.rule_type === 'recurring' && (
-            <span>{rule.days_of_week?.map((d) => dayNames[d]).join(', ')} {rule.start_time}–{rule.end_time}</span>
-          )}
-          {rule.rule_type === 'seasonal' && (
-            <span>{rule.effective_from} to {rule.effective_to} {rule.start_time}–{rule.end_time}</span>
-          )}
-          {rule.rule_type === 'block' && (
-            <span>{rule.blocked_dates?.length} date(s) blocked</span>
-          )}
-          {rule.description && <span style={styles.ruleDesc}>— {rule.description}</span>}
-          <button style={styles.deleteBtn} onClick={() => handleDelete(rule.id)}>×</button>
+        <div key={rule.id} style={{ ...styles.ruleCard, ...(editingId === rule.id ? { borderColor: 'var(--color-primary)' } : {}) }}>
+          <div style={{ cursor: 'pointer', flex: 1, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }} onClick={() => openEdit(rule)}>
+            <Badge variant="neutral">{rule.rule_type}</Badge>
+            {rule.rule_type === 'recurring' && (
+              <span>{[...(rule.days_of_week || [])].sort((a, b) => a - b).map((d) => dayNames[d]).join(', ')} {rule.start_time}–{rule.end_time}</span>
+            )}
+            {rule.rule_type === 'seasonal' && (
+              <span>{rule.effective_from} to {rule.effective_to} {rule.start_time}–{rule.end_time}</span>
+            )}
+            {rule.rule_type === 'block' && (
+              <span>{rule.blocked_dates?.length} date(s) blocked</span>
+            )}
+            {rule.description && <span style={styles.ruleDesc}>— {rule.description}</span>}
+          </div>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button style={styles.editBtn} onClick={() => openEdit(rule)} title="Edit">✏️</button>
+            <button style={styles.deleteBtn} onClick={() => handleDelete(rule.id)} title="Delete">×</button>
+          </div>
         </div>
       ))}
     </div>
@@ -713,13 +846,16 @@ const styles: Record<string, React.CSSProperties> = {
   variantList: { marginTop: 'var(--space-md)', display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)' },
   variantCard: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-sm) var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)' },
   deleteBtn: { background: 'none', border: 'none', color: 'var(--color-error-light)', cursor: 'pointer', fontSize: '18px', padding: '2px 6px' },
+  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px 6px' },
+  filterBtn: { padding: '6px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', color: 'var(--color-text)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontFamily: 'var(--font-family)', fontWeight: 500, transition: 'all 0.15s ease' },
+  filterBtnActive: { background: 'var(--color-accent, #C9A96E)', borderColor: 'var(--color-accent, #C9A96E)', color: '#1A1A1A', fontWeight: 600 },
   empty: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', textAlign: 'center', padding: 'var(--space-lg)' },
   imageGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 'var(--space-md)', marginTop: 'var(--space-md)' },
   imageCard: { position: 'relative' as const, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
   imageThumbnail: { width: '100%', height: '80px', objectFit: 'cover' as const },
   imageInfo: { display: 'flex', justifyContent: 'space-between', padding: '4px 6px' },
   staffRow: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) 0', borderBottom: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)' },
-  ruleCard: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) 0', borderBottom: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)' },
+  ruleCard: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)', marginTop: 'var(--space-sm)' },
   ruleDesc: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)' },
   policyList: { marginTop: 'var(--space-md)', display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)' },
   policyCard: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)' },

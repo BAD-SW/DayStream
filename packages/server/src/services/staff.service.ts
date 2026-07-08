@@ -27,6 +27,7 @@ interface StaffFilters {
   employmentType?: string;
   locationId?: string;
   serviceId?: string;
+  businessId?: string;
   search?: string;
   page?: number;
   limit?: number;
@@ -137,6 +138,12 @@ export async function getStaffList(tenantId: string, filters: StaffFilters) {
   const conditions = ['sp.tenant_id = $1'];
   const params: any[] = [tenantId];
   let paramIndex = 2;
+
+  // Filter by business if provided
+  if (filters.businessId) {
+    conditions.push(`sp.user_id IN (SELECT id FROM usr_users WHERE business_id = $${paramIndex++})`);
+    params.push(filters.businessId);
+  }
 
   if (filters.status) {
     conditions.push(`sp.status = $${paramIndex++}`);

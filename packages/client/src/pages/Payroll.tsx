@@ -143,8 +143,8 @@ function CompensationSection({ businessId }: { businessId: string }) {
         <div style={{ border: '1px solid var(--color-border, #e5e7eb)', borderRadius: '8px', padding: '16px', marginBottom: '16px', background: '#f9fafb' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Rate (cents)</label>
-              <input type="number" style={styles.input} value={editForm.rate} onChange={(e) => setEditForm({ ...editForm, rate: e.target.value })} />
+              <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Rate</label>
+              <input type="number" step="0.01" min="0" style={styles.input} value={(Number(editForm.rate) / 100).toFixed(2)} onChange={(e) => setEditForm({ ...editForm, rate: String(Math.round(parseFloat(e.target.value || '0') * 100)) })} />
             </div>
             <div>
               <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Type</label>
@@ -225,8 +225,8 @@ function DeductionsSection({ businessId }: { businessId: string }) {
               <input type="text" style={styles.input} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Amount (cents)</label>
-              <input type="number" style={styles.input} value={editForm.amount} onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })} />
+              <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Amount</label>
+              <input type="number" step="0.01" min="0" style={styles.input} value={(Number(editForm.amount) / 100).toFixed(2)} onChange={(e) => setEditForm({ ...editForm, amount: String(Math.round(parseFloat(e.target.value || '0') * 100)) })} />
             </div>
             <div>
               <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Type</label>

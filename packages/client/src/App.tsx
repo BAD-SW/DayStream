@@ -27,6 +27,7 @@ import { ServiceCategories } from './pages/ServiceCategories';
 import { Bookings } from './pages/Bookings';
 import { BookingCalendar } from './pages/BookingCalendar';
 import { BookingFlow } from './pages/BookingFlow';
+import { BookingCreate } from './pages/BookingCreate';
 import { Memberships } from './pages/Memberships';
 import { MembershipDetail } from './pages/MembershipDetail';
 import { MembershipPlans } from './pages/MembershipPlans';
@@ -94,6 +95,7 @@ export function App() {
 
         {/* Bookings */}
         <Route path="/bookings" element={<ProtectedRoute><Bookings /></ProtectedRoute>} />
+        <Route path="/bookings/new" element={<ProtectedRoute><BookingCreate /></ProtectedRoute>} />
         <Route path="/bookings/calendar" element={<ProtectedRoute><BookingCalendar /></ProtectedRoute>} />
         <Route path="/book/:serviceSlug" element={<ProtectedRoute><BookingFlow /></ProtectedRoute>} />
 
@@ -103,6 +105,7 @@ export function App() {
         <Route path="/memberships/:id" element={<ProtectedRoute><MembershipDetail /></ProtectedRoute>} />
 
         {/* Pricing */}
+        <Route path="/pricing" element={<ProtectedRoute><PricingRules /></ProtectedRoute>} />
         <Route path="/pricing/rules" element={<ProtectedRoute><PricingRules /></ProtectedRoute>} />
         <Route path="/pricing/codes" element={<ProtectedRoute><DiscountCodes /></ProtectedRoute>} />
 

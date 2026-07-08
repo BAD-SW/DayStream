@@ -779,11 +779,11 @@ import * as availabilityService from '../services/service-availability.service';
 const createAvailabilitySchema = Joi.object({
   rule_type: Joi.string().valid('recurring', 'seasonal', 'block').required(),
   days_of_week: Joi.array().items(Joi.number().integer().min(0).max(6)).allow(null),
-  start_time: Joi.string().pattern(/^\d{2}:\d{2}$/).allow(null),
-  end_time: Joi.string().pattern(/^\d{2}:\d{2}$/).allow(null),
-  effective_from: Joi.string().isoDate().allow(null),
-  effective_to: Joi.string().isoDate().allow(null),
-  blocked_dates: Joi.array().items(Joi.string().isoDate()).allow(null),
+  start_time: Joi.string().pattern(/^\d{1,2}:\d{2}$/).allow(null, ''),
+  end_time: Joi.string().pattern(/^\d{1,2}:\d{2}$/).allow(null, ''),
+  effective_from: Joi.string().allow(null, ''),
+  effective_to: Joi.string().allow(null, ''),
+  blocked_dates: Joi.array().items(Joi.string()).allow(null),
   description: Joi.string().max(200).allow('', null),
 });
 
@@ -829,6 +829,37 @@ servicesRouter.delete('/:id/availability/:ruleId', requirePermission('services:*
     success(res, { deleted: true });
   } catch (err: any) {
     error(res, 'Failed to delete rule', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/services/:id/availability/:ruleId
+const updateAvailabilitySchema = Joi.object({
+  rule_type: Joi.string().valid('recurring', 'seasonal', 'block'),
+  days_of_week: Joi.array().items(Joi.number().integer().min(0).max(6)).allow(null),
+  start_time: Joi.string().allow(null, ''),
+  end_time: Joi.string().allow(null, ''),
+  effective_from: Joi.string().allow(null, ''),
+  effective_to: Joi.string().allow(null, ''),
+  blocked_dates: Joi.array().items(Joi.string()).allow(null),
+  description: Joi.string().max(200).allow('', null),
+});
+
+servicesRouter.put('/:id/availability/:ruleId', requirePermission('services:*'), validate(updateAvailabilitySchema), async (req: Request, res: Response) => {
+  try {
+    const updated = await availabilityService.updateRule(req.params.ruleId, req.params.id, {
+      ruleType: req.body.rule_type,
+      daysOfWeek: req.body.days_of_week,
+      startTime: req.body.start_time,
+      endTime: req.body.end_time,
+      effectiveFrom: req.body.effective_from,
+      effectiveTo: req.body.effective_to,
+      blockedDates: req.body.blocked_dates,
+      description: req.body.description,
+    });
+    if (!updated) { error(res, 'Rule not found', 'NOT_FOUND', 404); return; }
+    success(res, updated);
+  } catch (err: any) {
+    error(res, 'Failed to update rule', 'INTERNAL_ERROR', 500);
   }
 });
 

@@ -117,6 +117,7 @@ export function Bookings() {
       <div style={styles.header}>
         <h1 style={styles.title}>Bookings</h1>
         <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+          <button style={styles.navBtn} onClick={() => navigate('/bookings/new')}>New Booking</button>
           <button style={styles.navBtn} onClick={() => navigate('/bookings/calendar')}>Calendar</button>
         </div>
       </div>
