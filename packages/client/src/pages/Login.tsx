@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 export function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -21,9 +22,7 @@ export function Login() {
 
     try {
       await login(TENANT_ID, email, password);
-      const redirectUrl = sessionStorage.getItem('redirectAfterLogin') || '/dashboard';
-      sessionStorage.removeItem('redirectAfterLogin');
-      navigate(redirectUrl);
+      navigate('/dashboard');
     } catch (err: any) {
       const msg = err.response?.data?.error || 'Login failed';
       setError(msg);
@@ -55,16 +54,26 @@ export function Login() {
 
           <div style={styles.fieldGroup}>
             <label htmlFor="password" style={styles.label}>Password</label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••••"
-              required
-              style={styles.input}
-              autoComplete="current-password"
-            />
+            <div style={styles.passwordWrapper}>
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••••"
+                required
+                style={styles.input}
+                autoComplete="current-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={styles.revealBtn}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
           </div>
 
           {error && <p style={styles.error}>{error}</p>}
@@ -73,10 +82,6 @@ export function Login() {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
-
-        <p style={styles.hint}>
-          Seed users: owner@transcend.test / password123
-        </p>
       </div>
     </div>
   );
@@ -156,10 +161,19 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     textAlign: 'center' as const,
   },
-  hint: {
-    color: '#8A8A8A',
-    fontSize: '12px',
-    marginTop: '24px',
-    textAlign: 'center' as const,
+  passwordWrapper: {
+    position: 'relative' as const,
+    display: 'flex',
+    alignItems: 'center',
+  },
+  revealBtn: {
+    position: 'absolute' as const,
+    right: '12px',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '16px',
+    padding: '4px',
+    lineHeight: 1,
   },
 };

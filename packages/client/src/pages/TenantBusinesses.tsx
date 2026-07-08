@@ -51,6 +51,10 @@ interface BusinessForm {
   payment_card_last4: string;
   payment_card_brand: string;
   payment_card_exp: string;
+  owner_email: string;
+  owner_first_name: string;
+  owner_last_name: string;
+  owner_password: string;
 }
 
 const EMPTY_FORM: BusinessForm = {
@@ -61,6 +65,7 @@ const EMPTY_FORM: BusinessForm = {
   payment_bank_name: '', payment_account_holder: '', payment_account_number: '',
   payment_routing_number: '', payment_iban: '',
   payment_card_last4: '', payment_card_brand: '', payment_card_exp: '',
+  owner_email: '', owner_first_name: '', owner_last_name: '', owner_password: '',
 };
 
 export function TenantBusinesses() {
@@ -125,9 +130,13 @@ export function TenantBusinesses() {
         billing_amount: form.billing_amount,
         signup_date: form.signup_date || null,
         next_billing_date: form.next_billing_date || null,
+        owner_email: form.owner_email,
+        owner_first_name: form.owner_first_name,
+        owner_last_name: form.owner_last_name,
+        owner_password: form.owner_password,
       });
       setShowCreate(false); fetchBusinesses();
-    } catch (err: any) { setFormError(err.response?.data?.message || 'Failed to create'); }
+    } catch (err: any) { setFormError(err.response?.data?.error || err.response?.data?.message || 'Failed to create'); }
     finally { setSaving(false); }
   }
 
@@ -289,9 +298,39 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
         <input style={styles.input} value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} placeholder="auto-generated-from-name" />
         <span style={styles.helper}>Lowercase, hyphens only. Leave blank to auto-generate.</span>
       </div>
+
+      {isCreate && (
+        <>
+          <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
+            Owner Details
+          </div>
+          <div style={styles.formRow}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>First Name *</label>
+              <input style={styles.input} value={form.owner_first_name} onChange={(e) => setForm({ ...form, owner_first_name: e.target.value })} required placeholder="First Name" />
+            </div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Last Name *</label>
+              <input style={styles.input} value={form.owner_last_name} onChange={(e) => setForm({ ...form, owner_last_name: e.target.value })} required placeholder="Last Name" />
+            </div>
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Owner Email *</label>
+            <input style={styles.input} type="email" value={form.owner_email} onChange={(e) => setForm({ ...form, owner_email: e.target.value })} required placeholder="owner@business.com" />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Owner Password *</label>
+            <input style={styles.input} type="password" value={form.owner_password} onChange={(e) => setForm({ ...form, owner_password: e.target.value })} required minLength={10} placeholder="Minimum 10 characters" />
+          </div>
+        </>
+      )}
+
+      <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
+        Business Contact
+      </div>
       <div style={styles.formRow}>
         <div style={styles.formGroup}>
-          <label style={styles.label}>Email</label>
+          <label style={styles.label}>Business Email</label>
           <input style={styles.input} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="contact@business.com" />
         </div>
         <div style={styles.formGroup}>

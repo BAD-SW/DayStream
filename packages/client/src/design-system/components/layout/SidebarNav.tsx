@@ -15,6 +15,7 @@ const navByPersona: Record<Persona, NavItem[]> = {
   system: [
     { label: 'Dashboard', path: '/dashboard', icon: '🏠' },
     { label: 'Tenants', path: '/admin/tenants', icon: '🏢' },
+    { label: 'Users', path: '/admin/users', icon: '👤' },
     { label: 'Configuration', path: '/admin/config', icon: '⚙️' },
     { label: 'Feature Flags', path: '/admin/feature-flags', icon: '🚩' },
     { label: 'Audit Log', path: '/admin/audit', icon: '🔍' },
@@ -22,6 +23,7 @@ const navByPersona: Record<Persona, NavItem[]> = {
   tenant: [
     { label: 'Dashboard', path: '/dashboard', icon: '🏠' },
     { label: 'Businesses', path: '/businesses', icon: '🏪' },
+    { label: 'Users', path: '/admin/tenant-users', icon: '👤' },
     { label: 'Billing', path: '/billing', icon: '🧾' },
     { label: 'Reports', path: '/reports', icon: '📈' },
     { label: 'Settings', path: '/settings', icon: '⚙️' },

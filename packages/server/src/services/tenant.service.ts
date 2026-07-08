@@ -38,9 +38,20 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
     );
     const tenant = tenantRows[0];
 
+    // Create default business with same name as tenant
+    const businessSlug = generateSlug(input.name);
+    const { rows: businessRows } = await client.query(
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status, default_language, currency, timezone)
+       VALUES ($1, $2, $3, 'active', $4, $5, $6)
+       RETURNING *`,
+      [tenant.id, input.name, businessSlug, input.default_language || 'en', input.currency || 'EUR', input.timezone || 'UTC'],
+    );
+    const business = businessRows[0];
+
     // Create tenant-specific roles (copy system roles for this tenant)
     const roleIds: Record<string, string> = {};
     const systemRoles = [
+      { name: 'Tenant Owner', permissions: '["*:*"]' },
       { name: 'Business Owner', permissions: '["services:*","bookings:*","staff:*","reports:*","settings:*","customers:*"]' },
       { name: 'Manager', permissions: '["services:read","bookings:*","staff:read","reports:read","customers:*","schedule:*"]' },
       { name: 'Staff', permissions: '["bookings:read","bookings:update","customers:read","schedule:read"]' },
@@ -59,17 +70,17 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
     // Create owner user
     const passwordHash = await hashPassword(input.owner_password);
     const { rows: userRows } = await client.query(
-      `INSERT INTO usr_users (tenant_id, email, first_name, last_name, password_hash, role, status)
-       VALUES ($1, $2, $3, $4, $5, 'business_owner', 'active')
-       RETURNING id, email, first_name, last_name, role`,
-      [tenant.id, input.owner_email, input.owner_first_name, input.owner_last_name, passwordHash],
+      `INSERT INTO usr_users (tenant_id, business_id, email, first_name, last_name, password_hash, role, persona, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'tenant_owner', 'tenant', 'active')
+       RETURNING id, email, first_name, last_name, role, persona, business_id`,
+      [tenant.id, business.id, input.owner_email, input.owner_first_name, input.owner_last_name, passwordHash],
     );
     const owner = userRows[0];
 
-    // Assign Business Owner role
+    // Assign Tenant Owner role
     await client.query(
       'INSERT INTO usr_user_roles (user_id, role_id, tenant_id) VALUES ($1, $2, $3)',
-      [owner.id, roleIds['Business Owner'], tenant.id],
+      [owner.id, roleIds['Tenant Owner'], tenant.id],
     );
 
     // Create staff profile for the business owner

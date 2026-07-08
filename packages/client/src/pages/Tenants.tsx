@@ -746,15 +746,18 @@ export function Tenants() {
               </div>
 
               <div style={styles.formGroup}>
-                <label style={styles.label} htmlFor="tenant-slug">URL Alias (optional, auto-generates)</label>
+                <label style={styles.label} htmlFor="tenant-slug">Slug (optional — auto-generated from name if left blank)</label>
                 <input
                   id="tenant-slug"
                   style={styles.input}
                   type="text"
                   value={createForm.slug}
                   onChange={(e) => setCreateForm({ ...createForm, slug: e.target.value })}
-                  placeholder="my-business"
+                  placeholder="e.g. transcend-health"
                 />
+                <small style={{ color: 'var(--color-text-muted, #888)', marginTop: '4px', display: 'block' }}>
+                  Lowercase letters, numbers, and hyphens only. Used as a unique identifier.
+                </small>
               </div>
 
               <div style={styles.formDivider}>Owner Details</div>

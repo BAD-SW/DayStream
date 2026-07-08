@@ -117,7 +117,7 @@ authRouter.post('/login', validate(loginSchema), async (req: Request, res: Respo
           first_name: result.user.first_name,
           last_name: result.user.last_name,
           role: result.user.role,
-          business_id: result.user.business_id || result.defaultBusinessId || null,
+          business_id: result.user.business_id,
         },
       },
     });

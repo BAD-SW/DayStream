@@ -7,12 +7,14 @@ import { Profile } from './pages/Profile';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { Tenants } from './pages/Tenants';
 import { AdminConfig } from './pages/AdminConfig';
+import { AdminUsers } from './pages/AdminUsers';
 import { AuditLog } from './pages/AuditLog';
 import { QueryEditorPage } from './pages/QueryEditorPage';
 import { PersonaDashboard } from './design-system/components/dashboard/PersonaDashboard';
 import { TenantBusinesses } from './pages/TenantBusinesses';
 import { TenantBilling } from './pages/TenantBilling';
 import { TenantReports } from './pages/TenantReports';
+import { TenantUsers } from './pages/TenantUsers';
 import { Customers } from './pages/Customers';
 import { CustomerCreate } from './pages/CustomerCreate';
 import { CustomerDetail } from './pages/CustomerDetail';
@@ -208,6 +210,14 @@ export function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/admin/users"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><AdminUsers /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
 
         {/* Tenant routes */}
         <Route
@@ -215,6 +225,14 @@ export function App() {
           element={
             <ProtectedRoute requiredRole="Manager" layout="none">
               <AdminLayout><TenantBusinesses /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/tenant-users"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><TenantUsers /></AdminLayout>
             </ProtectedRoute>
           }
         />

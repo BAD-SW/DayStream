@@ -52,10 +52,18 @@ export function hashToken(token: string): string {
 
 // --- User lookup ---
 
-export async function findUserByEmail(email: string, tenantId: string) {
-  const { rows } = await tenantQuery(tenantId,
-    'SELECT * FROM usr_users WHERE email = $1 AND tenant_id = $2',
-    [email, tenantId],
+export async function findUserByEmail(email: string, tenantId?: string) {
+  if (tenantId) {
+    const { rows } = await tenantQuery(tenantId,
+      'SELECT * FROM usr_users WHERE email = $1 AND tenant_id = $2',
+      [email, tenantId],
+    );
+    return rows[0] || null;
+  }
+  // System user lookup (no tenant)
+  const { rows } = await adminPool.query(
+    'SELECT * FROM usr_users WHERE email = $1 AND tenant_id IS NULL',
+    [email],
   );
   return rows[0] || null;
 }
@@ -69,25 +77,33 @@ export async function findUserById(userId: string) {
 
 // --- User permissions ---
 
-export async function getUserPermissions(userId: string, tenantId: string): Promise<string[]> {
-  const { rows } = await adminPool.query(
-    `SELECT DISTINCT jsonb_array_elements_text(r.permissions) AS permission
-     FROM usr_user_roles ur
-     JOIN usr_roles r ON ur.role_id = r.id
-     WHERE ur.user_id = $1 AND ur.tenant_id = $2`,
-    [userId, tenantId],
-  );
+export async function getUserPermissions(userId: string, tenantId?: string): Promise<string[]> {
+  const query = tenantId
+    ? `SELECT DISTINCT jsonb_array_elements_text(r.permissions) AS permission
+       FROM usr_user_roles ur
+       JOIN usr_roles r ON ur.role_id = r.id
+       WHERE ur.user_id = $1 AND ur.tenant_id = $2`
+    : `SELECT DISTINCT jsonb_array_elements_text(r.permissions) AS permission
+       FROM usr_user_roles ur
+       JOIN usr_roles r ON ur.role_id = r.id
+       WHERE ur.user_id = $1 AND ur.tenant_id IS NULL`;
+  const params = tenantId ? [userId, tenantId] : [userId];
+  const { rows } = await adminPool.query(query, params);
   return rows.map((r) => r.permission);
 }
 
-export async function getUserRole(userId: string, tenantId: string): Promise<string> {
-  const { rows } = await adminPool.query(
-    `SELECT r.name FROM usr_user_roles ur
-     JOIN usr_roles r ON ur.role_id = r.id
-     WHERE ur.user_id = $1 AND ur.tenant_id = $2
-     ORDER BY r.created_at ASC LIMIT 1`,
-    [userId, tenantId],
-  );
+export async function getUserRole(userId: string, tenantId?: string): Promise<string> {
+  const query = tenantId
+    ? `SELECT r.name FROM usr_user_roles ur
+       JOIN usr_roles r ON ur.role_id = r.id
+       WHERE ur.user_id = $1 AND ur.tenant_id = $2
+       ORDER BY r.created_at ASC LIMIT 1`
+    : `SELECT r.name FROM usr_user_roles ur
+       JOIN usr_roles r ON ur.role_id = r.id
+       WHERE ur.user_id = $1 AND ur.tenant_id IS NULL
+       ORDER BY r.created_at ASC LIMIT 1`;
+  const params = tenantId ? [userId, tenantId] : [userId];
+  const { rows } = await adminPool.query(query, params);
   return rows[0]?.name || 'customer';
 }
 
@@ -241,8 +257,47 @@ export async function loginUser(
 
   const user = await findUserByEmail(email, tenantId);
   if (!user) {
-    await recordLoginAttempt(email, tenantId, ip, false);
-    throw new Error('Invalid credentials');
+    // Fallback: try to find user by email across all tenants
+    const { rows: fallbackRows } = await adminPool.query(
+      "SELECT * FROM usr_users WHERE email = $1 AND status = 'active'",
+      [email],
+    );
+    if (fallbackRows.length === 0) {
+      await recordLoginAttempt(email, tenantId, ip, false);
+      throw new Error('Invalid credentials');
+    }
+    // Use the found user and their actual tenant
+    const foundUser = fallbackRows[0];
+    const effectiveTenantId = foundUser.tenant_id;
+
+    if (!foundUser.password_hash) {
+      throw new Error('Invalid credentials');
+    }
+
+    const valid = await verifyPassword(password, foundUser.password_hash);
+    if (!valid) {
+      await recordLoginAttempt(email, effectiveTenantId, ip, false);
+      throw new Error('Invalid credentials');
+    }
+
+    await recordLoginAttempt(email, effectiveTenantId, ip, true);
+    await clearLoginAttempts(email, effectiveTenantId);
+
+    const { rows: mfaRows } = await adminPool.query(
+      'SELECT * FROM usr_user_mfa WHERE user_id = $1 AND enabled = true',
+      [foundUser.id],
+    );
+    if (mfaRows.length > 0) {
+      return { user: foundUser, accessToken: '', refreshToken: '', requiresMfa: true };
+    }
+
+    const role = await getUserRole(foundUser.id, effectiveTenantId);
+    const permissions = await getUserPermissions(foundUser.id, effectiveTenantId);
+    const accessToken = generateAccessToken(foundUser.id, effectiveTenantId, role, permissions);
+    const refreshToken = generateRefreshToken();
+    await storeRefreshToken(foundUser.id, refreshToken, userAgent, ip);
+
+    return { user: foundUser, accessToken, refreshToken, requiresMfa: false };
   }
 
   if (!user.password_hash) {
@@ -278,19 +333,7 @@ export async function loginUser(
   const refreshToken = generateRefreshToken();
   await storeRefreshToken(user.id, refreshToken, userAgent, ip);
 
-  // If user has no business_id, resolve from tenant's businesses
-  let defaultBusinessId: string | null = null;
-  if (!user.business_id) {
-    const { rows: bizRows } = await adminPool.query(
-      "SELECT id FROM sys_businesses WHERE tenant_id = $1 AND status = 'active' ORDER BY created_at LIMIT 1",
-      [tenantId],
-    );
-    if (bizRows.length > 0) {
-      defaultBusinessId = bizRows[0].id;
-    }
-  }
-
-  return { user, accessToken, refreshToken, requiresMfa: false, defaultBusinessId };
+  return { user, accessToken, refreshToken, requiresMfa: false };
 }
 
 // --- Token refresh ---

@@ -91,6 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('business_id');
+    sessionStorage.removeItem('redirectAfterLogin');
     setUser(null);
     setFeatureFlags({});
   }

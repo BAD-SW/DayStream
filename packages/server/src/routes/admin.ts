@@ -8,6 +8,7 @@ import * as tenantService from '../services/tenant.service';
 import * as configService from '../services/config.service';
 import * as featureFlagService from '../services/feature-flag.service';
 import { logAudit, queryAuditLog } from '../services/audit.service';
+import { hashPassword } from '../services/auth.service';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 
@@ -52,7 +53,7 @@ function calculateNextBillingDate(lastBillingDate: string | null, signupDate: st
 
 const createTenantSchema = Joi.object({
   name: Joi.string().min(2).max(255).required(),
-  slug: Joi.string().min(2).max(100).pattern(/^[a-z0-9-]+$/),
+  slug: Joi.string().allow('').max(100).pattern(/^[a-z0-9-]+$/),
   owner_email: Joi.string().email({ tlds: false }).required(),
   owner_first_name: Joi.string().min(1).max(100).required(),
   owner_last_name: Joi.string().min(1).max(100).required(),
@@ -95,9 +96,9 @@ adminRouter.get('/tenants/:id', requirePermission('*:*'), async (req: Request, r
       error(res, 'Tenant not found', 'NOT_FOUND', 404);
       return;
     }
-    // Fetch owner (first business_owner user for this tenant)
+    // Fetch owner (first tenant_owner user for this tenant)
     const { rows: ownerRows } = await adminPool.query(
-      `SELECT id, email, first_name, last_name FROM usr_users WHERE tenant_id = $1 AND role = 'business_owner' ORDER BY created_at ASC LIMIT 1`,
+      `SELECT id, email, first_name, last_name FROM usr_users WHERE tenant_id = $1 AND role = 'tenant_owner' ORDER BY created_at ASC LIMIT 1`,
       [req.params.id],
     );
     const owner = ownerRows[0] || null;
@@ -187,7 +188,7 @@ adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantS
       ownerFields.push(`updated_at = NOW()`);
       ownerValues.push(req.params.id);
       await adminPool.query(
-        `UPDATE usr_users SET ${ownerFields.join(', ')} WHERE tenant_id = $${oidx} AND role = 'business_owner'`,
+        `UPDATE usr_users SET ${ownerFields.join(', ')} WHERE tenant_id = $${oidx} AND role = 'tenant_owner'`,
         ownerValues,
       );
     }
@@ -195,7 +196,7 @@ adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantS
     // Return updated tenant with owner
     const updated = await tenantService.getTenantById(req.params.id);
     const { rows: ownerRows } = await adminPool.query(
-      `SELECT id, email, first_name, last_name FROM usr_users WHERE tenant_id = $1 AND role = 'business_owner' ORDER BY created_at ASC LIMIT 1`,
+      `SELECT id, email, first_name, last_name FROM usr_users WHERE tenant_id = $1 AND role = 'tenant_owner' ORDER BY created_at ASC LIMIT 1`,
       [req.params.id],
     );
     success(res, { ...updated, owner: ownerRows[0] || null });
@@ -254,22 +255,93 @@ adminRouter.get('/businesses', tenantContext, requirePermission('settings:*'), a
   }
 });
 
-// POST /api/v1/admin/businesses — Create a business
+// POST /api/v1/admin/businesses — Create a business (with owner user)
 adminRouter.post('/businesses', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { name, slug, email, phone, address, default_language, currency, timezone, primary_color, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date } = req.body;
+    const { name, slug, email, phone, address, default_language, currency, timezone, primary_color, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date, owner_email, owner_first_name, owner_last_name, owner_password } = req.body;
     if (!name) { error(res, 'Name is required', 'VALIDATION_ERROR', 400); return; }
+    if (!owner_email || !owner_first_name || !owner_last_name || !owner_password) {
+      error(res, 'Owner details (email, first name, last name, password) are required', 'VALIDATION_ERROR', 400);
+      return;
+    }
+    if (owner_password.length < 10) {
+      error(res, 'Owner password must be at least 10 characters', 'VALIDATION_ERROR', 400);
+      return;
+    }
+
+    const tenantId = authReq.tenantId;
     const businessSlug = slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const freq = billing_frequency || 'monthly';
     const signupDt = signup_date || new Date().toISOString().split('T')[0];
     const nextBilling = next_billing_date || calculateNextBillingDate(null, signupDt, freq);
-    const { rows } = await adminPool.query(
-      `INSERT INTO sys_businesses (tenant_id, name, slug, email, phone, address, default_language, currency, timezone, primary_color, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
-      [authReq.tenantId, name, businessSlug, email || null, phone || null, address || null, default_language || 'en', currency || 'EUR', timezone || 'UTC', primary_color || '#C9A96E', freq, billing_amount ?? 0, billing_method || 'tbd', signupDt, nextBilling],
-    );
-    success(res, rows[0], undefined, 201);
+
+    const client = await adminPool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Create the business
+      const { rows: bizRows } = await client.query(
+        `INSERT INTO sys_businesses (tenant_id, name, slug, email, phone, address, default_language, currency, timezone, primary_color, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
+        [tenantId, name, businessSlug, email || null, phone || null, address || null, default_language || 'en', currency || 'EUR', timezone || 'UTC', primary_color || '#C9A96E', freq, billing_amount ?? 0, billing_method || 'tbd', signupDt, nextBilling],
+      );
+      const business = bizRows[0];
+
+      // Check owner email uniqueness
+      const { rows: existingUser } = await client.query(
+        'SELECT id FROM usr_users WHERE email = $1 AND tenant_id = $2',
+        [owner_email, tenantId],
+      );
+      if (existingUser.length > 0) {
+        await client.query('ROLLBACK');
+        error(res, 'A user with this email already exists in this tenant', 'EMAIL_EXISTS', 409);
+        return;
+      }
+
+      // Create business owner user
+      const passwordHash = await hashPassword(owner_password);
+      const { rows: userRows } = await client.query(
+        `INSERT INTO usr_users (tenant_id, business_id, email, first_name, last_name, password_hash, role, persona, status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'business_owner', 'business', 'active')
+         RETURNING id, email, first_name, last_name, role, persona`,
+        [tenantId, business.id, owner_email, owner_first_name, owner_last_name, passwordHash],
+      );
+      const owner = userRows[0];
+
+      // Assign Business Owner role
+      const { rows: roleRows } = await client.query(
+        "SELECT id FROM usr_roles WHERE tenant_id = $1 AND name = 'Business Owner'",
+        [tenantId],
+      );
+      if (roleRows.length > 0) {
+        await client.query(
+          'INSERT INTO usr_user_roles (user_id, role_id, tenant_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+          [owner.id, roleRows[0].id, tenantId],
+        );
+      }
+
+      // Create staff profile for the business owner
+      const { rows: staffRefRows } = await client.query(
+        'SELECT COUNT(*)::int AS cnt FROM stf_profiles WHERE tenant_id = $1',
+        [tenantId],
+      );
+      const staffRef = `STF-${String((staffRefRows[0].cnt || 0) + 1).padStart(3, '0')}`;
+      await client.query(
+        `INSERT INTO stf_profiles (tenant_id, user_id, staff_ref, first_name, last_name, email, employment_type, status, show_on_directory, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, 'full_time', 'active', true, $2)`,
+        [tenantId, owner.id, staffRef, owner_first_name, owner_last_name, owner_email],
+      );
+
+      await client.query('COMMIT');
+
+      success(res, { ...business, owner }, undefined, 201);
+    } catch (innerErr) {
+      await client.query('ROLLBACK');
+      throw innerErr;
+    } finally {
+      client.release();
+    }
   } catch (err: any) {
     if (err.message?.includes('unique') || err.code === '23505') {
       error(res, 'A business with this URL alias already exists', 'SLUG_EXISTS', 409);
@@ -894,5 +966,435 @@ adminRouter.get('/reports/system-revenue/detail', requirePermission('*:*'), asyn
     }
   } catch (err: any) {
     error(res, 'Failed to get system revenue detail', 'INTERNAL_ERROR', 500);
+  }
+});
+
+
+// ============================================================
+// --- User Management (Super Admin only) ---
+// ============================================================
+
+const PLATFORM_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+const PLATFORM_BUSINESS_ID = '00000000-0000-0000-0000-000000000002';
+
+// GET /api/v1/admin/users — List system and tenant-level users
+adminRouter.get('/users', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const persona = req.query.persona as string; // 'system' | 'tenant' | undefined (all)
+    const tenantId = req.query.tenant_id as string;
+
+    let query = `SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.persona, u.status, u.tenant_id, u.business_id, u.created_at,
+                        t.name as tenant_name
+                 FROM usr_users u
+                 LEFT JOIN sys_tenants t ON u.tenant_id = t.id
+                 WHERE u.persona IN ('system', 'tenant')`;
+    const params: any[] = [];
+    let idx = 1;
+
+    if (persona) {
+      query += ` AND u.persona = $${idx++}`;
+      params.push(persona);
+    }
+    if (tenantId) {
+      query += ` AND u.tenant_id = $${idx++}`;
+      params.push(tenantId);
+    }
+
+    query += ' ORDER BY u.persona, u.last_name, u.first_name';
+
+    const { rows } = await adminPool.query(query, params);
+    success(res, rows);
+  } catch (err: any) {
+    error(res, 'Failed to list users', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/admin/users/:id — Get user detail
+adminRouter.get('/users/:id', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const { rows } = await adminPool.query(
+      `SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.persona, u.status, u.tenant_id, u.business_id, u.created_at, u.updated_at,
+              t.name as tenant_name, b.name as business_name
+       FROM usr_users u
+       LEFT JOIN sys_tenants t ON u.tenant_id = t.id
+       LEFT JOIN sys_businesses b ON u.business_id = b.id
+       WHERE u.id = $1 AND u.persona IN ('system', 'tenant')`,
+      [req.params.id],
+    );
+    if (rows.length === 0) {
+      error(res, 'User not found', 'NOT_FOUND', 404);
+      return;
+    }
+    success(res, rows[0]);
+  } catch (err: any) {
+    error(res, 'Failed to get user', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// POST /api/v1/admin/users — Create a system or tenant user
+const createUserSchema = Joi.object({
+  email: Joi.string().email({ tlds: false }).required(),
+  first_name: Joi.string().min(1).max(100).required(),
+  last_name: Joi.string().min(1).max(100).required(),
+  password: Joi.string().min(10).required(),
+  persona: Joi.string().valid('system', 'tenant').required(),
+  role: Joi.string().valid('system_admin', 'system_support', 'tenant_owner', 'tenant_manager').required(),
+  tenant_id: Joi.string().uuid().when('persona', { is: 'tenant', then: Joi.required(), otherwise: Joi.forbidden() }),
+});
+
+adminRouter.post('/users', requirePermission('*:*'), validate(createUserSchema), async (req: Request, res: Response) => {
+  try {
+    const { email, first_name, last_name, password, persona, role, tenant_id } = req.body;
+
+    // Determine tenant and business assignment
+    let assignedTenantId: string;
+    let assignedBusinessId: string;
+
+    if (persona === 'system') {
+      // System users belong to the platform tenant/business
+      assignedTenantId = PLATFORM_TENANT_ID;
+      assignedBusinessId = PLATFORM_BUSINESS_ID;
+    } else {
+      // Tenant users belong to specified tenant + its default business
+      assignedTenantId = tenant_id;
+      const { rows: bizRows } = await adminPool.query(
+        "SELECT id FROM sys_businesses WHERE tenant_id = $1 AND status = 'active' ORDER BY created_at LIMIT 1",
+        [tenant_id],
+      );
+      if (bizRows.length === 0) {
+        error(res, 'Tenant has no active business. Create a business first.', 'VALIDATION_ERROR', 400);
+        return;
+      }
+      assignedBusinessId = bizRows[0].id;
+    }
+
+    // Check email uniqueness within tenant
+    const { rows: existing } = await adminPool.query(
+      'SELECT id FROM usr_users WHERE email = $1 AND tenant_id = $2',
+      [email, assignedTenantId],
+    );
+    if (existing.length > 0) {
+      error(res, 'A user with this email already exists in this tenant', 'EMAIL_EXISTS', 409);
+      return;
+    }
+
+    // Create user
+    const passwordHash = await hashPassword(password);
+    const { rows: userRows } = await adminPool.query(
+      `INSERT INTO usr_users (tenant_id, business_id, email, first_name, last_name, password_hash, role, persona, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')
+       RETURNING id, email, first_name, last_name, role, persona, tenant_id, business_id, status, created_at`,
+      [assignedTenantId, assignedBusinessId, email, first_name, last_name, passwordHash, role, persona],
+    );
+    const user = userRows[0];
+
+    // Assign appropriate role
+    const roleMapping: Record<string, string> = {
+      system_admin: '00000000-0000-0000-0000-000000000100', // Super Admin
+      system_support: '00000000-0000-0000-0000-000000000100', // Super Admin (can refine later)
+      tenant_owner: '00000000-0000-0000-0000-000000000101', // Business Owner (system role)
+      tenant_manager: '00000000-0000-0000-0000-000000000102', // Manager (system role)
+    };
+    const roleId = roleMapping[role];
+    if (roleId) {
+      await adminPool.query(
+        'INSERT INTO usr_user_roles (user_id, role_id, tenant_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+        [user.id, roleId, assignedTenantId],
+      );
+    }
+
+    const authReq = req as AuthenticatedRequest;
+    await logAudit({
+      tenantId: assignedTenantId,
+      userId: authReq.user.sub,
+      action: 'user.created',
+      resourceType: 'user',
+      resourceId: user.id,
+      details: { email, role, persona },
+    });
+
+    success(res, user, undefined, 201);
+  } catch (err: any) {
+    error(res, 'Failed to create user', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/admin/users/:id — Update a system or tenant user
+const updateUserSchema = Joi.object({
+  email: Joi.string().email({ tlds: false }),
+  first_name: Joi.string().min(1).max(100),
+  last_name: Joi.string().min(1).max(100),
+  role: Joi.string().valid('system_admin', 'system_support', 'tenant_owner', 'tenant_manager'),
+  status: Joi.string().valid('active', 'inactive'),
+  password: Joi.string().min(10),
+}).min(1);
+
+adminRouter.put('/users/:id', requirePermission('*:*'), validate(updateUserSchema), async (req: Request, res: Response) => {
+  try {
+    // Verify user exists and is system/tenant level
+    const { rows: existingRows } = await adminPool.query(
+      "SELECT * FROM usr_users WHERE id = $1 AND persona IN ('system', 'tenant')",
+      [req.params.id],
+    );
+    if (existingRows.length === 0) {
+      error(res, 'User not found', 'NOT_FOUND', 404);
+      return;
+    }
+
+    const { email, first_name, last_name, role, status, password } = req.body;
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    if (email !== undefined) { fields.push(`email = $${idx++}`); values.push(email); }
+    if (first_name !== undefined) { fields.push(`first_name = $${idx++}`); values.push(first_name); }
+    if (last_name !== undefined) { fields.push(`last_name = $${idx++}`); values.push(last_name); }
+    if (role !== undefined) { fields.push(`role = $${idx++}`); values.push(role); }
+    if (status !== undefined) { fields.push(`status = $${idx++}`); values.push(status); }
+    if (password) {
+      const passwordHash = await hashPassword(password);
+      fields.push(`password_hash = $${idx++}`);
+      values.push(passwordHash);
+    }
+
+    fields.push('updated_at = NOW()');
+    values.push(req.params.id);
+
+    const { rows } = await adminPool.query(
+      `UPDATE usr_users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING id, email, first_name, last_name, role, persona, status, tenant_id, business_id, updated_at`,
+      values,
+    );
+
+    success(res, rows[0]);
+  } catch (err: any) {
+    if (err.code === '23505') {
+      error(res, 'A user with this email already exists', 'EMAIL_EXISTS', 409);
+    } else {
+      error(res, 'Failed to update user', 'INTERNAL_ERROR', 500);
+    }
+  }
+});
+
+// DELETE /api/v1/admin/users/:id — Deactivate a system or tenant user
+adminRouter.delete('/users/:id', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+
+    // Prevent self-deletion
+    if (req.params.id === authReq.user.sub) {
+      error(res, 'Cannot deactivate your own account', 'VALIDATION_ERROR', 400);
+      return;
+    }
+
+    const { rows } = await adminPool.query(
+      `UPDATE usr_users SET status = 'inactive', updated_at = NOW()
+       WHERE id = $1 AND persona IN ('system', 'tenant')
+       RETURNING id, email, status`,
+      [req.params.id],
+    );
+    if (rows.length === 0) {
+      error(res, 'User not found', 'NOT_FOUND', 404);
+      return;
+    }
+
+    await logAudit({
+      tenantId: PLATFORM_TENANT_ID,
+      userId: authReq.user.sub,
+      action: 'user.deactivated',
+      resourceType: 'user',
+      resourceId: req.params.id,
+      details: { email: rows[0].email },
+    });
+
+    success(res, rows[0]);
+  } catch (err: any) {
+    error(res, 'Failed to deactivate user', 'INTERNAL_ERROR', 500);
+  }
+});
+
+
+// ============================================================
+// --- Tenant User Management (Tenant Owner) ---
+// ============================================================
+
+// GET /api/v1/admin/tenant-users — List users in current tenant
+adminRouter.get('/tenant-users', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { rows } = await adminPool.query(
+      `SELECT id, email, first_name, last_name, role, persona, status, business_id, created_at
+       FROM usr_users WHERE tenant_id = $1 AND persona = 'tenant'
+       ORDER BY last_name, first_name`,
+      [authReq.tenantId],
+    );
+    success(res, rows);
+  } catch (err: any) {
+    error(res, 'Failed to list tenant users', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// POST /api/v1/admin/tenant-users — Create a user in current tenant
+const createTenantUserSchema = Joi.object({
+  email: Joi.string().email({ tlds: false }).required(),
+  first_name: Joi.string().min(1).max(100).required(),
+  last_name: Joi.string().min(1).max(100).required(),
+  password: Joi.string().min(10).required(),
+});
+
+adminRouter.post('/tenant-users', tenantContext, requirePermission('settings:*'), validate(createTenantUserSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { email, first_name, last_name, password } = req.body;
+    const tenantId = authReq.tenantId;
+
+    // Get default business for this tenant
+    const { rows: bizRows } = await adminPool.query(
+      "SELECT id FROM sys_businesses WHERE tenant_id = $1 AND status = 'active' ORDER BY created_at LIMIT 1",
+      [tenantId],
+    );
+    if (bizRows.length === 0) {
+      error(res, 'No active business found for this tenant', 'VALIDATION_ERROR', 400);
+      return;
+    }
+    const businessId = bizRows[0].id;
+
+    // Check email uniqueness within tenant
+    const { rows: existing } = await adminPool.query(
+      'SELECT id FROM usr_users WHERE email = $1 AND tenant_id = $2',
+      [email, tenantId],
+    );
+    if (existing.length > 0) {
+      error(res, 'A user with this email already exists', 'EMAIL_EXISTS', 409);
+      return;
+    }
+
+    // Create user with tenant_owner role
+    const passwordHash = await hashPassword(password);
+    const { rows: userRows } = await adminPool.query(
+      `INSERT INTO usr_users (tenant_id, business_id, email, first_name, last_name, password_hash, role, persona, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'tenant_owner', 'tenant', 'active')
+       RETURNING id, email, first_name, last_name, role, persona, status, business_id, created_at`,
+      [tenantId, businessId, email, first_name, last_name, passwordHash],
+    );
+    const user = userRows[0];
+
+    // Assign Tenant Owner role from tenant-specific roles
+    const { rows: roleRows } = await adminPool.query(
+      "SELECT id FROM usr_roles WHERE tenant_id = $1 AND name = 'Tenant Owner'",
+      [tenantId],
+    );
+    if (roleRows.length > 0) {
+      await adminPool.query(
+        'INSERT INTO usr_user_roles (user_id, role_id, tenant_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+        [user.id, roleRows[0].id, tenantId],
+      );
+    }
+
+    await logAudit({
+      tenantId,
+      userId: authReq.user.sub,
+      action: 'tenant_user.created',
+      resourceType: 'user',
+      resourceId: user.id,
+      details: { email, role: 'tenant_owner' },
+    });
+
+    success(res, user, undefined, 201);
+  } catch (err: any) {
+    error(res, 'Failed to create user', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/admin/tenant-users/:id — Update a tenant user
+const updateTenantUserSchema = Joi.object({
+  email: Joi.string().email({ tlds: false }),
+  first_name: Joi.string().min(1).max(100),
+  last_name: Joi.string().min(1).max(100),
+  status: Joi.string().valid('active', 'inactive'),
+  password: Joi.string().min(10),
+}).min(1);
+
+adminRouter.put('/tenant-users/:id', tenantContext, requirePermission('settings:*'), validate(updateTenantUserSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+
+    // Verify user belongs to this tenant
+    const { rows: existingRows } = await adminPool.query(
+      "SELECT * FROM usr_users WHERE id = $1 AND tenant_id = $2 AND persona = 'tenant'",
+      [req.params.id, authReq.tenantId],
+    );
+    if (existingRows.length === 0) {
+      error(res, 'User not found', 'NOT_FOUND', 404);
+      return;
+    }
+
+    const { email, first_name, last_name, status, password } = req.body;
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    if (email !== undefined) { fields.push(`email = $${idx++}`); values.push(email); }
+    if (first_name !== undefined) { fields.push(`first_name = $${idx++}`); values.push(first_name); }
+    if (last_name !== undefined) { fields.push(`last_name = $${idx++}`); values.push(last_name); }
+    if (status !== undefined) { fields.push(`status = $${idx++}`); values.push(status); }
+    if (password) {
+      const passwordHash = await hashPassword(password);
+      fields.push(`password_hash = $${idx++}`);
+      values.push(passwordHash);
+    }
+
+    fields.push('updated_at = NOW()');
+    values.push(req.params.id, authReq.tenantId);
+
+    const { rows } = await adminPool.query(
+      `UPDATE usr_users SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx}
+       RETURNING id, email, first_name, last_name, role, persona, status, business_id, updated_at`,
+      values,
+    );
+
+    success(res, rows[0]);
+  } catch (err: any) {
+    if (err.code === '23505') {
+      error(res, 'A user with this email already exists', 'EMAIL_EXISTS', 409);
+    } else {
+      error(res, 'Failed to update user', 'INTERNAL_ERROR', 500);
+    }
+  }
+});
+
+// DELETE /api/v1/admin/tenant-users/:id — Deactivate a tenant user
+adminRouter.delete('/tenant-users/:id', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+
+    // Prevent self-deactivation
+    if (req.params.id === authReq.user.sub) {
+      error(res, 'Cannot deactivate your own account', 'VALIDATION_ERROR', 400);
+      return;
+    }
+
+    const { rows } = await adminPool.query(
+      `UPDATE usr_users SET status = 'inactive', updated_at = NOW()
+       WHERE id = $1 AND tenant_id = $2 AND persona = 'tenant'
+       RETURNING id, email, status`,
+      [req.params.id, authReq.tenantId],
+    );
+    if (rows.length === 0) {
+      error(res, 'User not found', 'NOT_FOUND', 404);
+      return;
+    }
+
+    await logAudit({
+      tenantId: authReq.tenantId,
+      userId: authReq.user.sub,
+      action: 'tenant_user.deactivated',
+      resourceType: 'user',
+      resourceId: req.params.id,
+      details: { email: rows[0].email },
+    });
+
+    success(res, rows[0]);
+  } catch (err: any) {
+    error(res, 'Failed to deactivate user', 'INTERNAL_ERROR', 500);
   }
 });

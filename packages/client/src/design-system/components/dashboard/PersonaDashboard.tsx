@@ -149,7 +149,7 @@ export function PersonaDashboard() {
 }
 
 function resolvePersona(role: string): Persona {
-  if (role === 'system_admin' || role === 'system_support') return 'system';
+  if (role === 'system_admin' || role === 'system_support' || role === 'Super Admin') return 'system';
   if (role === 'tenant_owner' || role === 'tenant_manager') return 'tenant';
   if (role === 'customer') return 'customer';
   return 'business';
