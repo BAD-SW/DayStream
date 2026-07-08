@@ -75,6 +75,7 @@ customersRouter.post('/', requirePermission('customers:*'), validate(createCusto
 
     success(res, result.customer, undefined, 201);
   } catch (err: any) {
+    console.error('[customers] Create customer failed:', err.message, err.stack);
     error(res, 'Failed to create customer', 'INTERNAL_ERROR', 500);
   }
 });
