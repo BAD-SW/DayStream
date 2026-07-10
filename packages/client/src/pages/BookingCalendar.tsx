@@ -109,31 +109,33 @@ export function BookingCalendar() {
 function DayView({ bookings, date, timezone, onBookingClick }: { bookings: any[]; date: string; timezone: string; onBookingClick: (id: string) => void }) {
   return (
     <div style={styles.timeGrid}>
-      <div style={styles.timeLabels}>
-        {HOURS.map((h) => (
-          <div key={h} style={styles.timeLabel}>{formatHour(h)}</div>
-        ))}
-      </div>
-      <div style={styles.dayColumn}>
-        {HOURS.map((h) => (
-          <div key={h} style={styles.hourRow} />
-        ))}
-        {bookings.map((bk) => {
-          const pos = getBookingPosition(bk, timezone);
-          if (!pos) return null;
-          return (
-            <div
-              key={bk.id}
-              style={{ ...styles.bookingBlock, top: `${pos.top}%`, height: `${pos.height}%`, background: STATUS_COLORS[bk.status] || '#8A8A8A', cursor: 'pointer' }}
-              onClick={() => onBookingClick(bk.id)}
-              title={`${bk.service_name} — ${bk.customer_name} (${bk.status})`}
-            >
-              <span style={styles.blockTime}>{formatTime(bk.start_time, timezone)}</span>
-              <span style={styles.blockTitle}>{bk.service_name}</span>
-              <span style={styles.blockSub}>{bk.customer_name}</span>
-            </div>
-          );
-        })}
+      {HOURS.map((h) => (
+        <div key={h} style={styles.gridRow}>
+          <div style={styles.timeLabel}>{formatHour(h)}</div>
+          <div style={styles.hourCell} />
+        </div>
+      ))}
+      {/* Booking blocks overlay */}
+      <div style={styles.bookingOverlay}>
+        <div style={styles.timeLabelSpacer} />
+        <div style={styles.dayColumnOverlay}>
+          {bookings.map((bk) => {
+            const pos = getBookingPosition(bk, timezone);
+            if (!pos) return null;
+            return (
+              <div
+                key={bk.id}
+                style={{ ...styles.bookingBlock, top: `${pos.top}%`, height: `${pos.height}%`, background: STATUS_COLORS[bk.status] || '#8A8A8A', cursor: 'pointer' }}
+                onClick={() => onBookingClick(bk.id)}
+                title={`${bk.service_name} — ${bk.customer_name} (${bk.status})`}
+              >
+                <span style={styles.blockTime}>{formatTime(bk.start_time, timezone)}</span>
+                <span style={styles.blockTitle}>{bk.service_name}</span>
+                <span style={styles.blockSub}>{bk.customer_name}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -160,43 +162,49 @@ function WeekView({ bookings, date, timezone, onBookingClick }: { bookings: any[
 
   return (
     <div style={styles.weekContainer}>
-      <div style={styles.weekHeader}>
-        <div style={styles.timeLabelsHeader} />
-        {days.map((d) => (
-          <div key={d} style={{ ...styles.weekDayHeader, ...(d === new Date().toISOString().slice(0, 10) ? styles.todayHeader : {}) }}>
-            <span style={styles.weekDayName}>{new Date(d + 'T12:00:00Z').toLocaleDateString(undefined, { weekday: 'short', timeZone: 'UTC' })}</span>
-            <span style={styles.weekDayNum}>{new Date(d + 'T12:00:00Z').getUTCDate()}</span>
-          </div>
-        ))}
-      </div>
-      <div style={styles.weekBody}>
-        <div style={styles.timeLabels}>
-          {HOURS.map((h) => (
-            <div key={h} style={styles.timeLabel}>{formatHour(h)}</div>
+      <div style={styles.weekBodyScroll}>
+        {/* Header row (inside scroll container so columns align) */}
+        <div style={{ ...styles.weekRow, height: 'auto', position: 'sticky' as const, top: 0, zIndex: 2, background: 'var(--color-background, #FFF)' }}>
+          <div style={styles.weekHeaderTimeCell} />
+          {days.map((d) => (
+            <div key={d} style={{ ...styles.weekDayHeader, ...(d === new Date().toISOString().slice(0, 10) ? styles.todayHeader : {}) }}>
+              <span style={styles.weekDayName}>{new Date(d + 'T12:00:00Z').toLocaleDateString(undefined, { weekday: 'short', timeZone: 'UTC' })}</span>
+              <span style={styles.weekDayNum}>{new Date(d + 'T12:00:00Z').getUTCDate()}</span>
+            </div>
           ))}
         </div>
-        {days.map((d) => (
-          <div key={d} style={styles.dayColumn}>
-            {HOURS.map((h) => (
-              <div key={h} style={styles.hourRow} />
+        {/* Time rows */}
+        {HOURS.map((h) => (
+          <div key={h} style={styles.weekRow}>
+            <div style={styles.weekTimeLabel}>{formatHour(h)}</div>
+            {days.map((d) => (
+              <div key={d} style={styles.weekCell} />
             ))}
-            {(bookingsByDay.get(d) || []).map((bk) => {
-              const pos = getBookingPosition(bk, timezone);
-              if (!pos) return null;
-              return (
-                <div
-                  key={bk.id}
-                  style={{ ...styles.bookingBlock, top: `${pos.top}%`, height: `${Math.max(pos.height, 3)}%`, background: STATUS_COLORS[bk.status] || '#8A8A8A', cursor: 'pointer' }}
-                  onClick={() => onBookingClick(bk.id)}
-                  title={`${bk.service_name} — ${bk.customer_name}`}
-                >
-                  <span style={styles.blockTime}>{formatTime(bk.start_time, timezone)}</span>
-                  <span style={styles.blockTitle}>{bk.service_name}</span>
-                </div>
-              );
-            })}
           </div>
         ))}
+        {/* Booking overlays per day */}
+        <div style={{ ...styles.weekOverlay, top: '50px' }}>
+          <div style={styles.weekOverlaySpacer} />
+          {days.map((d) => (
+            <div key={d} style={styles.weekDayOverlay}>
+              {(bookingsByDay.get(d) || []).map((bk) => {
+                const pos = getBookingPosition(bk, timezone);
+                if (!pos) return null;
+                return (
+                  <div
+                    key={bk.id}
+                    style={{ ...styles.bookingBlock, top: `${pos.top}%`, height: `${Math.max(pos.height, 3)}%`, background: STATUS_COLORS[bk.status] || '#8A8A8A', cursor: 'pointer' }}
+                    onClick={() => onBookingClick(bk.id)}
+                    title={`${bk.service_name} — ${bk.customer_name}`}
+                  >
+                    <span style={styles.blockTime}>{formatTime(bk.start_time, timezone)}</span>
+                    <span style={styles.blockTitle}>{bk.service_name}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -250,7 +258,11 @@ function MonthView({ days, date, onDayClick }: { days: any[]; date: string; onDa
             {cell.date && (
               <>
                 <span style={styles.monthCellDay}>{cell.day}</span>
-                {cell.count > 0 && <span style={styles.monthCellCount}>{cell.count}</span>}
+                {cell.count > 0 && (
+                  <span style={styles.monthCellCount}>
+                    {cell.count} booking{cell.count !== 1 ? 's' : ''}
+                  </span>
+                )}
               </>
             )}
           </div>
@@ -330,10 +342,15 @@ const styles: Record<string, React.CSSProperties> = {
   empty: { color: 'var(--color-text-secondary)', textAlign: 'center', padding: 'var(--space-xl)', fontSize: 'var(--font-size-sm)' },
 
   // Time grid (shared by day/week)
-  timeGrid: { display: 'grid', gridTemplateColumns: '60px 1fr', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
+  timeGrid: { position: 'relative' as const, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
+  gridRow: { display: 'grid', gridTemplateColumns: '60px 1fr', height: '60px', borderBottom: '1px solid var(--color-border)' },
+  timeLabel: { display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: '8px', paddingTop: '2px', fontSize: '11px', color: 'var(--color-text-secondary)' },
+  hourCell: { borderLeft: '1px solid var(--color-border)' },
+  bookingOverlay: { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0, display: 'grid', gridTemplateColumns: '60px 1fr', pointerEvents: 'none' as const },
+  timeLabelSpacer: {},
+  dayColumnOverlay: { position: 'relative' as const, pointerEvents: 'auto' as const },
   timeLabels: { display: 'flex', flexDirection: 'column' as const },
   timeLabelsHeader: { width: '60px', flexShrink: 0 },
-  timeLabel: { height: '60px', display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: '8px', paddingTop: '2px', fontSize: '11px', color: 'var(--color-text-secondary)', borderTop: '1px solid var(--color-border)' },
   dayColumn: { position: 'relative' as const, minHeight: `${HOURS.length * 60}px` },
   hourRow: { height: '60px', borderTop: '1px solid var(--color-border)', boxSizing: 'border-box' as const },
 
@@ -345,12 +362,18 @@ const styles: Record<string, React.CSSProperties> = {
 
   // Week view
   weekContainer: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
-  weekHeader: { display: 'grid', gridTemplateColumns: '60px repeat(7, 1fr)', borderBottom: '1px solid var(--color-border)' },
-  weekDayHeader: { padding: '8px 4px', textAlign: 'center' as const, fontSize: '12px' },
-  todayHeader: { background: 'var(--color-accent, #C9A96E)', color: '#1A1A1A', borderRadius: '4px' },
+  weekHeaderTimeCell: { borderRight: '1px solid var(--color-border)', borderBottom: '1px solid var(--color-border)' },
+  weekDayHeader: { padding: '8px 4px', textAlign: 'center' as const, fontSize: '12px', borderRight: '1px solid var(--color-border)', borderBottom: '1px solid var(--color-border)' },
+  todayHeader: { background: 'var(--color-accent, #C9A96E)', color: '#1A1A1A' },
   weekDayName: { display: 'block', fontWeight: 500 },
   weekDayNum: { display: 'block', fontSize: '16px', fontWeight: 600 },
-  weekBody: { display: 'grid', gridTemplateColumns: '60px repeat(7, 1fr)', overflow: 'auto', maxHeight: '700px' },
+  weekBodyScroll: { position: 'relative' as const, overflow: 'auto', maxHeight: '700px' },
+  weekRow: { display: 'grid', gridTemplateColumns: '60px repeat(7, 1fr)', height: '60px', borderBottom: '1px solid var(--color-border)' },
+  weekTimeLabel: { display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: '8px', paddingTop: '2px', fontSize: '11px', color: 'var(--color-text-secondary)', borderRight: '1px solid var(--color-border)' },
+  weekCell: { borderRight: '1px solid var(--color-border)' },
+  weekOverlay: { position: 'absolute' as const, top: 0, left: 0, right: 0, height: `${HOURS.length * 60}px`, display: 'grid', gridTemplateColumns: '60px repeat(7, 1fr)', pointerEvents: 'none' as const },
+  weekOverlaySpacer: {},
+  weekDayOverlay: { position: 'relative' as const, pointerEvents: 'auto' as const },
 
   // Month view
   monthHeader: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--color-border)', marginBottom: '4px' },
@@ -359,5 +382,5 @@ const styles: Record<string, React.CSSProperties> = {
   monthCell: { minHeight: '80px', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '4px 6px', display: 'flex', flexDirection: 'column' as const, gap: '2px' },
   monthCellToday: { background: 'rgba(201, 169, 110, 0.1)', borderColor: 'var(--color-accent, #C9A96E)' },
   monthCellDay: { fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' },
-  monthCellCount: { fontSize: '11px', color: 'var(--color-accent, #C9A96E)', fontWeight: 600 },
+  monthCellCount: { fontSize: '11px', color: '#fff', fontWeight: 600, background: 'var(--color-accent, #C9A96E)', borderRadius: '4px', padding: '2px 6px', alignSelf: 'flex-start' },
 };
