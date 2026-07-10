@@ -55,10 +55,11 @@ export async function createBooking(data: {
   return res.data.data;
 }
 
-export async function getBookings(businessId: string, filters?: { status?: string; customer_id?: string; staff_id?: string; date_from?: string; date_to?: string; page?: number }) {
+export async function getBookings(businessId: string, filters?: { status?: string; customer_id?: string; customer_search?: string; staff_id?: string; date_from?: string; date_to?: string; page?: number }) {
   const params = new URLSearchParams({ business_id: businessId });
   if (filters?.status) params.set('status', filters.status);
   if (filters?.customer_id) params.set('customer_id', filters.customer_id);
+  if (filters?.customer_search) params.set('customer_search', filters.customer_search);
   if (filters?.staff_id) params.set('staff_id', filters.staff_id);
   if (filters?.date_from) params.set('date_from', filters.date_from);
   if (filters?.date_to) params.set('date_to', filters.date_to);

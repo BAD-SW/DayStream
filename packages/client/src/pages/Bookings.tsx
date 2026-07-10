@@ -14,15 +14,20 @@ export function Bookings() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [staffFilter, setStaffFilter] = useState('');
+  const [customerFilter, setCustomerFilter] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [seriesModal, setSeriesModal] = useState<{ seriesId: string; bookings: any[] } | null>(null);
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [businessTimezone, setBusinessTimezone] = useState('UTC');
+  const [staffList, setStaffList] = useState<any[]>([]);
 
   const businessId = localStorage.getItem('business_id') || '';
 
-  // Fetch business timezone
+  // Fetch business timezone and staff list for filter
   useEffect(() => {
     if (!businessId) return;
     import('../api/client').then(({ apiClient }) => {
@@ -31,18 +36,28 @@ export function Bookings() {
         if (biz?.timezone) setBusinessTimezone(biz.timezone);
       }).catch(() => {});
     });
+    import('../api/staff').then((staffApi) => {
+      staffApi.getStaffList({ business_id: businessId, status: 'active' }).then((res) => setStaffList(res.data)).catch(() => {});
+    });
   }, [businessId]);
 
   const fetchBookings = useCallback(async () => {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const result = await bookingsApi.getBookings(businessId, { status: statusFilter || undefined, page });
+      const result = await bookingsApi.getBookings(businessId, {
+        status: statusFilter || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+        staff_id: staffFilter || undefined,
+        customer_search: customerFilter || undefined,
+        page,
+      });
       setBookings(result.data);
       setTotalPages(result.meta?.totalPages || 1);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId, statusFilter, page]);
+  }, [businessId, statusFilter, dateFrom, dateTo, staffFilter, customerFilter, page]);
 
   useEffect(() => { fetchBookings(); }, [fetchBookings]);
 
@@ -144,6 +159,18 @@ export function Bookings() {
           <option value="cancelled">Cancelled</option>
           <option value="no_show">No Show</option>
         </select>
+        <select value={staffFilter} onChange={(e) => { setStaffFilter(e.target.value); setPage(1); }} style={styles.select}>
+          <option value="">All Staff</option>
+          {staffList.map((s: any) => (
+            <option key={s.user_id} value={s.user_id}>{s.first_name} {s.last_name}</option>
+          ))}
+        </select>
+        <input type="text" style={styles.select} value={customerFilter} onChange={(e) => { setCustomerFilter(e.target.value); setPage(1); }} placeholder="Customer name..." title="Filter by customer" />
+        <input type="date" style={styles.select} value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} title="From date" />
+        <input type="date" style={styles.select} value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} title="To date" />
+        {(statusFilter || staffFilter || dateFrom || dateTo || customerFilter) && (
+          <button style={styles.navBtn} onClick={() => { setStatusFilter(''); setStaffFilter(''); setDateFrom(''); setDateTo(''); setCustomerFilter(''); setPage(1); }}>Clear</button>
+        )}
       </div>
 
       <Table columns={columns} data={bookings} loading={loading} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No bookings found" mobileCardMode onRowClick={(row) => navigate(`/bookings/${row.id}/edit`)} />
@@ -187,7 +214,7 @@ const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1200px', margin: '0 auto' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
   title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
-  toolbar: { display: 'flex', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' },
+  toolbar: { display: 'flex', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)', flexWrap: 'wrap' as const, alignItems: 'center' },
   select: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
   navBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 16px', color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
   actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },

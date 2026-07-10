@@ -23,6 +23,7 @@ interface BookingFilters {
   dateTo?: string;
   status?: string;
   customerId?: string;
+  customerSearch?: string;
   staffId?: string;
   serviceId?: string;
   page?: number;
@@ -179,6 +180,12 @@ export async function getBookings(filters: BookingFilters) {
   if (filters.customerId) {
     conditions.push(`b.customer_id = $${paramIndex++}`);
     params.push(filters.customerId);
+  }
+
+  if (filters.customerSearch) {
+    conditions.push(`b.customer_id IN (SELECT id FROM cus_customers WHERE (first_name ILIKE $${paramIndex} OR last_name ILIKE $${paramIndex} OR CONCAT(first_name, ' ', last_name) ILIKE $${paramIndex} OR email ILIKE $${paramIndex} OR COALESCE(phone, '') ILIKE $${paramIndex}))`);
+    params.push(`%${filters.customerSearch}%`);
+    paramIndex++;
   }
 
   if (filters.staffId) {
