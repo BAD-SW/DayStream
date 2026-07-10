@@ -113,7 +113,7 @@ export function Table<T extends Record<string, any>>({
     return (
       <div style={styles.cardList}>
         {sortedData.map((row, rowIndex) => (
-          <div key={rowIndex} style={styles.card} onClick={onRowClick ? () => onRowClick(row) : undefined}>
+          <div key={rowIndex} style={{ ...styles.card, ...(onRowClick ? { cursor: 'pointer' } : {}) }} onClick={onRowClick ? () => onRowClick(row) : undefined}>
             {columns.map((col) => (
               <div key={col.key} style={styles.cardField}>
                 <span style={styles.cardLabel}>{col.header}</span>
@@ -168,7 +168,7 @@ export function Table<T extends Record<string, any>>({
               return (
                 <tr
                   key={rowIndex}
-                  style={{ ...styles.tr, ...(selectedIds.includes(id) ? styles.trSelected : {}) }}
+                  style={{ ...styles.tr, ...(selectedIds.includes(id) ? styles.trSelected : {}), ...(onRowClick ? { cursor: 'pointer' } : {}) }}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
                 >
                   {selectable && (

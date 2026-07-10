@@ -18,8 +18,20 @@ export function Bookings() {
   const [totalPages, setTotalPages] = useState(1);
   const [seriesModal, setSeriesModal] = useState<{ seriesId: string; bookings: any[] } | null>(null);
   const [seriesLoading, setSeriesLoading] = useState(false);
+  const [businessTimezone, setBusinessTimezone] = useState('UTC');
 
   const businessId = localStorage.getItem('business_id') || '';
+
+  // Fetch business timezone
+  useEffect(() => {
+    if (!businessId) return;
+    import('../api/client').then(({ apiClient }) => {
+      apiClient.get('/v1/admin/businesses').then((res) => {
+        const biz = res.data.data?.find((b: any) => b.id === businessId);
+        if (biz?.timezone) setBusinessTimezone(biz.timezone);
+      }).catch(() => {});
+    });
+  }, [businessId]);
 
   const fetchBookings = useCallback(async () => {
     if (!businessId) { setLoading(false); return; }
@@ -86,7 +98,7 @@ export function Bookings() {
     { key: 'service_name', header: 'Service' },
     {
       key: 'start_time', header: 'Date/Time', sortable: true,
-      render: (val: string) => new Date(val).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }),
+      render: (val: string) => new Date(val).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', timeZone: businessTimezone }),
     },
     {
       key: 'status', header: 'Status',
@@ -134,7 +146,7 @@ export function Bookings() {
         </select>
       </div>
 
-      <Table columns={columns} data={bookings} loading={loading} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No bookings found" mobileCardMode />
+      <Table columns={columns} data={bookings} loading={loading} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No bookings found" mobileCardMode onRowClick={(row) => navigate(`/bookings/${row.id}/edit`)} />
 
       {/* Recurring Series Modal */}
       {seriesModal && (
@@ -148,7 +160,7 @@ export function Bookings() {
               {seriesModal.bookings.length === 0 && <p style={styles.empty}>No bookings in this series</p>}
               {seriesModal.bookings.map((bk: any) => (
                 <div key={bk.id} style={styles.seriesItem}>
-                  <span>{new Date(bk.start_time).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}</span>
+                  <span>{new Date(bk.start_time).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', timeZone: businessTimezone })}</span>
                   <Badge variant={STATUS_VARIANTS[bk.status] || 'neutral'}>{bk.status?.replace('_', ' ')}</Badge>
                   <span style={styles.seriesRef}>{bk.booking_reference}</span>
                 </div>

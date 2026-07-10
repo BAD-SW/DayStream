@@ -28,6 +28,7 @@ import { Bookings } from './pages/Bookings';
 import { BookingCalendar } from './pages/BookingCalendar';
 import { BookingFlow } from './pages/BookingFlow';
 import { BookingCreate } from './pages/BookingCreate';
+import { BookingEdit } from './pages/BookingEdit';
 import { Memberships } from './pages/Memberships';
 import { MembershipDetail } from './pages/MembershipDetail';
 import { MembershipPlans } from './pages/MembershipPlans';
@@ -96,6 +97,7 @@ export function App() {
         {/* Bookings */}
         <Route path="/bookings" element={<ProtectedRoute><Bookings /></ProtectedRoute>} />
         <Route path="/bookings/new" element={<ProtectedRoute><BookingCreate /></ProtectedRoute>} />
+        <Route path="/bookings/:id/edit" element={<ProtectedRoute><BookingEdit /></ProtectedRoute>} />
         <Route path="/bookings/calendar" element={<ProtectedRoute><BookingCalendar /></ProtectedRoute>} />
         <Route path="/book/:serviceSlug" element={<ProtectedRoute><BookingFlow /></ProtectedRoute>} />
 

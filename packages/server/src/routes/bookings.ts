@@ -5,6 +5,7 @@ import { tenantContext } from '../auth/tenant-context';
 import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
+import { adminPool } from '../db/pool';
 import * as availabilityService from '../services/availability.service';
 
 export const bookingsRouter = Router();
@@ -352,6 +353,72 @@ bookingsRouter.put('/:id/reschedule', requirePermission('bookings:*'), validate(
     success(res, result.booking);
   } catch (err: any) {
     error(res, 'Failed to reschedule booking', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/bookings/:id — Full booking update (change service, variant, staff, time, notes)
+const updateBookingSchema = Joi.object({
+  service_id: Joi.string().uuid(),
+  variant_id: Joi.string().uuid(),
+  staff_id: Joi.string().uuid().allow(null),
+  start_time: Joi.string().isoDate(),
+  notes: Joi.string().allow('', null),
+  customer_id: Joi.string().uuid(),
+});
+
+bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBookingSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const existing = await bookingService.getBookingById(req.params.id, businessId);
+    if (!existing) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+
+    // Build update fields
+    const updates: Record<string, any> = {};
+    if (req.body.service_id !== undefined) updates.service_id = req.body.service_id;
+    if (req.body.variant_id !== undefined) updates.variant_id = req.body.variant_id;
+    if (req.body.staff_id !== undefined) updates.staff_id = req.body.staff_id;
+    if (req.body.customer_id !== undefined) updates.customer_id = req.body.customer_id;
+    if (req.body.notes !== undefined) updates.notes = req.body.notes;
+
+    // If start_time changes, recalculate end_time based on variant duration
+    if (req.body.start_time) {
+      const variantId = req.body.variant_id || existing.variant_id;
+      const { rows: variantRows } = await adminPool.query('SELECT duration FROM svc_variants WHERE id = $1', [variantId]);
+      const duration = variantRows[0]?.duration || 60;
+      const startTime = new Date(req.body.start_time);
+      const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
+      updates.start_time = startTime.toISOString();
+      updates.end_time = endTime.toISOString();
+    }
+
+    if (Object.keys(updates).length === 0) {
+      success(res, existing);
+      return;
+    }
+
+    // Build SQL update
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+    for (const [key, val] of Object.entries(updates)) {
+      fields.push(`${key} = $${idx++}`);
+      values.push(val);
+    }
+    fields.push('updated_at = NOW()');
+    values.push(req.params.id, businessId);
+
+    const { rows } = await adminPool.query(
+      `UPDATE apt_bookings SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`,
+      values,
+    );
+
+    if (rows.length === 0) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    success(res, rows[0]);
+  } catch (err: any) {
+    error(res, 'Failed to update booking', 'INTERNAL_ERROR', 500);
   }
 });
 

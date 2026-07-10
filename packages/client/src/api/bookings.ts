@@ -104,6 +104,14 @@ export async function rescheduleBooking(id: string, businessId: string, startTim
   return res.data.data;
 }
 
+export async function updateBooking(id: string, businessId: string, data: {
+  service_id?: string; variant_id?: string; staff_id?: string | null;
+  start_time?: string; notes?: string | null; customer_id?: string;
+}) {
+  const res = await apiClient.put(`/v1/bookings/${id}?business_id=${businessId}`, data);
+  return res.data.data;
+}
+
 // --- Slot Holds ---
 
 export async function holdSlot(data: { business_id: string; service_id: string; variant_id: string; staff_id?: string; start_time: string; end_time: string }) {

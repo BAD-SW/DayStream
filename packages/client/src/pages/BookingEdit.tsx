@@ -1,0 +1,347 @@
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Button } from '../design-system/components/actions/Button';
+import { Alert } from '../design-system/components/feedback/Alert';
+import * as bookingsApi from '../api/bookings';
+import * as servicesApi from '../api/services';
+import * as customersApi from '../api/customers';
+import type { ServiceVariant } from '../api/services';
+import { apiClient } from '../api/client';
+
+interface SlotCombo {
+  start_time: string;
+  end_time: string;
+  duration: number;
+  location_id: string | null;
+  location_name: string | null;
+  staff_id: string;
+  staff_first_name: string;
+  staff_last_name: string;
+}
+
+export function BookingEdit() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const businessId = localStorage.getItem('business_id') || '';
+
+  const [booking, setBooking] = useState<any>(null);
+  const [services, setServices] = useState<any[]>([]);
+  const [variants, setVariants] = useState<ServiceVariant[]>([]);
+  const [businessTimezone, setBusinessTimezone] = useState('UTC');
+  const [allCombos, setAllCombos] = useState<SlotCombo[]>([]);
+  const [combosLoading, setCombosLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
+
+  // Customer search
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerResults, setCustomerResults] = useState<any[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [customerSearching, setCustomerSearching] = useState(false);
+
+  // Selections
+  const [selectedService, setSelectedService] = useState('');
+  const [selectedVariant, setSelectedVariant] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
+  const [selectedStaff, setSelectedStaff] = useState<string | null>(null);
+  const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const [notes, setNotes] = useState('');
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // Load booking + services + timezone on mount
+  useEffect(() => {
+    if (!businessId || !id) return;
+    Promise.all([
+      bookingsApi.getBooking(id, businessId),
+      servicesApi.getServices(businessId, { status: 'active' }),
+      apiClient.get('/v1/admin/businesses'),
+    ]).then(([bk, svcRes, bizRes]) => {
+      setBooking(bk);
+      setServices(svcRes.data);
+      const biz = bizRes.data.data?.find((b: any) => b.id === businessId);
+      if (biz?.timezone) setBusinessTimezone(biz.timezone);
+
+      // Pre-fill selections from booking
+      setSelectedService(bk.service_id);
+      setSelectedVariant(bk.variant_id);
+      setSelectedDate(bk.start_time.split('T')[0]);
+      setSelectedTime(bk.start_time);
+      setNotes(bk.notes || '');
+      setSelectedCustomer({ id: bk.customer_id, first_name: bk.customer_first_name, last_name: bk.customer_last_name, email: '' });
+      if (bk.staff_id) setSelectedStaff(bk.staff_id);
+
+      // Load variants for the service
+      servicesApi.getVariants(bk.service_id).then(setVariants);
+    }).catch(() => { setError('Failed to load booking'); })
+      .finally(() => setPageLoading(false));
+  }, [businessId, id]);
+
+  // Customer search with debounce
+  useEffect(() => {
+    if (!customerSearch || customerSearch.length < 2) {
+      setCustomerResults([]);
+      setShowCustomerDropdown(false);
+      return;
+    }
+    setCustomerSearching(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const res = await customersApi.getCustomers(businessId, { search: customerSearch, limit: 10 });
+        setCustomerResults(res.data);
+        setShowCustomerDropdown(true);
+      } catch { setCustomerResults([]); }
+      finally { setCustomerSearching(false); }
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [customerSearch, businessId]);
+
+  // Load variants when service changes
+  useEffect(() => {
+    if (!selectedService) { setVariants([]); return; }
+    servicesApi.getVariants(selectedService).then(setVariants);
+  }, [selectedService]);
+
+  // Fetch combinations when service + variant + date set
+  useEffect(() => {
+    if (!selectedService || !selectedVariant || !selectedDate) { setAllCombos([]); return; }
+    setCombosLoading(true);
+    apiClient.get('/v1/bookings/availability/combinations', {
+      params: { service_id: selectedService, business_id: businessId, date_from: selectedDate, date_to: selectedDate, variant_id: selectedVariant },
+    }).then((res) => {
+      const data = res.data.data;
+      setAllCombos(data.slots || []);
+      if (data.timezone) setBusinessTimezone(data.timezone);
+    }).catch(() => setAllCombos([]))
+      .finally(() => setCombosLoading(false));
+  }, [selectedService, selectedVariant, selectedDate, businessId]);
+
+  // Derived filters
+  const availableLocations = useMemo(() => {
+    const combos = allCombos.filter((c) => {
+      if (selectedStaff && c.staff_id !== selectedStaff) return false;
+      if (selectedTime && c.start_time !== selectedTime) return false;
+      return true;
+    });
+    const map = new Map<string, string>();
+    for (const c of combos) { if (c.location_id && c.location_name) map.set(c.location_id, c.location_name); }
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [allCombos, selectedStaff, selectedTime]);
+
+  const availableStaff = useMemo(() => {
+    const combos = allCombos.filter((c) => {
+      if (selectedLocation && c.location_id !== selectedLocation) return false;
+      if (selectedTime && c.start_time !== selectedTime) return false;
+      return true;
+    });
+    const map = new Map<string, { id: string; name: string }>();
+    for (const c of combos) { if (!map.has(c.staff_id)) map.set(c.staff_id, { id: c.staff_id, name: `${c.staff_first_name} ${c.staff_last_name}` }); }
+    return Array.from(map.values());
+  }, [allCombos, selectedLocation, selectedTime]);
+
+  const availableTimes = useMemo(() => {
+    const combos = allCombos.filter((c) => {
+      if (selectedLocation && c.location_id !== selectedLocation) return false;
+      if (selectedStaff && c.staff_id !== selectedStaff) return false;
+      return true;
+    });
+    const set = new Set<string>();
+    for (const c of combos) set.add(c.start_time);
+    return Array.from(set).sort();
+  }, [allCombos, selectedLocation, selectedStaff]);
+
+  const filteredCombos = useMemo(() => {
+    return allCombos.filter((c) => {
+      if (selectedLocation && c.location_id !== selectedLocation) return false;
+      if (selectedStaff && c.staff_id !== selectedStaff) return false;
+      if (selectedTime && c.start_time !== selectedTime) return false;
+      return true;
+    });
+  }, [allCombos, selectedLocation, selectedStaff, selectedTime]);
+
+  const canSave = selectedCustomer && selectedService && selectedVariant && selectedTime && filteredCombos.length > 0;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSave || !id) return;
+    const combo = filteredCombos[0];
+    setLoading(true);
+    setError('');
+    try {
+      await bookingsApi.updateBooking(id, businessId, {
+        customer_id: selectedCustomer.id,
+        service_id: selectedService,
+        variant_id: selectedVariant,
+        staff_id: combo.staff_id,
+        start_time: combo.start_time,
+        notes: notes || undefined,
+      });
+      navigate('/bookings');
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to update booking');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (pageLoading) return <p style={{ padding: '24px', color: 'var(--color-text-secondary)' }}>Loading booking...</p>;
+  if (!booking) return <Alert variant="error">Booking not found</Alert>;
+
+  return (
+    <div style={styles.page}>
+      <h1 style={styles.title}>Edit Booking</h1>
+      <p style={styles.subtitle}>Ref: {booking.booking_reference}</p>
+      {error && <Alert variant="error">{error}</Alert>}
+
+      <form onSubmit={handleSubmit} style={styles.form}>
+        {/* Customer */}
+        <div style={styles.field}>
+          <label style={styles.label}>Customer *</label>
+          <div style={styles.searchWrapper}>
+            {selectedCustomer ? (
+              <div style={styles.selectedCustomer}>
+                <span>{selectedCustomer.first_name} {selectedCustomer.last_name} {selectedCustomer.email ? `(${selectedCustomer.email})` : ''}</span>
+                <button type="button" style={styles.clearBtn} onClick={() => { setSelectedCustomer(null); setCustomerSearch(''); }}>×</button>
+              </div>
+            ) : (
+              <input style={styles.input} type="text" value={customerSearch}
+                onChange={(e) => setCustomerSearch(e.target.value)}
+                placeholder="Search by name, email, or phone..." autoComplete="off"
+                onFocus={() => { if (customerResults.length > 0) setShowCustomerDropdown(true); }}
+                onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)} />
+            )}
+            {showCustomerDropdown && customerResults.length > 0 && (
+              <div style={styles.dropdown}>
+                {customerResults.map((c) => (
+                  <button key={c.id} type="button" style={styles.dropdownItem}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => { setSelectedCustomer(c); setShowCustomerDropdown(false); setCustomerSearch(''); }}>
+                    <strong>{c.first_name} {c.last_name}</strong>
+                    <span style={styles.dropdownEmail}>{c.email}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Service */}
+        <div style={styles.field}>
+          <label style={styles.label}>Service *</label>
+          <select style={styles.select} value={selectedService} onChange={(e) => { setSelectedService(e.target.value); setSelectedVariant(''); setSelectedTime(null); setAllCombos([]); }}>
+            <option value="">Select a service...</option>
+            {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+
+        {/* Variant */}
+        {variants.length > 0 && (
+          <div style={styles.field}>
+            <label style={styles.label}>Duration / Option *</label>
+            <select style={styles.select} value={selectedVariant} onChange={(e) => { setSelectedVariant(e.target.value); setSelectedTime(null); setAllCombos([]); }}>
+              <option value="">Select an option...</option>
+              {variants.filter((v) => v.status === 'active').map((v) => (
+                <option key={v.id} value={v.id}>{v.name} — {v.duration} min — €{(v.price / 100).toFixed(2)}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Date */}
+        {selectedVariant && (
+          <div style={styles.field}>
+            <label style={styles.label}>Date *</label>
+            <input type="date" style={styles.input} value={selectedDate}
+              onChange={(e) => { setSelectedDate(e.target.value); setSelectedTime(null); }}
+              min={new Date().toISOString().slice(0, 10)} required />
+          </div>
+        )}
+
+        {/* Multi-filter panel */}
+        {selectedDate && !combosLoading && allCombos.length > 0 && (
+          <div style={styles.filterPanel}>
+            {availableLocations.length > 0 && (
+              <div style={styles.filterColumn}>
+                <label style={styles.filterLabel}>Location</label>
+                <button type="button" style={{ ...styles.filterOption, ...(selectedLocation === null ? styles.filterOptionActive : {}) }}
+                  onClick={() => setSelectedLocation(null)}>Any</button>
+                {availableLocations.map((l) => (
+                  <button key={l.id} type="button"
+                    style={{ ...styles.filterOption, ...(selectedLocation === l.id ? styles.filterOptionActive : {}) }}
+                    onClick={() => setSelectedLocation(selectedLocation === l.id ? null : l.id)}>{l.name}</button>
+                ))}
+              </div>
+            )}
+            <div style={styles.filterColumn}>
+              <label style={styles.filterLabel}>Staff</label>
+              <button type="button" style={{ ...styles.filterOption, ...(selectedStaff === null ? styles.filterOptionActive : {}) }}
+                onClick={() => setSelectedStaff(null)}>Any</button>
+              {availableStaff.map((s) => (
+                <button key={s.id} type="button"
+                  style={{ ...styles.filterOption, ...(selectedStaff === s.id ? styles.filterOptionActive : {}) }}
+                  onClick={() => setSelectedStaff(selectedStaff === s.id ? null : s.id)}>{s.name}</button>
+              ))}
+            </div>
+            <div style={styles.filterColumn}>
+              <label style={styles.filterLabel}>Time *</label>
+              <div style={styles.timeGrid}>
+                {availableTimes.map((t) => (
+                  <button key={t} type="button"
+                    style={{ ...styles.timeBtn, ...(selectedTime === t ? styles.timeBtnActive : {}) }}
+                    onClick={() => setSelectedTime(selectedTime === t ? null : t)}>
+                    {new Date(t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone: businessTimezone })}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {selectedDate && combosLoading && <p style={styles.hint}>Loading availability...</p>}
+        {selectedDate && !combosLoading && allCombos.length === 0 && <p style={styles.hint}>No availability for this date</p>}
+
+        {/* Notes */}
+        <div style={styles.field}>
+          <label style={styles.label}>Notes (optional)</label>
+          <textarea style={styles.textarea} value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Internal notes..." />
+        </div>
+
+        {/* Actions */}
+        <div style={styles.actions}>
+          <Button variant="secondary" type="button" onClick={() => navigate('/bookings')}>Cancel</Button>
+          <Button type="submit" loading={loading} disabled={!canSave}>Save Changes</Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  page: { padding: 'var(--space-lg)', maxWidth: '800px', margin: '0 auto' },
+  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', marginBottom: '4px' },
+  subtitle: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-lg)', marginTop: 0 },
+  form: { display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-md)' },
+  field: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
+  label: { fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-medium)' as any, color: 'var(--color-text)' },
+  select: { background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', color: 'var(--color-text)', fontSize: '16px', width: '100%', boxSizing: 'border-box' as const },
+  input: { background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', color: 'var(--color-text)', fontSize: '16px', width: '100%', boxSizing: 'border-box' as const },
+  textarea: { background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', color: 'var(--color-text)', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', resize: 'vertical' as const },
+  hint: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 },
+  searchWrapper: { position: 'relative' as const },
+  selectedCustomer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', fontSize: '14px', color: 'var(--color-text)' },
+  clearBtn: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: '18px', padding: '0 4px' },
+  dropdown: { position: 'absolute' as const, top: '100%', left: 0, right: 0, background: 'var(--color-surface, #242424)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', marginTop: '4px', maxHeight: '200px', overflow: 'auto', zIndex: 10, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' },
+  dropdownItem: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-start', width: '100%', padding: '10px 12px', border: 'none', background: 'var(--color-background, #1A1A1A)', cursor: 'pointer', textAlign: 'left' as const, color: 'var(--color-text)', fontSize: '14px', borderBottom: '1px solid var(--color-border)' },
+  dropdownEmail: { fontSize: '12px', color: 'var(--color-text-secondary)' },
+  filterPanel: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-md)', padding: 'var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)' },
+  filterColumn: { display: 'flex', flexDirection: 'column' as const, gap: '6px' },
+  filterLabel: { fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: '4px' },
+  filterOption: { padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'none', cursor: 'pointer', fontSize: '13px', color: 'var(--color-text)', textAlign: 'left' as const, fontFamily: 'var(--font-family)', transition: 'all 0.15s ease' },
+  filterOptionActive: { borderColor: 'var(--color-accent, #C9A96E)', background: 'var(--color-accent, #C9A96E)', color: '#1A1A1A', fontWeight: 600 },
+  timeGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: '4px', maxHeight: '300px', overflow: 'auto' },
+  timeBtn: { padding: '6px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--color-text)', textAlign: 'center' as const, fontFamily: 'var(--font-family)', transition: 'all 0.15s ease' },
+  timeBtnActive: { borderColor: 'var(--color-accent, #C9A96E)', background: 'var(--color-accent, #C9A96E)', color: '#1A1A1A', fontWeight: 600 },
+  actions: { display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-md)', marginTop: 'var(--space-md)' },
+};
