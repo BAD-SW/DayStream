@@ -352,7 +352,10 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
         </div>
         <div style={styles.formGroup}>
           <label style={styles.label}>Currency</label>
-          <input style={styles.input} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })} maxLength={3} />
+          <select style={styles.input} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
+            <option value="USD">USD ($)</option>
+            <option value="EUR">EUR (€)</option>
+          </select>
         </div>
         <div style={styles.formGroup}>
           <label style={styles.label}>Timezone</label>

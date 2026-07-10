@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
+import { Button } from '../design-system/components/actions/Button';
 import * as membershipsApi from '../api/memberships';
-import type { Membership } from '../api/memberships';
+import * as customersApi from '../api/customers';
+import type { Membership, MembershipPlan } from '../api/memberships';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   active: 'success', paused: 'warning', frozen: 'info', cancelled: 'error', expired: 'error', pending: 'neutral',
@@ -14,6 +16,7 @@ export function Memberships() {
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [showEnroll, setShowEnroll] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
@@ -84,8 +87,16 @@ export function Memberships() {
     <div style={styles.page}>
       <div style={styles.header}>
         <h1 style={styles.title}>Memberships</h1>
-        <button style={styles.navBtn} onClick={() => navigate('/memberships/plans')}>Manage Plans</button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <Button onClick={() => setShowEnroll(!showEnroll)}>{showEnroll ? 'Cancel' : 'Enroll Customer'}</Button>
+          <button style={styles.navBtn} onClick={() => navigate('/memberships/plans')}>Manage Plans</button>
+        </div>
       </div>
+
+      {showEnroll && (
+        <EnrollForm businessId={businessId} onEnrolled={() => { setShowEnroll(false); fetchMemberships(); }} />
+      )}
+
       <div style={styles.toolbar}>
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
           <option value="">All</option>
@@ -96,50 +107,101 @@ export function Memberships() {
         </select>
       </div>
       <Table columns={columns} data={memberships} loading={loading} onRowClick={(row) => navigate(`/memberships/${row.id}`)} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No memberships found" mobileCardMode />
-      <FamilySection businessId={businessId} />
     </div>
   );
 }
 
-function FamilySection({ businessId }: { businessId: string }) {
-  const [membershipId, setMembershipId] = useState('');
-  const [familyMembers, setFamilyMembers] = useState<any[]>([]);
-  const [showFamily, setShowFamily] = useState(false);
+function EnrollForm({ businessId, onEnrolled }: { businessId: string; onEnrolled: () => void }) {
+  const [plans, setPlans] = useState<MembershipPlan[]>([]);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerResults, setCustomerResults] = useState<any[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState('');
+  const [enrolling, setEnrolling] = useState(false);
+  const [error, setError] = useState('');
 
-  const loadFamily = async () => {
-    if (!membershipId) return;
+  useEffect(() => {
+    membershipsApi.getPlans(businessId).then(setPlans).catch(() => {});
+  }, [businessId]);
+
+  // Customer search with debounce
+  useEffect(() => {
+    if (!customerSearch || customerSearch.length < 2) { setCustomerResults([]); setShowDropdown(false); return; }
+    setSearching(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const res = await customersApi.getCustomers(businessId, { search: customerSearch, limit: 10 });
+        setCustomerResults(res.data);
+        setShowDropdown(true);
+      } catch { setCustomerResults([]); }
+      finally { setSearching(false); }
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [customerSearch, businessId]);
+
+  const handleEnroll = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomer || !selectedPlan) { setError('Select a customer and a plan'); return; }
+    setEnrolling(true);
+    setError('');
     try {
-      const members = await membershipsApi.getFamilyMembers(membershipId);
-      setFamilyMembers(members);
-      setShowFamily(true);
-    } catch { alert('Could not load family members'); }
-  };
-
-  const handleRemove = async (customerId: string) => {
-    if (!confirm('Remove this member from the family plan?')) return;
-    await membershipsApi.removeFamilyMember(membershipId, customerId);
-    setFamilyMembers(familyMembers.filter((m: any) => m.customer_id !== customerId));
+      await membershipsApi.createMembership({ business_id: businessId, customer_id: selectedCustomer.id, plan_id: selectedPlan });
+      onEnrolled();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to enroll customer');
+    } finally {
+      setEnrolling(false);
+    }
   };
 
   return (
-    <div style={{ marginTop: 'var(--space-lg)', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-lg)' }}>
-      <h2 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-bold)' as any, marginBottom: 'var(--space-md)' }}>Family Members</h2>
-      <div style={{ display: 'flex', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
-        <input style={styles.select} placeholder="Membership ID" value={membershipId} onChange={(e) => setMembershipId(e.target.value)} />
-        <button style={styles.navBtn} onClick={loadFamily}>Load Family</button>
-      </div>
-      {showFamily && (
-        <div>
-          {familyMembers.length === 0 ? <p style={{ color: 'var(--color-text-secondary)' }}>No family members</p> : (
-            familyMembers.map((m: any) => (
-              <div key={m.customer_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', marginBottom: '4px' }}>
-                <span>{m.first_name} {m.last_name}</span>
-                <button style={styles.actionBtn} onClick={() => handleRemove(m.customer_id)}>Remove</button>
-              </div>
-            ))
+    <div style={styles.enrollForm}>
+      <h3 style={{ margin: '0 0 12px 0', color: 'var(--color-text)', fontSize: '16px' }}>Enroll Customer in Plan</h3>
+      {error && <p style={{ color: 'var(--color-error)', fontSize: '13px', margin: '0 0 8px' }}>{error}</p>}
+      <form onSubmit={handleEnroll} style={{ display: 'flex', flexDirection: 'column' as const, gap: '12px' }}>
+        {/* Customer search */}
+        <div style={{ position: 'relative' as const }}>
+          <label style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>Customer *</label>
+          {selectedCustomer ? (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', fontSize: '14px' }}>
+              <span>{selectedCustomer.first_name} {selectedCustomer.last_name} ({selectedCustomer.email})</span>
+              <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: 'var(--color-text-secondary)' }} onClick={() => { setSelectedCustomer(null); setCustomerSearch(''); }}>×</button>
+            </div>
+          ) : (
+            <input style={styles.select} value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} placeholder="Search customer..." autoComplete="off"
+              onFocus={() => { if (customerResults.length > 0) setShowDropdown(true); }}
+              onBlur={() => setTimeout(() => setShowDropdown(false), 200)} />
+          )}
+          {showDropdown && customerResults.length > 0 && (
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', marginTop: '4px', maxHeight: '150px', overflow: 'auto', zIndex: 10, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+              {customerResults.map((c) => (
+                <button key={c.id} type="button" style={{ display: 'block', width: '100%', padding: '8px 12px', border: 'none', background: 'var(--color-background)', cursor: 'pointer', textAlign: 'left', color: 'var(--color-text)', fontSize: '13px', borderBottom: '1px solid var(--color-border)' }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { setSelectedCustomer(c); setShowDropdown(false); setCustomerSearch(''); }}>
+                  <strong>{c.first_name} {c.last_name}</strong> — {c.email}
+                </button>
+              ))}
+            </div>
           )}
         </div>
-      )}
+
+        {/* Plan select */}
+        <div>
+          <label style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>Plan *</label>
+          <select style={styles.select} value={selectedPlan} onChange={(e) => setSelectedPlan(e.target.value)} required>
+            <option value="">Select a plan...</option>
+            {plans.filter((p) => p.status === 'active').map((p) => (
+              <option key={p.id} value={p.id}>{p.name} — €{(p.price / 100).toFixed(2)}/{p.billing_cycle}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <Button type="submit" loading={enrolling} disabled={!selectedCustomer || !selectedPlan}>Enroll</Button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -156,4 +218,5 @@ const styles: Record<string, React.CSSProperties> = {
   select: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
   navBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 16px', color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
   actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  enrollForm: { padding: 'var(--space-lg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-lg)', background: 'var(--color-surface)' },
 };

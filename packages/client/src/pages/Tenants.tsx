@@ -411,14 +411,15 @@ export function Tenants() {
                   </div>
                   <div style={styles.formGroup}>
                     <label style={styles.label} htmlFor="edit-currency">Currency</label>
-                    <input
+                    <select
                       id="edit-currency"
                       style={styles.input}
-                      type="text"
                       value={editForm.currency}
-                      onChange={(e) => setEditForm({ ...editForm, currency: e.target.value.toUpperCase() })}
-                      maxLength={3}
-                    />
+                      onChange={(e) => setEditForm({ ...editForm, currency: e.target.value })}
+                    >
+                      <option value="USD">USD ($)</option>
+                      <option value="EUR">EUR (€)</option>
+                    </select>
                   </div>
                 </div>
 
@@ -830,14 +831,15 @@ export function Tenants() {
                 </div>
                 <div style={styles.formGroup}>
                   <label style={styles.label} htmlFor="tenant-currency">Currency</label>
-                  <input
+                  <select
                     id="tenant-currency"
                     style={styles.input}
-                    type="text"
                     value={createForm.currency}
                     onChange={(e) => setCreateForm({ ...createForm, currency: e.target.value })}
-                    placeholder="EUR"
-                  />
+                  >
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                  </select>
                 </div>
               </div>
 

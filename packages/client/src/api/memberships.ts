@@ -24,13 +24,20 @@ export interface Membership {
 }
 
 // Plans
-export async function getPlans(businessId: string) {
-  const res = await apiClient.get(`/v1/memberships/plans?business_id=${businessId}`);
+export async function getPlans(businessId: string, includeArchived?: boolean) {
+  const params = new URLSearchParams({ business_id: businessId });
+  if (includeArchived) params.set('include_archived', 'true');
+  const res = await apiClient.get(`/v1/memberships/plans?${params}`);
   return res.data.data;
 }
 
 export async function createPlan(data: any) {
   const res = await apiClient.post('/v1/memberships/plans', data);
+  return res.data.data;
+}
+
+export async function updatePlan(id: string, businessId: string, data: any) {
+  const res = await apiClient.put(`/v1/memberships/plans/${id}?business_id=${businessId}`, data);
   return res.data.data;
 }
 

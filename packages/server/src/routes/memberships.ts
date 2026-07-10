@@ -43,7 +43,10 @@ const createPlanSchema = Joi.object({
 const updatePlanSchema = Joi.object({
   name: Joi.string().min(1).max(200),
   description: Joi.string().max(2000).allow('', null),
+  plan_type: Joi.string().valid('unlimited', 'credit', 'hybrid', 'punch_card', 'intro_package'),
+  billing_cycle: Joi.string().valid('monthly', 'quarterly', 'annually', 'one_time'),
   price: Joi.number().integer().min(0),
+  status: Joi.string().valid('active', 'archived'),
   credits_per_cycle: Joi.number().integer().min(1).allow(null),
   credit_validity_days: Joi.number().integer().min(1).allow(null),
   rollover_policy: Joi.string().valid('none', 'limited', 'unlimited'),

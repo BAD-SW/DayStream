@@ -119,6 +119,7 @@ export async function updatePlan(id: string, businessId: string, updates: Record
 
   const allowedFields: Record<string, string> = {
     name: 'name', description: 'description', price: 'price',
+    plan_type: 'plan_type', billing_cycle: 'billing_cycle', status: 'status',
     credits_per_cycle: 'credits_per_cycle', credit_validity_days: 'credit_validity_days',
     rollover_policy: 'rollover_policy', max_rollover_credits: 'max_rollover_credits',
     total_sessions: 'total_sessions', expiration_days: 'expiration_days',
