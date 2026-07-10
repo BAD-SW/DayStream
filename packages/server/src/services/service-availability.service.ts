@@ -10,6 +10,9 @@ interface CreateRuleInput {
   effectiveTo?: string;
   blockedDates?: string[];
   description?: string;
+  locationIds?: string[];
+  staffIds?: string[];
+  variantIds?: string[];
 }
 
 /**
@@ -39,8 +42,8 @@ export async function createRule(input: CreateRuleInput) {
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO svc_availability_rules (service_id, rule_type, days_of_week, start_time, end_time, effective_from, effective_to, blocked_dates, description)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO svc_availability_rules (service_id, rule_type, days_of_week, start_time, end_time, effective_from, effective_to, blocked_dates, description, location_ids, staff_ids, variant_ids)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING *`,
     [
       input.serviceId, input.ruleType,
@@ -49,6 +52,9 @@ export async function createRule(input: CreateRuleInput) {
       input.effectiveFrom || null, input.effectiveTo || null,
       input.blockedDates || null,
       input.description || null,
+      input.locationIds || null,
+      input.staffIds || null,
+      input.variantIds || null,
     ],
   );
 
@@ -99,6 +105,9 @@ export async function updateRule(ruleId: string, serviceId: string, updates: Par
   if (updates.effectiveTo !== undefined) { fields.push(`effective_to = $${idx++}`); values.push(updates.effectiveTo || null); }
   if (updates.blockedDates !== undefined) { fields.push(`blocked_dates = $${idx++}`); values.push(updates.blockedDates || null); }
   if (updates.description !== undefined) { fields.push(`description = $${idx++}`); values.push(updates.description || null); }
+  if (updates.locationIds !== undefined) { fields.push(`location_ids = $${idx++}`); values.push(updates.locationIds || null); }
+  if (updates.staffIds !== undefined) { fields.push(`staff_ids = $${idx++}`); values.push(updates.staffIds || null); }
+  if (updates.variantIds !== undefined) { fields.push(`variant_ids = $${idx++}`); values.push(updates.variantIds || null); }
 
   if (fields.length === 0) return existing[0];
 

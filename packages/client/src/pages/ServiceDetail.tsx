@@ -43,10 +43,8 @@ export function ServiceDetail() {
       <Tabs items={[
         { id: 'details', label: 'Details', content: <DetailsTab service={service} businessId={businessId} onUpdate={setService} /> },
         { id: 'variants', label: 'Variants', content: <VariantsTab service={service} /> },
-        { id: 'locations', label: 'Locations', content: <LocationsTab service={service} businessId={businessId} /> },
         { id: 'images', label: 'Images', content: <ImagesTab service={service} businessId={businessId} /> },
-        { id: 'staff', label: 'Staff', content: <StaffTab service={service} businessId={businessId} /> },
-        { id: 'availability', label: 'Availability', content: <AvailabilityTab service={service} /> },
+        { id: 'availability', label: 'Availability', content: <AvailabilityTab service={service} businessId={businessId} /> },
         { id: 'policy', label: 'Policy', content: <PolicyTab service={service} businessId={businessId} /> },
       ]} />
     </div>
@@ -465,10 +463,12 @@ function StaffTab({ service, businessId }: { service: Service; businessId: strin
   );
 }
 
-function AvailabilityTab({ service }: { service: Service }) {
+function AvailabilityTab({ service, businessId }: { service: Service; businessId: string }) {
   const [rules, setRules] = useState<AvailabilityRule[]>(service.availability || []);
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [allLocations, setAllLocations] = useState<any[]>([]);
+  const [allStaff, setAllStaff] = useState<any[]>([]);
   const [form, setForm] = useState({
     rule_type: 'recurring' as string,
     days_of_week: [] as number[],
@@ -477,9 +477,21 @@ function AvailabilityTab({ service }: { service: Service }) {
     effective_from: '',
     effective_to: '',
     description: '',
+    location_ids: [] as string[],
+    staff_ids: [] as string[],
   });
 
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  // Load locations and staff for multi-select
+  useEffect(() => {
+    import('../api/locations').then((locApi) => {
+      locApi.getLocations(businessId).then(setAllLocations).catch(() => {});
+    });
+    import('../api/staff').then((staffApi) => {
+      staffApi.getStaffList({ business_id: businessId, status: 'active' }).then((res) => setAllStaff(res.data)).catch(() => {});
+    });
+  }, [businessId]);
 
   const toggleDay = (day: number) => {
     setForm({
@@ -491,7 +503,7 @@ function AvailabilityTab({ service }: { service: Service }) {
   };
 
   const resetForm = () => {
-    setForm({ rule_type: 'recurring', days_of_week: [], start_time: '09:00', end_time: '17:00', effective_from: '', effective_to: '', description: '' });
+    setForm({ rule_type: 'recurring', days_of_week: [], start_time: '09:00', end_time: '17:00', effective_from: '', effective_to: '', description: '', location_ids: [], staff_ids: [] });
   };
 
   const openAdd = () => {
@@ -511,6 +523,8 @@ function AvailabilityTab({ service }: { service: Service }) {
       effective_from: rule.effective_from ? rule.effective_from.split('T')[0] : '',
       effective_to: rule.effective_to ? rule.effective_to.split('T')[0] : '',
       description: rule.description || '',
+      location_ids: (rule as any).location_ids || [],
+      staff_ids: (rule as any).staff_ids || [],
     });
   };
 
@@ -528,6 +542,8 @@ function AvailabilityTab({ service }: { service: Service }) {
         data.effective_from = form.effective_from;
         data.effective_to = form.effective_to;
       }
+      if (form.location_ids.length > 0) data.location_ids = form.location_ids;
+      if (form.staff_ids.length > 0) data.staff_ids = form.staff_ids;
       const rule = await servicesApi.createAvailabilityRule(service.id, data);
       setRules([...rules, rule]);
       setShowAdd(false);
@@ -550,6 +566,8 @@ function AvailabilityTab({ service }: { service: Service }) {
         data.effective_from = form.effective_from;
         data.effective_to = form.effective_to;
       }
+      data.location_ids = form.location_ids.length > 0 ? form.location_ids : null;
+      data.staff_ids = form.staff_ids.length > 0 ? form.staff_ids : null;
       const updated = await servicesApi.updateAvailabilityRule(service.id, editingId, data);
       setRules(rules.map((r) => r.id === editingId ? updated : r));
       setEditingId(null);
@@ -617,6 +635,56 @@ function AvailabilityTab({ service }: { service: Service }) {
             </div>
           )}
           <FormField label="Description (optional)" value={form.description} onChange={(v) => setForm({ ...form, description: v })} />
+
+          {/* Location scoping */}
+          {allLocations.length > 0 && (
+            <div style={styles.fieldWrapper}>
+              <label style={styles.label}>Locations (optional — leave empty for all)</label>
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                {allLocations.map((loc: any) => (
+                  <button
+                    key={loc.id}
+                    type="button"
+                    onClick={() => {
+                      const ids = form.location_ids.includes(loc.id)
+                        ? form.location_ids.filter((id) => id !== loc.id)
+                        : [...form.location_ids, loc.id];
+                      setForm({ ...form, location_ids: ids });
+                    }}
+                    style={{ ...styles.filterBtn, ...(form.location_ids.includes(loc.id) ? styles.filterBtnActive : {}) }}
+                  >
+                    {loc.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Staff scoping */}
+          {allStaff.length > 0 && (
+            <div style={styles.fieldWrapper}>
+              <label style={styles.label}>Staff (optional — leave empty for all)</label>
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                {allStaff.map((s: any) => (
+                  <button
+                    key={s.user_id || s.id}
+                    type="button"
+                    onClick={() => {
+                      const staffId = s.user_id || s.id;
+                      const ids = form.staff_ids.includes(staffId)
+                        ? form.staff_ids.filter((id) => id !== staffId)
+                        : [...form.staff_ids, staffId];
+                      setForm({ ...form, staff_ids: ids });
+                    }}
+                    style={{ ...styles.filterBtn, ...(form.staff_ids.includes(s.user_id || s.id) ? styles.filterBtnActive : {}) }}
+                  >
+                    {s.first_name} {s.last_name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {editingId ? (
             <div style={{ display: 'flex', gap: '8px' }}>
               <Button onClick={handleSaveEdit}>Save Changes</Button>

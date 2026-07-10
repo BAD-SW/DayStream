@@ -785,6 +785,9 @@ const createAvailabilitySchema = Joi.object({
   effective_to: Joi.string().allow(null, ''),
   blocked_dates: Joi.array().items(Joi.string()).allow(null),
   description: Joi.string().max(200).allow('', null),
+  location_ids: Joi.array().items(Joi.string().uuid()).allow(null),
+  staff_ids: Joi.array().items(Joi.string().uuid()).allow(null),
+  variant_ids: Joi.array().items(Joi.string().uuid()).allow(null),
 });
 
 // GET /api/v1/services/:id/availability
@@ -810,6 +813,9 @@ servicesRouter.post('/:id/availability', requirePermission('services:*'), valida
       effectiveTo: req.body.effective_to,
       blockedDates: req.body.blocked_dates,
       description: req.body.description,
+      locationIds: req.body.location_ids,
+      staffIds: req.body.staff_ids,
+      variantIds: req.body.variant_ids,
     });
     success(res, rule, undefined, 201);
   } catch (err: any) {
@@ -842,6 +848,9 @@ const updateAvailabilitySchema = Joi.object({
   effective_to: Joi.string().allow(null, ''),
   blocked_dates: Joi.array().items(Joi.string()).allow(null),
   description: Joi.string().max(200).allow('', null),
+  location_ids: Joi.array().items(Joi.string().uuid()).allow(null),
+  staff_ids: Joi.array().items(Joi.string().uuid()).allow(null),
+  variant_ids: Joi.array().items(Joi.string().uuid()).allow(null),
 });
 
 servicesRouter.put('/:id/availability/:ruleId', requirePermission('services:*'), validate(updateAvailabilitySchema), async (req: Request, res: Response) => {
@@ -855,6 +864,9 @@ servicesRouter.put('/:id/availability/:ruleId', requirePermission('services:*'),
       effectiveTo: req.body.effective_to,
       blockedDates: req.body.blocked_dates,
       description: req.body.description,
+      locationIds: req.body.location_ids,
+      staffIds: req.body.staff_ids,
+      variantIds: req.body.variant_ids,
     });
     if (!updated) { error(res, 'Rule not found', 'NOT_FOUND', 404); return; }
     success(res, updated);

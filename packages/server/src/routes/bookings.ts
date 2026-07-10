@@ -35,12 +35,42 @@ bookingsRouter.get('/availability', requirePermission('bookings:read'), async (r
       dateFrom,
       dateTo,
       staffId: req.query.staff_id as string,
+      locationId: req.query.location_id as string,
       variantId: req.query.variant_id as string,
     });
 
     success(res, slots, { count: slots.length });
   } catch (err: any) {
     error(res, 'Failed to calculate availability', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/bookings/availability/combinations — Rich multi-filter data
+bookingsRouter.get('/availability/combinations', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const serviceId = req.query.service_id as string;
+    const businessId = req.query.business_id as string;
+    const dateFrom = req.query.date_from as string;
+    const dateTo = req.query.date_to as string;
+
+    if (!serviceId || !businessId || !dateFrom || !dateTo) {
+      error(res, 'service_id, business_id, date_from, and date_to are required', 'VALIDATION_ERROR', 400);
+      return;
+    }
+
+    const result = await availabilityService.getAvailabilityCombinations({
+      serviceId,
+      businessId,
+      dateFrom,
+      dateTo,
+      staffId: req.query.staff_id as string,
+      locationId: req.query.location_id as string,
+      variantId: req.query.variant_id as string,
+    });
+
+    success(res, result);
+  } catch (err: any) {
+    error(res, 'Failed to calculate availability combinations', 'INTERNAL_ERROR', 500);
   }
 });
 
