@@ -107,6 +107,9 @@ export function BookingCalendar() {
 // ============================================================
 
 function DayView({ bookings, date, timezone, onBookingClick }: { bookings: any[]; date: string; timezone: string; onBookingClick: (id: string) => void }) {
+  // Calculate layout: detect overlaps and assign columns
+  const positioned = layoutBookings(bookings, timezone);
+
   return (
     <div style={styles.timeGrid}>
       {HOURS.map((h) => (
@@ -119,22 +122,27 @@ function DayView({ bookings, date, timezone, onBookingClick }: { bookings: any[]
       <div style={styles.bookingOverlay}>
         <div style={styles.timeLabelSpacer} />
         <div style={styles.dayColumnOverlay}>
-          {bookings.map((bk) => {
-            const pos = getBookingPosition(bk, timezone);
-            if (!pos) return null;
-            return (
-              <div
-                key={bk.id}
-                style={{ ...styles.bookingBlock, top: `${pos.top}%`, height: `${pos.height}%`, background: STATUS_COLORS[bk.status] || '#8A8A8A', cursor: 'pointer' }}
-                onClick={() => onBookingClick(bk.id)}
-                title={`${bk.service_name} — ${bk.customer_name} (${bk.status})`}
-              >
-                <span style={styles.blockTime}>{formatTime(bk.start_time, timezone)}</span>
-                <span style={styles.blockTitle}>{bk.service_name}</span>
-                <span style={styles.blockSub}>{bk.customer_name}</span>
-              </div>
-            );
-          })}
+          {positioned.map((bk) => (
+            <div
+              key={bk.id}
+              style={{
+                ...styles.bookingBlock,
+                top: `${bk.top}%`,
+                height: `${bk.height}%`,
+                left: `${bk.left}%`,
+                width: `${bk.width}%`,
+                background: STATUS_COLORS[bk.status] || '#8A8A8A',
+                cursor: 'pointer',
+              }}
+              onClick={() => onBookingClick(bk.id)}
+              title={`${bk.service_name} — ${bk.customer_name} (${bk.staff_name || 'unassigned'})`}
+            >
+              <span style={styles.blockTime}>{formatTime(bk.start_time, timezone)}</span>
+              <span style={styles.blockTitle}>{bk.service_name}</span>
+              <span style={styles.blockSub}>{bk.customer_name}</span>
+              {bk.staff_name && <span style={styles.blockSub}>{bk.staff_name}</span>}
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -193,7 +201,7 @@ function WeekView({ bookings, date, timezone, onBookingClick }: { bookings: any[
                 return (
                   <div
                     key={bk.id}
-                    style={{ ...styles.bookingBlock, top: `${pos.top}%`, height: `${Math.max(pos.height, 3)}%`, background: STATUS_COLORS[bk.status] || '#8A8A8A', cursor: 'pointer' }}
+                    style={{ ...styles.bookingBlock, top: `${pos.top}%`, height: `${Math.max(pos.height, 3)}%`, left: '2px', right: '2px', background: STATUS_COLORS[bk.status] || '#8A8A8A', cursor: 'pointer' }}
                     onClick={() => onBookingClick(bk.id)}
                     title={`${bk.service_name} — ${bk.customer_name}`}
                   >
@@ -276,6 +284,62 @@ function MonthView({ days, date, onDayClick }: { days: any[]; date: string; onDa
 // Helpers
 // ============================================================
 
+/**
+ * Layout bookings into non-overlapping columns for the day view.
+ * Returns bookings with top, height, left, width percentages.
+ */
+function layoutBookings(bookings: any[], timezone: string): Array<any & { top: number; height: number; left: number; width: number }> {
+  // Get positions and sort by start time
+  const items = bookings
+    .map((bk) => {
+      const pos = getBookingPosition(bk, timezone);
+      if (!pos) return null;
+      return { ...bk, top: pos.top, height: pos.height, startPct: pos.top, endPct: pos.top + pos.height };
+    })
+    .filter(Boolean) as Array<any & { top: number; height: number; startPct: number; endPct: number }>;
+
+  items.sort((a, b) => a.startPct - b.startPct);
+
+  // Assign columns using a greedy approach
+  const columns: Array<Array<typeof items[0]>> = [];
+
+  for (const item of items) {
+    let placed = false;
+    for (let col = 0; col < columns.length; col++) {
+      const lastInCol = columns[col][columns[col].length - 1];
+      if (lastInCol.endPct <= item.startPct) {
+        columns[col].push(item);
+        (item as any)._col = col;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      (item as any)._col = columns.length;
+      columns.push([item]);
+    }
+  }
+
+  const totalCols = columns.length || 1;
+
+  // Determine max columns for each overlap group
+  return items.map((item) => {
+    const col = (item as any)._col as number;
+    // Find how many columns overlap at this item's time range
+    let maxOverlap = 0;
+    for (const other of items) {
+      if (other.startPct < item.endPct && other.endPct > item.startPct) {
+        maxOverlap++;
+      }
+    }
+    const numCols = Math.max(maxOverlap, 1);
+    const width = 100 / numCols;
+    const left = col * width;
+
+    return { ...item, left, width: width - 1 }; // -1 for small gap
+  });
+}
+
 function getWeekStart(dateStr: string): Date {
   const d = new Date(dateStr + 'T12:00:00Z');
   const day = d.getUTCDay();
@@ -355,7 +419,7 @@ const styles: Record<string, React.CSSProperties> = {
   hourRow: { height: '60px', borderTop: '1px solid var(--color-border)', boxSizing: 'border-box' as const },
 
   // Booking blocks
-  bookingBlock: { position: 'absolute' as const, left: '2px', right: '2px', borderRadius: '4px', padding: '2px 4px', overflow: 'hidden', fontSize: '11px', color: '#fff', zIndex: 1 },
+  bookingBlock: { position: 'absolute' as const, borderRadius: '4px', padding: '2px 4px', overflow: 'hidden', fontSize: '11px', color: '#fff', zIndex: 1 },
   blockTime: { fontWeight: 600, fontSize: '10px', display: 'block' },
   blockTitle: { display: 'block', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
   blockSub: { display: 'block', fontSize: '10px', opacity: 0.8, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
