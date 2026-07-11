@@ -136,6 +136,15 @@ export async function createCorporateAccount(data: any) {
   return res.data.data;
 }
 
+export async function updateCorporateAccount(id: string, data: any) {
+  const res = await apiClient.put(`/v1/pricing/corporate/${id}`, data);
+  return res.data.data;
+}
+
+export async function deleteCorporateAccount(id: string) {
+  await apiClient.delete(`/v1/pricing/corporate/${id}`);
+}
+
 export async function getCorporateMembers(corporateId: string) {
   const res = await apiClient.get(`/v1/pricing/corporate/${corporateId}/members`);
   return res.data.data;

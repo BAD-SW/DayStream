@@ -36,12 +36,21 @@ export async function getAccounts(businessId: string) {
  * Add a customer to a corporate account.
  */
 export async function addMember(accountId: string, customerId: string): Promise<{ success: boolean; error?: string }> {
-  // Check if already a member
+  // Check if already a member of this account
   const { rows: existing } = await adminPool.query(
     'SELECT 1 FROM pri_corporate_members WHERE account_id = $1 AND customer_id = $2',
     [accountId, customerId],
   );
   if (existing.length > 0) return { success: false, error: 'Customer is already a member of this account' };
+
+  // Check if already a member of a different corporate account
+  const { rows: otherAccount } = await adminPool.query(
+    `SELECT ca.name FROM pri_corporate_members cam
+     JOIN pri_corporate_accounts ca ON ca.id = cam.account_id
+     WHERE cam.customer_id = $1 AND cam.account_id != $2`,
+    [customerId, accountId],
+  );
+  if (otherAccount.length > 0) return { success: false, error: `Customer is already a member of "${otherAccount[0].name}". A customer can only belong to one corporate account.` };
 
   await adminPool.query(
     'INSERT INTO pri_corporate_members (account_id, customer_id) VALUES ($1, $2)',

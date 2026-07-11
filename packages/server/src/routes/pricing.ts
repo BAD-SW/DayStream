@@ -5,6 +5,7 @@ import { tenantContext } from '../auth/tenant-context';
 import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
+import { adminPool } from '../db/pool';
 import * as pricingService from '../services/pricing.service';
 import * as rulesService from '../services/pricing-rules.service';
 
@@ -50,7 +51,7 @@ const createRuleSchema = Joi.object({
   name: Joi.string().min(1).max(200).required(),
   description: Joi.string().max(500).allow('', null),
   rule_type: Joi.string().valid('membership', 'promotion', 'seasonal', 'first_time', 'corporate', 'volume', 'time_of_day', 'day_of_week').required(),
-  discount_type: Joi.string().valid('percentage', 'fixed').required(),
+  discount_type: Joi.string().valid('percentage', 'fixed', 'premium_percentage', 'premium_fixed').required(),
   discount_value: Joi.number().integer().min(1).required(),
   priority: Joi.number().integer().min(0).default(100),
   stacking_mode: Joi.string().valid('stackable', 'exclusive', 'non_stackable').default('stackable'),
@@ -75,7 +76,7 @@ const createRuleSchema = Joi.object({
 const updateRuleSchema = Joi.object({
   name: Joi.string().min(1).max(200),
   description: Joi.string().max(500).allow('', null),
-  discount_type: Joi.string().valid('percentage', 'fixed'),
+  discount_type: Joi.string().valid('percentage', 'fixed', 'premium_percentage', 'premium_fixed'),
   discount_value: Joi.number().integer().min(1),
   priority: Joi.number().integer().min(0),
   stacking_mode: Joi.string().valid('stackable', 'exclusive', 'non_stackable'),
@@ -385,6 +386,39 @@ pricingRouter.get('/corporate/:id/members', requirePermission('services:read'), 
     const members = await corporateService.getMembers(req.params.id);
     success(res, members);
   } catch (err: any) { error(res, 'Failed to list members', 'INTERNAL_ERROR', 500); }
+});
+
+// PUT /api/v1/pricing/corporate/:id
+pricingRouter.put('/corporate/:id', requirePermission('services:*'), async (req: Request, res: Response) => {
+  try {
+    const { name, contact_email, billing_email, discount_percentage, status } = req.body;
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+    if (name !== undefined) { fields.push(`name = $${idx++}`); values.push(name); }
+    if (contact_email !== undefined) { fields.push(`contact_email = $${idx++}`); values.push(contact_email); }
+    if (billing_email !== undefined) { fields.push(`billing_email = $${idx++}`); values.push(billing_email); }
+    if (discount_percentage !== undefined) { fields.push(`discount_percentage = $${idx++}`); values.push(discount_percentage); }
+    if (status !== undefined) { fields.push(`status = $${idx++}`); values.push(status); }
+    if (fields.length === 0) { error(res, 'No fields to update', 'VALIDATION_ERROR', 400); return; }
+    fields.push('updated_at = NOW()');
+    values.push(req.params.id);
+    const { rows } = await adminPool.query(
+      `UPDATE pri_corporate_accounts SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
+      values,
+    );
+    if (rows.length === 0) { error(res, 'Account not found', 'NOT_FOUND', 404); return; }
+    success(res, rows[0]);
+  } catch (err: any) { error(res, 'Failed to update corporate account', 'INTERNAL_ERROR', 500); }
+});
+
+// DELETE /api/v1/pricing/corporate/:id
+pricingRouter.delete('/corporate/:id', requirePermission('services:*'), async (req: Request, res: Response) => {
+  try {
+    const { rowCount } = await adminPool.query('DELETE FROM pri_corporate_accounts WHERE id = $1', [req.params.id]);
+    if (!rowCount) { error(res, 'Account not found', 'NOT_FOUND', 404); return; }
+    success(res, { deleted: true });
+  } catch (err: any) { error(res, 'Failed to delete corporate account', 'INTERNAL_ERROR', 500); }
 });
 
 
