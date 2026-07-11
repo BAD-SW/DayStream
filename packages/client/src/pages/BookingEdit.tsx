@@ -7,6 +7,7 @@ import * as servicesApi from '../api/services';
 import * as customersApi from '../api/customers';
 import type { ServiceVariant } from '../api/services';
 import { apiClient } from '../api/client';
+import { formatCurrency } from '../utils/currency';
 
 interface SlotCombo {
   start_time: string;
@@ -243,7 +244,7 @@ export function BookingEdit() {
             <select style={styles.select} value={selectedVariant} onChange={(e) => { setSelectedVariant(e.target.value); setSelectedTime(null); setAllCombos([]); }}>
               <option value="">Select an option...</option>
               {variants.filter((v) => v.status === 'active').map((v) => (
-                <option key={v.id} value={v.id}>{v.name} — {v.duration} min — €{(v.price / 100).toFixed(2)}</option>
+                <option key={v.id} value={v.id}>{v.name} — {v.duration} min — {formatCurrency(v.price)}</option>
               ))}
             </select>
           </div>

@@ -6,6 +6,7 @@ import { Button } from '../design-system/components/actions/Button';
 import * as servicesApi from '../api/services';
 import * as locationsApi from '../api/locations';
 import type { Service, ServiceVariant, AvailabilityRule } from '../api/services';
+import { formatCurrency } from '../utils/currency';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   active: 'success', draft: 'neutral', paused: 'warning', archived: 'error',
@@ -268,7 +269,7 @@ function VariantsTab({ service }: { service: Service }) {
         {variants.map((v) => (
           <div key={v.id} style={{ ...styles.variantCard, ...(editingId === v.id ? { borderColor: 'var(--color-primary)' } : {}) }}>
             <div style={{ cursor: 'pointer', flex: 1 }} onClick={() => handleEdit(v)}>
-              <strong>{v.name}</strong> — {v.duration} min — €{(v.price / 100).toFixed(2)}
+              <strong>{v.name}</strong> — {v.duration} min — {formatCurrency(v.price)}
               {v.pricing_model === 'subscription' && <Badge variant="info">Sub: {v.billing_interval}</Badge>}
             </div>
             <div style={{ display: 'flex', gap: '4px' }}>

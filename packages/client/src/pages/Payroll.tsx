@@ -3,6 +3,7 @@ import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import * as payrollApi from '../api/payroll';
+import { formatCurrency } from '../utils/currency';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'neutral'> = { open: 'neutral', processing: 'warning', finalized: 'success' };
 
@@ -85,9 +86,9 @@ function PeriodsSection({ businessId }: { businessId: string }) {
     { key: 'name', header: 'Staff', render: (_: any, r: any) => `${r.first_name} ${r.last_name}` },
     { key: 'hours_worked', header: 'Hours' },
     { key: 'sessions_delivered', header: 'Sessions' },
-    { key: 'gross_pay', header: 'Gross', render: (v: number) => `€${(v / 100).toFixed(2)}` },
-    { key: 'total_deductions', header: 'Deductions', render: (v: number) => `€${(v / 100).toFixed(2)}` },
-    { key: 'net_pay', header: 'Net', render: (v: number) => `€${(v / 100).toFixed(2)}` },
+    { key: 'gross_pay', header: 'Gross', render: (v: number) => formatCurrency(v) },
+    { key: 'total_deductions', header: 'Deductions', render: (v: number) => formatCurrency(v) },
+    { key: 'net_pay', header: 'Net', render: (v: number) => formatCurrency(v) },
   ];
 
   return (
@@ -165,7 +166,7 @@ function CompensationSection({ businessId }: { businessId: string }) {
             <div key={r.id} style={{ border: '1px solid var(--color-border, #e5e7eb)', borderRadius: '8px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <span style={{ fontWeight: 500 }}>{r.name || r.rule_type || r.type}</span>
-                <span style={{ marginLeft: '12px', fontSize: '13px', color: '#6b7280' }}>€{((r.rate || r.amount || 0) / 100).toFixed(2)}</span>
+                <span style={{ marginLeft: '12px', fontSize: '13px', color: '#6b7280' }}>{formatCurrency(r.rate || r.amount || 0)}</span>
                 {r.user_name && <span style={{ marginLeft: '12px', fontSize: '13px', color: '#6b7280' }}>{r.user_name}</span>}
               </div>
               <div style={{ display: 'flex', gap: '4px' }}>
@@ -247,7 +248,7 @@ function DeductionsSection({ businessId }: { businessId: string }) {
             <div key={d.id} style={{ border: '1px solid var(--color-border, #e5e7eb)', borderRadius: '8px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <span style={{ fontWeight: 500 }}>{d.name || d.deduction_type || d.type}</span>
-                <span style={{ marginLeft: '12px', fontSize: '13px', color: '#6b7280' }}>€{((d.amount || 0) / 100).toFixed(2)}</span>
+                <span style={{ marginLeft: '12px', fontSize: '13px', color: '#6b7280' }}>{formatCurrency(d.amount || 0)}</span>
                 {d.user_name && <span style={{ marginLeft: '12px', fontSize: '13px', color: '#6b7280' }}>{d.user_name}</span>}
               </div>
               <div style={{ display: 'flex', gap: '4px' }}>

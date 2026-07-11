@@ -6,6 +6,7 @@ import { Alert } from '../design-system/components/feedback/Alert';
 import * as bookingsApi from '../api/bookings';
 import * as servicesApi from '../api/services';
 import type { ServiceVariant, AvailableSlot } from '../api/services';
+import { formatCurrency } from '../utils/currency';
 
 type Step = 'variant' | 'date' | 'slot' | 'staff' | 'confirm' | 'done';
 
@@ -104,7 +105,7 @@ export function BookingFlow() {
                 onClick={() => setSelectedVariant(v)}>
                 <strong>{v.name}</strong>
                 <span>{v.duration} min</span>
-                <span style={styles.price}>€{(v.price / 100).toFixed(2)}</span>
+                <span style={styles.price}>{formatCurrency(v.price)}</span>
                 {v.pricing_model === 'subscription' && <Badge variant="info">{v.billing_interval}</Badge>}
               </button>
             ))}
@@ -178,7 +179,7 @@ export function BookingFlow() {
             <SummaryRow label="Duration" value={`${selectedVariant?.duration} min`} />
             <SummaryRow label="Date" value={new Date(selectedSlot!.start_time).toLocaleDateString()} />
             <SummaryRow label="Time" value={new Date(selectedSlot!.start_time).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} />
-            <SummaryRow label="Price" value={`€${((selectedVariant?.price || 0) / 100).toFixed(2)}`} />
+            <SummaryRow label="Price" value={formatCurrency(selectedVariant?.price || 0)} />
             {selectedStaff && selectedSlot?.available_staff.find((s) => s.id === selectedStaff) && (
               <SummaryRow label="Provider" value={`${selectedSlot!.available_staff.find((s) => s.id === selectedStaff)!.first_name} ${selectedSlot!.available_staff.find((s) => s.id === selectedStaff)!.last_name}`} />
             )}

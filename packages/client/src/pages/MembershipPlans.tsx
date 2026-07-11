@@ -4,6 +4,7 @@ import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import * as membershipsApi from '../api/memberships';
 import type { MembershipPlan } from '../api/memberships';
+import { formatCurrency } from '../utils/currency';
 
 const TYPE_LABELS: Record<string, string> = {
   unlimited: 'Unlimited', credit: 'Credit', hybrid: 'Hybrid', punch_card: 'Punch Card', intro_package: 'Intro',
@@ -199,7 +200,7 @@ export function MembershipPlans() {
             <h3 style={styles.planName}>{plan.name}</h3>
             <Badge variant={plan.status === 'active' ? 'success' : 'neutral'}>{plan.status}</Badge>
             <Badge variant="neutral">{TYPE_LABELS[plan.plan_type] || plan.plan_type}</Badge>
-            <div style={styles.planPrice}>€{(plan.price / 100).toFixed(2)}<span style={styles.cycle}>/{plan.billing_cycle}</span></div>
+            <div style={styles.planPrice}>{formatCurrency(plan.price)}<span style={styles.cycle}>/{plan.billing_cycle}</span></div>
             {plan.credits_per_cycle && <p style={styles.planDetail}>{plan.credits_per_cycle} credits/cycle</p>}
             {plan.total_sessions && <p style={styles.planDetail}>{plan.total_sessions} sessions</p>}
             <button

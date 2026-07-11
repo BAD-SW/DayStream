@@ -78,6 +78,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('refresh_token', refresh_token);
     if (userData.business_id) {
       localStorage.setItem('business_id', userData.business_id);
+      // Fetch and store business currency
+      try {
+        const bizRes = await apiClient.get('/v1/admin/businesses');
+        const biz = bizRes.data.data?.find((b: any) => b.id === userData.business_id);
+        if (biz?.currency) localStorage.setItem('business_currency', biz.currency);
+      } catch { /* non-critical */ }
     }
     setUser(userData);
     await loadFeatureFlags();
@@ -91,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('business_id');
+    localStorage.removeItem('business_currency');
     sessionStorage.removeItem('redirectAfterLogin');
     setUser(null);
     setFeatureFlags({});

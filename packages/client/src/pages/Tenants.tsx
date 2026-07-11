@@ -5,7 +5,8 @@ import { Button } from '../design-system/components/actions/Button';
 import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { apiClient } from '../api/client';
 import { TIMEZONES } from '../utils/timezones';
-import { CurrencyInput } from '../components/CurrencyInput';interface Tenant {
+import { CurrencyInput } from '../components/CurrencyInput';
+import { formatCurrency } from '../utils/currency';interface Tenant {
   id: string;
   name: string;
   slug: string;
@@ -654,7 +655,7 @@ export function Tenants() {
                   </div>
                   <div style={styles.detailRow}>
                     <span style={styles.detailLabel}>Amount</span>
-                    <span style={styles.detailValue}>{selectedTenant.billing_amount ? `${(selectedTenant.billing_amount / 100).toFixed(2)} ${selectedTenant.currency}` : '—'}</span>
+                    <span style={styles.detailValue}>{selectedTenant.billing_amount ? formatCurrency(selectedTenant.billing_amount, selectedTenant.currency) : '—'}</span>
                   </div>
                   <div style={styles.detailRow}>
                     <span style={styles.detailLabel}>Method</span>

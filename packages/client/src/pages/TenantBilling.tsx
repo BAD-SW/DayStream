@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
+import { formatCurrency } from '../utils/currency';
 
 interface BillingInfo {
   billing_frequency: string;
@@ -78,7 +79,7 @@ export function TenantBilling() {
   if (!billing) return <p style={styles.loading}>Unable to load billing information.</p>;
 
   const formatAmount = (cents: number, currency: string) => {
-    return `${(cents / 100).toFixed(2)} ${currency}`;
+    return formatCurrency(cents, currency);
   };
 
   return (

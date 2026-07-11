@@ -3,6 +3,7 @@ import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { Tabs } from '../design-system/components/navigation/Tabs';
 import * as apApi from '../api/accounts-payable';
+import { formatCurrency } from '../utils/currency';
 
 const BILL_STATUS: Record<string, 'success' | 'warning' | 'error' | 'neutral'> = { draft: 'neutral', pending: 'neutral', approved: 'info' as any, paid: 'success', overdue: 'error', void: 'error' };
 
@@ -125,8 +126,8 @@ export function AccountsPayable() {
     { key: 'name', header: 'Vendor' },
     { key: 'category', header: 'Category' },
     { key: 'payment_terms', header: 'Terms', render: (v: number) => `Net ${v}` },
-    { key: 'total_spend', header: 'Total Spend', render: (v: number) => `€${(v / 100).toFixed(2)}` },
-    { key: 'outstanding', header: 'Outstanding', render: (v: number) => `€${(v / 100).toFixed(2)}` },
+    { key: 'total_spend', header: 'Total Spend', render: (v: number) => formatCurrency(v) },
+    { key: 'outstanding', header: 'Outstanding', render: (v: number) => formatCurrency(v) },
     { key: 'actions', header: '', render: (_: any, row: any) => (
       <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); startEditVendor(row); }} aria-label={`Edit vendor ${row.name}`}>
         ✏️ Edit
@@ -137,14 +138,14 @@ export function AccountsPayable() {
   const billCols = [
     { key: 'vendor_name', header: 'Vendor' },
     { key: 'invoice_number', header: 'Invoice #' },
-    { key: 'amount', header: 'Amount', render: (v: number) => `€${(v / 100).toFixed(2)}` },
+    { key: 'amount', header: 'Amount', render: (v: number) => formatCurrency(v) },
     { key: 'due_date', header: 'Due', render: (v: string) => new Date(v).toLocaleDateString() },
     { key: 'status', header: 'Status', render: (v: string) => <Badge variant={BILL_STATUS[v] || 'neutral'}>{v}</Badge> },
   ];
 
   const expenseCols = [
     { key: 'date', header: 'Date', render: (v: string) => new Date(v).toLocaleDateString() },
-    { key: 'amount', header: 'Amount', render: (v: number) => `€${(v / 100).toFixed(2)}` },
+    { key: 'amount', header: 'Amount', render: (v: number) => formatCurrency(v) },
     { key: 'account_name', header: 'Category' },
     { key: 'description', header: 'Description' },
     { key: 'status', header: 'Status', render: (v: string) => <Badge variant={v === 'approved' ? 'success' : 'neutral'}>{v}</Badge> },
@@ -177,7 +178,7 @@ export function AccountsPayable() {
   const reconLineCols = [
     { key: 'date', header: 'Date', render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' },
     { key: 'description', header: 'Description' },
-    { key: 'amount', header: 'Amount', render: (v: number) => `€${(v / 100).toFixed(2)}` },
+    { key: 'amount', header: 'Amount', render: (v: number) => formatCurrency(v) },
     { key: 'matched', header: 'Status', render: (v: boolean) => <Badge variant={v ? 'success' : 'warning'}>{v ? 'Matched' : 'Unmatched'}</Badge> },
     { key: 'actions', header: '', render: (_: any, row: any) => !row.matched ? (
       <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); handleMatchLine(row.id); }} aria-label={`Match line ${row.description}`}>
@@ -255,7 +256,7 @@ export function AccountsPayable() {
                   <Table
                     columns={[
                       { key: 'category', header: 'Category' },
-                      { key: 'total', header: 'Total', render: (v: number) => `€${(v / 100).toFixed(2)}` },
+                      { key: 'total', header: 'Total', render: (v: number) => formatCurrency(v) },
                       { key: 'count', header: 'Transactions' },
                     ]}
                     data={expenseReport.categories}
@@ -264,7 +265,7 @@ export function AccountsPayable() {
                 )}
                 {expenseReport.total_amount != null && (
                   <div style={styles.reportSummary}>
-                    <strong>Total Expenses:</strong> €{(expenseReport.total_amount / 100).toFixed(2)}
+                    <strong>Total Expenses:</strong> {formatCurrency(expenseReport.total_amount)}
                   </div>
                 )}
               </div>

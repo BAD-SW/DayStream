@@ -4,6 +4,7 @@ import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import * as eventsApi from '../api/events';
 import type { Event } from '../api/events';
+import { formatCurrency } from '../utils/currency';
 
 type Tab = 'details' | 'tickets' | 'registrations' | 'waitlist' | 'facilitators' | 'communications' | 'reports';
 
@@ -119,7 +120,7 @@ function TicketsTab({ eventId }: { eventId: string }) {
                 </div>
               ) : (
                 <>
-                  <div><span className="font-medium">{t.name}</span> — ${(t.price / 100).toFixed(2)}</div>
+                  <div><span className="font-medium">{t.name}</span> — {formatCurrency(t.price)}</div>
                   <div className="flex gap-2 items-center">
                     <span className="text-sm text-gray-500">{t.sold_count || 0} / {t.quantity_available || '∞'} sold</span>
                     <Button size="sm" variant="ghost" onClick={() => handleEdit(t)}>Edit</Button>
@@ -319,7 +320,7 @@ function ReportsTab({ eventId }: { eventId: string }) {
     <div className="grid grid-cols-3 gap-4">
       <div className="border rounded p-4 text-center"><div className="text-2xl font-bold">{report.registrations?.confirmed || 0}</div><div className="text-sm text-gray-500">Confirmed</div></div>
       <div className="border rounded p-4 text-center"><div className="text-2xl font-bold">{report.attendanceRate}%</div><div className="text-sm text-gray-500">Attendance Rate</div></div>
-      <div className="border rounded p-4 text-center"><div className="text-2xl font-bold">${((report.revenue || 0) / 100).toFixed(0)}</div><div className="text-sm text-gray-500">Revenue</div></div>
+      <div className="border rounded p-4 text-center"><div className="text-2xl font-bold">{formatCurrency(report.revenue || 0)}</div><div className="text-sm text-gray-500">Revenue</div></div>
       <div className="border rounded p-4 text-center"><div className="text-2xl font-bold">{report.capacityUtilization}%</div><div className="text-sm text-gray-500">Capacity Used</div></div>
       <div className="border rounded p-4 text-center"><div className="text-2xl font-bold">{report.waitlistSize}</div><div className="text-sm text-gray-500">Waitlist</div></div>
       <div className="border rounded p-4 text-center"><div className="text-2xl font-bold">{report.cancellationRate}%</div><div className="text-sm text-gray-500">Cancellation Rate</div></div>

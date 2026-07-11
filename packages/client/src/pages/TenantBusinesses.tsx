@@ -6,6 +6,7 @@ import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { apiClient } from '../api/client';
 import { TIMEZONES } from '../utils/timezones';
 import { CurrencyInput } from '../components/CurrencyInput';
+import { formatCurrency } from '../utils/currency';
 
 interface Business {
   id: string;
@@ -214,7 +215,7 @@ export function TenantBusinesses() {
                   <DetailRow label="Timezone" value={selectedBiz.timezone} />
                   <DetailRow label="Brand Color" value={selectedBiz.primary_color} />
                   <DetailRow label="Billing Frequency" value={selectedBiz.billing_frequency?.charAt(0).toUpperCase() + selectedBiz.billing_frequency?.slice(1) || '—'} />
-                  <DetailRow label="Billing Amount" value={selectedBiz.billing_amount ? `${(selectedBiz.billing_amount / 100).toFixed(2)} ${selectedBiz.currency}` : '—'} />
+                  <DetailRow label="Billing Amount" value={selectedBiz.billing_amount ? formatCurrency(selectedBiz.billing_amount, selectedBiz.currency) : '—'} />
                   <DetailRow label="Billing Method" value={selectedBiz.billing_method === 'tbd' ? 'TBD' : selectedBiz.billing_method} />
                   <DetailRow label="Signup Date" value={selectedBiz.signup_date ? new Date(selectedBiz.signup_date).toLocaleDateString() : '—'} />
                   <DetailRow label="Next Billing Date" value={selectedBiz.next_billing_date ? new Date(selectedBiz.next_billing_date).toLocaleDateString() : '—'} />

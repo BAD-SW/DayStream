@@ -4,6 +4,7 @@ import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import * as pricingApi from '../api/pricing';
 import type { DiscountCode } from '../api/pricing';
+import { formatCurrency } from '../utils/currency';
 
 export function DiscountCodes() {
   const [codes, setCodes] = useState<DiscountCode[]>([]);
@@ -40,7 +41,7 @@ export function DiscountCodes() {
 
   const columns = [
     { key: 'code', header: 'Code' },
-    { key: 'discount', header: 'Discount', render: (_: any, r: DiscountCode) => r.discount_type === 'percentage' ? `${r.discount_value}%` : `€${(r.discount_value / 100).toFixed(2)}` },
+    { key: 'discount', header: 'Discount', render: (_: any, r: DiscountCode) => r.discount_type === 'percentage' ? `${r.discount_value}%` : formatCurrency(r.discount_value) },
     { key: 'current_uses', header: 'Uses', render: (_: any, r: DiscountCode) => `${r.current_uses}/${r.max_total_uses || '∞'}` },
     { key: 'status', header: 'Status', render: (v: string) => <Badge variant={v === 'active' ? 'success' : 'neutral'}>{v}</Badge> },
     {

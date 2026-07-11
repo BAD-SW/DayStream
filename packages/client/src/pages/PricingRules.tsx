@@ -4,6 +4,7 @@ import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import * as pricingApi from '../api/pricing';
 import type { PricingRule, PricingBundle } from '../api/pricing';
+import { formatCurrency } from '../utils/currency';
 
 const TYPE_LABELS: Record<string, string> = {
   membership: 'Membership', promotion: 'Promotion', seasonal: 'Seasonal', first_time: 'First Time',
@@ -65,7 +66,7 @@ function RulesSection({ businessId }: { businessId: string }) {
   const columns = [
     { key: 'name', header: 'Name' },
     { key: 'rule_type', header: 'Type', render: (v: string) => <Badge variant="neutral">{TYPE_LABELS[v] || v}</Badge> },
-    { key: 'discount', header: 'Discount', render: (_: any, r: PricingRule) => r.discount_type === 'percentage' ? `${r.discount_value}%` : `€${(r.discount_value / 100).toFixed(2)}` },
+    { key: 'discount', header: 'Discount', render: (_: any, r: PricingRule) => r.discount_type === 'percentage' ? `${r.discount_value}%` : formatCurrency(r.discount_value) },
     { key: 'priority', header: 'Priority' },
     { key: 'stacking_mode', header: 'Stacking', render: (v: string) => v.replace('_', ' ') },
     { key: 'status', header: 'Status', render: (v: string) => <Badge variant={v === 'active' ? 'success' : 'neutral'}>{v}</Badge> },
@@ -156,7 +157,7 @@ function BundlesSection({ businessId }: { businessId: string }) {
               <div>
                 <span style={{ fontWeight: 500 }}>{b.name}</span>
                 <Badge variant="neutral">{b.bundle_type}</Badge>
-                {b.bundle_price && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>€{(b.bundle_price / 100).toFixed(2)}</span>}
+                {b.bundle_price && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{formatCurrency(b.bundle_price)}</span>}
                 {b.discount_percentage && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{b.discount_percentage}% off</span>}
                 <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>{b.items.length} items</span>
               </div>

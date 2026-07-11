@@ -6,6 +6,7 @@ import { Button } from '../design-system/components/actions/Button';
 import * as membershipsApi from '../api/memberships';
 import * as customersApi from '../api/customers';
 import type { Membership, MembershipPlan } from '../api/memberships';
+import { formatCurrency } from '../utils/currency';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   active: 'success', paused: 'warning', frozen: 'info', cancelled: 'error', expired: 'error', pending: 'neutral',
@@ -193,7 +194,7 @@ function EnrollForm({ businessId, onEnrolled }: { businessId: string; onEnrolled
           <select style={styles.select} value={selectedPlan} onChange={(e) => setSelectedPlan(e.target.value)} required>
             <option value="">Select a plan...</option>
             {plans.filter((p) => p.status === 'active').map((p) => (
-              <option key={p.id} value={p.id}>{p.name} — €{(p.price / 100).toFixed(2)}/{p.billing_cycle}</option>
+              <option key={p.id} value={p.id}>{p.name} — {formatCurrency(p.price)}/{p.billing_cycle}</option>
             ))}
           </select>
         </div>

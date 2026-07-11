@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
+import { formatCurrency } from '../utils/currency';
 
 interface ReportData {
   revenue: any;
@@ -55,12 +56,12 @@ export function TenantReports() {
       <div style={styles.section}>
         <h3 style={styles.sectionTitle}>📊 Revenue</h3>
         <div style={styles.statsRow}>
-          <StatCard label="Revenue YTD" value={rev.total_revenue_ytd != null ? `${(rev.total_revenue_ytd / 100).toFixed(2)}` : '0.00'} prior={`${((rev.total_revenue_ytd_prior || 0) / 100).toFixed(2)}`}
-            onClick={() => openDetail('/v1/admin/reports/tenant-revenue/detail?type=ytd', 'Revenue YTD by Business', [{ key: 'name', label: 'Business' }, { key: 'revenue', label: 'Revenue YTD', render: (v: number) => (v / 100).toFixed(2) }])} />
-          <StatCard label="Revenue MTD" value={rev.month_revenue != null ? `${(rev.month_revenue / 100).toFixed(2)}` : '0.00'} prior={`${((rev.month_revenue_prior || 0) / 100).toFixed(2)}`}
-            onClick={() => openDetail('/v1/admin/reports/tenant-revenue/detail?type=month', 'Revenue MTD by Business', [{ key: 'name', label: 'Business' }, { key: 'revenue', label: 'Revenue MTD', render: (v: number) => (v / 100).toFixed(2) }])} />
-          <StatCard label="Still Expected MTD" value={rev.expected_remaining_mtd != null ? `${(rev.expected_remaining_mtd / 100).toFixed(2)}` : '0.00'}
-            onClick={() => openDetail('/v1/admin/reports/tenant-revenue/detail?type=expected_mtd', 'Still Expected This Month', [{ key: 'name', label: 'Business' }, { key: 'billing_amount', label: 'Amount Due', render: (v: number) => (v / 100).toFixed(2) }, { key: 'next_billing_date', label: 'Due Date', render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' }])} />
+          <StatCard label="Revenue YTD" value={formatCurrency(rev.total_revenue_ytd || 0)} prior={formatCurrency(rev.total_revenue_ytd_prior || 0)}
+            onClick={() => openDetail('/v1/admin/reports/tenant-revenue/detail?type=ytd', 'Revenue YTD by Business', [{ key: 'name', label: 'Business' }, { key: 'revenue', label: 'Revenue YTD', render: (v: number) => formatCurrency(v) }])} />
+          <StatCard label="Revenue MTD" value={formatCurrency(rev.month_revenue || 0)} prior={formatCurrency(rev.month_revenue_prior || 0)}
+            onClick={() => openDetail('/v1/admin/reports/tenant-revenue/detail?type=month', 'Revenue MTD by Business', [{ key: 'name', label: 'Business' }, { key: 'revenue', label: 'Revenue MTD', render: (v: number) => formatCurrency(v) }])} />
+          <StatCard label="Still Expected MTD" value={formatCurrency(rev.expected_remaining_mtd || 0)}
+            onClick={() => openDetail('/v1/admin/reports/tenant-revenue/detail?type=expected_mtd', 'Still Expected This Month', [{ key: 'name', label: 'Business' }, { key: 'billing_amount', label: 'Amount Due', render: (v: number) => formatCurrency(v) }, { key: 'next_billing_date', label: 'Due Date', render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' }])} />
           <StatCard label="Active Businesses" value={String(rev.active_businesses || 0)}
             onClick={() => openDetail('/v1/admin/reports/tenant-revenue/detail?type=businesses', 'Active Businesses', [{ key: 'name', label: 'Name' }, { key: 'status', label: 'Status' }, { key: 'created_at', label: 'Created', render: (v: string) => new Date(v).toLocaleDateString() }])} />
         </div>
