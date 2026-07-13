@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
 
-type SettingsTab = 'lifecycle' | 'scheduled-jobs' | 'notifications' | 'general';
+type SettingsTab = 'lifecycle' | 'scheduled-jobs' | 'notifications' | 'payment-methods';
 
 export function BusinessSettings() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('lifecycle');
@@ -11,7 +11,7 @@ export function BusinessSettings() {
     { key: 'lifecycle', label: 'Customer Lifecycle' },
     { key: 'scheduled-jobs', label: 'Scheduled Jobs' },
     { key: 'notifications', label: 'Notifications' },
-    { key: 'general', label: 'General' },
+    { key: 'payment-methods', label: 'Payment Methods' },
   ];
 
   return (
@@ -28,7 +28,7 @@ export function BusinessSettings() {
       {activeTab === 'lifecycle' && <LifecycleSettings />}
       {activeTab === 'scheduled-jobs' && <ScheduledJobsSettings />}
       {activeTab === 'notifications' && <NotificationSettings />}
-      {activeTab === 'general' && <GeneralSettings />}
+      {activeTab === 'payment-methods' && <PaymentMethodsSettings />}
     </div>
   );
 }
@@ -261,7 +261,7 @@ function ScheduledJobsSettings() {
                   <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px', color: 'var(--color-error)' }} onClick={() => handleDelete(job.id)}>Delete</button>
                 </div>
               </div>
-              {selectedHistory?.jobId === job.id && (
+              {selectedHistory?.jobId === job.id && selectedHistory && (
                 <div style={{ marginLeft: '16px', marginTop: '4px', borderLeft: '2px solid var(--color-border)', paddingLeft: '12px', marginBottom: '8px' }}>
                   {selectedHistory.entries.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>No execution history</p> : (
                     selectedHistory.entries.slice(0, 10).map((e: any) => (
@@ -298,42 +298,99 @@ function NotificationSettings() {
 }
 
 // ============================================================
-// General Settings
+// Payment Methods Settings
 // ============================================================
 
-function GeneralSettings() {
+const METHOD_INFO: { method: string; label: string; description: string; integrationOnly?: boolean }[] = [
+  { method: 'cash', label: 'Cash', description: 'Accept cash payments in person' },
+  { method: 'card', label: 'Card', description: 'Accept credit/debit card payments' },
+  { method: 'bank_transfer', label: 'Bank Transfer', description: 'Accept payments via bank routing and account number' },
+  { method: 'check', label: 'Check', description: 'Accept check payments' },
+  { method: 'gift_card', label: 'Gift Card', description: 'Accept gift card codes as payment' },
+  { method: 'google_pay', label: 'Google Pay', description: 'Accept Google Pay (requires integration)', integrationOnly: true },
+  { method: 'apple_pay', label: 'Apple Pay', description: 'Accept Apple Pay (requires integration)', integrationOnly: true },
+  { method: 'other', label: 'Other', description: 'Miscellaneous payment methods' },
+];
+
+function PaymentMethodsSettings() {
   const businessId = localStorage.getItem('business_id') || '';
-  const [config, setConfig] = useState<Record<string, string>>({});
+  const [methods, setMethods] = useState<{ method: string; enabled: boolean }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
-    apiClient.get(`/v1/admin/config`)
-      .then((res) => setConfig(res.data.data || {}))
-      .catch(() => {})
+    apiClient.get(`/v1/payments/methods?business_id=${businessId}`)
+      .then((res) => setMethods(res.data.data || []))
+      .catch(() => {
+        // Default all manual methods to enabled if API fails
+        setMethods(METHOD_INFO.map((m) => ({ method: m.method, enabled: !m.integrationOnly })));
+      })
       .finally(() => setLoading(false));
   }, [businessId]);
 
-  if (loading) return <p style={styles.muted}>Loading...</p>;
+  const toggleMethod = (method: string) => {
+    setMethods(methods.map((m) => m.method === method ? { ...m, enabled: !m.enabled } : m));
+    setMessage(null);
+  };
 
-  const entries = Object.entries(config);
+  const handleSave = async () => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      await apiClient.put('/v1/payments/methods', { business_id: businessId, methods });
+      setMessage('Payment methods saved.');
+    } catch {
+      setMessage('Failed to save payment methods.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <p style={styles.muted}>Loading...</p>;
 
   return (
     <div style={styles.section}>
-      <h2 style={styles.sectionTitle}>General Configuration</h2>
-      <p style={styles.description}>Business-level configuration values.</p>
-      {entries.length === 0 ? (
-        <p style={styles.muted}>No configuration entries defined.</p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {entries.map(([key, value]) => (
-            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--color-border)' }}>
-              <span style={{ fontFamily: 'monospace', fontSize: '13px', color: 'var(--color-text)' }}>{key}</span>
-              <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{String(value)}</span>
+      <h2 style={styles.sectionTitle}>Accepted Payment Methods</h2>
+      <p style={styles.description}>
+        Choose which payment methods your business accepts. Disabled methods will not appear as options when recording payments.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+        {METHOD_INFO.map((info) => {
+          const current = methods.find((m) => m.method === info.method);
+          const enabled = current?.enabled ?? !info.integrationOnly;
+          return (
+            <div key={info.method} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: enabled ? 'var(--color-surface)' : 'var(--color-background)' }}>
+              <div>
+                <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--color-text)' }}>{info.label}</span>
+                {info.integrationOnly && <span style={{ marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'var(--color-warning-bg, #fff3cd)', color: 'var(--color-warning-text, #856404)' }}>Integration</span>}
+                <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{info.description}</p>
+              </div>
+              <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={enabled} onChange={() => toggleMethod(info.method)}
+                  style={{ opacity: 0, width: 0, height: 0 }} />
+                <span style={{
+                  position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                  backgroundColor: enabled ? 'var(--color-primary)' : 'var(--color-border)',
+                  borderRadius: '12px', transition: 'background-color 0.2s',
+                }} />
+                <span style={{
+                  position: 'absolute', top: '2px', left: enabled ? '22px' : '2px',
+                  width: '20px', height: '20px', backgroundColor: '#fff',
+                  borderRadius: '50%', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                }} />
+              </label>
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
+
+      {message && <p style={{ fontSize: '13px', color: message.includes('Failed') ? 'var(--color-error)' : 'var(--color-success)', marginBottom: '12px' }}>{message}</p>}
+      <div style={styles.actions}>
+        <Button onClick={handleSave} loading={saving}>Save Payment Methods</Button>
+      </div>
     </div>
   );
 }

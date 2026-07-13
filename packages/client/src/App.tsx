@@ -34,6 +34,7 @@ import { MembershipDetail } from './pages/MembershipDetail';
 import { MembershipPlans } from './pages/MembershipPlans';
 import { PricingRules } from './pages/PricingRules';
 import { DiscountCodes } from './pages/DiscountCodes';
+import { Payments } from './pages/Payments';
 import { Payroll } from './pages/Payroll';
 import { AccountsPayable } from './pages/AccountsPayable';
 import { Staff } from './pages/Staff';
@@ -110,6 +111,9 @@ export function App() {
         <Route path="/pricing" element={<ProtectedRoute><PricingRules /></ProtectedRoute>} />
         <Route path="/pricing/rules" element={<ProtectedRoute><PricingRules /></ProtectedRoute>} />
         <Route path="/pricing/codes" element={<ProtectedRoute><DiscountCodes /></ProtectedRoute>} />
+
+        {/* Payments */}
+        <Route path="/payments" element={<ProtectedRoute><Payments /></ProtectedRoute>} />
 
         {/* Payroll & AP */}
         <Route path="/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
