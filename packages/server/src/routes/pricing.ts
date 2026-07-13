@@ -333,7 +333,9 @@ const createCorporateSchema = Joi.object({
   name: Joi.string().min(1).max(200).required(),
   contact_email: Joi.string().email({ tlds: false }).allow('', null),
   billing_email: Joi.string().email({ tlds: false }).allow('', null),
-  discount_percentage: Joi.number().integer().min(0).max(100).default(0),
+  agreement_start: Joi.string().allow('', null),
+  agreement_end: Joi.string().allow('', null),
+  status: Joi.string().valid('active', 'inactive').default('active'),
 });
 
 const addCorporateMemberSchema = Joi.object({
@@ -356,7 +358,8 @@ pricingRouter.post('/corporate', requirePermission('services:*'), validate(creat
     const account = await corporateService.createAccount({
       businessId: req.body.business_id, name: req.body.name,
       contactEmail: req.body.contact_email, billingEmail: req.body.billing_email,
-      discountPercentage: req.body.discount_percentage,
+      agreementStart: req.body.agreement_start, agreementEnd: req.body.agreement_end,
+      status: req.body.status,
     });
     success(res, account, undefined, 201);
   } catch (err: any) { error(res, 'Failed to create corporate account', 'INTERNAL_ERROR', 500); }
@@ -391,15 +394,16 @@ pricingRouter.get('/corporate/:id/members', requirePermission('services:read'), 
 // PUT /api/v1/pricing/corporate/:id
 pricingRouter.put('/corporate/:id', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
-    const { name, contact_email, billing_email, discount_percentage, status } = req.body;
+    const { name, contact_email, billing_email, status, agreement_start, agreement_end } = req.body;
     const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
     if (name !== undefined) { fields.push(`name = $${idx++}`); values.push(name); }
     if (contact_email !== undefined) { fields.push(`contact_email = $${idx++}`); values.push(contact_email); }
     if (billing_email !== undefined) { fields.push(`billing_email = $${idx++}`); values.push(billing_email); }
-    if (discount_percentage !== undefined) { fields.push(`discount_percentage = $${idx++}`); values.push(discount_percentage); }
     if (status !== undefined) { fields.push(`status = $${idx++}`); values.push(status); }
+    if (agreement_start !== undefined) { fields.push(`agreement_start = $${idx++}`); values.push(agreement_start || null); }
+    if (agreement_end !== undefined) { fields.push(`agreement_end = $${idx++}`); values.push(agreement_end || null); }
     if (fields.length === 0) { error(res, 'No fields to update', 'VALIDATION_ERROR', 400); return; }
     fields.push('updated_at = NOW()');
     values.push(req.params.id);

@@ -1,6 +1,7 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
 import { createActivity } from './customer-activity.service';
+import { calculatePrice } from './pricing.service';
 import { logger } from '../middleware/logger';
 
 interface CreateBookingInput {
@@ -47,13 +48,29 @@ export async function createBooking(input: CreateBookingInput) {
 
   const service = svcRows[0];
   const duration = service.duration;
-  const price = service.price;
+  const basePrice = service.price;
   const bookingType = service.booking_type;
   const bufferBefore = service.buffer_before || 0;
   const bufferAfter = service.buffer_after || 0;
 
   const startTime = new Date(input.startTime);
   const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
+
+  // Calculate price with applicable rules
+  let price = basePrice;
+  try {
+    const priceBreakdown = await calculatePrice({
+      businessId: input.businessId,
+      items: [{ variant_id: input.variantId }],
+      customerId: input.customerId,
+      bookingDatetime: input.startTime,
+    });
+    console.log('[booking] Price calculation:', JSON.stringify({ basePrice, total: priceBreakdown.total, discounts: priceBreakdown.discounts, savings: priceBreakdown.savings }));
+    price = priceBreakdown.total;
+  } catch (err: any) {
+    console.error('[booking] Pricing calculation failed:', err.message, err.stack);
+    logger.warn('Pricing calculation failed, using base price', { error: err.message });
+  }
 
   // Enforce lead time (unless staff override)
   if (!input.overrideRules) {

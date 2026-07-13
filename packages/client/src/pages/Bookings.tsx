@@ -4,6 +4,7 @@ import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import * as bookingsApi from '../api/bookings';
 import type { Booking } from '../api/bookings';
+import { formatCurrency } from '../utils/currency';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   pending: 'neutral', confirmed: 'info', in_progress: 'warning', completed: 'success', cancelled: 'error', no_show: 'error',
@@ -118,6 +119,10 @@ export function Bookings() {
     {
       key: 'status', header: 'Status',
       render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val.replace('_', ' ')}</Badge>,
+    },
+    {
+      key: 'price', header: 'Price',
+      render: (val: number) => val != null ? formatCurrency(val) : '—',
     },
     {
       key: 'staff', header: 'Staff',

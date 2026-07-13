@@ -591,7 +591,7 @@ function CorporateSection({ businessId }: { businessId: string }) {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingAccount, setEditingAccount] = useState<any>(null);
-  const [form, setForm] = useState({ name: '', contact_email: '', billing_email: '', discount_percentage: '' });
+  const [form, setForm] = useState({ name: '', contact_email: '', billing_email: '', agreement_start: '', agreement_end: '', status: 'active' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -626,7 +626,7 @@ function CorporateSection({ businessId }: { businessId: string }) {
     return () => clearTimeout(timeout);
   }, [memberSearch, businessId, members]);
 
-  const resetForm = () => setForm({ name: '', contact_email: '', billing_email: '', discount_percentage: '' });
+  const resetForm = () => setForm({ name: '', contact_email: '', billing_email: '', agreement_start: '', agreement_end: '', status: 'active' });
 
   const openCreate = () => { resetForm(); setEditingAccount(null); setShowForm(true); setError(''); };
 
@@ -636,7 +636,9 @@ function CorporateSection({ businessId }: { businessId: string }) {
       name: account.name || account.company_name || '',
       contact_email: account.contact_email || '',
       billing_email: account.billing_email || '',
-      discount_percentage: account.discount_percentage ? String(account.discount_percentage) : '',
+      agreement_start: account.agreement_start ? account.agreement_start.split('T')[0] : '',
+      agreement_end: account.agreement_end ? account.agreement_end.split('T')[0] : '',
+      status: account.status || 'active',
     });
     setShowForm(true);
     setError('');
@@ -650,7 +652,9 @@ function CorporateSection({ businessId }: { businessId: string }) {
       const data: any = { name: form.name };
       if (form.contact_email) data.contact_email = form.contact_email;
       if (form.billing_email) data.billing_email = form.billing_email;
-      if (form.discount_percentage) data.discount_percentage = parseInt(form.discount_percentage);
+      if (form.agreement_start) data.agreement_start = form.agreement_start;
+      if (form.agreement_end) data.agreement_end = form.agreement_end;
+      data.status = form.status;
 
       if (editingAccount) {
         const updated = await pricingApi.updateCorporateAccount(editingAccount.id, data);
@@ -721,9 +725,19 @@ function CorporateSection({ businessId }: { businessId: string }) {
               <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required placeholder="e.g. Acme Corp" />
             </div>
             <div style={styles.field}>
-              <label style={styles.label}>Discount %</label>
-              <input style={styles.input} type="number" min="0" max="100" value={form.discount_percentage} onChange={(e) => setForm({ ...form, discount_percentage: e.target.value })} placeholder="e.g. 15" />
-              <small style={styles.helper}>Applied automatically when a member of this account books.</small>
+              <label style={styles.label}>Status</label>
+              <select style={styles.input} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+            <div style={styles.field}>
+              <label style={styles.label}>Agreement Start</label>
+              <input style={styles.input} type="date" value={form.agreement_start} onChange={(e) => setForm({ ...form, agreement_start: e.target.value })} />
+            </div>
+            <div style={styles.field}>
+              <label style={styles.label}>Agreement End</label>
+              <input style={styles.input} type="date" value={form.agreement_end} onChange={(e) => setForm({ ...form, agreement_end: e.target.value })} />
             </div>
             <div style={styles.field}>
               <label style={styles.label}>Contact Email</label>
@@ -758,7 +772,8 @@ function CorporateSection({ businessId }: { businessId: string }) {
                   onClick={() => handleSelectAccount(a)}>
                   <div style={{ flex: 1 }}>
                     <span style={{ fontWeight: 500 }}>{a.name}</span>
-                    {a.discount_percentage > 0 && <span style={{ marginLeft: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{a.discount_percentage}% discount</span>}
+                    <Badge variant={a.status === 'active' ? 'success' : 'neutral'}>{a.status}</Badge>
+                    {a.agreement_end && <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>expires {new Date(a.agreement_end).toLocaleDateString()}</span>}
                     {a.contact_email && <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{a.contact_email}</span>}
                   </div>
                   <div style={{ display: 'flex', gap: '4px' }}>

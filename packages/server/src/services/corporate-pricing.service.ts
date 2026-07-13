@@ -5,7 +5,9 @@ interface CreateCorporateAccountInput {
   name: string;
   contactEmail?: string;
   billingEmail?: string;
-  discountPercentage?: number;
+  agreementStart?: string;
+  agreementEnd?: string;
+  status?: string;
 }
 
 /**
@@ -13,9 +15,9 @@ interface CreateCorporateAccountInput {
  */
 export async function createAccount(input: CreateCorporateAccountInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO pri_corporate_accounts (business_id, name, contact_email, billing_email, discount_percentage)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [input.businessId, input.name, input.contactEmail || null, input.billingEmail || null, input.discountPercentage ?? 0],
+    `INSERT INTO pri_corporate_accounts (business_id, name, contact_email, billing_email, agreement_start, agreement_end, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [input.businessId, input.name, input.contactEmail || null, input.billingEmail || null, input.agreementStart || null, input.agreementEnd || null, input.status || 'active'],
   );
   return rows[0];
 }

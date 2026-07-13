@@ -65,7 +65,9 @@ export async function calculatePrice(input: PriceCalculationInput): Promise<Pric
     const { rows: corpMembers } = await adminPool.query(
       `SELECT cam.account_id FROM pri_corporate_members cam
        JOIN pri_corporate_accounts ca ON ca.id = cam.account_id
-       WHERE cam.customer_id = $1 AND ca.business_id = $2 AND ca.status = 'active'`,
+       WHERE cam.customer_id = $1 AND ca.business_id = $2 AND ca.status = 'active'
+         AND (ca.agreement_start IS NULL OR ca.agreement_start <= CURRENT_DATE)
+         AND (ca.agreement_end IS NULL OR ca.agreement_end >= CURRENT_DATE)`,
       [customerId, businessId],
     );
     if (corpMembers.length > 0) corporateAccountId = corpMembers[0].account_id;
@@ -113,6 +115,20 @@ export async function calculatePrice(input: PriceCalculationInput): Promise<Pric
       }
       if (rule.customer_segment) {
         // Simplified: skip segment check for now
+      }
+    }
+
+    // Corporate rules must always match by account (even if applies_to_all_customers is true)
+    if (rule.rule_type === 'corporate') {
+      if (!corporateAccountId) return false; // customer not in any corporate account
+      if (rule.corporate_account_id && rule.corporate_account_id !== corporateAccountId) return false;
+    }
+
+    // Membership rules must always match by plan
+    if (rule.rule_type === 'membership') {
+      if (customerMembershipPlanIds.length === 0) return false; // customer has no membership
+      if (rule.membership_plan_ids && rule.membership_plan_ids.length > 0) {
+        if (!rule.membership_plan_ids.some((id: string) => customerMembershipPlanIds.includes(id))) return false;
       }
     }
 
@@ -275,12 +291,12 @@ async function applyDiscountCode(code: string, businessId: string, customerId: s
 
 async function getTaxRate(taxCategoryId: string | null, businessId: string): Promise<number> {
   if (taxCategoryId) {
-    const { rows } = await adminPool.query('SELECT rate FROM tax_categories WHERE id = $1', [taxCategoryId]);
+    const { rows } = await adminPool.query('SELECT rate FROM svc_tax_categories WHERE id = $1', [taxCategoryId]);
     if (rows.length > 0) return rows[0].rate;
   }
   // Fall back to default tax category
   const { rows } = await adminPool.query(
-    'SELECT rate FROM tax_categories WHERE business_id = $1 AND is_default = true', [businessId],
+    'SELECT rate FROM svc_tax_categories WHERE business_id = $1 AND is_default = true', [businessId],
   );
   return rows.length > 0 ? rows[0].rate : 0;
 }
