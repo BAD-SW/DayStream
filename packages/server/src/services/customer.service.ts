@@ -133,7 +133,8 @@ export async function updateCustomer(id: string, businessId: string, updates: Re
   for (const [key, value] of Object.entries(updates)) {
     if (allowedFields.includes(key)) {
       fields.push(`${key} = $${idx++}`);
-      values.push(value);
+      // Convert empty strings to null for date fields
+      values.push(key === 'date_of_birth' && value === '' ? null : value);
     }
   }
 

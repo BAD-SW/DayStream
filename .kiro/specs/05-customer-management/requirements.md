@@ -12,6 +12,8 @@ This phase builds the customer profile system, contact management, segmentation 
 - Enable tagging (manual and automated) for marketing and operations
 - Build activity timeline per customer per business
 - Support customer import/export and duplicate detection
+- Build Customer 360 overview with financial standing, aging/AR, and quick-actions
+- Enable direct booking, payment, refund, and credit initiation from customer profile
 - Ensure all customer data is tenant-scoped with business-level access control and GDPR-compliant
 
 ## Glossary
@@ -200,6 +202,54 @@ This phase builds the customer profile system, contact management, segmentation 
 7. THE system SHALL allow Customers to request account deletion (GDPR right to erasure)
 8. THE system SHALL NOT allow Customers to modify their lifecycle stage, tags, or internal notes
 
+### Requirement 12: Customer 360 Overview
+
+**User Story:** As a staff member, I want a comprehensive overview of a customer's entire relationship with the business, so that I can quickly understand their status, financial standing, and history without navigating multiple pages.
+
+#### Acceptance Criteria
+
+1. THE system SHALL display a Customer 360 overview page that consolidates all customer-related data in one view
+2. THE system SHALL display the customer's current financial standing including: outstanding balance, credit balance, aging summary (current, 30-day, 60-day, 90+ day buckets)
+3. THE system SHALL display recent booking history with status indicators (completed, upcoming, cancelled, no-show)
+4. THE system SHALL display recent payment history with amounts, methods, and dates
+5. THE system SHALL display current membership status (active plan, renewal date, usage)
+6. THE system SHALL display the customer's lifecycle stage with transition history
+7. THE system SHALL display active tags and segment memberships
+8. THE system SHALL provide visual indicators for at-risk conditions (overdue balance, upcoming membership expiry, inactivity)
+9. THE system SHALL load the 360 view with no more than 3-4 API calls total
+10. THE system SHALL support role-based visibility (e.g., financial details may be restricted from certain staff roles)
+
+### Requirement 13: Quick-Actions from Customer Profile
+
+**User Story:** As a receptionist, I want to initiate bookings, payments, refunds, and credits directly from a customer's profile, so that I can handle common tasks without navigating away.
+
+#### Acceptance Criteria
+
+1. THE system SHALL provide a "Book Appointment" quick-action from the Customer 360 view that opens the booking flow pre-populated with the customer
+2. THE system SHALL provide a "Record Payment" quick-action that opens the payment modal pre-populated with the customer
+3. THE system SHALL provide a "Issue Refund" quick-action that opens the refund flow pre-populated with the customer and their refundable charges
+4. THE system SHALL provide an "Apply Credit" quick-action that opens the credit flow pre-populated with the customer
+5. THE system SHALL return the user to the Customer 360 view after completing any quick-action
+6. THE system SHALL refresh the relevant sections of the 360 view after a quick-action completes (e.g., payment history after recording a payment)
+7. THE system SHALL respect the same permissions required by the underlying action (e.g., refund quick-action requires refund permission)
+
+### Requirement 14: Customer Import Enhancements
+
+**User Story:** As a business owner migrating from a legacy system, I want to import customer records from CSV with intelligent field mapping and validation, so that I can onboard quickly without data loss.
+
+#### Acceptance Criteria
+
+1. THE system SHALL support uploading CSV files up to 50MB (approximately 100,000 records)
+2. THE system SHALL auto-detect CSV column headers and suggest field mappings based on common naming patterns (e.g., "First Name", "fname", "first_name" all map to first_name)
+3. THE system SHALL display a preview of the first 10 rows with the proposed mapping before import
+4. THE system SHALL allow the user to manually adjust field mappings before confirming
+5. THE system SHALL support mapping to custom fields defined by the Business
+6. THE system SHALL validate all records and present a summary: total rows, valid rows, rows with errors, rows that are potential duplicates
+7. THE system SHALL allow the user to download an error report CSV with row numbers and specific field errors
+8. THE system SHALL support importing in batches (process in background for large files, notify when complete)
+9. THE system SHALL support a "skip duplicates" or "update existing" option for records matching on email
+10. THE system SHALL log the import operation with record counts, user who initiated, and timestamp
+
 ---
 
 ## Dependencies
@@ -208,6 +258,9 @@ This phase builds the customer profile system, contact management, segmentation 
 - Phase 02: Security & Compliance - Authentication, RBAC, audit logging, GDPR features, field-level encryption
 - Phase 03: Core Platform - Tenant context, API infrastructure, i18n, configuration engine
 - Phase 04: Design System - UI components for profile views, forms, tables, timelines
+- Phase 07: Booking Engine - Booking data for 360 view and quick-action flow
+- Phase 10: Payment Platform - Payment/refund/credit data for 360 view and quick-actions
+- Phase 26: Invoicing & AR - Invoice and aging data for financial standing in 360 view
 
 ## Success Criteria
 
