@@ -194,7 +194,7 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
       {/* Quick Actions Bar */}
       <div style={styles.quickActionsBar}>
         <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
-          <Button size="sm" onClick={() => { /* TODO: open payment modal pre-filled with customer */ }}>Record Payment</Button>
+          <Button size="sm" variant="secondary" onClick={() => { /* TODO: open payment modal pre-filled with customer */ }}>Record Payment</Button>
           <Button size="sm" variant="secondary" onClick={() => { /* TODO: open order flow pre-filled with customer */ }}>Place Order</Button>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
