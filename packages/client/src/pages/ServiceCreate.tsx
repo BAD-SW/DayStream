@@ -44,7 +44,7 @@ export function ServiceCreate() {
     setError('');
     try {
       const service = await servicesApi.createService({ ...form, business_id: businessId });
-      navigate(`/services/${service.id}`);
+      navigate(`/products/${service.id}`);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create service');
     } finally {
@@ -54,7 +54,7 @@ export function ServiceCreate() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/services')}>← Back to Services</button>
+      <button style={styles.back} onClick={() => navigate('/products')}>← Back to Products & Services</button>
       <h1 style={styles.title}>Create Service</h1>
       {error && <Alert variant="error">{error}</Alert>}
       <form onSubmit={handleSubmit} style={styles.form}>
@@ -127,7 +127,7 @@ export function ServiceCreate() {
           Enable online booking
         </label>
         <div style={styles.actions}>
-          <Button type="button" onClick={() => navigate('/services')}>Cancel</Button>
+          <Button type="button" onClick={() => navigate('/products')}>Cancel</Button>
           <Button type="submit" disabled={loading}>{loading ? 'Creating...' : 'Create Service'}</Button>
         </div>
       </form>

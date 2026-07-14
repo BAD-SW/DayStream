@@ -18,12 +18,14 @@ export function Badge({ children, variant = 'neutral' }: BadgeProps) {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
+        justifyContent: 'center',
         padding: '2px 8px',
         borderRadius: 'var(--radius-full)',
         fontSize: 'var(--font-size-xs)',
         fontWeight: 'var(--font-weight-medium)' as any,
         background: colors.bg,
         color: colors.color,
+        minWidth: '60px',
       }}
     >
       {children}

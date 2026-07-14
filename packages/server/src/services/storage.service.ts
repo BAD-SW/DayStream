@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { logger } from '../middleware/logger';
+import { adminPool } from '../db/pool';
 
 export interface StoredFile {
   filePath: string;        // relative path within storage root
@@ -14,8 +15,40 @@ export interface StoredFile {
 interface StorageBackend {
   save(relativePath: string, data: Buffer): Promise<void>;
   delete(relativePath: string): Promise<void>;
+  deleteDirectory(relativePath: string): Promise<void>;
   getUrl(relativePath: string): string;
   exists(relativePath: string): Promise<boolean>;
+}
+
+// Cache the storage path from DB (refreshed periodically)
+let cachedStoragePath: string | null = null;
+let cacheTime = 0;
+const CACHE_TTL = 60000; // 1 minute
+
+async function getStorageRoot(): Promise<string> {
+  const now = Date.now();
+  if (cachedStoragePath && (now - cacheTime) < CACHE_TTL) {
+    return cachedStoragePath;
+  }
+
+  try {
+    const { rows } = await adminPool.query(
+      "SELECT config_data FROM sys_system_configurations WHERE category = 'storage'",
+    );
+    const config = rows[0]?.config_data;
+    if (config?.local_path) {
+      cachedStoragePath = config.local_path;
+      cacheTime = now;
+      return cachedStoragePath!;
+    }
+  } catch (err) {
+    logger.warn('Failed to read storage config from database, using fallback');
+  }
+
+  // Fallback to env or cwd
+  cachedStoragePath = process.env.STORAGE_LOCAL_PATH || path.join(process.cwd(), 'storage');
+  cacheTime = now;
+  return cachedStoragePath!;
 }
 
 // ============================================================
@@ -23,18 +56,9 @@ interface StorageBackend {
 // ============================================================
 
 class LocalStorage implements StorageBackend {
-  private root: string;
-
-  constructor() {
-    this.root = process.env.STORAGE_LOCAL_PATH || path.join(process.cwd(), 'storage');
-    // Ensure root exists
-    if (!fs.existsSync(this.root)) {
-      fs.mkdirSync(this.root, { recursive: true });
-    }
-  }
-
   async save(relativePath: string, data: Buffer): Promise<void> {
-    const fullPath = path.join(this.root, relativePath);
+    const root = await getStorageRoot();
+    const fullPath = path.join(root, relativePath);
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -43,9 +67,18 @@ class LocalStorage implements StorageBackend {
   }
 
   async delete(relativePath: string): Promise<void> {
-    const fullPath = path.join(this.root, relativePath);
+    const root = await getStorageRoot();
+    const fullPath = path.join(root, relativePath);
     if (fs.existsSync(fullPath)) {
       fs.unlinkSync(fullPath);
+    }
+  }
+
+  async deleteDirectory(relativePath: string): Promise<void> {
+    const root = await getStorageRoot();
+    const fullPath = path.join(root, relativePath);
+    if (fs.existsSync(fullPath)) {
+      fs.rmSync(fullPath, { recursive: true, force: true });
     }
   }
 
@@ -55,7 +88,8 @@ class LocalStorage implements StorageBackend {
   }
 
   async exists(relativePath: string): Promise<boolean> {
-    const fullPath = path.join(this.root, relativePath);
+    const root = await getStorageRoot();
+    const fullPath = path.join(root, relativePath);
     return fs.existsSync(fullPath);
   }
 }
@@ -86,6 +120,11 @@ class S3Storage implements StorageBackend {
     throw new Error('S3 storage not yet implemented');
   }
 
+  async deleteDirectory(relativePath: string): Promise<void> {
+    // TODO: Implement S3 ListObjects + DeleteObjects for prefix
+    throw new Error('S3 storage not yet implemented');
+  }
+
   getUrl(relativePath: string): string {
     return `${this.endpoint}/${this.bucket}/${relativePath}`;
   }
@@ -112,6 +151,7 @@ if (BACKEND === 's3') {
 export const storage = {
   save: (relativePath: string, data: Buffer) => backend.save(relativePath, data),
   delete: (relativePath: string) => backend.delete(relativePath),
+  deleteDirectory: (relativePath: string) => backend.deleteDirectory(relativePath),
   getUrl: (relativePath: string) => backend.getUrl(relativePath),
   exists: (relativePath: string) => backend.exists(relativePath),
 };

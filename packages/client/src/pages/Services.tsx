@@ -4,44 +4,102 @@ import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import { SearchInput } from '../design-system/components/actions/SearchInput';
+import { apiClient } from '../api/client';
 import * as servicesApi from '../api/services';
 import type { Service, ServiceCategory } from '../api/services';
+import { formatCurrency } from '../utils/currency';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
-  active: 'success', draft: 'neutral', paused: 'warning', archived: 'error',
+  active: 'success', draft: 'neutral', paused: 'warning', archived: 'error', inactive: 'neutral',
 };
+
+type ProductType = '' | 'service' | 'merchandise';
+
+interface CatalogItem {
+  id: string;
+  name: string;
+  category_name?: string;
+  status: string;
+  item_type: 'service' | 'merchandise';
+  price?: number;
+  duration?: number;
+  sku?: string;
+}
 
 export function Services() {
   const navigate = useNavigate();
-  const [services, setServices] = useState<Service[]>([]);
+  const [items, setItems] = useState<CatalogItem[]>([]);
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState<ProductType>('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
+  // Create modals
+  const [showCreateService, setShowCreateService] = useState(false);
+  const [showCreateProduct, setShowCreateProduct] = useState(false);
+
   const businessId = localStorage.getItem('business_id') || '';
 
-  const fetchServices = useCallback(async () => {
+  const fetchItems = useCallback(async () => {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const result = await servicesApi.getServices(businessId, {
-        search: search || undefined,
-        status: statusFilter || undefined,
-        category_id: categoryFilter || undefined,
-        page,
-      });
-      setServices(result.data);
-      setTotalPages(result.meta?.totalPages || 1);
+      const combined: CatalogItem[] = [];
+      let totalCount = 0;
+
+      if (typeFilter !== 'merchandise') {
+        const result = await servicesApi.getServices(businessId, {
+          search: search || undefined,
+          status: statusFilter || undefined,
+          category_id: categoryFilter || undefined,
+          page,
+        });
+        for (const s of result.data) {
+          combined.push({
+            id: s.id,
+            name: s.name,
+            category_name: s.category_name,
+            status: s.status,
+            item_type: 'service',
+            duration: s.default_duration,
+          });
+        }
+        totalCount += result.meta?.total || result.data.length;
+      }
+
+      if (typeFilter !== 'service') {
+        const params = new URLSearchParams({ business_id: businessId });
+        if (search) params.set('search', search);
+        if (statusFilter) params.set('status', statusFilter);
+        if (categoryFilter) params.set('category_id', categoryFilter);
+        params.set('page', String(page));
+        const res = await apiClient.get(`/v1/merchandise?${params}`);
+        for (const m of res.data.data || []) {
+          combined.push({
+            id: m.id,
+            name: m.name,
+            category_name: m.category_name,
+            status: m.status,
+            item_type: 'merchandise',
+            price: m.price,
+            sku: m.sku,
+          });
+        }
+        totalCount += res.data.meta?.total || (res.data.data || []).length;
+      }
+
+      setItems(combined);
+      setTotalPages(Math.ceil(totalCount / 20) || 1);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId, search, statusFilter, categoryFilter, page]);
+  }, [businessId, search, statusFilter, categoryFilter, typeFilter, page]);
 
-  useEffect(() => { fetchServices(); }, [fetchServices]);
+  useEffect(() => { fetchItems(); }, [fetchItems]);
 
   useEffect(() => {
     if (!businessId) return;
@@ -54,28 +112,44 @@ export function Services() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  const handleQuickAction = async (action: string, service: Service) => {
+  const handleQuickAction = async (action: string, item: CatalogItem) => {
     try {
-      if (action === 'archive') await servicesApi.archiveService(service.id, businessId);
-      else if (action === 'pause') await servicesApi.pauseService(service.id, businessId);
-      else if (action === 'activate') await servicesApi.activateService(service.id, businessId);
-      else if (action === 'restore') await servicesApi.restoreService(service.id, businessId);
-      fetchServices();
+      if (item.item_type === 'service') {
+        if (action === 'archive') await servicesApi.archiveService(item.id, businessId);
+        else if (action === 'pause') await servicesApi.pauseService(item.id, businessId);
+        else if (action === 'activate') await servicesApi.activateService(item.id, businessId);
+        else if (action === 'restore') await servicesApi.restoreService(item.id, businessId);
+      } else {
+        if (action === 'archive') await apiClient.put(`/v1/merchandise/${item.id}/archive?business_id=${businessId}`);
+        else if (action === 'pause') await apiClient.put(`/v1/merchandise/${item.id}/pause?business_id=${businessId}`);
+        else if (action === 'activate') await apiClient.put(`/v1/merchandise/${item.id}/activate?business_id=${businessId}`);
+        else if (action === 'restore') await apiClient.put(`/v1/merchandise/${item.id}/restore?business_id=${businessId}`);
+      }
+      fetchItems();
     } catch { /* silent */ }
   };
 
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
-    { key: 'category_name', header: 'Category' },
+    {
+      key: 'item_type', header: 'Type',
+      render: (val: string) => <Badge variant={val === 'service' ? 'info' : 'neutral'}>{val === 'service' ? 'Service' : 'Product'}</Badge>,
+    },
+    { key: 'category_name', header: 'Category', render: (val: string) => val || '—' },
     {
       key: 'status', header: 'Status',
       render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge>,
     },
-    { key: 'booking_type', header: 'Type', render: (val: string) => val.replace('_', ' ') },
-    { key: 'default_duration', header: 'Duration', render: (val: number) => `${val} min` },
+    {
+      key: 'detail', header: 'Detail',
+      render: (_: any, row: CatalogItem) => {
+        if (row.item_type === 'service') return row.duration ? `${row.duration} min` : '—';
+        return row.price != null ? formatCurrency(row.price) : '—';
+      },
+    },
     {
       key: 'actions', header: '',
-      render: (_: any, row: Service) => (
+      render: (_: any, row: CatalogItem) => (
         <div style={{ display: 'flex', gap: '4px' }}>
           {row.status === 'draft' && <ActionBtn label="Activate" onClick={() => handleQuickAction('activate', row)} />}
           {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleQuickAction('pause', row)} />}
@@ -87,18 +161,32 @@ export function Services() {
     },
   ];
 
+  const handleRowClick = (row: CatalogItem) => {
+    if (row.item_type === 'service') {
+      navigate(`/products/${row.id}`);
+    } else {
+      navigate(`/products/merchandise/${row.id}`);
+    }
+  };
+
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Services</h1>
+        <h1 style={styles.title}>Products & Services</h1>
         <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-          <Button onClick={() => navigate('/services/categories')}>Categories</Button>
-          <Button onClick={() => navigate('/services/new')}>Add Service</Button>
+          <Button variant="secondary" onClick={() => navigate('/products/categories')}>Categories</Button>
+          <Button variant="secondary" onClick={() => setShowCreateService(true)}>Add Service</Button>
+          <Button variant="secondary" onClick={() => setShowCreateProduct(true)}>Add Product</Button>
         </div>
       </div>
 
       <div style={styles.toolbar}>
-        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search services..." />
+        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search..." />
+        <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value as ProductType); setPage(1); }} style={styles.select}>
+          <option value="">All Types</option>
+          <option value="service">Services</option>
+          <option value="merchandise">Products</option>
+        </select>
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
           <option value="">All Statuses</option>
           <option value="draft">Draft</option>
@@ -114,18 +202,227 @@ export function Services() {
 
       <Table
         columns={columns}
-        data={services}
+        data={items}
         loading={loading}
-        onRowClick={(row) => navigate(`/services/${row.id}`)}
+        onRowClick={handleRowClick}
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
-        emptyMessage="No services found"
+        emptyMessage="No products or services found"
         mobileCardMode
       />
+
+      {/* Create Service Modal */}
+      {showCreateService && (
+        <CreateServiceModal
+          businessId={businessId}
+          categories={categories}
+          onClose={() => setShowCreateService(false)}
+          onCreated={(service) => { setShowCreateService(false); navigate(`/products/${service.id}`); }}
+        />
+      )}
+
+      {/* Create Product Modal */}
+      {showCreateProduct && (
+        <CreateProductModal
+          businessId={businessId}
+          categories={categories}
+          onClose={() => setShowCreateProduct(false)}
+          onCreated={() => { setShowCreateProduct(false); fetchItems(); }}
+        />
+      )}
     </div>
   );
 }
+
+// --- Create Service Modal ---
+
+function CreateServiceModal({ businessId, categories, onClose, onCreated }: { businessId: string; categories: ServiceCategory[]; onClose: () => void; onCreated: (s: Service) => void }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    short_description: '',
+    booking_type: 'individual',
+    default_duration: 60,
+    buffer_before: 0,
+    buffer_after: 0,
+    max_capacity: 1,
+    category_id: '',
+    online_booking_enabled: true,
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name || !form.category_id) { setError('Name and category are required'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      const service = await servicesApi.createService({ ...form, business_id: businessId });
+      onCreated(service);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to create service');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={styles.overlay} onClick={onClose}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.modalHeader}>
+          <h3 style={styles.modalTitle}>Add Service</h3>
+          <button style={styles.closeBtn} onClick={onClose}>×</button>
+        </div>
+        {error && <p style={styles.error}>{error}</p>}
+        <form onSubmit={handleSubmit} style={styles.formGrid}>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Name *</label>
+            <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Category *</label>
+            <select style={styles.input} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })} required>
+              <option value="">Select...</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Booking Type</label>
+            <select style={styles.input} value={form.booking_type} onChange={(e) => setForm({ ...form, booking_type: e.target.value })}>
+              <option value="individual">Individual</option>
+              <option value="shared">Shared</option>
+              <option value="group">Group</option>
+              <option value="resource">Resource</option>
+            </select>
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Duration (min)</label>
+            <input style={styles.input} type="number" min={5} value={form.default_duration} onChange={(e) => setForm({ ...form, default_duration: Number(e.target.value) })} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Buffer Before (min)</label>
+            <input style={styles.input} type="number" min={0} value={form.buffer_before} onChange={(e) => setForm({ ...form, buffer_before: Number(e.target.value) })} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Buffer After (min)</label>
+            <input style={styles.input} type="number" min={0} value={form.buffer_after} onChange={(e) => setForm({ ...form, buffer_after: Number(e.target.value) })} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Max Capacity</label>
+            <input style={styles.input} type="number" min={1} value={form.max_capacity} onChange={(e) => setForm({ ...form, max_capacity: Number(e.target.value) })} />
+          </div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
+            <label style={styles.label}>Short Description</label>
+            <input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />
+          </div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
+            <label style={styles.label}>Description</label>
+            <textarea style={{ ...styles.input, minHeight: '60px' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text)', gridColumn: '1 / -1' }}>
+            <input type="checkbox" checked={form.online_booking_enabled} onChange={(e) => setForm({ ...form, online_booking_enabled: e.target.checked })} style={{ width: '16px', height: '16px' }} />
+            Enable online booking
+          </label>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}>
+            <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
+            <Button type="submit" loading={loading}>Create Service</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// --- Create Product Modal ---
+
+function CreateProductModal({ businessId, categories, onClose, onCreated }: { businessId: string; categories: ServiceCategory[]; onClose: () => void; onCreated: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [priceDisplay, setPriceDisplay] = useState('0.00');
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    short_description: '',
+    category_id: '',
+    sku: '',
+    price: 0,
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name) { setError('Name is required'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      await apiClient.post('/v1/merchandise', {
+        business_id: businessId,
+        name: form.name,
+        description: form.description || undefined,
+        short_description: form.short_description || undefined,
+        category_id: form.category_id || undefined,
+        sku: form.sku || undefined,
+        price: form.price,
+      });
+      onCreated();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to create product');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={styles.overlay} onClick={onClose}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.modalHeader}>
+          <h3 style={styles.modalTitle}>Add Product</h3>
+          <button style={styles.closeBtn} onClick={onClose}>×</button>
+        </div>
+        {error && <p style={styles.error}>{error}</p>}
+        <form onSubmit={handleSubmit} style={styles.formGrid}>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Name *</label>
+            <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Category</label>
+            <select style={styles.input} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
+              <option value="">None</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Price *</label>
+            <input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay}
+              onChange={(e) => setPriceDisplay(e.target.value)}
+              onBlur={() => { const cents = Math.round(parseFloat(priceDisplay || '0') * 100); setForm({ ...form, price: cents }); setPriceDisplay((cents / 100).toFixed(2)); }}
+            />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>SKU</label>
+            <input style={styles.input} value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="Optional" />
+          </div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
+            <label style={styles.label}>Short Description</label>
+            <input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />
+          </div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
+            <label style={styles.label}>Description</label>
+            <textarea style={{ ...styles.input, minHeight: '60px' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          </div>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}>
+            <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
+            <Button type="submit" loading={loading}>Create Product</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// --- Utility ---
 
 function ActionBtn({ label, onClick }: { label: string; onClick: () => void }) {
   return (
@@ -141,5 +438,15 @@ const styles: Record<string, React.CSSProperties> = {
   title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
   toolbar: { display: 'flex', gap: 'var(--space-md)', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' as const },
   select: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
-  actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', minWidth: '60px', textAlign: 'center' as const },
+  overlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
+  modal: { background: '#ffffff', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '600px', maxHeight: '85vh', overflow: 'auto', border: '1px solid #e0e0e0', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' },
+  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
+  modalTitle: { margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--color-text)' },
+  closeBtn: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--color-text-secondary)' },
+  formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
+  formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
+  label: { fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' },
+  input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
+  error: { color: 'var(--color-error)', fontSize: '13px', margin: '0 0 8px 0' },
 };

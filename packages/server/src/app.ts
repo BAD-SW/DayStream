@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import path from 'path';
+import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import swaggerUi from 'swagger-ui-express';
 import { logger } from './middleware/logger';
@@ -63,6 +65,32 @@ app.use(cookieParser());
 
 // Body parsing
 app.use(express.json({ limit: '1mb' }));
+
+// Serve uploaded files from storage (reads path from database config)
+app.use('/storage', async (req, res, next) => {
+  try {
+    const { adminPool: pool } = await import('./db/pool');
+    const { rows } = await pool.query("SELECT config_data FROM sys_system_configurations WHERE category = 'storage'");
+    const config = rows[0]?.config_data;
+    const storagePath = config?.local_path || process.env.STORAGE_LOCAL_PATH || path.join(process.cwd(), 'storage');
+    const filePath = path.join(storagePath, req.path);
+
+    // Prevent path traversal
+    const resolved = path.resolve(filePath);
+    if (!resolved.startsWith(path.resolve(storagePath))) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    if (fs.existsSync(resolved)) {
+      res.sendFile(resolved);
+    } else {
+      res.status(404).json({ error: 'File not found' });
+    }
+  } catch {
+    res.status(500).json({ error: 'Storage error' });
+  }
+});
 
 // Swagger UI
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec));

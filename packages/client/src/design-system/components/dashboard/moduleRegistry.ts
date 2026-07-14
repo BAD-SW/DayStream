@@ -20,17 +20,11 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   // Phase 5: Customer Management
   { id: 'customers', phase: 5, icon: '👥', titleKey: 'Customers', descriptionKey: 'Manage customer accounts', path: '/customers', personas: ['business'], permission: 'customers:read' },
 
-  // Phase 6: Service Management
-  { id: 'services', phase: 6, icon: '💼', titleKey: 'Services', descriptionKey: 'Manage service offerings', path: '/services', personas: ['business'], permission: 'services:read' },
+  // Phase 28: Products & Services (supersedes Phase 6, 8, 9)
+  { id: 'products-services', phase: 28, icon: '🛍️', titleKey: 'Products & Services', descriptionKey: 'Services, merchandise, memberships, and packages', path: '/products', personas: ['business'], permission: 'services:read' },
 
   // Phase 7: Booking Engine
   { id: 'bookings', phase: 7, icon: '📅', titleKey: 'Bookings', descriptionKey: 'Schedule and manage bookings', path: '/bookings', personas: ['business', 'customer'], permission: 'bookings:read' },
-
-  // Phase 8: Membership Engine
-  { id: 'memberships', phase: 8, icon: '🏷️', titleKey: 'Memberships', descriptionKey: 'Manage memberships and subscriptions', path: '/memberships', personas: ['business', 'customer'], featureFlag: 'feature.memberships' },
-
-  // Phase 9: Pricing Engine
-  { id: 'pricing', phase: 9, icon: '💰', titleKey: 'Pricing', descriptionKey: 'Configure pricing and packages', path: '/pricing', personas: ['business'], permission: 'services:*' },
 
   // Phase 10: Payment Platform
   { id: 'payments', phase: 10, icon: '💳', titleKey: 'Payments', descriptionKey: 'Process and track payments', path: '/payments', personas: ['business', 'customer'] },

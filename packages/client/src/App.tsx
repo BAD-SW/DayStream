@@ -22,6 +22,7 @@ import { Segments } from './pages/Segments';
 import { CustomerImport } from './pages/CustomerImport';
 import { Services } from './pages/Services';
 import { ServiceDetail } from './pages/ServiceDetail';
+import { MerchandiseDetail } from './pages/MerchandiseDetail';
 import { ServiceCreate } from './pages/ServiceCreate';
 import { ServiceCategories } from './pages/ServiceCategories';
 import { Bookings } from './pages/Bookings';
@@ -89,7 +90,13 @@ export function App() {
         <Route path="/customers/segments" element={<ProtectedRoute><Segments /></ProtectedRoute>} />
         <Route path="/customers/:id" element={<ProtectedRoute><CustomerDetail /></ProtectedRoute>} />
 
-        {/* Services */}
+        {/* Products & Services (Phase 28) */}
+        <Route path="/products" element={<ProtectedRoute><Services /></ProtectedRoute>} />
+        <Route path="/products/categories" element={<ProtectedRoute><ServiceCategories /></ProtectedRoute>} />
+        <Route path="/products/merchandise/:id" element={<ProtectedRoute><MerchandiseDetail /></ProtectedRoute>} />
+        <Route path="/products/:id" element={<ProtectedRoute><ServiceDetail /></ProtectedRoute>} />
+
+        {/* Legacy service routes (redirect-compatible) */}
         <Route path="/services" element={<ProtectedRoute><Services /></ProtectedRoute>} />
         <Route path="/services/new" element={<ProtectedRoute><ServiceCreate /></ProtectedRoute>} />
         <Route path="/services/categories" element={<ProtectedRoute><ServiceCategories /></ProtectedRoute>} />

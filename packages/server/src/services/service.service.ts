@@ -140,11 +140,9 @@ export async function getServices(businessId: string, filters: ServiceFilters) {
     params.push(filters.categoryId);
   }
 
-  if (filters.status) {
+  if (filters.status && filters.status !== 'all') {
     conditions.push(`s.status = $${paramIndex++}`);
     params.push(filters.status);
-  } else {
-    conditions.push("s.status != 'archived'");
   }
 
   if (filters.bookingType) {

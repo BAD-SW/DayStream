@@ -31,7 +31,7 @@ export function ServiceDetail() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/services')}>← Back to Services</button>
+      <button style={styles.back} onClick={() => navigate('/products')}>← Back to Products & Services</button>
 
       <div style={styles.header}>
         <div>
