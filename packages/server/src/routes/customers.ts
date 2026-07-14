@@ -427,13 +427,36 @@ customersRouter.get('/:id/notes', requirePermission('customers:read'), async (re
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
 
-    const notes = await notesService.getNotes(
-      req.params.id, businessId, authReq.tenantId, authReq.user.sub, authReq.user.role,
-    );
+    const result = await notesService.getNotes({
+      customerId: req.params.id,
+      businessId,
+      tenantId: authReq.tenantId,
+      userId: authReq.user.sub,
+      userRole: authReq.user.role,
+      category: req.query.category as string,
+      dateFrom: req.query.date_from as string,
+      dateTo: req.query.date_to as string,
+      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 10,
+      offset: req.query.offset ? parseInt(req.query.offset as string, 10) : 0,
+    });
 
-    success(res, notes);
+    success(res, result.notes, { total: result.total, limit: result.limit, offset: result.offset });
   } catch (err: any) {
     error(res, 'Failed to get notes', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// DELETE /api/v1/customers/:id/notes/:noteId — Delete a note
+customersRouter.delete('/:id/notes/:noteId', requirePermission('customers:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const deleted = await notesService.deleteNote(req.params.noteId, businessId);
+    if (!deleted) { error(res, 'Note not found', 'NOT_FOUND', 404); return; }
+    success(res, { deleted: true });
+  } catch (err: any) {
+    error(res, 'Failed to delete note', 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -463,6 +486,20 @@ customersRouter.post('/note-categories', requirePermission('settings:*'), valida
     success(res, category, undefined, 201);
   } catch (err: any) {
     error(res, 'Failed to create category', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// DELETE /api/v1/customers/note-categories/:id — Delete category
+customersRouter.delete('/note-categories/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const deleted = await notesService.deleteCategory(req.params.id, businessId);
+    if (!deleted) { error(res, 'Category not found', 'NOT_FOUND', 404); return; }
+    success(res, { deleted: true });
+  } catch (err: any) {
+    error(res, 'Failed to delete category', 'INTERNAL_ERROR', 500);
   }
 });
 

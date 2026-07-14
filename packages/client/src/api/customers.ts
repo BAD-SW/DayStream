@@ -104,14 +104,24 @@ export async function getActivities(customerId: string, businessId: string, filt
 
 // --- Notes ---
 
-export async function getNotes(customerId: string, businessId: string) {
-  const res = await apiClient.get(`/v1/customers/${customerId}/notes?business_id=${businessId}`);
-  return res.data.data;
+export async function getNotes(customerId: string, businessId: string, filters?: { category?: string; date_from?: string; date_to?: string; limit?: number; offset?: number }) {
+  const params = new URLSearchParams({ business_id: businessId });
+  if (filters?.category) params.set('category', filters.category);
+  if (filters?.date_from) params.set('date_from', filters.date_from);
+  if (filters?.date_to) params.set('date_to', filters.date_to);
+  if (filters?.limit) params.set('limit', String(filters.limit));
+  if (filters?.offset) params.set('offset', String(filters.offset));
+  const res = await apiClient.get(`/v1/customers/${customerId}/notes?${params}`);
+  return res.data;
 }
 
 export async function createNote(customerId: string, businessId: string, data: { category: string; content: string; is_sensitive?: boolean }) {
   const res = await apiClient.post(`/v1/customers/${customerId}/notes?business_id=${businessId}`, data);
   return res.data.data;
+}
+
+export async function deleteNote(customerId: string, noteId: string, businessId: string) {
+  await apiClient.delete(`/v1/customers/${customerId}/notes/${noteId}?business_id=${businessId}`);
 }
 
 // --- Tags ---

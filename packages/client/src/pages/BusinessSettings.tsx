@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
 
-type SettingsTab = 'lifecycle' | 'scheduled-jobs' | 'notifications' | 'payment-methods';
+type SettingsTab = 'lifecycle' | 'scheduled-jobs' | 'notifications' | 'payment-methods' | 'note-categories';
 
 export function BusinessSettings() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('lifecycle');
@@ -12,6 +12,7 @@ export function BusinessSettings() {
     { key: 'scheduled-jobs', label: 'Scheduled Jobs' },
     { key: 'notifications', label: 'Notifications' },
     { key: 'payment-methods', label: 'Payment Methods' },
+    { key: 'note-categories', label: 'Note Categories' },
   ];
 
   return (
@@ -29,6 +30,7 @@ export function BusinessSettings() {
       {activeTab === 'scheduled-jobs' && <ScheduledJobsSettings />}
       {activeTab === 'notifications' && <NotificationSettings />}
       {activeTab === 'payment-methods' && <PaymentMethodsSettings />}
+      {activeTab === 'note-categories' && <NoteCategoriesSettings />}
     </div>
   );
 }
@@ -395,6 +397,101 @@ function PaymentMethodsSettings() {
   );
 }
 
+
+// ============================================================
+// Note Categories Settings
+// ============================================================
+
+function NoteCategoriesSettings() {
+  const businessId = localStorage.getItem('business_id') || '';
+  const [categories, setCategories] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [addForm, setAddForm] = useState({ name: '', is_sensitive: false, customer_visible: false });
+  const [adding, setAdding] = useState(false);
+
+  useEffect(() => {
+    if (!businessId) { setLoading(false); return; }
+    apiClient.get(`/v1/customers/note-categories/list?business_id=${businessId}`)
+      .then((res) => setCategories(res.data.data || []))
+      .catch(() => setCategories([]))
+      .finally(() => setLoading(false));
+  }, [businessId]);
+
+  const handleAdd = async () => {
+    if (!addForm.name.trim()) return;
+    setAdding(true);
+    try {
+      const res = await apiClient.post(`/v1/customers/note-categories?business_id=${businessId}`, addForm);
+      setCategories([...categories, res.data.data]);
+      setAddForm({ name: '', is_sensitive: false, customer_visible: false });
+      setShowAdd(false);
+    } catch { alert('Failed to create category'); }
+    finally { setAdding(false); }
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Delete the "${name}" category? Notes using this category will not be deleted.`)) return;
+    try {
+      await apiClient.delete(`/v1/customers/note-categories/${id}?business_id=${businessId}`);
+      setCategories(categories.filter((c) => c.id !== id));
+    } catch { alert('Failed to delete category'); }
+  };
+
+  if (loading) return <p style={styles.muted}>Loading...</p>;
+
+  return (
+    <div style={styles.section}>
+      <h2 style={styles.sectionTitle}>Note Categories</h2>
+      <p style={styles.description}>
+        Define the categories available when adding notes to customer profiles. Sensitive categories encrypt their content and restrict access by role.
+      </p>
+
+      <div style={{ marginBottom: '16px' }}>
+        <Button onClick={() => setShowAdd(!showAdd)}>{showAdd ? 'Cancel' : 'Add Category'}</Button>
+      </div>
+
+      {showAdd && (
+        <div style={{ border: '1px solid var(--color-border)', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+          <div style={styles.fieldRow}>
+            <div style={styles.field}>
+              <label style={styles.label}>Category Name</label>
+              <input style={styles.input} value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} placeholder="e.g., Medical History" />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--color-text)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={addForm.is_sensitive} onChange={(e) => setAddForm({ ...addForm, is_sensitive: e.target.checked })} style={{ width: '16px', height: '16px' }} />
+              Sensitive (encrypted, restricted access)
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--color-text)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={addForm.customer_visible} onChange={(e) => setAddForm({ ...addForm, customer_visible: e.target.checked })} style={{ width: '16px', height: '16px' }} />
+              Visible to customer
+            </label>
+          </div>
+          <Button onClick={handleAdd} loading={adding}>Create Category</Button>
+        </div>
+      )}
+
+      {categories.length === 0 ? (
+        <p style={styles.muted}>No note categories defined. Add a category to start using customer notes.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {categories.map((cat) => (
+            <div key={cat.id} style={{ border: '1px solid var(--color-border)', borderRadius: '8px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{cat.name}</span>
+                {cat.is_sensitive && <span style={{ marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'var(--color-error)', color: '#fff' }}>Sensitive</span>}
+                {cat.customer_visible && <span style={{ marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'var(--color-info, #4A90A4)', color: '#fff' }}>Customer Visible</span>}
+              </div>
+              <button style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontSize: '12px', color: 'var(--color-error)' }} onClick={() => handleDelete(cat.id, cat.name)}>Delete</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ============================================================
 // Styles

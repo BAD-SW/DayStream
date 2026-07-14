@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Tabs } from '../design-system/components/navigation/Tabs';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
+import { apiClient } from '../api/client';
 import * as customersApi from '../api/customers';
 import type { Customer } from '../api/customers';
 
@@ -303,20 +304,64 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
   );
 }
 
-function NotesTab({ notes, customerId, businessId, onRefresh }: { notes: any[]; customerId: string; businessId: string; onRefresh: (n: any[]) => void }) {
+function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any[]; customerId: string; businessId: string; onRefresh: (n: any[]) => void }) {
   const [newNote, setNewNote] = useState('');
-  const [category, setCategory] = useState('general');
+  const [category, setCategory] = useState('');
+  const [categories, setCategories] = useState<any[]>([]);
+  const [notesList, setNotesList] = useState<any[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+  const LIMIT = 10;
+
+  // Fetch categories
+  useEffect(() => {
+    apiClient.get(`/v1/customers/note-categories/list?business_id=${businessId}`)
+      .then((res) => {
+        const cats = res.data.data || [];
+        setCategories(cats);
+        if (cats.length > 0 && !category) setCategory(cats[0].name);
+      })
+      .catch(() => setCategories([]));
+  }, [businessId]);
+
+  // Fetch notes with filters and pagination
+  const fetchNotes = useCallback(async (newOffset = 0) => {
+    const result = await customersApi.getNotes(customerId, businessId, {
+      category: filterCategory || undefined,
+      date_from: filterDateFrom || undefined,
+      date_to: filterDateTo || undefined,
+      limit: LIMIT,
+      offset: newOffset,
+    });
+    setNotesList(result.data || []);
+    setTotal(result.meta?.total || 0);
+    setOffset(newOffset);
+  }, [customerId, businessId, filterCategory, filterDateFrom, filterDateTo]);
+
+  useEffect(() => { fetchNotes(0); }, [fetchNotes]);
 
   const handleAddNote = async () => {
-    if (!newNote.trim()) return;
+    if (!newNote.trim() || !category) return;
     await customersApi.createNote(customerId, businessId, { category, content: newNote });
-    const updated = await customersApi.getNotes(customerId, businessId);
-    onRefresh(updated);
     setNewNote('');
+    fetchNotes(0);
   };
+
+  const handleDelete = async (noteId: string) => {
+    if (!confirm('Delete this note? This cannot be undone.')) return;
+    await customersApi.deleteNote(customerId, noteId, businessId);
+    fetchNotes(offset);
+  };
+
+  const totalPages = Math.ceil(total / LIMIT);
+  const currentPage = Math.floor(offset / LIMIT) + 1;
 
   return (
     <div style={styles.tabContent}>
+      {/* Add note form */}
       <div style={styles.noteForm}>
         <textarea
           value={newNote}
@@ -326,24 +371,63 @@ function NotesTab({ notes, customerId, businessId, onRefresh }: { notes: any[]; 
           rows={3}
         />
         <div style={styles.noteActions}>
-          <select value={category} onChange={(e) => setCategory(e.target.value)} style={styles.select}>
-            <option value="general">General</option>
-            <option value="health">Health</option>
-            <option value="preferences">Preferences</option>
-          </select>
-          <Button onClick={handleAddNote}>Add Note</Button>
+          {categories.length > 0 ? (
+            <select value={category} onChange={(e) => setCategory(e.target.value)} style={styles.select}>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.name}>{cat.name}</option>
+              ))}
+            </select>
+          ) : (
+            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>No categories defined. Add them in Settings.</span>
+          )}
+          <Button onClick={handleAddNote} disabled={categories.length === 0}>Add Note</Button>
         </div>
       </div>
-      {notes.length === 0 && <p style={styles.empty}>No notes yet</p>}
-      {notes.map((note: any) => (
+
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: 'var(--space-md)', flexWrap: 'wrap', alignItems: 'center' }}>
+        <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} style={styles.select}>
+          <option value="">All Categories</option>
+          {categories.map((cat) => (
+            <option key={cat.id} value={cat.name}>{cat.name}</option>
+          ))}
+        </select>
+        <input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} style={{ ...styles.select, minWidth: '130px' }} title="From" />
+        <input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} style={{ ...styles.select, minWidth: '130px' }} title="To" />
+        {(filterCategory || filterDateFrom || filterDateTo) && (
+          <button onClick={() => { setFilterCategory(''); setFilterDateFrom(''); setFilterDateTo(''); }} style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 10px', fontSize: '12px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}>Clear</button>
+        )}
+        <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginLeft: 'auto' }}>{total} note{total !== 1 ? 's' : ''}</span>
+      </div>
+
+      {/* Notes list */}
+      {notesList.length === 0 && <p style={styles.empty}>No notes found</p>}
+      {notesList.map((note: any) => (
         <div key={note.id} style={styles.noteCard}>
           <div style={styles.noteHeader}>
-            <Badge variant="neutral">{note.category}</Badge>
-            <span style={styles.noteDate}>{new Date(note.created_at).toLocaleDateString()}</span>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <Badge variant="neutral">{note.category}</Badge>
+              {note.is_sensitive && <Badge variant="error">Sensitive</Badge>}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span style={styles.noteDate}>{new Date(note.created_at).toLocaleDateString()}</span>
+              <button onClick={() => handleDelete(note.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 }} title="Delete note">×</button>
+            </div>
           </div>
-          <p style={styles.noteContent}>{note.content_decrypted || note.content || '(encrypted)'}</p>
+          <p style={styles.noteContent}>{note.content || '(encrypted)'}</p>
         </div>
       ))}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: 'var(--space-md)' }}>
+          <button disabled={offset === 0} onClick={() => fetchNotes(offset - LIMIT)}
+            style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: '12px', cursor: offset === 0 ? 'default' : 'pointer', opacity: offset === 0 ? 0.4 : 1 }}>Previous</button>
+          <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}>Page {currentPage} of {totalPages}</span>
+          <button disabled={offset + LIMIT >= total} onClick={() => fetchNotes(offset + LIMIT)}
+            style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: '12px', cursor: offset + LIMIT >= total ? 'default' : 'pointer', opacity: offset + LIMIT >= total ? 0.4 : 1 }}>Next</button>
+        </div>
+      )}
     </div>
   );
 }
