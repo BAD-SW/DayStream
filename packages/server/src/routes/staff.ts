@@ -141,9 +141,28 @@ staffRouter.get('/me/metrics', async (req: Request, res: Response) => {
 staffRouter.get('/me/notifications/preferences', async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const staff = await staffService.getStaffByUserId(authReq.user.sub, authReq.tenantId);
-    if (!staff) { error(res, 'No staff profile linked', 'NOT_FOUND', 404); return; }
-    const prefs = await notifService.getNotificationPreferences(staff.id);
+    const userId = authReq.user.sub;
+
+    const staff = await staffService.getStaffByUserId(userId, authReq.tenantId);
+    if (!staff) {
+      // User has no staff profile — return defaults (all off)
+      const allEvents = ['booking_confirmed', 'booking_cancelled', 'booking_reminder', 'schedule_changed', 'leave_approved', 'leave_rejected', 'new_review', 'payroll_ready'];
+      const prefs: Record<string, boolean> = {};
+      for (const event of allEvents) prefs[event] = false;
+      success(res, prefs);
+      return;
+    }
+
+    const rows = await notifService.getNotificationPreferences(staff.id);
+
+    // Transform to flat boolean format for the frontend
+    const allEvents = ['booking_confirmed', 'booking_cancelled', 'booking_reminder', 'schedule_changed', 'leave_approved', 'leave_rejected', 'new_review', 'payroll_ready'];
+    const prefs: Record<string, boolean> = {};
+    for (const event of allEvents) {
+      const row = rows.find((r: any) => r.event_type === event);
+      prefs[event] = row ? (row.channel_email || row.channel_in_app) : false;
+    }
+
     success(res, prefs);
   } catch (err: any) {
     error(res, 'Failed to get preferences', 'INTERNAL_ERROR', 500);
@@ -153,9 +172,37 @@ staffRouter.get('/me/notifications/preferences', async (req: Request, res: Respo
 staffRouter.put('/me/notifications/preferences', async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const staff = await staffService.getStaffByUserId(authReq.user.sub, authReq.tenantId);
-    if (!staff) { error(res, 'No staff profile linked', 'NOT_FOUND', 404); return; }
-    const prefs = await notifService.setNotificationPreferences(staff.id, req.body.preferences || []);
+    const userId = authReq.user.sub;
+
+    const staff = await staffService.getStaffByUserId(userId, authReq.tenantId);
+    if (!staff) {
+      // Can't save preferences without a staff profile
+      error(res, 'No staff profile linked to this user. Contact your administrator.', 'NOT_FOUND', 404);
+      return;
+    }
+
+    // Accept flat boolean format from frontend: { booking_confirmed: true, ... }
+    const updates = req.body;
+    const preferences = Object.entries(updates)
+      .filter(([_, value]) => typeof value === 'boolean')
+      .map(([key, value]) => ({
+        eventType: key,
+        channelEmail: value as boolean,
+        channelInApp: value as boolean,
+        channelSms: false,
+      }));
+
+    await notifService.setNotificationPreferences(staff.id, preferences);
+
+    // Return updated full preferences
+    const rows = await notifService.getNotificationPreferences(staff.id);
+    const allEvents = ['booking_confirmed', 'booking_cancelled', 'booking_reminder', 'schedule_changed', 'leave_approved', 'leave_rejected', 'new_review', 'payroll_ready'];
+    const prefs: Record<string, boolean> = {};
+    for (const event of allEvents) {
+      const row = rows.find((r: any) => r.event_type === event);
+      prefs[event] = row ? (row.channel_email || row.channel_in_app) : false;
+    }
+
     success(res, prefs);
   } catch (err: any) {
     error(res, 'Failed to update preferences', 'INTERNAL_ERROR', 500);

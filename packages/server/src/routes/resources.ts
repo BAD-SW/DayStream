@@ -165,7 +165,8 @@ resourcesRouter.get('/utilization', requirePermission('resources:read'), async (
 // ============================================================
 
 const createResourceSchema = Joi.object({
-  resource_type_id: Joi.string().uuid().required(),
+  resource_type_id: Joi.string().uuid().allow('', null),
+  category: Joi.string().valid('room', 'equipment', 'facility').allow('', null),
   location_id: Joi.string().uuid().allow(null),
   name: Joi.string().min(1).max(200).required(),
   description: Joi.string().max(2000).allow('', null),
@@ -196,7 +197,8 @@ resourcesRouter.post('/', requirePermission('resources:*'), validate(createResou
   try {
     const authReq = req as AuthenticatedRequest;
     const resource = await resourceService.createResource({
-      tenantId: authReq.tenantId, resourceTypeId: req.body.resource_type_id,
+      tenantId: authReq.tenantId, resourceTypeId: req.body.resource_type_id || null,
+      category: req.body.category || null,
       locationId: req.body.location_id, name: req.body.name, description: req.body.description,
       capacity: req.body.capacity, bufferMinutes: req.body.buffer_minutes,
       is247: req.body.is_24_7, displayOrder: req.body.display_order,

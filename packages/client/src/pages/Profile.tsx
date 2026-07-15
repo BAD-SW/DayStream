@@ -15,9 +15,17 @@ export function Profile() {
 
   const handleToggle = async (key: keyof NotificationPreferences) => {
     if (!prefs) return;
+    const previousPrefs = { ...prefs };
+    const newPrefs = { ...prefs, [key]: !prefs[key] };
+    setPrefs(newPrefs); // Optimistic update
     setSaving(true);
-    const updated = await staffApi.updateNotificationPreferences({ [key]: !prefs[key] });
-    setPrefs(updated);
+    try {
+      const updated = await staffApi.updateNotificationPreferences({ [key]: newPrefs[key] });
+      setPrefs(updated);
+    } catch {
+      setPrefs(previousPrefs); // Revert on failure
+      alert('Unable to save preference. You may not have a staff profile linked to your account.');
+    }
     setSaving(false);
   };
 

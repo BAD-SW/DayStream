@@ -253,6 +253,7 @@ export async function updateService(id: string, businessId: string, updates: Rec
     preparation_notes: 'preparation_notes',
     display_order: 'display_order',
     tax_category_id: 'tax_category_id',
+    is_taxable: 'is_taxable',
     cancellation_policy_id: 'cancellation_policy_id',
   };
 
@@ -262,8 +263,13 @@ export async function updateService(id: string, businessId: string, updates: Rec
 
   for (const [key, value] of Object.entries(updates)) {
     if (allowedFields[key] !== undefined) {
+      // Convert empty strings to null for UUID and boolean fields
+      let finalValue = value;
+      if ((key === 'category_id' || key === 'tax_category_id' || key === 'cancellation_policy_id') && value === '') {
+        finalValue = null;
+      }
       fields.push(`${allowedFields[key]} = $${idx++}`);
-      values.push(value);
+      values.push(finalValue);
     }
   }
 

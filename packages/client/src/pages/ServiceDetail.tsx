@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Tabs } from '../design-system/components/navigation/Tabs';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
+import { MultiSelect } from '../design-system/components/forms/MultiSelect';
 import * as servicesApi from '../api/services';
-import * as locationsApi from '../api/locations';
-import type { Service, ServiceVariant, AvailabilityRule } from '../api/services';
+import type { Service, ServiceVariant, ServiceCategory, AvailabilityRule } from '../api/services';
 import { formatCurrency } from '../utils/currency';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
@@ -17,13 +16,23 @@ export function ServiceDetail() {
   const navigate = useNavigate();
   const [service, setService] = useState<Service | null>(null);
   const [loading, setLoading] = useState(true);
+  const [categories, setCategories] = useState<ServiceCategory[]>([]);
+  const [taxCategories, setTaxCategories] = useState<any[]>([]);
 
   const businessId = localStorage.getItem('business_id') || '';
 
   useEffect(() => {
     if (!id || !businessId) return;
     setLoading(true);
-    servicesApi.getService(id, businessId).then(setService).catch(() => setService(null)).finally(() => setLoading(false));
+    Promise.all([
+      servicesApi.getService(id, businessId),
+      servicesApi.getCategories(businessId),
+      servicesApi.getTaxCategories(businessId),
+    ]).then(([svc, cats, tax]) => {
+      setService(svc);
+      setCategories(cats);
+      setTaxCategories(tax);
+    }).catch(() => setService(null)).finally(() => setLoading(false));
   }, [id, businessId]);
 
   if (loading) return <div style={styles.loading}>Loading...</div>;
@@ -33,31 +42,36 @@ export function ServiceDetail() {
     <div style={styles.page}>
       <button style={styles.back} onClick={() => navigate('/products')}>← Back to Products & Services</button>
 
-      <div style={styles.header}>
-        <div>
-          <h1 style={styles.title}>{service.name}</h1>
+      {/* Header Card */}
+      <div style={styles.headerCard}>
+        <div style={styles.headerInfo}>
+          <h1 style={styles.name}>{service.name}</h1>
           <span style={styles.slug}>/{service.slug}</span>
+          {service.category_name && <span style={styles.categoryLabel}>{service.category_name}</span>}
         </div>
-        <Badge variant={STATUS_VARIANTS[service.status] || 'neutral'}>{service.status}</Badge>
+        <div style={styles.headerRight}>
+          <Badge variant={STATUS_VARIANTS[service.status] || 'neutral'}>{service.status}</Badge>
+          <span style={styles.duration}>{service.default_duration} min</span>
+        </div>
       </div>
 
-      <Tabs items={[
-        { id: 'details', label: 'Details', content: <DetailsTab service={service} businessId={businessId} onUpdate={setService} /> },
-        { id: 'variants', label: 'Variants', content: <VariantsTab service={service} /> },
-        { id: 'images', label: 'Images', content: <ImagesTab service={service} businessId={businessId} /> },
-        { id: 'availability', label: 'Availability', content: <AvailabilityTab service={service} businessId={businessId} /> },
-        { id: 'policy', label: 'Policy', content: <PolicyTab service={service} businessId={businessId} /> },
-      ]} />
+      {/* Content */}
+      <ServiceForm service={service} categories={categories} taxCategories={taxCategories} businessId={businessId} onUpdate={setService} />
+      <VariantsCard service={service} onUpdate={setService} />
+      <ImagesCard service={service} businessId={businessId} />
+      <AvailabilityCard service={service} businessId={businessId} />
     </div>
   );
 }
 
-// --- Tabs ---
+// --- Service Form (always editable with save bar) ---
 
-function DetailsTab({ service, businessId, onUpdate }: { service: Service; businessId: string; onUpdate: (s: Service) => void }) {
-  const [editing, setEditing] = useState(false);
+function ServiceForm({ service, categories, taxCategories, businessId, onUpdate }: { service: Service; categories: ServiceCategory[]; taxCategories: any[]; businessId: string; onUpdate: (s: Service) => void }) {
+  const [saving, setSaving] = useState(false);
+  const [statusChanging, setStatusChanging] = useState(false);
   const [form, setForm] = useState({
     name: service.name,
+    category_id: service.category_id || '',
     description: service.description || '',
     short_description: service.short_description || '',
     booking_type: service.booking_type,
@@ -65,186 +79,295 @@ function DetailsTab({ service, businessId, onUpdate }: { service: Service; busin
     buffer_before: service.buffer_before,
     buffer_after: service.buffer_after,
     max_capacity: service.max_capacity,
-    min_advance_booking_hours: service.min_advance_booking_hours || 2,
-    max_advance_booking_days: service.max_advance_booking_days || 30,
     online_booking_enabled: service.online_booking_enabled,
-    preparation_notes: service.preparation_notes || '',
+    is_taxable: (service as any).is_taxable || false,
+    tax_category_id: (service as any).tax_category_id || '',
   });
 
+  const isDirty = form.name !== service.name ||
+    form.category_id !== (service.category_id || '') ||
+    form.description !== (service.description || '') ||
+    form.short_description !== (service.short_description || '') ||
+    form.booking_type !== service.booking_type ||
+    form.default_duration !== service.default_duration ||
+    form.buffer_before !== service.buffer_before ||
+    form.buffer_after !== service.buffer_after ||
+    form.max_capacity !== service.max_capacity ||
+    form.online_booking_enabled !== service.online_booking_enabled ||
+    form.is_taxable !== ((service as any).is_taxable || false) ||
+    form.tax_category_id !== ((service as any).tax_category_id || '');
+
   const handleSave = async () => {
-    const updated = await servicesApi.updateService(service.id, businessId, form);
-    onUpdate(updated);
-    setEditing(false);
+    setSaving(true);
+    try {
+      const updated = await servicesApi.updateService(service.id, businessId, form);
+      onUpdate(updated);
+    } catch { alert('Failed to save changes'); }
+    finally { setSaving(false); }
   };
 
-  if (!editing) {
-    return (
-      <div style={styles.tabContent}>
-        <Button onClick={() => setEditing(true)}>Edit</Button>
-        <div style={styles.fieldGrid}>
-          <Field label="Name" value={service.name} />
-          <Field label="Booking Type" value={service.booking_type} />
-          <Field label="Duration" value={`${service.default_duration} min`} />
-          <Field label="Buffer Before" value={`${service.buffer_before} min`} />
-          <Field label="Buffer After" value={`${service.buffer_after} min`} />
-          <Field label="Capacity" value={String(service.max_capacity)} />
-          <Field label="Min Advance Booking" value={`${service.min_advance_booking_hours || 2} hours`} />
-          <Field label="Max Advance Booking" value={`${service.max_advance_booking_days || 30} days`} />
-          <Field label="Online Booking" value={service.online_booking_enabled ? 'Yes' : 'No'} />
-        </div>
-        {service.short_description && <p style={styles.description}><strong>Short:</strong> {service.short_description}</p>}
-        {service.description && <p style={styles.description}>{service.description}</p>}
-        {service.preparation_notes && <p style={styles.description}><strong>Preparation Notes:</strong> {service.preparation_notes}</p>}
-      </div>
-    );
-  }
+  const handleDiscard = () => {
+    setForm({
+      name: service.name,
+      category_id: service.category_id || '',
+      description: service.description || '',
+      short_description: service.short_description || '',
+      booking_type: service.booking_type,
+      default_duration: service.default_duration,
+      buffer_before: service.buffer_before,
+      buffer_after: service.buffer_after,
+      max_capacity: service.max_capacity,
+      online_booking_enabled: service.online_booking_enabled,
+      is_taxable: (service as any).is_taxable || false,
+      tax_category_id: (service as any).tax_category_id || '',
+    });
+  };
+
+  const handleStatusAction = async (action: string) => {
+    setStatusChanging(true);
+    try {
+      if (action === 'activate') await servicesApi.activateService(service.id, businessId);
+      else if (action === 'pause') await servicesApi.pauseService(service.id, businessId);
+      else if (action === 'archive') await servicesApi.archiveService(service.id, businessId);
+      else if (action === 'restore') await servicesApi.restoreService(service.id, businessId);
+      const updated = await servicesApi.getService(service.id, businessId);
+      onUpdate(updated);
+    } catch { alert(`Failed to ${action}`); }
+    finally { setStatusChanging(false); }
+  };
 
   return (
-    <div style={styles.tabContent}>
-      <div style={styles.formGrid}>
-        <FormField label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
-        <div style={styles.fieldWrapper}>
-          <label style={styles.label}>Booking Type</label>
-          <select value={form.booking_type} onChange={(e) => setForm({ ...form, booking_type: e.target.value })} style={styles.input}>
-            <option value="individual">Individual</option>
-            <option value="shared">Shared</option>
-            <option value="group">Group</option>
-            <option value="resource">Resource</option>
-          </select>
+    <>
+      {/* Actions bar */}
+      <div style={styles.actionsBar}>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {service.status === 'draft' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('activate')} loading={statusChanging}>Activate</Button>}
+          {service.status === 'active' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('pause')} loading={statusChanging}>Pause</Button>}
+          {service.status === 'paused' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('activate')} loading={statusChanging}>Activate</Button>}
+          {service.status !== 'archived' && <Button variant="destructive" size="sm" onClick={() => handleStatusAction('archive')} loading={statusChanging}>Archive</Button>}
+          {service.status === 'archived' && <Button variant="secondary" size="sm" onClick={() => handleStatusAction('restore')} loading={statusChanging}>Restore</Button>}
         </div>
-        <FormField label="Duration (min)" type="number" value={String(form.default_duration)} onChange={(v) => setForm({ ...form, default_duration: parseInt(v) || 60 })} />
-        <FormField label="Max Capacity" type="number" value={String(form.max_capacity)} onChange={(v) => setForm({ ...form, max_capacity: parseInt(v) || 1 })} />
-        <FormField label="Buffer Before (min)" type="number" value={String(form.buffer_before)} onChange={(v) => setForm({ ...form, buffer_before: parseInt(v) || 0 })} />
-        <FormField label="Buffer After (min)" type="number" value={String(form.buffer_after)} onChange={(v) => setForm({ ...form, buffer_after: parseInt(v) || 0 })} />
-        <FormField label="Min Advance Booking (hours)" type="number" value={String(form.min_advance_booking_hours)} onChange={(v) => setForm({ ...form, min_advance_booking_hours: parseInt(v) || 2 })} />
-        <FormField label="Max Advance Booking (days)" type="number" value={String(form.max_advance_booking_days)} onChange={(v) => setForm({ ...form, max_advance_booking_days: parseInt(v) || 30 })} />
-        <div style={{ gridColumn: '1 / -1' }}>
-          <FormField label="Short Description" value={form.short_description} onChange={(v) => setForm({ ...form, short_description: v })} />
-        </div>
-        <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <label style={styles.label}>Description</label>
-          <textarea style={{ ...styles.input, minHeight: '80px' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-        </div>
-        <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <label style={styles.label}>Preparation Notes</label>
-          <textarea style={{ ...styles.input, minHeight: '60px' }} value={form.preparation_notes} onChange={(e) => setForm({ ...form, preparation_notes: e.target.value })} />
-        </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', gridColumn: '1 / -1' }}>
-          <input type="checkbox" checked={form.online_booking_enabled} onChange={(e) => setForm({ ...form, online_booking_enabled: e.target.checked })} />
-          Enable online booking
-        </label>
       </div>
-      <div style={styles.actions}>
-        <Button onClick={() => setEditing(false)}>Cancel</Button>
-        <Button onClick={handleSave}>Save</Button>
+
+      {/* Save bar */}
+      {isDirty && (
+        <div style={styles.saveBar}>
+          <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>You have unsaved changes</span>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Button variant="outline" size="sm" onClick={handleDiscard}>Discard</Button>
+            <Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Service Details Card */}
+      <div style={styles.card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Service Details</h3>
+          <Button size="sm" variant="secondary" onClick={() => { /* TODO: trigger translation */ }}>Translate</Button>
+        </div>
+        <div style={styles.formGrid}>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Name *</label>
+            <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Category</label>
+            <select style={styles.input} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
+              <option value="">None</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Booking Type</label>
+            <select style={styles.input} value={form.booking_type} onChange={(e) => setForm({ ...form, booking_type: e.target.value })}>
+              <option value="individual">Individual</option>
+              <option value="shared">Shared</option>
+              <option value="group">Group</option>
+              <option value="resource">Resource</option>
+            </select>
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Duration (min)</label>
+            <input style={styles.input} type="number" min={5} value={form.default_duration} onChange={(e) => setForm({ ...form, default_duration: Number(e.target.value) })} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Buffer Before (min)</label>
+            <input style={styles.input} type="number" min={0} value={form.buffer_before} onChange={(e) => setForm({ ...form, buffer_before: Number(e.target.value) })} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Buffer After (min)</label>
+            <input style={styles.input} type="number" min={0} value={form.buffer_after} onChange={(e) => setForm({ ...form, buffer_after: Number(e.target.value) })} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Max Capacity</label>
+            <input style={styles.input} type="number" min={1} value={form.max_capacity} onChange={(e) => setForm({ ...form, max_capacity: Number(e.target.value) })} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={form.online_booking_enabled} onChange={(e) => setForm({ ...form, online_booking_enabled: e.target.checked })} style={{ width: '16px', height: '16px' }} />
+              Online Booking
+            </label>
+          </div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
+            <label style={styles.label}>Short Description</label>
+            <input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />
+          </div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
+            <label style={styles.label}>Description</label>
+            <textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={form.is_taxable} onChange={(e) => setForm({ ...form, is_taxable: e.target.checked })} style={{ width: '16px', height: '16px' }} />
+              Taxable
+            </label>
+          </div>
+          {form.is_taxable && (
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Tax Category</label>
+              <select style={styles.input} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
+                <option value="">Select...</option>
+                {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
+              </select>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
-function VariantsTab({ service }: { service: Service }) {
+// --- Variants Card (with modal add/edit) ---
+
+function VariantsCard({ service }: { service: Service; onUpdate: (s: Service) => void }) {
   const [variants, setVariants] = useState<ServiceVariant[]>(service.variants || []);
-  const [showAdd, setShowAdd] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: '', duration: 60, price: 0, pricing_model: 'per_session', billing_interval: 'monthly', included_sessions: '' });
-  const [priceDisplay, setPriceDisplay] = useState('0.00');
-
-  const handleAdd = async () => {
-    const data: any = { name: form.name, duration: form.duration, price: form.price, pricing_model: form.pricing_model };
-    if (form.pricing_model === 'subscription') {
-      data.billing_interval = form.billing_interval;
-      data.included_sessions = form.included_sessions ? parseInt(form.included_sessions) : null;
-    }
-    const variant = await servicesApi.createVariant(service.id, data);
-    setVariants([...variants, variant]);
-    setShowAdd(false);
-    setForm({ name: '', duration: 60, price: 0, pricing_model: 'per_session', billing_interval: 'monthly', included_sessions: '' });
-    setPriceDisplay('0.00');
-  };
-
-  const handleEdit = (v: ServiceVariant) => {
-    setEditingId(v.id);
-    setForm({
-      name: v.name,
-      duration: v.duration,
-      price: v.price,
-      pricing_model: v.pricing_model,
-      billing_interval: v.billing_interval || 'monthly',
-      included_sessions: v.included_sessions ? String(v.included_sessions) : '',
-    });
-    setPriceDisplay((v.price / 100).toFixed(2));
-    setShowAdd(false);
-  };
-
-  const handleSaveEdit = async () => {
-    if (!editingId) return;
-    const data: any = { name: form.name, duration: form.duration, price: form.price, pricing_model: form.pricing_model };
-    if (form.pricing_model === 'subscription') {
-      data.billing_interval = form.billing_interval;
-      data.included_sessions = form.included_sessions ? parseInt(form.included_sessions) : null;
-    }
-    const updated = await servicesApi.updateVariant(service.id, editingId, data);
-    setVariants(variants.map((v) => v.id === editingId ? updated : v));
-    setEditingId(null);
-    setForm({ name: '', duration: 60, price: 0, pricing_model: 'per_session', billing_interval: 'monthly', included_sessions: '' });
-    setPriceDisplay('0.00');
-  };
-
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setForm({ name: '', duration: 60, price: 0, pricing_model: 'per_session', billing_interval: 'monthly', included_sessions: '' });
-    setPriceDisplay('0.00');
-  };
-
-  const openAdd = () => {
-    setShowAdd(true);
-    setEditingId(null);
-    setForm({ name: '', duration: 60, price: 0, pricing_model: 'per_session', billing_interval: 'monthly', included_sessions: '' });
-    setPriceDisplay('0.00');
-  };
+  const [showModal, setShowModal] = useState(false);
+  const [editingVariant, setEditingVariant] = useState<ServiceVariant | undefined>(undefined);
 
   const handleDelete = async (variantId: string) => {
+    if (!confirm('Delete this variant?')) return;
     try {
       await servicesApi.deleteVariant(service.id, variantId);
       setVariants(variants.filter((v) => v.id !== variantId));
     } catch { /* silent */ }
   };
 
+  const handleSaved = async () => {
+    setShowModal(false);
+    setEditingVariant(undefined);
+    const updated = await servicesApi.getVariants(service.id);
+    setVariants(updated);
+  };
+
   return (
-    <div style={styles.tabContent}>
-      {!editingId && <Button onClick={() => showAdd ? setShowAdd(false) : openAdd()}>{showAdd ? 'Cancel' : 'Add Variant'}</Button>}
-      {(showAdd || editingId) && (
-        <div style={styles.addForm}>
-          <FormField label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
-          <FormField label="Duration (min)" type="number" value={String(form.duration)} onChange={(v) => setForm({ ...form, duration: parseInt(v) || 60 })} />
-          <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Price</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              style={styles.input}
-              value={priceDisplay}
+    <div style={styles.card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Variants</h3>
+        <Button size="sm" variant="secondary" onClick={() => { setEditingVariant(undefined); setShowModal(true); }}>Add Variant</Button>
+      </div>
+
+      {variants.length === 0 && <p style={styles.muted}>No variants yet. Add at least one variant to activate this service.</p>}
+      {variants.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {variants.map((v) => (
+            <div key={v.id} style={styles.variantRow}>
+              <div style={{ flex: 1 }}>
+                <strong>{v.name}</strong> — {v.duration} min — {formatCurrency(v.price)}
+                {v.pricing_model === 'subscription' && <Badge variant="info">{`Sub: ${v.billing_interval || 'monthly'}`}</Badge>}
+              </div>
+              <Badge variant={STATUS_VARIANTS[v.status] || 'neutral'}>{v.status}</Badge>
+              <button style={styles.editBtn} onClick={() => { setEditingVariant(v); setShowModal(true); }} title="Edit">✏️</button>
+              <button style={styles.deleteBtn} onClick={() => handleDelete(v.id)} title="Delete">×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Variant Modal */}
+      {showModal && (
+        <ServiceVariantModal
+          serviceId={service.id}
+          variant={editingVariant}
+          onClose={() => { setShowModal(false); setEditingVariant(undefined); }}
+          onSaved={handleSaved}
+        />
+      )}
+    </div>
+  );
+}
+
+function ServiceVariantModal({ serviceId, variant, onClose, onSaved }: { serviceId: string; variant?: ServiceVariant; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({
+    name: variant?.name || '',
+    duration: variant?.duration || 60,
+    price: variant?.price || 0,
+    pricing_model: variant?.pricing_model || 'per_session',
+    billing_interval: variant?.billing_interval || 'monthly',
+    included_sessions: variant?.included_sessions ? String(variant.included_sessions) : '',
+  });
+  const [priceDisplay, setPriceDisplay] = useState(variant ? (variant.price / 100).toFixed(2) : '0.00');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name) { setError('Name is required'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      const data: any = { name: form.name, duration: form.duration, price: form.price, pricing_model: form.pricing_model };
+      if (form.pricing_model === 'subscription') {
+        data.billing_interval = form.billing_interval;
+        data.included_sessions = form.included_sessions ? parseInt(form.included_sessions) : null;
+      }
+      if (variant) {
+        await servicesApi.updateVariant(serviceId, variant.id, data);
+      } else {
+        await servicesApi.createVariant(serviceId, data);
+      }
+      onSaved();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to save variant');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div style={styles.overlay} onClick={onClose}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.modalHeader}>
+          <h3 style={styles.modalTitle}>{variant ? 'Edit Variant' : 'Add Variant'}</h3>
+          <button style={styles.closeBtn} onClick={onClose}>×</button>
+        </div>
+        {error && <p style={{ color: 'var(--color-error)', fontSize: '13px', margin: '0 0 8px 0' }}>{error}</p>}
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Name *</label>
+            <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Duration (min) *</label>
+            <input style={styles.input} type="number" min={5} value={form.duration} onChange={(e) => setForm({ ...form, duration: Number(e.target.value) })} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Price *</label>
+            <input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay}
               onChange={(e) => setPriceDisplay(e.target.value)}
-              onBlur={() => {
-                const cents = Math.round(parseFloat(priceDisplay || '0') * 100);
-                setForm({ ...form, price: cents });
-                setPriceDisplay((cents / 100).toFixed(2));
-              }}
+              onBlur={() => { const cents = Math.round(parseFloat(priceDisplay || '0') * 100); setForm({ ...form, price: cents }); setPriceDisplay((cents / 100).toFixed(2)); }}
             />
           </div>
-          <div style={styles.fieldWrapper}>
+          <div style={styles.formGroup}>
             <label style={styles.label}>Pricing Model</label>
-            <select value={form.pricing_model} onChange={(e) => setForm({ ...form, pricing_model: e.target.value })} style={styles.input}>
+            <select style={styles.input} value={form.pricing_model} onChange={(e) => setForm({ ...form, pricing_model: e.target.value })}>
               <option value="per_session">Per Session</option>
               <option value="subscription">Subscription</option>
             </select>
           </div>
           {form.pricing_model === 'subscription' && (
             <>
-              <div style={styles.fieldWrapper}>
+              <div style={styles.formGroup}>
                 <label style={styles.label}>Billing Interval</label>
-                <select value={form.billing_interval} onChange={(e) => setForm({ ...form, billing_interval: e.target.value })} style={styles.input}>
+                <select style={styles.input} value={form.billing_interval} onChange={(e) => setForm({ ...form, billing_interval: e.target.value })}>
                   <option value="weekly">Weekly</option>
                   <option value="biweekly">Biweekly</option>
                   <option value="monthly">Monthly</option>
@@ -252,329 +375,80 @@ function VariantsTab({ service }: { service: Service }) {
                   <option value="annually">Annually</option>
                 </select>
               </div>
-              <FormField label="Included Sessions (blank = unlimited)" value={form.included_sessions} onChange={(v) => setForm({ ...form, included_sessions: v })} />
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Included Sessions (blank = unlimited)</label>
+                <input style={styles.input} value={form.included_sessions} onChange={(e) => setForm({ ...form, included_sessions: e.target.value })} />
+              </div>
             </>
           )}
-          {editingId ? (
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <Button onClick={handleSaveEdit}>Save Changes</Button>
-              <Button variant="secondary" onClick={handleCancelEdit}>Cancel</Button>
-            </div>
-          ) : (
-            <Button onClick={handleAdd}>Save Variant</Button>
-          )}
-        </div>
-      )}
-      <div style={styles.variantList}>
-        {variants.map((v) => (
-          <div key={v.id} style={{ ...styles.variantCard, ...(editingId === v.id ? { borderColor: 'var(--color-primary)' } : {}) }}>
-            <div style={{ cursor: 'pointer', flex: 1 }} onClick={() => handleEdit(v)}>
-              <strong>{v.name}</strong> — {v.duration} min — {formatCurrency(v.price)}
-              {v.pricing_model === 'subscription' && <Badge variant="info">Sub: {v.billing_interval}</Badge>}
-            </div>
-            <div style={{ display: 'flex', gap: '4px' }}>
-              <button style={styles.editBtn} onClick={() => handleEdit(v)} title="Edit">✏️</button>
-              <button style={styles.deleteBtn} onClick={() => handleDelete(v.id)} title="Delete">×</button>
-            </div>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+            <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
+            <Button type="submit" loading={saving}>{variant ? 'Save Changes' : 'Add Variant'}</Button>
           </div>
-        ))}
-        {variants.length === 0 && <p style={styles.empty}>No variants yet</p>}
+        </form>
       </div>
     </div>
   );
 }
 
-function ImagesTab({ service, businessId }: { service: Service; businessId: string }) {
+// --- Images Card ---
+
+function ImagesCard({ service, businessId }: { service: Service; businessId: string }) {
   const [images, setImages] = useState(service.images || []);
+  const [uploading, setUploading] = useState(false);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const img = await servicesApi.uploadImage(service.id, businessId, file);
-    setImages([...images, img]);
+    setUploading(true);
+    try {
+      const img = await servicesApi.uploadImage(service.id, businessId, file);
+      setImages([...images, img]);
+    } catch { alert('Failed to upload image'); }
+    finally { setUploading(false); }
   };
 
   const handleDelete = async (imageId: string) => {
+    if (!confirm('Delete this image?')) return;
     await servicesApi.deleteImage(service.id, imageId);
     setImages(images.filter((i) => i.id !== imageId));
   };
 
   return (
-    <div style={styles.tabContent}>
-      <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleUpload} />
-      <div style={styles.imageGrid}>
-        {images.map((img) => (
-          <div key={img.id} style={styles.imageCard}>
-            <img src={img.urls?.thumbnail || ''} alt={img.alt_text || ''} style={styles.imageThumbnail} />
-            <div style={styles.imageInfo}>
-              {img.is_primary && <Badge variant="success">Primary</Badge>}
-              <button style={styles.deleteBtn} onClick={() => handleDelete(img.id)}>×</button>
+    <div style={styles.card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Images</h3>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: '13px', cursor: 'pointer', color: 'var(--color-text)' }}>
+          {uploading ? 'Uploading...' : 'Upload Image'}
+          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleUpload} style={{ display: 'none' }} disabled={uploading} />
+        </label>
+      </div>
+      {images.length === 0 && <p style={styles.muted}>No images uploaded</p>}
+      {images.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 'var(--space-md)' }}>
+          {images.map((img) => (
+            <div key={img.id} style={{ position: 'relative', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+              <img src={img.urls?.thumbnail || ''} alt={img.alt_text || ''} style={{ width: '100%', height: '80px', objectFit: 'cover' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 6px' }}>
+                {img.is_primary && <Badge variant="success">Primary</Badge>}
+                <button style={styles.deleteBtn} onClick={() => handleDelete(img.id)}>×</button>
+              </div>
             </div>
-          </div>
-        ))}
-        {images.length === 0 && <p style={styles.empty}>No images uploaded</p>}
-      </div>
-    </div>
-  );
-}
-
-function LocationsTab({ service, businessId }: { service: Service; businessId: string }) {
-  const [allLocations, setAllLocations] = useState<locationsApi.Location[]>([]);
-  const [assignedIds, setAssignedIds] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    Promise.all([
-      locationsApi.getLocations(businessId),
-      servicesApi.getServiceLocations(service.id),
-    ]).then(([locs, ids]) => {
-      setAllLocations(locs);
-      setAssignedIds(ids);
-    }).catch(() => {})
-      .finally(() => setLoading(false));
-  }, [businessId, service.id]);
-
-  const toggleLocation = (id: string) => {
-    setAssignedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await servicesApi.setServiceLocations(service.id, businessId, assignedIds);
-    } catch { alert('Failed to save locations'); }
-    finally { setSaving(false); }
-  };
-
-  if (loading) return <div style={styles.tabContent}><p style={styles.empty}>Loading...</p></div>;
-
-  if (allLocations.length === 0) {
-    return (
-      <div style={styles.tabContent}>
-        <p style={styles.empty}>No locations configured for this business. Add locations in Settings → Locations first.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div style={styles.tabContent}>
-      <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 var(--space-md) 0' }}>
-        Select which locations offer this service. If none are selected, the service is available at all locations.
-      </p>
-      <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)' }}>
-        {allLocations.map((loc) => (
-          <label key={loc.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', cursor: 'pointer', padding: 'var(--space-sm)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
-            <input
-              type="checkbox"
-              checked={assignedIds.includes(loc.id)}
-              onChange={() => toggleLocation(loc.id)}
-            />
-            <span><strong>{loc.name}</strong></span>
-            {loc.is_primary && <Badge variant="info">Primary</Badge>}
-            {loc.city && <span style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)' }}>— {loc.city}{loc.state_province ? `, ${loc.state_province}` : ''}</span>}
-          </label>
-        ))}
-      </div>
-      <div style={{ marginTop: 'var(--space-md)' }}>
-        <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save Locations'}</Button>
-      </div>
-    </div>
-  );
-}
-
-function StaffTab({ service, businessId }: { service: Service; businessId: string }) {
-  const [staff, setStaff] = useState<any[]>(service.staff || []);
-  const [availableStaff, setAvailableStaff] = useState<any[]>([]);
-  const [showAdd, setShowAdd] = useState(false);
-  const [selectedUserId, setSelectedUserId] = useState('');
-  const [isPrimary, setIsPrimary] = useState(false);
-
-  useEffect(() => {
-    if (showAdd && availableStaff.length === 0) {
-      import('../api/staff').then((staffApi) => {
-        staffApi.getStaffList({ status: 'active', business_id: businessId }).then((result) => {
-          // Filter out already assigned staff (by user_id)
-          const assignedUserIds = staff.map((s) => s.user_id);
-          setAvailableStaff(result.data.filter((s: any) => !assignedUserIds.includes(s.user_id)));
-        });
-      });
-    }
-  }, [showAdd]);
-
-  const handleAssign = async () => {
-    if (!selectedUserId) return;
-    try {
-      const staffMember = availableStaff.find((s) => s.id === selectedUserId);
-      if (!staffMember?.user_id) {
-        alert('This staff member does not have a linked user account. Please add an email address on their profile to create one.');
-        return;
-      }
-      const assignment = await servicesApi.assignStaff(service.id, { user_id: staffMember.user_id, is_primary: isPrimary });
-      setStaff([...staff, { ...assignment, first_name: staffMember.first_name, last_name: staffMember.last_name }]);
-      setSelectedUserId('');
-      setIsPrimary(false);
-      setShowAdd(false);
-      setAvailableStaff(availableStaff.filter((s) => s.id !== selectedUserId));
-    } catch { alert('Failed to assign staff'); }
-  };
-
-  const handleRemove = async (userId: string) => {
-    if (!confirm('Remove this staff member from the service?')) return;
-    try {
-      await servicesApi.removeStaff(service.id, userId);
-      setStaff(staff.filter((s) => s.user_id !== userId));
-    } catch { alert('Failed to remove staff'); }
-  };
-
-  return (
-    <div style={styles.tabContent}>
-      <Button onClick={() => setShowAdd(!showAdd)}>{showAdd ? 'Cancel' : 'Assign Staff'}</Button>
-      {showAdd && (
-        <div style={styles.addForm}>
-          <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Staff Member</label>
-            <select style={styles.input} value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)}>
-              <option value="">— Select —</option>
-              {availableStaff.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.first_name} {s.last_name}{!s.user_id ? ' (no user account)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
-            <input type="checkbox" checked={isPrimary} onChange={(e) => setIsPrimary(e.target.checked)} />
-            Primary provider
-          </label>
-          <Button onClick={handleAssign}>Assign</Button>
+          ))}
         </div>
       )}
-      {staff.length === 0 && !showAdd && <p style={styles.empty}>No staff assigned to this service</p>}
-      {staff.map((s) => (
-        <div key={s.id || s.user_id} style={styles.staffRow}>
-          <span>{s.first_name} {s.last_name}</span>
-          {s.is_primary && <Badge variant="success">Primary</Badge>}
-          <button style={styles.deleteBtn} onClick={() => handleRemove(s.user_id)}>×</button>
-        </div>
-      ))}
+      <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>Accepted: JPEG, PNG, or WebP. Max 5MB. Min 400×300px.</p>
     </div>
   );
 }
 
-function AvailabilityTab({ service, businessId }: { service: Service; businessId: string }) {
+// --- Availability Card ---
+
+function AvailabilityCard({ service }: { service: Service; businessId: string }) {
   const [rules, setRules] = useState<AvailabilityRule[]>(service.availability || []);
-  const [showAdd, setShowAdd] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [allLocations, setAllLocations] = useState<any[]>([]);
-  const [allStaff, setAllStaff] = useState<any[]>([]);
-  const [form, setForm] = useState({
-    rule_type: 'recurring' as string,
-    days_of_week: [] as number[],
-    start_time: '09:00',
-    end_time: '17:00',
-    effective_from: '',
-    effective_to: '',
-    description: '',
-    location_ids: [] as string[],
-    staff_ids: [] as string[],
-  });
-
+  const [showModal, setShowModal] = useState(false);
+  const [editingRule, setEditingRule] = useState<AvailabilityRule | undefined>(undefined);
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-  // Load locations and staff for multi-select
-  useEffect(() => {
-    import('../api/locations').then((locApi) => {
-      locApi.getLocations(businessId).then(setAllLocations).catch(() => {});
-    });
-    import('../api/staff').then((staffApi) => {
-      staffApi.getStaffList({ business_id: businessId, status: 'active' }).then((res) => setAllStaff(res.data)).catch(() => {});
-    });
-  }, [businessId]);
-
-  const toggleDay = (day: number) => {
-    setForm({
-      ...form,
-      days_of_week: form.days_of_week.includes(day)
-        ? form.days_of_week.filter((d) => d !== day)
-        : [...form.days_of_week, day],
-    });
-  };
-
-  const resetForm = () => {
-    setForm({ rule_type: 'recurring', days_of_week: [], start_time: '09:00', end_time: '17:00', effective_from: '', effective_to: '', description: '', location_ids: [], staff_ids: [] });
-  };
-
-  const openAdd = () => {
-    setEditingId(null);
-    resetForm();
-    setShowAdd(true);
-  };
-
-  const openEdit = (rule: AvailabilityRule) => {
-    setShowAdd(false);
-    setEditingId(rule.id);
-    setForm({
-      rule_type: rule.rule_type,
-      days_of_week: rule.days_of_week || [],
-      start_time: rule.start_time || '09:00',
-      end_time: rule.end_time || '17:00',
-      effective_from: rule.effective_from ? rule.effective_from.split('T')[0] : '',
-      effective_to: rule.effective_to ? rule.effective_to.split('T')[0] : '',
-      description: rule.description || '',
-      location_ids: (rule as any).location_ids || [],
-      staff_ids: (rule as any).staff_ids || [],
-    });
-  };
-
-  const handleAdd = async () => {
-    try {
-      const data: any = { rule_type: form.rule_type, description: form.description || undefined };
-      if (form.rule_type === 'recurring') {
-        data.days_of_week = form.days_of_week;
-        data.start_time = form.start_time;
-        data.end_time = form.end_time;
-      } else if (form.rule_type === 'seasonal') {
-        data.days_of_week = form.days_of_week.length > 0 ? form.days_of_week : undefined;
-        data.start_time = form.start_time;
-        data.end_time = form.end_time;
-        data.effective_from = form.effective_from;
-        data.effective_to = form.effective_to;
-      }
-      if (form.location_ids.length > 0) data.location_ids = form.location_ids;
-      if (form.staff_ids.length > 0) data.staff_ids = form.staff_ids;
-      const rule = await servicesApi.createAvailabilityRule(service.id, data);
-      setRules([...rules, rule]);
-      setShowAdd(false);
-      resetForm();
-    } catch { alert('Failed to create rule'); }
-  };
-
-  const handleSaveEdit = async () => {
-    if (!editingId) return;
-    try {
-      const data: any = { rule_type: form.rule_type, description: form.description || undefined };
-      if (form.rule_type === 'recurring') {
-        data.days_of_week = form.days_of_week;
-        data.start_time = form.start_time;
-        data.end_time = form.end_time;
-      } else if (form.rule_type === 'seasonal') {
-        data.days_of_week = form.days_of_week.length > 0 ? form.days_of_week : undefined;
-        data.start_time = form.start_time;
-        data.end_time = form.end_time;
-        data.effective_from = form.effective_from;
-        data.effective_to = form.effective_to;
-      }
-      data.location_ids = form.location_ids.length > 0 ? form.location_ids : null;
-      data.staff_ids = form.staff_ids.length > 0 ? form.staff_ids : null;
-      const updated = await servicesApi.updateAvailabilityRule(service.id, editingId, data);
-      setRules(rules.map((r) => r.id === editingId ? updated : r));
-      setEditingId(null);
-      resetForm();
-    } catch { alert('Failed to update rule'); }
-  };
 
   const handleDelete = async (ruleId: string) => {
     if (!confirm('Delete this availability rule?')) return;
@@ -584,348 +458,200 @@ function AvailabilityTab({ service, businessId }: { service: Service; businessId
     } catch { alert('Failed to delete rule'); }
   };
 
-  const isFormOpen = showAdd || editingId;
+  const handleSaved = async () => {
+    setShowModal(false);
+    setEditingRule(undefined);
+    const updated = await servicesApi.getAvailability(service.id);
+    setRules(updated);
+  };
 
   return (
-    <div style={styles.tabContent}>
-      {!isFormOpen && <Button onClick={openAdd}>Add Rule</Button>}
-      {isFormOpen && (
-        <div style={styles.addForm}>
-          <div style={styles.fieldWrapper}>
+    <div style={styles.card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Availability</h3>
+        <Button size="sm" variant="secondary" onClick={() => { setEditingRule(undefined); setShowModal(true); }}>Add Rule</Button>
+      </div>
+      {rules.length === 0 && <p style={styles.muted}>No availability rules. Service is available anytime.</p>}
+      {rules.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {rules.map((rule) => (
+            <div key={rule.id} style={styles.variantRow}>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <Badge variant="neutral">{rule.rule_type}</Badge>
+                {rule.rule_type === 'recurring' && <span>{[...(rule.days_of_week || [])].sort((a, b) => a - b).map((d) => dayNames[d]).join(', ')} {rule.start_time}–{rule.end_time}</span>}
+                {rule.rule_type === 'seasonal' && <span>{rule.effective_from} to {rule.effective_to} {rule.start_time}–{rule.end_time}</span>}
+                {rule.description && <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>— {rule.description}</span>}
+              </div>
+              <button style={styles.editBtn} onClick={() => { setEditingRule(rule); setShowModal(true); }} title="Edit">✏️</button>
+              <button style={styles.deleteBtn} onClick={() => handleDelete(rule.id)} title="Delete">×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showModal && (
+        <AvailabilityModal
+          serviceId={service.id}
+          rule={editingRule}
+          onClose={() => { setShowModal(false); setEditingRule(undefined); }}
+          onSaved={handleSaved}
+        />
+      )}
+    </div>
+  );
+}
+
+function AvailabilityModal({ serviceId, rule, onClose, onSaved }: { serviceId: string; rule?: AvailabilityRule; onClose: () => void; onSaved: () => void }) {
+  const businessId = localStorage.getItem('business_id') || '';
+  const [form, setForm] = useState({
+    rule_type: rule?.rule_type || 'recurring',
+    days_of_week: rule?.days_of_week || [] as number[],
+    start_time: rule?.start_time || '09:00',
+    end_time: rule?.end_time || '17:00',
+    effective_from: rule?.effective_from ? rule.effective_from.split('T')[0] : '',
+    effective_to: rule?.effective_to ? rule.effective_to.split('T')[0] : '',
+    description: rule?.description || '',
+    location_ids: (rule as any)?.location_ids || [] as string[],
+    staff_ids: (rule as any)?.staff_ids || [] as string[],
+    resource_ids: (rule as any)?.resource_ids || [] as string[],
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [allLocations, setAllLocations] = useState<any[]>([]);
+  const [allStaff, setAllStaff] = useState<any[]>([]);
+  const [allResources, setAllResources] = useState<any[]>([]);
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  useEffect(() => {
+    import('../api/locations').then((locApi) => { locApi.getLocations(businessId).then(setAllLocations).catch(() => {}); });
+    import('../api/staff').then((staffApi) => { staffApi.getStaffList({ business_id: businessId, status: 'active' }).then((res) => setAllStaff(res.data)).catch(() => {}); });
+    import('../api/resources').then((resApi) => { resApi.getResources({ business_id: businessId, status: 'active' }).then((res) => setAllResources(res.data)).catch(() => {}); });
+  }, [businessId]);
+
+  const toggleDay = (day: number) => {
+    setForm({ ...form, days_of_week: form.days_of_week.includes(day) ? form.days_of_week.filter((d) => d !== day) : [...form.days_of_week, day] });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      const data: any = { rule_type: form.rule_type, description: form.description || undefined };
+      if (form.rule_type === 'recurring') { data.days_of_week = form.days_of_week; data.start_time = form.start_time; data.end_time = form.end_time; }
+      else if (form.rule_type === 'seasonal') { data.days_of_week = form.days_of_week.length > 0 ? form.days_of_week : undefined; data.start_time = form.start_time; data.end_time = form.end_time; data.effective_from = form.effective_from; data.effective_to = form.effective_to; }
+      if (form.location_ids.length > 0) data.location_ids = form.location_ids;
+      if (form.staff_ids.length > 0) data.staff_ids = form.staff_ids;
+      if (form.resource_ids.length > 0) data.resource_ids = form.resource_ids;
+      if (rule) { await servicesApi.updateAvailabilityRule(serviceId, rule.id, data); }
+      else { await servicesApi.createAvailabilityRule(serviceId, data); }
+      onSaved();
+    } catch (err: any) { setError(err.response?.data?.error || 'Failed to save rule'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div style={styles.overlay} onClick={onClose}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.modalHeader}>
+          <h3 style={styles.modalTitle}>{rule ? 'Edit Availability Rule' : 'Add Availability Rule'}</h3>
+          <button style={styles.closeBtn} onClick={onClose}>×</button>
+        </div>
+        {error && <p style={{ color: 'var(--color-error)', fontSize: '13px', margin: '0 0 8px 0' }}>{error}</p>}
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={styles.formGroup}>
             <label style={styles.label}>Rule Type</label>
             <select style={styles.input} value={form.rule_type} onChange={(e) => setForm({ ...form, rule_type: e.target.value })}>
               <option value="recurring">Recurring (weekly)</option>
               <option value="seasonal">Seasonal (date range)</option>
             </select>
           </div>
-          <div style={styles.fieldWrapper}>
+          <div style={styles.formGroup}>
             <label style={styles.label}>Days of Week</label>
             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
               {dayNames.map((name, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => toggleDay(idx)}
-                  style={{ ...styles.filterBtn, ...(form.days_of_week.includes(idx) ? styles.filterBtnActive : {}) }}
-                >
+                <button key={idx} type="button" onClick={() => toggleDay(idx)}
+                  style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: form.days_of_week.includes(idx) ? 'var(--color-accent, #C9A96E)' : 'var(--color-background)', color: form.days_of_week.includes(idx) ? '#1A1A1A' : 'var(--color-text)', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}>
                   {name}
                 </button>
               ))}
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
-            <div style={styles.fieldWrapper}>
-              <label style={styles.label}>Start Time</label>
-              <input type="time" style={styles.input} value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
-            </div>
-            <div style={styles.fieldWrapper}>
-              <label style={styles.label}>End Time</label>
-              <input type="time" style={styles.input} value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} />
-            </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={styles.formGroup}><label style={styles.label}>Start Time</label><input type="time" style={styles.input} value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} /></div>
+            <div style={styles.formGroup}><label style={styles.label}>End Time</label><input type="time" style={styles.input} value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} /></div>
           </div>
           {form.rule_type === 'seasonal' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
-              <div style={styles.fieldWrapper}>
-                <label style={styles.label}>Effective From</label>
-                <input type="date" style={styles.input} value={form.effective_from} onChange={(e) => setForm({ ...form, effective_from: e.target.value })} />
-              </div>
-              <div style={styles.fieldWrapper}>
-                <label style={styles.label}>Effective To</label>
-                <input type="date" style={styles.input} value={form.effective_to} onChange={(e) => setForm({ ...form, effective_to: e.target.value })} />
-              </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={styles.formGroup}><label style={styles.label}>Effective From</label><input type="date" style={styles.input} value={form.effective_from} onChange={(e) => setForm({ ...form, effective_from: e.target.value })} /></div>
+              <div style={styles.formGroup}><label style={styles.label}>Effective To</label><input type="date" style={styles.input} value={form.effective_to} onChange={(e) => setForm({ ...form, effective_to: e.target.value })} /></div>
             </div>
           )}
-          <FormField label="Description (optional)" value={form.description} onChange={(v) => setForm({ ...form, description: v })} />
-
-          {/* Location scoping */}
           {allLocations.length > 0 && (
-            <div style={styles.fieldWrapper}>
-              <label style={styles.label}>Locations (optional — leave empty for all)</label>
-              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                {allLocations.map((loc: any) => (
-                  <button
-                    key={loc.id}
-                    type="button"
-                    onClick={() => {
-                      const ids = form.location_ids.includes(loc.id)
-                        ? form.location_ids.filter((id) => id !== loc.id)
-                        : [...form.location_ids, loc.id];
-                      setForm({ ...form, location_ids: ids });
-                    }}
-                    style={{ ...styles.filterBtn, ...(form.location_ids.includes(loc.id) ? styles.filterBtnActive : {}) }}
-                  >
-                    {loc.name}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <MultiSelect
+              label="Locations (leave empty for all)"
+              options={allLocations.map((loc: any) => ({ id: loc.id, label: loc.name }))}
+              selected={form.location_ids}
+              onChange={(ids) => setForm({ ...form, location_ids: ids })}
+              placeholder="All locations"
+            />
           )}
-
-          {/* Staff scoping */}
           {allStaff.length > 0 && (
-            <div style={styles.fieldWrapper}>
-              <label style={styles.label}>Staff (optional — leave empty for all)</label>
-              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                {allStaff.map((s: any) => (
-                  <button
-                    key={s.user_id || s.id}
-                    type="button"
-                    onClick={() => {
-                      const staffId = s.user_id || s.id;
-                      const ids = form.staff_ids.includes(staffId)
-                        ? form.staff_ids.filter((id) => id !== staffId)
-                        : [...form.staff_ids, staffId];
-                      setForm({ ...form, staff_ids: ids });
-                    }}
-                    style={{ ...styles.filterBtn, ...(form.staff_ids.includes(s.user_id || s.id) ? styles.filterBtnActive : {}) }}
-                  >
-                    {s.first_name} {s.last_name}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <MultiSelect
+              label="Staff (leave empty for all)"
+              options={allStaff.map((s: any) => ({ id: s.user_id || s.id, label: `${s.first_name} ${s.last_name}` }))}
+              selected={form.staff_ids}
+              onChange={(ids) => setForm({ ...form, staff_ids: ids })}
+              placeholder="All staff"
+            />
           )}
-
-          {editingId ? (
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <Button onClick={handleSaveEdit}>Save Changes</Button>
-              <Button variant="secondary" onClick={() => { setEditingId(null); resetForm(); }}>Cancel</Button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <Button onClick={handleAdd}>Save Rule</Button>
-              <Button variant="secondary" onClick={() => { setShowAdd(false); resetForm(); }}>Cancel</Button>
-            </div>
+          {allResources.length > 0 && (
+            <MultiSelect
+              label="Required Resources (leave empty for none)"
+              options={allResources.map((r: any) => ({ id: r.id, label: r.name }))}
+              selected={form.resource_ids}
+              onChange={(ids) => setForm({ ...form, resource_ids: ids })}
+              placeholder="No resource requirements"
+            />
           )}
-        </div>
-      )}
-      {rules.length === 0 && !isFormOpen && <p style={styles.empty}>No availability rules. Service is available anytime.</p>}
-      {rules.map((rule: AvailabilityRule) => (
-        <div key={rule.id} style={{ ...styles.ruleCard, ...(editingId === rule.id ? { borderColor: 'var(--color-primary)' } : {}) }}>
-          <div style={{ cursor: 'pointer', flex: 1, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }} onClick={() => openEdit(rule)}>
-            <Badge variant="neutral">{rule.rule_type}</Badge>
-            {rule.rule_type === 'recurring' && (
-              <span>{[...(rule.days_of_week || [])].sort((a, b) => a - b).map((d) => dayNames[d]).join(', ')} {rule.start_time}–{rule.end_time}</span>
-            )}
-            {rule.rule_type === 'seasonal' && (
-              <span>{rule.effective_from} to {rule.effective_to} {rule.start_time}–{rule.end_time}</span>
-            )}
-            {rule.rule_type === 'block' && (
-              <span>{rule.blocked_dates?.length} date(s) blocked</span>
-            )}
-            {rule.description && <span style={styles.ruleDesc}>— {rule.description}</span>}
+          <div style={styles.formGroup}><label style={styles.label}>Description (optional)</label><input style={styles.input} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+            <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
+            <Button type="submit" loading={saving}>{rule ? 'Save Changes' : 'Add Rule'}</Button>
           </div>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <button style={styles.editBtn} onClick={() => openEdit(rule)} title="Edit">✏️</button>
-            <button style={styles.deleteBtn} onClick={() => handleDelete(rule.id)} title="Delete">×</button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function PolicyTab({ service, businessId }: { service: Service; businessId: string }) {
-  const [policies, setPolicies] = useState<any[]>([]);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<any>({});
-  const [taxCategories, setTaxCategories] = useState<any[]>([]);
-  const [editingTax, setEditingTax] = useState<string | null>(null);
-  const [taxForm, setTaxForm] = useState<any>({});
-
-  useEffect(() => {
-    servicesApi.getPolicies(businessId).then(setPolicies).catch(() => {});
-    servicesApi.getTaxCategories(businessId).then(setTaxCategories).catch(() => {});
-  }, [businessId]);
-
-  const handleEditPolicy = (policy: any) => {
-    setEditing(policy.id);
-    setEditForm({
-      name: policy.name,
-      free_cancellation_hours: policy.free_cancellation_hours,
-      late_cancel_fee_type: policy.late_cancel_fee_type,
-      late_cancel_fee_value: policy.late_cancel_fee_value,
-      noshow_fee_type: policy.noshow_fee_type,
-      noshow_fee_value: policy.noshow_fee_value,
-    });
-  };
-
-  const handleSavePolicy = async (id: string) => {
-    try {
-      const updated = await servicesApi.updatePolicy(id, businessId, editForm);
-      setPolicies(policies.map((p) => (p.id === id ? updated : p)));
-      setEditing(null);
-    } catch {
-      alert('Failed to update policy');
-    }
-  };
-
-  const handleDeletePolicy = async (id: string) => {
-    if (!confirm('Delete this cancellation policy? Services using it will revert to the default policy.')) return;
-    try {
-      await servicesApi.deletePolicy(id, businessId);
-      setPolicies(policies.filter((p) => p.id !== id));
-    } catch {
-      alert('Failed to delete policy. It may be in use.');
-    }
-  };
-
-  const handleEditTax = (tax: any) => {
-    setEditingTax(tax.id);
-    setTaxForm({ name: tax.name, rate: tax.rate, is_default: tax.is_default });
-  };
-
-  const handleSaveTax = async (id: string) => {
-    try {
-      const updated = await servicesApi.updateTaxCategory(id, businessId, taxForm);
-      setTaxCategories(taxCategories.map((t) => (t.id === id ? updated : t)));
-      setEditingTax(null);
-    } catch {
-      alert('Failed to update tax category');
-    }
-  };
-
-  return (
-    <div style={styles.tabContent}>
-      {/* Cancellation Policies */}
-      <h3 style={{ fontSize: 'var(--font-size-md)', color: 'var(--color-text)', marginBottom: 'var(--space-sm)' }}>Cancellation Policies</h3>
-      <p style={styles.label}>Assigned Policy: {(service as any).cancellation_policy_id ? 'Custom' : 'Business Default'}</p>
-      <div style={styles.policyList}>
-        {policies.map((p) => (
-          <div key={p.id} style={styles.policyCard}>
-            {editing === p.id ? (
-              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)', width: '100%' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-sm)' }}>
-                  <div style={styles.fieldWrapper}>
-                    <label style={styles.label}>Name</label>
-                    <input style={styles.input} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
-                  </div>
-                  <div style={styles.fieldWrapper}>
-                    <label style={styles.label}>Free Cancel (hours)</label>
-                    <input type="number" style={styles.input} value={editForm.free_cancellation_hours} onChange={(e) => setEditForm({ ...editForm, free_cancellation_hours: parseInt(e.target.value) || 0 })} />
-                  </div>
-                  <div style={styles.fieldWrapper}>
-                    <label style={styles.label}>Late Cancel Fee (%)</label>
-                    <input type="number" style={styles.input} value={editForm.late_cancel_fee_value} onChange={(e) => setEditForm({ ...editForm, late_cancel_fee_value: parseInt(e.target.value) || 0 })} />
-                  </div>
-                  <div style={styles.fieldWrapper}>
-                    <label style={styles.label}>No-show Fee (%)</label>
-                    <input type="number" style={styles.input} value={editForm.noshow_fee_value} onChange={(e) => setEditForm({ ...editForm, noshow_fee_value: parseInt(e.target.value) || 0 })} />
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-                  <Button onClick={() => handleSavePolicy(p.id)}>Save</Button>
-                  <Button onClick={() => setEditing(null)}>Cancel</Button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', flex: 1 }}>
-                  <strong>{p.name}</strong>
-                  {p.is_default && <Badge variant="info">Default</Badge>}
-                  <span>Free cancel: {p.free_cancellation_hours}h | Late: {p.late_cancel_fee_value}% | No-show: {p.noshow_fee_value}%</span>
-                </div>
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  <button style={styles.deleteBtn} onClick={() => handleEditPolicy(p)} title="Edit">✎</button>
-                  {!p.is_default && <button style={styles.deleteBtn} onClick={() => handleDeletePolicy(p.id)} title="Delete">×</button>}
-                </div>
-              </>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Tax Categories */}
-      <h3 style={{ fontSize: 'var(--font-size-md)', color: 'var(--color-text)', marginTop: 'var(--space-xl)', marginBottom: 'var(--space-sm)' }}>Tax Categories</h3>
-      <div style={styles.policyList}>
-        {taxCategories.map((t) => (
-          <div key={t.id} style={styles.policyCard}>
-            {editingTax === t.id ? (
-              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)', width: '100%' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
-                  <div style={styles.fieldWrapper}>
-                    <label style={styles.label}>Name</label>
-                    <input style={styles.input} value={taxForm.name} onChange={(e) => setTaxForm({ ...taxForm, name: e.target.value })} />
-                  </div>
-                  <div style={styles.fieldWrapper}>
-                    <label style={styles.label}>Rate (%)</label>
-                    <input type="number" step="0.01" style={styles.input} value={taxForm.rate} onChange={(e) => setTaxForm({ ...taxForm, rate: parseFloat(e.target.value) || 0 })} />
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-                  <Button onClick={() => handleSaveTax(t.id)}>Save</Button>
-                  <Button onClick={() => setEditingTax(null)}>Cancel</Button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', flex: 1 }}>
-                  <strong>{t.name}</strong>
-                  {t.is_default && <Badge variant="info">Default</Badge>}
-                  <span>{t.rate}%</span>
-                </div>
-                <button style={styles.deleteBtn} onClick={() => handleEditTax(t)} title="Edit">✎</button>
-              </>
-            )}
-          </div>
-        ))}
-        {taxCategories.length === 0 && <p style={styles.empty}>No tax categories configured</p>}
+        </form>
       </div>
     </div>
   );
 }
-
-// --- Helpers ---
-
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={styles.fieldWrapper}>
-      <span style={styles.label}>{label}</span>
-      <span style={styles.fieldValue}>{value}</span>
-    </div>
-  );
-}
-
-function FormField({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
-  return (
-    <div style={styles.fieldWrapper}>
-      <label style={styles.label}>{label}</label>
-      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} style={styles.input} />
-    </div>
-  );
-}
+// --- Styles ---
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { padding: 'var(--space-lg)', maxWidth: '1000px', margin: '0 auto' },
+  page: { padding: 'var(--space-lg)', maxWidth: '900px', margin: '0 auto' },
   loading: { padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-text-secondary)' },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, marginBottom: 'var(--space-md)', fontFamily: 'var(--font-family)' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
-  title: { margin: 0, fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
+  headerCard: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-lg)', background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', marginBottom: 'var(--space-md)' },
+  headerInfo: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
+  name: { margin: 0, fontSize: 'var(--font-size-xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
   slug: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
-  tabContent: { padding: 'var(--space-md) 0' },
-  fieldGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 'var(--space-md)', marginTop: 'var(--space-md)' },
-  formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' },
-  fieldWrapper: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  label: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-medium)' as any },
-  fieldValue: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
-  input: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
-  description: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', marginTop: 'var(--space-md)' },
-  actions: { display: 'flex', gap: 'var(--space-md)', marginTop: 'var(--space-md)' },
-  addForm: { display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)', padding: 'var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', marginTop: 'var(--space-md)', marginBottom: 'var(--space-md)' },
-  variantList: { marginTop: 'var(--space-md)', display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)' },
-  variantCard: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-sm) var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)' },
-  deleteBtn: { background: 'none', border: 'none', color: 'var(--color-error-light)', cursor: 'pointer', fontSize: '18px', padding: '2px 6px' },
-  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px 6px' },
-  filterBtn: { padding: '6px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', color: 'var(--color-text)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontFamily: 'var(--font-family)', fontWeight: 500, transition: 'all 0.15s ease' },
-  filterBtnActive: { background: 'var(--color-accent, #C9A96E)', borderColor: 'var(--color-accent, #C9A96E)', color: '#1A1A1A', fontWeight: 600 },
-  empty: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', textAlign: 'center', padding: 'var(--space-lg)' },
-  imageGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 'var(--space-md)', marginTop: 'var(--space-md)' },
-  imageCard: { position: 'relative' as const, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
-  imageThumbnail: { width: '100%', height: '80px', objectFit: 'cover' as const },
-  imageInfo: { display: 'flex', justifyContent: 'space-between', padding: '4px 6px' },
-  staffRow: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) 0', borderBottom: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)' },
-  ruleCard: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)', marginTop: 'var(--space-sm)' },
-  ruleDesc: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)' },
-  policyList: { marginTop: 'var(--space-md)', display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)' },
-  policyCard: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)' },
+  categoryLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
+  headerRight: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: '4px' },
+  duration: { fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)' },
+  actionsBar: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: 'var(--space-md)' },
+  saveBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-sm) var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-primary)' },
+  card: { padding: 'var(--space-lg)', background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', marginBottom: 'var(--space-md)' },
+  cardTitle: { margin: '0 0 var(--space-md) 0', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
+  formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
+  formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
+  label: { fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' },
+  input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
+  muted: { fontSize: '14px', color: 'var(--color-text-secondary)', margin: 0 },
+  variantRow: { display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: '14px' },
+  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px 4px' },
+  deleteBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 },
+  overlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
+  modal: { background: 'var(--color-surface)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '500px', maxHeight: '85vh', overflow: 'auto', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' },
+  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
+  modalTitle: { margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--color-text)' },
+  closeBtn: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--color-text-secondary)' },
 };

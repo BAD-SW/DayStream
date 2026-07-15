@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { ThemeModeToggle } from '../design-system/themes/ThemeModeToggle';
 import { getVisibleModules } from '../design-system/components/dashboard/moduleRegistry';
+import { Profile } from '../pages/Profile';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -12,6 +13,7 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const { user, logout, featureFlags } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [showProfile, setShowProfile] = useState(false);
 
   // Get modules visible to this user for the sidebar
   const persona = user ? resolvePersona(user.role) : 'business';
@@ -35,6 +37,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               {user.first_name ? `${user.first_name} ${user.last_name}` : user.email}
             </span>
           )}
+          {user && <button onClick={() => setShowProfile(true)} style={styles.gearIcon} title="Profile Settings">⚙️</button>}
           <button onClick={logout} style={styles.logoutBtn}>Sign Out</button>
         </div>
       </header>
@@ -47,7 +50,6 @@ export function AppLayout({ children }: AppLayoutProps) {
               {modules.map((mod) => (
                 <Link key={mod.id} to={mod.path} style={styles.navLink}>{mod.titleKey}</Link>
               ))}
-              <Link to="/profile" style={styles.navLinkBottom}>Profile</Link>
             </>
           ) : (
             <>
@@ -55,7 +57,6 @@ export function AppLayout({ children }: AppLayoutProps) {
               {modules.map((mod) => (
                 <Link key={mod.id} to={mod.path} style={styles.navIcon} title={mod.titleKey}>{mod.icon}</Link>
               ))}
-              <Link to="/profile" style={styles.navIcon} title="Profile">👤</Link>
             </>
           )}
         </nav>
@@ -64,6 +65,19 @@ export function AppLayout({ children }: AppLayoutProps) {
           {children}
         </main>
       </div>
+
+      {/* Profile Modal */}
+      {showProfile && (
+        <div style={styles.overlay} onClick={() => setShowProfile(false)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>Profile</h3>
+              <button style={styles.closeBtn} onClick={() => setShowProfile(false)}>×</button>
+            </div>
+            <Profile />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -106,6 +120,9 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: 'var(--color-header-bg)',
     height: '56px',
     boxSizing: 'border-box' as const,
+    position: 'sticky' as const,
+    top: 0,
+    zIndex: 100,
   },
   headerLeft: {
     display: 'flex',
@@ -145,6 +162,52 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '13px',
     cursor: 'pointer',
   },
+  gearIcon: {
+    textDecoration: 'none',
+    fontSize: '16px',
+    cursor: 'pointer',
+    background: 'none',
+    border: 'none',
+  },
+  overlay: {
+    position: 'fixed' as const,
+    top: 0, left: 0, right: 0, bottom: 0,
+    background: 'rgba(0,0,0,0.6)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  modal: {
+    background: 'var(--color-background)',
+    borderRadius: '12px',
+    padding: '24px',
+    width: '100%',
+    maxWidth: '500px',
+    maxHeight: '80vh',
+    overflow: 'auto' as const,
+    border: '1px solid var(--color-border)',
+    boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '16px',
+  },
+  modalTitle: {
+    margin: 0,
+    fontSize: '18px',
+    fontWeight: 600,
+    color: 'var(--color-text)',
+  },
+  closeBtn: {
+    background: 'none',
+    border: 'none',
+    fontSize: '20px',
+    cursor: 'pointer',
+    color: 'var(--color-text-secondary)',
+  },
   body: {
     display: 'flex',
     flex: 1,
@@ -170,16 +233,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '14px',
     padding: '8px 12px',
     borderRadius: '6px',
-  },
-  navLinkBottom: {
-    color: 'var(--color-text-secondary)',
-    textDecoration: 'none',
-    fontSize: '14px',
-    padding: '8px 12px',
-    borderRadius: '6px',
-    marginTop: 'auto',
-    borderTop: '1px solid var(--color-border)',
-    paddingTop: '12px',
   },
   navIcon: {
     color: 'var(--color-text-secondary)',

@@ -3,7 +3,8 @@ import { logAudit } from './audit.service';
 
 interface CreateResourceInput {
   tenantId: string;
-  resourceTypeId: string;
+  resourceTypeId?: string | null;
+  category?: string | null;
   locationId?: string;
   name: string;
   description?: string;
@@ -28,11 +29,12 @@ interface ResourceFilters {
 
 export async function createResource(input: CreateResourceInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO res_resources (tenant_id, resource_type_id, location_id, name, description,
+    `INSERT INTO res_resources (tenant_id, resource_type_id, category, location_id, name, description,
        capacity, buffer_minutes, is_24_7, photo_path, display_order, custom_attributes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
     [
-      input.tenantId, input.resourceTypeId, input.locationId || null,
+      input.tenantId, input.resourceTypeId || null, input.category || null,
+      input.locationId || null,
       input.name, input.description || null,
       input.capacity ?? 1, input.bufferMinutes ?? 0,
       input.is247 ?? false, input.photoPath || null,
@@ -68,10 +70,10 @@ export async function getResources(tenantId: string, filters: ResourceFilters) {
 
   const [data, count] = await Promise.all([
     adminPool.query(
-      `SELECT r.*, rt.name AS type_name, rt.category
-       FROM res_resources r JOIN res_types rt ON rt.id = r.resource_type_id
+      `SELECT r.*, rt.name AS type_name, COALESCE(rt.category, r.category) AS category
+       FROM res_resources r LEFT JOIN res_types rt ON rt.id = r.resource_type_id
        WHERE ${where} ORDER BY r.display_order, r.name LIMIT ${limit} OFFSET ${offset}`, params),
-    adminPool.query(`SELECT COUNT(*)::int AS total FROM res_resources r JOIN res_types rt ON rt.id = r.resource_type_id WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*)::int AS total FROM res_resources r WHERE ${where}`, params),
   ]);
 
   return { resources: data.rows, total: count.rows[0].total, page, limit };
@@ -79,8 +81,8 @@ export async function getResources(tenantId: string, filters: ResourceFilters) {
 
 export async function getResourceById(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `SELECT r.*, rt.name AS type_name, rt.category
-     FROM res_resources r JOIN res_types rt ON rt.id = r.resource_type_id
+    `SELECT r.*, rt.name AS type_name, COALESCE(rt.category, r.category) AS category
+     FROM res_resources r LEFT JOIN res_types rt ON rt.id = r.resource_type_id
      WHERE r.id = $1 AND r.tenant_id = $2`, [id, tenantId]);
   return rows[0] || null;
 }

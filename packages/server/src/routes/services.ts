@@ -346,7 +346,7 @@ const createServiceSchema = Joi.object({
 });
 
 const updateServiceSchema = Joi.object({
-  category_id: Joi.string().uuid(),
+  category_id: Joi.string().uuid().allow('', null),
   name: Joi.string().min(1).max(200),
   description: Joi.string().max(5000).allow('', null),
   short_description: Joi.string().max(500).allow('', null),
@@ -360,8 +360,9 @@ const updateServiceSchema = Joi.object({
   online_booking_enabled: Joi.boolean(),
   preparation_notes: Joi.string().max(2000).allow('', null),
   display_order: Joi.number().integer().min(0),
-  tax_category_id: Joi.string().uuid().allow(null),
-  cancellation_policy_id: Joi.string().uuid().allow(null),
+  is_taxable: Joi.boolean(),
+  tax_category_id: Joi.string().uuid().allow('', null),
+  cancellation_policy_id: Joi.string().uuid().allow('', null),
 }).min(1);
 
 // POST /api/v1/services — Create service

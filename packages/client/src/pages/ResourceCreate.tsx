@@ -1,26 +1,27 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Alert } from '../design-system/components/feedback/Alert';
 import * as resourcesApi from '../api/resources';
 
+const RESOURCE_CATEGORIES = [
+  { value: 'room', label: 'Room' },
+  { value: 'equipment', label: 'Equipment' },
+  { value: 'facility', label: 'Facility' },
+];
+
 export function ResourceCreate() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [types, setTypes] = useState<resourcesApi.ResourceType[]>([]);
   const [form, setForm] = useState({
     name: '',
     description: '',
-    resource_type_id: '',
+    category: '',
     capacity: 1,
     buffer_minutes: 0,
     is_24_7: false,
   });
-
-  useEffect(() => {
-    resourcesApi.getResourceTypes().then(setTypes).catch(() => {});
-  }, []);
 
   const handleChange = (field: string, value: any) => {
     setForm({ ...form, [field]: value });
@@ -28,6 +29,7 @@ export function ResourceCreate() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.category) { setError('Category is required'); return; }
     setLoading(true);
     setError('');
     try {
@@ -56,10 +58,10 @@ export function ResourceCreate() {
         </div>
         <div style={styles.row}>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Resource Type *</label>
-            <select style={styles.input} value={form.resource_type_id} onChange={(e) => handleChange('resource_type_id', e.target.value)} required>
+            <label style={styles.label}>Category *</label>
+            <select style={styles.input} value={form.category} onChange={(e) => handleChange('category', e.target.value)} required>
               <option value="">— Select —</option>
-              {types.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.category})</option>)}
+              {RESOURCE_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
           </div>
           <div style={styles.fieldWrapper}>

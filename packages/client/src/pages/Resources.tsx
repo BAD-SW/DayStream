@@ -20,7 +20,7 @@ export function Resources() {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [showTypes, setShowTypes] = useState(false);
+  const [showTypes] = useState(false);
   const [editingType, setEditingType] = useState<ResourceType | null>(null);
   const [typeForm, setTypeForm] = useState({ name: '', category: '', description: '' });
 
@@ -60,6 +60,16 @@ export function Resources() {
     setEditingType(null);
   };
 
+  const handleCreateType = async () => {
+    if (!typeForm.name) return;
+    try {
+      const created = await resourcesApi.createResourceType(typeForm);
+      setTypes([...types, created]);
+      setEditingType(null);
+      setTypeForm({ name: '', category: 'room', description: '' });
+    } catch { alert('Failed to create resource type'); }
+  };
+
   const handleDeleteType = async (typeId: string) => {
     if (!confirm('Delete this resource type? This cannot be undone.')) return;
     await resourcesApi.deleteResourceType(typeId);
@@ -79,16 +89,16 @@ export function Resources() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold">Resources</h1>
         <div className="flex gap-2">
-          <Button variant="ghost" onClick={() => setShowTypes(!showTypes)}>
-            {showTypes ? 'Hide Types' : 'Manage Types'}
-          </Button>
           <Button onClick={() => navigate('/resources/new')}>Add Resource</Button>
         </div>
       </div>
 
       {showTypes && (
         <div className="border rounded-lg p-4 mb-6">
-          <h2 className="font-medium mb-3">Resource Types</h2>
+          <div className="flex justify-between items-center mb-3">
+            <h2 className="font-medium">Resource Types</h2>
+            <Button variant="secondary" onClick={() => { setEditingType({ id: '', name: '', category: 'room', description: '', is_system: false, resource_count: 0 } as any); setTypeForm({ name: '', category: 'room', description: '' }); }}>Add Type</Button>
+          </div>
           {editingType && (
             <div className="border rounded p-4 mb-3 bg-gray-50">
               <div className="grid grid-cols-3 gap-3 mb-3">
@@ -113,7 +123,7 @@ export function Resources() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button onClick={handleSaveType}>Save</Button>
+                <Button onClick={editingType.id ? handleSaveType : handleCreateType}>{editingType.id ? 'Save' : 'Create'}</Button>
                 <Button variant="ghost" onClick={() => setEditingType(null)}>Cancel</Button>
               </div>
             </div>

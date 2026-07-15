@@ -26,7 +26,7 @@ const SIZES: ImageSizes = {
  * Build the storage path for a service image.
  */
 function buildBasePath(tenantId: string, businessId: string, serviceId: string): string {
-  return `${tenantId}/${businessId}/services/${serviceId}`;
+  return `services/${businessId}/${serviceId}`;
 }
 
 /**
