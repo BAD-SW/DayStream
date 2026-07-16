@@ -62,7 +62,7 @@ export function MembershipDetail() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/products')}>← Back to Products & Services</button>
+      <button style={styles.back} onClick={() => navigate('/offers')}>← Back to Offerings</button>
 
       {/* Header Card */}
       <div style={styles.headerCard}>

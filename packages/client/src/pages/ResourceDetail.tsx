@@ -16,7 +16,7 @@ export function ResourceDetail() {
 
   useEffect(() => {
     if (!id) return;
-    resourcesApi.getResource(id).then(setResource).catch(() => navigate('/resources')).finally(() => setLoading(false));
+    resourcesApi.getResource(id).then(setResource).catch(() => navigate('/business')).finally(() => setLoading(false));
   }, [id, navigate]);
 
   if (loading) return <div className="p-6">Loading...</div>;
@@ -37,7 +37,7 @@ export function ResourceDetail() {
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <Button variant="ghost" onClick={() => navigate('/resources')}>← Back</Button>
+          <Button variant="ghost" onClick={() => navigate('/business')}>← Back</Button>
           <h1 className="text-2xl font-semibold mt-2">
             {resource.name}
             <span className="text-sm text-gray-500 ml-2">{resource.type_name}</span>

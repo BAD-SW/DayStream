@@ -39,6 +39,7 @@ import { Payments } from './pages/Payments';
 import { Payroll } from './pages/Payroll';
 import { AccountsPayable } from './pages/AccountsPayable';
 import { Staff } from './pages/Staff';
+import { Business } from './pages/Business';
 import { StaffCreate } from './pages/StaffCreate';
 import { StaffDetail } from './pages/StaffDetail';
 import { StaffLeave } from './pages/StaffLeave';
@@ -90,12 +91,12 @@ export function App() {
         <Route path="/customers/segments" element={<ProtectedRoute><Segments /></ProtectedRoute>} />
         <Route path="/customers/:id" element={<ProtectedRoute><CustomerDetail /></ProtectedRoute>} />
 
-        {/* Products & Services (Phase 28) */}
-        <Route path="/products" element={<ProtectedRoute><Services /></ProtectedRoute>} />
-        <Route path="/products/categories" element={<ProtectedRoute><ServiceCategories /></ProtectedRoute>} />
-        <Route path="/products/merchandise/:id" element={<ProtectedRoute><MerchandiseDetail /></ProtectedRoute>} />
-        <Route path="/products/memberships/:id" element={<ProtectedRoute><MembershipDetail /></ProtectedRoute>} />
-        <Route path="/products/:id" element={<ProtectedRoute><ServiceDetail /></ProtectedRoute>} />
+        {/* Offerings (Phase 28) */}
+        <Route path="/offers" element={<ProtectedRoute><Services /></ProtectedRoute>} />
+        <Route path="/offers/categories" element={<ProtectedRoute><ServiceCategories /></ProtectedRoute>} />
+        <Route path="/offers/merchandise/:id" element={<ProtectedRoute><MerchandiseDetail /></ProtectedRoute>} />
+        <Route path="/offers/memberships/:id" element={<ProtectedRoute><MembershipDetail /></ProtectedRoute>} />
+        <Route path="/offers/services/:id" element={<ProtectedRoute><ServiceDetail /></ProtectedRoute>} />
 
         {/* Legacy service routes (redirect-compatible) */}
         <Route path="/services" element={<ProtectedRoute><Services /></ProtectedRoute>} />
@@ -126,6 +127,9 @@ export function App() {
         {/* Payroll & AP */}
         <Route path="/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
         <Route path="/ap" element={<ProtectedRoute><AccountsPayable /></ProtectedRoute>} />
+
+        {/* Business (Staff, Resources, Locations) */}
+        <Route path="/business" element={<ProtectedRoute><Business /></ProtectedRoute>} />
 
         {/* Staff Management */}
         <Route path="/staff" element={<ProtectedRoute><Staff /></ProtectedRoute>} />

@@ -20,8 +20,8 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   // Phase 5: Customer Management
   { id: 'customers', phase: 5, icon: '👥', titleKey: 'Customers', descriptionKey: 'Manage customer accounts', path: '/customers', personas: ['business'], permission: 'customers:read' },
 
-  // Phase 28: Products & Services (supersedes Phase 6, 8, 9)
-  { id: 'products-services', phase: 28, icon: '🛍️', titleKey: 'Products & Services', descriptionKey: 'Services, merchandise, memberships, and packages', path: '/products', personas: ['business'], permission: 'services:read' },
+  // Phase 28: Offerings (supersedes Phase 6, 8, 9)
+  { id: 'offerings', phase: 28, icon: '🛍️', titleKey: 'Offerings', descriptionKey: 'Services, products, memberships, and promotions', path: '/offers', personas: ['business'], permission: 'services:read' },
 
   // Phase 7: Booking Engine
   { id: 'bookings', phase: 7, icon: '📅', titleKey: 'Bookings', descriptionKey: 'Schedule and manage bookings', path: '/bookings', personas: ['business', 'customer'], permission: 'bookings:read' },
@@ -32,11 +32,8 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   // Phase 11: Accounts Payable
   { id: 'accounts', phase: 11, icon: '📊', titleKey: 'Accounts', descriptionKey: 'Financial accounts and payables', path: '/accounts', personas: ['business'], permission: 'reports:*' },
 
-  // Phase 12: Staff Management
-  { id: 'staff', phase: 12, icon: '👔', titleKey: 'Staff', descriptionKey: 'Manage team and schedules', path: '/staff', personas: ['business'], permission: 'staff:read' },
-
-  // Phase 13: Resource Management
-  { id: 'resources', phase: 13, icon: '🏢', titleKey: 'Resources', descriptionKey: 'Rooms, equipment, and facilities', path: '/resources', personas: ['business'], permission: 'services:*' },
+  // Business (Staff, Resources, Locations)
+  { id: 'business', phase: 12, icon: '🏢', titleKey: 'Business', descriptionKey: 'Staff, resources, and locations', path: '/business', personas: ['business'], permission: 'staff:read' },
 
   // Phase 14: Events & Workshops
   { id: 'events', phase: 14, icon: '🎪', titleKey: 'Events', descriptionKey: 'Events and workshops', path: '/events', personas: ['business', 'customer'], featureFlag: 'feature.events' },
@@ -58,9 +55,6 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
 
   // Business Settings
   { id: 'business-settings', phase: 0, icon: '⚙️', titleKey: 'Settings', descriptionKey: 'Business configuration', path: '/settings', personas: ['business'], permission: 'settings:*' },
-
-  // Locations
-  { id: 'locations', phase: 0, icon: '📍', titleKey: 'Locations', descriptionKey: 'Manage business locations', path: '/settings/locations', personas: ['business'], permission: 'settings:*' },
 
   // Phase 22: Community Engagement
   { id: 'community', phase: 22, icon: '🤝', titleKey: 'Community', descriptionKey: 'Community and engagement', path: '/community', personas: ['business', 'customer'], featureFlag: 'feature.community' },

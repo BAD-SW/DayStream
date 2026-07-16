@@ -85,9 +85,9 @@ export function Resources() {
   }, {} as Record<string, Resource[]>);
 
   return (
-    <div className="p-6">
+    <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Resources</h1>
+        <div></div>
         <div className="flex gap-2">
           <Button onClick={() => navigate('/resources/new')}>Add Resource</Button>
         </div>

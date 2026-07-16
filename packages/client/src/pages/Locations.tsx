@@ -33,9 +33,8 @@ export function Locations() {
   useEffect(() => { fetchLocations(); }, [businessId, search]);
 
   return (
-    <div style={styles.page}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>Locations</h1>
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-md)' }}>
         <Button onClick={() => navigate('/settings/locations/new')}>Add Location</Button>
       </div>
 

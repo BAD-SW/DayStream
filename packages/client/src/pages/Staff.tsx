@@ -79,9 +79,9 @@ export function Staff() {
   ];
 
   return (
-    <div className="p-6">
+    <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Staff</h1>
+        <div></div>
         <Button onClick={() => navigate('/staff/new')}>Add Staff</Button>
       </div>
 

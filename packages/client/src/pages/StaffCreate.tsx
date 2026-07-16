@@ -54,7 +54,7 @@ export function StaffCreate() {
 
   return (
     <div className="p-6 max-w-2xl">
-      <Button variant="ghost" onClick={() => navigate('/staff')}>← Back</Button>
+      <Button variant="ghost" onClick={() => navigate('/business')}>← Back</Button>
       <h1 className="text-2xl font-semibold mt-2 mb-6">Add Staff Member</h1>
 
       {error && <div className="bg-red-50 text-red-700 p-3 rounded mb-4">{error}</div>}
@@ -143,7 +143,7 @@ export function StaffCreate() {
 
         <div className="flex gap-3 pt-4">
           <Button type="submit" disabled={saving}>{saving ? 'Creating...' : 'Create Staff'}</Button>
-          <Button variant="ghost" onClick={() => navigate('/staff')}>Cancel</Button>
+          <Button variant="ghost" onClick={() => navigate('/business')}>Cancel</Button>
         </div>
       </form>
     </div>

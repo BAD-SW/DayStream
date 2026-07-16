@@ -13,165 +13,83 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
   active: 'success', draft: 'neutral', paused: 'warning', archived: 'error', inactive: 'neutral',
 };
 
-type ProductType = '' | 'service' | 'merchandise';
-
-interface CatalogItem {
-  id: string;
-  name: string;
-  category_name?: string;
-  status: string;
-  item_type: 'service' | 'merchandise';
-  price?: number;
-  duration?: number;
-  sku?: string;
-}
-
 export function Services() {
-  const [activeTab, setActiveTab] = useState<'catalog' | 'memberships' | 'promotions'>('catalog');
+  const [activeTab, setActiveTab] = useState<'services' | 'products' | 'memberships' | 'promotions'>('services');
 
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Products & Services</h1>
+        <h1 style={styles.title}>Offerings</h1>
       </div>
       <div style={styles.tabBar}>
-        <button onClick={() => setActiveTab('catalog')} style={{ ...styles.tab, ...(activeTab === 'catalog' ? styles.tabActive : {}) }}>Catalog</button>
+        <button onClick={() => setActiveTab('services')} style={{ ...styles.tab, ...(activeTab === 'services' ? styles.tabActive : {}) }}>Services</button>
+        <button onClick={() => setActiveTab('products')} style={{ ...styles.tab, ...(activeTab === 'products' ? styles.tabActive : {}) }}>Products</button>
         <button onClick={() => setActiveTab('memberships')} style={{ ...styles.tab, ...(activeTab === 'memberships' ? styles.tabActive : {}) }}>Memberships</button>
         <button onClick={() => setActiveTab('promotions')} style={{ ...styles.tab, ...(activeTab === 'promotions' ? styles.tabActive : {}) }}>Promotions</button>
       </div>
-      {activeTab === 'catalog' && <CatalogTab />}
+      {activeTab === 'services' && <ServicesTab />}
+      {activeTab === 'products' && <ProductsTab />}
       {activeTab === 'memberships' && <MembershipsTab />}
       {activeTab === 'promotions' && <PromotionsTab />}
     </div>
   );
 }
 
-// --- Catalog Tab (existing services + merchandise) ---
+// --- Services Tab ---
 
-function CatalogTab() {
+function ServicesTab() {
   const navigate = useNavigate();
-  const [items, setItems] = useState<CatalogItem[]>([]);
+  const [services, setServices] = useState<any[]>([]);
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [typeFilter, setTypeFilter] = useState<ProductType>('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-
-  // Create modals
-  const [showCreateService, setShowCreateService] = useState(false);
-  const [showCreateProduct, setShowCreateProduct] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
 
   const businessId = localStorage.getItem('business_id') || '';
 
-  const fetchItems = useCallback(async () => {
+  const fetchServices = useCallback(async () => {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const combined: CatalogItem[] = [];
-      let totalCount = 0;
-
-      if (typeFilter !== 'merchandise') {
-        const result = await servicesApi.getServices(businessId, {
-          search: search || undefined,
-          status: statusFilter || undefined,
-          category_id: categoryFilter || undefined,
-          page,
-        });
-        for (const s of result.data) {
-          combined.push({
-            id: s.id,
-            name: s.name,
-            category_name: s.category_name,
-            status: s.status,
-            item_type: 'service',
-            duration: s.default_duration,
-          });
-        }
-        totalCount += result.meta?.total || result.data.length;
-      }
-
-      if (typeFilter !== 'service') {
-        const params = new URLSearchParams({ business_id: businessId });
-        if (search) params.set('search', search);
-        if (statusFilter) params.set('status', statusFilter);
-        if (categoryFilter) params.set('category_id', categoryFilter);
-        params.set('page', String(page));
-        const res = await apiClient.get(`/v1/merchandise?${params}`);
-        for (const m of res.data.data || []) {
-          combined.push({
-            id: m.id,
-            name: m.name,
-            category_name: m.category_name,
-            status: m.status,
-            item_type: 'merchandise',
-            price: m.price,
-            sku: m.sku,
-          });
-        }
-        totalCount += res.data.meta?.total || (res.data.data || []).length;
-      }
-
-      setItems(combined);
-      setTotalPages(Math.ceil(totalCount / 20) || 1);
+      const result = await servicesApi.getServices(businessId, {
+        search: search || undefined,
+        status: statusFilter || undefined,
+        category_id: categoryFilter || undefined,
+        page,
+      });
+      setServices(result.data);
+      setTotalPages(result.meta?.totalPages || 1);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId, search, statusFilter, categoryFilter, typeFilter, page]);
+  }, [businessId, search, statusFilter, categoryFilter, page]);
 
-  useEffect(() => { fetchItems(); }, [fetchItems]);
+  useEffect(() => { fetchServices(); }, [fetchServices]);
+  useEffect(() => { if (businessId) servicesApi.getCategories(businessId).then(setCategories).catch(() => {}); }, [businessId]);
+  useEffect(() => { const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300); return () => clearTimeout(t); }, [searchInput]);
 
-  useEffect(() => {
-    if (!businessId) return;
-    servicesApi.getCategories(businessId).then(setCategories).catch(() => {});
-  }, [businessId]);
-
-  // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
-
-  const handleQuickAction = async (action: string, item: CatalogItem) => {
+  const handleQuickAction = async (action: string, svc: any) => {
     try {
-      if (item.item_type === 'service') {
-        if (action === 'archive') await servicesApi.archiveService(item.id, businessId);
-        else if (action === 'pause') await servicesApi.pauseService(item.id, businessId);
-        else if (action === 'activate') await servicesApi.activateService(item.id, businessId);
-        else if (action === 'restore') await servicesApi.restoreService(item.id, businessId);
-      } else {
-        if (action === 'archive') await apiClient.put(`/v1/merchandise/${item.id}/archive?business_id=${businessId}`);
-        else if (action === 'pause') await apiClient.put(`/v1/merchandise/${item.id}/pause?business_id=${businessId}`);
-        else if (action === 'activate') await apiClient.put(`/v1/merchandise/${item.id}/activate?business_id=${businessId}`);
-        else if (action === 'restore') await apiClient.put(`/v1/merchandise/${item.id}/restore?business_id=${businessId}`);
-      }
-      fetchItems();
+      if (action === 'archive') await servicesApi.archiveService(svc.id, businessId);
+      else if (action === 'pause') await servicesApi.pauseService(svc.id, businessId);
+      else if (action === 'activate') await servicesApi.activateService(svc.id, businessId);
+      else if (action === 'restore') await servicesApi.restoreService(svc.id, businessId);
+      fetchServices();
     } catch { /* silent */ }
   };
 
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
-    {
-      key: 'item_type', header: 'Type',
-      render: (val: string) => <Badge variant={val === 'service' ? 'info' : 'neutral'}>{val === 'service' ? 'Service' : 'Product'}</Badge>,
-    },
     { key: 'category_name', header: 'Category', render: (val: string) => val || '—' },
-    {
-      key: 'status', header: 'Status',
-      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge>,
-    },
-    {
-      key: 'detail', header: 'Detail',
-      render: (_: any, row: CatalogItem) => {
-        if (row.item_type === 'service') return row.duration ? `${row.duration} min` : '—';
-        return row.price != null ? formatCurrency(row.price) : '—';
-      },
-    },
+    { key: 'status', header: 'Status', render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
+    { key: 'default_duration', header: 'Duration', render: (val: number) => val ? `${val} min` : '—' },
     {
       key: 'actions', header: '',
-      render: (_: any, row: CatalogItem) => (
+      render: (_: any, row: any) => (
         <div style={{ display: 'flex', gap: '4px' }}>
           {row.status === 'draft' && <ActionBtn label="Activate" onClick={() => handleQuickAction('activate', row)} />}
           {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleQuickAction('pause', row)} />}
@@ -183,29 +101,14 @@ function CatalogTab() {
     },
   ];
 
-  const handleRowClick = (row: CatalogItem) => {
-    if (row.item_type === 'service') {
-      navigate(`/products/${row.id}`);
-    } else {
-      navigate(`/products/merchandise/${row.id}`);
-    }
-  };
-
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
-        <Button variant="secondary" onClick={() => navigate('/products/categories')}>Categories</Button>
-        <Button variant="secondary" onClick={() => setShowCreateService(true)}>Add Service</Button>
-        <Button variant="secondary" onClick={() => setShowCreateProduct(true)}>Add Product</Button>
+        <Button variant="secondary" onClick={() => navigate('/offers/categories')}>Categories</Button>
+        <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Service</Button>
       </div>
-
       <div style={styles.toolbar}>
-        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search..." />
-        <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value as ProductType); setPage(1); }} style={styles.select}>
-          <option value="">All Types</option>
-          <option value="service">Services</option>
-          <option value="merchandise">Products</option>
-        </select>
+        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search services..." />
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
           <option value="">All Statuses</option>
           <option value="draft">Draft</option>
@@ -218,41 +121,104 @@ function CatalogTab() {
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </div>
-
-      <Table
-        columns={columns}
-        data={items}
-        loading={loading}
-        onRowClick={handleRowClick}
-        page={page}
-        totalPages={totalPages}
-        onPageChange={setPage}
-        emptyMessage="No products or services found"
-        mobileCardMode
-      />
-
-      {/* Create Service Modal */}
-      {showCreateService && (
-        <CreateServiceModal
-          businessId={businessId}
-          categories={categories}
-          onClose={() => setShowCreateService(false)}
-          onCreated={(service) => { setShowCreateService(false); navigate(`/products/${service.id}`); }}
-        />
-      )}
-
-      {/* Create Product Modal */}
-      {showCreateProduct && (
-        <CreateProductModal
-          businessId={businessId}
-          categories={categories}
-          onClose={() => setShowCreateProduct(false)}
-          onCreated={() => { setShowCreateProduct(false); fetchItems(); }}
-        />
-      )}
+      <Table columns={columns} data={services} loading={loading} onRowClick={(row) => navigate(`/offers/services/${row.id}`)} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No services found" mobileCardMode />
+      {showCreate && <CreateServiceModal businessId={businessId} categories={categories} onClose={() => setShowCreate(false)} onCreated={(svc) => { setShowCreate(false); navigate(`/offers/services/${svc.id}`); }} />}
     </>
   );
 }
+
+// --- Products Tab ---
+
+function ProductsTab() {
+  const navigate = useNavigate();
+  const [products, setProducts] = useState<any[]>([]);
+  const [categories, setCategories] = useState<ServiceCategory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [showCreate, setShowCreate] = useState(false);
+
+  const businessId = localStorage.getItem('business_id') || '';
+
+  const fetchProducts = useCallback(async () => {
+    if (!businessId) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ business_id: businessId });
+      if (search) params.set('search', search);
+      if (statusFilter) params.set('status', statusFilter);
+      if (categoryFilter) params.set('category_id', categoryFilter);
+      params.set('page', String(page));
+      const res = await apiClient.get(`/v1/merchandise?${params}`);
+      setProducts(res.data.data || []);
+      setTotalPages(res.data.meta?.totalPages || 1);
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  }, [businessId, search, statusFilter, categoryFilter, page]);
+
+  useEffect(() => { fetchProducts(); }, [fetchProducts]);
+  useEffect(() => { if (businessId) servicesApi.getCategories(businessId).then(setCategories).catch(() => {}); }, [businessId]);
+  useEffect(() => { const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300); return () => clearTimeout(t); }, [searchInput]);
+
+  const handleQuickAction = async (action: string, item: any) => {
+    try {
+      if (action === 'archive') await apiClient.put(`/v1/merchandise/${item.id}/archive?business_id=${businessId}`);
+      else if (action === 'pause') await apiClient.put(`/v1/merchandise/${item.id}/pause?business_id=${businessId}`);
+      else if (action === 'activate') await apiClient.put(`/v1/merchandise/${item.id}/activate?business_id=${businessId}`);
+      else if (action === 'restore') await apiClient.put(`/v1/merchandise/${item.id}/restore?business_id=${businessId}`);
+      fetchProducts();
+    } catch { /* silent */ }
+  };
+
+  const columns = [
+    { key: 'name', header: 'Name', sortable: true },
+    { key: 'category_name', header: 'Category', render: (val: string) => val || '—' },
+    { key: 'status', header: 'Status', render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
+    { key: 'price', header: 'Price', render: (val: number) => val != null ? formatCurrency(val) : '—' },
+    { key: 'sku', header: 'SKU', render: (val: string) => val || '—' },
+    {
+      key: 'actions', header: '',
+      render: (_: any, row: any) => (
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleQuickAction('pause', row)} />}
+          {row.status === 'paused' && <ActionBtn label="Activate" onClick={() => handleQuickAction('activate', row)} />}
+          {row.status !== 'archived' && <ActionBtn label="Archive" onClick={() => handleQuickAction('archive', row)} />}
+          {row.status === 'archived' && <ActionBtn label="Restore" onClick={() => handleQuickAction('restore', row)} />}
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
+        <Button variant="secondary" onClick={() => navigate('/offers/categories')}>Categories</Button>
+        <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Product</Button>
+      </div>
+      <div style={styles.toolbar}>
+        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search products..." />
+        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
+          <option value="">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="paused">Paused</option>
+          <option value="archived">Archived</option>
+        </select>
+        <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }} style={styles.select}>
+          <option value="">All Categories</option>
+          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
+      <Table columns={columns} data={products} loading={loading} onRowClick={(row) => navigate(`/offers/merchandise/${row.id}`)} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No products found" mobileCardMode />
+      {showCreate && <CreateProductModal businessId={businessId} categories={categories} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); fetchProducts(); }} />}
+    </>
+  );
+}
+// --- Memberships Tab ---
+// --- Memberships Tab ---
 
 // --- Create Service Modal ---
 
@@ -280,11 +246,8 @@ function CreateServiceModal({ businessId, categories, onClose, onCreated }: { bu
     try {
       const service = await servicesApi.createService({ ...form, business_id: businessId });
       onCreated(service);
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create service');
-    } finally {
-      setLoading(false);
-    }
+    } catch (err: any) { setError(err.response?.data?.error || 'Failed to create service'); }
+    finally { setLoading(false); }
   };
 
   return (
@@ -296,58 +259,17 @@ function CreateServiceModal({ businessId, categories, onClose, onCreated }: { bu
         </div>
         {error && <p style={styles.error}>{error}</p>}
         <form onSubmit={handleSubmit} style={styles.formGrid}>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Name *</label>
-            <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-          </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Category *</label>
-            <select style={styles.input} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })} required>
-              <option value="">Select...</option>
-              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Booking Type</label>
-            <select style={styles.input} value={form.booking_type} onChange={(e) => setForm({ ...form, booking_type: e.target.value })}>
-              <option value="individual">Individual</option>
-              <option value="shared">Shared</option>
-              <option value="group">Group</option>
-              <option value="resource">Resource</option>
-            </select>
-          </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Duration (min)</label>
-            <input style={styles.input} type="number" min={5} value={form.default_duration} onChange={(e) => setForm({ ...form, default_duration: Number(e.target.value) })} />
-          </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Buffer Before (min)</label>
-            <input style={styles.input} type="number" min={0} value={form.buffer_before} onChange={(e) => setForm({ ...form, buffer_before: Number(e.target.value) })} />
-          </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Buffer After (min)</label>
-            <input style={styles.input} type="number" min={0} value={form.buffer_after} onChange={(e) => setForm({ ...form, buffer_after: Number(e.target.value) })} />
-          </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Max Capacity</label>
-            <input style={styles.input} type="number" min={1} value={form.max_capacity} onChange={(e) => setForm({ ...form, max_capacity: Number(e.target.value) })} />
-          </div>
-          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
-            <label style={styles.label}>Short Description</label>
-            <input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />
-          </div>
-          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
-            <label style={styles.label}>Description</label>
-            <textarea style={{ ...styles.input, minHeight: '60px' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-          </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text)', gridColumn: '1 / -1' }}>
-            <input type="checkbox" checked={form.online_booking_enabled} onChange={(e) => setForm({ ...form, online_booking_enabled: e.target.checked })} style={{ width: '16px', height: '16px' }} />
-            Enable online booking
-          </label>
-          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}>
-            <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button type="submit" loading={loading}>Create Service</Button>
-          </div>
+          <div style={styles.formGroup}><label style={styles.label}>Name *</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Category *</label><select style={styles.input} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })} required><option value="">Select...</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+          <div style={styles.formGroup}><label style={styles.label}>Booking Type</label><select style={styles.input} value={form.booking_type} onChange={(e) => setForm({ ...form, booking_type: e.target.value })}><option value="individual">Individual</option><option value="shared">Shared</option><option value="group">Group</option><option value="resource">Resource</option></select></div>
+          <div style={styles.formGroup}><label style={styles.label}>Duration (min)</label><input style={styles.input} type="number" min={5} value={form.default_duration} onChange={(e) => setForm({ ...form, default_duration: Number(e.target.value) })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Buffer Before (min)</label><input style={styles.input} type="number" min={0} value={form.buffer_before} onChange={(e) => setForm({ ...form, buffer_before: Number(e.target.value) })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Buffer After (min)</label><input style={styles.input} type="number" min={0} value={form.buffer_after} onChange={(e) => setForm({ ...form, buffer_after: Number(e.target.value) })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Max Capacity</label><input style={styles.input} type="number" min={1} value={form.max_capacity} onChange={(e) => setForm({ ...form, max_capacity: Number(e.target.value) })} /></div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Short Description</label><input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} /></div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Description</label><textarea style={{ ...styles.input, minHeight: '60px' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text)', gridColumn: '1 / -1' }}><input type="checkbox" checked={form.online_booking_enabled} onChange={(e) => setForm({ ...form, online_booking_enabled: e.target.checked })} style={{ width: '16px', height: '16px' }} />Enable online booking</label>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit" loading={loading}>Create Service</Button></div>
         </form>
       </div>
     </div>
@@ -360,14 +282,7 @@ function CreateProductModal({ businessId, categories, onClose, onCreated }: { bu
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [priceDisplay, setPriceDisplay] = useState('0.00');
-  const [form, setForm] = useState({
-    name: '',
-    description: '',
-    short_description: '',
-    category_id: '',
-    sku: '',
-    price: 0,
-  });
+  const [form, setForm] = useState({ name: '', description: '', short_description: '', category_id: '', sku: '', price: 0 });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -375,21 +290,10 @@ function CreateProductModal({ businessId, categories, onClose, onCreated }: { bu
     setLoading(true);
     setError('');
     try {
-      await apiClient.post('/v1/merchandise', {
-        business_id: businessId,
-        name: form.name,
-        description: form.description || undefined,
-        short_description: form.short_description || undefined,
-        category_id: form.category_id || undefined,
-        sku: form.sku || undefined,
-        price: form.price,
-      });
+      await apiClient.post('/v1/merchandise', { business_id: businessId, name: form.name, description: form.description || undefined, short_description: form.short_description || undefined, category_id: form.category_id || undefined, sku: form.sku || undefined, price: form.price });
       onCreated();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create product');
-    } finally {
-      setLoading(false);
-    }
+    } catch (err: any) { setError(err.response?.data?.error || 'Failed to create product'); }
+    finally { setLoading(false); }
   };
 
   return (
@@ -401,40 +305,13 @@ function CreateProductModal({ businessId, categories, onClose, onCreated }: { bu
         </div>
         {error && <p style={styles.error}>{error}</p>}
         <form onSubmit={handleSubmit} style={styles.formGrid}>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Name *</label>
-            <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-          </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Category</label>
-            <select style={styles.input} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
-              <option value="">None</option>
-              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Price *</label>
-            <input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay}
-              onChange={(e) => setPriceDisplay(e.target.value)}
-              onBlur={() => { const cents = Math.round(parseFloat(priceDisplay || '0') * 100); setForm({ ...form, price: cents }); setPriceDisplay((cents / 100).toFixed(2)); }}
-            />
-          </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>SKU</label>
-            <input style={styles.input} value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="Optional" />
-          </div>
-          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
-            <label style={styles.label}>Short Description</label>
-            <input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />
-          </div>
-          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
-            <label style={styles.label}>Description</label>
-            <textarea style={{ ...styles.input, minHeight: '60px' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-          </div>
-          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}>
-            <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button type="submit" loading={loading}>Create Product</Button>
-          </div>
+          <div style={styles.formGroup}><label style={styles.label}>Name *</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Category</label><select style={styles.input} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}><option value="">None</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+          <div style={styles.formGroup}><label style={styles.label}>Price *</label><input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay} onChange={(e) => setPriceDisplay(e.target.value)} onBlur={() => { const cents = Math.round(parseFloat(priceDisplay || '0') * 100); setForm({ ...form, price: cents }); setPriceDisplay((cents / 100).toFixed(2)); }} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>SKU</label><input style={styles.input} value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="Optional" /></div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Short Description</label><input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} /></div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Description</label><textarea style={{ ...styles.input, minHeight: '60px' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit" loading={loading}>Create Product</Button></div>
         </form>
       </div>
     </div>
@@ -518,7 +395,7 @@ function MembershipsTab() {
         <CreateMembershipModal
           businessId={businessId}
           onClose={() => setShowCreate(false)}
-          onCreated={(plan) => { setShowCreate(false); navigate(`/products/memberships/${plan.id}`); }}
+          onCreated={(plan) => { setShowCreate(false); navigate(`/offers/memberships/${plan.id}`); }}
         />
       )}
     </>

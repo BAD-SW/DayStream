@@ -44,7 +44,7 @@ export function ResourceCreate() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/resources')}>← Back to Resources</button>
+      <button style={styles.back} onClick={() => navigate('/business')}>← Back to Business</button>
       <h1 style={styles.title}>Create Resource</h1>
       {error && <Alert variant="error">{error}</Alert>}
       <form onSubmit={handleSubmit} style={styles.form}>
@@ -80,7 +80,7 @@ export function ResourceCreate() {
           </label>
         </div>
         <div style={styles.actions}>
-          <Button type="button" onClick={() => navigate('/resources')}>Cancel</Button>
+          <Button type="button" onClick={() => navigate('/business')}>Cancel</Button>
           <Button type="submit" disabled={loading}>{loading ? 'Creating...' : 'Create Resource'}</Button>
         </div>
       </form>

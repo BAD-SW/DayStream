@@ -43,7 +43,7 @@ export function LocationCreate() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/settings/locations')}>← Back to Locations</button>
+      <button style={styles.back} onClick={() => navigate('/business')}>← Back to Business</button>
       <h1 style={styles.title}>Add Location</h1>
 
       {error && <Alert variant="error">{error}</Alert>}
@@ -70,7 +70,7 @@ export function LocationCreate() {
           </div>
         </div>
         <div style={styles.formActions}>
-          <Button type="button" variant="outline" onClick={() => navigate('/settings/locations')}>Cancel</Button>
+          <Button type="button" variant="outline" onClick={() => navigate('/business')}>Cancel</Button>
           <Button type="submit" disabled={loading}>{loading ? 'Creating...' : 'Create Location'}</Button>
         </div>
       </form>
