@@ -33,6 +33,7 @@ import { BookingEdit } from './pages/BookingEdit';
 import { Memberships } from './pages/Memberships';
 import { MembershipDetail } from './pages/MembershipDetail';
 import { PromotionDetail } from './pages/PromotionDetail';
+import { PackageDetail } from './pages/PackageDetail';
 import { MembershipPlans } from './pages/MembershipPlans';
 import { PricingRules } from './pages/PricingRules';
 import { DiscountCodes } from './pages/DiscountCodes';
@@ -98,6 +99,7 @@ export function App() {
         <Route path="/offers/merchandise/:id" element={<ProtectedRoute><MerchandiseDetail /></ProtectedRoute>} />
         <Route path="/offers/memberships/:id" element={<ProtectedRoute><MembershipDetail /></ProtectedRoute>} />
         <Route path="/offers/promotions/:id" element={<ProtectedRoute><PromotionDetail /></ProtectedRoute>} />
+        <Route path="/offers/packages/:id" element={<ProtectedRoute><PackageDetail /></ProtectedRoute>} />
         <Route path="/offers/services/:id" element={<ProtectedRoute><ServiceDetail /></ProtectedRoute>} />
 
         {/* Legacy service routes (redirect-compatible) */}

@@ -487,13 +487,143 @@ function CreateMembershipModal({ businessId, onClose, onCreated }: { businessId:
   );
 }
 
-// --- Packages Tab (placeholder) ---
+// --- Packages Tab ---
 
 function PackagesTab() {
+  const navigate = useNavigate();
+  const businessId = localStorage.getItem('business_id') || '';
+  const [packages, setPackages] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+
+  const fetchPackages = useCallback(async () => {
+    if (!businessId) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      const res = await apiClient.get(`/v1/packages?business_id=${businessId}`);
+      setPackages(res.data.data || []);
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  }, [businessId]);
+
+  useEffect(() => { fetchPackages(); }, [fetchPackages]);
+
+  const handleQuickAction = async (action: string, pkg: any) => {
+    try {
+      await apiClient.put(`/v1/packages/${pkg.id}/${action}?business_id=${businessId}`);
+      fetchPackages();
+    } catch { /* silent */ }
+  };
+
+  const columns = [
+    { key: 'name', header: 'Name', sortable: true },
+    { key: 'price', header: 'Price', render: (val: number) => formatCurrency(val) },
+    {
+      key: 'expiration_type', header: 'Expiration',
+      render: (val: string, row: any) => val === 'none' ? 'Never' : `${row.expiration_days} days`,
+    },
+    { key: 'status', header: 'Status', render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
+    { key: 'active_purchases', header: 'Sold', render: (val: number) => val || 0 },
+    {
+      key: 'actions', header: '',
+      render: (_: any, row: any) => (
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleQuickAction('pause', row)} />}
+          {(row.status === 'paused' || row.status === 'archived') && <ActionBtn label="Activate" onClick={() => handleQuickAction('activate', row)} />}
+          {row.status !== 'archived' && <ActionBtn label="Archive" onClick={() => handleQuickAction('archive', row)} />}
+        </div>
+      ),
+    },
+  ];
+
   return (
-    <div style={{ textAlign: 'center', padding: 'var(--space-2xl)', color: 'var(--color-text-secondary)' }}>
-      <p style={{ fontSize: '16px', marginBottom: '8px' }}>Packages</p>
-      <p style={{ fontSize: '14px' }}>Bundled offerings that combine services and products at a fixed price will be managed here.</p>
+    <>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-md)' }}>
+        <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Package</Button>
+      </div>
+
+      <Table
+        columns={columns}
+        data={packages}
+        loading={loading}
+        onRowClick={(row) => navigate(`/offers/packages/${row.id}`)}
+        emptyMessage="No packages defined"
+        mobileCardMode
+      />
+
+      {showCreate && (
+        <CreatePackageModal
+          businessId={businessId}
+          onClose={() => setShowCreate(false)}
+          onCreated={(pkg) => { setShowCreate(false); navigate(`/offers/packages/${pkg.id}`); }}
+        />
+      )}
+    </>
+  );
+}
+
+function CreatePackageModal({ businessId, onClose, onCreated }: { businessId: string; onClose: () => void; onCreated: (pkg: any) => void }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [priceDisplay, setPriceDisplay] = useState('0.00');
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    price: 0,
+    expiration_type: 'none',
+    expiration_days: '',
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name) { setError('Name is required'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      const res = await apiClient.post('/v1/packages', {
+        business_id: businessId,
+        name: form.name,
+        description: form.description || undefined,
+        price: form.price,
+        expiration_type: form.expiration_type,
+        expiration_days: form.expiration_days ? parseInt(form.expiration_days) : undefined,
+      });
+      onCreated(res.data.data);
+    } catch (err: any) { setError(err.response?.data?.error || 'Failed to create package'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div style={styles.overlay} onClick={onClose}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.modalHeader}>
+          <h3 style={styles.modalTitle}>Add Package</h3>
+          <button style={styles.closeBtn} onClick={onClose}>×</button>
+        </div>
+        {error && <p style={styles.error}>{error}</p>}
+        <form onSubmit={handleSubmit} style={styles.formGrid}>
+          <div style={styles.formGroup}><label style={styles.label}>Name *</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Price *</label>
+            <input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay}
+              onChange={(e) => setPriceDisplay(e.target.value)}
+              onBlur={() => { const cents = Math.round(parseFloat(priceDisplay || '0') * 100); setForm({ ...form, price: cents }); setPriceDisplay((cents / 100).toFixed(2)); }}
+            />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Expiration</label>
+            <select style={styles.input} value={form.expiration_type} onChange={(e) => setForm({ ...form, expiration_type: e.target.value })}>
+              <option value="none">Never expires</option>
+              <option value="days_from_purchase">Days from purchase</option>
+            </select>
+          </div>
+          {form.expiration_type === 'days_from_purchase' && (
+            <div style={styles.formGroup}><label style={styles.label}>Days until expiry</label><input style={styles.input} type="number" min="1" value={form.expiration_days} onChange={(e) => setForm({ ...form, expiration_days: e.target.value })} /></div>
+          )}
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Description</label><textarea style={{ ...styles.input, minHeight: '60px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit" loading={loading}>Create Package</Button></div>
+        </form>
+      </div>
     </div>
   );
 }
