@@ -94,6 +94,7 @@ export function App() {
         <Route path="/products" element={<ProtectedRoute><Services /></ProtectedRoute>} />
         <Route path="/products/categories" element={<ProtectedRoute><ServiceCategories /></ProtectedRoute>} />
         <Route path="/products/merchandise/:id" element={<ProtectedRoute><MerchandiseDetail /></ProtectedRoute>} />
+        <Route path="/products/memberships/:id" element={<ProtectedRoute><MembershipDetail /></ProtectedRoute>} />
         <Route path="/products/:id" element={<ProtectedRoute><ServiceDetail /></ProtectedRoute>} />
 
         {/* Legacy service routes (redirect-compatible) */}

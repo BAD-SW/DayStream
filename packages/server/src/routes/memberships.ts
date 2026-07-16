@@ -67,31 +67,34 @@ membershipsRouter.get('/plans', requirePermission('services:read'), async (req: 
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    const plans = await plansService.getPlans(businessId, req.query.include_archived === 'true');
-    success(res, plans);
+    const result = await membershipService.getPlans({
+      businessId,
+      status: req.query.status as string,
+      search: req.query.search as string,
+      page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
+      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 50,
+    });
+    success(res, result.plans, { total: result.total, page: result.page, limit: result.limit });
   } catch (err: any) { error(res, 'Failed to list plans', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/memberships/plans
-membershipsRouter.post('/plans', requirePermission('services:*'), validate(createPlanSchema), async (req: Request, res: Response) => {
+membershipsRouter.post('/plans', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
-    const plan = await plansService.createPlan({
-      businessId: req.body.business_id, name: req.body.name, description: req.body.description,
-      planType: req.body.plan_type, billingCycle: req.body.billing_cycle, price: req.body.price,
-      creditsPerCycle: req.body.credits_per_cycle, creditValidityDays: req.body.credit_validity_days,
-      rolloverPolicy: req.body.rollover_policy, maxRolloverCredits: req.body.max_rollover_credits,
-      totalSessions: req.body.total_sessions, expirationDays: req.body.expiration_days,
-      isIntroOnly: req.body.is_intro_only, maxFrequencyPerDay: req.body.max_frequency_per_day,
-      trialDays: req.body.trial_days, maxPauseDaysPerYear: req.body.max_pause_days_per_year,
-      maxPausesPerYear: req.body.max_pauses_per_year, maxAdditionalMembers: req.body.max_additional_members,
-      sharedCredits: req.body.shared_credits, displayOrder: req.body.display_order,
+    const plan = await membershipService.createPlan({
+      businessId: req.body.business_id,
+      name: req.body.name,
+      description: req.body.description,
+      shortDescription: req.body.short_description,
+      billingFrequency: req.body.billing_frequency,
+      price: req.body.price,
+      trialDays: req.body.trial_days,
+      discountServicesPct: req.body.discount_services_pct,
+      discountMerchandisePct: req.body.discount_merchandise_pct,
+      displayOrder: req.body.display_order,
     });
     success(res, plan, undefined, 201);
-  } catch (err: any) {
-    if (err.message.includes('must have') || err.message.includes('require')) {
-      error(res, err.message, 'VALIDATION_ERROR', 400);
-    } else { error(res, 'Failed to create plan', 'INTERNAL_ERROR', 500); }
-  }
+  } catch (err: any) { error(res, 'Failed to create plan', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/memberships/plans/:id
@@ -99,18 +102,18 @@ membershipsRouter.get('/plans/:id', requirePermission('services:read'), async (r
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    const plan = await plansService.getPlanById(req.params.id, businessId);
+    const plan = await membershipService.getPlanById(req.params.id, businessId);
     if (!plan) { error(res, 'Plan not found', 'NOT_FOUND', 404); return; }
     success(res, plan);
   } catch (err: any) { error(res, 'Failed to get plan', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/memberships/plans/:id
-membershipsRouter.put('/plans/:id', requirePermission('services:*'), validate(updatePlanSchema), async (req: Request, res: Response) => {
+membershipsRouter.put('/plans/:id', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    const plan = await plansService.updatePlan(req.params.id, businessId, req.body);
+    const plan = await membershipService.updatePlan(req.params.id, businessId, req.body);
     if (!plan) { error(res, 'Plan not found', 'NOT_FOUND', 404); return; }
     success(res, plan);
   } catch (err: any) { error(res, 'Failed to update plan', 'INTERNAL_ERROR', 500); }
@@ -121,93 +124,74 @@ membershipsRouter.put('/plans/:id/archive', requirePermission('services:*'), asy
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    const archived = await plansService.archivePlan(req.params.id, businessId);
+    const archived = await membershipService.archivePlan(req.params.id, businessId);
     if (!archived) { error(res, 'Plan not found', 'NOT_FOUND', 404); return; }
     success(res, { archived: true });
   } catch (err: any) { error(res, 'Failed to archive plan', 'INTERNAL_ERROR', 500); }
 });
 
+// PUT /api/v1/memberships/plans/:id/activate
+membershipsRouter.put('/plans/:id/activate', requirePermission('services:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const activated = await membershipService.activatePlan(req.params.id, businessId);
+    if (!activated) { error(res, 'Plan not found', 'NOT_FOUND', 404); return; }
+    success(res, { activated: true });
+  } catch (err: any) { error(res, 'Failed to activate plan', 'INTERNAL_ERROR', 500); }
+});
+
+// PUT /api/v1/memberships/plans/:id/pause
+membershipsRouter.put('/plans/:id/pause', requirePermission('services:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const paused = await membershipService.pausePlan(req.params.id, businessId);
+    if (!paused) { error(res, 'Plan not found', 'NOT_FOUND', 404); return; }
+    success(res, { paused: true });
+  } catch (err: any) { error(res, 'Failed to pause plan', 'INTERNAL_ERROR', 500); }
+});
+
 // ============================================================
-// Memberships
+// Memberships (enrollments)
 // ============================================================
 
 const createMembershipSchema = Joi.object({
   business_id: Joi.string().uuid().required(),
   customer_id: Joi.string().uuid().required(),
   plan_id: Joi.string().uuid().required(),
-  staff_initiated: Joi.boolean().default(false),
+  start_date: Joi.string().isoDate().default(() => new Date().toISOString().split('T')[0]),
 });
 
-const cancelMembershipSchema = Joi.object({
-  reason: Joi.string().max(500).allow('', null),
-});
-
-// POST /api/v1/memberships — Purchase/activate
+// POST /api/v1/memberships — Enroll customer
 membershipsRouter.post('/', requirePermission('services:*'), validate(createMembershipSchema), async (req: Request, res: Response) => {
   try {
-    const authReq = req as AuthenticatedRequest;
-    const membership = await membershipService.createMembership({
+    const enrollment = await membershipService.enrollCustomer({
+      planId: req.body.plan_id,
       businessId: req.body.business_id,
       customerId: req.body.customer_id,
-      planId: req.body.plan_id,
-      createdBy: authReq.user.sub,
-      tenantId: authReq.tenantId,
-      staffInitiated: req.body.staff_initiated,
+      startDate: req.body.start_date,
     });
-    success(res, membership, undefined, 201);
+    success(res, enrollment, undefined, 201);
   } catch (err: any) {
-    if (err.message.includes('not found') || err.message.includes('not active')) {
+    if (err.message.includes('not found')) {
       error(res, err.message, 'NOT_FOUND', 404);
-    } else if (err.message.includes('already') || err.message.includes('Intro')) {
-      error(res, err.message, 'CONFLICT', 409);
-    } else { error(res, 'Failed to create membership', 'INTERNAL_ERROR', 500); }
+    } else { error(res, 'Failed to enroll customer', 'INTERNAL_ERROR', 500); }
   }
 });
 
-// GET /api/v1/memberships
+// GET /api/v1/memberships — List enrollments
 membershipsRouter.get('/', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    const result = await membershipService.getMemberships(businessId, {
-      status: req.query.status as string,
+    const enrollments = await membershipService.getEnrollments(businessId, {
       customerId: req.query.customer_id as string,
       planId: req.query.plan_id as string,
-      page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
-      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
+      status: req.query.status as string,
     });
-    success(res, result.memberships, { page: result.page, limit: result.limit, total: result.total, totalPages: Math.ceil(result.total / result.limit) });
-  } catch (err: any) { error(res, 'Failed to list memberships', 'INTERNAL_ERROR', 500); }
-});
-
-// Reporting routes (registered before /:id to avoid conflict)
-import * as reportsServiceFwd from '../services/membership-reports.service';
-
-membershipsRouter.get('/reports/summary', requirePermission('services:read'), async (req: Request, res: Response) => {
-  try {
-    const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    const report = await reportsServiceFwd.getSummaryReport({ businessId, planId: req.query.plan_id as string });
-    success(res, report);
-  } catch (err: any) { error(res, 'Failed to generate report', 'INTERNAL_ERROR', 500); }
-});
-
-membershipsRouter.get('/reports/churn', requirePermission('services:read'), async (req: Request, res: Response) => {
-  try {
-    const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    const report = await reportsServiceFwd.getChurnReport({ businessId, dateFrom: req.query.date_from as string, dateTo: req.query.date_to as string });
-    success(res, report);
-  } catch (err: any) { error(res, 'Failed to generate report', 'INTERNAL_ERROR', 500); }
-});
-
-membershipsRouter.get('/reports/credits', requirePermission('services:read'), async (req: Request, res: Response) => {
-  try {
-    const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    const report = await reportsServiceFwd.getCreditReport({ businessId, dateFrom: req.query.date_from as string, dateTo: req.query.date_to as string });
-    success(res, report);
-  } catch (err: any) { error(res, 'Failed to generate report', 'INTERNAL_ERROR', 500); }
+    success(res, enrollments);
+  } catch (err: any) { error(res, 'Failed to list enrollments', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/memberships/:id
@@ -215,237 +199,87 @@ membershipsRouter.get('/:id', requirePermission('services:read'), async (req: Re
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    const membership = await membershipService.getMembershipById(req.params.id, businessId);
-    if (!membership) { error(res, 'Membership not found', 'NOT_FOUND', 404); return; }
-    success(res, membership);
-  } catch (err: any) { error(res, 'Failed to get membership', 'INTERNAL_ERROR', 500); }
-});
-
-// PUT /api/v1/memberships/:id/cancel
-membershipsRouter.put('/:id/cancel', requirePermission('services:*'), validate(cancelMembershipSchema), async (req: Request, res: Response) => {
-  try {
-    const authReq = req as AuthenticatedRequest;
-    const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    const result = await membershipService.cancelMembership(req.params.id, businessId, authReq.user.sub, authReq.tenantId, req.body.reason);
-    if (!result.success) {
-      const status = result.error?.includes('not found') ? 404 : 400;
-      error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INVALID_TRANSITION', status);
-      return;
-    }
-    success(res, { cancelled: true });
-  } catch (err: any) { error(res, 'Failed to cancel membership', 'INTERNAL_ERROR', 500); }
-});
-
-
-// ============================================================
-// Credits
-// ============================================================
-
-import * as creditsService from '../services/membership-credits.service';
-
-const deductCreditsSchema = Joi.object({
-  amount: Joi.number().integer().min(1).required(),
-  booking_id: Joi.string().uuid().allow(null),
-  description: Joi.string().max(200).allow('', null),
-});
-
-const restoreCreditsSchema = Joi.object({
-  amount: Joi.number().integer().min(1).required(),
-  booking_id: Joi.string().uuid().allow(null),
-  description: Joi.string().max(200).allow('', null),
-});
-
-const adjustCreditsSchema = Joi.object({
-  amount: Joi.number().integer().required(), // positive or negative
-  description: Joi.string().min(1).max(200).required(),
-});
-
-// GET /api/v1/memberships/:id/credits
-membershipsRouter.get('/:id/credits', requirePermission('services:read'), async (req: Request, res: Response) => {
-  try {
-    const info = await creditsService.getCreditInfo(req.params.id);
-    if (!info) { error(res, 'Membership not found', 'NOT_FOUND', 404); return; }
-    success(res, info);
-  } catch (err: any) { error(res, 'Failed to get credits', 'INTERNAL_ERROR', 500); }
-});
-
-// POST /api/v1/memberships/:id/credits/deduct
-membershipsRouter.post('/:id/credits/deduct', requirePermission('services:*'), validate(deductCreditsSchema), async (req: Request, res: Response) => {
-  try {
-    const result = await creditsService.deductCredits(req.params.id, req.body.amount, req.body.booking_id, req.body.description);
-    if (!result.success) {
-      const status = result.error?.includes('not found') ? 404 : 400;
-      error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INSUFFICIENT_CREDITS', status);
-      return;
-    }
-    success(res, { balance_after: result.balance_after });
-  } catch (err: any) { error(res, 'Failed to deduct credits', 'INTERNAL_ERROR', 500); }
-});
-
-// POST /api/v1/memberships/:id/credits/restore
-membershipsRouter.post('/:id/credits/restore', requirePermission('services:*'), validate(restoreCreditsSchema), async (req: Request, res: Response) => {
-  try {
-    const result = await creditsService.restoreCredits(req.params.id, req.body.amount, req.body.booking_id, req.body.description);
-    if (!result.success) { error(res, result.error!, 'NOT_FOUND', 404); return; }
-    success(res, { balance_after: result.balance_after });
-  } catch (err: any) { error(res, 'Failed to restore credits', 'INTERNAL_ERROR', 500); }
-});
-
-// POST /api/v1/memberships/:id/credits/adjust
-membershipsRouter.post('/:id/credits/adjust', requirePermission('services:*'), validate(adjustCreditsSchema), async (req: Request, res: Response) => {
-  try {
-    const result = await creditsService.adjustCredits(req.params.id, req.body.amount, req.body.description);
-    if (!result.success) {
-      const status = result.error?.includes('not found') ? 404 : 400;
-      error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'VALIDATION_ERROR', status);
-      return;
-    }
-    success(res, { balance_after: result.balance_after });
-  } catch (err: any) { error(res, 'Failed to adjust credits', 'INTERNAL_ERROR', 500); }
-});
-
-
-// ============================================================
-// Freeze / Pause
-// ============================================================
-
-import * as freezeService from '../services/membership-freeze.service';
-
-const pauseSchema = Joi.object({
-  pause_days: Joi.number().integer().min(1).max(180).required(),
-  admin_override: Joi.boolean().default(false),
+    const enrollment = await membershipService.getEnrollmentById(req.params.id, businessId);
+    if (!enrollment) { error(res, 'Enrollment not found', 'NOT_FOUND', 404); return; }
+    success(res, enrollment);
+  } catch (err: any) { error(res, 'Failed to get enrollment', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/memberships/:id/pause
-membershipsRouter.put('/:id/pause', requirePermission('services:*'), validate(pauseSchema), async (req: Request, res: Response) => {
+membershipsRouter.put('/:id/pause', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
-    const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-
-    const result = await freezeService.pauseMembership(
-      req.params.id, businessId, req.body.pause_days,
-      authReq.user.sub, authReq.tenantId, req.body.admin_override,
-    );
-    if (!result.success) {
-      const status = result.error?.includes('not found') ? 404 : 400;
-      error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'VALIDATION_ERROR', status);
-      return;
-    }
-    success(res, result.membership);
-  } catch (err: any) { error(res, 'Failed to pause membership', 'INTERNAL_ERROR', 500); }
+    const paused = await membershipService.pauseEnrollment(req.params.id, businessId);
+    if (!paused) { error(res, 'Enrollment not found or not active', 'NOT_FOUND', 404); return; }
+    success(res, { paused: true });
+  } catch (err: any) { error(res, 'Failed to pause enrollment', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/memberships/:id/resume
 membershipsRouter.put('/:id/resume', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
-    const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-
-    const result = await freezeService.resumeMembership(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
-    if (!result.success) {
-      const status = result.error?.includes('not found') ? 404 : 400;
-      error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'VALIDATION_ERROR', status);
-      return;
-    }
-    success(res, result.membership);
-  } catch (err: any) { error(res, 'Failed to resume membership', 'INTERNAL_ERROR', 500); }
+    const resumed = await membershipService.resumeEnrollment(req.params.id, businessId);
+    if (!resumed) { error(res, 'Enrollment not found or not paused', 'NOT_FOUND', 404); return; }
+    success(res, { resumed: true });
+  } catch (err: any) { error(res, 'Failed to resume enrollment', 'INTERNAL_ERROR', 500); }
 });
 
-
-// ============================================================
-// Upgrade / Downgrade
-// ============================================================
-
-import * as upgradeService from '../services/membership-upgrade.service';
-
-const planChangeSchema = Joi.object({
-  plan_id: Joi.string().uuid().required(),
-});
-
-// PUT /api/v1/memberships/:id/upgrade
-membershipsRouter.put('/:id/upgrade', requirePermission('services:*'), validate(planChangeSchema), async (req: Request, res: Response) => {
-  try {
-    const authReq = req as AuthenticatedRequest;
-    const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-
-    const result = await upgradeService.upgradeMembership(req.params.id, businessId, req.body.plan_id, authReq.user.sub, authReq.tenantId);
-    if (!result.success) {
-      const status = result.error?.includes('not found') ? 404 : 400;
-      error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'VALIDATION_ERROR', status);
-      return;
-    }
-    success(res, { membership: result.membership, proration_amount: result.proration_amount });
-  } catch (err: any) { error(res, 'Failed to upgrade', 'INTERNAL_ERROR', 500); }
-});
-
-// PUT /api/v1/memberships/:id/downgrade
-membershipsRouter.put('/:id/downgrade', requirePermission('services:*'), validate(planChangeSchema), async (req: Request, res: Response) => {
-  try {
-    const authReq = req as AuthenticatedRequest;
-    const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-
-    const result = await upgradeService.downgradeMembership(req.params.id, businessId, req.body.plan_id, authReq.user.sub, authReq.tenantId);
-    if (!result.success) {
-      const status = result.error?.includes('not found') ? 404 : 400;
-      error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'VALIDATION_ERROR', status);
-      return;
-    }
-    success(res, { membership: result.membership, proration_amount: result.proration_amount });
-  } catch (err: any) { error(res, 'Failed to downgrade', 'INTERNAL_ERROR', 500); }
-});
-
-
-// ============================================================
-// Family Memberships
-// ============================================================
-
-import * as familyService from '../services/membership-family.service';
-
-const addMemberSchema = Joi.object({
-  customer_id: Joi.string().uuid().required(),
-});
-
-// POST /api/v1/memberships/:id/members — Add family member
-membershipsRouter.post('/:id/members', requirePermission('services:*'), validate(addMemberSchema), async (req: Request, res: Response) => {
-  try {
-    const authReq = req as AuthenticatedRequest;
-    const businessId = req.query.business_id as string;
-    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-
-    const result = await familyService.addFamilyMember(req.params.id, businessId, req.body.customer_id, authReq.user.sub);
-    if (!result.success) {
-      const status = result.error?.includes('not found') ? 404 : 400;
-      error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'VALIDATION_ERROR', status);
-      return;
-    }
-    success(res, result.membership, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to add family member', 'INTERNAL_ERROR', 500); }
-});
-
-// DELETE /api/v1/memberships/:id/members/:customerId — Remove family member
-membershipsRouter.delete('/:id/members/:customerId', requirePermission('services:*'), async (req: Request, res: Response) => {
+// PUT /api/v1/memberships/:id/cancel
+membershipsRouter.put('/:id/cancel', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-
-    const removed = await familyService.removeFamilyMember(req.params.id, businessId, req.params.customerId);
-    if (!removed) { error(res, 'Family member not found', 'NOT_FOUND', 404); return; }
-    success(res, { removed: true });
-  } catch (err: any) { error(res, 'Failed to remove family member', 'INTERNAL_ERROR', 500); }
+    const cancelled = await membershipService.cancelEnrollment(req.params.id, businessId);
+    if (!cancelled) { error(res, 'Enrollment not found', 'NOT_FOUND', 404); return; }
+    success(res, { cancelled: true });
+  } catch (err: any) { error(res, 'Failed to cancel enrollment', 'INTERNAL_ERROR', 500); }
 });
 
-// GET /api/v1/memberships/:id/members — List family members
-membershipsRouter.get('/:id/members', requirePermission('services:read'), async (req: Request, res: Response) => {
+// --- Plan Items ---
+
+// GET /api/v1/memberships/plans/:id/items
+membershipsRouter.get('/plans/:id/items', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
-    const members = await familyService.getFamilyMembers(req.params.id);
-    success(res, members);
-  } catch (err: any) { error(res, 'Failed to list family members', 'INTERNAL_ERROR', 500); }
+    const items = await membershipService.getPlanItems(req.params.id);
+    success(res, items);
+  } catch (err: any) { error(res, 'Failed to get plan items', 'INTERNAL_ERROR', 500); }
 });
 
+// POST /api/v1/memberships/plans/:id/items
+membershipsRouter.post('/plans/:id/items', requirePermission('services:*'), async (req: Request, res: Response) => {
+  try {
+    const item = await membershipService.addPlanItem({
+      planId: req.params.id,
+      itemType: req.body.item_type,
+      serviceId: req.body.service_id,
+      merchandiseId: req.body.merchandise_id,
+      variantId: req.body.variant_id,
+      quantityPerPeriod: req.body.quantity_per_period,
+    });
+    success(res, item, undefined, 201);
+  } catch (err: any) { error(res, 'Failed to add plan item', 'INTERNAL_ERROR', 500); }
+});
 
-// (Reporting routes registered above, before /:id)
+// DELETE /api/v1/memberships/plans/:id/items/:itemId
+membershipsRouter.delete('/plans/:id/items/:itemId', requirePermission('services:*'), async (req: Request, res: Response) => {
+  try {
+    const deleted = await membershipService.removePlanItem(req.params.itemId);
+    if (!deleted) { error(res, 'Item not found', 'NOT_FOUND', 404); return; }
+    success(res, { deleted: true });
+  } catch (err: any) { error(res, 'Failed to remove plan item', 'INTERNAL_ERROR', 500); }
+});
+
+// PUT /api/v1/memberships/plans/:id/items/:itemId
+membershipsRouter.put('/plans/:id/items/:itemId', requirePermission('services:*'), async (req: Request, res: Response) => {
+  try {
+    const updated = await membershipService.updatePlanItem(req.params.itemId, {
+      quantityPerPeriod: req.body.quantity_per_period,
+      variantId: req.body.variant_id,
+    });
+    if (!updated) { error(res, 'Item not found', 'NOT_FOUND', 404); return; }
+    success(res, updated);
+  } catch (err: any) { error(res, 'Failed to update plan item', 'INTERNAL_ERROR', 500); }
+});

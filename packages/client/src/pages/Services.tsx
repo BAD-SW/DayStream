@@ -27,6 +27,28 @@ interface CatalogItem {
 }
 
 export function Services() {
+  const [activeTab, setActiveTab] = useState<'catalog' | 'memberships' | 'promotions'>('catalog');
+
+  return (
+    <div style={styles.page}>
+      <div style={styles.header}>
+        <h1 style={styles.title}>Products & Services</h1>
+      </div>
+      <div style={styles.tabBar}>
+        <button onClick={() => setActiveTab('catalog')} style={{ ...styles.tab, ...(activeTab === 'catalog' ? styles.tabActive : {}) }}>Catalog</button>
+        <button onClick={() => setActiveTab('memberships')} style={{ ...styles.tab, ...(activeTab === 'memberships' ? styles.tabActive : {}) }}>Memberships</button>
+        <button onClick={() => setActiveTab('promotions')} style={{ ...styles.tab, ...(activeTab === 'promotions' ? styles.tabActive : {}) }}>Promotions</button>
+      </div>
+      {activeTab === 'catalog' && <CatalogTab />}
+      {activeTab === 'memberships' && <MembershipsTab />}
+      {activeTab === 'promotions' && <PromotionsTab />}
+    </div>
+  );
+}
+
+// --- Catalog Tab (existing services + merchandise) ---
+
+function CatalogTab() {
   const navigate = useNavigate();
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
@@ -170,14 +192,11 @@ export function Services() {
   };
 
   return (
-    <div style={styles.page}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>Products & Services</h1>
-        <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-          <Button variant="secondary" onClick={() => navigate('/products/categories')}>Categories</Button>
-          <Button variant="secondary" onClick={() => setShowCreateService(true)}>Add Service</Button>
-          <Button variant="secondary" onClick={() => setShowCreateProduct(true)}>Add Product</Button>
-        </div>
+    <>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
+        <Button variant="secondary" onClick={() => navigate('/products/categories')}>Categories</Button>
+        <Button variant="secondary" onClick={() => setShowCreateService(true)}>Add Service</Button>
+        <Button variant="secondary" onClick={() => setShowCreateProduct(true)}>Add Product</Button>
       </div>
 
       <div style={styles.toolbar}>
@@ -231,7 +250,7 @@ export function Services() {
           onCreated={() => { setShowCreateProduct(false); fetchItems(); }}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -422,6 +441,184 @@ function CreateProductModal({ businessId, categories, onClose, onCreated }: { bu
   );
 }
 
+// --- Memberships Tab ---
+
+function MembershipsTab() {
+  const navigate = useNavigate();
+  const businessId = localStorage.getItem('business_id') || '';
+  const [plans, setPlans] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+
+  const fetchPlans = useCallback(async () => {
+    if (!businessId) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      const res = await apiClient.get(`/v1/memberships/plans?business_id=${businessId}`);
+      setPlans(res.data.data || []);
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  }, [businessId]);
+
+  useEffect(() => { fetchPlans(); }, [fetchPlans]);
+
+  const handleQuickAction = async (action: string, plan: any) => {
+    try {
+      await apiClient.put(`/v1/memberships/plans/${plan.id}/${action}?business_id=${businessId}`);
+      fetchPlans();
+    } catch { /* silent */ }
+  };
+
+  const columns = [
+    { key: 'name', header: 'Name', sortable: true },
+    {
+      key: 'billing_frequency', header: 'Billing',
+      render: (val: string) => val ? val.charAt(0).toUpperCase() + val.slice(1) : '—',
+    },
+    {
+      key: 'price', header: 'Price',
+      render: (val: number) => formatCurrency(val),
+    },
+    {
+      key: 'status', header: 'Status',
+      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge>,
+    },
+    {
+      key: 'active_enrollments', header: 'Enrolled',
+      render: (val: number) => val || 0,
+    },
+    {
+      key: 'actions', header: '',
+      render: (_: any, row: any) => (
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleQuickAction('pause', row)} />}
+          {(row.status === 'paused' || row.status === 'draft') && <ActionBtn label="Activate" onClick={() => handleQuickAction('activate', row)} />}
+          {row.status !== 'archived' && <ActionBtn label="Archive" onClick={() => handleQuickAction('archive', row)} />}
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-md)' }}>
+        <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Membership</Button>
+      </div>
+
+      <Table
+        columns={columns}
+        data={plans}
+        loading={loading}
+        onRowClick={(row) => navigate(`/products/memberships/${row.id}`)}
+        emptyMessage="No membership plans defined"
+        mobileCardMode
+      />
+
+      {showCreate && (
+        <CreateMembershipModal
+          businessId={businessId}
+          onClose={() => setShowCreate(false)}
+          onCreated={(plan) => { setShowCreate(false); navigate(`/products/memberships/${plan.id}`); }}
+        />
+      )}
+    </>
+  );
+}
+
+function CreateMembershipModal({ businessId, onClose, onCreated }: { businessId: string; onClose: () => void; onCreated: (plan: any) => void }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [priceDisplay, setPriceDisplay] = useState('0.00');
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    billing_frequency: 'monthly',
+    price: 0,
+    trial_days: 0,
+    discount_services_pct: 0,
+    discount_merchandise_pct: 0,
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name) { setError('Name is required'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      const res = await apiClient.post('/v1/memberships/plans', { ...form, business_id: businessId });
+      onCreated(res.data.data);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to create membership plan');
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div style={styles.overlay} onClick={onClose}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.modalHeader}>
+          <h3 style={styles.modalTitle}>Add Membership Plan</h3>
+          <button style={styles.closeBtn} onClick={onClose}>×</button>
+        </div>
+        {error && <p style={styles.error}>{error}</p>}
+        <form onSubmit={handleSubmit} style={styles.formGrid}>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Name *</label>
+            <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Billing Frequency *</label>
+            <select style={styles.input} value={form.billing_frequency} onChange={(e) => setForm({ ...form, billing_frequency: e.target.value })}>
+              <option value="weekly">Weekly</option>
+              <option value="biweekly">Biweekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="annually">Annually</option>
+            </select>
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Price per Period *</label>
+            <input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay}
+              onChange={(e) => setPriceDisplay(e.target.value)}
+              onBlur={() => { const cents = Math.round(parseFloat(priceDisplay || '0') * 100); setForm({ ...form, price: cents }); setPriceDisplay((cents / 100).toFixed(2)); }}
+            />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Trial Days</label>
+            <input style={styles.input} type="number" min={0} value={form.trial_days} onChange={(e) => setForm({ ...form, trial_days: Number(e.target.value) })} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Discount on Services (%)</label>
+            <input style={styles.input} type="number" min={0} max={100} value={form.discount_services_pct} onChange={(e) => setForm({ ...form, discount_services_pct: Number(e.target.value) })} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Discount on Products (%)</label>
+            <input style={styles.input} type="number" min={0} max={100} value={form.discount_merchandise_pct} onChange={(e) => setForm({ ...form, discount_merchandise_pct: Number(e.target.value) })} />
+          </div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
+            <label style={styles.label}>Description</label>
+            <textarea style={{ ...styles.input, minHeight: '60px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          </div>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}>
+            <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
+            <Button type="submit" loading={loading}>Create Plan</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// --- Promotions Tab (placeholder) ---
+
+function PromotionsTab() {
+  return (
+    <div style={{ textAlign: 'center', padding: 'var(--space-2xl)', color: 'var(--color-text-secondary)' }}>
+      <p style={{ fontSize: '16px', marginBottom: '8px' }}>Promotions</p>
+      <p style={{ fontSize: '14px' }}>Time-limited discounts, promo codes, and seasonal pricing adjustments will be managed here.</p>
+    </div>
+  );
+}
+
 // --- Utility ---
 
 function ActionBtn({ label, onClick }: { label: string; onClick: () => void }) {
@@ -434,13 +631,16 @@ function ActionBtn({ label, onClick }: { label: string; onClick: () => void }) {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1200px', margin: '0 auto' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' },
   title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
+  tabBar: { display: 'flex', gap: '0', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-lg)' },
+  tab: { background: 'none', border: 'none', borderBottom: '2px solid transparent', padding: '10px 20px', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  tabActive: { color: 'var(--color-primary)', borderBottomColor: 'var(--color-primary)' },
   toolbar: { display: 'flex', gap: 'var(--space-md)', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' as const },
   select: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
   actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', minWidth: '60px', textAlign: 'center' as const },
-  overlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { background: 'var(--color-surface)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '600px', maxHeight: '85vh', overflow: 'auto', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' },
+  overlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
+  modal: { background: 'var(--color-background)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '600px', maxHeight: '85vh', overflow: 'auto', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.3)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
   modalTitle: { margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--color-text)' },
   closeBtn: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--color-text-secondary)' },
