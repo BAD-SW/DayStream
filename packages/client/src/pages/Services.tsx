@@ -106,7 +106,6 @@ function ServicesTab() {
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
-        <Button variant="secondary" onClick={() => navigate('/offers/categories')}>Categories</Button>
         <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Service</Button>
       </div>
       <div style={styles.toolbar}>
@@ -198,7 +197,6 @@ function ProductsTab() {
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
-        <Button variant="secondary" onClick={() => navigate('/offers/categories')}>Categories</Button>
         <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Product</Button>
       </div>
       <div style={styles.toolbar}>
