@@ -81,8 +81,8 @@ export function CustomerDetail() {
         items={[
           { id: 'overview', label: 'Overview', content: <OverviewTab customer={customer} tags={tags} onUpdate={setCustomer} /> },
           { id: 'notes', label: 'Notes', content: <NotesTab notes={notes} customerId={customer.id} businessId={businessId} onRefresh={(n) => setNotes(n)} /> },
-          { id: 'timeline', label: 'Timeline', content: <TimelineTab activities={activities} customerId={customer.id} businessId={businessId} /> },
           { id: 'preferences', label: 'Preferences', content: <PreferencesTab preferences={preferences} onChange={handlePreferenceChange} /> },
+          { id: 'timeline', label: 'Timeline', content: <TimelineTab activities={activities} customerId={customer.id} businessId={businessId} /> },
         ]}
       />
     </div>
@@ -274,10 +274,7 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
         </div>
 
         {/* Membership Card */}
-        <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Membership</h3>
-          <p style={styles.cardMuted}>No active membership</p>
-        </div>
+        <MembershipCard customerId={customer.id} businessId={businessId} />
 
         {/* Payment Methods on File Card */}
         <div style={styles.card}>
@@ -502,6 +499,154 @@ function PreferencesTab({ preferences, onChange }: { preferences: any; onChange:
     </div>
   );
 }
+
+// --- Membership Card ---
+
+function MembershipCard({ customerId, businessId }: { customerId: string; businessId: string }) {
+  const [enrollments, setEnrollments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showEnroll, setShowEnroll] = useState(false);
+  const [showChangePlan, setShowChangePlan] = useState<any>(null);
+  const [plans, setPlans] = useState<any[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [enrolling, setEnrolling] = useState(false);
+
+  const fetchEnrollments = useCallback(async () => {
+    try {
+      const res = await apiClient.get(`/v1/memberships?business_id=${businessId}&customer_id=${customerId}`);
+      setEnrollments((res.data.data || []).filter((e: any) => e.status === 'active' || e.status === 'paused'));
+    } catch { setEnrollments([]); }
+    finally { setLoading(false); }
+  }, [customerId, businessId]);
+
+  useEffect(() => { fetchEnrollments(); }, [fetchEnrollments]);
+
+  const loadPlans = async () => {
+    if (plans.length === 0) {
+      try {
+        const res = await apiClient.get(`/v1/memberships/plans?business_id=${businessId}&status=active`);
+        setPlans(res.data.data || []);
+      } catch { setPlans([]); }
+    }
+  };
+
+  const openEnroll = async () => { await loadPlans(); setShowEnroll(true); };
+
+  const handleEnroll = async () => {
+    if (!selectedPlanId) return;
+    setEnrolling(true);
+    try {
+      await apiClient.post('/v1/memberships', { business_id: businessId, customer_id: customerId, plan_id: selectedPlanId, start_date: new Date().toISOString().split('T')[0] });
+      await fetchEnrollments();
+      setShowEnroll(false);
+      setSelectedPlanId('');
+    } catch (err: any) { alert(err.response?.data?.error || 'Failed to enroll'); }
+    finally { setEnrolling(false); }
+  };
+
+  const handlePause = async (enrollmentId: string) => {
+    try { await apiClient.put(`/v1/memberships/${enrollmentId}/pause?business_id=${businessId}`); await fetchEnrollments(); }
+    catch { alert('Failed to pause'); }
+  };
+
+  const handleResume = async (enrollmentId: string) => {
+    try { await apiClient.put(`/v1/memberships/${enrollmentId}/resume?business_id=${businessId}`); await fetchEnrollments(); }
+    catch { alert('Failed to resume'); }
+  };
+
+  const handleCancel = async (enrollmentId: string) => {
+    if (!confirm('Cancel this membership? This cannot be undone.')) return;
+    try { await apiClient.put(`/v1/memberships/${enrollmentId}/cancel?business_id=${businessId}`); await fetchEnrollments(); }
+    catch { alert('Failed to cancel'); }
+  };
+
+  const handleChangePlan = async (enrollment: any) => {
+    await loadPlans();
+    setShowChangePlan(enrollment);
+    setSelectedPlanId('');
+  };
+
+  const confirmChangePlan = async () => {
+    if (!selectedPlanId || !showChangePlan) return;
+    setEnrolling(true);
+    try {
+      // Cancel old enrollment and create new one
+      await apiClient.put(`/v1/memberships/${showChangePlan.id}/cancel?business_id=${businessId}`);
+      await apiClient.post('/v1/memberships', { business_id: businessId, customer_id: customerId, plan_id: selectedPlanId, start_date: new Date().toISOString().split('T')[0] });
+      await fetchEnrollments();
+      setShowChangePlan(null);
+      setSelectedPlanId('');
+    } catch (err: any) { alert(err.response?.data?.error || 'Failed to change plan'); }
+    finally { setEnrolling(false); }
+  };
+
+  return (
+    <div style={styles.card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Membership</h3>
+        {enrollments.length === 0 && !loading && (
+          <Button size="sm" variant="secondary" onClick={openEnroll}>Enroll</Button>
+        )}
+      </div>
+
+      {loading && <p style={styles.cardMuted}>Loading...</p>}
+      {!loading && enrollments.length === 0 && !showEnroll && <p style={styles.cardMuted}>No active membership</p>}
+
+      {enrollments.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {enrollments.map((e: any) => (
+            <div key={e.id} style={{ padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: '13px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <strong>{e.plan_name}</strong>
+                <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{e.billing_frequency}</span>
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+                Since {new Date(e.start_date).toLocaleDateString()}
+                {e.next_billing_date && ` · Next billing: ${new Date(e.next_billing_date).toLocaleDateString()}`}
+              </div>
+              <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                {e.status === 'active' && <button style={membershipActionStyle} onClick={() => handlePause(e.id)}>Pause</button>}
+                {e.status === 'paused' && <button style={membershipActionStyle} onClick={() => handleResume(e.id)}>Resume</button>}
+                <button style={membershipActionStyle} onClick={() => handleChangePlan(e)}>Change Plan</button>
+                {(e.status === 'active' || e.status === 'paused') && <button style={{ ...membershipActionStyle, color: 'var(--color-error)' }} onClick={() => handleCancel(e.id)}>Cancel</button>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showEnroll && (
+        <div style={{ marginTop: '8px', padding: '12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <select style={{ flex: 1, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '6px 10px', fontSize: '13px', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' }} value={selectedPlanId} onChange={(e) => setSelectedPlanId(e.target.value)}>
+              <option value="">Select a plan...</option>
+              {plans.map((p: any) => <option key={p.id} value={p.id}>{p.name} — {p.billing_frequency}</option>)}
+            </select>
+            <Button size="sm" onClick={handleEnroll} loading={enrolling} disabled={!selectedPlanId}>Enroll</Button>
+            <Button size="sm" variant="secondary" onClick={() => setShowEnroll(false)}>Cancel</Button>
+          </div>
+          {plans.length === 0 && <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>No active membership plans available. Create plans under Offerings → Memberships.</p>}
+        </div>
+      )}
+
+      {showChangePlan && (
+        <div style={{ marginTop: '8px', padding: '12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)' }}>
+          <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '0 0 8px' }}>Change from <strong>{showChangePlan.plan_name}</strong> to:</p>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <select style={{ flex: 1, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '6px 10px', fontSize: '13px', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' }} value={selectedPlanId} onChange={(e) => setSelectedPlanId(e.target.value)}>
+              <option value="">Select new plan...</option>
+              {plans.filter((p: any) => p.id !== showChangePlan.plan_id).map((p: any) => <option key={p.id} value={p.id}>{p.name} — {p.billing_frequency}</option>)}
+            </select>
+            <Button size="sm" onClick={confirmChangePlan} loading={enrolling} disabled={!selectedPlanId}>Confirm</Button>
+            <Button size="sm" variant="secondary" onClick={() => setShowChangePlan(null)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const membershipActionStyle: React.CSSProperties = { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: '11px', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' };
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '900px', margin: '0 auto' },
