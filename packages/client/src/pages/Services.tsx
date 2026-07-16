@@ -14,7 +14,7 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
 };
 
 export function Services() {
-  const [activeTab, setActiveTab] = useState<'services' | 'products' | 'memberships' | 'promotions'>('services');
+  const [activeTab, setActiveTab] = useState<'services' | 'products' | 'memberships' | 'packages' | 'promotions'>('services');
 
   return (
     <div style={styles.page}>
@@ -25,11 +25,13 @@ export function Services() {
         <button onClick={() => setActiveTab('services')} style={{ ...styles.tab, ...(activeTab === 'services' ? styles.tabActive : {}) }}>Services</button>
         <button onClick={() => setActiveTab('products')} style={{ ...styles.tab, ...(activeTab === 'products' ? styles.tabActive : {}) }}>Products</button>
         <button onClick={() => setActiveTab('memberships')} style={{ ...styles.tab, ...(activeTab === 'memberships' ? styles.tabActive : {}) }}>Memberships</button>
+        <button onClick={() => setActiveTab('packages')} style={{ ...styles.tab, ...(activeTab === 'packages' ? styles.tabActive : {}) }}>Packages</button>
         <button onClick={() => setActiveTab('promotions')} style={{ ...styles.tab, ...(activeTab === 'promotions' ? styles.tabActive : {}) }}>Promotions</button>
       </div>
       {activeTab === 'services' && <ServicesTab />}
       {activeTab === 'products' && <ProductsTab />}
       {activeTab === 'memberships' && <MembershipsTab />}
+      {activeTab === 'packages' && <PackagesTab />}
       {activeTab === 'promotions' && <PromotionsTab />}
     </div>
   );
@@ -485,13 +487,191 @@ function CreateMembershipModal({ businessId, onClose, onCreated }: { businessId:
   );
 }
 
-// --- Promotions Tab (placeholder) ---
+// --- Packages Tab (placeholder) ---
 
-function PromotionsTab() {
+function PackagesTab() {
   return (
     <div style={{ textAlign: 'center', padding: 'var(--space-2xl)', color: 'var(--color-text-secondary)' }}>
-      <p style={{ fontSize: '16px', marginBottom: '8px' }}>Promotions</p>
-      <p style={{ fontSize: '14px' }}>Time-limited discounts, promo codes, and seasonal pricing adjustments will be managed here.</p>
+      <p style={{ fontSize: '16px', marginBottom: '8px' }}>Packages</p>
+      <p style={{ fontSize: '14px' }}>Bundled offerings that combine services and products at a fixed price will be managed here.</p>
+    </div>
+  );
+}
+
+// --- Promotions Tab ---
+
+const PROMO_TYPE_LABELS: Record<string, string> = {
+  discount_percentage: '% Off',
+  discount_fixed: '$ Off',
+  price_override: 'Fixed Price',
+  premium_percentage: '% Premium',
+  premium_fixed: '$ Premium',
+};
+
+function PromotionsTab() {
+  const navigate = useNavigate();
+  const businessId = localStorage.getItem('business_id') || '';
+  const [promotions, setPromotions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+
+  const fetchPromotions = useCallback(async () => {
+    if (!businessId) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      const res = await apiClient.get(`/v1/promotions?business_id=${businessId}`);
+      setPromotions(res.data.data || []);
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  }, [businessId]);
+
+  useEffect(() => { fetchPromotions(); }, [fetchPromotions]);
+
+  const handleQuickAction = async (action: string, promo: any) => {
+    try {
+      await apiClient.put(`/v1/promotions/${promo.id}/${action}?business_id=${businessId}`);
+      fetchPromotions();
+    } catch { /* silent */ }
+  };
+
+  const columns = [
+    { key: 'name', header: 'Name', sortable: true },
+    { key: 'type', header: 'Type', render: (val: string) => PROMO_TYPE_LABELS[val] || val },
+    {
+      key: 'value', header: 'Value',
+      render: (_: any, row: any) => {
+        if (row.type.includes('percentage')) return `${row.value}%`;
+        return formatCurrency(row.value);
+      },
+    },
+    { key: 'promo_code', header: 'Code', render: (val: string) => val || '—' },
+    { key: 'status', header: 'Status', render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
+    {
+      key: 'date_range', header: 'Active Period',
+      render: (_: any, row: any) => {
+        if (!row.date_from && !row.date_to) return 'Always';
+        const from = row.date_from ? new Date(row.date_from).toLocaleDateString() : '';
+        const to = row.date_to ? new Date(row.date_to).toLocaleDateString() : '';
+        return `${from} – ${to}`;
+      },
+    },
+    {
+      key: 'actions', header: '',
+      render: (_: any, row: any) => (
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleQuickAction('pause', row)} />}
+          {(row.status === 'paused' || row.status === 'expired') && <ActionBtn label="Activate" onClick={() => handleQuickAction('activate', row)} />}
+          {row.status !== 'archived' && <ActionBtn label="Archive" onClick={() => handleQuickAction('archive', row)} />}
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-md)' }}>
+        <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Promotion</Button>
+      </div>
+
+      <Table
+        columns={columns}
+        data={promotions}
+        loading={loading}
+        onRowClick={(row) => navigate(`/offers/promotions/${row.id}`)}
+        emptyMessage="No promotions defined"
+        mobileCardMode
+      />
+
+      {showCreate && (
+        <CreatePromotionModal
+          businessId={businessId}
+          onClose={() => setShowCreate(false)}
+          onCreated={(promo) => { setShowCreate(false); navigate(`/offers/promotions/${promo.id}`); }}
+        />
+      )}
+    </>
+  );
+}
+
+function CreatePromotionModal({ businessId, onClose, onCreated }: { businessId: string; onClose: () => void; onCreated: (promo: any) => void }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    type: 'discount_percentage',
+    value: 0,
+    promo_code: '',
+    date_from: '',
+    date_to: '',
+    max_redemptions: '',
+    max_per_customer: '',
+    stackable: false,
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name) { setError('Name is required'); return; }
+    if (!form.value) { setError('Value is required'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      const data: any = {
+        business_id: businessId,
+        name: form.name,
+        description: form.description || undefined,
+        type: form.type,
+        value: form.type.includes('percentage') ? form.value : Math.round(form.value * 100),
+        promo_code: form.promo_code || undefined,
+        date_from: form.date_from || undefined,
+        date_to: form.date_to || undefined,
+        max_redemptions: form.max_redemptions ? parseInt(form.max_redemptions) : undefined,
+        max_per_customer: form.max_per_customer ? parseInt(form.max_per_customer) : undefined,
+        stackable: form.stackable,
+      };
+      const res = await apiClient.post('/v1/promotions', data);
+      onCreated(res.data.data);
+    } catch (err: any) { setError(err.response?.data?.error || 'Failed to create promotion'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div style={styles.overlay} onClick={onClose}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.modalHeader}>
+          <h3 style={styles.modalTitle}>Add Promotion</h3>
+          <button style={styles.closeBtn} onClick={onClose}>×</button>
+        </div>
+        {error && <p style={styles.error}>{error}</p>}
+        <form onSubmit={handleSubmit} style={styles.formGrid}>
+          <div style={styles.formGroup}><label style={styles.label}>Name *</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Type *</label>
+            <select style={styles.input} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+              <option value="discount_percentage">Percentage Discount</option>
+              <option value="discount_fixed">Fixed Amount Discount</option>
+              <option value="price_override">Price Override</option>
+              <option value="premium_percentage">Percentage Premium</option>
+              <option value="premium_fixed">Fixed Amount Premium</option>
+            </select>
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>{form.type.includes('percentage') ? 'Percentage *' : 'Amount *'}</label>
+            <input style={styles.input} type="number" step={form.type.includes('percentage') ? '1' : '0.01'} min="0" value={form.value} onChange={(e) => setForm({ ...form, value: Number(e.target.value) })} required />
+          </div>
+          <div style={styles.formGroup}><label style={styles.label}>Promo Code</label><input style={styles.input} value={form.promo_code} onChange={(e) => setForm({ ...form, promo_code: e.target.value.toUpperCase() })} placeholder="Optional" /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Start Date</label><input style={styles.input} type="date" value={form.date_from} onChange={(e) => setForm({ ...form, date_from: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>End Date</label><input style={styles.input} type="date" value={form.date_to} onChange={(e) => setForm({ ...form, date_to: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Max Redemptions</label><input style={styles.input} type="number" min="1" value={form.max_redemptions} onChange={(e) => setForm({ ...form, max_redemptions: e.target.value })} placeholder="Unlimited" /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Max per Customer</label><input style={styles.input} type="number" min="1" value={form.max_per_customer} onChange={(e) => setForm({ ...form, max_per_customer: e.target.value })} placeholder="Unlimited" /></div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text)', gridColumn: '1 / -1' }}>
+            <input type="checkbox" checked={form.stackable} onChange={(e) => setForm({ ...form, stackable: e.target.checked })} style={{ width: '16px', height: '16px' }} />
+            Stackable (can combine with other promotions)
+          </label>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Description</label><textarea style={{ ...styles.input, minHeight: '60px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit" loading={loading}>Create Promotion</Button></div>
+        </form>
+      </div>
     </div>
   );
 }
