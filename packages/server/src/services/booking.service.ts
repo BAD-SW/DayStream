@@ -6,7 +6,8 @@ import { logger } from '../middleware/logger';
 
 interface CreateBookingInput {
   businessId: string;
-  customerId: string;
+  customerId?: string;
+  walkInName?: string;
   serviceId: string;
   variantId: string;
   staffId?: string;
@@ -112,9 +113,11 @@ export async function createBooking(input: CreateBookingInput) {
     }
   }
 
-  // Customer conflict check
-  const customerConflict = await checkCustomerConflict(input.customerId, startTime, endTime);
-  if (customerConflict) throw new Error('Customer has a conflicting booking at this time');
+  // Customer conflict check (skip for walk-ins)
+  if (input.customerId) {
+    const customerConflict = await checkCustomerConflict(input.customerId, startTime, endTime);
+    if (customerConflict) throw new Error('Customer has a conflicting booking at this time');
+  }
 
   // Generate booking reference
   const { rows: refRows } = await adminPool.query(
@@ -128,12 +131,12 @@ export async function createBooking(input: CreateBookingInput) {
 
   // Insert booking
   const { rows } = await adminPool.query(
-    `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, staff_id, resource_id,
+    `INSERT INTO apt_bookings (business_id, customer_id, walk_in_name, service_id, variant_id, staff_id, resource_id,
        start_time, end_time, buffer_before, buffer_after, status, booking_reference, booking_type, price, notes, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
      RETURNING *`,
     [
-      input.businessId, input.customerId, input.serviceId, input.variantId,
+      input.businessId, input.customerId || null, input.walkInName || null, input.serviceId, input.variantId,
       staffId, input.resourceId || null,
       startTime.toISOString(), endTime.toISOString(),
       bufferBefore, bufferAfter, status, bookingReference, bookingType, price,
@@ -150,15 +153,17 @@ export async function createBooking(input: CreateBookingInput) {
     [booking.id, status, input.createdBy],
   );
 
-  // Log in customer activity timeline
-  await createActivity({
-    customerId: input.customerId,
-    businessId: input.businessId,
-    activityType: 'booking',
-    description: `Booked: ${service.name} (${bookingReference})`,
-    metadata: { booking_id: booking.id, service_id: input.serviceId, start_time: startTime.toISOString() },
-    createdBy: input.createdBy,
-  });
+  // Log in customer activity timeline (skip for walk-ins)
+  if (input.customerId) {
+    await createActivity({
+      customerId: input.customerId,
+      businessId: input.businessId,
+      activityType: 'booking',
+      description: `Booked: ${service.name} (${bookingReference})`,
+      metadata: { booking_id: booking.id, service_id: input.serviceId, start_time: startTime.toISOString() },
+      createdBy: input.createdBy,
+    });
+  }
 
   // Audit
   await logAudit({
@@ -216,13 +221,15 @@ export async function getBookings(filters: BookingFilters) {
   }
 
   if (filters.dateFrom) {
-    conditions.push(`b.start_time >= $${paramIndex++}`);
+    conditions.push(`b.start_time >= $${paramIndex}::date`);
     params.push(filters.dateFrom);
+    paramIndex++;
   }
 
   if (filters.dateTo) {
-    conditions.push(`b.start_time <= $${paramIndex++}`);
+    conditions.push(`b.start_time < ($${paramIndex}::date + interval '1 day')`);
     params.push(filters.dateTo);
+    paramIndex++;
   }
 
   const where = conditions.join(' AND ');
@@ -236,7 +243,7 @@ export async function getBookings(filters: BookingFilters) {
               u.first_name AS staff_first_name, u.last_name AS staff_last_name
        FROM apt_bookings b
        JOIN svc_services s ON s.id = b.service_id
-       JOIN cus_customers c ON c.id = b.customer_id
+       LEFT JOIN cus_customers c ON c.id = b.customer_id
        LEFT JOIN usr_users u ON u.id = b.staff_id
        WHERE ${where}
        ORDER BY b.start_time DESC
@@ -265,7 +272,7 @@ export async function getBookingById(id: string, businessId: string) {
      FROM apt_bookings b
      JOIN svc_services s ON s.id = b.service_id
      JOIN svc_variants sv ON sv.id = b.variant_id
-     JOIN cus_customers c ON c.id = b.customer_id
+     LEFT JOIN cus_customers c ON c.id = b.customer_id
      LEFT JOIN usr_users u ON u.id = b.staff_id
      WHERE b.id = $1 AND b.business_id = $2`,
     [id, businessId],

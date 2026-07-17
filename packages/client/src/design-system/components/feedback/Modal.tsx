@@ -42,11 +42,10 @@ export function Modal({ open, onClose, title, size = 'md', children, footer }: M
   const dialogHeight = isMobile ? '100vh' : 'auto';
 
   return (
-    <div style={styles.overlay} onClick={onClose} aria-hidden="true">
+    <div style={styles.overlay} aria-hidden="true">
       <div
         ref={dialogRef}
         style={{ ...styles.dialog, maxWidth: dialogMaxWidth, borderRadius: dialogBorderRadius, height: dialogHeight }}
-        onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
@@ -70,7 +69,7 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 'var(--z-modal)' as any, padding: 'var(--space-md)',
   },
   dialog: {
-    background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)',
+    background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: 'var(--radius-lg)',
     width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column',
     boxShadow: 'var(--shadow-xl)',
   },

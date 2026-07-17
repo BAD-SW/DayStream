@@ -29,7 +29,7 @@ export function Drawer({ open, onClose, position = 'right', title, children }: D
 
   return (
     <>
-      <div style={styles.overlay} onClick={onClose} aria-hidden="true" />
+      <div style={styles.overlay} aria-hidden="true" />
       <aside style={{ ...styles.drawer, ...posStyle }} role="dialog" aria-modal="true">
         {title && (
           <div style={styles.header}>
@@ -45,7 +45,7 @@ export function Drawer({ open, onClose, position = 'right', title, children }: D
 
 const styles: Record<string, React.CSSProperties> = {
   overlay: { position: 'fixed', inset: 0, background: 'var(--color-overlay)', zIndex: 400 },
-  drawer: { position: 'fixed', top: 0, bottom: 0, width: '360px', maxWidth: '90vw', background: 'var(--color-surface)', zIndex: 401, display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-xl)' },
+  drawer: { position: 'fixed', top: 0, bottom: 0, width: '360px', maxWidth: '90vw', background: 'var(--color-surface-modal, #FFFFFF)', zIndex: 401, display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-xl)' },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--space-lg)', borderBottom: '1px solid var(--color-border)' },
   title: { fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)' as any, margin: 0, color: 'var(--color-text)' },
   close: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', fontSize: '20px', cursor: 'pointer' },

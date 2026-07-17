@@ -194,8 +194,8 @@ export function AccountsPayable() {
 
       {/* Edit Vendor Modal */}
       {editingVendor && (
-        <div style={styles.overlay} onClick={() => setEditingVendor(null)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Edit Vendor">
+        <div style={styles.overlay}>
+          <div style={styles.modal} role="dialog" aria-label="Edit Vendor">
             <h2 style={styles.modalTitle}>Edit Vendor</h2>
             <div style={styles.formGrid}>
               <label style={styles.fieldLabel}>
@@ -314,7 +314,7 @@ const styles: Record<string, React.CSSProperties> = {
   fieldLabel: { display: 'flex', flexDirection: 'column' as const, gap: '4px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-medium)' as any },
   input: { padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)', fontFamily: 'var(--font-family)', color: 'var(--color-text)', background: 'var(--color-surface)' },
   overlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-xl)', width: '100%', maxWidth: '500px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' },
+  modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-xl)', width: '100%', maxWidth: '500px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' },
   modalTitle: { fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-md)' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)', marginBottom: 'var(--space-lg)' },
   modalActions: { display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)' },

@@ -7,7 +7,8 @@ import { logger } from '../middleware/logger';
 // Valid state transitions
 const VALID_TRANSITIONS: Record<string, string[]> = {
   pending: ['confirmed', 'cancelled'],
-  confirmed: ['in_progress', 'cancelled', 'no_show'],
+  confirmed: ['checked_in', 'cancelled', 'no_show'],
+  checked_in: ['completed', 'confirmed'],
   in_progress: ['completed'],
   // Terminal states: completed, cancelled, no_show — no transitions out
 };
@@ -61,6 +62,14 @@ async function transitionStatus(
     }
   }
 
+  if (newStatus === 'checked_in') {
+    updateFields.push(`checked_in_at = NOW()`);
+  }
+
+  if (newStatus === 'confirmed' && currentStatus === 'checked_in') {
+    updateFields.push(`checked_in_at = NULL`);
+  }
+
   await adminPool.query(
     `UPDATE apt_bookings SET ${updateFields.join(', ')} WHERE id = $1 AND business_id = $2`,
     updateParams,
@@ -83,15 +92,17 @@ async function transitionStatus(
     details: { from: currentStatus, to: newStatus, reason: options?.reason },
   });
 
-  // Log in customer timeline
-  await createActivity({
-    customerId: booking.customer_id,
-    businessId,
-    activityType: 'booking',
-    description: `Booking ${booking.booking_reference}: ${currentStatus} → ${newStatus}`,
-    metadata: { booking_id: bookingId, from: currentStatus, to: newStatus },
-    createdBy: userId,
-  });
+  // Log in customer timeline (skip for walk-ins with no customer)
+  if (booking.customer_id) {
+    await createActivity({
+      customerId: booking.customer_id,
+      businessId,
+      activityType: 'booking',
+      description: `Booking ${booking.booking_reference}: ${currentStatus} → ${newStatus}`,
+      metadata: { booking_id: bookingId, from: currentStatus, to: newStatus },
+      createdBy: userId,
+    });
+  }
 
   // Return updated booking
   const { rows: updated } = await adminPool.query('SELECT * FROM apt_bookings WHERE id = $1', [bookingId]);
@@ -152,10 +163,17 @@ export async function cancelBooking(
 }
 
 /**
- * Check in a customer (Confirmed → In Progress).
+ * Check in a customer (Confirmed → Checked In).
  */
 export async function checkInBooking(bookingId: string, businessId: string, userId: string, tenantId: string): Promise<TransitionResult> {
-  return transitionStatus(bookingId, businessId, 'in_progress', userId, tenantId);
+  return transitionStatus(bookingId, businessId, 'checked_in', userId, tenantId);
+}
+
+/**
+ * Reset a checked-in booking back to confirmed (Checked In → Confirmed).
+ */
+export async function resetBooking(bookingId: string, businessId: string, userId: string, tenantId: string): Promise<TransitionResult> {
+  return transitionStatus(bookingId, businessId, 'confirmed', userId, tenantId);
 }
 
 /**
@@ -293,13 +311,15 @@ export async function evaluateNoShows(windowMinutes = 15): Promise<{ processed: 
       [booking.id],
     );
 
-    await createActivity({
-      customerId: booking.customer_id,
-      businessId: booking.business_id,
-      activityType: 'booking',
-      description: `Booking ${booking.booking_reference}: No-show (auto)`,
-      metadata: { booking_id: booking.id },
-    });
+    if (booking.customer_id) {
+      await createActivity({
+        customerId: booking.customer_id,
+        businessId: booking.business_id,
+        activityType: 'booking',
+        description: `Booking ${booking.booking_reference}: No-show (auto)`,
+        metadata: { booking_id: booking.id },
+      });
+    }
 
     processed++;
   }

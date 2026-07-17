@@ -30,6 +30,7 @@ interface PlanItemInput {
   merchandiseId?: string;
   variantId?: string;
   quantityPerPeriod: number;
+  accessFrequency?: 'daily' | 'weekly' | 'monthly' | 'unlimited';
 }
 
 interface EnrollInput {
@@ -179,19 +180,20 @@ export async function getPlanItems(planId: string) {
 
 export async function addPlanItem(input: PlanItemInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO mbr_plan_items (plan_id, item_type, service_id, merchandise_id, variant_id, quantity_per_period)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO mbr_plan_items (plan_id, item_type, service_id, merchandise_id, variant_id, quantity_per_period, access_frequency)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
     [
       input.planId, input.itemType,
       input.serviceId || null, input.merchandiseId || null,
       input.variantId || null, input.quantityPerPeriod,
+      input.accessFrequency || 'monthly',
     ],
   );
   return rows[0];
 }
 
-export async function updatePlanItem(itemId: string, updates: { quantityPerPeriod?: number; variantId?: string | null }) {
+export async function updatePlanItem(itemId: string, updates: { quantityPerPeriod?: number; variantId?: string | null; accessFrequency?: string }) {
   const fields: string[] = [];
   const values: any[] = [];
   let idx = 1;
@@ -203,6 +205,10 @@ export async function updatePlanItem(itemId: string, updates: { quantityPerPerio
   if (updates.variantId !== undefined) {
     fields.push(`variant_id = $${idx++}`);
     values.push(updates.variantId || null);
+  }
+  if (updates.accessFrequency !== undefined) {
+    fields.push(`access_frequency = $${idx++}`);
+    values.push(updates.accessFrequency);
   }
 
   if (fields.length === 0) return null;

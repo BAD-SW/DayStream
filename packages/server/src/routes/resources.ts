@@ -31,7 +31,10 @@ resourcesRouter.use(tenantContext);
 resourcesRouter.get('/types', requirePermission('resources:read'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const types = await typesService.getResourceTypes(authReq.tenantId);
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const types = await typesService.getResourceTypes(authReq.tenantId, businessId);
     success(res, types);
   } catch (err: any) { error(res, 'Failed to list resource types', 'INTERNAL_ERROR', 500); }
 });
@@ -39,7 +42,10 @@ resourcesRouter.get('/types', requirePermission('resources:read'), async (req: R
 resourcesRouter.post('/types', requirePermission('resources:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const type = await typesService.createResourceType(authReq.tenantId, {
+    const businessId = req.query.business_id as string || req.body.business_id;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const type = await typesService.createResourceType(authReq.tenantId, businessId, {
       name: req.body.name, category: req.body.category, description: req.body.description,
     });
     success(res, type, undefined, 201);
@@ -180,7 +186,11 @@ const createResourceSchema = Joi.object({
 resourcesRouter.get('/', requirePermission('resources:read'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
     const result = await resourceService.getResources(authReq.tenantId, {
+      businessId,
       resourceTypeId: req.query.resource_type_id as string,
       locationId: req.query.location_id as string,
       status: req.query.status as string,
@@ -196,8 +206,12 @@ resourcesRouter.get('/', requirePermission('resources:read'), async (req: Reques
 resourcesRouter.post('/', requirePermission('resources:*'), validate(createResourceSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string || req.body.business_id;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
     const resource = await resourceService.createResource({
-      tenantId: authReq.tenantId, resourceTypeId: req.body.resource_type_id || null,
+      tenantId: authReq.tenantId, businessId,
+      resourceTypeId: req.body.resource_type_id || null,
       category: req.body.category || null,
       locationId: req.body.location_id, name: req.body.name, description: req.body.description,
       capacity: req.body.capacity, bufferMinutes: req.body.buffer_minutes,
@@ -210,8 +224,10 @@ resourcesRouter.post('/', requirePermission('resources:*'), validate(createResou
 
 resourcesRouter.get('/:id', requirePermission('resources:read'), async (req: Request, res: Response) => {
   try {
-    const authReq = req as AuthenticatedRequest;
-    const resource = await resourceService.getResourceById(req.params.id, authReq.tenantId);
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const resource = await resourceService.getResourceById(req.params.id, businessId);
     if (!resource) { error(res, 'Resource not found', 'NOT_FOUND', 404); return; }
     success(res, resource);
   } catch (err: any) { error(res, 'Failed to get resource', 'INTERNAL_ERROR', 500); }
@@ -220,7 +236,10 @@ resourcesRouter.get('/:id', requirePermission('resources:read'), async (req: Req
 resourcesRouter.put('/:id', requirePermission('resources:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const resource = await resourceService.updateResource(req.params.id, authReq.tenantId, req.body, authReq.user.sub);
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const resource = await resourceService.updateResource(req.params.id, businessId, req.body, authReq.user.sub);
     if (!resource) { error(res, 'Resource not found', 'NOT_FOUND', 404); return; }
     success(res, resource);
   } catch (err: any) { error(res, 'Failed to update resource', 'INTERNAL_ERROR', 500); }
@@ -229,7 +248,10 @@ resourcesRouter.put('/:id', requirePermission('resources:*'), async (req: Reques
 resourcesRouter.put('/:id/deactivate', requirePermission('resources:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const resource = await resourceService.deactivateResource(req.params.id, authReq.tenantId, authReq.user.sub);
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const resource = await resourceService.deactivateResource(req.params.id, businessId, authReq.user.sub);
     if (!resource) { error(res, 'Resource not found or already inactive', 'NOT_FOUND', 404); return; }
     success(res, resource);
   } catch (err: any) { error(res, 'Failed to deactivate', 'INTERNAL_ERROR', 500); }
@@ -238,11 +260,14 @@ resourcesRouter.put('/:id/deactivate', requirePermission('resources:*'), async (
 resourcesRouter.post('/:id/photo', requirePermission('resources:*'), upload.single('photo'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
     if (!req.file) { error(res, 'No photo provided', 'VALIDATION_ERROR', 400); return; }
     const ext = req.file.originalname.split('.').pop() || 'jpg';
     const relativePath = `resources/${authReq.tenantId}/${req.params.id}.${ext}`;
     await storage.save(relativePath, req.file.buffer);
-    const resource = await resourceService.updateResource(req.params.id, authReq.tenantId, { photo_path: relativePath }, authReq.user.sub);
+    const resource = await resourceService.updateResource(req.params.id, businessId, { photo_path: relativePath }, authReq.user.sub);
     success(res, resource);
   } catch (err: any) { error(res, 'Failed to upload photo', 'INTERNAL_ERROR', 500); }
 });

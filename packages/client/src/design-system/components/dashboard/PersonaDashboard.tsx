@@ -119,8 +119,8 @@ export function PersonaDashboard() {
 
       {/* Detail Modal */}
       {detail && (
-        <div style={modalStyles.overlay} onClick={() => setDetail(null)}>
-          <div style={modalStyles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={modalStyles.overlay}>
+          <div style={modalStyles.modal}>
             <div style={modalStyles.header}>
               <h3 style={modalStyles.title}>{detail.title}</h3>
               <button style={modalStyles.closeBtn} onClick={() => setDetail(null)}>&times;</button>
@@ -217,7 +217,7 @@ function getKpisForPersona(persona: Persona): KpiData[] {
 
 const modalStyles: Record<string, React.CSSProperties> = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { background: 'var(--color-surface-elevated, var(--color-surface))', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '700px', maxHeight: '80vh', overflowY: 'auto' as const, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
+  modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '700px', maxHeight: '80vh', overflowY: 'auto' as const, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
   title: { fontSize: '18px', fontWeight: 600, color: 'var(--color-text)', margin: 0 },
   closeBtn: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', fontSize: '24px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 },

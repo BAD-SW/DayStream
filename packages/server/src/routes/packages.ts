@@ -45,6 +45,56 @@ packagesRouter.post('/', requirePermission('services:*'), async (req: Request, r
   } catch (err: any) { error(res, 'Failed to create package', 'INTERNAL_ERROR', 500); }
 });
 
+// --- Package Purchases (registered before /:id to avoid route conflict) ---
+
+// GET /api/v1/packages/purchases/customer/:customerId
+packagesRouter.get('/purchases/customer/:customerId', requirePermission('services:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const purchases = await packageService.getCustomerPurchases(req.params.customerId, businessId);
+    success(res, purchases);
+  } catch (err: any) { error(res, 'Failed to get purchases', 'INTERNAL_ERROR', 500); }
+});
+
+// GET /api/v1/packages/purchases/:purchaseId/status
+packagesRouter.get('/purchases/:purchaseId/status', requirePermission('services:read'), async (req: Request, res: Response) => {
+  try {
+    const status = await packageService.getPurchaseStatus(req.params.purchaseId);
+    success(res, status);
+  } catch (err: any) { error(res, 'Failed to get purchase status', 'INTERNAL_ERROR', 500); }
+});
+
+// GET /api/v1/packages/purchases/:purchaseId/balance/:itemId
+packagesRouter.get('/purchases/:purchaseId/balance/:itemId', requirePermission('services:read'), async (req: Request, res: Response) => {
+  try {
+    const balance = await packageService.getRemainingBalance(req.params.purchaseId, req.params.itemId);
+    success(res, balance);
+  } catch (err: any) { error(res, 'Failed to get balance', 'INTERNAL_ERROR', 500); }
+});
+
+// POST /api/v1/packages/purchases/:purchaseId/redeem
+packagesRouter.post('/purchases/:purchaseId/redeem', requirePermission('services:*'), async (req: Request, res: Response) => {
+  try {
+    if (!req.body.package_item_id) { error(res, 'package_item_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const redemption = await packageService.redeemPackageItem({
+      purchaseId: req.params.purchaseId,
+      packageItemId: req.body.package_item_id,
+      quantityRedeemed: req.body.quantity_redeemed,
+      minutesRedeemed: req.body.minutes_redeemed,
+      bookingId: req.body.booking_id,
+      notes: req.body.notes,
+    });
+    success(res, redemption, undefined, 201);
+  } catch (err: any) {
+    if (err.message.includes('Insufficient') || err.message.includes('expired') || err.message.includes('not found') || err.message.includes('inactive')) {
+      error(res, err.message, 'VALIDATION_ERROR', 400);
+    } else { error(res, 'Failed to redeem', 'INTERNAL_ERROR', 500); }
+  }
+});
+
 // GET /api/v1/packages/:id
 packagesRouter.get('/:id', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {
@@ -120,6 +170,7 @@ packagesRouter.post('/:id/items', requirePermission('services:*'), async (req: R
       merchandiseId: req.body.merchandise_id,
       variantId: req.body.variant_id,
       quantity: req.body.quantity,
+      redemptionType: req.body.redemption_type,
     });
     success(res, item, undefined, 201);
   } catch (err: any) { error(res, 'Failed to add item', 'INTERNAL_ERROR', 500); }
@@ -131,6 +182,7 @@ packagesRouter.put('/:id/items/:itemId', requirePermission('services:*'), async 
     const updated = await packageService.updatePackageItem(req.params.itemId, {
       quantity: req.body.quantity,
       variantId: req.body.variant_id,
+      redemptionType: req.body.redemption_type,
     });
     if (!updated) { error(res, 'Item not found', 'NOT_FOUND', 404); return; }
     success(res, updated);
@@ -144,4 +196,24 @@ packagesRouter.delete('/:id/items/:itemId', requirePermission('services:*'), asy
     if (!deleted) { error(res, 'Item not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) { error(res, 'Failed to remove item', 'INTERNAL_ERROR', 500); }
+});
+
+// POST /api/v1/packages/:id/purchase — Purchase a package for a customer
+packagesRouter.post('/:id/purchase', requirePermission('services:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string || req.body.business_id;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!req.body.customer_id) { error(res, 'customer_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const purchase = await packageService.purchasePackage({
+      packageId: req.params.id,
+      businessId,
+      customerId: req.body.customer_id,
+    });
+    success(res, purchase, undefined, 201);
+  } catch (err: any) {
+    if (err.message.includes('not found') || err.message.includes('not available')) {
+      error(res, err.message, 'VALIDATION_ERROR', 400);
+    } else { error(res, 'Failed to purchase package', 'INTERNAL_ERROR', 500); }
+  }
 });

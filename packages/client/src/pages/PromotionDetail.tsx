@@ -344,8 +344,8 @@ function AppliesToPickerModal({ promo, businessId, onClose, onSaved }: { promo: 
   const filteredProducts = productSearch ? products.filter((p) => p.name.toLowerCase().includes(productSearch.toLowerCase())) : products;
 
   return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div style={pickerStyles.modal} onClick={(e) => e.stopPropagation()}>
+    <div style={styles.overlay}>
+      <div style={pickerStyles.modal}>
         <div style={styles.modalHeader}>
           <h3 style={styles.modalTitle}>Configure Scope</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
@@ -428,7 +428,7 @@ function AppliesToPickerModal({ promo, businessId, onClose, onSaved }: { promo: 
 }
 
 const pickerStyles: Record<string, React.CSSProperties> = {
-  modal: { background: 'var(--color-background)', borderRadius: '12px', padding: '24px', width: '95%', maxWidth: '900px', maxHeight: '80vh', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column' },
+  modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '95%', maxWidth: '900px', maxHeight: '80vh', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column' },
   columns: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '10px', flex: 1, minHeight: 0 },
   column: { display: 'flex', flexDirection: 'column', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
   columnHeader: { fontSize: '11px', fontWeight: 600, color: 'var(--color-text)', padding: '8px 10px', borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)', textTransform: 'uppercase', letterSpacing: '0.5px' },
@@ -460,7 +460,7 @@ const styles: Record<string, React.CSSProperties> = {
   label: { fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' },
   input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
   overlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { background: 'var(--color-background)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '500px', maxHeight: '85vh', overflow: 'auto', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.3)' },
+  modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '500px', maxHeight: '85vh', overflow: 'auto', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.3)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
   modalTitle: { margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--color-text)' },
   closeBtn: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--color-text-secondary)' },

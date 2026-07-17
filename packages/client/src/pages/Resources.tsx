@@ -24,12 +24,19 @@ export function Resources() {
   const [editingType, setEditingType] = useState<ResourceType | null>(null);
   const [typeForm, setTypeForm] = useState({ name: '', category: '', description: '' });
 
-  useEffect(() => { resourcesApi.getResourceTypes().then(setTypes).catch(() => {}); }, []);
+  const businessId = localStorage.getItem('business_id') || '';
+
+  useEffect(() => {
+    if (!businessId) return;
+    resourcesApi.getResourceTypes({ business_id: businessId }).then(setTypes).catch(() => {});
+  }, [businessId]);
 
   const fetchResources = useCallback(async () => {
+    if (!businessId) return;
     setLoading(true);
     try {
       const result = await resourcesApi.getResources({
+        business_id: businessId,
         search: search || undefined,
         resource_type_id: typeFilter || undefined,
         category: categoryFilter || undefined,
@@ -38,7 +45,7 @@ export function Resources() {
       setResources(result.data);
       setTotal(result.meta?.total || 0);
     } catch {} finally { setLoading(false); }
-  }, [search, typeFilter, categoryFilter, page]);
+  }, [businessId, search, typeFilter, categoryFilter, page]);
 
   useEffect(() => { fetchResources(); }, [fetchResources]);
 
@@ -63,7 +70,7 @@ export function Resources() {
   const handleCreateType = async () => {
     if (!typeForm.name) return;
     try {
-      const created = await resourcesApi.createResourceType(typeForm);
+      const created = await resourcesApi.createResourceType({ ...typeForm, business_id: businessId });
       setTypes([...types, created]);
       setEditingType(null);
       setTypeForm({ name: '', category: 'room', description: '' });

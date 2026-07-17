@@ -29,13 +29,14 @@ export interface ResourceType {
 }
 
 // Resource Types
-export async function getResourceTypes() {
-  const res = await apiClient.get('/v1/resources/types');
+export async function getResourceTypes(params?: Record<string, any>) {
+  const res = await apiClient.get('/v1/resources/types', { params });
   return res.data.data as ResourceType[];
 }
 
 export async function createResourceType(data: Record<string, any>) {
-  const res = await apiClient.post('/v1/resources/types', data);
+  const { business_id, ...body } = data;
+  const res = await apiClient.post('/v1/resources/types', body, { params: { business_id } });
   return res.data.data;
 }
 
@@ -55,22 +56,23 @@ export async function getResources(params?: Record<string, any>) {
 }
 
 export async function createResource(data: Record<string, any>) {
-  const res = await apiClient.post('/v1/resources', data);
+  const { business_id, ...body } = data;
+  const res = await apiClient.post('/v1/resources', body, { params: { business_id } });
   return res.data.data;
 }
 
-export async function getResource(id: string) {
-  const res = await apiClient.get(`/v1/resources/${id}`);
+export async function getResource(id: string, businessId?: string) {
+  const res = await apiClient.get(`/v1/resources/${id}`, { params: { business_id: businessId } });
   return res.data.data as Resource;
 }
 
-export async function updateResource(id: string, data: Record<string, any>) {
-  const res = await apiClient.put(`/v1/resources/${id}`, data);
+export async function updateResource(id: string, data: Record<string, any>, businessId?: string) {
+  const res = await apiClient.put(`/v1/resources/${id}`, data, { params: { business_id: businessId } });
   return res.data.data;
 }
 
-export async function deactivateResource(id: string) {
-  const res = await apiClient.put(`/v1/resources/${id}/deactivate`);
+export async function deactivateResource(id: string, businessId?: string) {
+  const res = await apiClient.put(`/v1/resources/${id}/deactivate`, {}, { params: { business_id: businessId } });
   return res.data.data;
 }
 

@@ -20,8 +20,8 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   // Customers
   { id: 'customers', phase: 5, icon: '👥', titleKey: 'Customers', descriptionKey: 'Manage customer accounts', path: '/customers', personas: ['business'], permission: 'customers:read' },
 
-  // Bookings
-  { id: 'bookings', phase: 7, icon: '📅', titleKey: 'Bookings', descriptionKey: 'Schedule and manage bookings', path: '/bookings', personas: ['business', 'customer'], permission: 'bookings:read' },
+  // Appointments
+  { id: 'appointments', phase: 7, icon: '📅', titleKey: 'Appointments', descriptionKey: 'Schedule and manage appointments', path: '/bookings', personas: ['business', 'customer'], permission: 'bookings:read' },
 
   // Accounting
   { id: 'accounting', phase: 11, icon: '📊', titleKey: 'Accounting', descriptionKey: 'Accounts payable and receivables', path: '/accounts', personas: ['business'], permission: 'reports:*' },

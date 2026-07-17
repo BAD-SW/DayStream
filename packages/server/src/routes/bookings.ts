@@ -138,7 +138,8 @@ import * as bookingService from '../services/booking.service';
 
 const createBookingSchema = Joi.object({
   business_id: Joi.string().uuid().required(),
-  customer_id: Joi.string().uuid().required(),
+  customer_id: Joi.string().uuid().allow(null, ''),
+  walk_in_name: Joi.string().max(100).allow('', null),
   service_id: Joi.string().uuid().required(),
   variant_id: Joi.string().uuid().required(),
   staff_id: Joi.string().uuid().allow(null),
@@ -154,7 +155,8 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
     const authReq = req as AuthenticatedRequest;
     const booking = await bookingService.createBooking({
       businessId: req.body.business_id,
-      customerId: req.body.customer_id,
+      customerId: req.body.customer_id || undefined,
+      walkInName: req.body.walk_in_name,
       serviceId: req.body.service_id,
       variantId: req.body.variant_id,
       staffId: req.body.staff_id,
@@ -292,6 +294,7 @@ bookingsRouter.put('/:id/check-in', requirePermission('bookings:*'), async (req:
     }
     success(res, result.booking);
   } catch (err: any) {
+    console.error('Check-in error:', err);
     error(res, 'Failed to check in', 'INTERNAL_ERROR', 500);
   }
 });
@@ -312,6 +315,25 @@ bookingsRouter.put('/:id/complete', requirePermission('bookings:*'), async (req:
     success(res, result.booking);
   } catch (err: any) {
     error(res, 'Failed to complete booking', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/bookings/:id/reset
+bookingsRouter.put('/:id/reset', requirePermission('bookings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    const result = await lifecycleService.resetBooking(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
+    if (!result.success) {
+      const status = result.error === 'Booking not found' ? 404 : 400;
+      error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INVALID_TRANSITION', status);
+      return;
+    }
+    success(res, result.booking);
+  } catch (err: any) {
+    error(res, 'Failed to reset booking', 'INTERNAL_ERROR', 500);
   }
 });
 

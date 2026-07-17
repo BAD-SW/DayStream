@@ -30,10 +30,12 @@ export function ResourceCreate() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.category) { setError('Category is required'); return; }
+    const businessId = localStorage.getItem('business_id') || '';
+    if (!businessId) { setError('No business selected'); return; }
     setLoading(true);
     setError('');
     try {
-      const resource = await resourcesApi.createResource(form);
+      const resource = await resourcesApi.createResource({ ...form, business_id: businessId });
       navigate(`/resources/${resource.id}`);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create resource');

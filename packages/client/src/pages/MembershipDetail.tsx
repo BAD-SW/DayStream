@@ -36,6 +36,7 @@ interface PlanItem {
   merchandise_id?: string;
   variant_id?: string;
   quantity_per_period: number;
+  access_frequency?: string;
   service_name?: string;
   merchandise_name?: string;
 }
@@ -279,7 +280,7 @@ function PlanItemsCard({ planId }: { planId: string }) {
                 <Badge variant={item.item_type === 'service' ? 'info' : 'neutral'}>{item.item_type === 'service' ? 'Service' : 'Product'}</Badge>
                 <strong style={{ marginLeft: '8px' }}>{item.service_name || item.merchandise_name || 'Unknown'}</strong>
               </div>
-              <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>×{item.quantity_per_period}/period</span>
+              <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{item.access_frequency === 'unlimited' ? 'Unlimited' : `×${item.quantity_per_period}/${item.access_frequency === 'daily' ? 'day' : item.access_frequency === 'weekly' ? 'week' : 'month'}`}</span>
               <button style={styles.editBtn} onClick={() => setEditingItem(item)} title="Edit">✏️</button>
               <button style={styles.deleteBtn} onClick={() => handleDelete(item.id)} title="Remove">×</button>
             </div>
@@ -310,6 +311,7 @@ function AddEditPlanItemModal({ planId, item, onClose, onSaved }: { planId: stri
   const [selectedId, setSelectedId] = useState(item?.service_id || item?.merchandise_id || '');
   const [selectedVariantId, setSelectedVariantId] = useState(item?.variant_id || '');
   const [quantity, setQuantity] = useState(item?.quantity_per_period || 1);
+  const [accessFrequency, setAccessFrequency] = useState(item?.access_frequency || 'monthly');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -338,10 +340,11 @@ function AddEditPlanItemModal({ planId, item, onClose, onSaved }: { planId: stri
     setError('');
     try {
       if (isEditing) {
-        // Update existing item (quantity and variant)
+        // Update existing item (quantity, variant, access frequency)
         await apiClient.put(`/v1/memberships/plans/${planId}/items/${item!.id}`, {
           quantity_per_period: quantity,
           variant_id: selectedVariantId || null,
+          access_frequency: accessFrequency,
         });
       } else {
         await apiClient.post(`/v1/memberships/plans/${planId}/items`, {
@@ -350,6 +353,7 @@ function AddEditPlanItemModal({ planId, item, onClose, onSaved }: { planId: stri
           merchandise_id: itemType === 'merchandise' ? selectedId : undefined,
           variant_id: selectedVariantId || undefined,
           quantity_per_period: quantity,
+          access_frequency: accessFrequency,
         });
       }
       onSaved();
@@ -360,8 +364,8 @@ function AddEditPlanItemModal({ planId, item, onClose, onSaved }: { planId: stri
   const options = itemType === 'service' ? services : merchandise;
 
   return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+    <div style={styles.overlay}>
+      <div style={styles.modal}>
         <div style={styles.modalHeader}>
           <h3 style={styles.modalTitle}>{isEditing ? 'Edit Included Item' : 'Add Included Item'}</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
@@ -392,8 +396,19 @@ function AddEditPlanItemModal({ planId, item, onClose, onSaved }: { planId: stri
             </div>
           )}
           <div style={styles.formGroup}>
-            <label style={styles.label}>Quantity per Period</label>
-            <input style={styles.input} type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />
+            <label style={styles.label}>Access Frequency</label>
+            <select style={styles.input} value={accessFrequency} onChange={(e) => setAccessFrequency(e.target.value)}>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="unlimited">Unlimited</option>
+            </select>
+            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px' }}>How often the allowance resets (use-it-or-lose-it)</span>
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>{accessFrequency === 'unlimited' ? 'Unlimited' : `Quantity per ${accessFrequency === 'daily' ? 'day' : accessFrequency === 'weekly' ? 'week' : 'month'}`}</label>
+            {accessFrequency !== 'unlimited' && <input style={styles.input} type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />}
+            {accessFrequency === 'unlimited' && <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', padding: '10px 0' }}>No limit on usage</span>}
           </div>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
@@ -429,7 +444,7 @@ const styles: Record<string, React.CSSProperties> = {
   deleteBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 },
   editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px 4px' },
   overlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { background: 'var(--color-background)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '450px', maxHeight: '85vh', overflow: 'auto', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.3)' },
+  modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '450px', maxHeight: '85vh', overflow: 'auto', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.3)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
   modalTitle: { margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--color-text)' },
   closeBtn: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--color-text-secondary)' },

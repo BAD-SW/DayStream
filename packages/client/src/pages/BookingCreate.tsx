@@ -33,6 +33,8 @@ export function BookingCreate() {
   const [combosLoading, setCombosLoading] = useState(false);
 
   // Customer search
+  const [isWalkIn, setIsWalkIn] = useState(false);
+  const [walkInName, setWalkInName] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [customerResults, setCustomerResults] = useState<any[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
@@ -159,7 +161,7 @@ export function BookingCreate() {
   }, [allCombos, selectedLocation, selectedStaff]);
 
   // Can we book?
-  const canBook = selectedCustomer && selectedService && selectedVariant && selectedTime && filteredCombos.length > 0;
+  const canBook = (selectedCustomer || isWalkIn) && selectedService && selectedVariant && selectedTime && filteredCombos.length > 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,7 +174,8 @@ export function BookingCreate() {
     try {
       await bookingsApi.createBooking({
         business_id: businessId,
-        customer_id: selectedCustomer.id,
+        customer_id: isWalkIn ? undefined : selectedCustomer.id,
+        walk_in_name: isWalkIn ? (walkInName || 'Walk-in') : undefined,
         service_id: selectedService,
         variant_id: selectedVariant,
         staff_id: combo.staff_id,
@@ -195,9 +198,18 @@ export function BookingCreate() {
       {error && <Alert variant="error">{error}</Alert>}
 
       <form onSubmit={handleSubmit} style={styles.form}>
-        {/* Customer Search */}
+        {/* Customer */}
         <div style={styles.field}>
-          <label style={styles.label}>Customer *</label>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+            <label style={styles.label}>Customer {!isWalkIn && '*'}</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={isWalkIn} onChange={(e) => { setIsWalkIn(e.target.checked); if (e.target.checked) setSelectedCustomer(null); }} style={{ width: '14px', height: '14px' }} />
+              Walk-in
+            </label>
+          </div>
+          {isWalkIn ? (
+            <input style={styles.input} value={walkInName} onChange={(e) => setWalkInName(e.target.value)} placeholder="Name (optional)" />
+          ) : (
           <div style={styles.searchWrapper}>
             {selectedCustomer ? (
               <div style={styles.selectedCustomer}>
@@ -233,6 +245,7 @@ export function BookingCreate() {
               <span style={styles.hint}>No customers found</span>
             )}
           </div>
+          )}
         </div>
 
         {/* Service */}

@@ -68,8 +68,8 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       {/* Profile Modal */}
       {showProfile && (
-        <div style={styles.overlay} onClick={() => setShowProfile(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>Profile</h3>
               <button style={styles.closeBtn} onClick={() => setShowProfile(false)}>×</button>
@@ -179,7 +179,7 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 1000,
   },
   modal: {
-    background: 'var(--color-background)',
+    background: 'var(--color-surface-modal, #FFFFFF)',
     borderRadius: '12px',
     padding: '24px',
     width: '100%',

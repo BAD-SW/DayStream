@@ -258,6 +258,7 @@ membershipsRouter.post('/plans/:id/items', requirePermission('services:*'), asyn
       merchandiseId: req.body.merchandise_id,
       variantId: req.body.variant_id,
       quantityPerPeriod: req.body.quantity_per_period,
+      accessFrequency: req.body.access_frequency,
     });
     success(res, item, undefined, 201);
   } catch (err: any) { error(res, 'Failed to add plan item', 'INTERNAL_ERROR', 500); }
@@ -278,6 +279,7 @@ membershipsRouter.put('/plans/:id/items/:itemId', requirePermission('services:*'
     const updated = await membershipService.updatePlanItem(req.params.itemId, {
       quantityPerPeriod: req.body.quantity_per_period,
       variantId: req.body.variant_id,
+      accessFrequency: req.body.access_frequency,
     });
     if (!updated) { error(res, 'Item not found', 'NOT_FOUND', 404); return; }
     success(res, updated);

@@ -200,8 +200,8 @@ export function TenantUsers() {
 
       {/* Create Modal */}
       {showCreate && (
-        <div style={styles.overlay} onClick={() => setShowCreate(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
             <h2 style={styles.modalTitle}>Create User</h2>
             {createError && <div style={styles.error}>{createError}</div>}
             <form onSubmit={handleCreate}>
@@ -263,8 +263,8 @@ export function TenantUsers() {
 
       {/* Edit Modal */}
       {editUser && (
-        <div style={styles.overlay} onClick={() => setEditUser(null)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
             <h2 style={styles.modalTitle}>Edit User</h2>
             <p style={styles.subtitle}>{editUser.email}</p>
             {editError && <div style={styles.error}>{editError}</div>}
@@ -379,7 +379,7 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 1000,
   },
   modal: {
-    background: 'var(--color-surface, #242424)',
+    background: 'var(--color-surface-modal, #FFFFFF)',
     borderRadius: '12px',
     padding: '32px',
     width: '100%',

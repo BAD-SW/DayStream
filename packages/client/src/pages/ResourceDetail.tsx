@@ -16,7 +16,8 @@ export function ResourceDetail() {
 
   useEffect(() => {
     if (!id) return;
-    resourcesApi.getResource(id).then(setResource).catch(() => navigate('/business')).finally(() => setLoading(false));
+    const businessId = localStorage.getItem('business_id') || '';
+    resourcesApi.getResource(id, businessId).then(setResource).catch(() => navigate('/business')).finally(() => setLoading(false));
   }, [id, navigate]);
 
   if (loading) return <div className="p-6">Loading...</div>;

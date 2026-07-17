@@ -352,8 +352,8 @@ export function Tenants() {
 
       {/* Detail Panel */}
       {selectedTenant && (
-        <div style={styles.overlay} onClick={closeDetail}>
-          <div style={styles.detailPanel} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.overlay}>
+          <div style={styles.detailPanel}>
             <div style={styles.detailHeader}>
               <h2 style={styles.detailTitle}>{editing ? 'Edit Tenant' : selectedTenant.name}</h2>
               <button
@@ -719,8 +719,8 @@ export function Tenants() {
 
       {/* Create Tenant Modal */}
       {showCreate && (
-        <div style={styles.overlay} onClick={() => setShowCreate(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
             <div style={styles.modalHeader}>
               <h2 style={styles.modalTitle}>Create Tenant</h2>
               <button
@@ -893,7 +893,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   // Detail Panel
   detailPanel: {
-    background: 'var(--color-surface-elevated, var(--color-surface))', borderRadius: 'var(--radius-lg)',
+    background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: 'var(--radius-lg)',
     padding: 'var(--space-xl)', width: '100%', maxWidth: '480px',
     maxHeight: '80vh', overflowY: 'auto' as const,
     boxShadow: '0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px var(--color-border)',
@@ -908,7 +908,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   // Modal
   modal: {
-    background: 'var(--color-surface-elevated, var(--color-surface))', borderRadius: 'var(--radius-lg)',
+    background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: 'var(--radius-lg)',
     padding: 'var(--space-xl)', width: '100%', maxWidth: '560px',
     maxHeight: '85vh', overflowY: 'auto' as const,
     boxShadow: '0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px var(--color-border)',

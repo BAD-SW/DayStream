@@ -4,10 +4,9 @@ import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import * as bookingsApi from '../api/bookings';
 import type { Booking } from '../api/bookings';
-import { formatCurrency } from '../utils/currency';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
-  pending: 'neutral', confirmed: 'info', in_progress: 'warning', completed: 'success', cancelled: 'error', no_show: 'error',
+  pending: 'neutral', confirmed: 'info', checked_in: 'success', in_progress: 'warning', completed: 'success', cancelled: 'error', no_show: 'error',
 };
 
 export function Bookings() {
@@ -15,14 +14,12 @@ export function Bookings() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
+  const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
   const [staffFilter, setStaffFilter] = useState('');
   const [customerFilter, setCustomerFilter] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [seriesModal, setSeriesModal] = useState<{ seriesId: string; bookings: any[] } | null>(null);
-  const [seriesLoading, setSeriesLoading] = useState(false);
   const [businessTimezone, setBusinessTimezone] = useState('UTC');
   const [staffList, setStaffList] = useState<any[]>([]);
 
@@ -68,48 +65,17 @@ export function Bookings() {
       else if (action === 'cancel') await bookingsApi.cancelBooking(booking.id, businessId);
       else if (action === 'no-show') await bookingsApi.noShowBooking(booking.id, businessId);
       else if (action === 'check-in') await bookingsApi.checkInBooking(booking.id, businessId);
-      else if (action === 'complete') await bookingsApi.completeBooking(booking.id, businessId);
+      else if (action === 'reset') await bookingsApi.resetBooking(booking.id, businessId);
+      else if (action === 'checkout') { navigate(`/checkout?appointment=${booking.id}`); return; }
       fetchBookings();
     } catch { /* silent */ }
-  };
-
-  const handleViewSeries = async (seriesId: string) => {
-    setSeriesLoading(true);
-    try {
-      const data = await bookingsApi.getRecurringSeries(seriesId, businessId);
-      setSeriesModal({ seriesId, bookings: data.bookings || data });
-    } catch {
-      alert('Failed to load recurring series');
-    } finally {
-      setSeriesLoading(false);
-    }
-  };
-
-  const handleCancelSeries = async (seriesId: string) => {
-    if (!confirm('Cancel all remaining bookings in this recurring series? This cannot be undone.')) return;
-    try {
-      await bookingsApi.cancelRecurringSeries(seriesId, businessId);
-      setSeriesModal(null);
-      fetchBookings();
-    } catch {
-      alert('Failed to cancel series');
-    }
-  };
-
-  const handleConfirmWaitlist = async (entryId: string) => {
-    try {
-      await bookingsApi.confirmWaitlistEntry(entryId, businessId);
-      fetchBookings();
-    } catch {
-      alert('Failed to confirm waitlist entry');
-    }
   };
 
   const columns = [
     { key: 'booking_reference', header: 'Ref', width: '120px' },
     {
       key: 'customer', header: 'Customer',
-      render: (_: any, row: Booking) => `${row.customer_first_name} ${row.customer_last_name}`,
+      render: (_: any, row: Booking) => row.customer_first_name ? `${row.customer_first_name} ${row.customer_last_name}` : (row as any).walk_in_name || 'Walk-in',
     },
     { key: 'service_name', header: 'Service' },
     {
@@ -121,10 +87,6 @@ export function Bookings() {
       render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val.replace('_', ' ')}</Badge>,
     },
     {
-      key: 'price', header: 'Price',
-      render: (val: number) => val != null ? formatCurrency(val) : '—',
-    },
-    {
       key: 'staff', header: 'Staff',
       render: (_: any, row: Booking) => row.staff_first_name ? `${row.staff_first_name} ${row.staff_last_name}` : '—',
     },
@@ -134,11 +96,10 @@ export function Bookings() {
         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
           {row.status === 'pending' && <ActionBtn label="Confirm" onClick={() => handleAction('confirm', row)} />}
           {row.status === 'confirmed' && <ActionBtn label="Check-in" onClick={() => handleAction('check-in', row)} />}
-          {row.status === 'in_progress' && <ActionBtn label="Complete" onClick={() => handleAction('complete', row)} />}
-          {['pending', 'confirmed'].includes(row.status) && <ActionBtn label="Cancel" onClick={() => handleAction('cancel', row)} />}
+          {row.status === 'confirmed' && <ActionBtn label="Cancel" onClick={() => handleAction('cancel', row)} />}
           {row.status === 'confirmed' && <ActionBtn label="No-show" onClick={() => handleAction('no-show', row)} />}
-          {row.recurring_series_id && <ActionBtn label="View Series" onClick={() => handleViewSeries(row.recurring_series_id!)} />}
-          {row.waitlist_entry_id && <ActionBtn label="Confirm Waitlist" onClick={() => handleConfirmWaitlist(row.waitlist_entry_id!)} />}
+          {row.status === 'checked_in' && <ActionBtn label="Check-out" onClick={() => handleAction('checkout', row)} />}
+          {row.status === 'checked_in' && <ActionBtn label="Reset" onClick={() => handleAction('reset', row)} />}
         </div>
       ),
     },
@@ -147,9 +108,9 @@ export function Bookings() {
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Bookings</h1>
+        <h1 style={styles.title}>Appointments</h1>
         <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-          <button style={styles.navBtn} onClick={() => navigate('/bookings/new')}>New Booking</button>
+          <button style={styles.navBtn} onClick={() => navigate('/bookings/new')}>New Appointment</button>
           <button style={styles.navBtn} onClick={() => navigate('/bookings/calendar')}>Calendar</button>
         </div>
       </div>
@@ -159,7 +120,7 @@ export function Bookings() {
           <option value="">All Statuses</option>
           <option value="pending">Pending</option>
           <option value="confirmed">Confirmed</option>
-          <option value="in_progress">In Progress</option>
+          <option value="checked_in">Checked In</option>
           <option value="completed">Completed</option>
           <option value="cancelled">Cancelled</option>
           <option value="no_show">No Show</option>
@@ -180,33 +141,6 @@ export function Bookings() {
 
       <Table columns={columns} data={bookings} loading={loading} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No bookings found" mobileCardMode onRowClick={(row) => navigate(`/bookings/${row.id}/edit`)} />
 
-      {/* Recurring Series Modal */}
-      {seriesModal && (
-        <div style={styles.modalOverlay} onClick={() => setSeriesModal(null)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>Recurring Series</h2>
-              <button style={styles.modalClose} onClick={() => setSeriesModal(null)}>×</button>
-            </div>
-            <div style={styles.modalBody}>
-              {seriesModal.bookings.length === 0 && <p style={styles.empty}>No bookings in this series</p>}
-              {seriesModal.bookings.map((bk: any) => (
-                <div key={bk.id} style={styles.seriesItem}>
-                  <span>{new Date(bk.start_time).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', timeZone: businessTimezone })}</span>
-                  <Badge variant={STATUS_VARIANTS[bk.status] || 'neutral'}>{bk.status?.replace('_', ' ')}</Badge>
-                  <span style={styles.seriesRef}>{bk.booking_reference}</span>
-                </div>
-              ))}
-            </div>
-            <div style={styles.modalFooter}>
-              <button style={styles.cancelSeriesBtn} onClick={() => handleCancelSeries(seriesModal.seriesId)}>
-                Cancel Entire Series
-              </button>
-              <button style={styles.navBtn} onClick={() => setSeriesModal(null)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -225,7 +159,7 @@ const styles: Record<string, React.CSSProperties> = {
   actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
   empty: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', textAlign: 'center', padding: 'var(--space-lg)' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-lg)', maxWidth: '600px', width: '90%', maxHeight: '80vh', overflow: 'auto', border: '1px solid var(--color-border)' },
+  modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-lg)', maxWidth: '600px', width: '90%', maxHeight: '80vh', overflow: 'auto', border: '1px solid var(--color-border)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' },
   modalTitle: { margin: 0, fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
   modalClose: { background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: 'var(--color-text-secondary)', padding: '4px' },

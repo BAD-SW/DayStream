@@ -1,9 +1,18 @@
 import { adminPool } from '../db/pool';
 
 /**
- * List resource types for a tenant.
+ * List resource types for a business.
  */
-export async function getResourceTypes(tenantId: string) {
+export async function getResourceTypes(tenantId: string, businessId?: string) {
+  if (businessId) {
+    const { rows } = await adminPool.query(
+      `SELECT rt.*, (SELECT COUNT(*)::int FROM res_resources WHERE resource_type_id = rt.id AND business_id = $2) AS resource_count
+       FROM res_types rt WHERE rt.business_id = $2 ORDER BY rt.category, rt.name`,
+      [tenantId, businessId],
+    );
+    return rows;
+  }
+  // Fallback for legacy calls without business_id
   const { rows } = await adminPool.query(
     `SELECT rt.*, (SELECT COUNT(*)::int FROM res_resources WHERE resource_type_id = rt.id) AS resource_count
      FROM res_types rt WHERE rt.tenant_id = $1 ORDER BY rt.category, rt.name`,
@@ -15,15 +24,15 @@ export async function getResourceTypes(tenantId: string) {
 /**
  * Create a resource type.
  */
-export async function createResourceType(tenantId: string, input: {
+export async function createResourceType(tenantId: string, businessId: string, input: {
   name: string;
   category: string;
   description?: string;
 }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO res_types (tenant_id, name, category, description)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [tenantId, input.name, input.category, input.description || null],
+    `INSERT INTO res_types (tenant_id, business_id, name, category, description)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [tenantId, businessId, input.name, input.category, input.description || null],
   );
   return rows[0];
 }

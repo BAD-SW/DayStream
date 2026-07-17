@@ -3,6 +3,7 @@ import { logAudit } from './audit.service';
 
 interface CreateResourceInput {
   tenantId: string;
+  businessId: string;
   resourceTypeId?: string | null;
   category?: string | null;
   locationId?: string;
@@ -18,6 +19,7 @@ interface CreateResourceInput {
 }
 
 interface ResourceFilters {
+  businessId: string;
   resourceTypeId?: string;
   locationId?: string;
   status?: string;
@@ -29,11 +31,11 @@ interface ResourceFilters {
 
 export async function createResource(input: CreateResourceInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO res_resources (tenant_id, resource_type_id, category, location_id, name, description,
+    `INSERT INTO res_resources (tenant_id, business_id, resource_type_id, category, location_id, name, description,
        capacity, buffer_minutes, is_24_7, photo_path, display_order, custom_attributes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
     [
-      input.tenantId, input.resourceTypeId || null, input.category || null,
+      input.tenantId, input.businessId, input.resourceTypeId || null, input.category || null,
       input.locationId || null,
       input.name, input.description || null,
       input.capacity ?? 1, input.bufferMinutes ?? 0,
@@ -52,15 +54,15 @@ export async function createResource(input: CreateResourceInput) {
 }
 
 export async function getResources(tenantId: string, filters: ResourceFilters) {
-  const conditions = ['r.tenant_id = $1'];
-  const params: any[] = [tenantId];
+  const conditions = ['r.business_id = $1'];
+  const params: any[] = [filters.businessId];
   let idx = 2;
 
   if (filters.resourceTypeId) { conditions.push(`r.resource_type_id = $${idx++}`); params.push(filters.resourceTypeId); }
   if (filters.locationId) { conditions.push(`r.location_id = $${idx++}`); params.push(filters.locationId); }
   if (filters.status) { conditions.push(`r.status = $${idx++}`); params.push(filters.status); }
   else { conditions.push("r.status != 'inactive'"); }
-  if (filters.category) { conditions.push(`rt.category = $${idx++}`); params.push(filters.category); }
+  if (filters.category) { conditions.push(`COALESCE(rt.category, r.category) = $${idx++}`); params.push(filters.category); }
   if (filters.search) { conditions.push(`(r.name ILIKE $${idx} OR r.description ILIKE $${idx})`); params.push(`%${filters.search}%`); idx++; }
 
   const where = conditions.join(' AND ');
@@ -73,21 +75,21 @@ export async function getResources(tenantId: string, filters: ResourceFilters) {
       `SELECT r.*, rt.name AS type_name, COALESCE(rt.category, r.category) AS category
        FROM res_resources r LEFT JOIN res_types rt ON rt.id = r.resource_type_id
        WHERE ${where} ORDER BY r.display_order, r.name LIMIT ${limit} OFFSET ${offset}`, params),
-    adminPool.query(`SELECT COUNT(*)::int AS total FROM res_resources r WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*)::int AS total FROM res_resources r LEFT JOIN res_types rt ON rt.id = r.resource_type_id WHERE ${where}`, params),
   ]);
 
   return { resources: data.rows, total: count.rows[0].total, page, limit };
 }
 
-export async function getResourceById(id: string, tenantId: string) {
+export async function getResourceById(id: string, businessId: string) {
   const { rows } = await adminPool.query(
     `SELECT r.*, rt.name AS type_name, COALESCE(rt.category, r.category) AS category
      FROM res_resources r LEFT JOIN res_types rt ON rt.id = r.resource_type_id
-     WHERE r.id = $1 AND r.tenant_id = $2`, [id, tenantId]);
+     WHERE r.id = $1 AND r.business_id = $2`, [id, businessId]);
   return rows[0] || null;
 }
 
-export async function updateResource(id: string, tenantId: string, updates: Record<string, any>, userId: string) {
+export async function updateResource(id: string, businessId: string, updates: Record<string, any>, userId: string) {
   const allowed: Record<string, string> = {
     name: 'name', description: 'description', resource_type_id: 'resource_type_id',
     location_id: 'location_id', capacity: 'capacity', buffer_minutes: 'buffer_minutes',
@@ -107,18 +109,20 @@ export async function updateResource(id: string, tenantId: string, updates: Reco
   }
   if (fields.length === 0) return null;
   fields.push('updated_at = NOW()');
-  values.push(id, tenantId);
+  values.push(id, businessId);
 
   const { rows } = await adminPool.query(
-    `UPDATE res_resources SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`, values);
+    `UPDATE res_resources SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`, values);
   return rows[0] || null;
 }
 
-export async function deactivateResource(id: string, tenantId: string, userId: string) {
+export async function deactivateResource(id: string, businessId: string, userId: string) {
   const { rows } = await adminPool.query(
     `UPDATE res_resources SET status = 'inactive', updated_at = NOW()
-     WHERE id = $1 AND tenant_id = $2 AND status != 'inactive' RETURNING *`, [id, tenantId]);
+     WHERE id = $1 AND business_id = $2 AND status != 'inactive' RETURNING *`, [id, businessId]);
   if (rows.length === 0) return null;
+  // Get tenant_id for audit
+  const tenantId = rows[0].tenant_id;
   await logAudit({ tenantId, userId, action: 'resource.deactivated', resourceType: 'resource', resourceId: id });
   return rows[0];
 }

@@ -48,7 +48,7 @@ export async function getAvailability(businessId: string, serviceId: string, dat
 // --- Booking CRUD ---
 
 export async function createBooking(data: {
-  business_id: string; customer_id: string; service_id: string; variant_id: string;
+  business_id: string; customer_id?: string; walk_in_name?: string; service_id: string; variant_id: string;
   staff_id?: string; start_time: string; notes?: string; override_rules?: boolean;
 }) {
   const res = await apiClient.post('/v1/bookings', data);
@@ -97,6 +97,11 @@ export async function completeBooking(id: string, businessId: string) {
 
 export async function noShowBooking(id: string, businessId: string) {
   const res = await apiClient.put(`/v1/bookings/${id}/no-show?business_id=${businessId}`);
+  return res.data.data;
+}
+
+export async function resetBooking(id: string, businessId: string) {
+  const res = await apiClient.put(`/v1/bookings/${id}/reset?business_id=${businessId}`);
   return res.data.data;
 }
 

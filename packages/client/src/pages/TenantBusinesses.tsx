@@ -193,8 +193,8 @@ export function TenantBusinesses() {
 
       {/* Detail / Edit Panel */}
       {selectedBiz && (
-        <div style={styles.overlay} onClick={() => { setSelectedBiz(null); setEditing(false); }}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>{editing ? 'Edit Business' : selectedBiz.name}</h3>
               <button style={styles.closeBtn} onClick={() => { setSelectedBiz(null); setEditing(false); }}>&times;</button>
@@ -234,8 +234,8 @@ export function TenantBusinesses() {
 
       {/* Create Modal */}
       {showCreate && (
-        <div style={styles.overlay} onClick={() => setShowCreate(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>Create Business</h3>
               <button style={styles.closeBtn} onClick={() => setShowCreate(false)}>&times;</button>
@@ -468,7 +468,7 @@ const styles: Record<string, React.CSSProperties> = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
   heading: { fontSize: '24px', fontWeight: 300, margin: 0, color: 'var(--color-text)' },
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { background: 'var(--color-surface-elevated, var(--color-surface))', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '560px', maxHeight: '85vh', overflowY: 'auto' as const, boxShadow: '0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px var(--color-border)' },
+  modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '560px', maxHeight: '85vh', overflowY: 'auto' as const, boxShadow: '0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px var(--color-border)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
   modalTitle: { fontSize: '18px', fontWeight: 600, color: 'var(--color-text)', margin: 0 },
   closeBtn: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', fontSize: '24px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 },
