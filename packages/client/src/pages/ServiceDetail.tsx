@@ -40,7 +40,7 @@ export function ServiceDetail() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/offers')}>← Back to Offerings</button>
+      <button style={styles.back} onClick={() => navigate('/offers?tab=services')}>← Back to Offerings</button>
 
       {/* Header Card */}
       <div style={styles.headerCard}>

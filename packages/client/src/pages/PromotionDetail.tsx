@@ -41,7 +41,7 @@ export function PromotionDetail() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/offers')}>← Back to Offerings</button>
+      <button style={styles.back} onClick={() => navigate('/offers?tab=promotions')}>← Back to Offerings</button>
 
       {/* Header */}
       <div style={styles.headerCard}>

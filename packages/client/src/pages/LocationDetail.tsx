@@ -77,7 +77,7 @@ export function LocationDetail() {
     if (!id || !confirm('Deactivate this location?')) return;
     try {
       await locationsApi.deactivateLocation(id, businessId);
-      navigate('/business');
+      navigate('/business?tab=locations');
     } catch (err: any) {
       alert(err.response?.data?.error || 'Failed to deactivate');
     }
@@ -88,7 +88,7 @@ export function LocationDetail() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/business')}>← Back to Business</button>
+      <button style={styles.back} onClick={() => navigate('/business?tab=locations')}>← Back to Business</button>
 
       <div style={styles.header}>
         <div style={styles.headerLeft}>

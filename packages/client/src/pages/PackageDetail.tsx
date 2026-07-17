@@ -30,11 +30,11 @@ export function PackageDetail() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/offers')}>← Back to Offerings</button>
+      <button style={styles.back} onClick={() => navigate('/offers?tab=packages')}>← Back to Offerings</button>
       <div style={styles.headerCard}>
         <div style={styles.headerInfo}>
           <h1 style={styles.name}>{pkg.name}</h1>
-          <span style={styles.sub}>{pkg.expiration_type === 'none' ? 'Never expires' : `Expires ${pkg.expiration_days} days after purchase`}</span>
+          <span style={styles.sub}>{pkg.expiration_type === 'none' ? 'Never expires' : `Expires ${pkg.expiration_days} ${pkg.expiration_unit || 'days'} after purchase`}</span>
         </div>
         <div style={styles.headerRight}>
           <Badge variant={STATUS_VARIANTS[pkg.status] || 'neutral'}>{pkg.status}</Badge>
@@ -56,6 +56,7 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
     name: pkg.name, description: pkg.description || '', short_description: pkg.short_description || '',
     price: pkg.price, expiration_type: pkg.expiration_type || 'none',
     expiration_days: pkg.expiration_days ? String(pkg.expiration_days) : '',
+    expiration_unit: pkg.expiration_unit || 'days',
     is_taxable: pkg.is_taxable || false, tax_category_id: pkg.tax_category_id || '',
   });
 
@@ -63,6 +64,7 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
     form.short_description !== (pkg.short_description || '') || form.price !== pkg.price ||
     form.expiration_type !== (pkg.expiration_type || 'none') ||
     form.expiration_days !== (pkg.expiration_days ? String(pkg.expiration_days) : '') ||
+    form.expiration_unit !== (pkg.expiration_unit || 'days') ||
     form.is_taxable !== (pkg.is_taxable || false) || form.tax_category_id !== (pkg.tax_category_id || '');
 
   const handleSave = async () => {
@@ -80,6 +82,7 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
     setForm({ name: pkg.name, description: pkg.description || '', short_description: pkg.short_description || '',
       price: pkg.price, expiration_type: pkg.expiration_type || 'none',
       expiration_days: pkg.expiration_days ? String(pkg.expiration_days) : '',
+      expiration_unit: pkg.expiration_unit || 'days',
       is_taxable: pkg.is_taxable || false, tax_category_id: pkg.tax_category_id || '' });
     setPriceDisplay((pkg.price / 100).toFixed(2));
   };
@@ -124,11 +127,21 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
             <label style={styles.label}>Expiration</label>
             <select style={styles.input} value={form.expiration_type} onChange={(e) => setForm({ ...form, expiration_type: e.target.value })}>
               <option value="none">Never expires</option>
-              <option value="days_from_purchase">Days from purchase</option>
+              <option value="days_from_purchase">From purchase date</option>
             </select>
           </div>
           {form.expiration_type === 'days_from_purchase' && (
-            <div style={styles.formGroup}><label style={styles.label}>Days until expiry</label><input style={styles.input} type="number" min="1" value={form.expiration_days} onChange={(e) => setForm({ ...form, expiration_days: e.target.value })} /></div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Expires after</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input style={{ ...styles.input, flex: 1 }} type="number" min="1" value={form.expiration_days} onChange={(e) => setForm({ ...form, expiration_days: e.target.value })} />
+                <select style={{ ...styles.input, width: '120px' }} value={form.expiration_unit} onChange={(e) => setForm({ ...form, expiration_unit: e.target.value })}>
+                  <option value="days">Days</option>
+                  <option value="weeks">Weeks</option>
+                  <option value="months">Months</option>
+                </select>
+              </div>
+            </div>
           )}
           <div style={styles.formGroup}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>

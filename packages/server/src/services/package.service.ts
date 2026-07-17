@@ -92,7 +92,7 @@ export async function getPackageById(id: string, businessId: string) {
 }
 
 export async function updatePackage(id: string, businessId: string, updates: Record<string, any>) {
-  const allowedFields = ['name', 'description', 'short_description', 'price', 'status', 'expiration_type', 'expiration_days', 'display_order', 'is_taxable', 'tax_category_id'];
+  const allowedFields = ['name', 'description', 'short_description', 'price', 'status', 'expiration_type', 'expiration_days', 'expiration_unit', 'display_order', 'is_taxable', 'tax_category_id'];
   const fields: string[] = [];
   const values: any[] = [];
   let idx = 1;
@@ -203,9 +203,17 @@ export async function purchasePackage(input: PurchaseInput) {
   if (pkg.status !== 'active') throw new Error('Package is not available for purchase');
 
   let expiresAt: string | null = null;
-  if (pkg.expiration_type === 'days' && pkg.expiration_days) {
-    const expires = new Date(Date.now() + pkg.expiration_days * 86400000);
-    expiresAt = expires.toISOString();
+  if (pkg.expiration_type !== 'none' && pkg.expiration_days) {
+    const now = new Date();
+    const unit = pkg.expiration_unit || 'days';
+    if (unit === 'months') {
+      now.setMonth(now.getMonth() + pkg.expiration_days);
+    } else if (unit === 'weeks') {
+      now.setDate(now.getDate() + pkg.expiration_days * 7);
+    } else {
+      now.setDate(now.getDate() + pkg.expiration_days);
+    }
+    expiresAt = now.toISOString();
   }
 
   const { rows } = await adminPool.query(

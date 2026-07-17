@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Staff } from './Staff';
 import { Resources } from './Resources';
 import { Locations } from './Locations';
@@ -6,8 +7,13 @@ import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
 import * as servicesApi from '../api/services';
 
+const VALID_TABS = ['staff', 'resources', 'locations', 'categories'] as const;
+type Tab = typeof VALID_TABS[number];
+
 export function Business() {
-  const [activeTab, setActiveTab] = useState<'staff' | 'resources' | 'locations' | 'categories'>('staff');
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab') as Tab | null;
+  const [activeTab, setActiveTab] = useState<Tab>(tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'staff');
 
   return (
     <div style={styles.page}>

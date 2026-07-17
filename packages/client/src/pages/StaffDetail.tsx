@@ -17,7 +17,7 @@ export function StaffDetail() {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    staffApi.getStaff(id).then(setStaff).catch(() => navigate('/business')).finally(() => setLoading(false));
+    staffApi.getStaff(id).then(setStaff).catch(() => navigate('/business?tab=staff')).finally(() => setLoading(false));
   }, [id, navigate]);
 
   if (loading) return <div className="p-6">Loading...</div>;
@@ -36,7 +36,7 @@ export function StaffDetail() {
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <Button variant="ghost" onClick={() => navigate('/business')}>← Back</Button>
+          <Button variant="ghost" onClick={() => navigate('/business?tab=staff')}>← Back</Button>
           <h1 className="text-2xl font-semibold mt-2">
             {staff.first_name} {staff.last_name}
             <span className="text-sm text-gray-500 ml-2">{staff.staff_ref}</span>

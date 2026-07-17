@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
@@ -13,8 +13,13 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
   active: 'success', draft: 'neutral', paused: 'warning', archived: 'error', inactive: 'neutral',
 };
 
+const VALID_TABS = ['services', 'products', 'memberships', 'packages', 'promotions'] as const;
+type Tab = typeof VALID_TABS[number];
+
 export function Services() {
-  const [activeTab, setActiveTab] = useState<'services' | 'products' | 'memberships' | 'packages' | 'promotions'>('services');
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab') as Tab | null;
+  const [activeTab, setActiveTab] = useState<Tab>(tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'services');
 
   return (
     <div style={styles.page}>
@@ -518,7 +523,7 @@ function PackagesTab() {
     { key: 'price', header: 'Price', render: (val: number) => formatCurrency(val) },
     {
       key: 'expiration_type', header: 'Expiration',
-      render: (val: string, row: any) => val === 'none' ? 'Never' : `${row.expiration_days} days`,
+      render: (val: string, row: any) => val === 'none' ? 'Never' : `${row.expiration_days} ${row.expiration_unit || 'days'}`,
     },
     { key: 'status', header: 'Status', render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
     { key: 'active_purchases', header: 'Sold', render: (val: number) => val || 0 },
@@ -570,6 +575,7 @@ function CreatePackageModal({ businessId, onClose, onCreated }: { businessId: st
     price: 0,
     expiration_type: 'none',
     expiration_days: '',
+    expiration_unit: 'days',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -585,6 +591,7 @@ function CreatePackageModal({ businessId, onClose, onCreated }: { businessId: st
         price: form.price,
         expiration_type: form.expiration_type,
         expiration_days: form.expiration_days ? parseInt(form.expiration_days) : undefined,
+        expiration_unit: form.expiration_unit,
       });
       onCreated(res.data.data);
     } catch (err: any) { setError(err.response?.data?.error || 'Failed to create package'); }
@@ -616,7 +623,17 @@ function CreatePackageModal({ businessId, onClose, onCreated }: { businessId: st
             </select>
           </div>
           {form.expiration_type === 'days_from_purchase' && (
-            <div style={styles.formGroup}><label style={styles.label}>Days until expiry</label><input style={styles.input} type="number" min="1" value={form.expiration_days} onChange={(e) => setForm({ ...form, expiration_days: e.target.value })} /></div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Expires after</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input style={{ ...styles.input, flex: 1 }} type="number" min="1" value={form.expiration_days} onChange={(e) => setForm({ ...form, expiration_days: e.target.value })} />
+                <select style={{ ...styles.input, width: '120px' }} value={form.expiration_unit} onChange={(e) => setForm({ ...form, expiration_unit: e.target.value })}>
+                  <option value="days">Days</option>
+                  <option value="weeks">Weeks</option>
+                  <option value="months">Months</option>
+                </select>
+              </div>
+            </div>
           )}
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Description</label><textarea style={{ ...styles.input, minHeight: '60px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
           <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit" loading={loading}>Create Package</Button></div>
