@@ -331,16 +331,20 @@ function MembershipsTab() {
   const [plans, setPlans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
   const fetchPlans = useCallback(async () => {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const res = await apiClient.get(`/v1/memberships/plans?business_id=${businessId}`);
+      const res = await apiClient.get(`/v1/memberships/plans?business_id=${businessId}&page=${page}&limit=20`);
       setPlans(res.data.data || []);
+      const meta = res.data.meta || {};
+      setTotalPages(meta.totalPages || Math.ceil((meta.total || 0) / 20) || 1);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId]);
+  }, [businessId, page]);
 
   useEffect(() => { fetchPlans(); }, [fetchPlans]);
 
@@ -392,6 +396,9 @@ function MembershipsTab() {
         data={plans}
         loading={loading}
         onRowClick={(row) => navigate(`/offers/memberships/${row.id}`)}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
         emptyMessage="No membership plans defined"
         mobileCardMode
       />
@@ -498,16 +505,24 @@ function PackagesTab() {
   const [packages, setPackages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+
+  useEffect(() => { const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300); return () => clearTimeout(t); }, [searchInput]);
 
   const fetchPackages = useCallback(async () => {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const res = await apiClient.get(`/v1/packages?business_id=${businessId}`);
+      const res = await apiClient.get(`/v1/packages?business_id=${businessId}&page=${page}&limit=20${search ? `&search=${encodeURIComponent(search)}` : ''}`);
       setPackages(res.data.data || []);
+      const meta = res.data.meta || {};
+      setTotalPages(meta.totalPages || Math.ceil((meta.total || 0) / 20) || 1);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId]);
+  }, [businessId, page, search]);
 
   useEffect(() => { fetchPackages(); }, [fetchPackages]);
 
@@ -541,7 +556,8 @@ function PackagesTab() {
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-md)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search packages..." />
         <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Package</Button>
       </div>
 
@@ -550,6 +566,9 @@ function PackagesTab() {
         data={packages}
         loading={loading}
         onRowClick={(row) => navigate(`/offers/packages/${row.id}`)}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
         emptyMessage="No packages defined"
         mobileCardMode
       />
@@ -576,6 +595,7 @@ function CreatePackageModal({ businessId, onClose, onCreated }: { businessId: st
     expiration_type: 'none',
     expiration_days: '',
     expiration_unit: 'days',
+    new_customers_only: false,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -592,6 +612,7 @@ function CreatePackageModal({ businessId, onClose, onCreated }: { businessId: st
         expiration_type: form.expiration_type,
         expiration_days: form.expiration_days ? parseInt(form.expiration_days) : undefined,
         expiration_unit: form.expiration_unit,
+        new_customers_only: form.new_customers_only,
       });
       onCreated(res.data.data);
     } catch (err: any) { setError(err.response?.data?.error || 'Failed to create package'); }
@@ -635,6 +656,11 @@ function CreatePackageModal({ businessId, onClose, onCreated }: { businessId: st
               </div>
             </div>
           )}
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={form.new_customers_only} onChange={(e) => setForm({ ...form, new_customers_only: e.target.checked })} style={{ width: '16px', height: '16px' }} /> New customers only (intro offer)
+            </label>
+          </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Description</label><textarea style={{ ...styles.input, minHeight: '60px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
           <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit" loading={loading}>Create Package</Button></div>
         </form>
@@ -659,16 +685,24 @@ function PromotionsTab() {
   const [promotions, setPromotions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+
+  useEffect(() => { const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300); return () => clearTimeout(t); }, [searchInput]);
 
   const fetchPromotions = useCallback(async () => {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const res = await apiClient.get(`/v1/promotions?business_id=${businessId}`);
+      const res = await apiClient.get(`/v1/promotions?business_id=${businessId}&page=${page}&limit=20${search ? `&search=${encodeURIComponent(search)}` : ''}`);
       setPromotions(res.data.data || []);
+      const meta = res.data.meta || {};
+      setTotalPages(meta.totalPages || Math.ceil((meta.total || 0) / 20) || 1);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId]);
+  }, [businessId, page, search]);
 
   useEffect(() => { fetchPromotions(); }, [fetchPromotions]);
 
@@ -714,7 +748,8 @@ function PromotionsTab() {
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-md)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search promotions..." />
         <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Promotion</Button>
       </div>
 
@@ -723,6 +758,9 @@ function PromotionsTab() {
         data={promotions}
         loading={loading}
         onRowClick={(row) => navigate(`/offers/promotions/${row.id}`)}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
         emptyMessage="No promotions defined"
         mobileCardMode
       />

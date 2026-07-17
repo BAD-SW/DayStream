@@ -37,9 +37,11 @@ packagesRouter.post('/', requirePermission('services:*'), async (req: Request, r
       price: req.body.price,
       expirationType: req.body.expiration_type,
       expirationDays: req.body.expiration_days,
+      expirationUnit: req.body.expiration_unit,
       displayOrder: req.body.display_order,
       isTaxable: req.body.is_taxable,
       taxCategoryId: req.body.tax_category_id,
+      newCustomersOnly: req.body.new_customers_only,
     });
     success(res, pkg, undefined, 201);
   } catch (err: any) { error(res, 'Failed to create package', 'INTERNAL_ERROR', 500); }

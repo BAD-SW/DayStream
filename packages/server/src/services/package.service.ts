@@ -10,9 +10,11 @@ interface CreatePackageInput {
   price: number;
   expirationType?: string;
   expirationDays?: number;
+  expirationUnit?: string;
   displayOrder?: number;
   isTaxable?: boolean;
   taxCategoryId?: string;
+  newCustomersOnly?: boolean;
 }
 
 interface PackageFilters {
@@ -37,13 +39,15 @@ interface PackageItemInput {
 
 export async function createPackage(input: CreatePackageInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO pkg_packages (business_id, name, description, short_description, price, expiration_type, expiration_days, display_order, is_taxable, tax_category_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `INSERT INTO pkg_packages (business_id, name, description, short_description, price, expiration_type, expiration_days, expiration_unit, display_order, is_taxable, tax_category_id, new_customers_only)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING *`,
     [
       input.businessId, input.name, input.description || null, input.shortDescription || null,
       input.price, input.expirationType || 'none', input.expirationDays || null,
+      input.expirationUnit || 'days',
       input.displayOrder ?? 0, input.isTaxable ?? false, input.taxCategoryId || null,
+      input.newCustomersOnly ?? false,
     ],
   );
   return rows[0];
@@ -92,7 +96,7 @@ export async function getPackageById(id: string, businessId: string) {
 }
 
 export async function updatePackage(id: string, businessId: string, updates: Record<string, any>) {
-  const allowedFields = ['name', 'description', 'short_description', 'price', 'status', 'expiration_type', 'expiration_days', 'expiration_unit', 'display_order', 'is_taxable', 'tax_category_id'];
+  const allowedFields = ['name', 'description', 'short_description', 'price', 'status', 'expiration_type', 'expiration_days', 'expiration_unit', 'display_order', 'is_taxable', 'tax_category_id', 'new_customers_only'];
   const fields: string[] = [];
   const values: any[] = [];
   let idx = 1;
@@ -201,6 +205,25 @@ export async function purchasePackage(input: PurchaseInput) {
   const pkg = await getPackageById(input.packageId, input.businessId);
   if (!pkg) throw new Error('Package not found');
   if (pkg.status !== 'active') throw new Error('Package is not available for purchase');
+
+  // Check new customers only restriction
+  if (pkg.new_customers_only) {
+    const { rows: history } = await adminPool.query(
+      `SELECT id FROM pkg_purchases WHERE customer_id = $1 AND business_id = $2 LIMIT 1`,
+      [input.customerId, input.businessId],
+    );
+    if (history.length > 0) {
+      throw new Error('This intro package is only available to new customers');
+    }
+    // Also check for completed appointments
+    const { rows: bookings } = await adminPool.query(
+      `SELECT id FROM apt_bookings WHERE customer_id = $1 AND business_id = $2 AND status IN ('completed', 'checked_in') LIMIT 1`,
+      [input.customerId, input.businessId],
+    );
+    if (bookings.length > 0) {
+      throw new Error('This intro package is only available to new customers');
+    }
+  }
 
   let expiresAt: string | null = null;
   if (pkg.expiration_type !== 'none' && pkg.expiration_days) {

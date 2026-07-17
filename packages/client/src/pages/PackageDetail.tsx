@@ -58,6 +58,7 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
     expiration_days: pkg.expiration_days ? String(pkg.expiration_days) : '',
     expiration_unit: pkg.expiration_unit || 'days',
     is_taxable: pkg.is_taxable || false, tax_category_id: pkg.tax_category_id || '',
+    new_customers_only: pkg.new_customers_only || false,
   });
 
   const isDirty = form.name !== pkg.name || form.description !== (pkg.description || '') ||
@@ -65,7 +66,8 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
     form.expiration_type !== (pkg.expiration_type || 'none') ||
     form.expiration_days !== (pkg.expiration_days ? String(pkg.expiration_days) : '') ||
     form.expiration_unit !== (pkg.expiration_unit || 'days') ||
-    form.is_taxable !== (pkg.is_taxable || false) || form.tax_category_id !== (pkg.tax_category_id || '');
+    form.is_taxable !== (pkg.is_taxable || false) || form.tax_category_id !== (pkg.tax_category_id || '') ||
+    form.new_customers_only !== (pkg.new_customers_only || false);
 
   const handleSave = async () => {
     setSaving(true);
@@ -83,7 +85,8 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
       price: pkg.price, expiration_type: pkg.expiration_type || 'none',
       expiration_days: pkg.expiration_days ? String(pkg.expiration_days) : '',
       expiration_unit: pkg.expiration_unit || 'days',
-      is_taxable: pkg.is_taxable || false, tax_category_id: pkg.tax_category_id || '' });
+      is_taxable: pkg.is_taxable || false, tax_category_id: pkg.tax_category_id || '',
+      new_customers_only: pkg.new_customers_only || false });
     setPriceDisplay((pkg.price / 100).toFixed(2));
   };
 
@@ -146,6 +149,11 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
           <div style={styles.formGroup}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
               <input type="checkbox" checked={form.is_taxable} onChange={(e) => setForm({ ...form, is_taxable: e.target.checked })} style={{ width: '16px', height: '16px' }} /> Taxable
+            </label>
+          </div>
+          <div style={styles.formGroup}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={form.new_customers_only} onChange={(e) => setForm({ ...form, new_customers_only: e.target.checked })} style={{ width: '16px', height: '16px' }} /> New customers only (intro offer)
             </label>
           </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Short Description</label><input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} /></div>
