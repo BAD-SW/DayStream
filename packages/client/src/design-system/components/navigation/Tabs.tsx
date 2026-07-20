@@ -44,26 +44,37 @@ export function Tabs({ items, defaultTab, orientation = 'horizontal' }: TabsProp
   return (
     <div style={isVertical ? styles.containerVertical : undefined}>
       <div role="tablist" aria-orientation={orientation} style={isVertical ? styles.tabListVertical : styles.tabList}>
-        {items.map((item, index) => (
-          <button
-            key={item.id}
-            ref={(el) => { tabRefs.current[index] = el; }}
-            role="tab"
-            aria-selected={active === item.id}
-            aria-controls={`tabpanel-${item.id}`}
-            tabIndex={active === item.id ? 0 : -1}
-            onClick={() => setActive(item.id)}
-            onKeyDown={(e) => handleKeyDown(e, index)}
-            style={{
-              ...styles.tab,
-              ...(active === item.id ? styles.tabActive : {}),
-              ...(isVertical ? styles.tabVertical : {}),
-              ...(isVertical && active === item.id ? styles.tabActiveVertical : {}),
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
+        {items.map((item, index) => {
+          const isActive = active === item.id;
+          return (
+            <button
+              key={item.id}
+              ref={(el) => { tabRefs.current[index] = el; }}
+              role="tab"
+              aria-selected={isActive}
+              aria-controls={`tabpanel-${item.id}`}
+              tabIndex={isActive ? 0 : -1}
+              onClick={() => setActive(item.id)}
+              onKeyDown={(e) => handleKeyDown(e, index)}
+              style={{
+                background: 'none', border: 'none', outline: 'none',
+                borderBottom: isVertical ? 'none' : (isActive ? '3px solid var(--color-primary)' : '3px solid transparent'),
+                borderLeft: isVertical ? (isActive ? '3px solid var(--color-primary)' : '3px solid transparent') : 'none',
+                padding: isVertical ? 'var(--space-sm) var(--space-md)' : 'var(--space-sm) var(--space-md)',
+                paddingLeft: isVertical ? 'var(--space-md)' : undefined,
+                fontSize: 'var(--font-size-sm)',
+                color: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-family)',
+                fontWeight: isActive ? 600 : 500,
+                textAlign: 'left' as const,
+                marginBottom: isVertical ? undefined : '-1px',
+              }}
+            >
+              {item.label}
+            </button>
+          );
+        })}
       </div>
       <div style={isVertical ? styles.panelVertical : undefined}>
         {items.map((item) => (

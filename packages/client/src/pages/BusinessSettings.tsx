@@ -19,11 +19,22 @@ export function BusinessSettings() {
     <div style={styles.page}>
       <h1 style={styles.title}>Settings</h1>
       <div style={styles.tabBar}>
-        {tabs.map((tab) => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-            style={{ ...styles.tab, ...(activeTab === tab.key ? styles.tabActive : {}) }}>
-            {tab.label}
-          </button>
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.key;
+          return (
+            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+              style={{
+                background: 'none', border: 'none', outline: 'none',
+                borderBottom: isActive ? '3px solid var(--color-primary)' : '3px solid transparent',
+                padding: '10px 20px', fontSize: '14px',
+                fontWeight: isActive ? 600 : 500,
+                color: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                cursor: 'pointer', fontFamily: 'var(--font-family)', marginBottom: '-1px',
+              }}>
+              {tab.label}
+            </button>
+          );
+        })}
         ))}
       </div>
       {activeTab === 'lifecycle' && <LifecycleSettings />}

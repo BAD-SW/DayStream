@@ -27,11 +27,23 @@ export function Services() {
         <h1 style={styles.title}>Offerings</h1>
       </div>
       <div style={styles.tabBar}>
-        <button onClick={() => setActiveTab('services')} style={{ ...styles.tab, ...(activeTab === 'services' ? styles.tabActive : {}) }}>Services</button>
-        <button onClick={() => setActiveTab('products')} style={{ ...styles.tab, ...(activeTab === 'products' ? styles.tabActive : {}) }}>Products</button>
-        <button onClick={() => setActiveTab('memberships')} style={{ ...styles.tab, ...(activeTab === 'memberships' ? styles.tabActive : {}) }}>Memberships</button>
-        <button onClick={() => setActiveTab('packages')} style={{ ...styles.tab, ...(activeTab === 'packages' ? styles.tabActive : {}) }}>Packages</button>
-        <button onClick={() => setActiveTab('promotions')} style={{ ...styles.tab, ...(activeTab === 'promotions' ? styles.tabActive : {}) }}>Promotions</button>
+        {(['services', 'products', 'memberships', 'packages', 'promotions'] as const).map((tab) => {
+          const isActive = activeTab === tab;
+          const labels: Record<string, string> = { services: 'Services', products: 'Products', memberships: 'Memberships', packages: 'Packages', promotions: 'Promotions' };
+          return (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              style={{
+                background: 'none', border: 'none', outline: 'none',
+                borderBottom: isActive ? '3px solid var(--color-primary)' : '3px solid transparent',
+                padding: '10px 20px', fontSize: '14px',
+                fontWeight: isActive ? 600 : 500,
+                color: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                cursor: 'pointer', fontFamily: 'var(--font-family)', marginBottom: '-1px',
+              }}>
+              {labels[tab]}
+            </button>
+          );
+        })}
       </div>
       {activeTab === 'services' && <ServicesTab />}
       {activeTab === 'products' && <ProductsTab />}
@@ -874,8 +886,8 @@ const styles: Record<string, React.CSSProperties> = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' },
   title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
   tabBar: { display: 'flex', gap: '0', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-lg)' },
-  tab: { background: 'none', border: 'none', borderBottom: '2px solid transparent', padding: '10px 20px', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
-  tabActive: { color: 'var(--color-primary)', borderBottomColor: 'var(--color-primary)' },
+  tab: { background: 'none', border: 'none', borderBottom: '3px solid transparent', padding: '10px 20px', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', marginBottom: '-1px' },
+  tabActive: { color: 'var(--color-primary)', borderBottomColor: 'var(--color-primary)', fontWeight: 600 },
   toolbar: { display: 'flex', gap: 'var(--space-md)', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' as const },
   select: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
   actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', minWidth: '60px', textAlign: 'center' as const },

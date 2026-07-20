@@ -130,6 +130,11 @@ export async function addQualification(staffId: string, data: Record<string, any
   return res.data.data;
 }
 
+export async function updateQualification(staffId: string, qualId: string, data: Record<string, any>) {
+  const res = await apiClient.put(`/v1/staff/${staffId}/qualifications/${qualId}`, data);
+  return res.data.data;
+}
+
 export async function deleteQualification(staffId: string, qualId: string) {
   await apiClient.delete(`/v1/staff/${staffId}/qualifications/${qualId}`);
 }
@@ -150,6 +155,11 @@ export async function getAvailabilityPatterns(staffId: string) {
 
 export async function createAvailabilityPattern(staffId: string, data: Record<string, any>) {
   const res = await apiClient.post(`/v1/staff/${staffId}/availability/patterns`, data);
+  return res.data.data;
+}
+
+export async function updateAvailabilityPattern(staffId: string, patternId: string, data: Record<string, any>) {
+  const res = await apiClient.put(`/v1/staff/${staffId}/availability/patterns/${patternId}`, data);
   return res.data.data;
 }
 
@@ -177,9 +187,9 @@ export interface AvailabilityOverride {
   id: string;
   staff_id: string;
   override_date: string;
+  override_type: string;
   start_time: string | null;
   end_time: string | null;
-  is_unavailable: boolean;
   reason: string | null;
 }
 

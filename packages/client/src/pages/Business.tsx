@@ -21,10 +21,23 @@ export function Business() {
         <h1 style={styles.title}>Business Setup</h1>
       </div>
       <div style={styles.tabBar}>
-        <button onClick={() => setActiveTab('staff')} style={{ ...styles.tab, ...(activeTab === 'staff' ? styles.tabActive : {}) }}>Staff</button>
-        <button onClick={() => setActiveTab('resources')} style={{ ...styles.tab, ...(activeTab === 'resources' ? styles.tabActive : {}) }}>Resources</button>
-        <button onClick={() => setActiveTab('locations')} style={{ ...styles.tab, ...(activeTab === 'locations' ? styles.tabActive : {}) }}>Locations</button>
-        <button onClick={() => setActiveTab('categories')} style={{ ...styles.tab, ...(activeTab === 'categories' ? styles.tabActive : {}) }}>Categories</button>
+        {(['staff', 'resources', 'locations', 'categories'] as const).map((tab) => {
+          const isActive = activeTab === tab;
+          const labels: Record<string, string> = { staff: 'Staff', resources: 'Resources', locations: 'Locations', categories: 'Categories' };
+          return (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              style={{
+                background: 'none', border: 'none', outline: 'none',
+                borderBottom: isActive ? '3px solid var(--color-primary)' : '3px solid transparent',
+                padding: '10px 20px', fontSize: '14px',
+                fontWeight: isActive ? 600 : 500,
+                color: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                cursor: 'pointer', fontFamily: 'var(--font-family)', marginBottom: '-1px',
+              }}>
+              {labels[tab]}
+            </button>
+          );
+        })}
       </div>
       {activeTab === 'staff' && <Staff />}
       {activeTab === 'resources' && <Resources />}
@@ -200,6 +213,6 @@ const styles: Record<string, React.CSSProperties> = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' },
   title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
   tabBar: { display: 'flex', gap: '0', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-lg)' },
-  tab: { background: 'none', border: 'none', borderBottom: '2px solid transparent', padding: '10px 20px', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
-  tabActive: { color: 'var(--color-primary)', borderBottomColor: 'var(--color-primary)' },
+  tab: { background: 'none', border: 'none', borderBottom: '3px solid transparent', padding: '10px 20px', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', marginBottom: '-1px' },
+  tabActive: { color: 'var(--color-primary)', borderBottomColor: 'var(--color-primary)', fontWeight: 600 },
 };
