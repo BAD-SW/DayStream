@@ -102,10 +102,10 @@ const styles: Record<string, React.CSSProperties> = {
   tags: { display: 'flex', gap: '4px', flexWrap: 'wrap', flex: 1 },
   tag: { fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text)' },
   arrow: { fontSize: '10px', color: 'var(--color-text-secondary)', marginLeft: '8px' },
-  dropdown: { position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '4px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 100, overflow: 'hidden' },
+  dropdown: { position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '4px', background: 'var(--color-surface-modal, #FFFFFF)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 100, overflow: 'hidden' },
   search: { width: '100%', border: 'none', borderBottom: '1px solid var(--color-border)', padding: '8px 10px', fontSize: '13px', outline: 'none', fontFamily: 'var(--font-family)', boxSizing: 'border-box' },
   optionsList: { maxHeight: '160px', overflowY: 'auto', padding: '4px 0' },
   option: { display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', fontSize: '13px', color: 'var(--color-text)', cursor: 'pointer' },
   empty: { fontSize: '12px', color: 'var(--color-text-secondary)', padding: '8px 10px', margin: 0 },
-  clearBtn: { width: '100%', border: 'none', borderTop: '1px solid var(--color-border)', padding: '6px', fontSize: '12px', color: 'var(--color-text-secondary)', cursor: 'pointer', background: 'var(--color-surface)', textAlign: 'center' },
+  clearBtn: { width: '100%', border: 'none', borderTop: '1px solid var(--color-border)', padding: '6px', fontSize: '12px', color: 'var(--color-text-secondary)', cursor: 'pointer', background: 'var(--color-surface-modal, #FFFFFF)', textAlign: 'center' },
 };
