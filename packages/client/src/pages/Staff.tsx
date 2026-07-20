@@ -90,7 +90,7 @@ export function Staff() {
           <option value="terminated">Terminated</option>
         </select>
         <div style={{ flex: 1 }} />
-        <Button onClick={() => navigate('/staff/new')}>Add Staff</Button>
+        <Button variant="secondary" onClick={() => navigate('/staff/new')}>Add Staff</Button>
       </div>
 
       <Table

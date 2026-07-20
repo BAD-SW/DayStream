@@ -88,7 +88,7 @@ export function Resources() {
           <option value="facility">Facilities</option>
         </select>
         <div style={{ flex: 1 }} />
-        <Button onClick={() => navigate('/resources/new')}>Add Resource</Button>
+        <Button variant="secondary" onClick={() => navigate('/resources/new')}>Add Resource</Button>
       </div>
 
       <Table
