@@ -35,7 +35,6 @@ export function BusinessSettings() {
             </button>
           );
         })}
-        ))}
       </div>
       {activeTab === 'lifecycle' && <LifecycleSettings />}
       {activeTab === 'scheduled-jobs' && <ScheduledJobsSettings />}
