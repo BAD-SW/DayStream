@@ -6,7 +6,7 @@ import { Alert } from '../design-system/components/feedback/Alert';
 import * as staffApi from '../api/staff';
 import type { StaffProfile, Qualification, AvailabilityPattern, AvailabilityOverride } from '../api/staff';
 
-type Tab = 'profile' | 'qualifications' | 'availability' | 'calendar';
+type Tab = 'profile' | 'qualifications' | 'availability' | 'calendar' | 'compensation';
 
 /** Format a time string (HH:mm or HH:mm:ss) to locale format */
 function formatTime(time: string): string {
@@ -37,6 +37,7 @@ export function StaffDetail() {
     { key: 'qualifications', label: 'Qualifications' },
     { key: 'availability', label: 'Availability' },
     { key: 'calendar', label: 'Calendar' },
+    { key: 'compensation', label: 'Compensation' },
   ];
 
   return (
@@ -77,6 +78,12 @@ export function StaffDetail() {
       {activeTab === 'qualifications' && <QualificationsTab staffId={staff.id} />}
       {activeTab === 'availability' && <AvailabilityTab staffId={staff.id} />}
       {activeTab === 'calendar' && <CalendarTab staffId={staff.id} />}
+      {activeTab === 'compensation' && (
+        <div style={styles.card}>
+          <h3 style={styles.cardTitle}>Compensation</h3>
+          <p style={styles.emptyText}>Compensation management is coming soon. This will include pay rates, commission structures, and payment tracking.</p>
+        </div>
+      )}
     </div>
   );
 }
