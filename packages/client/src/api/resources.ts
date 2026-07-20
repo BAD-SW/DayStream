@@ -155,6 +155,10 @@ export async function updateMaintenance(resourceId: string, maintenanceId: strin
   return res.data.data;
 }
 
+export async function deleteMaintenance(resourceId: string, maintenanceId: string) {
+  await apiClient.delete(`/v1/resources/${resourceId}/maintenance/${maintenanceId}`);
+}
+
 // Dependencies
 export async function getDependencies(resourceId: string) {
   const res = await apiClient.get(`/v1/resources/${resourceId}/dependencies`);

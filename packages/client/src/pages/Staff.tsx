@@ -80,28 +80,17 @@ export function Staff() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div></div>
-        <Button onClick={() => navigate('/staff/new')}>Add Staff</Button>
-      </div>
-
-      <div className="flex gap-4 mb-4">
-        <SearchInput
-          value={searchInput}
-          onChange={setSearchInput}
-          placeholder="Search by name or email..."
-        />
-        <select
-          className="border rounded px-3 py-2 text-sm"
-          value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-        >
-          <option value="">All statuses</option>
+      <div style={styles.toolbar}>
+        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search staff..." />
+        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
+          <option value="">All Statuses</option>
           <option value="active">Active</option>
           <option value="onboarding">Onboarding</option>
           <option value="inactive">Inactive</option>
           <option value="terminated">Terminated</option>
         </select>
+        <div style={{ flex: 1 }} />
+        <Button onClick={() => navigate('/staff/new')}>Add Staff</Button>
       </div>
 
       <Table
@@ -109,16 +98,17 @@ export function Staff() {
         data={staff}
         loading={loading}
         onRowClick={(row) => navigate(`/staff/${row.id}`)}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
         emptyMessage="No staff members found"
+        mobileCardMode
       />
-
-      {totalPages > 1 && (
-        <div className="flex justify-center gap-2 mt-4">
-          <Button variant="ghost" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</Button>
-          <span className="px-3 py-2 text-sm">Page {page} of {totalPages}</span>
-          <Button variant="ghost" disabled={page === totalPages} onClick={() => setPage(page + 1)}>Next</Button>
-        </div>
-      )}
     </div>
   );
 }
+
+const styles: Record<string, React.CSSProperties> = {
+  toolbar: { display: 'flex', gap: 'var(--space-md)', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' },
+  select: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
+};

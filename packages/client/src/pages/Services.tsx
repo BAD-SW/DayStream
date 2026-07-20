@@ -122,9 +122,6 @@ function ServicesTab() {
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
-        <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Service</Button>
-      </div>
       <div style={styles.toolbar}>
         <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search services..." />
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
@@ -138,6 +135,8 @@ function ServicesTab() {
           <option value="">All Categories</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
+        <div style={{ flex: 1 }} />
+        <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Service</Button>
       </div>
       <Table columns={columns} data={services} loading={loading} onRowClick={(row) => navigate(`/offers/services/${row.id}`)} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No services found" mobileCardMode />
       {showCreate && <CreateServiceModal businessId={businessId} categories={categories} onClose={() => setShowCreate(false)} onCreated={(svc) => { setShowCreate(false); navigate(`/offers/services/${svc.id}`); }} />}
@@ -213,9 +212,6 @@ function ProductsTab() {
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
-        <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Product</Button>
-      </div>
       <div style={styles.toolbar}>
         <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search products..." />
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
@@ -228,6 +224,8 @@ function ProductsTab() {
           <option value="">All Categories</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
+        <div style={{ flex: 1 }} />
+        <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Product</Button>
       </div>
       <Table columns={columns} data={products} loading={loading} onRowClick={(row) => navigate(`/offers/merchandise/${row.id}`)} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No products found" mobileCardMode />
       {showCreate && <CreateProductModal businessId={businessId} categories={categories} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); fetchProducts(); }} />}
@@ -345,18 +343,23 @@ function MembershipsTab() {
   const [showCreate, setShowCreate] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+
+  useEffect(() => { const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300); return () => clearTimeout(t); }, [searchInput]);
 
   const fetchPlans = useCallback(async () => {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const res = await apiClient.get(`/v1/memberships/plans?business_id=${businessId}&page=${page}&limit=20`);
+      const res = await apiClient.get(`/v1/memberships/plans?business_id=${businessId}&page=${page}&limit=20${statusFilter ? `&status=${statusFilter}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`);
       setPlans(res.data.data || []);
       const meta = res.data.meta || {};
       setTotalPages(meta.totalPages || Math.ceil((meta.total || 0) / 20) || 1);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId, page]);
+  }, [businessId, page, statusFilter, search]);
 
   useEffect(() => { fetchPlans(); }, [fetchPlans]);
 
@@ -399,7 +402,16 @@ function MembershipsTab() {
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-md)' }}>
+      <div style={styles.toolbar}>
+        <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search memberships..." />
+        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
+          <option value="">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="paused">Paused</option>
+          <option value="draft">Draft</option>
+          <option value="archived">Archived</option>
+        </select>
+        <div style={{ flex: 1 }} />
         <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Membership</Button>
       </div>
 
@@ -521,6 +533,7 @@ function PackagesTab() {
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   useEffect(() => { const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300); return () => clearTimeout(t); }, [searchInput]);
 
@@ -528,13 +541,13 @@ function PackagesTab() {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const res = await apiClient.get(`/v1/packages?business_id=${businessId}&page=${page}&limit=20${search ? `&search=${encodeURIComponent(search)}` : ''}`);
+      const res = await apiClient.get(`/v1/packages?business_id=${businessId}&page=${page}&limit=20${search ? `&search=${encodeURIComponent(search)}` : ''}${statusFilter ? `&status=${statusFilter}` : ''}`);
       setPackages(res.data.data || []);
       const meta = res.data.meta || {};
       setTotalPages(meta.totalPages || Math.ceil((meta.total || 0) / 20) || 1);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId, page, search]);
+  }, [businessId, page, search, statusFilter]);
 
   useEffect(() => { fetchPackages(); }, [fetchPackages]);
 
@@ -570,6 +583,13 @@ function PackagesTab() {
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
         <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search packages..." />
+        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
+          <option value="">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="paused">Paused</option>
+          <option value="archived">Archived</option>
+        </select>
+        <div style={{ flex: 1 }} />
         <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Package</Button>
       </div>
 
@@ -701,6 +721,7 @@ function PromotionsTab() {
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   useEffect(() => { const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300); return () => clearTimeout(t); }, [searchInput]);
 
@@ -708,13 +729,13 @@ function PromotionsTab() {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const res = await apiClient.get(`/v1/promotions?business_id=${businessId}&page=${page}&limit=20${search ? `&search=${encodeURIComponent(search)}` : ''}`);
+      const res = await apiClient.get(`/v1/promotions?business_id=${businessId}&page=${page}&limit=20${search ? `&search=${encodeURIComponent(search)}` : ''}${statusFilter ? `&status=${statusFilter}` : ''}`);
       setPromotions(res.data.data || []);
       const meta = res.data.meta || {};
       setTotalPages(meta.totalPages || Math.ceil((meta.total || 0) / 20) || 1);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId, page, search]);
+  }, [businessId, page, search, statusFilter]);
 
   useEffect(() => { fetchPromotions(); }, [fetchPromotions]);
 
@@ -760,8 +781,16 @@ function PromotionsTab() {
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+      <div style={styles.toolbar}>
         <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search promotions..." />
+        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
+          <option value="">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="paused">Paused</option>
+          <option value="expired">Expired</option>
+          <option value="archived">Archived</option>
+        </select>
+        <div style={{ flex: 1 }} />
         <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Promotion</Button>
       </div>
 
@@ -885,7 +914,7 @@ const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1200px', margin: '0 auto' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' },
   title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
-  tabBar: { display: 'flex', gap: '0', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-lg)' },
+  tabBar: { display: 'flex', gap: '0', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-md)' },
   tab: { background: 'none', border: 'none', borderBottom: '3px solid transparent', padding: '10px 20px', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', marginBottom: '-1px' },
   tabActive: { color: 'var(--color-primary)', borderBottomColor: 'var(--color-primary)', fontWeight: 600 },
   toolbar: { display: 'flex', gap: 'var(--space-md)', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' as const },
