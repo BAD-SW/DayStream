@@ -69,7 +69,7 @@ export function Locations() {
           <option value="temporarily_closed">Temporarily Closed</option>
         </select>
         <div style={{ flex: 1 }} />
-        <Button onClick={() => navigate('/settings/locations/new')}>Add Location</Button>
+        <Button variant="secondary" onClick={() => navigate('/settings/locations/new')}>Add Location</Button>
       </div>
 
       <Table
