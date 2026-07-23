@@ -249,3 +249,40 @@ locationsRouter.get('/:id/hours/overrides/years', requirePermission('settings:re
     error(res, 'Failed to get override years', 'INTERNAL_ERROR', 500);
   }
 });
+
+
+// ============================================================
+// Location Staff Assignments
+// ============================================================
+
+// GET /api/v1/locations/:id/staff
+locationsRouter.get('/:id/staff', requirePermission('settings:read'), async (req: Request, res: Response) => {
+  try {
+    const staff = await locationHoursService.getLocationStaff(req.params.id);
+    success(res, staff);
+  } catch (err: any) {
+    error(res, 'Failed to get location staff', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// POST /api/v1/locations/:id/staff
+locationsRouter.post('/:id/staff', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    if (!req.body.staff_id) { error(res, 'staff_id required', 'VALIDATION_ERROR', 400); return; }
+    const assignment = await locationHoursService.assignStaffToLocation(req.params.id, req.body.staff_id);
+    success(res, assignment, undefined, 201);
+  } catch (err: any) {
+    error(res, 'Failed to assign staff', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// DELETE /api/v1/locations/:id/staff/:staffId
+locationsRouter.delete('/:id/staff/:staffId', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const removed = await locationHoursService.removeStaffFromLocation(req.params.id, req.params.staffId);
+    if (!removed) { error(res, 'Assignment not found', 'NOT_FOUND', 404); return; }
+    success(res, { deleted: true });
+  } catch (err: any) {
+    error(res, 'Failed to remove staff', 'INTERNAL_ERROR', 500);
+  }
+});

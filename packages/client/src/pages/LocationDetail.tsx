@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
+import { apiClient } from '../api/client';
 import * as locationsApi from '../api/locations';
 import type { Location } from '../api/locations';
 
@@ -171,6 +172,8 @@ export function LocationDetail() {
         <LocationHoursSection locationId={location.id} />
         <LocationHourOverridesSection locationId={location.id} />
       </div>
+
+      <LocationStaffSection locationId={location.id} businessId={businessId} />
     </div>
   );
 }
@@ -386,6 +389,82 @@ function LocationHourOverridesSection({ locationId }: { locationId: string }) {
               )}
               <button onClick={() => openEdit(o)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px' }}>✏️</button>
               <button onClick={() => handleDelete(o.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px' }}>🗑️</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Location Staff Section ---
+
+function LocationStaffSection({ locationId, businessId }: { locationId: string; businessId: string }) {
+  const [assignedStaff, setAssignedStaff] = useState<any[]>([]);
+  const [allStaff, setAllStaff] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [selectedStaffId, setSelectedStaffId] = useState('');
+
+  const fetchAssigned = async () => {
+    setLoading(true);
+    locationsApi.getLocationStaff(locationId).then(setAssignedStaff).finally(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchAssigned(); }, [locationId]);
+
+  const openAdd = async () => {
+    // Fetch all business staff to show unassigned ones
+    try {
+      const res = await apiClient.get(`/v1/schedule/staff?business_id=${businessId}`);
+      setAllStaff(res.data.data || []);
+    } catch { /* silent */ }
+    setSelectedStaffId('');
+    setShowAdd(true);
+  };
+
+  const handleAssign = async () => {
+    if (!selectedStaffId) return;
+    await locationsApi.assignStaffToLocation(locationId, selectedStaffId);
+    setShowAdd(false);
+    fetchAssigned();
+  };
+
+  const handleRemove = async (staffId: string) => {
+    if (!confirm('Remove this staff member from this location?')) return;
+    await locationsApi.removeStaffFromLocation(locationId, staffId);
+    fetchAssigned();
+  };
+
+  // Filter out already-assigned staff from the add dropdown
+  const assignedIds = assignedStaff.map((s) => s.staff_id);
+  const availableStaff = allStaff.filter((s) => !assignedIds.includes(s.id));
+
+  return (
+    <div style={{ marginTop: 'var(--space-lg)', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-lg)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+        <h3 style={styles.hoursTitle}>Staff at this Location</h3>
+        <Button size="sm" variant="secondary" onClick={openAdd}>Add Staff</Button>
+      </div>
+
+      {showAdd && (
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+          <select style={{ ...styles.timeInput, width: '220px' }} value={selectedStaffId} onChange={(e) => setSelectedStaffId(e.target.value)}>
+            <option value="">Select staff member...</option>
+            {availableStaff.map((s: any) => <option key={s.id} value={s.id}>{s.first_name} {s.last_name}</option>)}
+          </select>
+          <Button size="sm" onClick={handleAssign}>Assign</Button>
+          <Button size="sm" variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
+        </div>
+      )}
+
+      {loading ? <p style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>Loading...</p> :
+       assignedStaff.length === 0 ? <p style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>No staff assigned to this location.</p> : (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+          {assignedStaff.map((s) => (
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', fontSize: '13px', color: 'var(--color-text)' }}>
+              <span>{s.first_name} {s.last_name}</span>
+              <button onClick={() => handleRemove(s.staff_id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '0 2px', color: 'var(--color-text-muted)' }} title="Remove">×</button>
             </div>
           ))}
         </div>

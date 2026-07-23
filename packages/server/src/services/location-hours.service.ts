@@ -117,3 +117,46 @@ export async function getLocationHourOverrideYears(locationId: string): Promise<
   );
   return rows.map((r) => r.year);
 }
+
+
+// --- Location Staff Assignments ---
+
+/**
+ * Get staff assigned to a location.
+ */
+export async function getLocationStaff(locationId: string) {
+  const { rows } = await adminPool.query(
+    `SELECT ls.id, ls.staff_id, sp.first_name, sp.last_name, sp.staff_ref
+     FROM sys_location_staff ls
+     JOIN stf_profiles sp ON sp.id = ls.staff_id
+     WHERE ls.location_id = $1
+     ORDER BY sp.first_name, sp.last_name`,
+    [locationId],
+  );
+  return rows;
+}
+
+/**
+ * Assign a staff member to a location.
+ */
+export async function assignStaffToLocation(locationId: string, staffId: string) {
+  const { rows } = await adminPool.query(
+    `INSERT INTO sys_location_staff (location_id, staff_id)
+     VALUES ($1, $2)
+     ON CONFLICT (location_id, staff_id) DO NOTHING
+     RETURNING *`,
+    [locationId, staffId],
+  );
+  return rows[0];
+}
+
+/**
+ * Remove a staff member from a location.
+ */
+export async function removeStaffFromLocation(locationId: string, staffId: string): Promise<boolean> {
+  const { rowCount } = await adminPool.query(
+    'DELETE FROM sys_location_staff WHERE location_id = $1 AND staff_id = $2',
+    [locationId, staffId],
+  );
+  return (rowCount ?? 0) > 0;
+}

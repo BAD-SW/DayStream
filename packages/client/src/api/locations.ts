@@ -126,3 +126,26 @@ export async function getLocationHourOverrideYears(locationId: string): Promise<
   const res = await apiClient.get(`/v1/locations/${locationId}/hours/overrides/years`);
   return res.data.data;
 }
+
+// --- Location Staff Assignments ---
+
+export interface LocationStaff {
+  id: string;
+  staff_id: string;
+  first_name: string;
+  last_name: string;
+  staff_ref: string;
+}
+
+export async function getLocationStaff(locationId: string): Promise<LocationStaff[]> {
+  const res = await apiClient.get(`/v1/locations/${locationId}/staff`);
+  return res.data.data;
+}
+
+export async function assignStaffToLocation(locationId: string, staffId: string): Promise<void> {
+  await apiClient.post(`/v1/locations/${locationId}/staff`, { staff_id: staffId });
+}
+
+export async function removeStaffFromLocation(locationId: string, staffId: string): Promise<void> {
+  await apiClient.delete(`/v1/locations/${locationId}/staff/${staffId}`);
+}
