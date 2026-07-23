@@ -4,6 +4,8 @@ import { Staff } from './Staff';
 import { Resources } from './Resources';
 import { Locations } from './Locations';
 import { Button } from '../design-system/components/actions/Button';
+import { Badge } from '../design-system/components/data/Badge';
+import { Table } from '../design-system/components/data/Table';
 import { apiClient } from '../api/client';
 import * as servicesApi from '../api/services';
 
@@ -53,7 +55,7 @@ function CategoriesTab() {
   const businessId = localStorage.getItem('business_id') || '';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
       <ProductCategoriesSection businessId={businessId} />
       <NoteCategoriesSection businessId={businessId} />
     </div>
@@ -94,33 +96,32 @@ function ProductCategoriesSection({ businessId }: { businessId: string }) {
     } catch { alert('Failed to delete category'); }
   };
 
-  if (loading) return <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>Loading...</p>;
+  const columns = [
+    { key: 'name', header: 'Name' },
+    {
+      key: 'actions', header: '', width: '60px',
+      render: (_: any, row: any) => (
+        <button onClick={(e) => { e.stopPropagation(); handleDelete(row.id, row.name); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>
+      ),
+    },
+  ];
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={sectionTitleStyle}>Product & Service Categories</h3>
-        <Button size="sm" variant="secondary" onClick={() => setShowAdd(!showAdd)}>{showAdd ? 'Cancel' : 'Add Category'}</Button>
+      <div style={catStyles.toolbar}>
+        <h3 style={catStyles.sectionTitle}>Product & Service Categories</h3>
+        <div style={{ flex: 1 }} />
+        {showAdd ? (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input style={catStyles.input} value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="Category name" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }} />
+            <Button size="sm" onClick={handleAdd} loading={adding}>Create</Button>
+            <Button size="sm" variant="secondary" onClick={() => { setShowAdd(false); setAddName(''); }}>Cancel</Button>
+          </div>
+        ) : (
+          <Button size="sm" variant="secondary" onClick={() => setShowAdd(true)}>Add Category</Button>
+        )}
       </div>
-
-      {showAdd && (
-        <div style={{ display: 'flex', gap: '8px', marginBottom: 'var(--space-md)' }}>
-          <input style={inputStyle} value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="Category name" />
-          <Button size="sm" onClick={handleAdd} loading={adding}>Create</Button>
-        </div>
-      )}
-
-      {categories.length === 0 && <p style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>No product/service categories defined.</p>}
-      {categories.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {categories.map((cat) => (
-            <div key={cat.id} style={itemRowStyle}>
-              <span style={{ fontWeight: 500, color: 'var(--color-text)', fontSize: '14px' }}>{cat.name}</span>
-              <button onClick={() => handleDelete(cat.id, cat.name)} style={deleteBtnStyle} title="Delete">×</button>
-            </div>
-          ))}
-        </div>
-      )}
+      <Table columns={columns} data={categories} loading={loading} emptyMessage="No product/service categories defined" />
     </div>
   );
 }
@@ -162,51 +163,57 @@ function NoteCategoriesSection({ businessId }: { businessId: string }) {
     } catch { alert('Failed to delete category'); }
   };
 
-  if (loading) return <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>Loading...</p>;
+  const columns = [
+    {
+      key: 'name', header: 'Name',
+      render: (_: any, row: any) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span>{row.name}</span>
+          {row.is_sensitive && <Badge variant="error">Sensitive</Badge>}
+          {row.customer_visible && <Badge variant="info">Customer Visible</Badge>}
+        </div>
+      ),
+    },
+    {
+      key: 'actions', header: '', width: '60px',
+      render: (_: any, row: any) => (
+        <button onClick={(e) => { e.stopPropagation(); handleDelete(row.id, row.name); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>
+      ),
+    },
+  ];
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={sectionTitleStyle}>Customer Note Categories</h3>
-        <Button size="sm" variant="secondary" onClick={() => setShowAdd(!showAdd)}>{showAdd ? 'Cancel' : 'Add Category'}</Button>
+      <div style={catStyles.toolbar}>
+        <h3 style={catStyles.sectionTitle}>Customer Note Categories</h3>
+        <div style={{ flex: 1 }} />
+        {showAdd ? (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <input style={catStyles.input} value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} placeholder="Category name" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: 'var(--color-text)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={addForm.is_sensitive} onChange={(e) => setAddForm({ ...addForm, is_sensitive: e.target.checked })} style={{ width: '14px', height: '14px' }} /> Sensitive
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: 'var(--color-text)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={addForm.customer_visible} onChange={(e) => setAddForm({ ...addForm, customer_visible: e.target.checked })} style={{ width: '14px', height: '14px' }} /> Customer Visible
+            </label>
+            <Button size="sm" onClick={handleAdd} loading={adding}>Create</Button>
+            <Button size="sm" variant="secondary" onClick={() => { setShowAdd(false); setAddForm({ name: '', is_sensitive: false, customer_visible: false }); }}>Cancel</Button>
+          </div>
+        ) : (
+          <Button size="sm" variant="secondary" onClick={() => setShowAdd(true)}>Add Category</Button>
+        )}
       </div>
-
-      {showAdd && (
-        <div style={{ display: 'flex', gap: '8px', marginBottom: 'var(--space-md)', flexWrap: 'wrap', alignItems: 'center' }}>
-          <input style={inputStyle} value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} placeholder="Category name" />
-          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: 'var(--color-text)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={addForm.is_sensitive} onChange={(e) => setAddForm({ ...addForm, is_sensitive: e.target.checked })} style={{ width: '14px', height: '14px' }} /> Sensitive
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: 'var(--color-text)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={addForm.customer_visible} onChange={(e) => setAddForm({ ...addForm, customer_visible: e.target.checked })} style={{ width: '14px', height: '14px' }} /> Customer Visible
-          </label>
-          <Button size="sm" onClick={handleAdd} loading={adding}>Create</Button>
-        </div>
-      )}
-
-      {categories.length === 0 && <p style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>No note categories defined.</p>}
-      {categories.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {categories.map((cat) => (
-            <div key={cat.id} style={itemRowStyle}>
-              <div>
-                <span style={{ fontWeight: 500, color: 'var(--color-text)', fontSize: '14px' }}>{cat.name}</span>
-                {cat.is_sensitive && <span style={{ marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'var(--color-error)', color: '#fff' }}>Sensitive</span>}
-                {cat.customer_visible && <span style={{ marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'var(--color-info, #4A90A4)', color: '#fff' }}>Customer Visible</span>}
-              </div>
-              <button onClick={() => handleDelete(cat.id, cat.name)} style={deleteBtnStyle} title="Delete">×</button>
-            </div>
-          ))}
-        </div>
-      )}
+      <Table columns={columns} data={categories} loading={loading} emptyMessage="No note categories defined" />
     </div>
   );
 }
 
-const sectionTitleStyle: React.CSSProperties = { margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--color-text)', textTransform: 'uppercase', letterSpacing: '0.5px' };
-const inputStyle: React.CSSProperties = { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '6px 12px', fontSize: '13px', fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' };
-const itemRowStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' };
-const deleteBtnStyle: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 };
+const catStyles: Record<string, React.CSSProperties> = {
+  toolbar: { display: 'flex', gap: 'var(--space-md)', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' },
+  sectionTitle: { margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 600 as any, color: 'var(--color-text)' },
+  input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 'var(--font-size-sm)', fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
+  deleteBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '4px' },
+};
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1200px', margin: '0 auto' },
