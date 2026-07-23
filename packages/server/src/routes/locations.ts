@@ -168,3 +168,84 @@ locationsRouter.put('/:id/deactivate', requirePermission('settings:*'), async (r
     }
   }
 });
+
+// ============================================================
+// Location Hours
+// ============================================================
+
+import * as locationHoursService from '../services/location-hours.service';
+
+// GET /api/v1/locations/:id/hours
+locationsRouter.get('/:id/hours', requirePermission('settings:read'), async (req: Request, res: Response) => {
+  try {
+    const hours = await locationHoursService.getLocationHours(req.params.id);
+    success(res, hours);
+  } catch (err: any) {
+    error(res, 'Failed to get location hours', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/locations/:id/hours
+locationsRouter.put('/:id/hours', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    if (!Array.isArray(req.body.hours)) {
+      error(res, 'hours array required', 'VALIDATION_ERROR', 400);
+      return;
+    }
+    const hours = await locationHoursService.setLocationHours(req.params.id, req.body.hours);
+    success(res, hours);
+  } catch (err: any) {
+    error(res, 'Failed to set location hours', 'INTERNAL_ERROR', 500);
+  }
+});
+
+
+// GET /api/v1/locations/:id/hours/overrides
+locationsRouter.get('/:id/hours/overrides', requirePermission('settings:read'), async (req: Request, res: Response) => {
+  try {
+    const year = req.query.year ? parseInt(req.query.year as string, 10) : undefined;
+    const overrides = await locationHoursService.getLocationHourOverrides(req.params.id, year);
+    success(res, overrides);
+  } catch (err: any) {
+    error(res, 'Failed to get hour overrides', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// POST /api/v1/locations/:id/hours/overrides
+locationsRouter.post('/:id/hours/overrides', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    if (!req.body.override_date) { error(res, 'override_date required', 'VALIDATION_ERROR', 400); return; }
+    const override = await locationHoursService.upsertLocationHourOverride(req.params.id, {
+      override_date: req.body.override_date,
+      label: req.body.label,
+      is_closed: req.body.is_closed ?? false,
+      open_time: req.body.open_time,
+      close_time: req.body.close_time,
+    });
+    success(res, override, undefined, 201);
+  } catch (err: any) {
+    error(res, 'Failed to save hour override', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// DELETE /api/v1/locations/:id/hours/overrides/:overrideId
+locationsRouter.delete('/:id/hours/overrides/:overrideId', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const deleted = await locationHoursService.deleteLocationHourOverride(req.params.overrideId, req.params.id);
+    if (!deleted) { error(res, 'Override not found', 'NOT_FOUND', 404); return; }
+    success(res, { deleted: true });
+  } catch (err: any) {
+    error(res, 'Failed to delete hour override', 'INTERNAL_ERROR', 500);
+  }
+});
+
+
+// GET /api/v1/locations/:id/hours/overrides/years
+locationsRouter.get('/:id/hours/overrides/years', requirePermission('settings:read'), async (req: Request, res: Response) => {
+  try {
+    const years = await locationHoursService.getLocationHourOverrideYears(req.params.id);
+    success(res, years);
+  } catch (err: any) {
+    error(res, 'Failed to get override years', 'INTERNAL_ERROR', 500);
+  }
+});

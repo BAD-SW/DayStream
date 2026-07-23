@@ -333,6 +333,13 @@ adminRouter.post('/businesses', tenantContext, requirePermission('settings:*'), 
         [tenantId, owner.id, staffRef, owner_first_name, owner_last_name, owner_email],
       );
 
+      // Auto-create default location
+      await client.query(
+        `INSERT INTO sys_locations (business_id, name, slug, status, is_primary, timezone)
+         VALUES ($1, $2, $3, 'active', true, $4)`,
+        [business.id, name, businessSlug, timezone || 'UTC'],
+      );
+
       await client.query('COMMIT');
 
       success(res, { ...business, owner }, undefined, 201);

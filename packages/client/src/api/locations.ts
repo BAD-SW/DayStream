@@ -72,3 +72,57 @@ export async function updateLocation(id: string, businessId: string, data: Parti
 export async function deactivateLocation(id: string, businessId: string): Promise<void> {
   await apiClient.put(`/v1/locations/${id}/deactivate?business_id=${businessId}`);
 }
+
+// --- Location Hours ---
+
+export interface LocationHours {
+  id?: string;
+  location_id: string;
+  day_of_week: number;
+  is_closed: boolean;
+  open_time: string | null;
+  close_time: string | null;
+}
+
+export async function getLocationHours(locationId: string): Promise<LocationHours[]> {
+  const res = await apiClient.get(`/v1/locations/${locationId}/hours`);
+  return res.data.data;
+}
+
+export async function setLocationHours(locationId: string, hours: Array<{ day_of_week: number; is_closed: boolean; open_time?: string | null; close_time?: string | null }>): Promise<LocationHours[]> {
+  const res = await apiClient.put(`/v1/locations/${locationId}/hours`, { hours });
+  return res.data.data;
+}
+
+// --- Location Hour Overrides ---
+
+export interface LocationHourOverride {
+  id?: string;
+  location_id: string;
+  override_date: string;
+  label: string | null;
+  is_closed: boolean;
+  open_time: string | null;
+  close_time: string | null;
+}
+
+export async function getLocationHourOverrides(locationId: string, year?: number): Promise<LocationHourOverride[]> {
+  const params: Record<string, any> = {};
+  if (year) params.year = year;
+  const res = await apiClient.get(`/v1/locations/${locationId}/hours/overrides`, { params });
+  return res.data.data;
+}
+
+export async function saveLocationHourOverride(locationId: string, data: { override_date: string; label?: string; is_closed: boolean; open_time?: string; close_time?: string }): Promise<LocationHourOverride> {
+  const res = await apiClient.post(`/v1/locations/${locationId}/hours/overrides`, data);
+  return res.data.data;
+}
+
+export async function deleteLocationHourOverride(locationId: string, overrideId: string): Promise<void> {
+  await apiClient.delete(`/v1/locations/${locationId}/hours/overrides/${overrideId}`);
+}
+
+export async function getLocationHourOverrideYears(locationId: string): Promise<number[]> {
+  const res = await apiClient.get(`/v1/locations/${locationId}/hours/overrides/years`);
+  return res.data.data;
+}

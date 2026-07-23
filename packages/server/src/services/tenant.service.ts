@@ -48,6 +48,13 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
     );
     const business = businessRows[0];
 
+    // Auto-create default location for the business
+    await client.query(
+      `INSERT INTO sys_locations (business_id, name, slug, status, is_primary, timezone)
+       VALUES ($1, $2, $3, 'active', true, $4)`,
+      [business.id, input.name, businessSlug, input.timezone || 'UTC'],
+    );
+
     // Create tenant-specific roles (copy system roles for this tenant)
     const roleIds: Record<string, string> = {};
     const systemRoles = [

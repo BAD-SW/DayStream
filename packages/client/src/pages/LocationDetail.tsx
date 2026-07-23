@@ -166,6 +166,230 @@ export function LocationDetail() {
           </div>
         </div>
       )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-xl)', marginTop: 'var(--space-xl)', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-lg)' }}>
+        <LocationHoursSection locationId={location.id} />
+        <LocationHourOverridesSection locationId={location.id} />
+      </div>
+    </div>
+  );
+}
+
+// --- Location Hours Section ---
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function LocationHoursSection({ locationId }: { locationId: string }) {
+  const [hours, setHours] = useState<Array<{ day_of_week: number; is_closed: boolean; open_time: string; close_time: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    locationsApi.getLocationHours(locationId).then((data) => {
+      // Fill all 7 days, using data where available
+      const filled = DAY_NAMES.map((_, i) => {
+        const existing = data.find((h) => h.day_of_week === i);
+        return {
+          day_of_week: i,
+          is_closed: existing ? existing.is_closed : true,
+          open_time: existing?.open_time?.slice(0, 5) || '09:00',
+          close_time: existing?.close_time?.slice(0, 5) || '17:00',
+        };
+      });
+      setHours(filled);
+    }).finally(() => setLoading(false));
+  }, [locationId]);
+
+  const updateDay = (dayIndex: number, field: string, value: any) => {
+    setHours(hours.map((h) => h.day_of_week === dayIndex ? { ...h, [field]: value } : h));
+    setDirty(true);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await locationsApi.setLocationHours(locationId, hours);
+      setDirty(false);
+    } catch { alert('Failed to save hours'); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return null;
+
+  return (
+    <div style={styles.hoursSection}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+        <h3 style={styles.hoursTitle}>Hours of Operation</h3>
+        {dirty && <Button size="sm" onClick={handleSave} loading={saving}>Save Hours</Button>}
+      </div>
+      <div style={styles.hoursGrid}>
+        {hours.map((day) => (
+          <div key={day.day_of_week} style={styles.hoursRow}>
+            <span style={styles.dayLabel}>{DAY_NAMES[day.day_of_week]}</span>
+            <label style={styles.closedToggle}>
+              <input type="checkbox" checked={!day.is_closed} onChange={(e) => updateDay(day.day_of_week, 'is_closed', !e.target.checked)} style={{ width: '14px', height: '14px' }} />
+              Open
+            </label>
+            {!day.is_closed ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <input type="time" style={styles.timeInput} value={day.open_time} onChange={(e) => updateDay(day.day_of_week, 'open_time', e.target.value)} />
+                <span style={{ color: 'var(--color-text-muted)' }}>–</span>
+                <input type="time" style={styles.timeInput} value={day.close_time} onChange={(e) => updateDay(day.day_of_week, 'close_time', e.target.value)} />
+              </div>
+            ) : (
+              <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>Closed</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// --- Location Hour Overrides Section ---
+
+function formatTime(time: string): string {
+  const [h, m] = time.split(':');
+  const date = new Date();
+  date.setHours(parseInt(h), parseInt(m), 0);
+  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+function LocationHourOverridesSection({ locationId }: { locationId: string }) {
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(currentYear);
+  const [yearOptions, setYearOptions] = useState<number[]>([currentYear]);
+  const [overrides, setOverrides] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ override_date: '', label: '', is_closed: false, open_time: '09:00', close_time: '17:00' });
+  const [saving, setSaving] = useState(false);
+
+  const fetchYears = async () => {
+    const years = await locationsApi.getLocationHourOverrideYears(locationId);
+    // Always include current year
+    const combined = Array.from(new Set([...years, currentYear])).sort();
+    setYearOptions(combined);
+  };
+
+  const fetchOverrides = async (y: number) => {
+    setLoading(true);
+    locationsApi.getLocationHourOverrides(locationId, y).then(setOverrides).finally(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchYears(); }, [locationId]);
+  useEffect(() => { fetchOverrides(year); }, [locationId, year]);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const openAdd = () => {
+    setEditingId(null);
+    setForm({ override_date: '', label: '', is_closed: false, open_time: '09:00', close_time: '17:00' });
+    setShowAdd(true);
+  };
+
+  const openEdit = (o: any) => {
+    setEditingId(o.id);
+    setForm({
+      override_date: o.override_date.split('T')[0],
+      label: o.label || '',
+      is_closed: o.is_closed,
+      open_time: o.open_time ? o.open_time.slice(0, 5) : '09:00',
+      close_time: o.close_time ? o.close_time.slice(0, 5) : '17:00',
+    });
+    setShowAdd(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.override_date) return;
+    setSaving(true);
+    try {
+      await locationsApi.saveLocationHourOverride(locationId, {
+        override_date: form.override_date,
+        label: form.label || undefined,
+        is_closed: form.is_closed,
+        open_time: form.is_closed ? undefined : form.open_time,
+        close_time: form.is_closed ? undefined : form.close_time,
+      });
+      setShowAdd(false);
+      setEditingId(null);
+      setForm({ override_date: '', label: '', is_closed: false, open_time: '09:00', close_time: '17:00' });
+      fetchOverrides(year);
+      fetchYears();
+    } catch { alert('Failed to save'); }
+    finally { setSaving(false); }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Remove this holiday override?')) return;
+    await locationsApi.deleteLocationHourOverride(locationId, id);
+    fetchOverrides(year);
+  };
+
+  return (
+    <div style={styles.hoursSection}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+        <h3 style={styles.hoursTitle}>Holiday & Special Hours</h3>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <select style={{ ...styles.timeInput, width: '90px' }} value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <Button size="sm" variant="secondary" onClick={openAdd}>Add</Button>
+        </div>
+      </div>
+
+      {showAdd && (
+        <div style={{ background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Date *</label>
+              <input type="date" style={styles.timeInput} value={form.override_date} onChange={(e) => setForm({ ...form, override_date: e.target.value })} />
+            </div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Label (e.g. Christmas Day)</label>
+              <input style={styles.timeInput} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="Optional" />
+            </div>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--color-text)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.is_closed} onChange={(e) => setForm({ ...form, is_closed: e.target.checked })} style={{ width: '14px', height: '14px' }} />
+            Closed all day
+          </label>
+          {!form.is_closed && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <input type="time" style={styles.timeInput} value={form.open_time} onChange={(e) => setForm({ ...form, open_time: e.target.value })} />
+              <span style={{ color: 'var(--color-text-muted)' }}>–</span>
+              <input type="time" style={styles.timeInput} value={form.close_time} onChange={(e) => setForm({ ...form, close_time: e.target.value })} />
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Button size="sm" onClick={handleSave} loading={saving}>{editingId ? 'Save Changes' : 'Save'}</Button>
+            <Button size="sm" variant="secondary" onClick={() => { setShowAdd(false); setEditingId(null); }}>Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {loading ? <p style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>Loading...</p> :
+       overrides.length === 0 ? <p style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>No holiday overrides for {year}.</p> : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {overrides.map((o) => (
+            <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
+              <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', minWidth: '50px' }}>
+                {new Date(o.override_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+              </span>
+              {o.label && <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', flex: 1 }}>{o.label}</span>}
+              {!o.label && <span style={{ flex: 1 }} />}
+              {o.is_closed ? (
+                <span style={{ fontSize: '12px', padding: '2px 8px', borderRadius: '4px', background: 'var(--color-error-bg, rgba(211,47,47,0.1))', color: 'var(--color-error)' }}>Closed</span>
+              ) : (
+                <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>{formatTime(o.open_time)}–{formatTime(o.close_time)}</span>
+              )}
+              <button onClick={() => openEdit(o)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px' }}>✏️</button>
+              <button onClick={() => handleDelete(o.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px' }}>🗑️</button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -206,4 +430,12 @@ const styles: Record<string, React.CSSProperties> = {
   label: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-medium)' as any, display: 'block', marginBottom: '2px' },
   fieldValue: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', display: 'block' },
   input: { width: '100%', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', boxSizing: 'border-box' as const },
+  hoursSection: {},
+  hoursTitle: { margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-semibold)' as any, color: 'var(--color-text)' },
+  hoursGrid: { display: 'flex', flexDirection: 'column' as const, gap: '8px' },
+  hoursRow: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', minHeight: '36px' },
+  dayLabel: { width: '100px', fontSize: 'var(--font-size-sm)', fontWeight: 500 as any, color: 'var(--color-text)' },
+  closedToggle: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--color-text-secondary)', cursor: 'pointer', width: '60px' },
+  timeInput: { background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '6px 10px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', width: '120px' },
+  formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
 };
