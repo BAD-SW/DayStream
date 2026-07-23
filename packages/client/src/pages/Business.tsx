@@ -55,9 +55,11 @@ function CategoriesTab() {
   const businessId = localStorage.getItem('business_id') || '';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
+    <div>
       <ProductCategoriesSection businessId={businessId} />
-      <NoteCategoriesSection businessId={businessId} />
+      <div style={{ marginTop: 'var(--space-lg)' }}>
+        <NoteCategoriesSection businessId={businessId} />
+      </div>
     </div>
   );
 }
@@ -97,11 +99,13 @@ function ProductCategoriesSection({ businessId }: { businessId: string }) {
   };
 
   const columns = [
-    { key: 'name', header: 'Name' },
+    { key: 'name', header: 'Name', sortable: true },
     {
-      key: 'actions', header: '', width: '60px',
+      key: 'id', header: '',
       render: (_: any, row: any) => (
-        <button onClick={(e) => { e.stopPropagation(); handleDelete(row.id, row.name); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>
+        <div style={{ textAlign: 'right' }}>
+          <button onClick={(e) => { e.stopPropagation(); handleDelete(row.id, row.name); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>
+        </div>
       ),
     },
   ];
@@ -175,9 +179,11 @@ function NoteCategoriesSection({ businessId }: { businessId: string }) {
       ),
     },
     {
-      key: 'actions', header: '', width: '60px',
+      key: 'id', header: '',
       render: (_: any, row: any) => (
-        <button onClick={(e) => { e.stopPropagation(); handleDelete(row.id, row.name); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>
+        <div style={{ textAlign: 'right' }}>
+          <button onClick={(e) => { e.stopPropagation(); handleDelete(row.id, row.name); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>
+        </div>
       ),
     },
   ];
@@ -212,7 +218,7 @@ const catStyles: Record<string, React.CSSProperties> = {
   toolbar: { display: 'flex', gap: 'var(--space-md)', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' },
   sectionTitle: { margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 600 as any, color: 'var(--color-text)' },
   input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 'var(--font-size-sm)', fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
-  deleteBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '4px' },
+  deleteBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '0' },
 };
 
 const styles: Record<string, React.CSSProperties> = {

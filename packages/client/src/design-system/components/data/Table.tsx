@@ -239,6 +239,7 @@ const styles: Record<string, React.CSSProperties> = {
   tr: {
     borderBottom: '1px solid var(--color-border)',
     transition: 'background var(--duration-fast) var(--ease-default)',
+    height: '40px',
   },
   trSelected: { background: 'var(--color-surface-hover)' },
   td: { padding: 'var(--space-sm) var(--space-md)', color: 'var(--color-text)' },
