@@ -65,6 +65,7 @@ export async function createScheduleEntry(input: {
  * Update a schedule entry.
  */
 export async function updateScheduleEntry(entryId: string, businessId: string, updates: {
+  scheduleDate?: string;
   startTime?: string;
   endTime?: string;
   locationId?: string | null;
@@ -75,6 +76,7 @@ export async function updateScheduleEntry(entryId: string, businessId: string, u
   const values: any[] = [];
   let idx = 1;
 
+  if (updates.scheduleDate !== undefined) { fields.push(`schedule_date = $${idx++}`); values.push(updates.scheduleDate); }
   if (updates.startTime !== undefined) { fields.push(`start_time = $${idx++}`); values.push(updates.startTime); }
   if (updates.endTime !== undefined) { fields.push(`end_time = $${idx++}`); values.push(updates.endTime); }
   if (updates.locationId !== undefined) { fields.push(`location_id = $${idx++}`); values.push(updates.locationId); }

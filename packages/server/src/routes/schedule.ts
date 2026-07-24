@@ -79,6 +79,7 @@ scheduleRouter.put('/:id', requirePermission('staff:*'), async (req: Request, re
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
 
     const entry = await scheduleService.updateScheduleEntry(req.params.id, businessId, {
+      scheduleDate: req.body.schedule_date,
       startTime: req.body.start_time,
       endTime: req.body.end_time,
       locationId: req.body.location_id,
