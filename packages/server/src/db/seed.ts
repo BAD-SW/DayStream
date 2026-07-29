@@ -3,6 +3,7 @@ import { adminPool } from './pool';
 
 // Fixed seed UUIDs for idempotent seeding
 const SEED_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+const SEED_BUSINESS_ID = '00000000-0000-0000-0000-000000000002';
 const SEED_USERS: Record<string, { id: string; email: string; firstName: string; lastName: string; role: string; persona: string }> = {
   owner: {
     id: '00000000-0000-0000-0000-000000000010',
@@ -111,11 +112,18 @@ async function seed() {
     await client.query('DELETE FROM usr_users WHERE tenant_id = $1', [SEED_TENANT_ID]);
     await client.query('DELETE FROM sys_tenants WHERE id = $1', [SEED_TENANT_ID]);
 
-    // Insert test tenant
+    // Insert platform tenant (DayStream) — required by migration 037
     await client.query(
-      `INSERT INTO sys_tenants (id, name, slug, status)
-       VALUES ($1, $2, $3, $4)`,
-      [SEED_TENANT_ID, 'Transcend Health Mallorca', 'transcend', 'active'],
+      `INSERT INTO sys_tenants (id, name, slug, status, default_language, currency, timezone)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO NOTHING`,
+      [SEED_TENANT_ID, 'DayStream', 'daystream', 'active', 'en', 'EUR', 'UTC'],
+    );
+
+    // Insert platform business (DayStream) — required as FK for usr_users.business_id
+    await client.query(
+      `INSERT INTO sys_businesses (id, tenant_id, name, slug, status, default_language, currency, timezone)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (id) DO NOTHING`,
+      [SEED_BUSINESS_ID, SEED_TENANT_ID, 'DayStream', 'daystream', 'active', 'en', 'EUR', 'UTC'],
     );
 
     // Hash password with bcrypt (same as auth service)
@@ -138,9 +146,9 @@ async function seed() {
 
     for (const [, user] of Object.entries(SEED_USERS)) {
       await client.query(
-        `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, persona, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')`,
-        [user.id, SEED_TENANT_ID, user.email, user.firstName, user.lastName, passwordHash, user.role, user.persona],
+        `INSERT INTO usr_users (id, tenant_id, business_id, email, first_name, last_name, password_hash, role, persona, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active')`,
+        [user.id, SEED_TENANT_ID, SEED_BUSINESS_ID, user.email, user.firstName, user.lastName, passwordHash, user.role, user.persona],
       );
 
       // Assign role in user_roles table
