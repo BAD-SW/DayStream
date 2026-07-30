@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
+import { useBusinessSettings } from '../context/BusinessSettingsContext';
 
 type SettingsTab = 'system' | 'lifecycle' | 'scheduled-jobs' | 'notifications' | 'payment-methods' | 'integrations';
 
@@ -54,6 +55,7 @@ export function BusinessSettings() {
 
 function SystemSettings() {
   const businessId = localStorage.getItem('business_id') || '';
+  const { refresh: refreshBusinessSettings } = useBusinessSettings();
   const [schedulingMode, setSchedulingMode] = useState<string>('availability');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -75,6 +77,7 @@ function SystemSettings() {
     setSaving(true);
     try {
       await apiClient.put(`/v1/admin/businesses/${businessId}/settings`, { scheduling_mode: newMode });
+      refreshBusinessSettings(); // Update sidebar and dashboard immediately
     } catch { alert('Failed to save setting'); setSchedulingMode(schedulingMode); }
     finally { setSaving(false); }
   };

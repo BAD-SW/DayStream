@@ -6,6 +6,7 @@ import { SortableTileGrid } from './SortableTileGrid';
 import { getVisibleModules } from './moduleRegistry';
 import { Persona } from '@daystream/shared';
 import { apiClient } from '../../../api/client';
+import { useBusinessSettings } from '../../../context/BusinessSettingsContext';
 
 interface DetailModal {
   title: string;
@@ -99,7 +100,16 @@ export function PersonaDashboard() {
   if (!user) return null;
 
   const permissions = getPermissionsFromRole(user.role);
-  const modules = getVisibleModules(persona!, permissions, featureFlags);
+  const baseModules = getVisibleModules(persona!, permissions, featureFlags);
+
+  const { settings: businessSettings } = useBusinessSettings();
+  const modules = baseModules.map((mod) => {
+    if (mod.id === 'schedule') {
+      const status = businessSettings.schedulingMode === 'schedule' ? 'Enabled' : 'Disabled';
+      return { ...mod, titleKey: `Schedule (${status})`, descriptionKey: `Staff scheduling — ${status}` };
+    }
+    return mod;
+  });
 
   const kpis = (persona === 'system' ? systemKpis : persona === 'tenant' ? tenantKpis : businessKpis) || getKpisForPersona(persona!);
   const tiles = modules;

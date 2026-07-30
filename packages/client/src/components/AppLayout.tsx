@@ -1,6 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useBusinessSettings } from '../context/BusinessSettingsContext';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { ThemeModeToggle } from '../design-system/themes/ThemeModeToggle';
 import { getVisibleModules } from '../design-system/components/dashboard/moduleRegistry';
@@ -18,7 +19,19 @@ export function AppLayout({ children }: AppLayoutProps) {
   // Get modules visible to this user for the sidebar
   const persona = user ? resolvePersona(user.role) : 'business';
   const permissions = user ? getPermissionsFromRole(user.role) : [];
-  const modules = getVisibleModules(persona, permissions, featureFlags);
+  const baseModules = getVisibleModules(persona, permissions, featureFlags);
+
+  // Get scheduling mode from shared context
+  const { settings: businessSettings } = useBusinessSettings();
+
+  // Annotate Schedule module title with enabled/disabled status
+  const modules = baseModules.map((mod) => {
+    if (mod.id === 'schedule') {
+      const status = businessSettings.schedulingMode === 'schedule' ? 'Enabled' : 'Disabled';
+      return { ...mod, titleKey: `Schedule (${status})`, descriptionKey: `Staff scheduling — ${status}` };
+    }
+    return mod;
+  });
 
   return (
     <div style={styles.container}>

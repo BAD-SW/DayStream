@@ -172,47 +172,81 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
     [businessId, new Date(dateFrom).toISOString(), new Date(dateTo + 'T23:59:59Z').toISOString(), staffIds.length > 0 ? staffIds : null],
   );
 
-  // 8. Load staff schedules
-  const { rows: staffSchedules } = await adminPool.query(
-    `SELECT user_id, day_of_week, start_time, end_time, effective_from, effective_to
-     FROM apt_staff_schedules
-     WHERE business_id = $1 AND is_available = true
-       AND ($2::uuid[] IS NULL OR user_id = ANY($2))`,
-    [businessId, staffIds.length > 0 ? staffIds : null],
+  // 8. Load business scheduling mode
+  const { rows: bizSettings } = await adminPool.query(
+    'SELECT scheduling_mode FROM sys_businesses WHERE id = $1',
+    [businessId],
   );
+  const schedulingMode = bizSettings[0]?.scheduling_mode || 'availability';
 
-  // 9. Load staff time off
-  const { rows: timeOff } = await adminPool.query(
-    `SELECT user_id, start_time, end_time
-     FROM apt_staff_time_off
-     WHERE business_id = $1
-       AND start_time < $3::timestamptz
-       AND end_time > $2::timestamptz
-       AND ($4::uuid[] IS NULL OR user_id = ANY($4))`,
-    [businessId, new Date(dateFrom).toISOString(), new Date(dateTo + 'T23:59:59Z').toISOString(), staffIds.length > 0 ? staffIds : null],
-  );
+  // 9. Load staff working hours based on scheduling mode
+  let staffWorkingData: any[] = [];
+  let staffOverrides: any[] = [];
 
-  // 10. Load staff location assignments
-  const { rows: staffLocationAssignments } = await adminPool.query(
-    `SELECT staff_id, location_id FROM stf_location_assignments WHERE staff_id IN (
-       SELECT id FROM stf_profiles WHERE user_id = ANY($1)
-     )`,
-    [staffIds.length > 0 ? staffIds : ['00000000-0000-0000-0000-000000000000']],
-  );
+  if (schedulingMode === 'schedule') {
+    // Use staff schedule entries
+    const { rows } = await adminPool.query(
+      `SELECT e.staff_id, sp.user_id, e.schedule_date, e.start_time, e.end_time
+       FROM stf_schedule_entries e
+       JOIN stf_profiles sp ON sp.id = e.staff_id
+       WHERE e.business_id = $1 AND e.schedule_date >= $2 AND e.schedule_date <= $3 AND e.entry_type = 'shift'`,
+      [businessId, dateFrom, dateTo],
+    );
+    staffWorkingData = rows;
+  } else {
+    // Use staff availability patterns
+    const { rows: patterns } = await adminPool.query(
+      `SELECT p.staff_id, sp.user_id, ps.day_of_week, ps.start_time, ps.end_time, p.effective_from, p.effective_to
+       FROM stf_availability_patterns p
+       JOIN stf_profiles sp ON sp.id = p.staff_id
+       JOIN stf_availability_pattern_slots ps ON ps.pattern_id = p.id
+       WHERE sp.user_id = ANY($1) AND p.is_default = true`,
+      [staffIds.length > 0 ? staffIds : ['00000000-0000-0000-0000-000000000000']],
+    );
+    staffWorkingData = patterns;
 
-  // Build a map: user_id -> location_ids they work at
-  // First need staff profile IDs mapped to user IDs
-  const { rows: staffProfileMap } = await adminPool.query(
-    'SELECT id, user_id FROM stf_profiles WHERE user_id = ANY($1)',
-    [staffIds.length > 0 ? staffIds : ['00000000-0000-0000-0000-000000000000']],
-  );
-  const profileToUser = new Map(staffProfileMap.map((r: any) => [r.id, r.user_id]));
-  const staffLocations = new Map<string, string[]>(); // user_id -> location_ids
-  for (const sla of staffLocationAssignments) {
-    const userId = profileToUser.get(sla.staff_id);
-    if (!userId) continue;
-    if (!staffLocations.has(userId)) staffLocations.set(userId, []);
-    staffLocations.get(userId)!.push(sla.location_id);
+    // Load availability overrides
+    const { rows: overrides } = await adminPool.query(
+      `SELECT o.staff_id, sp.user_id, o.override_date, o.override_type, o.start_time, o.end_time
+       FROM stf_availability_overrides o
+       JOIN stf_profiles sp ON sp.id = o.staff_id
+       WHERE sp.user_id = ANY($1) AND o.override_date >= $2 AND o.override_date <= $3`,
+      [staffIds.length > 0 ? staffIds : ['00000000-0000-0000-0000-000000000000'], dateFrom, dateTo],
+    );
+    staffOverrides = overrides;
+  }
+
+  // 10. Load location business hours
+  const primaryLocationId = locationId || (serviceLocations.length > 0 ? serviceLocations[0].id : null);
+  let locationHours: any[] = [];
+  let locationHourOverrides: any[] = [];
+  if (primaryLocationId) {
+    const { rows: hours } = await adminPool.query(
+      'SELECT * FROM sys_location_hours WHERE location_id = $1',
+      [primaryLocationId],
+    );
+    locationHours = hours;
+
+    const { rows: overrides } = await adminPool.query(
+      'SELECT * FROM sys_location_hour_overrides WHERE location_id = $1 AND override_date >= $2 AND override_date <= $3',
+      [primaryLocationId, dateFrom, dateTo],
+    );
+    locationHourOverrides = overrides;
+  }
+
+  // 11. Load location-staff assignments for filtering
+  let staffLocationMap = new Map<string, string[]>();
+  if (primaryLocationId) {
+    const { rows: locStaff } = await adminPool.query(
+      'SELECT ls.staff_id, sp.user_id FROM sys_location_staff ls JOIN stf_profiles sp ON sp.id = ls.staff_id WHERE ls.location_id = $1',
+      [primaryLocationId],
+    );
+    if (locStaff.length > 0) {
+      for (const ls of locStaff) {
+        if (!staffLocationMap.has(ls.user_id)) staffLocationMap.set(ls.user_id, []);
+        staffLocationMap.get(ls.user_id)!.push(primaryLocationId);
+      }
+    }
   }
 
   // Generate slots
@@ -246,11 +280,13 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
           ? eligibleStaff.filter((s: any) => window.staffIds!.includes(s.user_id))
           : eligibleStaff;
 
-        // Determine available staff for this slot (check conflicts, time off, etc.)
+        // Determine available staff for this slot (check conflicts, working hours, etc.)
         const availableStaffForSlot = needsStaff
           ? getAvailableStaffForSlot(
               windowEligibleStaff, slotStart, slotEnd, bufferBefore, bufferAfter,
-              staffSchedules, timeOff, existingBookings, activeHolds, dayOfWeek, currentDateStr,
+              existingBookings, activeHolds, dayOfWeek, currentDateStr,
+              schedulingMode, staffWorkingData, staffOverrides,
+              locationHours, locationHourOverrides,
             )
           : windowEligibleStaff;
 
@@ -263,7 +299,7 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
 
         // Generate combos: for each available staff × each valid location
         for (const staff of availableStaffForSlot) {
-          const staffLocationIds = staffLocations.get(staff.user_id);
+          const staffLocationIds = staffLocationMap.get(staff.user_id);
 
           for (const loc of windowLocations) {
             // If staff has location assignments, only include if they work at this location
@@ -369,42 +405,107 @@ function getAvailableStaffForSlot(
   slotEnd: Date,
   bufferBefore: number,
   bufferAfter: number,
-  staffSchedules: any[],
-  timeOff: any[],
   existingBookings: any[],
   activeHolds: any[],
   dayOfWeek: number,
   dateStr: string,
+  schedulingMode: string,
+  staffWorkingData: any[],
+  staffOverrides: any[],
+  locationHours: any[],
+  locationHourOverrides: any[],
 ): any[] {
   const blockStart = new Date(slotStart.getTime() - bufferBefore * 60 * 1000);
   const blockEnd = new Date(slotEnd.getTime() + bufferAfter * 60 * 1000);
 
+  // Check if slot is within business hours
+  if (locationHours.length > 0) {
+    // Check for holiday override on this date
+    const override = locationHourOverrides.find((o: any) => {
+      const oDate = typeof o.override_date === 'string' ? o.override_date.split('T')[0] : o.override_date;
+      return oDate === dateStr;
+    });
+    if (override) {
+      if (override.is_closed) return []; // Business closed this day
+      if (override.open_time && override.close_time) {
+        const slotMinutes = slotStart.getUTCHours() * 60 + slotStart.getUTCMinutes();
+        const slotEndMinutes = slotEnd.getUTCHours() * 60 + slotEnd.getUTCMinutes();
+        const openMin = timeToMinutes(override.open_time);
+        const closeMin = timeToMinutes(override.close_time);
+        if (slotMinutes < openMin || slotEndMinutes > closeMin) return [];
+      }
+    } else {
+      // Normal business hours check
+      const bh = locationHours.find((h: any) => h.day_of_week === dayOfWeek);
+      if (bh) {
+        if (bh.is_closed) return [];
+        if (bh.open_time && bh.close_time) {
+          const slotMinutes = slotStart.getUTCHours() * 60 + slotStart.getUTCMinutes();
+          const slotEndMinutes = slotEnd.getUTCHours() * 60 + slotEnd.getUTCMinutes();
+          const openMin = timeToMinutes(bh.open_time);
+          const closeMin = timeToMinutes(bh.close_time);
+          if (slotMinutes < openMin || slotEndMinutes > closeMin) return [];
+        }
+      }
+    }
+  }
+
   return eligibleStaff.filter((staff: any) => {
     const userId = staff.user_id;
 
-    // Check staff schedule
-    const schedules = staffSchedules.filter((s: any) => s.user_id === userId && s.day_of_week === dayOfWeek);
-    if (schedules.length > 0) {
+    // Check if staff is working at this time based on scheduling mode
+    if (schedulingMode === 'schedule') {
+      // Check stf_schedule_entries for this date
+      const entries = staffWorkingData.filter((e: any) => {
+        const eDate = typeof e.schedule_date === 'string' ? e.schedule_date.split('T')[0] : e.schedule_date;
+        return e.user_id === userId && eDate === dateStr;
+      });
+      if (entries.length === 0) return false; // Not scheduled this day
       const slotMinutes = slotStart.getUTCHours() * 60 + slotStart.getUTCMinutes();
       const slotEndMinutes = slotEnd.getUTCHours() * 60 + slotEnd.getUTCMinutes();
-      const isScheduled = schedules.some((s: any) => {
-        const schedStart = timeToMinutes(s.start_time);
-        const schedEnd = timeToMinutes(s.end_time);
-        if (s.effective_from && dateStr < s.effective_from) return false;
-        if (s.effective_to && dateStr > s.effective_to) return false;
-        return slotMinutes >= schedStart && slotEndMinutes <= schedEnd;
+      const isWithinShift = entries.some((e: any) => {
+        const shiftStart = timeToMinutes(e.start_time);
+        const shiftEnd = timeToMinutes(e.end_time);
+        return slotMinutes >= shiftStart && slotEndMinutes <= shiftEnd;
       });
-      if (!isScheduled) return false;
+      if (!isWithinShift) return false;
+    } else {
+      // Check stf_availability_patterns
+      // First check overrides for this date
+      const dateOverride = staffOverrides.find((o: any) => {
+        const oDate = typeof o.override_date === 'string' ? o.override_date.split('T')[0] : o.override_date;
+        return o.user_id === userId && oDate === dateStr;
+      });
+      if (dateOverride) {
+        if (dateOverride.override_type === 'remove') return false; // Day off
+        if (dateOverride.override_type === 'modify' || dateOverride.override_type === 'add') {
+          if (dateOverride.start_time && dateOverride.end_time) {
+            const slotMinutes = slotStart.getUTCHours() * 60 + slotStart.getUTCMinutes();
+            const slotEndMinutes = slotEnd.getUTCHours() * 60 + slotEnd.getUTCMinutes();
+            const oStart = timeToMinutes(dateOverride.start_time);
+            const oEnd = timeToMinutes(dateOverride.end_time);
+            if (slotMinutes < oStart || slotEndMinutes > oEnd) return false;
+          }
+        }
+      } else {
+        // Check availability pattern for this day of week
+        const patterns = staffWorkingData.filter((p: any) => p.user_id === userId && p.day_of_week === dayOfWeek);
+        if (patterns.length > 0) {
+          const slotMinutes = slotStart.getUTCHours() * 60 + slotStart.getUTCMinutes();
+          const slotEndMinutes = slotEnd.getUTCHours() * 60 + slotEnd.getUTCMinutes();
+          const isAvailable = patterns.some((p: any) => {
+            if (p.effective_from && dateStr < p.effective_from) return false;
+            if (p.effective_to && dateStr > p.effective_to) return false;
+            const patStart = timeToMinutes(p.start_time);
+            const patEnd = timeToMinutes(p.end_time);
+            return slotMinutes >= patStart && slotEndMinutes <= patEnd;
+          });
+          if (!isAvailable) return false;
+        }
+        // If no pattern defined for this day, staff is not available
+        else return false;
+      }
     }
-    // If no schedule defined, assume available
-
-    // Check time off
-    const hasTimeOff = timeOff.some((to: any) =>
-      to.user_id === userId &&
-      new Date(to.start_time) < blockEnd &&
-      new Date(to.end_time) > blockStart,
-    );
-    if (hasTimeOff) return false;
 
     // Check existing bookings
     const hasConflict = existingBookings.some((bk: any) => {
