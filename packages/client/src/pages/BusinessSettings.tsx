@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
 
-type SettingsTab = 'lifecycle' | 'scheduled-jobs' | 'notifications' | 'payment-methods' | 'integrations';
+type SettingsTab = 'system' | 'lifecycle' | 'scheduled-jobs' | 'notifications' | 'payment-methods' | 'integrations';
 
 export function BusinessSettings() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('lifecycle');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('system');
 
   const tabs: { key: SettingsTab; label: string }[] = [
+    { key: 'system', label: 'System' },
     { key: 'lifecycle', label: 'Customer Lifecycle' },
     { key: 'scheduled-jobs', label: 'Scheduled Jobs' },
     { key: 'notifications', label: 'Notifications' },
@@ -36,6 +37,7 @@ export function BusinessSettings() {
           );
         })}
       </div>
+      {activeTab === 'system' && <SystemSettings />}
       {activeTab === 'lifecycle' && <LifecycleSettings />}
       {activeTab === 'scheduled-jobs' && <ScheduledJobsSettings />}
       {activeTab === 'notifications' && <NotificationSettings />}
@@ -45,6 +47,77 @@ export function BusinessSettings() {
   );
 }
 
+
+// ============================================================
+// System Settings
+// ============================================================
+
+function SystemSettings() {
+  const businessId = localStorage.getItem('business_id') || '';
+  const [schedulingMode, setSchedulingMode] = useState<string>('availability');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!businessId) { setLoading(false); return; }
+    apiClient.get(`/v1/admin/businesses/${businessId}/settings`)
+      .then((res) => {
+        const data = res.data.data;
+        if (data) setSchedulingMode(data.scheduling_mode || 'availability');
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [businessId]);
+
+  const handleToggle = async (checked: boolean) => {
+    const newMode = checked ? 'schedule' : 'availability';
+    setSchedulingMode(newMode);
+    setSaving(true);
+    try {
+      await apiClient.put(`/v1/admin/businesses/${businessId}/settings`, { scheduling_mode: newMode });
+    } catch { alert('Failed to save setting'); setSchedulingMode(schedulingMode); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>Loading...</p>;
+
+  return (
+    <div style={settingStyles.section}>
+      <h3 style={settingStyles.sectionTitle}>Scheduling</h3>
+      <div style={settingStyles.settingRow}>
+        <div style={settingStyles.settingInfo}>
+          <label style={settingStyles.settingLabel}>Use Staff Schedule</label>
+          <p style={settingStyles.settingDesc}>
+            When enabled, the appointment booking engine uses the Staff Schedule (shifts assigned on the Schedule page) to determine when staff are available.
+            When disabled, it uses Staff Availability Patterns (defined on each staff member's profile).
+          </p>
+        </div>
+        <label style={settingStyles.toggle}>
+          <input
+            type="checkbox"
+            checked={schedulingMode === 'schedule'}
+            onChange={(e) => handleToggle(e.target.checked)}
+            disabled={saving}
+            style={{ width: '18px', height: '18px' }}
+          />
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', marginLeft: '8px' }}>
+            {schedulingMode === 'schedule' ? 'Enabled' : 'Disabled'}
+          </span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+const settingStyles: Record<string, React.CSSProperties> = {
+  section: { marginBottom: 'var(--space-xl)' },
+  sectionTitle: { margin: '0 0 var(--space-md) 0', fontSize: 'var(--font-size-md)', fontWeight: 600 as any, color: 'var(--color-text)' },
+  settingRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: 'var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', background: 'var(--color-surface)' },
+  settingInfo: { flex: 1 },
+  settingLabel: { fontSize: 'var(--font-size-sm)', fontWeight: 600 as any, color: 'var(--color-text)', display: 'block', marginBottom: '4px' },
+  settingDesc: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', margin: 0, maxWidth: '500px', lineHeight: 1.4 },
+  toggle: { display: 'flex', alignItems: 'center', cursor: 'pointer', flexShrink: 0 },
+};
 
 // ============================================================
 // Lifecycle Settings

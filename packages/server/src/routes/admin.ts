@@ -1405,3 +1405,44 @@ adminRouter.delete('/tenant-users/:id', tenantContext, requirePermission('settin
     error(res, 'Failed to deactivate user', 'INTERNAL_ERROR', 500);
   }
 });
+
+// GET /api/v1/admin/businesses/:id/settings — Get business system settings
+adminRouter.get('/businesses/:id/settings', tenantContext, requirePermission('settings:read'), async (req: Request, res: Response) => {
+  try {
+    const { rows } = await adminPool.query(
+      'SELECT scheduling_mode FROM sys_businesses WHERE id = $1',
+      [req.params.id],
+    );
+    if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    success(res, rows[0]);
+  } catch (err: any) {
+    error(res, 'Failed to get settings', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/admin/businesses/:id/settings — Update business system settings
+adminRouter.put('/businesses/:id/settings', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    if (req.body.scheduling_mode !== undefined) {
+      fields.push(`scheduling_mode = $${idx++}`);
+      values.push(req.body.scheduling_mode);
+    }
+
+    if (fields.length === 0) { error(res, 'No settings to update', 'VALIDATION_ERROR', 400); return; }
+    fields.push('updated_at = NOW()');
+    values.push(req.params.id);
+
+    const { rows } = await adminPool.query(
+      `UPDATE sys_businesses SET ${fields.join(', ')} WHERE id = $${idx} RETURNING scheduling_mode`,
+      values,
+    );
+    if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    success(res, rows[0]);
+  } catch (err: any) {
+    error(res, 'Failed to update settings', 'INTERNAL_ERROR', 500);
+  }
+});
