@@ -67,15 +67,29 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
 
 /**
  * Filter modules for a given user context.
+ *
+ * `contextLevel` (system | tenant | business) comes from the Context Switcher's active
+ * context and, when provided, determines the persona bucket used for the module-visibility
+ * check instead of the raw JWT persona — e.g. a system-persona user who has switched into a
+ * business context sees business-level modules, not system admin modules. Permission checks
+ * always run against the caller's real JWT-derived `userPermissions`, so switching context can
+ * only narrow what's visible, never grant a module the user's actual permissions don't allow.
  */
 export function getVisibleModules(
   persona: Persona,
   userPermissions: string[],
   featureFlags: Record<string, boolean>,
+  contextLevel?: 'system' | 'tenant' | 'business',
 ): ModuleDefinition[] {
+  const effectivePersonas: Persona[] =
+    contextLevel === 'system' ? ['system'] :
+    contextLevel === 'tenant' ? ['tenant'] :
+    contextLevel === 'business' ? ['business', 'customer'] :
+    [persona];
+
   return MODULE_REGISTRY.filter((mod) => {
-    // Must match persona
-    if (!mod.personas.includes(persona)) return false;
+    // Must match the context-appropriate persona bucket
+    if (!mod.personas.some((p) => effectivePersonas.includes(p))) return false;
 
     // Must have permission (if specified)
     if (mod.permission) {

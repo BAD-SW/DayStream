@@ -1,5 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useContextManager } from '../context/ContextManager';
 import { LoadingSpinner } from './LoadingSpinner';
 import { AppLayout } from './AppLayout';
 
@@ -15,9 +16,13 @@ interface ProtectedRouteProps {
  */
 export function ProtectedRoute({ children, requiredRole, layout = 'app' }: ProtectedRouteProps) {
   const { isAuthenticated, isLoading, user } = useAuth();
+  const { isInitialising: contextInitialising } = useContextManager();
   const location = useLocation();
 
-  if (isLoading) {
+  // Wait on ContextManager too, not just AuthContext — otherwise AppLayout can render one
+  // frame with the wrong (persona-default) contextLevel before a restored/switched context
+  // is applied, flashing the wrong sidebar modules for a moment (Requirement 6.6).
+  if (isLoading || (isAuthenticated && contextInitialising)) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1A1A1A' }}>
         <LoadingSpinner />

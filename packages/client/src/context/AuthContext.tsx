@@ -7,6 +7,7 @@ interface User {
   first_name: string;
   last_name: string;
   role: string;
+  tenant_id?: string;
   business_id?: string;
 }
 
@@ -49,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             first_name: '',
             last_name: '',
             role: payload.role || '',
+            tenant_id: payload.tid || undefined,
             business_id: localStorage.getItem('business_id') || undefined,
           });
           loadFeatureFlags();

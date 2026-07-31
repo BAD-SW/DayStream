@@ -57,4 +57,40 @@ describe('Module Registry', () => {
       expect(modules.some(m => m.id === 'reports')).toBe(true);
     });
   });
+
+  describe('getVisibleModules — Context Switcher contextLevel filtering', () => {
+    it('a system-persona user viewing a business context sees business modules, not system modules', () => {
+      const modules = getVisibleModules('system', ['*:*'], {}, 'business');
+      expect(modules.some(m => m.id === 'customers')).toBe(true);
+      expect(modules.some(m => m.id === 'system-tenants')).toBe(false);
+      expect(modules.some(m => m.id === 'system-config')).toBe(false);
+    });
+
+    it('a system-persona user viewing a tenant context sees tenant modules only', () => {
+      const modules = getVisibleModules('system', ['*:*'], {}, 'tenant');
+      expect(modules.some(m => m.id === 'tenant-businesses')).toBe(true);
+      expect(modules.some(m => m.id === 'system-tenants')).toBe(false);
+      expect(modules.some(m => m.id === 'customers')).toBe(false);
+    });
+
+    it('a system-persona user viewing a system context sees system modules only', () => {
+      const modules = getVisibleModules('system', ['*:*'], {}, 'system');
+      expect(modules.some(m => m.id === 'system-tenants')).toBe(true);
+      expect(modules.some(m => m.id === 'tenant-businesses')).toBe(false);
+      expect(modules.some(m => m.id === 'customers')).toBe(false);
+    });
+
+    it('omitting contextLevel preserves the original persona-only behaviour', () => {
+      const withContext = getVisibleModules('business', ['*:*'], {});
+      const withoutContext = getVisibleModules('business', ['*:*'], {}, undefined);
+      expect(withContext).toEqual(withoutContext);
+    });
+
+    it('never returns a module the permissions array would not otherwise permit, regardless of contextLevel', () => {
+      const modules = getVisibleModules('system', ['bookings:read'], {}, 'business');
+      // 'customers' requires customers:read, which this permission set does not grant
+      expect(modules.some(m => m.id === 'customers')).toBe(false);
+      expect(modules.some(m => m.id === 'appointments')).toBe(true);
+    });
+  });
 });

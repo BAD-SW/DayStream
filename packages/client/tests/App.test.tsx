@@ -2,13 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../src/context/AuthContext';
+import { ContextProvider } from '../src/context/ContextManager';
 import { App } from '../src/App';
 
 function renderApp(route = '/login') {
   return render(
     <MemoryRouter initialEntries={[route]}>
       <AuthProvider>
-        <App />
+        <ContextProvider>
+          <App />
+        </ContextProvider>
       </AuthProvider>
     </MemoryRouter>,
   );

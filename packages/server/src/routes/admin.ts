@@ -565,6 +565,40 @@ adminRouter.get('/audit-log', tenantContext, requirePermission('settings:*'), as
   }
 });
 
+// --- Context Switcher: self-service display info ---
+
+// GET /api/v1/admin/my-context — Current user's own tenant/business display info
+// (name + primary_color only — used to label the Context Switcher's default context
+// before any switch has occurred; scoped strictly to the caller's own JWT tenant and,
+// optionally, a business_id they already have access to within that tenant).
+adminRouter.get('/my-context', tenantContext, async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { rows: tenantRows } = await adminPool.query(
+      'SELECT id, name FROM sys_tenants WHERE id = $1',
+      [authReq.tenantId],
+    );
+    if (tenantRows.length === 0) {
+      error(res, 'Tenant not found', 'NOT_FOUND', 404);
+      return;
+    }
+
+    let business: { id: string; name: string; primary_color: string | null } | null = null;
+    const businessId = req.query.business_id as string | undefined;
+    if (businessId) {
+      const { rows: bizRows } = await adminPool.query(
+        'SELECT id, name, primary_color FROM sys_businesses WHERE id = $1 AND tenant_id = $2',
+        [businessId, authReq.tenantId],
+      );
+      business = bizRows[0] || null;
+    }
+
+    success(res, { tenant: tenantRows[0], business });
+  } catch (err: any) {
+    error(res, 'Failed to get context info', 'INTERNAL_ERROR', 500);
+  }
+});
+
 // --- Tenant Billing Self-Service ---
 
 // GET /api/v1/admin/my-billing — Tenant views their own billing info (read-only terms + editable payment method)

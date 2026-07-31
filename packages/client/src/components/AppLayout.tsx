@@ -1,8 +1,11 @@
 import { ReactNode, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useContextManager, getPermissionsFromRole } from '../context/ContextManager';
 import { useBusinessSettings } from '../context/BusinessSettingsContext';
 import { LanguageSwitcher } from './LanguageSwitcher';
+import { ContextSwitcher } from './ContextSwitcher';
+import { ContextBreadcrumb } from './ContextBreadcrumb';
 import { ThemeModeToggle } from '../design-system/themes/ThemeModeToggle';
 import { getVisibleModules } from '../design-system/components/dashboard/moduleRegistry';
 import { Profile } from '../pages/Profile';
@@ -13,13 +16,15 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const { user, logout, featureFlags } = useAuth();
+  const { persona, activeContext } = useContextManager();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showProfile, setShowProfile] = useState(false);
 
-  // Get modules visible to this user for the sidebar
-  const persona = user ? resolvePersona(user.role) : 'business';
+  // Get modules visible to this user for the sidebar, scoped to the active context level
+  // (not just the raw JWT persona) so a system admin who has switched into a business
+  // context sees business-level modules rather than system admin modules.
   const permissions = user ? getPermissionsFromRole(user.role) : [];
-  const baseModules = getVisibleModules(persona, permissions, featureFlags);
+  const baseModules = getVisibleModules(persona, permissions, featureFlags, activeContext.contextLevel);
 
   // Get scheduling mode from shared context
   const { settings: businessSettings } = useBusinessSettings();
@@ -40,6 +45,8 @@ export function AppLayout({ children }: AppLayoutProps) {
           <button onClick={() => setSidebarOpen(!sidebarOpen)} style={styles.menuBtn} aria-label="Toggle sidebar">
             ☰
           </button>
+          <ContextSwitcher />
+          <ContextBreadcrumb />
           <h1 style={styles.logo}>DayStream</h1>
         </div>
         <div style={styles.headerRight}>
@@ -93,26 +100,6 @@ export function AppLayout({ children }: AppLayoutProps) {
       )}
     </div>
   );
-}
-
-function resolvePersona(role: string): 'system' | 'tenant' | 'business' | 'customer' {
-  if (role === 'system_admin' || role === 'system_support' || role === 'Super Admin') return 'system';
-  if (role === 'tenant_owner' || role === 'tenant_manager') return 'tenant';
-  if (role === 'customer') return 'customer';
-  return 'business';
-}
-
-function getPermissionsFromRole(role: string): string[] {
-  switch (role) {
-    case 'system_admin': case 'system_support': case 'Super Admin': return ['*:*'];
-    case 'tenant_owner': return ['*:*'];
-    case 'tenant_manager': return ['reports:read', 'settings:*'];
-    case 'business_owner': return ['services:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*', 'customers:*'];
-    case 'business_manager': case 'manager': return ['services:read', 'bookings:*', 'staff:read', 'reports:read', 'customers:*'];
-    case 'business_staff': return ['bookings:read', 'bookings:update', 'customers:read'];
-    case 'customer': return ['bookings:read', 'bookings:create'];
-    default: return ['services:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*', 'customers:*'];
-  }
 }
 
 const styles: Record<string, React.CSSProperties> = {

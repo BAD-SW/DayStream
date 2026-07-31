@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { ReactNode } from 'react';
 import { ThemeProvider, useTheme } from '../src/design-system/themes/ThemeProvider';
-import { AuthProvider } from '../src/context/AuthContext';
 
 // Mock the API client
 vi.mock('../src/api/client', () => ({
@@ -12,11 +11,18 @@ vi.mock('../src/api/client', () => ({
   },
 }));
 
+// ThemeProvider now sources its context-cascade inputs from ContextManager instead of
+// raw JWT role — mock it directly so this file can keep testing light/dark mode logic
+// in isolation, without standing up the full Auth/Context/Router provider stack.
+vi.mock('../src/context/ContextManager', () => ({
+  useContextManager: () => ({
+    activeContext: { contextLevel: 'system', tenantId: null, businessId: null, displayName: 'DayStream Platform' },
+  }),
+}));
+
 function wrapper({ children }: { children: ReactNode }) {
   return (
-    <AuthProvider>
-      <ThemeProvider>{children}</ThemeProvider>
-    </AuthProvider>
+    <ThemeProvider>{children}</ThemeProvider>
   );
 }
 

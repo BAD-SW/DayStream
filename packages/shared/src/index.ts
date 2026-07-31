@@ -12,6 +12,13 @@ export type {
   SavedQueryDTO,
   QueryHistoryDTO,
 } from './types/query-editor';
+export type {
+  ContextLevel,
+  ActiveContext,
+  SwitchableContext,
+  ContextSwitchAuditEntry,
+  ContextState,
+} from './types/context';
 
 // Constants
 export { USER_ROLES, PERSONAS } from './constants/roles';

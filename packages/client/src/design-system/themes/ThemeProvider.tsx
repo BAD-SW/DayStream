@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { apiClient } from '../../api/client';
-import { useAuth } from '../../context/AuthContext';
+import { useContextManager } from '../../context/ContextManager';
+import { applyTheme, resetToDefault, ThemeConfig } from '../../context/ThemeManager';
 
 interface BusinessTheme {
   primaryColor?: string;
@@ -76,7 +77,7 @@ function persistToApi(mode: 'dark' | 'light'): void {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<'dark' | 'light'>(detectSystemPreference);
   const [businessTheme, setBusinessTheme] = useState<BusinessTheme | null>(null);
-  const { user } = useAuth();
+  const { activeContext } = useContextManager();
   const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Apply theme mode to document
@@ -85,51 +86,56 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     safeSetItem('theme-mode', mode);
   }, [mode]);
 
-  // Load business theme when user context changes
+  // Load and apply theme overrides for the active context (system → tenant → business cascade).
+  // Driven by ContextManager's activeContext rather than raw JWT role, so switching context
+  // (not just logging in as a given persona) re-applies the correct branding.
   useEffect(() => {
-    if (user && (user.role === 'business_owner' || user.role === 'business_manager' || user.role === 'business_staff' || user.role === 'customer')) {
-      loadBusinessTheme();
-    } else {
-      // System/Tenant users get default theme
-      clearBusinessOverrides();
-      setBusinessTheme(null);
-    }
-  }, [user]);
+    let cancelled = false;
 
-  // Apply business theme CSS overrides
-  useEffect(() => {
-    const root = document.documentElement;
-    if (businessTheme) {
-      if (businessTheme.primaryColor) root.style.setProperty('--color-primary', businessTheme.primaryColor);
-      if (businessTheme.accentColor) root.style.setProperty('--color-accent', businessTheme.accentColor);
-      if (businessTheme.fontFamily) root.style.setProperty('--font-family', businessTheme.fontFamily);
-      if (businessTheme.borderRadius) {
-        const radiusMap = { sharp: '2px', rounded: '8px', pill: '9999px' };
-        root.style.setProperty('--radius-md', radiusMap[businessTheme.borderRadius]);
+    async function loadContextTheme() {
+      if (activeContext.contextLevel === 'system') {
+        if (!cancelled) {
+          setBusinessTheme(null);
+          resetToDefault();
+        }
+        return;
+      }
+
+      try {
+        // Tenant-level layer: brand.* config for the active tenant (the apiClient interceptor
+        // injects X-Context-Tenant-Id automatically when this differs from the caller's own JWT tenant).
+        const configRes = await apiClient.get('/v1/admin/config');
+        const config = configRes.data.data || {};
+        const merged: ThemeConfig = {
+          colorPrimary: config['brand.primary_color'] || undefined,
+          logoUrl: config['brand.logo_url'] || undefined,
+        };
+
+        // Business-level layer: overrides the tenant color when a business is in scope.
+        if (activeContext.contextLevel === 'business' && activeContext.businessId) {
+          try {
+            const bizRes = await apiClient.get('/v1/admin/my-context', { params: { business_id: activeContext.businessId } });
+            const business = bizRes.data.data?.business;
+            if (business?.primary_color) merged.colorPrimary = business.primary_color;
+          } catch {
+            // Fall back to the tenant-level color only
+          }
+        }
+
+        if (cancelled) return;
+        setBusinessTheme({ primaryColor: merged.colorPrimary, logoUrl: merged.logoUrl });
+        applyTheme(merged);
+      } catch {
+        if (!cancelled) {
+          setBusinessTheme(null);
+          resetToDefault();
+        }
       }
     }
-  }, [businessTheme]);
 
-  async function loadBusinessTheme() {
-    try {
-      const res = await apiClient.get('/v1/admin/config');
-      const config = res.data.data;
-      setBusinessTheme({
-        primaryColor: config['brand.primary_color'] || undefined,
-        logoUrl: config['brand.logo_url'] || undefined,
-      });
-    } catch {
-      // Non-critical — use defaults
-    }
-  }
-
-  function clearBusinessOverrides() {
-    const root = document.documentElement;
-    root.style.removeProperty('--color-primary');
-    root.style.removeProperty('--color-accent');
-    root.style.removeProperty('--font-family');
-    root.style.removeProperty('--radius-md');
-  }
+    loadContextTheme();
+    return () => { cancelled = true; };
+  }, [activeContext.contextLevel, activeContext.tenantId, activeContext.businessId]);
 
   function toggleMode() {
     const root = document.documentElement;

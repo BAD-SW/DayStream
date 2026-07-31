@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../../context/AuthContext';
+import { useContextManager } from '../../../context/ContextManager';
 import { DashboardShell } from './DashboardShell';
 import { KpiCard } from './KpiCard';
 import { SortableTileGrid } from './SortableTileGrid';
@@ -19,13 +20,18 @@ interface DetailModal {
  */
 export function PersonaDashboard() {
   const { user, featureFlags } = useAuth();
+  const { activeContext, persona: rawPersona } = useContextManager();
   const [tenantKpis, setTenantKpis] = useState<KpiData[] | null>(null);
   const [systemKpis, setSystemKpis] = useState<KpiData[] | null>(null);
   const [businessKpis, setBusinessKpis] = useState<KpiData[] | null>(null);
   const [detail, setDetail] = useState<DetailModal | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const persona = user ? resolvePersona(user.role) : null;
+  // Customers never have an active context to switch (out of scope for the Context Switcher),
+  // so they always follow their raw JWT persona. Every other persona follows the active context
+  // level instead — e.g. a system admin who has switched into a business context sees the
+  // business dashboard here, matching the business-level modules AppLayout's sidebar shows them.
+  const persona: Persona | null = user ? (rawPersona === 'customer' ? 'customer' : activeContext.contextLevel) : null;
 
   async function openDetail(endpoint: string, title: string, columns: DetailModal['columns']) {
     setDetailLoading(true);
@@ -100,7 +106,7 @@ export function PersonaDashboard() {
   if (!user) return null;
 
   const permissions = getPermissionsFromRole(user.role);
-  const baseModules = getVisibleModules(persona!, permissions, featureFlags);
+  const baseModules = getVisibleModules(persona!, permissions, featureFlags, activeContext.contextLevel);
 
   const { settings: businessSettings } = useBusinessSettings();
   const modules = baseModules.map((mod) => {
@@ -156,13 +162,6 @@ export function PersonaDashboard() {
       )}
     </>
   );
-}
-
-function resolvePersona(role: string): Persona {
-  if (role === 'system_admin' || role === 'system_support' || role === 'Super Admin') return 'system';
-  if (role === 'tenant_owner' || role === 'tenant_manager') return 'tenant';
-  if (role === 'customer') return 'customer';
-  return 'business';
 }
 
 function getPermissionsFromRole(role: string): string[] {

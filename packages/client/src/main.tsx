@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ContextProvider } from './context/ContextManager';
 import { BusinessSettingsProvider } from './context/BusinessSettingsContext';
 import { ThemeProvider } from './design-system/themes/ThemeProvider';
 import { App } from './App';
@@ -16,11 +17,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
-        <BusinessSettingsProvider>
-          <ThemeProvider>
-            <App />
-          </ThemeProvider>
-        </BusinessSettingsProvider>
+        <ContextProvider>
+          <BusinessSettingsProvider>
+            <ThemeProvider>
+              <App />
+            </ThemeProvider>
+          </BusinessSettingsProvider>
+        </ContextProvider>
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>,
