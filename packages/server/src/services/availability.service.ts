@@ -489,11 +489,15 @@ function getAvailableStaffForSlot(
         }
       } else {
         // Check availability pattern for this day of week
-        const patterns = staffWorkingData.filter((p: any) => p.user_id === userId && p.day_of_week === dayOfWeek);
-        if (patterns.length > 0) {
+        const allStaffPatterns = staffWorkingData.filter((p: any) => p.user_id === userId);
+        const dayPatterns = allStaffPatterns.filter((p: any) => p.day_of_week === dayOfWeek);
+
+        if (allStaffPatterns.length === 0) {
+          // No patterns defined at all — assume staff is available (no restrictions set up)
+        } else if (dayPatterns.length > 0) {
           const slotMinutes = slotStart.getUTCHours() * 60 + slotStart.getUTCMinutes();
           const slotEndMinutes = slotEnd.getUTCHours() * 60 + slotEnd.getUTCMinutes();
-          const isAvailable = patterns.some((p: any) => {
+          const isAvailable = dayPatterns.some((p: any) => {
             if (p.effective_from && dateStr < p.effective_from) return false;
             if (p.effective_to && dateStr > p.effective_to) return false;
             const patStart = timeToMinutes(p.start_time);
@@ -501,9 +505,10 @@ function getAvailableStaffForSlot(
             return slotMinutes >= patStart && slotEndMinutes <= patEnd;
           });
           if (!isAvailable) return false;
+        } else {
+          // Staff has patterns but none for this day — they don't work this day
+          return false;
         }
-        // If no pattern defined for this day, staff is not available
-        else return false;
       }
     }
 

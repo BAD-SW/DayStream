@@ -35,7 +35,7 @@ const createMerchandiseSchema = Joi.object({
 });
 
 const updateMerchandiseSchema = Joi.object({
-  category_id: Joi.string().uuid().allow(null),
+  category_id: Joi.string().uuid().allow(null, ''),
   name: Joi.string().min(1).max(200),
   description: Joi.string().max(5000).allow('', null),
   short_description: Joi.string().max(500).allow('', null),
@@ -44,7 +44,7 @@ const updateMerchandiseSchema = Joi.object({
   status: Joi.string().valid('active', 'inactive', 'archived'),
   image_url: Joi.string().uri().allow('', null),
   display_order: Joi.number().integer().min(0),
-  tax_category_id: Joi.string().uuid().allow(null),
+  tax_category_id: Joi.string().uuid().allow(null, ''),
   is_taxable: Joi.boolean(),
 }).min(1);
 

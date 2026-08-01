@@ -122,7 +122,15 @@ function ProductForm({ item, categories, businessId, onUpdate }: { item: Merchan
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await apiClient.put(`/v1/merchandise/${item.id}?business_id=${businessId}`, form);
+      const payload = {
+        ...form,
+        category_id: form.category_id || null,
+        tax_category_id: form.tax_category_id || null,
+        sku: form.sku || null,
+        description: form.description || null,
+        short_description: form.short_description || null,
+      };
+      const res = await apiClient.put(`/v1/merchandise/${item.id}?business_id=${businessId}`, payload);
       onUpdate(res.data.data);
     } catch { alert('Failed to save changes'); }
     finally { setSaving(false); }

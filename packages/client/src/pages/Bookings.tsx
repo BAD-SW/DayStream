@@ -15,7 +15,7 @@ export function Bookings() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
   const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
-  const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
+  const [dateTo, setDateTo] = useState(new Date(Date.now() + 6 * 86400000).toISOString().split('T')[0]);
   const [staffFilter, setStaffFilter] = useState('');
   const [customerFilter, setCustomerFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -72,22 +72,22 @@ export function Bookings() {
   };
 
   const columns = [
-    { key: 'booking_reference', header: 'Ref', width: '120px' },
+    { key: 'booking_reference', header: 'Ref', width: '120px', sortable: true },
     {
-      key: 'customer', header: 'Customer',
+      key: 'customer_first_name', header: 'Customer', sortable: true,
       render: (_: any, row: Booking) => row.customer_first_name ? `${row.customer_first_name} ${row.customer_last_name}` : (row as any).walk_in_name || 'Walk-in',
     },
-    { key: 'service_name', header: 'Service' },
+    { key: 'service_name', header: 'Service', sortable: true },
     {
       key: 'start_time', header: 'Date/Time', sortable: true,
       render: (val: string) => new Date(val).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', timeZone: businessTimezone }),
     },
     {
-      key: 'status', header: 'Status',
+      key: 'status', header: 'Status', sortable: true,
       render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val.replace('_', ' ')}</Badge>,
     },
     {
-      key: 'staff', header: 'Staff',
+      key: 'staff_first_name', header: 'Staff', sortable: true,
       render: (_: any, row: Booking) => row.staff_first_name ? `${row.staff_first_name} ${row.staff_last_name}` : '—',
     },
     {
@@ -139,7 +139,7 @@ export function Bookings() {
         )}
       </div>
 
-      <Table columns={columns} data={bookings} loading={loading} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No bookings found" mobileCardMode onRowClick={(row) => navigate(`/bookings/${row.id}/edit`)} />
+      <Table columns={columns} data={bookings} loading={loading} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No bookings found" mobileCardMode clientSort onRowClick={(row) => navigate(`/bookings/${row.id}/edit`)} />
 
     </div>
   );

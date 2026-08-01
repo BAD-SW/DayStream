@@ -81,6 +81,136 @@ export async function createBooking(input: CreateBookingInput) {
     }
   }
 
+  // Check business hours (location hours + holiday overrides)
+  const { rows: locRows } = await adminPool.query(
+    "SELECT id FROM sys_locations WHERE business_id = $1 AND status = 'active' AND is_primary = true LIMIT 1",
+    [input.businessId],
+  );
+  const locationId = locRows[0]?.id;
+  if (locationId) {
+    const bookingDate = startTime.toISOString().split('T')[0];
+    const dayOfWeek = startTime.getUTCDay();
+    const slotMins = startTime.getUTCHours() * 60 + startTime.getUTCMinutes();
+    const endMins = endTime.getUTCHours() * 60 + endTime.getUTCMinutes();
+
+    // Check holiday overrides first
+    const { rows: overrides } = await adminPool.query(
+      'SELECT * FROM sys_location_hour_overrides WHERE location_id = $1 AND override_date = $2',
+      [locationId, bookingDate],
+    );
+    if (overrides.length > 0) {
+      const override = overrides[0];
+      if (override.is_closed) {
+        throw new Error('Business is closed on this date (holiday)');
+      }
+      if (override.open_time && override.close_time) {
+        const [oh, om] = override.open_time.split(':').map(Number);
+        const [ch, cm] = override.close_time.split(':').map(Number);
+        if (slotMins < oh * 60 + om || endMins > ch * 60 + cm) {
+          throw new Error('Appointment time is outside business hours for this date');
+        }
+      }
+    } else {
+      // Check normal business hours
+      const { rows: hours } = await adminPool.query(
+        'SELECT * FROM sys_location_hours WHERE location_id = $1 AND day_of_week = $2',
+        [locationId, dayOfWeek],
+      );
+      if (hours.length > 0) {
+        const bh = hours[0];
+        if (bh.is_closed) {
+          throw new Error('Business is closed on this day');
+        }
+        if (bh.open_time && bh.close_time) {
+          const [oh, om] = bh.open_time.split(':').map(Number);
+          const [ch, cm] = bh.close_time.split(':').map(Number);
+          if (slotMins < oh * 60 + om || endMins > ch * 60 + cm) {
+            throw new Error('Appointment time is outside business hours');
+          }
+        }
+      }
+    }
+  }
+
+  // Check staff working hours (schedule mode vs availability mode)
+  if (input.staffId && !input.overrideRules) {
+    const { rows: bizRows } = await adminPool.query(
+      'SELECT scheduling_mode FROM sys_businesses WHERE id = $1',
+      [input.businessId],
+    );
+    const schedulingMode = bizRows[0]?.scheduling_mode || 'availability';
+    const bookingDate = startTime.toISOString().split('T')[0];
+    const dayOfWeek = startTime.getUTCDay();
+    const slotMins = startTime.getUTCHours() * 60 + startTime.getUTCMinutes();
+    const endMins = endTime.getUTCHours() * 60 + endTime.getUTCMinutes();
+
+    if (schedulingMode === 'schedule') {
+      // Check if staff has a schedule entry covering this time
+      const { rows: schedEntries } = await adminPool.query(
+        `SELECT e.start_time, e.end_time FROM stf_schedule_entries e
+         JOIN stf_profiles sp ON sp.id = e.staff_id
+         WHERE sp.user_id = $1 AND e.schedule_date = $2 AND e.entry_type = 'shift'`,
+        [input.staffId, bookingDate],
+      );
+      if (schedEntries.length === 0) {
+        throw new Error('Staff member is not scheduled to work on this date');
+      }
+      const isWithinShift = schedEntries.some((e: any) => {
+        const [sh, sm] = e.start_time.split(':').map(Number);
+        const [eh, em] = e.end_time.split(':').map(Number);
+        return slotMins >= sh * 60 + sm && endMins <= eh * 60 + em;
+      });
+      if (!isWithinShift) {
+        throw new Error('Appointment time is outside staff scheduled shift');
+      }
+    } else {
+      // Check availability patterns + overrides
+      const { rows: profileRows } = await adminPool.query(
+        'SELECT id FROM stf_profiles WHERE user_id = $1 LIMIT 1', [input.staffId],
+      );
+      if (profileRows.length > 0) {
+        const staffProfileId = profileRows[0].id;
+
+        // Check overrides first
+        const { rows: overrideRows } = await adminPool.query(
+          'SELECT * FROM stf_availability_overrides WHERE staff_id = $1 AND override_date = $2',
+          [staffProfileId, bookingDate],
+        );
+        if (overrideRows.length > 0) {
+          const override = overrideRows[0];
+          if (override.override_type === 'remove') {
+            throw new Error('Staff member is not available on this date');
+          }
+          if ((override.override_type === 'modify' || override.override_type === 'add') && override.start_time && override.end_time) {
+            const [oh, om] = override.start_time.split(':').map(Number);
+            const [ch, cm] = override.end_time.split(':').map(Number);
+            if (slotMins < oh * 60 + om || endMins > ch * 60 + cm) {
+              throw new Error('Appointment time is outside staff availability for this date');
+            }
+          }
+        } else {
+          // Check pattern for this day of week
+          const { rows: patternSlots } = await adminPool.query(
+            `SELECT ps.start_time, ps.end_time FROM stf_availability_pattern_slots ps
+             JOIN stf_availability_patterns p ON p.id = ps.pattern_id
+             WHERE p.staff_id = $1 AND p.is_default = true AND ps.day_of_week = $2`,
+            [staffProfileId, dayOfWeek],
+          );
+          if (patternSlots.length > 0) {
+            const isAvailable = patternSlots.some((s: any) => {
+              const [sh, sm] = s.start_time.split(':').map(Number);
+              const [eh, em] = s.end_time.split(':').map(Number);
+              return slotMins >= sh * 60 + sm && endMins <= eh * 60 + em;
+            });
+            if (!isAvailable) {
+              throw new Error('Appointment time is outside staff availability hours');
+            }
+          }
+        }
+      }
+    }
+  }
+
   // Resolve staff (auto-assign if not provided for individual bookings)
   let staffId = input.staffId || null;
   if (!staffId && bookingType === 'individual') {
@@ -246,7 +376,7 @@ export async function getBookings(filters: BookingFilters) {
        LEFT JOIN cus_customers c ON c.id = b.customer_id
        LEFT JOIN usr_users u ON u.id = b.staff_id
        WHERE ${where}
-       ORDER BY b.start_time DESC
+       ORDER BY b.start_time ASC
        LIMIT ${limit} OFFSET ${offset}`,
       params,
     ),

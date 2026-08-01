@@ -91,9 +91,70 @@ export function BookingCreate() {
     resetFilters();
   }, [selectedService]);
 
-  // Fetch availability combinations when service + variant + date are set
+  // Check if business is closed on selected date (per location)
+  const [businessClosed, setBusinessClosed] = useState<string | null>(null);
+  const [locationStatuses, setLocationStatuses] = useState<Map<string, { status: 'open' | 'closed' | 'modified'; label?: string; hours?: string }>>(new Map());
+
   useEffect(() => {
-    if (!selectedService || !selectedVariant || !selectedDate) { setAllCombos([]); return; }
+    if (!selectedDate || !businessId) { setBusinessClosed(null); setLocationStatuses(new Map()); return; }
+    apiClient.get(`/v1/locations?business_id=${businessId}`).then(async (locRes) => {
+      const locs = locRes.data.data || [];
+      if (locs.length === 0) { setBusinessClosed(null); setLocationStatuses(new Map()); return; }
+
+      const dayOfWeek = new Date(selectedDate + 'T12:00:00').getDay();
+      const year = new Date(selectedDate).getFullYear();
+      const statuses = new Map<string, { status: 'open' | 'closed' | 'modified'; label?: string; hours?: string }>();
+
+      for (const loc of locs) {
+        try {
+          // Check overrides
+          const overridesRes = await apiClient.get(`/v1/locations/${loc.id}/hours/overrides?year=${year}`);
+          const overrides = overridesRes.data.data || [];
+          const dayOverride = overrides.find((o: any) => o.override_date.split('T')[0] === selectedDate);
+
+          if (dayOverride) {
+            if (dayOverride.is_closed) {
+              statuses.set(loc.id, { status: 'closed', label: dayOverride.label || 'Holiday' });
+              continue;
+            } else if (dayOverride.open_time && dayOverride.close_time) {
+              const openStr = new Date(`2000-01-01T${dayOverride.open_time}`).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+              const closeStr = new Date(`2000-01-01T${dayOverride.close_time}`).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+              statuses.set(loc.id, { status: 'modified', label: dayOverride.label, hours: `${openStr}–${closeStr}` });
+              continue;
+            }
+          }
+
+          // Check regular hours
+          const hoursRes = await apiClient.get(`/v1/locations/${loc.id}/hours`);
+          const hours = hoursRes.data.data || [];
+          const dayHours = hours.find((h: any) => h.day_of_week === dayOfWeek);
+
+          if (dayHours && dayHours.is_closed) {
+            statuses.set(loc.id, { status: 'closed', label: 'Closed this day' });
+          } else {
+            statuses.set(loc.id, { status: 'open' });
+          }
+        } catch {
+          statuses.set(loc.id, { status: 'open' });
+        }
+      }
+
+      setLocationStatuses(statuses);
+
+      // Only show full "business closed" message if ALL locations are closed
+      const allClosed = locs.every((loc: any) => statuses.get(loc.id)?.status === 'closed');
+      if (allClosed) {
+        const firstLabel = statuses.values().next().value?.label;
+        setBusinessClosed(firstLabel ? `Closed — ${firstLabel}` : 'All locations closed');
+      } else {
+        setBusinessClosed(null);
+      }
+    }).catch(() => { setBusinessClosed(null); setLocationStatuses(new Map()); });
+  }, [selectedDate, businessId]);
+
+  // Fetch availability combinations when service + variant + date are set (and business is open)
+  useEffect(() => {
+    if (!selectedService || !selectedVariant || !selectedDate || businessClosed) { setAllCombos([]); return; }
     setCombosLoading(true);
     apiClient.get('/v1/bookings/availability/combinations', {
       params: { service_id: selectedService, business_id: businessId, date_from: selectedDate, date_to: selectedDate, variant_id: selectedVariant },
@@ -104,7 +165,7 @@ export function BookingCreate() {
     }).catch(() => setAllCombos([]))
       .finally(() => setCombosLoading(false));
     resetFilters();
-  }, [selectedService, selectedVariant, selectedDate, businessId]);
+  }, [selectedService, selectedVariant, selectedDate, businessId, businessClosed]);
 
   function resetFilters() {
     setSelectedLocation(null);
@@ -281,7 +342,7 @@ export function BookingCreate() {
         )}
 
         {/* Multi-filter panel */}
-        {selectedDate && !combosLoading && allCombos.length > 0 && (
+        {selectedDate && !combosLoading && !businessClosed && allCombos.length > 0 && (
           <div style={styles.filterPanel}>
             {/* Locations column */}
             {availableLocations.length > 0 && (
@@ -290,11 +351,20 @@ export function BookingCreate() {
                 <button type="button"
                   style={{ ...styles.filterOption, ...(selectedLocation === null ? styles.filterOptionActive : {}) }}
                   onClick={() => setSelectedLocation(null)}>Any</button>
-                {availableLocations.map((l) => (
-                  <button key={l.id} type="button"
-                    style={{ ...styles.filterOption, ...(selectedLocation === l.id ? styles.filterOptionActive : {}) }}
-                    onClick={() => setSelectedLocation(selectedLocation === l.id ? null : l.id)}>{l.name}</button>
-                ))}
+                {availableLocations.map((l) => {
+                  const locStatus = locationStatuses.get(l.id);
+                  const isClosed = locStatus?.status === 'closed';
+                  return (
+                    <button key={l.id} type="button"
+                      disabled={isClosed}
+                      style={{ ...styles.filterOption, ...(selectedLocation === l.id ? styles.filterOptionActive : {}), ...(isClosed ? { opacity: 0.5, cursor: 'not-allowed', textDecoration: 'line-through' } : {}) }}
+                      onClick={() => !isClosed && setSelectedLocation(selectedLocation === l.id ? null : l.id)}>
+                      {l.name}
+                      {isClosed && <span style={{ fontSize: '10px', display: 'block', color: 'var(--color-error)' }}>{locStatus?.label || 'Closed'}</span>}
+                      {locStatus?.status === 'modified' && <span style={{ fontSize: '10px', display: 'block', color: 'var(--color-text-muted)' }}>{locStatus.hours}</span>}
+                    </button>
+                  );
+                })}
               </div>
             )}
 
@@ -328,7 +398,13 @@ export function BookingCreate() {
         )}
 
         {selectedDate && combosLoading && <p style={styles.hint}>Loading availability...</p>}
-        {selectedDate && !combosLoading && allCombos.length === 0 && <p style={styles.hint}>No availability for this date</p>}
+        {selectedDate && businessClosed && (
+          <div style={{ padding: 'var(--space-md)', border: '1px solid var(--color-error)', borderRadius: 'var(--radius-md)', background: 'var(--color-error-bg, rgba(211,47,47,0.05))', marginBottom: 'var(--space-md)' }}>
+            <p style={{ margin: 0, fontSize: 'var(--font-size-sm)', color: 'var(--color-error)', fontWeight: 600 }}>{businessClosed}</p>
+            <p style={{ margin: '4px 0 0', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>No appointments can be booked on this date.</p>
+          </div>
+        )}
+        {selectedDate && !combosLoading && !businessClosed && allCombos.length === 0 && <p style={styles.hint}>No availability for this date</p>}
 
         {/* Notes */}
         <div style={styles.field}>

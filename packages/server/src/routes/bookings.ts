@@ -175,6 +175,7 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
     } else if (err.message.includes('conflict') || err.message.includes('capacity') || err.message.includes('advance booking') || err.message.includes('No staff')) {
       error(res, err.message, 'CONFLICT', 409);
     } else {
+      console.error('Booking creation error:', err);
       error(res, 'Failed to create booking', 'INTERNAL_ERROR', 500);
     }
   }
