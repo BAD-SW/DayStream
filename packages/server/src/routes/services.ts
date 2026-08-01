@@ -43,6 +43,7 @@ servicesRouter.get('/categories', requirePermission('services:read'), async (req
     const categories = await categoriesService.getCategories(businessId);
     success(res, categories);
   } catch (err: any) {
+    console.error('List categories error:', err);
     error(res, 'Failed to list categories', 'INTERNAL_ERROR', 500);
   }
 });
@@ -426,6 +427,7 @@ servicesRouter.get('/', requirePermission('services:read'), async (req: Request,
       totalPages: Math.ceil(result.total / result.limit),
     });
   } catch (err: any) {
+    console.error('List services error:', err);
     error(res, 'Failed to list services', 'INTERNAL_ERROR', 500);
   }
 });

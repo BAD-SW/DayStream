@@ -60,7 +60,8 @@ apiClient.interceptors.request.use(async (config) => {
   if (ctx) {
     if (ctx.businessId) {
       if (!config.params) config.params = {};
-      if (config.params.business_id === undefined) {
+      const urlHasBusinessId = config.url?.includes('business_id');
+      if (config.params.business_id === undefined && !urlHasBusinessId) {
         config.params.business_id = ctx.businessId;
       }
     }

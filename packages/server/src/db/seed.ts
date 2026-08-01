@@ -108,7 +108,9 @@ async function seed() {
     await client.query('DELETE FROM usr_refresh_tokens WHERE user_id IN (SELECT id FROM usr_users WHERE tenant_id = $1)', [SEED_TENANT_ID]);
     await client.query('DELETE FROM usr_password_history WHERE user_id IN (SELECT id FROM usr_users WHERE tenant_id = $1)', [SEED_TENANT_ID]);
     await client.query('DELETE FROM sys_tenant_configurations WHERE tenant_id = $1', [SEED_TENANT_ID]);
+    await client.query('UPDATE sys_system_configurations SET updated_by = NULL WHERE updated_by IN (SELECT id FROM usr_users WHERE tenant_id = $1)', [SEED_TENANT_ID]);
     await client.query('DELETE FROM usr_user_roles WHERE tenant_id = $1', [SEED_TENANT_ID]);
+    await client.query('DELETE FROM usr_roles WHERE tenant_id = $1', [SEED_TENANT_ID]);
     await client.query('DELETE FROM usr_users WHERE tenant_id = $1', [SEED_TENANT_ID]);
     await client.query('DELETE FROM sys_tenants WHERE id = $1', [SEED_TENANT_ID]);
 
@@ -130,19 +132,42 @@ async function seed() {
     const passwordHash = await bcrypt.hash('password123', 12);
     let userCount = 0;
 
-    // Role mapping to system role IDs from migration 002
-    const roleMap: Record<string, string> = {
-      system_admin: '00000000-0000-0000-0000-000000000100',
-      system_support: '00000000-0000-0000-0000-000000000100',
-      tenant_owner: '00000000-0000-0000-0000-000000000101',
-      tenant_manager: '00000000-0000-0000-0000-000000000102',
-      business_owner: '00000000-0000-0000-0000-000000000101',
-      manager: '00000000-0000-0000-0000-000000000102',
-      reception: '00000000-0000-0000-0000-000000000103',
-      therapist: '00000000-0000-0000-0000-000000000103',
-      trainer: '00000000-0000-0000-0000-000000000103',
-      customer: '00000000-0000-0000-0000-000000000104',
-    };
+    // Create roles for the seed tenant (matching what tenant.service.ts creates)
+    const seedRoles = [
+      { name: 'Tenant Owner', permissions: '["*:*"]' },
+      { name: 'Business Owner', permissions: '["services:*","bookings:*","staff:*","reports:*","settings:*","customers:*"]' },
+      { name: 'Manager', permissions: '["services:read","bookings:*","staff:read","reports:read","customers:*","schedule:*"]' },
+      { name: 'Staff', permissions: '["bookings:read","bookings:update","customers:read","schedule:read"]' },
+      { name: 'Customer', permissions: '["bookings:create","bookings:read","profile:update"]' },
+    ];
+    for (const role of seedRoles) {
+      await client.query(
+        `INSERT INTO usr_roles (tenant_id, name, permissions, is_system)
+         VALUES ($1, $2, $3, true) ON CONFLICT DO NOTHING`,
+        [SEED_TENANT_ID, role.name, role.permissions],
+      );
+    }
+
+    // Look up roles by name for the seed tenant
+    const { rows: roleRows } = await client.query(
+      'SELECT id, name FROM usr_roles WHERE tenant_id = $1',
+      [SEED_TENANT_ID],
+    );
+    const roleMap: Record<string, string> = {};
+    for (const r of roleRows) {
+      const nameLower = r.name.toLowerCase();
+      if (nameLower.includes('owner')) { roleMap['business_owner'] = r.id; roleMap['tenant_owner'] = r.id; }
+      if (nameLower.includes('manager')) { roleMap['manager'] = r.id; roleMap['tenant_manager'] = r.id; }
+      if (nameLower === 'staff') { roleMap['reception'] = r.id; roleMap['therapist'] = r.id; roleMap['trainer'] = r.id; }
+      if (nameLower === 'customer') { roleMap['customer'] = r.id; }
+    }
+    // Also check for system-level roles
+    const { rows: sysRoles } = await client.query(
+      "SELECT id, name FROM usr_roles WHERE tenant_id IS NULL OR name LIKE '%Admin%'",
+    );
+    for (const r of sysRoles) {
+      if (r.name.toLowerCase().includes('admin')) { roleMap['system_admin'] = r.id; roleMap['system_support'] = r.id; }
+    }
 
     for (const [, user] of Object.entries(SEED_USERS)) {
       await client.query(
