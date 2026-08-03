@@ -6,9 +6,9 @@ import { adminPool } from '../db/pool';
 export async function getResourceTypes(tenantId: string, businessId?: string) {
   if (businessId) {
     const { rows } = await adminPool.query(
-      `SELECT rt.*, (SELECT COUNT(*)::int FROM res_resources WHERE resource_type_id = rt.id AND business_id = $2) AS resource_count
-       FROM res_types rt WHERE rt.business_id = $2 ORDER BY rt.category, rt.name`,
-      [tenantId, businessId],
+      `SELECT rt.*, (SELECT COUNT(*)::int FROM res_resources WHERE resource_type_id = rt.id AND business_id = $1) AS resource_count
+       FROM res_types rt WHERE rt.business_id = $1 ORDER BY rt.category, rt.name`,
+      [businessId],
     );
     return rows;
   }

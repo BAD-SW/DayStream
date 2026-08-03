@@ -359,6 +359,7 @@ const updateServiceSchema = Joi.object({
   min_advance_booking_hours: Joi.number().integer().min(0),
   max_advance_booking_days: Joi.number().integer().min(1).max(365),
   online_booking_enabled: Joi.boolean(),
+  requires_dedicated_staff: Joi.boolean(),
   preparation_notes: Joi.string().max(2000).allow('', null),
   display_order: Joi.number().integer().min(0),
   is_taxable: Joi.boolean(),
@@ -790,6 +791,7 @@ const createAvailabilitySchema = Joi.object({
   description: Joi.string().max(200).allow('', null),
   location_ids: Joi.array().items(Joi.string().uuid()).allow(null),
   staff_ids: Joi.array().items(Joi.string().uuid()).allow(null),
+  resource_ids: Joi.array().items(Joi.string().uuid()).allow(null),
   variant_ids: Joi.array().items(Joi.string().uuid()).allow(null),
 });
 
@@ -818,6 +820,7 @@ servicesRouter.post('/:id/availability', requirePermission('services:*'), valida
       description: req.body.description,
       locationIds: req.body.location_ids,
       staffIds: req.body.staff_ids,
+      resourceIds: req.body.resource_ids,
       variantIds: req.body.variant_ids,
     });
     success(res, rule, undefined, 201);
@@ -853,6 +856,7 @@ const updateAvailabilitySchema = Joi.object({
   description: Joi.string().max(200).allow('', null),
   location_ids: Joi.array().items(Joi.string().uuid()).allow(null),
   staff_ids: Joi.array().items(Joi.string().uuid()).allow(null),
+  resource_ids: Joi.array().items(Joi.string().uuid()).allow(null),
   variant_ids: Joi.array().items(Joi.string().uuid()).allow(null),
 });
 
@@ -869,6 +873,7 @@ servicesRouter.put('/:id/availability/:ruleId', requirePermission('services:*'),
       description: req.body.description,
       locationIds: req.body.location_ids,
       staffIds: req.body.staff_ids,
+      resourceIds: req.body.resource_ids,
       variantIds: req.body.variant_ids,
     });
     if (!updated) { error(res, 'Rule not found', 'NOT_FOUND', 404); return; }
