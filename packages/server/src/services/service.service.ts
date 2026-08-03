@@ -250,6 +250,7 @@ export async function updateService(id: string, businessId: string, updates: Rec
     min_advance_booking_hours: 'min_advance_booking_hours',
     max_advance_booking_days: 'max_advance_booking_days',
     online_booking_enabled: 'online_booking_enabled',
+    requires_dedicated_staff: 'requires_dedicated_staff',
     preparation_notes: 'preparation_notes',
     display_order: 'display_order',
     tax_category_id: 'tax_category_id',

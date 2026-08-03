@@ -52,6 +52,12 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
   const [saving, setSaving] = useState(false);
   const [statusChanging, setStatusChanging] = useState(false);
   const [priceDisplay, setPriceDisplay] = useState((pkg.price / 100).toFixed(2));
+  const [taxCategories, setTaxCategories] = useState<any[]>([]);
+
+  useEffect(() => {
+    apiClient.get(`/v1/services/tax-categories?business_id=${businessId}`).then((res) => setTaxCategories(res.data.data || [])).catch(() => {});
+  }, [businessId]);
+
   const [form, setForm] = useState({
     name: pkg.name, description: pkg.description || '', short_description: pkg.short_description || '',
     price: pkg.price, expiration_type: pkg.expiration_type || 'none',
@@ -147,12 +153,15 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
             </div>
           )}
           <div style={styles.formGroup}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={form.is_taxable} onChange={(e) => setForm({ ...form, is_taxable: e.target.checked })} style={{ width: '16px', height: '16px' }} /> Taxable
-            </label>
+            <label style={styles.label}>Tax Category</label>
+            <select style={styles.input} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
+              <option value="">No tax</option>
+              {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
+            </select>
           </div>
           <div style={styles.formGroup}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
+            <label style={styles.label}>&nbsp;</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', paddingTop: '4px' }}>
               <input type="checkbox" checked={form.new_customers_only} onChange={(e) => setForm({ ...form, new_customers_only: e.target.checked })} style={{ width: '16px', height: '16px' }} /> New customers only (intro offer)
             </label>
           </div>

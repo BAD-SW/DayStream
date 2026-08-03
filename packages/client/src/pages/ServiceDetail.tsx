@@ -80,6 +80,7 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
     buffer_after: service.buffer_after,
     max_capacity: service.max_capacity,
     online_booking_enabled: service.online_booking_enabled,
+    requires_dedicated_staff: service.requires_dedicated_staff !== false,
     is_taxable: (service as any).is_taxable || false,
     tax_category_id: (service as any).tax_category_id || '',
   });
@@ -94,6 +95,7 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
     form.buffer_after !== service.buffer_after ||
     form.max_capacity !== service.max_capacity ||
     form.online_booking_enabled !== service.online_booking_enabled ||
+    form.requires_dedicated_staff !== (service.requires_dedicated_staff !== false) ||
     form.is_taxable !== ((service as any).is_taxable || false) ||
     form.tax_category_id !== ((service as any).tax_category_id || '');
 
@@ -204,10 +206,24 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
             <input style={styles.input} type="number" min={1} value={form.max_capacity} onChange={(e) => setForm({ ...form, max_capacity: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={form.online_booking_enabled} onChange={(e) => setForm({ ...form, online_booking_enabled: e.target.checked })} style={{ width: '16px', height: '16px' }} />
-              Online Booking
-            </label>
+            <label style={styles.label}>&nbsp;</label>
+            <div style={{ display: 'flex', gap: '24px', paddingTop: '4px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.online_booking_enabled} onChange={(e) => setForm({ ...form, online_booking_enabled: e.target.checked })} style={{ width: '16px', height: '16px' }} />
+                Online Booking
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.requires_dedicated_staff} onChange={(e) => setForm({ ...form, requires_dedicated_staff: e.target.checked })} style={{ width: '16px', height: '16px' }} />
+                Requires Dedicated Staff
+              </label>
+            </div>
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Tax Category</label>
+            <select style={styles.input} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
+              <option value="">No tax</option>
+              {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
+            </select>
           </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
             <label style={styles.label}>Short Description</label>
@@ -217,21 +233,6 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
             <label style={styles.label}>Description</label>
             <textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
-          <div style={styles.formGroup}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={form.is_taxable} onChange={(e) => setForm({ ...form, is_taxable: e.target.checked })} style={{ width: '16px', height: '16px' }} />
-              Taxable
-            </label>
-          </div>
-          {form.is_taxable && (
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Tax Category</label>
-              <select style={styles.input} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
-                <option value="">Select...</option>
-                {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
-              </select>
-            </div>
-          )}
         </div>
       </div>
     </>

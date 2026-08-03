@@ -213,6 +213,13 @@ function ProductForm({ item, categories, businessId, onUpdate }: { item: Merchan
             <label style={styles.label}>SKU</label>
             <input style={styles.input} value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} />
           </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Tax Category</label>
+            <select style={styles.input} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
+              <option value="">No tax</option>
+              {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
+            </select>
+          </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
             <label style={styles.label}>Short Description</label>
             <input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />
@@ -221,21 +228,6 @@ function ProductForm({ item, categories, businessId, onUpdate }: { item: Merchan
             <label style={styles.label}>Description</label>
             <textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
-          <div style={styles.formGroup}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={form.is_taxable} onChange={(e) => setForm({ ...form, is_taxable: e.target.checked })} style={{ width: '16px', height: '16px' }} />
-              Taxable
-            </label>
-          </div>
-          {form.is_taxable && (
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Tax Category</label>
-              <select style={styles.input} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
-                <option value="">Select tax category...</option>
-                {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
-              </select>
-            </div>
-          )}
         </div>
       </div>
     </>

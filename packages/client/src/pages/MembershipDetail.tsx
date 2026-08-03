@@ -211,20 +211,12 @@ function PlanForm({ plan, businessId, onUpdate }: { plan: MembershipPlan; busine
             <input style={styles.input} type="number" min={0} max={100} value={form.discount_merchandise_pct} onChange={(e) => setForm({ ...form, discount_merchandise_pct: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={form.is_taxable} onChange={(e) => setForm({ ...form, is_taxable: e.target.checked })} style={{ width: '16px', height: '16px' }} />
-              Taxable
-            </label>
+            <label style={styles.label}>Tax Category</label>
+            <select style={styles.input} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
+              <option value="">No tax</option>
+              {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
+            </select>
           </div>
-          {form.is_taxable && (
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Tax Category</label>
-              <select style={styles.input} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
-                <option value="">Select...</option>
-                {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
-              </select>
-            </div>
-          )}
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
             <label style={styles.label}>Short Description</label>
             <input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />

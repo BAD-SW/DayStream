@@ -218,8 +218,8 @@ export async function createBooking(input: CreateBookingInput) {
     if (!staffId) throw new Error('No staff available for the selected time');
   }
 
-  // Conflict detection (skip staff conflict for shared/group — staff facilitates multiple customers)
-  if (staffId && bookingType === 'individual') {
+  // Conflict detection (skip staff conflict for shared/group and non-dedicated services)
+  if (staffId && bookingType === 'individual' && service.requires_dedicated_staff !== false) {
     const staffConflict = await checkStaffConflict(staffId, startTime, endTime, bufferBefore, bufferAfter);
     if (staffConflict) throw new Error('Staff member has a conflicting booking at this time');
   }
