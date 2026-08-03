@@ -32,6 +32,7 @@ interface TimeWindow {
   end: number;
   staffIds?: string[];    // if set, only these staff are valid for this window
   locationIds?: string[]; // if set, only these locations are valid for this window
+  resourceIds?: string[]; // if set, these resources are required for this window
 }
 
 // Legacy interface for backward compat (used by BookingFlow customer-facing)
@@ -172,6 +173,34 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
     [businessId, new Date(dateFrom).toISOString(), new Date(dateTo + 'T23:59:59Z').toISOString(), staffIds.length > 0 ? staffIds : null],
   );
 
+  // 7b. Load resource bookings for conflict checking
+  // Collect all resource IDs referenced in availability rules
+  const ruleResourceIds = [...new Set(availRules.flatMap((r: any) => r.resource_ids || []))];
+  let resourceBookings: any[] = [];
+  let resourceCapacities = new Map<string, number>();
+  if (ruleResourceIds.length > 0) {
+    const { rows: resBookings } = await adminPool.query(
+      `SELECT resource_id, start_time, end_time
+       FROM apt_bookings
+       WHERE business_id = $1
+         AND resource_id = ANY($2)
+         AND start_time < $4::timestamptz
+         AND end_time > $3::timestamptz
+         AND status IN ('pending', 'confirmed', 'in_progress')`,
+      [businessId, ruleResourceIds, new Date(dateFrom).toISOString(), new Date(dateTo + 'T23:59:59Z').toISOString()],
+    );
+    resourceBookings = resBookings;
+
+    // Load resource capacities
+    const { rows: resources } = await adminPool.query(
+      'SELECT id, capacity FROM res_resources WHERE id = ANY($1)',
+      [ruleResourceIds],
+    );
+    for (const r of resources) {
+      resourceCapacities.set(r.id, r.capacity || 1);
+    }
+  }
+
   // 8. Load business scheduling mode
   const { rows: bizSettings } = await adminPool.query(
     'SELECT scheduling_mode FROM sys_businesses WHERE id = $1',
@@ -293,6 +322,37 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
 
         if (availableStaffForSlot.length === 0 && needsStaff) continue;
 
+        // Check resource availability for this slot (if resources are required by this window)
+        if (window.resourceIds && window.resourceIds.length > 0) {
+          const allResourcesBooked = window.resourceIds.every((resId: string) => {
+            const cap = resourceCapacities.get(resId) || 1;
+            // Find all bookings that overlap this slot for this resource
+            const overlapping = resourceBookings.filter((rb: any) =>
+              rb.resource_id === resId &&
+              new Date(rb.start_time) < slotEnd &&
+              new Date(rb.end_time) > slotStart
+            );
+            // Check max concurrent at any point within the slot
+            // Sample at each overlapping booking's start/end boundaries
+            if (overlapping.length < cap) return false; // quick exit: can't exceed capacity
+            const checkPoints = [slotStart.getTime()];
+            for (const ob of overlapping) {
+              const obStart = new Date(ob.start_time).getTime();
+              const obEnd = new Date(ob.end_time).getTime();
+              if (obStart > slotStart.getTime() && obStart < slotEnd.getTime()) checkPoints.push(obStart);
+              if (obEnd > slotStart.getTime() && obEnd < slotEnd.getTime()) checkPoints.push(obEnd - 1);
+            }
+            const maxConcurrent = checkPoints.reduce((max, t) => {
+              const concurrent = overlapping.filter((ob: any) =>
+                new Date(ob.start_time).getTime() <= t && new Date(ob.end_time).getTime() > t
+              ).length;
+              return Math.max(max, concurrent);
+            }, 0);
+            return maxConcurrent >= cap;
+          });
+          if (allResourcesBooked) continue;
+        }
+
         // Determine which locations are valid for this window
         const windowLocations = window.locationIds
           ? serviceLocations.filter(l => window.locationIds!.includes(l.id))
@@ -389,6 +449,7 @@ function getServiceHoursForDay(rules: any[], dayOfWeek: number, dateStr: string)
           end,
           staffIds: rule.staff_ids && rule.staff_ids.length > 0 ? rule.staff_ids : undefined,
           locationIds: rule.location_ids && rule.location_ids.length > 0 ? rule.location_ids : undefined,
+          resourceIds: rule.resource_ids && rule.resource_ids.length > 0 ? rule.resource_ids : undefined,
         });
       }
     }

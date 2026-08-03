@@ -224,8 +224,54 @@ export async function createBooking(input: CreateBookingInput) {
     if (staffConflict) throw new Error('Staff member has a conflicting booking at this time');
   }
 
-  if (input.resourceId) {
-    const resourceConflict = await checkResourceConflict(input.resourceId, startTime, endTime);
+  // Auto-assign resource if not provided but service availability rules require one
+  let resourceId = input.resourceId || null;
+  if (!resourceId) {
+    const { rows: availRules } = await adminPool.query(
+      `SELECT resource_ids FROM svc_availability_rules WHERE service_id = $1 AND rule_type = 'recurring' AND resource_ids IS NOT NULL LIMIT 1`,
+      [input.serviceId],
+    );
+    if (availRules.length > 0 && availRules[0].resource_ids && availRules[0].resource_ids.length > 0) {
+      const requiredResourceIds: string[] = availRules[0].resource_ids;
+      // Find an available resource (max concurrent under capacity for this time)
+      for (const resId of requiredResourceIds) {
+        const { rows: resRows } = await adminPool.query('SELECT capacity FROM res_resources WHERE id = $1', [resId]);
+        const capacity = resRows[0]?.capacity || 1;
+        const { rows: overlapping } = await adminPool.query(
+          `SELECT start_time, end_time FROM apt_bookings
+           WHERE resource_id = $1 AND start_time < $3 AND end_time > $2
+             AND status IN ('pending', 'confirmed', 'in_progress')`,
+          [resId, startTime.toISOString(), endTime.toISOString()],
+        );
+        // Check max concurrent at any point within the proposed slot
+        if (overlapping.length < capacity) {
+          resourceId = resId;
+          break;
+        }
+        const checkPoints = [startTime.getTime()];
+        for (const ob of overlapping) {
+          const obStart = new Date(ob.start_time).getTime();
+          const obEnd = new Date(ob.end_time).getTime();
+          if (obStart > startTime.getTime() && obStart < endTime.getTime()) checkPoints.push(obStart);
+          if (obEnd > startTime.getTime() && obEnd < endTime.getTime()) checkPoints.push(obEnd - 1);
+        }
+        const maxConcurrent = checkPoints.reduce((max, t) => {
+          const concurrent = overlapping.filter((ob: any) =>
+            new Date(ob.start_time).getTime() <= t && new Date(ob.end_time).getTime() > t
+          ).length;
+          return Math.max(max, concurrent);
+        }, 0);
+        if (maxConcurrent < capacity) {
+          resourceId = resId;
+          break;
+        }
+      }
+      if (!resourceId) throw new Error('Resource has a conflicting booking at this time');
+    }
+  }
+
+  if (resourceId) {
+    const resourceConflict = await checkResourceConflict(resourceId, startTime, endTime);
     if (resourceConflict) throw new Error('Resource has a conflicting booking at this time');
   }
 
@@ -267,7 +313,7 @@ export async function createBooking(input: CreateBookingInput) {
      RETURNING *`,
     [
       input.businessId, input.customerId || null, input.walkInName || null, input.serviceId, input.variantId,
-      staffId, input.resourceId || null,
+      staffId, resourceId,
       startTime.toISOString(), endTime.toISOString(),
       bufferBefore, bufferAfter, status, bookingReference, bookingType, price,
       input.notes || null, input.createdBy,
@@ -469,16 +515,40 @@ async function checkStaffConflict(staffId: string, startTime: Date, endTime: Dat
 }
 
 async function checkResourceConflict(resourceId: string, startTime: Date, endTime: Date): Promise<boolean> {
-  const { rows } = await adminPool.query(
-    `SELECT id FROM apt_bookings
+  // Get resource capacity
+  const { rows: resRows } = await adminPool.query(
+    'SELECT capacity FROM res_resources WHERE id = $1', [resourceId],
+  );
+  const capacity = resRows[0]?.capacity || 1;
+
+  // Get overlapping bookings
+  const { rows: overlapping } = await adminPool.query(
+    `SELECT start_time, end_time FROM apt_bookings
      WHERE resource_id = $1
        AND start_time < $3
        AND end_time > $2
-       AND status IN ('pending', 'confirmed', 'in_progress')
-     LIMIT 1`,
+       AND status IN ('pending', 'confirmed', 'in_progress')`,
     [resourceId, startTime.toISOString(), endTime.toISOString()],
   );
-  return rows.length > 0;
+
+  // Quick exit: total overlapping is under capacity
+  if (overlapping.length < capacity) return false;
+
+  // Check max concurrent at any point within the proposed slot
+  const checkPoints = [startTime.getTime()];
+  for (const ob of overlapping) {
+    const obStart = new Date(ob.start_time).getTime();
+    const obEnd = new Date(ob.end_time).getTime();
+    if (obStart > startTime.getTime() && obStart < endTime.getTime()) checkPoints.push(obStart);
+    if (obEnd > startTime.getTime() && obEnd < endTime.getTime()) checkPoints.push(obEnd - 1);
+  }
+  const maxConcurrent = checkPoints.reduce((max, t) => {
+    const concurrent = overlapping.filter((ob: any) =>
+      new Date(ob.start_time).getTime() <= t && new Date(ob.end_time).getTime() > t
+    ).length;
+    return Math.max(max, concurrent);
+  }, 0);
+  return maxConcurrent >= capacity;
 }
 
 async function checkCustomerConflict(customerId: string, startTime: Date, endTime: Date): Promise<boolean> {

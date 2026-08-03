@@ -17,11 +17,13 @@ export function Bookings() {
   const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
   const [dateTo, setDateTo] = useState(new Date(Date.now() + 6 * 86400000).toISOString().split('T')[0]);
   const [staffFilter, setStaffFilter] = useState('');
+  const [serviceFilter, setServiceFilter] = useState('');
   const [customerFilter, setCustomerFilter] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [businessTimezone, setBusinessTimezone] = useState('UTC');
   const [staffList, setStaffList] = useState<any[]>([]);
+  const [serviceList, setServiceList] = useState<any[]>([]);
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -37,6 +39,12 @@ export function Bookings() {
     import('../api/staff').then((staffApi) => {
       staffApi.getStaffList({ business_id: businessId, status: 'active' }).then((res) => setStaffList(res.data)).catch(() => {});
     });
+    import('../api/services').then((svcApi) => {
+      svcApi.getServices(businessId).then((res: any) => {
+        const list = (res as any).data || res;
+        setServiceList(Array.isArray(list) ? list : []);
+      }).catch(() => {});
+    });
   }, [businessId]);
 
   const fetchBookings = useCallback(async () => {
@@ -48,6 +56,7 @@ export function Bookings() {
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
         staff_id: staffFilter || undefined,
+        service_id: serviceFilter || undefined,
         customer_search: customerFilter || undefined,
         page,
       });
@@ -55,7 +64,7 @@ export function Bookings() {
       setTotalPages(result.meta?.totalPages || 1);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId, statusFilter, dateFrom, dateTo, staffFilter, customerFilter, page]);
+  }, [businessId, statusFilter, dateFrom, dateTo, staffFilter, serviceFilter, customerFilter, page]);
 
   useEffect(() => { fetchBookings(); }, [fetchBookings]);
 
@@ -131,11 +140,17 @@ export function Bookings() {
             <option key={s.user_id} value={s.user_id}>{s.first_name} {s.last_name}</option>
           ))}
         </select>
+        <select value={serviceFilter} onChange={(e) => { setServiceFilter(e.target.value); setPage(1); }} style={styles.select}>
+          <option value="">All Services</option>
+          {serviceList.map((s: any) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
         <input type="text" style={styles.select} value={customerFilter} onChange={(e) => { setCustomerFilter(e.target.value); setPage(1); }} placeholder="Customer name..." title="Filter by customer" />
         <input type="date" style={styles.select} value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} title="From date" />
         <input type="date" style={styles.select} value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} title="To date" />
-        {(statusFilter || staffFilter || dateFrom || dateTo || customerFilter) && (
-          <button style={styles.navBtn} onClick={() => { setStatusFilter(''); setStaffFilter(''); setDateFrom(''); setDateTo(''); setCustomerFilter(''); setPage(1); }}>Clear</button>
+        {(statusFilter || staffFilter || serviceFilter || dateFrom || dateTo || customerFilter) && (
+          <button style={styles.navBtn} onClick={() => { setStatusFilter(''); setStaffFilter(''); setServiceFilter(''); setDateFrom(''); setDateTo(''); setCustomerFilter(''); setPage(1); }}>Clear</button>
         )}
       </div>
 

@@ -14,8 +14,14 @@ interface CalendarEntry {
  * Combines bookings, availability, leave, and overrides.
  */
 export async function getStaffCalendar(staffId: string, startDate: string, endDate: string, locationId?: string) {
-  // Get bookings in range
-  const { rows: bookings } = await adminPool.query(
+  // Resolve user_id from staff profile (bookings reference users.id, not stf_profiles.id)
+  const { rows: staffRows } = await adminPool.query(
+    'SELECT user_id FROM stf_profiles WHERE id = $1', [staffId],
+  );
+  const userId = staffRows[0]?.user_id;
+
+  // Get bookings in range (using user_id since apt_bookings.staff_id references users)
+  const { rows: bookings } = userId ? await adminPool.query(
     `SELECT b.id, b.start_time, b.end_time, b.status, b.service_id,
             s.name AS service_name, c.first_name AS customer_first_name, c.last_name AS customer_last_name
      FROM apt_bookings b
@@ -26,8 +32,8 @@ export async function getStaffCalendar(staffId: string, startDate: string, endDa
        AND b.start_time::date <= $3::date
        AND b.status IN ('confirmed', 'checked_in', 'completed')
      ORDER BY b.start_time`,
-    [staffId, startDate, endDate],
-  );
+    [userId, startDate, endDate],
+  ) : { rows: [] };
 
   // Get approved leave in range
   const { rows: leaveRequests } = await adminPool.query(
