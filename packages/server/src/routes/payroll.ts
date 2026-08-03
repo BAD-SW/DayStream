@@ -23,6 +23,8 @@ const createCompRuleSchema = Joi.object({
   rule_type: Joi.string().valid('hourly', 'per_session', 'commission', 'salary').required(),
   rate: Joi.number().integer().min(1).required(),
   threshold_amount: Joi.number().integer().min(0).allow(null),
+  reference_type: Joi.string().valid('service', 'product', 'membership', 'package').allow(null),
+  reference_ids: Joi.array().items(Joi.string().uuid()).allow(null),
   overtime_multiplier: Joi.number().min(1).max(5).default(1.5),
   overtime_after_hours: Joi.number().integer().min(1).default(40),
   holiday_multiplier: Joi.number().min(1).max(5).default(2.0),
@@ -33,6 +35,8 @@ const createCompRuleSchema = Joi.object({
 const updateCompRuleSchema = Joi.object({
   rate: Joi.number().integer().min(1),
   threshold_amount: Joi.number().integer().min(0).allow(null),
+  reference_type: Joi.string().valid('service', 'product', 'membership', 'package').allow(null),
+  reference_ids: Joi.array().items(Joi.string().uuid()).allow(null),
   overtime_multiplier: Joi.number().min(1).max(5),
   overtime_after_hours: Joi.number().integer().min(1),
   holiday_multiplier: Joi.number().min(1).max(5),
@@ -57,11 +61,15 @@ payrollRouter.post('/compensation-rules', requirePermission('staff:*'), validate
     const rule = await compensationService.createRule({
       businessId: req.body.business_id, userId: req.body.user_id, ruleType: req.body.rule_type,
       rate: req.body.rate, thresholdAmount: req.body.threshold_amount,
+      referenceType: req.body.reference_type, referenceIds: req.body.reference_ids,
       overtimeMultiplier: req.body.overtime_multiplier, overtimeAfterHours: req.body.overtime_after_hours,
       holidayMultiplier: req.body.holiday_multiplier, effectiveFrom: req.body.effective_from, effectiveTo: req.body.effective_to,
     });
     success(res, rule, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to create rule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) {
+    if (err.message.includes('overlapping')) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, 'Failed to create rule', 'INTERNAL_ERROR', 500); }
+  }
 });
 
 // PUT /api/v1/payroll/compensation-rules/:id
@@ -72,7 +80,21 @@ payrollRouter.put('/compensation-rules/:id', requirePermission('staff:*'), valid
     const rule = await compensationService.updateRule(req.params.id, businessId, req.body);
     if (!rule) { error(res, 'Rule not found', 'NOT_FOUND', 404); return; }
     success(res, rule);
-  } catch (err: any) { error(res, 'Failed to update rule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) {
+    if (err.message.includes('overlapping')) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, 'Failed to update rule', 'INTERNAL_ERROR', 500); }
+  }
+});
+
+// DELETE /api/v1/payroll/compensation-rules/:id
+payrollRouter.delete('/compensation-rules/:id', requirePermission('staff:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const deleted = await compensationService.deleteRule(req.params.id, businessId);
+    if (!deleted) { error(res, 'Rule not found', 'NOT_FOUND', 404); return; }
+    success(res, { deleted: true });
+  } catch (err: any) { error(res, 'Failed to delete rule', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================

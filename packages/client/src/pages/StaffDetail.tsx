@@ -4,6 +4,7 @@ import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { Alert } from '../design-system/components/feedback/Alert';
 import * as staffApi from '../api/staff';
+import * as payrollApi from '../api/payroll';
 import type { StaffProfile, Qualification, AvailabilityPattern, AvailabilityOverride } from '../api/staff';
 
 type Tab = 'profile' | 'qualifications' | 'availability' | 'calendar' | 'compensation';
@@ -78,12 +79,7 @@ export function StaffDetail() {
       {activeTab === 'qualifications' && <QualificationsTab staffId={staff.id} />}
       {activeTab === 'availability' && <AvailabilityTab staffId={staff.id} />}
       {activeTab === 'calendar' && <CalendarTab staffId={staff.id} />}
-      {activeTab === 'compensation' && (
-        <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Compensation</h3>
-          <p style={styles.emptyText}>Compensation management is coming soon. This will include pay rates, commission structures, and payment tracking.</p>
-        </div>
-      )}
+      {activeTab === 'compensation' && <CompensationTab userId={staff.user_id} />}
     </div>
   );
 }
@@ -632,6 +628,364 @@ function CalendarTab({ staffId }: { staffId: string }) {
               </div>
             ))}
           </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// --- Compensation Tab ---
+
+const RULE_TYPE_LABELS: Record<string, string> = {
+  hourly: 'Hourly Rate',
+  per_session: 'Flat Rate',
+  commission: 'Commission',
+  salary: 'Salary',
+};
+
+const REF_TYPE_LABELS: Record<string, string> = {
+  service: 'Service',
+  product: 'Product',
+  membership: 'Membership',
+  package: 'Package',
+};
+
+interface CompensationRule {
+  id: string;
+  rule_type: string;
+  rate: number;
+  threshold_amount: number | null;
+  reference_type: string | null;
+  reference_ids: string[] | null;
+  overtime_multiplier: number;
+  overtime_after_hours: number;
+  holiday_multiplier: number;
+  effective_from: string;
+  effective_to: string | null;
+  status: string;
+}
+
+interface OfferingItem { id: string; name: string; }
+
+function CompensationTab({ userId }: { userId: string | null }) {
+  const businessId = localStorage.getItem('business_id') || '';
+  const [rules, setRules] = useState<CompensationRule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<CompensationRule | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [offerings, setOfferings] = useState<Record<string, OfferingItem[]>>({ service: [], product: [], membership: [], package: [] });
+
+  const emptyForm = {
+    rule_type: 'hourly' as string,
+    rate: '',
+    threshold_amount: '',
+    reference_type: '' as string,
+    reference_ids: [] as string[],
+    overtime_multiplier: '1.5',
+    overtime_after_hours: '40',
+    holiday_multiplier: '2.0',
+    effective_from: new Date().toISOString().split('T')[0],
+    effective_to: '',
+  };
+  const [form, setForm] = useState(emptyForm);
+
+  const fetchRules = useCallback(async () => {
+    if (!userId || !businessId) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      const data = await payrollApi.getCompensationRules(businessId, userId);
+      setRules(data);
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  }, [userId, businessId]);
+
+  useEffect(() => { fetchRules(); }, [fetchRules]);
+
+  useEffect(() => {
+    if (!businessId) return;
+    const loadOfferings = async () => {
+      const [svcMod, { apiClient }] = await Promise.all([
+        import('../api/services'),
+        import('../api/client'),
+      ]);
+      const results: Record<string, OfferingItem[]> = { service: [], product: [], membership: [], package: [] };
+      try { const r = await svcMod.getServices(businessId); const l = (r as any).data || r; results.service = Array.isArray(l) ? l.map((s: any) => ({ id: s.id, name: s.name })) : []; } catch {}
+      try { const r = await apiClient.get(`/v1/merchandise?business_id=${businessId}&limit=100`); results.product = (r.data.data || []).map((p: any) => ({ id: p.id, name: p.name })); } catch {}
+      try { const r = await apiClient.get(`/v1/memberships/plans?business_id=${businessId}&limit=100`); results.membership = (r.data.data || []).map((m: any) => ({ id: m.id, name: m.name })); } catch {}
+      try { const r = await apiClient.get(`/v1/packages?business_id=${businessId}&limit=100`); results.package = (r.data.data || []).map((p: any) => ({ id: p.id, name: p.name })); } catch {}
+      setOfferings(results);
+    };
+    loadOfferings();
+  }, [businessId]);
+
+  const openAdd = () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setShowForm(true);
+  };
+
+  const openEdit = (rule: CompensationRule) => {
+    setEditing(rule);
+    setForm({
+      rule_type: rule.rule_type,
+      rate: String(rule.rate / 100),
+      threshold_amount: rule.threshold_amount ? String(rule.threshold_amount / 100) : '',
+      reference_type: rule.reference_type || '',
+      reference_ids: rule.reference_ids || [],
+      overtime_multiplier: String(rule.overtime_multiplier),
+      overtime_after_hours: String(rule.overtime_after_hours),
+      holiday_multiplier: String(rule.holiday_multiplier),
+      effective_from: rule.effective_from ? rule.effective_from.split('T')[0] : '',
+      effective_to: rule.effective_to ? rule.effective_to.split('T')[0] : '',
+    });
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.rate || !form.effective_from) return;
+    setSaving(true);
+    try {
+      const rateInCents = Math.round(parseFloat(form.rate) * 100);
+      const thresholdInCents = form.threshold_amount ? Math.round(parseFloat(form.threshold_amount) * 100) : null;
+      const refType = form.reference_type || null;
+      const refIds = form.reference_ids.length > 0 ? form.reference_ids : null;
+
+      if (editing) {
+        await payrollApi.updateCompensationRule(editing.id, businessId, {
+          rate: rateInCents,
+          threshold_amount: thresholdInCents,
+          reference_type: refType,
+          reference_ids: refIds,
+          overtime_multiplier: parseFloat(form.overtime_multiplier),
+          overtime_after_hours: parseInt(form.overtime_after_hours),
+          holiday_multiplier: parseFloat(form.holiday_multiplier),
+          effective_from: form.effective_from,
+          effective_to: form.effective_to || null,
+        });
+      } else {
+        await payrollApi.createCompensationRule({
+          business_id: businessId,
+          user_id: userId,
+          rule_type: form.rule_type,
+          rate: rateInCents,
+          threshold_amount: thresholdInCents,
+          reference_type: refType,
+          reference_ids: refIds,
+          overtime_multiplier: parseFloat(form.overtime_multiplier),
+          overtime_after_hours: parseInt(form.overtime_after_hours),
+          holiday_multiplier: parseFloat(form.holiday_multiplier),
+          effective_from: form.effective_from,
+          effective_to: form.effective_to || null,
+        });
+      }
+      setShowForm(false);
+      fetchRules();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || 'Failed to save compensation rule';
+      alert(msg);
+    }
+    finally { setSaving(false); }
+  };
+
+  const handleDeactivate = async (rule: CompensationRule) => {
+    const newStatus = rule.status === 'active' ? 'inactive' : 'active';
+    try {
+      await payrollApi.updateCompensationRule(rule.id, businessId, { status: newStatus });
+      fetchRules();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || 'Failed to update rule status';
+      alert(msg);
+    }
+  };
+
+  const handleDelete = async (rule: CompensationRule) => {
+    const refLabel = rule.reference_type ? ` (${REF_TYPE_LABELS[rule.reference_type] || rule.reference_type})` : '';
+    if (!confirm(`Delete this ${RULE_TYPE_LABELS[rule.rule_type] || rule.rule_type}${refLabel} rule?`)) return;
+    try {
+      await payrollApi.deleteCompensationRule(rule.id, businessId);
+      fetchRules();
+    } catch {
+      alert('Failed to delete rule');
+    }
+  };
+
+  const formatRate = (rule: CompensationRule) => {
+    if (rule.rule_type === 'commission') {
+      return `${(rule.rate / 100).toFixed(1)}%`;
+    }
+    return `€${(rule.rate / 100).toFixed(2)}`;
+  };
+
+  const formatRateLabel = (ruleType: string) => {
+    switch (ruleType) {
+      case 'hourly': return 'Rate (€/hour)';
+      case 'per_session': return 'Rate (€/flat)';
+      case 'commission': return 'Rate (%)';
+      case 'salary': return 'Rate (€/period)';
+      default: return 'Rate';
+    }
+  };
+
+  const getRefNames = (rule: CompensationRule): string => {
+    if (!rule.reference_type || !rule.reference_ids || rule.reference_ids.length === 0) return '';
+    const items = offerings[rule.reference_type] || [];
+    return rule.reference_ids.map((id) => items.find((i) => i.id === id)?.name || id.slice(0, 8)).join(', ');
+  };
+
+  const toggleReferenceId = (id: string) => {
+    const current = form.reference_ids;
+    if (current.includes(id)) {
+      setForm({ ...form, reference_ids: current.filter((x) => x !== id) });
+    } else {
+      setForm({ ...form, reference_ids: [...current, id] });
+    }
+  };
+
+  if (!userId) {
+    return (
+      <div style={styles.card}>
+        <p style={styles.emptyText}>This staff member does not have an associated user account. Compensation rules require a linked user.</p>
+      </div>
+    );
+  }
+
+  if (loading) return <div style={styles.loading}>Loading...</div>;
+
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Compensation Rules</h3>
+        <Button variant="secondary" size="sm" onClick={openAdd}>Add Rule</Button>
+      </div>
+
+      {showForm && (
+        <div style={styles.card}>
+          <h4 style={{ ...styles.cardTitle, fontSize: '14px' }}>{editing ? 'Edit Compensation Rule' : 'Add Compensation Rule'}</h4>
+          <div style={styles.formGrid}>
+            {!editing && (
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Type *</label>
+                <select style={styles.input} value={form.rule_type} onChange={(e) => setForm({ ...form, rule_type: e.target.value, reference_type: '', reference_ids: [] })}>
+                  <option value="hourly">Hourly Rate</option>
+                  <option value="per_session">Flat Rate</option>
+                  <option value="commission">Commission (%)</option>
+                  <option value="salary">Salary</option>
+                </select>
+              </div>
+            )}
+            <div style={styles.formGroup}>
+              <label style={styles.label}>{formatRateLabel(form.rule_type)} *</label>
+              <input type="number" step="0.01" min="0" style={styles.input} value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value })} />
+            </div>
+            {form.rule_type === 'commission' && (
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Threshold (€)</label>
+                <input type="number" step="0.01" min="0" style={styles.input} value={form.threshold_amount} onChange={(e) => setForm({ ...form, threshold_amount: e.target.value })} placeholder="Revenue threshold before commission kicks in" />
+              </div>
+            )}
+            {(form.rule_type === 'per_session' || form.rule_type === 'commission') && (
+              <>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Offering Type</label>
+                  <select style={styles.input} value={form.reference_type} onChange={(e) => setForm({ ...form, reference_type: e.target.value, reference_ids: [] })}>
+                    <option value="">— All (Generic) —</option>
+                    <option value="service">Service</option>
+                    <option value="product">Product</option>
+                    <option value="membership">Membership</option>
+                    <option value="package">Package</option>
+                  </select>
+                </div>
+                {form.reference_type && (
+                  <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
+                    <label style={styles.label}>Specific {REF_TYPE_LABELS[form.reference_type] || 'Items'} (leave empty for all of this type)</label>
+                    <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px', maxHeight: '160px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {(offerings[form.reference_type] || []).length === 0 && (
+                        <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>No {form.reference_type}s found</span>
+                      )}
+                      {(offerings[form.reference_type] || []).map((item) => (
+                        <label key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text)', cursor: 'pointer', padding: '4px 8px', borderRadius: '4px', background: form.reference_ids.includes(item.id) ? 'var(--color-surface-hover, rgba(255,255,255,0.05))' : 'transparent' }}>
+                          <input type="checkbox" checked={form.reference_ids.includes(item.id)} onChange={() => toggleReferenceId(item.id)} style={{ width: '14px', height: '14px' }} />
+                          {item.name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+            {form.rule_type === 'hourly' && (
+              <>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Overtime After (hours/week)</label>
+                  <input type="number" min="1" style={styles.input} value={form.overtime_after_hours} onChange={(e) => setForm({ ...form, overtime_after_hours: e.target.value })} />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Overtime Multiplier</label>
+                  <input type="number" step="0.1" min="1" max="5" style={styles.input} value={form.overtime_multiplier} onChange={(e) => setForm({ ...form, overtime_multiplier: e.target.value })} />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Holiday Multiplier</label>
+                  <input type="number" step="0.1" min="1" max="5" style={styles.input} value={form.holiday_multiplier} onChange={(e) => setForm({ ...form, holiday_multiplier: e.target.value })} />
+                </div>
+              </>
+            )}
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Effective From *</label>
+              <input type="date" style={styles.input} value={form.effective_from} onChange={(e) => setForm({ ...form, effective_from: e.target.value })} />
+            </div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Effective To</label>
+              <input type="date" style={styles.input} value={form.effective_to} onChange={(e) => setForm({ ...form, effective_to: e.target.value })} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', marginTop: 'var(--space-md)' }}>
+            <Button size="sm" onClick={handleSave} loading={saving}>{editing ? 'Save' : 'Add'}</Button>
+            <Button variant="secondary" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {rules.length === 0 && !showForm && <p style={styles.emptyText}>No compensation rules configured. Add pay rates, commissions, or salary to track this staff member's compensation.</p>}
+      {rules.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {rules.map((rule) => {
+            const refNames = getRefNames(rule);
+            const refTypeLabel = rule.reference_type ? REF_TYPE_LABELS[rule.reference_type] : null;
+            return (
+            <div key={rule.id} style={{ ...styles.listItem, opacity: rule.status === 'inactive' ? 0.6 : 1 }}>
+              <div style={{ flex: 1 }}>
+                <strong style={{ color: 'var(--color-text)' }}>{RULE_TYPE_LABELS[rule.rule_type] || rule.rule_type}</strong>
+                {refTypeLabel && <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--color-text-secondary)', background: 'var(--color-surface)', padding: '2px 6px', borderRadius: '4px' }}>{refTypeLabel}</span>}
+                <span style={{ marginLeft: '12px', fontSize: '15px', fontWeight: 600, color: 'var(--color-primary)' }}>{formatRate(rule)}</span>
+                {rule.rule_type === 'commission' && rule.threshold_amount && (
+                  <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>after €{(rule.threshold_amount / 100).toFixed(2)} revenue</span>
+                )}
+                {refNames && (
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>Applies to: {refNames}</div>
+                )}
+                {!refNames && refTypeLabel && (
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>Applies to: All {refTypeLabel}s</div>
+                )}
+                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+                  From {new Date(rule.effective_from).toLocaleDateString()}
+                  {rule.effective_to && ` to ${new Date(rule.effective_to).toLocaleDateString()}`}
+                  {rule.rule_type === 'hourly' && (
+                    <span style={{ marginLeft: '12px' }}>OT: {rule.overtime_multiplier}x after {rule.overtime_after_hours}h · Holiday: {rule.holiday_multiplier}x</span>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Badge variant={rule.status === 'active' ? 'success' : 'neutral'}>{rule.status}</Badge>
+                <button style={styles.iconBtn} onClick={() => openEdit(rule)} title="Edit">✏️</button>
+                <button style={styles.iconBtn} onClick={() => handleDeactivate(rule)} title={rule.status === 'active' ? 'Deactivate' : 'Activate'}>
+                  {rule.status === 'active' ? '⏸️' : '▶️'}
+                </button>
+                <button style={styles.iconBtn} onClick={() => handleDelete(rule)} title="Delete">🗑️</button>
+              </div>
+            </div>
+            );
+          })}
         </div>
       )}
     </>

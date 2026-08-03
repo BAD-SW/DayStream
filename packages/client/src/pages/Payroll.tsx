@@ -122,7 +122,7 @@ function CompensationSection({ businessId }: { businessId: string }) {
 
   const handleSave = async () => {
     if (!editingId) return;
-    const updated = await payrollApi.updateCompensationRule(editingId, {
+    const updated = await payrollApi.updateCompensationRule(editingId, businessId, {
       rate: Number(editForm.rate),
       rule_type: editForm.rule_type,
     });
@@ -132,7 +132,7 @@ function CompensationSection({ businessId }: { businessId: string }) {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this compensation rule?')) return;
-    await payrollApi.deleteCompensationRule(id);
+    await payrollApi.deleteCompensationRule(id, businessId);
     setRules(rules.filter((r: any) => r.id !== id));
   };
 

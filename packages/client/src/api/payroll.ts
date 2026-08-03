@@ -13,13 +13,13 @@ export async function createCompensationRule(data: any) {
   return res.data.data;
 }
 
-export async function updateCompensationRule(id: string, data: any) {
-  const res = await apiClient.put(`/v1/payroll/compensation-rules/${id}`, data);
+export async function updateCompensationRule(id: string, businessId: string, data: any) {
+  const res = await apiClient.put(`/v1/payroll/compensation-rules/${id}?business_id=${businessId}`, data);
   return res.data.data;
 }
 
-export async function deleteCompensationRule(id: string) {
-  await apiClient.delete(`/v1/payroll/compensation-rules/${id}`);
+export async function deleteCompensationRule(id: string, businessId: string) {
+  await apiClient.delete(`/v1/payroll/compensation-rules/${id}?business_id=${businessId}`);
 }
 
 // --- Time Entries ---
