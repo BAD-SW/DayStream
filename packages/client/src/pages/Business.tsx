@@ -125,7 +125,7 @@ function ProductCategoriesSection({ businessId }: { businessId: string }) {
           <Button size="sm" variant="secondary" onClick={() => setShowAdd(true)}>Add Category</Button>
         )}
       </div>
-      <Table columns={columns} data={categories} loading={loading} emptyMessage="No product/service categories defined" />
+      <Table columns={columns} data={categories} loading={loading} emptyMessage="No product/service categories defined" clientSort />
     </div>
   );
 }
@@ -169,7 +169,7 @@ function NoteCategoriesSection({ businessId }: { businessId: string }) {
 
   const columns = [
     {
-      key: 'name', header: 'Name',
+      key: 'name', header: 'Name', sortable: true,
       render: (_: any, row: any) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span>{row.name}</span>
@@ -209,7 +209,7 @@ function NoteCategoriesSection({ businessId }: { businessId: string }) {
           <Button size="sm" variant="secondary" onClick={() => setShowAdd(true)}>Add Category</Button>
         )}
       </div>
-      <Table columns={columns} data={categories} loading={loading} emptyMessage="No note categories defined" />
+      <Table columns={columns} data={categories} loading={loading} emptyMessage="No note categories defined" clientSort />
     </div>
   );
 }

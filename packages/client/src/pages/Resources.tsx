@@ -52,19 +52,19 @@ export function Resources() {
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
     {
-      key: 'category', header: 'Category',
+      key: 'category', header: 'Category', sortable: true,
       render: (val: string) => val ? val.charAt(0).toUpperCase() + val.slice(1) : '—',
     },
     {
-      key: 'capacity', header: 'Capacity',
+      key: 'capacity', header: 'Capacity', sortable: true,
       render: (val: number) => val > 1 ? `${val} concurrent` : 'Exclusive',
     },
     {
-      key: 'buffer_minutes', header: 'Buffer',
+      key: 'buffer_minutes', header: 'Buffer', sortable: true,
       render: (val: number) => val > 0 ? `${val} min` : '—',
     },
     {
-      key: 'status', header: 'Status',
+      key: 'status', header: 'Status', sortable: true,
       render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge>,
     },
   ];
@@ -101,6 +101,7 @@ export function Resources() {
         onPageChange={setPage}
         emptyMessage="No resources found"
         mobileCardMode
+        clientSort
       />
     </div>
   );

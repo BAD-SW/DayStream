@@ -39,16 +39,16 @@ export function Locations() {
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
     {
-      key: 'address_line1', header: 'Address',
+      key: 'address_line1', header: 'Address', sortable: true,
       render: (_: any, row: Location) => {
         const parts = [row.address_line1, row.city, row.state_province].filter(Boolean);
         return parts.join(', ') || '—';
       },
     },
-    { key: 'phone', header: 'Phone', render: (val: string) => val || '—' },
-    { key: 'timezone', header: 'Timezone', render: (val: string) => val || '—' },
+    { key: 'phone', header: 'Phone', sortable: true, render: (val: string) => val || '—' },
+    { key: 'timezone', header: 'Timezone', sortable: true, render: (val: string) => val || '—' },
     {
-      key: 'status', header: 'Status',
+      key: 'status', header: 'Status', sortable: true,
       render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val.replace('_', ' ')}</Badge>,
     },
     {
@@ -79,6 +79,7 @@ export function Locations() {
         onRowClick={(row) => navigate(`/settings/locations/${row.id}`)}
         emptyMessage="No locations found"
         mobileCardMode
+        clientSort
       />
     </div>
   );

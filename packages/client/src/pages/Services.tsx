@@ -103,9 +103,9 @@ function ServicesTab() {
 
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
-    { key: 'category_name', header: 'Category', render: (val: string) => val || '—' },
-    { key: 'status', header: 'Status', render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
-    { key: 'default_duration', header: 'Duration', render: (val: number) => val ? `${val} min` : '—' },
+    { key: 'category_name', header: 'Category', sortable: true, render: (val: string) => val || '—' },
+    { key: 'default_duration', header: 'Duration', sortable: true, render: (val: number) => val ? `${val} min` : '—' },
+    { key: 'status', header: 'Status', sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
     {
       key: 'actions', header: '',
       render: (_: any, row: any) => (
@@ -138,7 +138,7 @@ function ServicesTab() {
         <div style={{ flex: 1 }} />
         <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Service</Button>
       </div>
-      <Table columns={columns} data={services} loading={loading} onRowClick={(row) => navigate(`/offers/services/${row.id}`)} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No services found" mobileCardMode />
+      <Table columns={columns} data={services} loading={loading} onRowClick={(row) => navigate(`/offers/services/${row.id}`)} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No services found" mobileCardMode clientSort />
       {showCreate && <CreateServiceModal businessId={businessId} categories={categories} onClose={() => setShowCreate(false)} onCreated={(svc) => { setShowCreate(false); navigate(`/offers/services/${svc.id}`); }} />}
     </>
   );
@@ -193,10 +193,10 @@ function ProductsTab() {
 
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
-    { key: 'category_name', header: 'Category', render: (val: string) => val || '—' },
-    { key: 'status', header: 'Status', render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
-    { key: 'price', header: 'Price', render: (val: number) => val != null ? formatCurrency(val) : '—' },
-    { key: 'sku', header: 'SKU', render: (val: string) => val || '—' },
+    { key: 'category_name', header: 'Category', sortable: true, render: (val: string) => val || '—' },
+    { key: 'price', header: 'Price', sortable: true, render: (val: number) => val != null ? formatCurrency(val) : '—' },
+    { key: 'sku', header: 'SKU', sortable: true, render: (val: string) => val || '—' },
+    { key: 'status', header: 'Status', sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
     {
       key: 'actions', header: '',
       render: (_: any, row: any) => (
@@ -227,7 +227,7 @@ function ProductsTab() {
         <div style={{ flex: 1 }} />
         <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Product</Button>
       </div>
-      <Table columns={columns} data={products} loading={loading} onRowClick={(row) => navigate(`/offers/merchandise/${row.id}`)} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No products found" mobileCardMode />
+      <Table columns={columns} data={products} loading={loading} onRowClick={(row) => navigate(`/offers/merchandise/${row.id}`)} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No products found" mobileCardMode clientSort />
       {showCreate && <CreateProductModal businessId={businessId} categories={categories} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); fetchProducts(); }} />}
     </>
   );
@@ -373,20 +373,20 @@ function MembershipsTab() {
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
     {
-      key: 'billing_frequency', header: 'Billing',
+      key: 'billing_frequency', header: 'Billing', sortable: true,
       render: (val: string) => val ? val.charAt(0).toUpperCase() + val.slice(1) : '—',
     },
     {
-      key: 'price', header: 'Price',
+      key: 'price', header: 'Price', sortable: true,
       render: (val: number) => formatCurrency(val),
     },
     {
-      key: 'status', header: 'Status',
-      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge>,
+      key: 'active_enrollments', header: 'Enrolled', sortable: true,
+      render: (val: number) => val || 0,
     },
     {
-      key: 'active_enrollments', header: 'Enrolled',
-      render: (val: number) => val || 0,
+      key: 'status', header: 'Status', sortable: true,
+      render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge>,
     },
     {
       key: 'actions', header: '',
@@ -425,6 +425,7 @@ function MembershipsTab() {
         onPageChange={setPage}
         emptyMessage="No membership plans defined"
         mobileCardMode
+        clientSort
       />
 
       {showCreate && (
@@ -560,13 +561,13 @@ function PackagesTab() {
 
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
-    { key: 'price', header: 'Price', render: (val: number) => formatCurrency(val) },
+    { key: 'price', header: 'Price', sortable: true, render: (val: number) => formatCurrency(val) },
     {
-      key: 'expiration_type', header: 'Expiration',
+      key: 'expiration_type', header: 'Expiration', sortable: true,
       render: (val: string, row: any) => val === 'none' ? 'Never' : `${row.expiration_days} ${row.expiration_unit || 'days'}`,
     },
-    { key: 'status', header: 'Status', render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
-    { key: 'active_purchases', header: 'Sold', render: (val: number) => val || 0 },
+    { key: 'active_purchases', header: 'Sold', sortable: true, render: (val: number) => val || 0 },
+    { key: 'status', header: 'Status', sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
     {
       key: 'actions', header: '',
       render: (_: any, row: any) => (
@@ -603,6 +604,7 @@ function PackagesTab() {
         onPageChange={setPage}
         emptyMessage="No packages defined"
         mobileCardMode
+        clientSort
       />
 
       {showCreate && (
@@ -748,18 +750,17 @@ function PromotionsTab() {
 
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
-    { key: 'type', header: 'Type', render: (val: string) => PROMO_TYPE_LABELS[val] || val },
+    { key: 'type', header: 'Type', sortable: true, render: (val: string) => PROMO_TYPE_LABELS[val] || val },
     {
-      key: 'value', header: 'Value',
+      key: 'value', header: 'Value', sortable: true,
       render: (_: any, row: any) => {
         if (row.type.includes('percentage')) return `${row.value}%`;
         return formatCurrency(row.value);
       },
     },
-    { key: 'promo_code', header: 'Code', render: (val: string) => val || '—' },
-    { key: 'status', header: 'Status', render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
+    { key: 'promo_code', header: 'Code', sortable: true, render: (val: string) => val || '—' },
     {
-      key: 'date_range', header: 'Active Period',
+      key: 'date_range', header: 'Active Period', sortable: true,
       render: (_: any, row: any) => {
         if (!row.date_from && !row.date_to) return 'Always';
         const from = row.date_from ? new Date(row.date_from).toLocaleDateString() : '';
@@ -767,6 +768,7 @@ function PromotionsTab() {
         return `${from} – ${to}`;
       },
     },
+    { key: 'status', header: 'Status', sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
     {
       key: 'actions', header: '',
       render: (_: any, row: any) => (
@@ -804,6 +806,7 @@ function PromotionsTab() {
         onPageChange={setPage}
         emptyMessage="No promotions defined"
         mobileCardMode
+        clientSort
       />
 
       {showCreate && (

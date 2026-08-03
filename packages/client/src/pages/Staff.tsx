@@ -58,18 +58,18 @@ export function Staff() {
   }, [searchInput]);
 
   const columns = [
-    { key: 'staff_ref', header: 'Ref', width: '100px' },
+    { key: 'staff_ref', header: 'Ref', width: '100px', sortable: true },
     {
-      key: 'name', header: 'Name',
+      key: 'first_name', header: 'Name', sortable: true,
       render: (_: any, row: StaffProfile) => `${row.first_name} ${row.last_name}`,
     },
-    { key: 'email', header: 'Email' },
+    { key: 'email', header: 'Email', sortable: true },
     {
-      key: 'employment_type', header: 'Type',
+      key: 'employment_type', header: 'Type', sortable: true,
       render: (val: string) => EMPLOYMENT_LABELS[val] || val,
     },
     {
-      key: 'status', header: 'Status',
+      key: 'status', header: 'Status', sortable: true,
       render: (val: string) => (
         <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>
           {val.charAt(0).toUpperCase() + val.slice(1)}
@@ -103,6 +103,7 @@ export function Staff() {
         onPageChange={setPage}
         emptyMessage="No staff members found"
         mobileCardMode
+        clientSort
       />
     </div>
   );

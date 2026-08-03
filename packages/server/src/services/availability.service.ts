@@ -287,6 +287,7 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
               existingBookings, activeHolds, dayOfWeek, currentDateStr,
               schedulingMode, staffWorkingData, staffOverrides,
               locationHours, locationHourOverrides,
+              service.requires_dedicated_staff !== false,
             )
           : windowEligibleStaff;
 
@@ -414,6 +415,7 @@ function getAvailableStaffForSlot(
   staffOverrides: any[],
   locationHours: any[],
   locationHourOverrides: any[],
+  requiresDedicatedStaff: boolean,
 ): any[] {
   const blockStart = new Date(slotStart.getTime() - bufferBefore * 60 * 1000);
   const blockEnd = new Date(slotEnd.getTime() + bufferAfter * 60 * 1000);
@@ -512,22 +514,24 @@ function getAvailableStaffForSlot(
       }
     }
 
-    // Check existing bookings
-    const hasConflict = existingBookings.some((bk: any) => {
-      if (bk.staff_id !== userId) return false;
-      const bkStart = new Date(new Date(bk.start_time).getTime() - (bk.buffer_before || 0) * 60 * 1000);
-      const bkEnd = new Date(new Date(bk.end_time).getTime() + (bk.buffer_after || 0) * 60 * 1000);
-      return bkStart < blockEnd && bkEnd > blockStart;
-    });
-    if (hasConflict) return false;
+    // Check existing bookings (only for dedicated staff services)
+    if (requiresDedicatedStaff) {
+      const hasConflict = existingBookings.some((bk: any) => {
+        if (bk.staff_id !== userId) return false;
+        const bkStart = new Date(new Date(bk.start_time).getTime() - (bk.buffer_before || 0) * 60 * 1000);
+        const bkEnd = new Date(new Date(bk.end_time).getTime() + (bk.buffer_after || 0) * 60 * 1000);
+        return bkStart < blockEnd && bkEnd > blockStart;
+      });
+      if (hasConflict) return false;
 
-    // Check slot holds
-    const hasHold = activeHolds.some((h: any) =>
-      h.staff_id === userId &&
-      new Date(h.start_time) < blockEnd &&
-      new Date(h.end_time) > blockStart,
-    );
-    if (hasHold) return false;
+      // Check slot holds
+      const hasHold = activeHolds.some((h: any) =>
+        h.staff_id === userId &&
+        new Date(h.start_time) < blockEnd &&
+        new Date(h.end_time) > blockStart,
+      );
+      if (hasHold) return false;
+    }
 
     return true;
   });
