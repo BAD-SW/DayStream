@@ -27,6 +27,7 @@ import { ServiceCreate } from './pages/ServiceCreate';
 import { ServiceCategories } from './pages/ServiceCategories';
 import { Bookings } from './pages/Bookings';
 import { BookingCalendar } from './pages/BookingCalendar';
+import { Checkout as CheckoutPage } from './pages/Checkout';
 import { BookingFlow } from './pages/BookingFlow';
 import { Schedule } from './pages/Schedule';
 import { BookingCreate } from './pages/BookingCreate';
@@ -114,6 +115,7 @@ export function App() {
         <Route path="/bookings/new" element={<ProtectedRoute><BookingCreate /></ProtectedRoute>} />
         <Route path="/bookings/:id/edit" element={<ProtectedRoute><BookingEdit /></ProtectedRoute>} />
         <Route path="/bookings/calendar" element={<ProtectedRoute><BookingCalendar /></ProtectedRoute>} />
+        <Route path="/checkout" element={<ProtectedRoute><CheckoutPage /></ProtectedRoute>} />
         <Route path="/book/:serviceSlug" element={<ProtectedRoute><BookingFlow /></ProtectedRoute>} />
 
         {/* Schedule */}
