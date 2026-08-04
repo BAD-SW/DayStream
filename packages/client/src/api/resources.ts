@@ -87,6 +87,11 @@ export async function createSchedule(resourceId: string, data: Record<string, an
   return res.data.data;
 }
 
+export async function updateSchedule(resourceId: string, scheduleId: string, data: Record<string, any>) {
+  const res = await apiClient.put(`/v1/resources/${resourceId}/schedule/${scheduleId}`, data);
+  return res.data.data;
+}
+
 export async function deleteSchedule(resourceId: string, scheduleId: string) {
   await apiClient.delete(`/v1/resources/${resourceId}/schedule/${scheduleId}`);
 }

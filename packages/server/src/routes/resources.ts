@@ -291,7 +291,10 @@ resourcesRouter.post('/:id/schedule', requirePermission('resources:*'), async (r
       slots: (req.body.slots || []).map((s: any) => ({ dayOfWeek: s.day_of_week, startTime: s.start_time, endTime: s.end_time })),
     });
     success(res, schedule, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to create schedule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) {
+    if (err.message.includes('overlaps')) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, 'Failed to create schedule', 'INTERNAL_ERROR', 500); }
+  }
 });
 
 resourcesRouter.put('/:id/schedule/:sid', requirePermission('resources:*'), async (req: Request, res: Response) => {
@@ -302,7 +305,18 @@ resourcesRouter.put('/:id/schedule/:sid', requirePermission('resources:*'), asyn
     });
     if (!schedule) { error(res, 'Schedule not found', 'NOT_FOUND', 404); return; }
     success(res, schedule);
-  } catch (err: any) { error(res, 'Failed to update schedule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) {
+    if (err.message.includes('overlaps')) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, 'Failed to update schedule', 'INTERNAL_ERROR', 500); }
+  }
+});
+
+resourcesRouter.delete('/:id/schedule/:sid', requirePermission('resources:*'), async (req: Request, res: Response) => {
+  try {
+    const deleted = await scheduleService.deleteSchedule(req.params.sid, req.params.id);
+    if (!deleted) { error(res, 'Schedule not found', 'NOT_FOUND', 404); return; }
+    success(res, { deleted: true });
+  } catch (err: any) { error(res, 'Failed to delete schedule', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.get('/:id/schedule/blocks', requirePermission('resources:read'), async (req: Request, res: Response) => {

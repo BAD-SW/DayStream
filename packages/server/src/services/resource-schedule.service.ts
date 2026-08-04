@@ -7,6 +7,40 @@ interface ScheduleSlotInput {
 }
 
 /**
+ * Check if a schedule date range overlaps with any existing schedule for the resource.
+ */
+async function checkScheduleOverlap(resourceId: string, effectiveFrom: string, effectiveTo: string | null, excludeId?: string): Promise<boolean> {
+  const params: any[] = [resourceId, effectiveFrom];
+  let idx = 3;
+
+  // Overlap: existing.effective_from <= new.effective_to AND (existing.effective_to IS NULL OR existing.effective_to >= new.effective_from)
+  let effectiveToClause = '';
+  if (effectiveTo) {
+    effectiveToClause = `AND effective_from <= $${idx}`;
+    params.push(effectiveTo);
+    idx++;
+  }
+
+  let excludeClause = '';
+  if (excludeId) {
+    excludeClause = `AND id != $${idx}`;
+    params.push(excludeId);
+    idx++;
+  }
+
+  const { rows } = await adminPool.query(
+    `SELECT id FROM res_schedules
+     WHERE resource_id = $1
+       AND (effective_to IS NULL OR effective_to >= $2)
+       ${effectiveToClause}
+       ${excludeClause}
+     LIMIT 1`,
+    params,
+  );
+  return rows.length > 0;
+}
+
+/**
  * Get schedules for a resource.
  */
 export async function getSchedules(resourceId: string) {
@@ -30,13 +64,22 @@ export async function createSchedule(resourceId: string, input: {
   effectiveTo?: string;
   slots: ScheduleSlotInput[];
 }) {
+  const effectiveFrom = input.effectiveFrom || new Date().toISOString().slice(0, 10);
+  const effectiveTo = input.effectiveTo || null;
+
+  // Check for overlapping schedules
+  const overlap = await checkScheduleOverlap(resourceId, effectiveFrom, effectiveTo);
+  if (overlap) {
+    throw new Error('A schedule already exists that overlaps with this date range. Edit the existing schedule or adjust the dates.');
+  }
+
   const client = await adminPool.connect();
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
       `INSERT INTO res_schedules (resource_id, name, effective_from, effective_to)
        VALUES ($1, $2, $3, $4) RETURNING *`,
-      [resourceId, input.name || 'Default', input.effectiveFrom, input.effectiveTo || null]);
+      [resourceId, input.name || 'Default', effectiveFrom, effectiveTo]);
     const schedule = rows[0];
 
     for (const slot of input.slots) {
@@ -67,6 +110,19 @@ export async function updateSchedule(id: string, resourceId: string, updates: {
   effectiveTo?: string | null;
   slots?: ScheduleSlotInput[];
 }) {
+  // If dates are changing, check for overlaps (excluding self)
+  if (updates.effectiveFrom !== undefined || updates.effectiveTo !== undefined) {
+    const { rows: current } = await adminPool.query('SELECT * FROM res_schedules WHERE id = $1', [id]);
+    if (current.length > 0) {
+      const from = updates.effectiveFrom ?? current[0].effective_from;
+      const to = updates.effectiveTo !== undefined ? updates.effectiveTo : current[0].effective_to;
+      const overlap = await checkScheduleOverlap(resourceId, typeof from === 'string' ? from : from?.toISOString?.()?.slice(0,10), to ? (typeof to === 'string' ? to : to?.toISOString?.()?.slice(0,10)) : null, id);
+      if (overlap) {
+        throw new Error('A schedule already exists that overlaps with this date range. Edit the existing schedule or adjust the dates.');
+      }
+    }
+  }
+
   const client = await adminPool.connect();
   try {
     await client.query('BEGIN');
@@ -100,6 +156,26 @@ export async function updateSchedule(id: string, resourceId: string, updates: {
       `SELECT * FROM res_schedule_slots WHERE schedule_id = $1 ORDER BY day_of_week, start_time`, [id]);
     rows[0].slots = slots;
     return rows[0];
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Delete a schedule and its slots.
+ */
+export async function deleteSchedule(id: string, resourceId: string): Promise<boolean> {
+  const client = await adminPool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM res_schedule_slots WHERE schedule_id = $1', [id]);
+    const { rowCount } = await client.query(
+      'DELETE FROM res_schedules WHERE id = $1 AND resource_id = $2', [id, resourceId]);
+    await client.query('COMMIT');
+    return (rowCount ?? 0) > 0;
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

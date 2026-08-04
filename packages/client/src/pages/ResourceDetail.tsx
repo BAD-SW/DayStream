@@ -176,33 +176,159 @@ function DetailsTab({ resource, businessId, onUpdate }: { resource: Resource; bu
 function ScheduleTab({ resourceId }: { resourceId: string }) {
   const [schedules, setSchedules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  const emptySlots = () => dayNames.map((_, i) => ({ day_of_week: i, start_time: '09:00', end_time: '17:00', enabled: i >= 1 && i <= 6 }));
+  const [formName, setFormName] = useState('Operating Hours');
+  const [formFrom, setFormFrom] = useState('');
+  const [formTo, setFormTo] = useState('');
+  const [formSlots, setFormSlots] = useState(emptySlots());
+
+  const fetchSchedules = useCallback(async () => {
+    setLoading(true);
     resourcesApi.getSchedules(resourceId).then(setSchedules).finally(() => setLoading(false));
   }, [resourceId]);
+
+  useEffect(() => { fetchSchedules(); }, [fetchSchedules]);
+
+  const openAdd = () => {
+    setEditing(null);
+    setFormName('Operating Hours');
+    setFormFrom('');
+    setFormTo('');
+    setFormSlots(emptySlots());
+    setShowForm(true);
+  };
+
+  const openEdit = (schedule: any) => {
+    setEditing(schedule);
+    setFormName(schedule.name || 'Operating Hours');
+    setFormFrom(schedule.effective_from ? schedule.effective_from.split('T')[0] : '');
+    setFormTo(schedule.effective_to ? schedule.effective_to.split('T')[0] : '');
+    const slots = emptySlots().map(s => {
+      const existing = (schedule.slots || []).find((sl: any) => sl.day_of_week === s.day_of_week);
+      if (existing) return { ...s, start_time: existing.start_time.slice(0, 5), end_time: existing.end_time.slice(0, 5), enabled: true };
+      return { ...s, enabled: false };
+    });
+    setFormSlots(slots);
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const activeSlots = formSlots.filter(s => s.enabled).map(s => ({ day_of_week: s.day_of_week, start_time: s.start_time, end_time: s.end_time }));
+      const data = { name: formName, effective_from: formFrom || null, effective_to: formTo || null, slots: activeSlots };
+      if (editing) {
+        await resourcesApi.updateSchedule(resourceId, editing.id, data);
+      } else {
+        await resourcesApi.createSchedule(resourceId, data);
+      }
+      setShowForm(false);
+      fetchSchedules();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || 'Failed to save schedule';
+      alert(msg);
+    }
+    finally { setSaving(false); }
+  };
+
+  const handleDelete = async (schedule: any) => {
+    if (!confirm(`Delete "${schedule.name}" schedule?`)) return;
+    try {
+      await resourcesApi.deleteSchedule(resourceId, schedule.id);
+      fetchSchedules();
+    } catch { alert('Failed to delete schedule'); }
+  };
+
+  const updateSlot = (dayOfWeek: number, field: string, value: any) => {
+    setFormSlots(formSlots.map(s => s.day_of_week === dayOfWeek ? { ...s, [field]: value } : s));
+  };
 
   if (loading) return <div style={styles.loading}>Loading...</div>;
 
   return (
-    <div style={styles.card}>
-      <h3 style={styles.cardTitle}>Operating Hours</h3>
-      {schedules.length === 0 ? (
-        <p style={styles.emptyText}>No schedules defined. If the resource is marked 24/7, it's always available. Otherwise, add a schedule to define operating hours.</p>
-      ) : (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Operating Hours</h3>
+        <Button variant="secondary" size="sm" onClick={openAdd}>Add Schedule</Button>
+      </div>
+
+      {showForm && (
+        <div style={styles.card}>
+          <h4 style={{ ...styles.cardTitle, fontSize: '14px' }}>{editing ? 'Edit Schedule' : 'Add Schedule'}</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' }}>
+            <div style={styles.formGroup}><label style={styles.label}>Name</label><input style={styles.input} value={formName} onChange={(e) => setFormName(e.target.value)} /></div>
+            <div style={styles.formGroup}><label style={styles.label}>Effective From</label><input type="date" style={styles.input} value={formFrom} onChange={(e) => setFormFrom(e.target.value)} /></div>
+            <div style={styles.formGroup}><label style={styles.label}>Effective To</label><input type="date" style={styles.input} value={formTo} onChange={(e) => setFormTo(e.target.value)} /></div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: 'var(--space-md)' }}>
+            {formSlots.map((slot) => (
+              <div key={slot.day_of_week} style={{ display: 'grid', gridTemplateColumns: '120px 40px 1fr 1fr', gap: '8px', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', color: 'var(--color-text)', fontWeight: 500 }}>{dayNames[slot.day_of_week]}</span>
+                <input type="checkbox" checked={slot.enabled} onChange={(e) => updateSlot(slot.day_of_week, 'enabled', e.target.checked)} style={{ width: '16px', height: '16px' }} />
+                {slot.enabled ? (
+                  <>
+                    <input type="time" style={styles.input} value={slot.start_time} onChange={(e) => updateSlot(slot.day_of_week, 'start_time', e.target.value)} />
+                    <input type="time" style={styles.input} value={slot.end_time} onChange={(e) => updateSlot(slot.day_of_week, 'end_time', e.target.value)} />
+                  </>
+                ) : (
+                  <span style={{ gridColumn: 'span 2', fontSize: '12px', color: 'var(--color-text-secondary)' }}>Closed</span>
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Button size="sm" onClick={handleSave} loading={saving}>{editing ? 'Save' : 'Create'}</Button>
+            <Button variant="secondary" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {schedules.length === 0 && !showForm && (
+        <p style={styles.emptyText}>No operating hours defined. If the resource is marked "Available 24/7" on the Details tab, it has no time restrictions. Otherwise, add a schedule to define when this resource can be booked.</p>
+      )}
+
+      {schedules.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {schedules.map((s: any) => (
-            <div key={s.id} style={styles.listItem}>
-              <div style={{ flex: 1 }}>
-                <strong style={{ color: 'var(--color-text)' }}>{s.name}</strong>
-                <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                  {s.effective_from ? new Date(s.effective_from).toLocaleDateString() : ''} → {s.effective_to ? new Date(s.effective_to).toLocaleDateString() : 'Ongoing'}
-                </span>
+            <div key={s.id} style={styles.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div>
+                  <strong style={{ color: 'var(--color-text)' }}>{s.name}</strong>
+                  {(s.effective_from || s.effective_to) && (
+                    <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                      {s.effective_from ? new Date(s.effective_from).toLocaleDateString() : 'Start'} → {s.effective_to ? new Date(s.effective_to).toLocaleDateString() : 'Ongoing'}
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button style={styles.iconBtn} onClick={() => openEdit(s)} title="Edit">✏️</button>
+                  <button style={styles.iconBtn} onClick={() => handleDelete(s)} title="Delete">🗑️</button>
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {dayNames.map((dayName, i) => {
+                  const slot = (s.slots || []).find((sl: any) => sl.day_of_week === i);
+                  return (
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '8px', fontSize: '13px' }}>
+                      <span style={{ color: 'var(--color-text-secondary)', fontWeight: 500 }}>{dayName}</span>
+                      <span style={{ color: slot ? 'var(--color-text)' : 'var(--color-text-secondary)' }}>
+                        {slot ? `${slot.start_time.slice(0, 5)} – ${slot.end_time.slice(0, 5)}` : 'Closed'}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
