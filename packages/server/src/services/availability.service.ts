@@ -523,15 +523,17 @@ function getAvailableStaffForSlot(
         const eDate = typeof e.schedule_date === 'string' ? e.schedule_date.split('T')[0] : e.schedule_date;
         return e.user_id === userId && eDate === dateStr;
       });
-      if (entries.length === 0) return false; // Not scheduled this day
-      const slotMinutes = slotStart.getUTCHours() * 60 + slotStart.getUTCMinutes();
-      const slotEndMinutes = slotEnd.getUTCHours() * 60 + slotEnd.getUTCMinutes();
-      const isWithinShift = entries.some((e: any) => {
-        const shiftStart = timeToMinutes(e.start_time);
-        const shiftEnd = timeToMinutes(e.end_time);
-        return slotMinutes >= shiftStart && slotEndMinutes <= shiftEnd;
-      });
-      if (!isWithinShift) return false;
+      // If no schedule entries exist for this staff member, treat as available (unscheduled = no restrictions)
+      if (entries.length > 0) {
+        const slotMinutes = slotStart.getUTCHours() * 60 + slotStart.getUTCMinutes();
+        const slotEndMinutes = slotEnd.getUTCHours() * 60 + slotEnd.getUTCMinutes();
+        const isWithinShift = entries.some((e: any) => {
+          const shiftStart = timeToMinutes(e.start_time);
+          const shiftEnd = timeToMinutes(e.end_time);
+          return slotMinutes >= shiftStart && slotEndMinutes <= shiftEnd;
+        });
+        if (!isWithinShift) return false;
+      }
     } else {
       // Check stf_availability_patterns
       // First check overrides for this date
