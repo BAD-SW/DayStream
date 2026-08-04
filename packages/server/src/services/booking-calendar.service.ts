@@ -85,11 +85,11 @@ export async function getCalendar(query: CalendarQuery) {
   const { rows } = await adminPool.query(
     `SELECT b.id, b.start_time, b.end_time, b.status, b.booking_type, b.booking_reference,
             s.name AS service_name,
-            c.first_name || ' ' || c.last_name AS customer_name,
+            COALESCE(c.first_name || ' ' || c.last_name, b.walk_in_name, 'Walk-in') AS customer_name,
             COALESCE(u.first_name || ' ' || u.last_name, '') AS staff_name
      FROM apt_bookings b
      JOIN svc_services s ON s.id = b.service_id
-     JOIN cus_customers c ON c.id = b.customer_id
+     LEFT JOIN cus_customers c ON c.id = b.customer_id
      LEFT JOIN usr_users u ON u.id = b.staff_id
      WHERE ${where}
      ORDER BY b.start_time`,
@@ -146,11 +146,10 @@ function getDateRange(dateStr: string, view: 'day' | 'week' | 'month'): { startD
   }
 
   if (view === 'week') {
-    // Start from Monday of the week
-    const dayOfWeek = date.getUTCDay();
-    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Monday = 1
+    // Start from Sunday of the week
+    const dayOfWeek = date.getUTCDay(); // 0=Sun
     const startDate = new Date(date);
-    startDate.setUTCDate(startDate.getUTCDate() + diff);
+    startDate.setUTCDate(startDate.getUTCDate() - dayOfWeek);
     const endDate = new Date(startDate);
     endDate.setUTCDate(endDate.getUTCDate() + 7);
     return { startDate, endDate };

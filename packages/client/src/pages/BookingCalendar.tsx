@@ -181,37 +181,48 @@ function WeekView({ bookings, date, timezone, onBookingClick }: { bookings: any[
             </div>
           ))}
         </div>
-        {/* Time rows */}
-        {HOURS.map((h) => (
-          <div key={h} style={styles.weekRow}>
-            <div style={styles.weekTimeLabel}>{formatHour(h)}</div>
-            {days.map((d) => (
-              <div key={d} style={styles.weekCell} />
-            ))}
-          </div>
-        ))}
-        {/* Booking overlays per day */}
-        <div style={{ ...styles.weekOverlay, top: '50px' }}>
-          <div style={styles.weekOverlaySpacer} />
-          {days.map((d) => (
-            <div key={d} style={styles.weekDayOverlay}>
-              {(bookingsByDay.get(d) || []).map((bk) => {
-                const pos = getBookingPosition(bk, timezone);
-                if (!pos) return null;
-                return (
+        {/* Time rows + booking overlay wrapper */}
+        <div style={{ position: 'relative' as const }}>
+          {/* Time rows */}
+          {HOURS.map((h) => (
+            <div key={h} style={styles.weekRow}>
+              <div style={styles.weekTimeLabel}>{formatHour(h)}</div>
+              {days.map((d) => (
+                <div key={d} style={styles.weekCell} />
+              ))}
+            </div>
+          ))}
+          {/* Booking overlays per day */}
+          <div style={{ ...styles.weekOverlay, top: 0, height: `${HOURS.length * 60}px` }}>
+            <div style={styles.weekOverlaySpacer} />
+          {days.map((d) => {
+            const dayBookings = bookingsByDay.get(d) || [];
+            const positioned = layoutBookings(dayBookings, timezone);
+            return (
+              <div key={d} style={styles.weekDayOverlay}>
+                {positioned.map((bk) => (
                   <div
                     key={bk.id}
-                    style={{ ...styles.bookingBlock, top: `${pos.top}%`, height: `${Math.max(pos.height, 3)}%`, left: '2px', right: '2px', background: STATUS_COLORS[bk.status] || '#8A8A8A', cursor: 'pointer' }}
+                    style={{
+                      ...styles.bookingBlock,
+                      top: `${bk.top}%`,
+                      height: `${Math.max(bk.height, 3)}%`,
+                      left: `${bk.left}%`,
+                      width: `${bk.width}%`,
+                      background: STATUS_COLORS[bk.status] || '#8A8A8A',
+                      cursor: 'pointer',
+                    }}
                     onClick={() => onBookingClick(bk.id)}
                     title={`${bk.service_name} — ${bk.customer_name}`}
                   >
                     <span style={styles.blockTime}>{formatTime(bk.start_time, timezone)}</span>
                     <span style={styles.blockTitle}>{bk.service_name}</span>
                   </div>
-                );
-              })}
-            </div>
-          ))}
+                ))}
+              </div>
+            );
+          })}
+          </div>
         </div>
       </div>
     </div>
@@ -419,7 +430,7 @@ const styles: Record<string, React.CSSProperties> = {
   hourRow: { height: '60px', borderTop: '1px solid var(--color-border)', boxSizing: 'border-box' as const },
 
   // Booking blocks
-  bookingBlock: { position: 'absolute' as const, borderRadius: '4px', padding: '2px 4px', overflow: 'hidden', fontSize: '11px', color: '#fff', zIndex: 1 },
+  bookingBlock: { position: 'absolute' as const, borderRadius: '4px', padding: '2px 4px', overflow: 'hidden', fontSize: '11px', color: '#fff', zIndex: 1, border: '2px solid var(--color-background, #FFF)', boxSizing: 'border-box' as const },
   blockTime: { fontWeight: 600, fontSize: '10px', display: 'block' },
   blockTitle: { display: 'block', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
   blockSub: { display: 'block', fontSize: '10px', opacity: 0.8, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
