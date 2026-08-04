@@ -8,6 +8,8 @@
     "start": "node dist/index.js",
     "migrate:dev": "tsx src/db/migrate.ts",
     "seed:dev": "tsx src/db/seed.ts",
+    "seed:config": "tsx src/db/seed-config-runner.ts",
+    "seed:export": "tsx src/db/export-config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
