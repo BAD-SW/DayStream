@@ -74,14 +74,6 @@ export function Checkout() {
     } catch { /* silent */ }
   };
 
-  const handleUpdateCredit = async (item: OrderItem, userId: string | null) => {
-    if (!order) return;
-    try {
-      const updated = await checkoutApi.updateItem(order.id, item.id, { credited_to: userId });
-      setOrder(updated);
-    } catch { /* silent */ }
-  };
-
   const handleRemoveItem = async (item: OrderItem) => {
     if (!order) return;
     try {
@@ -95,7 +87,7 @@ export function Checkout() {
     setCompleting(true);
     try {
       const completed = await checkoutApi.completeOrder(order.id, businessId, { payment_method: 'cash' });
-      setOrder(completed);
+      navigate(`/receipt/${completed.id}`);
     } catch (err: any) {
       alert(err?.response?.data?.error || 'Failed to complete payment');
     } finally {
@@ -239,9 +231,13 @@ export function Checkout() {
 
       {isCompleted && (
         <div style={styles.card}>
-          <p style={{ color: 'var(--color-text)', margin: 0 }}>
+          <p style={{ color: 'var(--color-text)', margin: '0 0 12px' }}>
             Payment completed via <strong>{order.payment_method}</strong> on {new Date(order.completed_at!).toLocaleString()}
           </p>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Button size="sm" onClick={() => navigate(`/receipt/${order.id}`)}>View Receipt</Button>
+            <Button variant="secondary" size="sm" onClick={() => window.open(`/receipt/${order.id}`, '_blank')}>Print Receipt</Button>
+          </div>
         </div>
       )}
 
