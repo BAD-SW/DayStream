@@ -154,44 +154,65 @@ export function Checkout() {
 
         {order.items.length === 0 && <p style={styles.empty}>No items in cart</p>}
 
-        {order.items.map((item) => (
-          editingItemId === item.id && isOpen ? (
-            <InlineEditItem
-              key={item.id}
-              item={item}
-              orderId={order.id}
-              staffList={staffList}
-              onSaved={(updated) => { setOrder(updated); setEditingItemId(null); }}
-              onCancel={() => setEditingItemId(null)}
-            />
-          ) : (
-            <div key={item.id} style={styles.lineItem}>
-              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 180px 70px 50px', gap: '8px', alignItems: 'center' }}>
-                <span style={styles.itemTypeLabel}>{item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1)}:</span>
-                <div style={styles.lineItemInfo}>
-                  <strong style={{ color: 'var(--color-text)' }}>{item.item_name}</strong>
-                  {item.variant_name && <span style={styles.variant}> ({item.variant_name})</span>}
-                  {item.quantity > 1 && <span style={styles.qty}>×{item.quantity}</span>}
-                  {item.credited_to && item.credited_to !== order.credited_to && (
-                    <span style={styles.overrideInline}>Credit: {item.credited_first_name} {item.credited_last_name}</span>
-                  )}
-                </div>
-                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', textAlign: 'right' as const }}>
-                  {formatCurrency(item.unit_price)}{item.quantity > 1 ? ` × ${item.quantity}` : ''}{item.tax_amount > 0 ? ` + ${formatCurrency(item.tax_amount)} tax` : ''}
-                </span>
-                <span style={{ ...styles.price, textAlign: 'right' as const }}>{formatCurrency(item.total_price)}</span>
-                <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
-                  {isOpen && (
-                    <>
-                      <button style={styles.editBtn} onClick={() => setEditingItemId(item.id)} title="Edit">✏️</button>
-                      <button style={styles.removeBtn} onClick={() => handleRemoveItem(item)} title="Remove">✕</button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          )
-        ))}
+        {order.items.length > 0 && (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                <th style={styles.th}>Item</th>
+                <th style={styles.th}>Variant</th>
+                <th style={styles.thRight}>Qty</th>
+                <th style={styles.thRight}>Price</th>
+                <th style={styles.thRight}>Adj</th>
+                <th style={styles.thRight}>Tax</th>
+                <th style={styles.thRight}>Total</th>
+                {isOpen && <th style={{ width: '50px' }} />}
+              </tr>
+            </thead>
+            <tbody>
+              {order.items.map((item) => (
+                editingItemId === item.id && isOpen ? (
+                  <tr key={item.id}>
+                    <td colSpan={isOpen ? 8 : 7} style={{ padding: '8px 0' }}>
+                      <InlineEditItem
+                        item={item}
+                        orderId={order.id}
+                        staffList={staffList}
+                        onSaved={(updated) => { setOrder(updated); setEditingItemId(null); }}
+                        onCancel={() => setEditingItemId(null)}
+                      />
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={item.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                    <td style={styles.td}>
+                      <span style={styles.itemTypeLabel}>{item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1)}:</span>{' '}
+                      <strong>{item.item_name}</strong>
+                      {item.credited_to && item.credited_to !== order.credited_to && (
+                        <div style={styles.overrideInline}>Credit: {item.credited_first_name} {item.credited_last_name}</div>
+                      )}
+                    </td>
+                    <td style={styles.td}>{item.variant_name || '—'}</td>
+                    <td style={styles.tdRight}>{item.quantity}</td>
+                    <td style={styles.tdRight}>{formatCurrency(item.unit_price)}</td>
+                    <td style={styles.tdRight}>
+                      {item.discount_amount > 0 && <span style={{ color: 'var(--color-success, #2E7D32)' }}>-{formatCurrency(item.discount_amount)}</span>}
+                      {item.discount_amount < 0 && <span style={{ color: 'var(--color-error, #D32F2F)' }}>+{formatCurrency(Math.abs(item.discount_amount))}</span>}
+                      {item.discount_amount === 0 && '—'}
+                    </td>
+                    <td style={styles.tdRight}>{item.tax_amount > 0 ? formatCurrency(item.tax_amount) : '—'}</td>
+                    <td style={{ ...styles.tdRight, fontWeight: 600 }}>{formatCurrency(item.total_price)}</td>
+                    {isOpen && (
+                      <td style={{ ...styles.tdRight, whiteSpace: 'nowrap' as const, verticalAlign: 'middle' as const }}>
+                        <button style={styles.editBtn} onClick={() => setEditingItemId(item.id)} title="Edit">✏️</button>
+                        <button style={styles.removeBtn} onClick={() => handleRemoveItem(item)} title="Remove">✕</button>
+                      </td>
+                    )}
+                  </tr>
+                )
+              ))}
+            </tbody>
+          </table>
+        )}
 
         {/* Inline Add Item Row */}
         {showAddItem && isOpen && (
@@ -217,7 +238,8 @@ export function Checkout() {
       {/* Totals */}
       <div style={styles.card}>
         <div style={styles.totalRow}><span>Subtotal</span><span>{formatCurrency(order.subtotal)}</span></div>
-        {order.discount_amount > 0 && <div style={styles.totalRow}><span>Discount</span><span>-{formatCurrency(order.discount_amount)}</span></div>}
+        {order.discount_amount > 0 && <div style={styles.totalRow}><span>Discount{order.promo_code ? ` (${order.promo_code})` : ''}</span><span>-{formatCurrency(order.discount_amount)}</span></div>}
+        {order.discount_amount < 0 && <div style={styles.totalRow}><span>Surcharge{order.promo_code ? ` (${order.promo_code})` : ''}</span><span>+{formatCurrency(Math.abs(order.discount_amount))}</span></div>}
         {order.tax_amount > 0 && <div style={styles.totalRow}><span>Tax</span><span>{formatCurrency(order.tax_amount)}</span></div>}
         <div style={{ ...styles.totalRow, fontWeight: 700, fontSize: '18px', borderTop: '1px solid var(--color-border)', paddingTop: '8px', marginTop: '8px' }}>
           <span>Total</span><span>{formatCurrency(order.total_amount)}</span>
@@ -384,12 +406,15 @@ function PromoCodeInput({ order, businessId, onUpdated }: { order: Order; busine
   };
 
   if (order.promo_code) {
+    const isDiscount = order.discount_amount > 0;
+    const isSurcharge = order.discount_amount < 0;
     return (
       <div style={{ ...styles.card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px var(--space-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Promo:</span>
           <strong style={{ color: 'var(--color-text)' }}>{order.promo_code}</strong>
-          <span style={{ fontSize: '12px', color: 'var(--color-success, #2E7D32)' }}>−{formatCurrency(order.discount_amount)}</span>
+          {isDiscount && <span style={{ fontSize: '12px', color: 'var(--color-success, #2E7D32)' }}>−{formatCurrency(order.discount_amount)}</span>}
+          {isSurcharge && <span style={{ fontSize: '12px', color: 'var(--color-error, #D32F2F)' }}>+{formatCurrency(Math.abs(order.discount_amount))}</span>}
         </div>
         <button style={styles.removeBtn} onClick={handleRemove} title="Remove code">✕</button>
       </div>
@@ -511,10 +536,14 @@ const styles: Record<string, React.CSSProperties> = {
   variant: { fontSize: '12px', color: 'var(--color-text-secondary)' },
   qty: { fontSize: '12px', color: 'var(--color-text-secondary)', marginLeft: '4px' },
   price: { fontWeight: 600, color: 'var(--color-text)', fontSize: '15px' },
+  th: { textAlign: 'left' as const, fontSize: '11px', fontWeight: 600, textTransform: 'uppercase' as const, color: 'var(--color-text-secondary)', padding: '8px 4px' },
+  thRight: { textAlign: 'right' as const, fontSize: '11px', fontWeight: 600, textTransform: 'uppercase' as const, color: 'var(--color-text-secondary)', padding: '8px 4px' },
+  td: { padding: '10px 4px', verticalAlign: 'top' as const, color: 'var(--color-text)' },
+  tdRight: { padding: '10px 4px', textAlign: 'right' as const, verticalAlign: 'top' as const, color: 'var(--color-text)' },
   creditSelect: { fontSize: '13px', padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
   inlineSelect: { fontSize: '12px', padding: '6px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
-  removeBtn: { background: 'none', border: 'none', color: 'var(--color-error)', cursor: 'pointer', fontSize: '16px', padding: '4px' },
-  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '4px' },
+  removeBtn: { background: 'none', border: 'none', color: 'var(--color-error)', cursor: 'pointer', fontSize: '16px', padding: '0', lineHeight: 1, verticalAlign: 'middle' as const },
+  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '0', lineHeight: 1, verticalAlign: 'middle' as const },
   totalRow: { display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '14px', color: 'var(--color-text)' },
   actions: { display: 'flex', gap: 'var(--space-md)', marginTop: 'var(--space-md)' },
 };
