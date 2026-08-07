@@ -10,6 +10,7 @@ export interface OrderItem {
   item_type: 'service' | 'product' | 'membership' | 'package';
   item_id: string | null;
   item_name: string;
+  variant_id: string | null;
   variant_name: string | null;
   quantity: number;
   unit_price: number;

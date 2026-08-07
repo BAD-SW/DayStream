@@ -166,9 +166,9 @@ export function Checkout() {
             />
           ) : (
             <div key={item.id} style={styles.lineItem}>
-              <div style={styles.lineItemMain}>
+              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 180px 70px 50px', gap: '8px', alignItems: 'center' }}>
+                <span style={styles.itemTypeLabel}>{item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1)}:</span>
                 <div style={styles.lineItemInfo}>
-                  <span style={styles.itemTypeLabel}>{item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1)}:</span>
                   <strong style={{ color: 'var(--color-text)' }}>{item.item_name}</strong>
                   {item.variant_name && <span style={styles.variant}> ({item.variant_name})</span>}
                   {item.quantity > 1 && <span style={styles.qty}>×{item.quantity}</span>}
@@ -176,8 +176,11 @@ export function Checkout() {
                     <span style={styles.overrideInline}>Credit: {item.credited_first_name} {item.credited_last_name}</span>
                   )}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={styles.price}>{formatCurrency(item.total_price)}</span>
+                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', textAlign: 'right' as const }}>
+                  {formatCurrency(item.unit_price)}{item.quantity > 1 ? ` × ${item.quantity}` : ''}{item.tax_amount > 0 ? ` + ${formatCurrency(item.tax_amount)} tax` : ''}
+                </span>
+                <span style={{ ...styles.price, textAlign: 'right' as const }}>{formatCurrency(item.total_price)}</span>
+                <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
                   {isOpen && (
                     <>
                       <button style={styles.editBtn} onClick={() => setEditingItemId(item.id)} title="Edit">✏️</button>
@@ -420,16 +423,31 @@ function InlineEditItem({ item, orderId, staffList, onSaved, onCancel }: {
   onCancel: () => void;
 }) {
   const [quantity, setQuantity] = useState(item.quantity);
-  const [unitPrice, setUnitPrice] = useState(String((item.unit_price / 100).toFixed(2)));
   const [creditedTo, setCreditedTo] = useState(item.credited_to || '');
+  const [variants, setVariants] = useState<any[]>([]);
+  const [selectedVariantId, setSelectedVariantId] = useState(item.variant_id || '');
   const [saving, setSaving] = useState(false);
+
+  // Load variants for products
+  useEffect(() => {
+    if (item.item_type === 'product' && item.item_id) {
+      import('../api/client').then(({ apiClient }) => {
+        apiClient.get(`/v1/merchandise/${item.item_id}/variants`).then((res) => {
+          setVariants(res.data.data || []);
+        }).catch(() => setVariants([]));
+      });
+    }
+  }, [item.item_type, item.item_id]);
+
+  const selectedVariant = variants.find((v: any) => v.id === selectedVariantId);
+  const currentPrice = selectedVariant?.price ?? item.unit_price;
 
   const handleSave = async () => {
     setSaving(true);
     try {
       const updated = await checkoutApi.updateItem(orderId, item.id, {
         quantity,
-        unit_price: Math.round(parseFloat(unitPrice) * 100),
+        unit_price: currentPrice,
         credited_to: creditedTo || null,
       });
       onSaved(updated);
@@ -439,10 +457,19 @@ function InlineEditItem({ item, orderId, staffList, onSaved, onCancel }: {
 
   return (
     <div style={{ ...styles.lineItem, background: 'var(--color-background)', borderRadius: 'var(--radius-md)', padding: '12px' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 80px 45px 120px auto', gap: '6px', alignItems: 'center' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr auto 45px 120px auto', gap: '6px', alignItems: 'center' }}>
         <span style={styles.itemTypeLabel}>{item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1)}:</span>
-        <strong style={{ color: 'var(--color-text)', fontSize: '13px' }}>{item.item_name}{item.variant_name ? ` (${item.variant_name})` : ''}</strong>
-        <input type="number" step="0.01" min="0" style={{ ...styles.inlineSelect, width: '75px' }} value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} title="Unit price" />
+        <strong style={{ color: 'var(--color-text)', fontSize: '13px' }}>{item.item_name}</strong>
+        {variants.length > 0 ? (
+          <select style={{ ...styles.inlineSelect, minWidth: '110px' }} value={selectedVariantId} onChange={(e) => setSelectedVariantId(e.target.value)}>
+            <option value="">Base ({formatCurrency(item.unit_price)})</option>
+            {variants.map((v: any) => (
+              <option key={v.id} value={v.id}>{v.name} — {formatCurrency(v.price)}</option>
+            ))}
+          </select>
+        ) : (
+          <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{item.variant_name ? `(${item.variant_name})` : ''} {formatCurrency(currentPrice)}</span>
+        )}
         <input type="number" min="1" style={{ ...styles.inlineSelect, width: '40px', textAlign: 'center' as const }} value={quantity} onChange={(e) => setQuantity(parseInt(e.target.value) || 1)} title="Quantity" />
         <select style={styles.inlineSelect} value={creditedTo} onChange={(e) => setCreditedTo(e.target.value)}>
           <option value="">— Override —</option>

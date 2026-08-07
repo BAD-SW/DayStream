@@ -53,7 +53,8 @@ export async function createOrder(input: CreateOrderInput) {
 export async function createOrderFromBooking(bookingId: string, businessId: string, checkedOutBy: string) {
   // Load booking with service/variant details
   const { rows: bookings } = await adminPool.query(
-    `SELECT b.*, s.name AS service_name, sv.name AS variant_name, sv.price AS variant_price,
+    `SELECT b.*, s.name AS service_name, s.is_taxable, s.tax_category_id,
+            sv.name AS variant_name, sv.price AS variant_price,
             c.id AS cust_id, c.first_name AS cust_first, c.last_name AS cust_last
      FROM apt_bookings b
      JOIN svc_services s ON s.id = b.service_id
@@ -85,6 +86,7 @@ export async function createOrderFromBooking(bookingId: string, businessId: stri
 
   // Add service as first line item (credited to the assigned staff)
   const price = booking.variant_price || booking.price || 0;
+  const taxAmount = await calculateTaxForItem('service', booking.service_id, price, 1);
   await addItem(order.id, {
     itemType: 'service',
     itemId: booking.service_id,
@@ -93,6 +95,7 @@ export async function createOrderFromBooking(bookingId: string, businessId: stri
     variantName: booking.variant_name || undefined,
     quantity: 1,
     unitPrice: price,
+    taxAmount,
     creditedTo: booking.staff_id || undefined,
     bookingId,
   });
@@ -111,13 +114,22 @@ export async function addItem(orderId: string, input: AddItemInput) {
   if (orderRows.length === 0) throw new Error('Order not found');
   if (orderRows[0].status !== 'open') throw new Error('Order is not open');
 
-  const totalPrice = (input.unitPrice * input.quantity) - (input.discountAmount || 0) + (input.taxAmount || 0);
+  // Auto-calculate tax if not explicitly provided
+  let taxAmount = input.taxAmount || 0;
+  if (input.taxAmount === undefined && input.itemId) {
+    console.log(`[Tax] Auto-calculating tax for item ${input.itemId} (type=${input.itemType})`);
+    taxAmount = await calculateTaxForItem(input.itemType, input.itemId, input.unitPrice, input.quantity);
+  } else {
+    console.log(`[Tax] Skipping auto-calc: taxAmount=${input.taxAmount}, itemId=${input.itemId}`);
+  }
+
+  const totalPrice = (input.unitPrice * input.quantity) - (input.discountAmount || 0) + taxAmount;
 
   const { rows } = await adminPool.query(
     `INSERT INTO fin_order_items (order_id, item_type, item_id, item_name, variant_id, variant_name, quantity, unit_price, discount_amount, tax_amount, total_price, credited_to, booking_id, notes)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
     [orderId, input.itemType, input.itemId || null, input.itemName, input.variantId || null, input.variantName || null,
-     input.quantity, input.unitPrice, input.discountAmount || 0, input.taxAmount || 0, totalPrice,
+     input.quantity, input.unitPrice, input.discountAmount || 0, taxAmount, totalPrice,
      input.creditedTo || null, input.bookingId || null, input.notes || null],
   );
 
@@ -143,7 +155,17 @@ export async function updateItem(itemId: string, orderId: string, updates: Parti
   const quantity = updates.quantity ?? item.quantity;
   const unitPrice = updates.unitPrice ?? item.unit_price;
   const discount = updates.discountAmount ?? item.discount_amount;
-  const tax = updates.taxAmount ?? item.tax_amount;
+
+  // Recalculate tax if quantity or price changed
+  let tax = item.tax_amount;
+  if ((updates.quantity !== undefined && updates.quantity !== item.quantity) ||
+      (updates.unitPrice !== undefined && updates.unitPrice !== item.unit_price)) {
+    // Recalculate from the item's tax category
+    tax = await calculateTaxForItem(item.item_type, item.item_id, unitPrice, quantity);
+  } else if (updates.taxAmount !== undefined) {
+    tax = updates.taxAmount;
+  }
+
   const totalPrice = (unitPrice * quantity) - discount + tax;
 
   const { rows } = await adminPool.query(
@@ -470,6 +492,41 @@ export async function getOrders(businessId: string, filters?: {
     orders: dataResult.rows,
     meta: { total: countResult.rows[0].total, page, totalPages: Math.ceil(countResult.rows[0].total / limit) },
   };
+}
+
+/**
+ * Calculate tax amount for an item based on its tax category.
+ */
+export async function calculateTaxForItem(itemType: string, itemId: string | null, unitPrice: number, quantity: number): Promise<number> {
+  if (!itemId) return 0;
+
+  let taxCategoryId: string | null = null;
+
+  if (itemType === 'service') {
+    const { rows } = await adminPool.query('SELECT tax_category_id FROM svc_services WHERE id = $1', [itemId]);
+    if (rows.length > 0) taxCategoryId = rows[0].tax_category_id;
+  } else if (itemType === 'product') {
+    const { rows } = await adminPool.query('SELECT tax_category_id FROM prd_merchandise WHERE id = $1', [itemId]);
+    if (rows.length > 0) taxCategoryId = rows[0].tax_category_id;
+  } else if (itemType === 'membership') {
+    const { rows } = await adminPool.query('SELECT tax_category_id FROM mbr_plans WHERE id = $1', [itemId]);
+    if (rows.length > 0) taxCategoryId = rows[0].tax_category_id;
+  } else if (itemType === 'package') {
+    const { rows } = await adminPool.query('SELECT tax_category_id FROM pkg_packages WHERE id = $1', [itemId]);
+    if (rows.length > 0) taxCategoryId = rows[0].tax_category_id;
+  }
+
+  console.log(`[Tax] item_type=${itemType} item_id=${itemId} tax_category_id=${taxCategoryId}`);
+
+  if (!taxCategoryId) return 0;
+
+  const { rows: taxRows } = await adminPool.query('SELECT rate FROM svc_tax_categories WHERE id = $1', [taxCategoryId]);
+  if (taxRows.length === 0) return 0;
+
+  const rate = taxRows[0].rate; // basis points (2100 = 21%)
+  const tax = Math.round(unitPrice * quantity * rate / 10000);
+  console.log(`[Tax] rate=${rate} unitPrice=${unitPrice} qty=${quantity} calculated_tax=${tax}`);
+  return tax;
 }
 
 /**
