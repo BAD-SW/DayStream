@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { generateJournalEntries } from './order-journal.service';
 
 interface CreateOrderInput {
   businessId: string;
@@ -217,6 +218,14 @@ export async function completeOrder(orderId: string, businessId: string, input: 
       `UPDATE apt_bookings SET status = 'completed' WHERE id = $1 AND status IN ('checked_in', 'in_progress')`,
       [orderRows[0].booking_id],
     );
+  }
+
+  // Auto-generate journal entries for accounting
+  try {
+    await generateJournalEntries(orderId, businessId, input.checkedOutBy);
+  } catch (err: any) {
+    console.error('[Journal] Failed to generate entries:', err.message);
+    // Don't fail the order completion if journaling fails
   }
 
   return getOrder(orderId);

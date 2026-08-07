@@ -94,7 +94,7 @@ export function Tabs({ items, defaultTab, orientation = 'horizontal' }: TabsProp
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  tabList: { display: 'flex', gap: 'var(--space-xs)', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-md)' },
+  tabList: { display: 'flex', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-md)', justifyContent: 'space-evenly', width: '80%' },
   tabListVertical: { display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)', borderRight: '1px solid var(--color-border)', paddingRight: 'var(--space-md)', minWidth: '150px' },
   containerVertical: { display: 'flex', gap: 'var(--space-md)' },
   tab: {

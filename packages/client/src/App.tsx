@@ -138,6 +138,7 @@ export function App() {
 
         {/* Payroll & AP */}
         <Route path="/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
+        <Route path="/accounting" element={<ProtectedRoute><AccountsPayable /></ProtectedRoute>} />
         <Route path="/ap" element={<ProtectedRoute><AccountsPayable /></ProtectedRoute>} />
 
         {/* Business (Staff, Resources, Locations) */}

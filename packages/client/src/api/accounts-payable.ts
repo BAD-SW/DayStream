@@ -57,9 +57,15 @@ export async function createAccount(data: any) {
   const res = await apiClient.post('/v1/ap/accounts', data);
   return res.data.data;
 }
-export async function archiveAccount(id: string, businessId: string) {
-  const res = await apiClient.put(`/v1/ap/accounts/${id}/archive?business_id=${businessId}`);
+export async function updateAccount(id: string, businessId: string, data: any) {
+  const res = await apiClient.put(`/v1/ap/accounts/${id}?business_id=${businessId}`, data);
   return res.data.data;
+}
+export async function archiveAccount(id: string, businessId: string) {
+  await apiClient.put(`/v1/ap/accounts/${id}/archive?business_id=${businessId}`);
+}
+export async function unarchiveAccount(id: string, businessId: string) {
+  await apiClient.put(`/v1/ap/accounts/${id}/unarchive?business_id=${businessId}`);
 }
 export async function seedAccounts(businessId: string) {
   await apiClient.post(`/v1/ap/accounts/seed?business_id=${businessId}`);

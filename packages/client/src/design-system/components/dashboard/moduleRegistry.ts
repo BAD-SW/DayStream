@@ -27,7 +27,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   { id: 'schedule', phase: 7, icon: '🗓️', titleKey: 'Schedule', descriptionKey: 'Staff scheduling and shift management', path: '/schedule', personas: ['business'], permission: 'staff:read' },
 
   // Accounting
-  { id: 'accounting', phase: 11, icon: '📊', titleKey: 'Accounting', descriptionKey: 'Accounts payable and receivables', path: '/accounts', personas: ['business'], permission: 'reports:*' },
+  { id: 'accounting', phase: 11, icon: '📊', titleKey: 'Accounting', descriptionKey: 'Accounts payable and receivables', path: '/accounting', personas: ['business'], permission: 'reports:*' },
 
   // Reports
   { id: 'reports', phase: 17, icon: '📈', titleKey: 'Reports', descriptionKey: 'Analytics and insights', path: '/reports', personas: ['business'], permission: 'reports:read' },

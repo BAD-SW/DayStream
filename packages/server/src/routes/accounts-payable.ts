@@ -224,6 +224,37 @@ apRouter.put('/accounts/:id/archive', requirePermission('settings:*'), async (re
   } catch (err: any) { error(res, 'Failed to archive account', 'INTERNAL_ERROR', 500); }
 });
 
+// PUT /api/v1/ap/accounts/:id/unarchive
+apRouter.put('/accounts/:id/unarchive', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const result = await coaService.unarchiveAccount(req.params.id, businessId);
+    if (!result.success) { error(res, result.error!, 'VALIDATION_ERROR', 400); return; }
+    success(res, { unarchived: true });
+  } catch (err: any) { error(res, 'Failed to unarchive account', 'INTERNAL_ERROR', 500); }
+});
+
+// PUT /api/v1/ap/accounts/:id
+const updateAccountSchema = Joi.object({
+  name: Joi.string().min(1).max(100),
+  description: Joi.string().max(500).allow('', null),
+  code: Joi.string().min(1).max(20),
+}).min(1);
+
+apRouter.put('/accounts/:id', requirePermission('settings:*'), validate(updateAccountSchema), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const account = await coaService.updateAccount(req.params.id, businessId, req.body);
+    if (!account) { error(res, 'Account not found', 'NOT_FOUND', 404); return; }
+    success(res, account);
+  } catch (err: any) {
+    if (err.message.includes('duplicate') || err.message.includes('unique')) { error(res, 'Account code already exists', 'DUPLICATE', 409); }
+    else { error(res, 'Failed to update account', 'INTERNAL_ERROR', 500); }
+  }
+});
+
 // POST /api/v1/ap/accounts/seed — Seed defaults
 apRouter.post('/accounts/seed', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {

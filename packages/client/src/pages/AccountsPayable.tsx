@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { Tabs } from '../design-system/components/navigation/Tabs';
+import { TableActionButton } from '../design-system/components/actions/TableActionButton';
 import * as apApi from '../api/accounts-payable';
 import { formatCurrency } from '../utils/currency';
 
@@ -18,6 +19,10 @@ export function AccountsPayable() {
   const [loading, setLoading] = useState(true);
   const [editingVendor, setEditingVendor] = useState<any | null>(null);
   const [editVendorForm, setEditVendorForm] = useState<any>({});
+  const [showAddAccount, setShowAddAccount] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<any | null>(null);
+  const [accountForm, setAccountForm] = useState({ code: '', name: '', account_type: 'expense', description: '' });
+  const [showArchived, setShowArchived] = useState(false);
   const [reportDateFrom, setReportDateFrom] = useState(() => {
     const d = new Date(); d.setMonth(d.getMonth() - 1);
     return d.toISOString().slice(0, 10);
@@ -40,7 +45,14 @@ export function AccountsPayable() {
       setVendors(v);
       setBills(b);
       setExpenses(e);
-      setAccounts(accts);
+      // Auto-seed chart of accounts if empty
+      if (Array.isArray(accts) && accts.length === 0) {
+        await apApi.seedAccounts(businessId);
+        const seeded = await apApi.getAccounts(businessId);
+        setAccounts(seeded);
+      } else {
+        setAccounts(accts);
+      }
       setJournalEntries(Array.isArray(journal) ? journal : journal.entries || []);
     } finally { setLoading(false); }
   }, [businessId]);
@@ -51,7 +63,7 @@ export function AccountsPayable() {
   async function handleArchiveAccount(id: string) {
     if (!confirm('Archive this account? It will no longer appear in active lists.')) return;
     await apApi.archiveAccount(id, businessId);
-    setAccounts((prev) => prev.filter((a) => a.id !== id));
+    setAccounts((prev) => prev.map((a) => a.id === id ? { ...a, status: 'archived' } : a));
   }
 
   // --- Void Journal Entry ---
@@ -152,16 +164,88 @@ export function AccountsPayable() {
   ];
 
   const accountCols = [
-    { key: 'code', header: 'Code' },
-    { key: 'name', header: 'Name' },
-    { key: 'account_type', header: 'Type', render: (v: string) => <Badge variant="neutral">{v}</Badge> },
+    { key: 'code', header: 'Code', sortable: true },
+    { key: 'account_type', header: 'Type', sortable: true },
+    { key: 'name', header: 'Name', sortable: true },
     { key: 'description', header: 'Description' },
     { key: 'actions', header: '', render: (_: any, row: any) => (
-      <button style={styles.dangerBtn} onClick={(e) => { e.stopPropagation(); handleArchiveAccount(row.id); }} aria-label={`Archive account ${row.name}`}>
-        📦 Archive
-      </button>
+      <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+        <TableActionButton label="Edit" variant="edit" onClick={() => openEditAccount(row)} />
+        {row.status === 'active' && (
+          <TableActionButton label="Archive" variant="archive" onClick={() => handleArchiveAccount(row.id)} />
+        )}
+        {row.status === 'archived' && (
+          <TableActionButton label="Restore" variant="restore" onClick={() => handleUnarchiveAccount(row.id)} />
+        )}
+      </div>
     )},
   ];
+
+  function openAddAccount() {
+    setEditingAccount(null);
+    setAccountForm({ code: '', name: '', account_type: 'expense', description: '' });
+    setShowAddAccount(true);
+  }
+
+  function openEditAccount(acct: any) {
+    setEditingAccount(acct);
+    setAccountForm({ code: acct.code, name: acct.name, account_type: acct.account_type, description: acct.description || '' });
+    setShowAddAccount(true);
+  }
+
+  async function handleSaveAccount() {
+    if (!accountForm.code || !accountForm.name) return;
+    try {
+      if (editingAccount) {
+        await apApi.updateAccount(editingAccount.id, businessId, { code: accountForm.code, name: accountForm.name, description: accountForm.description });
+      } else {
+        await apApi.createAccount({ business_id: businessId, ...accountForm });
+      }
+      setShowAddAccount(false);
+      loadData();
+    } catch (err: any) {
+      alert(err?.response?.data?.error || 'Failed to save account');
+    }
+  }
+
+  async function handleUnarchiveAccount(id: string) {
+    try {
+      await apApi.unarchiveAccount(id, businessId);
+      loadData();
+    } catch (err: any) {
+      alert(err?.response?.data?.error || 'Failed to unarchive');
+    }
+  }
+
+  const filteredAccounts = showArchived ? accounts : accounts.filter((a: any) => a.status === 'active');
+
+  const accountsContent = (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived
+        </label>
+        <button style={styles.primaryBtn} onClick={openAddAccount}>Add Account</button>
+      </div>
+      {showAddAccount && (
+        <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
+          <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
+            <div><label style={styles.fieldLabel}>Code</label><input style={{ ...styles.input, width: '80px' }} value={accountForm.code} onChange={(e) => setAccountForm({ ...accountForm, code: e.target.value })} placeholder="e.g. 4600" /></div>
+            <div><label style={styles.fieldLabel}>Type</label><select style={{ ...styles.input, width: '120px' }} value={accountForm.account_type} onChange={(e) => setAccountForm({ ...accountForm, account_type: e.target.value })} disabled={!!editingAccount}>
+              <option value="asset">Asset</option><option value="liability">Liability</option><option value="equity">Equity</option><option value="revenue">Revenue</option><option value="expense">Expense</option>
+            </select></div>
+            <div><label style={styles.fieldLabel}>Name</label><input style={{ ...styles.input, width: '280px' }} value={accountForm.name} onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} placeholder="Account name" /></div>
+            <div><label style={styles.fieldLabel}>Description</label><input style={{ ...styles.input, width: '280px' }} value={accountForm.description} onChange={(e) => setAccountForm({ ...accountForm, description: e.target.value })} placeholder="Optional" /></div>
+            <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+              <button style={styles.primaryBtn} onClick={handleSaveAccount}>{editingAccount ? 'Save' : 'Create'}</button>
+              <button style={styles.secondaryBtn} onClick={() => setShowAddAccount(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+      <Table columns={accountCols} data={filteredAccounts} loading={loading} emptyMessage="No accounts" clientSort />
+    </div>
+  );
 
   const journalCols = [
     { key: 'entry_date', header: 'Date', render: (v: string) => new Date(v).toLocaleDateString() },
@@ -190,7 +274,7 @@ export function AccountsPayable() {
   // --- Render ---
   return (
     <div style={styles.page}>
-      <h1 style={styles.title}>Accounts Payable</h1>
+      <h1 style={styles.title}>Accounting</h1>
 
       {/* Edit Vendor Modal */}
       {editingVendor && (
@@ -235,7 +319,7 @@ export function AccountsPayable() {
         { id: 'vendors', label: 'Vendors', content: <Table columns={vendorCols} data={vendors} loading={loading} emptyMessage="No vendors" /> },
         { id: 'bills', label: 'Bills', content: <Table columns={billCols} data={bills} loading={loading} emptyMessage="No bills" /> },
         { id: 'expenses', label: 'Expenses', content: <Table columns={expenseCols} data={expenses} loading={loading} emptyMessage="No expenses" /> },
-        { id: 'accounts', label: 'Chart of Accounts', content: <Table columns={accountCols} data={accounts} loading={loading} emptyMessage="No accounts" /> },
+        { id: 'accounts', label: 'Chart of Accounts', content: accountsContent },
         { id: 'journal', label: 'Journal', content: <Table columns={journalCols} data={journalEntries} loading={loading} emptyMessage="No journal entries" /> },
         { id: 'reports', label: 'Expense Reports', content: (
           <div>
