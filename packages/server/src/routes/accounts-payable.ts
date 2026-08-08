@@ -72,6 +72,7 @@ const createBillSchema = Joi.object({
   amount: Joi.number().integer().min(1).required(),
   due_date: Joi.string().isoDate().required(),
   description: Joi.string().max(500).allow('', null),
+  account_id: Joi.string().uuid().allow(null),
   line_items: Joi.array().items(Joi.object({
     description: Joi.string().required(), quantity: Joi.number().required(),
     unit_price: Joi.number().integer().required(), account_id: Joi.string().uuid().allow(null),
@@ -93,13 +94,26 @@ apRouter.get('/bills', requirePermission('settings:*'), async (req: Request, res
 
 apRouter.post('/bills', requirePermission('settings:*'), validate(createBillSchema), async (req: Request, res: Response) => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const bill = await billsService.createBill({
       businessId: req.body.business_id, vendorId: req.body.vendor_id, invoiceNumber: req.body.invoice_number,
       amount: req.body.amount, dueDate: req.body.due_date, description: req.body.description,
+      accountId: req.body.account_id,
       lineItems: req.body.line_items, isRecurring: req.body.is_recurring, recurrenceInterval: req.body.recurrence_interval,
+      createdBy: authReq.user.sub,
     });
     success(res, bill, undefined, 201);
   } catch (err: any) { error(res, 'Failed to create bill', 'INTERNAL_ERROR', 500); }
+});
+
+apRouter.put('/bills/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const bill = await billsService.updateBill(req.params.id, businessId, req.body);
+    if (!bill) { error(res, 'Bill not found', 'NOT_FOUND', 404); return; }
+    success(res, bill);
+  } catch (err: any) { error(res, 'Failed to update bill', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.put('/bills/:id/approve', requirePermission('settings:*'), async (req: Request, res: Response) => {

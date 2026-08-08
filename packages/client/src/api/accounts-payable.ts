@@ -9,6 +9,10 @@ export async function createVendor(data: any) {
   const res = await apiClient.post('/v1/ap/vendors', data);
   return res.data.data;
 }
+export async function updateVendor(id: string, businessId: string, data: any) {
+  const res = await apiClient.put(`/v1/ap/vendors/${id}?business_id=${businessId}`, data);
+  return res.data.data;
+}
 
 // --- Bills ---
 export async function getBills(businessId: string, filters?: { status?: string }) {
@@ -19,6 +23,10 @@ export async function getBills(businessId: string, filters?: { status?: string }
 }
 export async function createBill(data: any) {
   const res = await apiClient.post('/v1/ap/bills', data);
+  return res.data.data;
+}
+export async function updateBill(id: string, businessId: string, data: any) {
+  const res = await apiClient.put(`/v1/ap/bills/${id}?business_id=${businessId}`, data);
   return res.data.data;
 }
 export async function approveBill(id: string, businessId: string) {
@@ -40,12 +48,6 @@ export async function createExpense(data: any) {
 }
 export async function approveExpense(id: string, businessId: string) {
   await apiClient.put(`/v1/ap/expenses/${id}/approve?business_id=${businessId}`);
-}
-
-// --- Vendors (Update) ---
-export async function updateVendor(id: string, businessId: string, data: any) {
-  const res = await apiClient.put(`/v1/ap/vendors/${id}?business_id=${businessId}`, data);
-  return res.data.data;
 }
 
 // --- Chart of Accounts ---

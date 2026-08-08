@@ -19,6 +19,9 @@ export function AccountsPayable() {
   const [loading, setLoading] = useState(true);
   const [editingVendor, setEditingVendor] = useState<any | null>(null);
   const [editVendorForm, setEditVendorForm] = useState<any>({});
+  const [showVendorForm, setShowVendorForm] = useState(false);
+  const [showBillForm, setShowBillForm] = useState(false);
+  const [billForm, setBillForm] = useState({ vendor_id: '', invoice_number: '', amount: '', due_date: '', description: '' });
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [editingAccount, setEditingAccount] = useState<any | null>(null);
   const [accountForm, setAccountForm] = useState({ code: '', name: '', account_type: 'expense', description: '' });
@@ -74,6 +77,61 @@ export function AccountsPayable() {
     setAccounts((prev) => prev.map((a) => a.id === id ? { ...a, status: 'archived' } : a));
   }
 
+  // --- Bills ---
+  function openAddBill() {
+    setBillForm({ vendor_id: '', invoice_number: '', amount: '', due_date: '', description: '', account_id: '' });
+    setShowBillForm(true);
+  }
+
+  function openEditBill(bill: any) {
+    setBillForm({ vendor_id: bill.vendor_id, invoice_number: bill.invoice_number || '', amount: String((bill.amount / 100).toFixed(2)), due_date: bill.due_date ? bill.due_date.split('T')[0] : '', description: bill.description || '', account_id: bill.account_id || '', _editId: bill.id });
+    setShowBillForm(true);
+  }
+
+  function handleVendorChange(vendorId: string) {
+    const vendor = vendors.find((v: any) => v.id === vendorId);
+    const terms = vendor?.payment_terms || 30;
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + terms);
+    setBillForm({ ...billForm, vendor_id: vendorId, due_date: dueDate.toISOString().slice(0, 10) });
+  }
+
+  async function saveBill() {
+    if (!billForm.vendor_id || !billForm.amount || !billForm.due_date) {
+      alert('Vendor, Amount, and Due Date are required');
+      return;
+    }
+    try {
+      if ((billForm as any)._editId) {
+        await apApi.updateBill((billForm as any)._editId, businessId, {
+          vendor_id: billForm.vendor_id,
+          invoice_number: billForm.invoice_number || null,
+          amount: Math.round(parseFloat(billForm.amount) * 100),
+          due_date: billForm.due_date,
+          description: billForm.description || null,
+          account_id: billForm.account_id || null,
+        });
+        loadData();
+      } else {
+        const created = await apApi.createBill({ business_id: businessId, vendor_id: billForm.vendor_id, invoice_number: billForm.invoice_number || null, amount: Math.round(parseFloat(billForm.amount) * 100), due_date: billForm.due_date, description: billForm.description || null, account_id: billForm.account_id || null });
+        setBills((prev) => [...prev, created]);
+      }
+      setShowBillForm(false);
+    } catch { alert('Failed to save bill'); }
+  }
+
+  async function handleApproveBill(id: string) {
+    await apApi.approveBill(id, businessId);
+    loadData();
+  }
+
+  async function handlePayBill(id: string) {
+    const amount = prompt('Enter payment amount (€):');
+    if (!amount) return;
+    await apApi.payBill(id, businessId, Math.round(parseFloat(amount) * 100));
+    loadData();
+  }
+
   // --- Void Journal Entry ---
   async function handleVoidEntry(id: string) {
     if (!confirm('Void this journal entry? A reversing entry will be created.')) return;
@@ -83,15 +141,28 @@ export function AccountsPayable() {
   }
 
   // --- Edit Vendor ---
+  function openAddVendor() {
+    setEditingVendor(null);
+    setEditVendorForm({ name: '', contact_name: '', email: '', phone: '', category: '', payment_terms: 30, address: '', tax_id: '', notes: '' });
+    setShowVendorForm(true);
+  }
+
   function startEditVendor(vendor: any) {
     setEditingVendor(vendor);
-    setEditVendorForm({ name: vendor.name, contact_name: vendor.contact_name || '', email: vendor.email || '', phone: vendor.phone || '', category: vendor.category || '', payment_terms: vendor.payment_terms || 30 });
+    setEditVendorForm({ name: vendor.name, contact_name: vendor.contact_name || '', email: vendor.email || '', phone: vendor.phone || '', category: vendor.category || '', payment_terms: vendor.payment_terms || 30, address: vendor.address || '', tax_id: vendor.tax_id || '', notes: vendor.notes || '' });
+    setShowVendorForm(true);
   }
 
   async function saveVendor() {
-    if (!editingVendor) return;
-    const updated = await apApi.updateVendor(editingVendor.id, businessId, editVendorForm);
-    setVendors((prev) => prev.map((v) => (v.id === editingVendor.id ? { ...v, ...updated } : v)));
+    if (!editVendorForm.name) return;
+    if (editingVendor) {
+      const updated = await apApi.updateVendor(editingVendor.id, businessId, editVendorForm);
+      setVendors((prev) => prev.map((v) => (v.id === editingVendor.id ? { ...v, ...updated } : v)));
+    } else {
+      const created = await apApi.createVendor({ business_id: businessId, ...editVendorForm });
+      setVendors((prev) => [...prev, created]);
+    }
+    setShowVendorForm(false);
     setEditingVendor(null);
   }
 
@@ -143,24 +214,28 @@ export function AccountsPayable() {
 
   // --- Column definitions ---
   const vendorCols = [
-    { key: 'name', header: 'Vendor' },
-    { key: 'category', header: 'Category' },
-    { key: 'payment_terms', header: 'Terms', render: (v: number) => `Net ${v}` },
-    { key: 'total_spend', header: 'Total Spend', render: (v: number) => formatCurrency(v) },
-    { key: 'outstanding', header: 'Outstanding', render: (v: number) => formatCurrency(v) },
+    { key: 'name', header: 'Vendor', sortable: true },
+    { key: 'contact_name', header: 'Contact' },
+    { key: 'email', header: 'Email' },
+    { key: 'category', header: 'Category', sortable: true },
+    { key: 'payment_terms', header: 'Terms', render: (v: number) => v ? `Net ${v}` : '—' },
     { key: 'actions', header: '', render: (_: any, row: any) => (
-      <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); startEditVendor(row); }} aria-label={`Edit vendor ${row.name}`}>
-        ✏️ Edit
-      </button>
+      <TableActionButton label="Edit" variant="edit" onClick={() => startEditVendor(row)} />
     )},
   ];
 
   const billCols = [
-    { key: 'vendor_name', header: 'Vendor' },
+    { key: 'vendor_name', header: 'Vendor', sortable: true },
     { key: 'invoice_number', header: 'Invoice #' },
     { key: 'amount', header: 'Amount', render: (v: number) => formatCurrency(v) },
-    { key: 'due_date', header: 'Due', render: (v: string) => new Date(v).toLocaleDateString() },
-    { key: 'status', header: 'Status', render: (v: string) => <Badge variant={BILL_STATUS[v] || 'neutral'}>{v}</Badge> },
+    { key: 'due_date', header: 'Due', sortable: true, render: (v: string) => new Date(v).toLocaleDateString() },
+    { key: 'status', header: 'Status', sortable: true, render: (v: string) => <Badge variant={BILL_STATUS[v] || 'neutral'}>{v}</Badge> },
+    { key: 'actions', header: '', render: (_: any, row: any) => (
+      <div style={{ display: 'flex', gap: '4px' }}>
+        <TableActionButton label="Edit" variant="edit" onClick={() => openEditBill(row)} />
+        {row.status !== 'paid' && <TableActionButton label="Pay" variant="activate" onClick={() => handlePayBill(row.id)} />}
+      </div>
+    )},
   ];
 
   const expenseCols = [
@@ -440,48 +515,61 @@ export function AccountsPayable() {
     <div style={styles.page}>
       <h1 style={styles.title}>Accounting</h1>
 
-      {/* Edit Vendor Modal */}
-      {editingVendor && (
-        <div style={styles.overlay}>
-          <div style={styles.modal} role="dialog" aria-label="Edit Vendor">
-            <h2 style={styles.modalTitle}>Edit Vendor</h2>
-            <div style={styles.formGrid}>
-              <label style={styles.fieldLabel}>
-                Name
-                <input style={styles.input} value={editVendorForm.name} onChange={(e) => setEditVendorForm({ ...editVendorForm, name: e.target.value })} />
-              </label>
-              <label style={styles.fieldLabel}>
-                Contact Name
-                <input style={styles.input} value={editVendorForm.contact_name} onChange={(e) => setEditVendorForm({ ...editVendorForm, contact_name: e.target.value })} />
-              </label>
-              <label style={styles.fieldLabel}>
-                Email
-                <input style={styles.input} type="email" value={editVendorForm.email} onChange={(e) => setEditVendorForm({ ...editVendorForm, email: e.target.value })} />
-              </label>
-              <label style={styles.fieldLabel}>
-                Phone
-                <input style={styles.input} value={editVendorForm.phone} onChange={(e) => setEditVendorForm({ ...editVendorForm, phone: e.target.value })} />
-              </label>
-              <label style={styles.fieldLabel}>
-                Category
-                <input style={styles.input} value={editVendorForm.category} onChange={(e) => setEditVendorForm({ ...editVendorForm, category: e.target.value })} />
-              </label>
-              <label style={styles.fieldLabel}>
-                Payment Terms (days)
-                <input style={styles.input} type="number" value={editVendorForm.payment_terms} onChange={(e) => setEditVendorForm({ ...editVendorForm, payment_terms: parseInt(e.target.value, 10) || 0 })} />
-              </label>
-            </div>
-            <div style={styles.modalActions}>
-              <button style={styles.secondaryBtn} onClick={() => setEditingVendor(null)}>Cancel</button>
-              <button style={styles.primaryBtn} onClick={saveVendor}>Save</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <Tabs items={[
-        { id: 'vendors', label: 'Vendors', content: <Table columns={vendorCols} data={vendors} loading={loading} emptyMessage="No vendors" /> },
-        { id: 'bills', label: 'Bills', content: <Table columns={billCols} data={bills} loading={loading} emptyMessage="No bills" /> },
+        { id: 'vendors', label: 'Vendors', content: (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-md)' }}>
+              <button style={styles.primaryBtn} onClick={openAddVendor}>Add Vendor</button>
+            </div>
+            {showVendorForm && (
+              <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
+                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <div><label style={styles.fieldLabel}>Name *</label><input style={styles.input} value={editVendorForm.name} onChange={(e) => setEditVendorForm({ ...editVendorForm, name: e.target.value })} placeholder="Vendor name" /></div>
+                  <div><label style={styles.fieldLabel}>Contact</label><input style={styles.input} value={editVendorForm.contact_name} onChange={(e) => setEditVendorForm({ ...editVendorForm, contact_name: e.target.value })} placeholder="Contact person" /></div>
+                  <div><label style={styles.fieldLabel}>Email</label><input style={styles.input} value={editVendorForm.email} onChange={(e) => setEditVendorForm({ ...editVendorForm, email: e.target.value })} placeholder="Email" /></div>
+                  <div><label style={styles.fieldLabel}>Phone</label><input style={styles.input} value={editVendorForm.phone} onChange={(e) => setEditVendorForm({ ...editVendorForm, phone: e.target.value })} placeholder="Phone" /></div>
+                  <div><label style={styles.fieldLabel}>Category</label><input style={styles.input} value={editVendorForm.category} onChange={(e) => setEditVendorForm({ ...editVendorForm, category: e.target.value })} placeholder="e.g. Supplies" /></div>
+                  <div><label style={styles.fieldLabel}>Terms (days)</label><input style={{ ...styles.input, width: '80px' }} type="number" value={editVendorForm.payment_terms} onChange={(e) => setEditVendorForm({ ...editVendorForm, payment_terms: parseInt(e.target.value) || 0 })} /></div>
+                  <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                    <button style={styles.primaryBtn} onClick={saveVendor}>{editingVendor ? 'Save' : 'Create'}</button>
+                    <button style={styles.secondaryBtn} onClick={() => setShowVendorForm(false)}>Cancel</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            <Table columns={vendorCols} data={vendors} loading={loading} emptyMessage="No vendors" clientSort />
+          </div>
+        ) },
+        { id: 'bills', label: 'Bills', content: (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-md)' }}>
+              <button style={styles.primaryBtn} onClick={openAddBill}>Add Bill</button>
+            </div>
+            {showBillForm && (
+              <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
+                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <div><label style={styles.fieldLabel}>Vendor *</label><select style={styles.input} value={billForm.vendor_id} onChange={(e) => handleVendorChange(e.target.value)}>
+                    <option value="">— Select —</option>
+                    {vendors.map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  </select></div>
+                  <div><label style={styles.fieldLabel}>Expense Account</label><select style={styles.input} value={billForm.account_id} onChange={(e) => setBillForm({ ...billForm, account_id: e.target.value })}>
+                    <option value="">— Select —</option>
+                    {accounts.filter((a: any) => a.account_type === 'expense' && a.status === 'active').map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
+                  </select></div>
+                  <div><label style={styles.fieldLabel}>Invoice #</label><input style={styles.input} value={billForm.invoice_number} onChange={(e) => setBillForm({ ...billForm, invoice_number: e.target.value })} placeholder="INV-001" /></div>
+                  <div><label style={styles.fieldLabel}>Amount (€) *</label><input style={{ ...styles.input, width: '100px' }} type="number" step="0.01" value={billForm.amount} onChange={(e) => setBillForm({ ...billForm, amount: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>Due Date *</label><input style={styles.input} type="date" value={billForm.due_date} onChange={(e) => setBillForm({ ...billForm, due_date: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>Description</label><input style={styles.input} value={billForm.description} onChange={(e) => setBillForm({ ...billForm, description: e.target.value })} placeholder="What for" /></div>
+                  <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                    <button style={styles.primaryBtn} onClick={saveBill}>{(billForm as any)._editId ? 'Save' : 'Create'}</button>
+                    <button style={styles.secondaryBtn} onClick={() => setShowBillForm(false)}>Cancel</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            <Table columns={billCols} data={bills} loading={loading} emptyMessage="No bills" clientSort />
+          </div>
+        ) },
         { id: 'expenses', label: 'Expenses', content: <Table columns={expenseCols} data={expenses} loading={loading} emptyMessage="No expenses" /> },
         { id: 'accounts', label: 'Chart of Accounts', content: accountsContent },
         { id: 'journal', label: 'Journal', content: <JournalTab entries={journalEntries} loading={loading} onVoid={handleVoidEntry} /> },
