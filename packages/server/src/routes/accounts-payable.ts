@@ -28,6 +28,7 @@ const createVendorSchema = Joi.object({
   tax_id: Joi.string().max(50).allow('', null),
   payment_terms: Joi.number().integer().min(0).default(30),
   category: Joi.string().max(50).allow('', null),
+  default_account_id: Joi.string().uuid().allow('', null),
   notes: Joi.string().max(1000).allow('', null),
 });
 
@@ -45,7 +46,7 @@ apRouter.post('/vendors', requirePermission('settings:*'), validate(createVendor
     const vendor = await vendorsService.createVendor({
       businessId: req.body.business_id, name: req.body.name, contactName: req.body.contact_name,
       email: req.body.email, phone: req.body.phone, address: req.body.address,
-      taxId: req.body.tax_id, paymentTerms: req.body.payment_terms, category: req.body.category, notes: req.body.notes,
+      taxId: req.body.tax_id, paymentTerms: req.body.payment_terms, category: req.body.category, defaultAccountId: req.body.default_account_id, notes: req.body.notes,
     });
     success(res, vendor, undefined, 201);
   } catch (err: any) { error(res, 'Failed to create vendor', 'INTERNAL_ERROR', 500); }

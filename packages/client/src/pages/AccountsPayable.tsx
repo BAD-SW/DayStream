@@ -22,6 +22,8 @@ export function AccountsPayable() {
   const [showVendorForm, setShowVendorForm] = useState(false);
   const [showBillForm, setShowBillForm] = useState(false);
   const [billForm, setBillForm] = useState({ vendor_id: '', invoice_number: '', amount: '', due_date: '', description: '' });
+  const [showExpenseForm, setShowExpenseForm] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({ date: new Date().toISOString().slice(0, 10), amount: '', account_id: '', description: '', payment_method: 'cash' });
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [editingAccount, setEditingAccount] = useState<any | null>(null);
   const [accountForm, setAccountForm] = useState({ code: '', name: '', account_type: 'expense', description: '' });
@@ -93,7 +95,7 @@ export function AccountsPayable() {
     const terms = vendor?.payment_terms || 30;
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + terms);
-    setBillForm({ ...billForm, vendor_id: vendorId, due_date: dueDate.toISOString().slice(0, 10) });
+    setBillForm({ ...billForm, vendor_id: vendorId, due_date: dueDate.toISOString().slice(0, 10), account_id: vendor?.default_account_id || billForm.account_id });
   }
 
   async function saveBill() {
@@ -132,6 +134,31 @@ export function AccountsPayable() {
     loadData();
   }
 
+  // --- Expenses ---
+  function openAddExpense() {
+    setExpenseForm({ date: new Date().toISOString().slice(0, 10), amount: '', account_id: '', description: '', payment_method: 'cash' });
+    setShowExpenseForm(true);
+  }
+
+  async function saveExpense() {
+    if (!expenseForm.amount || !expenseForm.date) {
+      alert('Date and Amount are required');
+      return;
+    }
+    try {
+      const created = await apApi.createExpense({
+        business_id: businessId,
+        date: expenseForm.date,
+        amount: Math.round(parseFloat(expenseForm.amount) * 100),
+        account_id: expenseForm.account_id || null,
+        description: expenseForm.description || null,
+        payment_method: expenseForm.payment_method || 'cash',
+      });
+      setExpenses((prev: any[]) => [...prev, created]);
+      setShowExpenseForm(false);
+    } catch { alert('Failed to create expense'); }
+  }
+
   // --- Void Journal Entry ---
   async function handleVoidEntry(id: string) {
     if (!confirm('Void this journal entry? A reversing entry will be created.')) return;
@@ -143,13 +170,13 @@ export function AccountsPayable() {
   // --- Edit Vendor ---
   function openAddVendor() {
     setEditingVendor(null);
-    setEditVendorForm({ name: '', contact_name: '', email: '', phone: '', category: '', payment_terms: 30, address: '', tax_id: '', notes: '' });
+    setEditVendorForm({ name: '', contact_name: '', email: '', phone: '', category: '', payment_terms: 30, address: '', tax_id: '', notes: '', default_account_id: '' });
     setShowVendorForm(true);
   }
 
   function startEditVendor(vendor: any) {
     setEditingVendor(vendor);
-    setEditVendorForm({ name: vendor.name, contact_name: vendor.contact_name || '', email: vendor.email || '', phone: vendor.phone || '', category: vendor.category || '', payment_terms: vendor.payment_terms || 30, address: vendor.address || '', tax_id: vendor.tax_id || '', notes: vendor.notes || '' });
+    setEditVendorForm({ name: vendor.name, contact_name: vendor.contact_name || '', email: vendor.email || '', phone: vendor.phone || '', category: vendor.category || '', payment_terms: vendor.payment_terms || 30, address: vendor.address || '', tax_id: vendor.tax_id || '', notes: vendor.notes || '', default_account_id: vendor.default_account_id || '' });
     setShowVendorForm(true);
   }
 
@@ -217,7 +244,7 @@ export function AccountsPayable() {
     { key: 'name', header: 'Vendor', sortable: true },
     { key: 'contact_name', header: 'Contact' },
     { key: 'email', header: 'Email' },
-    { key: 'category', header: 'Category', sortable: true },
+    { key: 'phone', header: 'Phone' },
     { key: 'payment_terms', header: 'Terms', render: (v: number) => v ? `Net ${v}` : '—' },
     { key: 'actions', header: '', render: (_: any, row: any) => (
       <TableActionButton label="Edit" variant="edit" onClick={() => startEditVendor(row)} />
@@ -239,11 +266,11 @@ export function AccountsPayable() {
   ];
 
   const expenseCols = [
-    { key: 'date', header: 'Date', render: (v: string) => new Date(v).toLocaleDateString() },
-    { key: 'amount', header: 'Amount', render: (v: number) => formatCurrency(v) },
-    { key: 'account_name', header: 'Category' },
+    { key: 'date', header: 'Date', sortable: true, render: (v: string) => new Date(v).toLocaleDateString() },
+    { key: 'amount', header: 'Amount', sortable: true, render: (v: number) => formatCurrency(v) },
+    { key: 'account_name', header: 'Account' },
     { key: 'description', header: 'Description' },
-    { key: 'status', header: 'Status', render: (v: string) => <Badge variant={v === 'approved' ? 'success' : 'neutral'}>{v}</Badge> },
+    { key: 'payment_method', header: 'Paid via' },
   ];
 
   const accountCols = [
@@ -523,13 +550,16 @@ export function AccountsPayable() {
             </div>
             {showVendorForm && (
               <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
-                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <div><label style={styles.fieldLabel}>Name *</label><input style={styles.input} value={editVendorForm.name} onChange={(e) => setEditVendorForm({ ...editVendorForm, name: e.target.value })} placeholder="Vendor name" /></div>
-                  <div><label style={styles.fieldLabel}>Contact</label><input style={styles.input} value={editVendorForm.contact_name} onChange={(e) => setEditVendorForm({ ...editVendorForm, contact_name: e.target.value })} placeholder="Contact person" /></div>
-                  <div><label style={styles.fieldLabel}>Email</label><input style={styles.input} value={editVendorForm.email} onChange={(e) => setEditVendorForm({ ...editVendorForm, email: e.target.value })} placeholder="Email" /></div>
-                  <div><label style={styles.fieldLabel}>Phone</label><input style={styles.input} value={editVendorForm.phone} onChange={(e) => setEditVendorForm({ ...editVendorForm, phone: e.target.value })} placeholder="Phone" /></div>
-                  <div><label style={styles.fieldLabel}>Category</label><input style={styles.input} value={editVendorForm.category} onChange={(e) => setEditVendorForm({ ...editVendorForm, category: e.target.value })} placeholder="e.g. Supplies" /></div>
-                  <div><label style={styles.fieldLabel}>Terms (days)</label><input style={{ ...styles.input, width: '80px' }} type="number" value={editVendorForm.payment_terms} onChange={(e) => setEditVendorForm({ ...editVendorForm, payment_terms: parseInt(e.target.value) || 0 })} /></div>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <div><label style={styles.fieldLabel}>Name *</label><input style={{ ...styles.input, width: '150px' }} value={editVendorForm.name} onChange={(e) => setEditVendorForm({ ...editVendorForm, name: e.target.value })} placeholder="Vendor name" /></div>
+                  <div><label style={styles.fieldLabel}>Contact</label><input style={{ ...styles.input, width: '130px' }} value={editVendorForm.contact_name} onChange={(e) => setEditVendorForm({ ...editVendorForm, contact_name: e.target.value })} placeholder="Contact person" /></div>
+                  <div><label style={styles.fieldLabel}>Email</label><input style={{ ...styles.input, width: '160px' }} value={editVendorForm.email} onChange={(e) => setEditVendorForm({ ...editVendorForm, email: e.target.value })} placeholder="Email" /></div>
+                  <div><label style={styles.fieldLabel}>Phone</label><input style={{ ...styles.input, width: '120px' }} value={editVendorForm.phone} onChange={(e) => setEditVendorForm({ ...editVendorForm, phone: e.target.value })} placeholder="Phone" /></div>
+                  <div><label style={styles.fieldLabel}>Terms</label><input style={{ ...styles.input, width: '50px' }} type="number" value={editVendorForm.payment_terms} onChange={(e) => setEditVendorForm({ ...editVendorForm, payment_terms: parseInt(e.target.value) || 0 })} /></div>
+                  <div><label style={styles.fieldLabel}>Default Account</label><select style={{ ...styles.input, width: '180px' }} value={editVendorForm.default_account_id} onChange={(e) => setEditVendorForm({ ...editVendorForm, default_account_id: e.target.value })}>
+                    <option value="">— None —</option>
+                    {accounts.filter((a: any) => a.account_type === 'expense' && a.status === 'active').map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
+                  </select></div>
                   <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
                     <button style={styles.primaryBtn} onClick={saveVendor}>{editingVendor ? 'Save' : 'Create'}</button>
                     <button style={styles.secondaryBtn} onClick={() => setShowVendorForm(false)}>Cancel</button>
@@ -556,7 +586,7 @@ export function AccountsPayable() {
                     <option value="">— Select —</option>
                     {accounts.filter((a: any) => a.account_type === 'expense' && a.status === 'active').map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
                   </select></div>
-                  <div><label style={styles.fieldLabel}>Invoice #</label><input style={styles.input} value={billForm.invoice_number} onChange={(e) => setBillForm({ ...billForm, invoice_number: e.target.value })} placeholder="INV-001" /></div>
+                  <div><label style={styles.fieldLabel}>Invoice #</label><input style={styles.input} value={billForm.invoice_number} onChange={(e) => setBillForm({ ...billForm, invoice_number: e.target.value })} /></div>
                   <div><label style={styles.fieldLabel}>Amount (€) *</label><input style={{ ...styles.input, width: '100px' }} type="number" step="0.01" value={billForm.amount} onChange={(e) => setBillForm({ ...billForm, amount: e.target.value })} /></div>
                   <div><label style={styles.fieldLabel}>Due Date *</label><input style={styles.input} type="date" value={billForm.due_date} onChange={(e) => setBillForm({ ...billForm, due_date: e.target.value })} /></div>
                   <div><label style={styles.fieldLabel}>Description</label><input style={styles.input} value={billForm.description} onChange={(e) => setBillForm({ ...billForm, description: e.target.value })} placeholder="What for" /></div>
@@ -570,69 +600,39 @@ export function AccountsPayable() {
             <Table columns={billCols} data={bills} loading={loading} emptyMessage="No bills" clientSort />
           </div>
         ) },
-        { id: 'expenses', label: 'Expenses', content: <Table columns={expenseCols} data={expenses} loading={loading} emptyMessage="No expenses" /> },
+        { id: 'expenses', label: 'Expenses', content: (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-md)' }}>
+              <button style={styles.primaryBtn} onClick={openAddExpense}>Add Expense</button>
+            </div>
+            {showExpenseForm && (
+              <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <div><label style={styles.fieldLabel}>Date *</label><input style={styles.input} type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>Amount (€) *</label><input style={{ ...styles.input, width: '100px' }} type="number" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>Expense Account</label><select style={{ ...styles.input, width: '180px' }} value={expenseForm.account_id} onChange={(e) => setExpenseForm({ ...expenseForm, account_id: e.target.value })}>
+                    <option value="">— Select —</option>
+                    {accounts.filter((a: any) => a.account_type === 'expense' && a.status === 'active').map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
+                  </select></div>
+                  <div><label style={styles.fieldLabel}>Description</label><input style={{ ...styles.input, width: '200px' }} value={expenseForm.description} onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })} placeholder="What was purchased" /></div>
+                  <div><label style={styles.fieldLabel}>Paid via</label><select style={{ ...styles.input, width: '100px' }} value={expenseForm.payment_method} onChange={(e) => setExpenseForm({ ...expenseForm, payment_method: e.target.value })}>
+                    <option value="cash">Cash</option>
+                    <option value="card">Card</option>
+                    <option value="transfer">Transfer</option>
+                    <option value="other">Other</option>
+                  </select></div>
+                  <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                    <button style={styles.primaryBtn} onClick={saveExpense}>Create</button>
+                    <button style={styles.secondaryBtn} onClick={() => setShowExpenseForm(false)}>Cancel</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            <Table columns={expenseCols} data={expenses} loading={loading} emptyMessage="No expenses" clientSort />
+          </div>
+        ) },
         { id: 'accounts', label: 'Chart of Accounts', content: accountsContent },
         { id: 'journal', label: 'Journal', content: <JournalTab entries={journalEntries} loading={loading} onVoid={handleVoidEntry} /> },
-        { id: 'reports', label: 'Expense Reports', content: (
-          <div>
-            <div style={styles.toolbar}>
-              <label style={styles.fieldLabel}>
-                From
-                <input style={styles.input} type="date" value={reportDateFrom} onChange={(e) => setReportDateFrom(e.target.value)} />
-              </label>
-              <label style={styles.fieldLabel}>
-                To
-                <input style={styles.input} type="date" value={reportDateTo} onChange={(e) => setReportDateTo(e.target.value)} />
-              </label>
-              <button style={styles.primaryBtn} onClick={loadExpenseReport}>Generate Report</button>
-            </div>
-            {expenseReport && (
-              <div style={styles.reportContent}>
-                {expenseReport.categories && (
-                  <Table
-                    columns={[
-                      { key: 'category', header: 'Category' },
-                      { key: 'total', header: 'Total', render: (v: number) => formatCurrency(v) },
-                      { key: 'count', header: 'Transactions' },
-                    ]}
-                    data={expenseReport.categories}
-                    emptyMessage="No expense data"
-                  />
-                )}
-                {expenseReport.total_amount != null && (
-                  <div style={styles.reportSummary}>
-                    <strong>Total Expenses:</strong> {formatCurrency(expenseReport.total_amount)}
-                  </div>
-                )}
-              </div>
-            )}
-            {!expenseReport && <div style={styles.emptyHint}>Select a date range and click Generate Report.</div>}
-          </div>
-        )},
-        { id: 'reconciliation', label: 'Reconciliation', content: (
-          <div>
-            <div style={styles.toolbar}>
-              <button style={styles.primaryBtn} onClick={handleImportStatement}>📄 Import Statement</button>
-              <div style={styles.inlineGroup}>
-                <input style={styles.input} placeholder="Statement ID" value={statementId} onChange={(e) => setStatementId(e.target.value)} />
-                <button style={styles.secondaryBtn} onClick={() => loadStatementDetails()}>Load</button>
-              </div>
-            </div>
-            {reconciliation && (
-              <div>
-                {reconciliation.status && (
-                  <div style={styles.reconStatus}>
-                    <Badge variant={reconciliation.status.fully_reconciled ? 'success' : 'warning'}>
-                      {reconciliation.status.fully_reconciled ? 'Fully Reconciled' : `${reconciliation.status.matched_count || 0} / ${reconciliation.status.total_lines || 0} matched`}
-                    </Badge>
-                  </div>
-                )}
-                <Table columns={reconLineCols} data={reconciliation.lines || []} emptyMessage="No statement lines" />
-              </div>
-            )}
-            {!reconciliation && <div style={styles.emptyHint}>Import a bank statement or enter a Statement ID to view details.</div>}
-          </div>
-        )},
       ]} />
     </div>
   );
