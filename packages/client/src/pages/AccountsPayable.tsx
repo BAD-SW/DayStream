@@ -23,6 +23,14 @@ export function AccountsPayable() {
   const [editingAccount, setEditingAccount] = useState<any | null>(null);
   const [accountForm, setAccountForm] = useState({ code: '', name: '', account_type: 'expense', description: '' });
   const [showArchived, setShowArchived] = useState(false);
+  const [journalDateFrom, setJournalDateFrom] = useState(() => {
+    const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [journalDateTo, setJournalDateTo] = useState(() => {
+    const d = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0);
+    return d.toISOString().slice(0, 10);
+  });
+  const [journalPage, setJournalPage] = useState(1);
   const [reportDateFrom, setReportDateFrom] = useState(() => {
     const d = new Date(); d.setMonth(d.getMonth() - 1);
     return d.toISOString().slice(0, 10);
@@ -40,7 +48,7 @@ export function AccountsPayable() {
         apApi.getBills(businessId),
         apApi.getExpenses(businessId),
         apApi.getAccounts(businessId),
-        apApi.getJournalEntries(businessId),
+        apApi.getJournalEntries(businessId, { date_from: journalDateFrom, date_to: journalDateTo, page: journalPage }),
       ]);
       setVendors(v);
       setBills(b);
@@ -53,9 +61,9 @@ export function AccountsPayable() {
       } else {
         setAccounts(accts);
       }
-      setJournalEntries(Array.isArray(journal) ? journal : journal.entries || []);
+      setJournalEntries(Array.isArray(journal) ? journal : journal.data || []);
     } finally { setLoading(false); }
-  }, [businessId]);
+  }, [businessId, journalDateFrom, journalDateTo, journalPage]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -247,17 +255,173 @@ export function AccountsPayable() {
     </div>
   );
 
-  const journalCols = [
-    { key: 'entry_date', header: 'Date', render: (v: string) => new Date(v).toLocaleDateString() },
-    { key: 'description', header: 'Description' },
-    { key: 'reference_type', header: 'Ref Type' },
-    { key: 'status', header: 'Status', render: (v: string) => <Badge variant={v === 'voided' ? 'error' : 'success'}>{v || 'posted'}</Badge> },
-    { key: 'actions', header: '', render: (_: any, row: any) => row.status !== 'voided' ? (
-      <button style={styles.dangerBtn} onClick={(e) => { e.stopPropagation(); handleVoidEntry(row.id); }} aria-label={`Void journal entry ${row.description}`}>
-        🚫 Void
-      </button>
-    ) : null },
-  ];
+  function JournalTab({ entries, loading: ld, onVoid }: { entries: any[]; loading: boolean; onVoid: (id: string) => void }) {
+    const [expandedDate, setExpandedDate] = useState<string | null>(null);
+    const [expandedEntry, setExpandedEntry] = useState<string | null>(null);
+    const [viewMode, setViewMode] = useState<'orders' | 'accounts'>('orders');
+
+    function handleExportCsv() {
+      if (entries.length === 0) return;
+      const rows: string[] = ['Date,Entry Description,Reference Type,Account Code,Account Name,Debit,Credit'];
+      for (const entry of entries) {
+        const date = new Date(entry.entry_date).toLocaleDateString('sv-SE');
+        for (const line of (entry.lines || [])) {
+          rows.push([
+            date,
+            `"${(entry.description || '').replace(/"/g, '""')}"`,
+            entry.reference_type || '',
+            line.account_code || '',
+            `"${(line.account_name || '').replace(/"/g, '""')}"`,
+            line.debit > 0 ? (line.debit / 100).toFixed(2) : '',
+            line.credit > 0 ? (line.credit / 100).toFixed(2) : '',
+          ].join(','));
+        }
+      }
+      const csv = rows.join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `journal_${journalDateFrom}_to_${journalDateTo}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // Group entries by date
+    const byDate = new Map<string, any[]>();
+    for (const entry of entries) {
+      const dateStr = new Date(entry.entry_date).toLocaleDateString();
+      if (!byDate.has(dateStr)) byDate.set(dateStr, []);
+      byDate.get(dateStr)!.push(entry);
+    }
+
+    // For View 2: aggregate lines by account per date
+    function getAccountSummary(dateEntries: any[]) {
+      const accountMap = new Map<string, { code: string; name: string; totalDebit: number; totalCredit: number; orders: { id: string; description: string; debit: number; credit: number }[] }>();
+      for (const entry of dateEntries) {
+        for (const line of (entry.lines || [])) {
+          const key = line.account_id;
+          if (!accountMap.has(key)) {
+            accountMap.set(key, { code: line.account_code, name: line.account_name, totalDebit: 0, totalCredit: 0, orders: [] });
+          }
+          const acct = accountMap.get(key)!;
+          acct.totalDebit += line.debit;
+          acct.totalCredit += line.credit;
+          acct.orders.push({ id: entry.id, description: entry.description, debit: line.debit, credit: line.credit });
+        }
+      }
+      return Array.from(accountMap.values()).sort((a, b) => a.code.localeCompare(b.code));
+    }
+
+    return (
+      <div>
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
+          <label style={styles.fieldLabel}>From <input style={styles.input} type="date" value={journalDateFrom} onChange={(e) => { setJournalDateFrom(e.target.value); setJournalPage(1); }} /></label>
+          <label style={styles.fieldLabel}>To <input style={styles.input} type="date" value={journalDateTo} onChange={(e) => { setJournalDateTo(e.target.value); setJournalPage(1); }} /></label>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
+            <button style={styles.secondaryBtn} onClick={handleExportCsv}>Export CSV</button>
+            <button style={{ ...styles.secondaryBtn, fontWeight: viewMode === 'orders' ? 700 : 400 }} onClick={() => setViewMode('orders')}>By Order</button>
+            <button style={{ ...styles.secondaryBtn, fontWeight: viewMode === 'accounts' ? 700 : 400 }} onClick={() => setViewMode('accounts')}>By Account</button>
+          </div>
+        </div>
+
+        {ld && <p style={{ color: 'var(--color-text-secondary)' }}>Loading...</p>}
+        {!ld && entries.length === 0 && <p style={{ color: 'var(--color-text-secondary)', textAlign: 'center' }}>No journal entries for this period</p>}
+
+        {!ld && entries.length > 0 && viewMode === 'orders' && (
+          <div>
+            {Array.from(byDate.entries()).map(([dateStr, dateEntries]) => (
+              <div key={dateStr} style={{ marginBottom: '4px' }}>
+                <div
+                  style={{ padding: '10px 8px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--color-text)', background: expandedDate === dateStr ? 'var(--color-background)' : undefined, borderBottom: '1px solid var(--color-border)' }}
+                  onClick={() => setExpandedDate(expandedDate === dateStr ? null : dateStr)}
+                >
+                  {dateStr} <span style={{ fontWeight: 400, fontSize: '12px', color: 'var(--color-text-secondary)', marginLeft: '8px' }}>({dateEntries.length} {dateEntries.length === 1 ? 'order' : 'orders'})</span>
+                </div>
+                {expandedDate === dateStr && (
+                  <div style={{ paddingLeft: '20px' }}>
+                    {dateEntries.map((entry: any) => (
+                      <div key={entry.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                        <div
+                          style={{ padding: '8px 4px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                          onClick={() => setExpandedEntry(expandedEntry === entry.id ? null : entry.id)}
+                        >
+                          <span style={{ fontSize: '13px' }}>
+                            <strong>{entry.description}</strong>
+                            {entry.is_void && <Badge variant="error">voided</Badge>}
+                          </span>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <span style={{ fontSize: '13px', fontWeight: 500 }}>{formatCurrency(entry.lines?.reduce((s: number, l: any) => s + l.debit, 0) || 0)}</span>
+                            {!entry.is_void && <TableActionButton label="Void" variant="delete" onClick={() => onVoid(entry.id)} />}
+                          </div>
+                        </div>
+                        {expandedEntry === entry.id && entry.lines && (
+                          <div style={{ paddingLeft: '20px', paddingBottom: '8px' }}>
+                            {entry.lines.map((line: any) => (
+                              <div key={line.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                <span>{line.debit > 0 ? 'Debit' : 'Credit'}: {line.account_code} — {line.account_name}</span>
+                                <span>{formatCurrency(line.debit || line.credit)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!ld && entries.length > 0 && viewMode === 'accounts' && (
+          <div>
+            {Array.from(byDate.entries()).map(([dateStr, dateEntries]) => {
+              const summary = getAccountSummary(dateEntries);
+              return (
+                <div key={dateStr} style={{ marginBottom: '4px' }}>
+                  <div
+                    style={{ padding: '10px 8px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--color-text)', background: expandedDate === dateStr ? 'var(--color-background)' : undefined, borderBottom: '1px solid var(--color-border)' }}
+                    onClick={() => setExpandedDate(expandedDate === dateStr ? null : dateStr)}
+                  >
+                    {dateStr} <span style={{ fontWeight: 400, fontSize: '12px', color: 'var(--color-text-secondary)', marginLeft: '8px' }}>({summary.length} accounts)</span>
+                  </div>
+                  {expandedDate === dateStr && (
+                    <div style={{ paddingLeft: '20px' }}>
+                      {summary.map((acct) => (
+                        <div key={acct.code} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                          <div
+                            style={{ padding: '8px 4px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                            onClick={() => setExpandedEntry(expandedEntry === acct.code + dateStr ? null : acct.code + dateStr)}
+                          >
+                            <span style={{ fontSize: '13px' }}><strong>{acct.code} — {acct.name}</strong></span>
+                            <span style={{ fontSize: '13px' }}>
+                              {acct.totalDebit > 0 && <span style={{ marginRight: '16px' }}>Debit {formatCurrency(acct.totalDebit)}</span>}
+                              {acct.totalCredit > 0 && <span>Credit {formatCurrency(acct.totalCredit)}</span>}
+                            </span>
+                          </div>
+                          {expandedEntry === acct.code + dateStr && (
+                            <div style={{ paddingLeft: '20px', paddingBottom: '8px' }}>
+                              {acct.orders.map((ord, idx) => (
+                                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                  <span>{ord.description}</span>
+                                  <span>{ord.debit > 0 ? formatCurrency(ord.debit) : formatCurrency(ord.credit)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const reconLineCols = [
     { key: 'date', header: 'Date', render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' },
@@ -320,7 +484,7 @@ export function AccountsPayable() {
         { id: 'bills', label: 'Bills', content: <Table columns={billCols} data={bills} loading={loading} emptyMessage="No bills" /> },
         { id: 'expenses', label: 'Expenses', content: <Table columns={expenseCols} data={expenses} loading={loading} emptyMessage="No expenses" /> },
         { id: 'accounts', label: 'Chart of Accounts', content: accountsContent },
-        { id: 'journal', label: 'Journal', content: <Table columns={journalCols} data={journalEntries} loading={loading} emptyMessage="No journal entries" /> },
+        { id: 'journal', label: 'Journal', content: <JournalTab entries={journalEntries} loading={loading} onVoid={handleVoidEntry} /> },
         { id: 'reports', label: 'Expense Reports', content: (
           <div>
             <div style={styles.toolbar}>

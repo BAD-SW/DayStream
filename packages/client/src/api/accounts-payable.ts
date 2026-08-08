@@ -72,8 +72,12 @@ export async function seedAccounts(businessId: string) {
 }
 
 // --- Journal ---
-export async function getJournalEntries(businessId: string) {
-  const res = await apiClient.get(`/v1/ap/journal?business_id=${businessId}`);
+export async function getJournalEntries(businessId: string, filters?: { date_from?: string; date_to?: string; page?: number }) {
+  const params = new URLSearchParams({ business_id: businessId });
+  if (filters?.date_from) params.set('date_from', filters.date_from);
+  if (filters?.date_to) params.set('date_to', filters.date_to);
+  if (filters?.page) params.set('page', String(filters.page));
+  const res = await apiClient.get(`/v1/ap/journal?${params}`);
   return res.data;
 }
 export async function createJournalEntry(data: any) {

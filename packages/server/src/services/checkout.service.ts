@@ -224,7 +224,7 @@ export async function completeOrder(orderId: string, businessId: string, input: 
   try {
     await generateJournalEntries(orderId, businessId, input.checkedOutBy);
   } catch (err: any) {
-    console.error('[Journal] Failed to generate entries:', err.message);
+    console.error('[Journal] Failed to generate entries:', err.message, err.stack);
     // Don't fail the order completion if journaling fails
   }
 

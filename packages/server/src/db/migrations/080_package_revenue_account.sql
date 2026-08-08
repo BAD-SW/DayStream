@@ -30,7 +30,8 @@ BEGIN
         (p_business_id, '2000', 'Liabilities', 'liability', true),
         (p_business_id, '2100', 'Accounts Payable', 'liability', true),
         (p_business_id, '2200', 'Payroll Payable', 'liability', true),
-        (p_business_id, '2300', 'Tax Payable', 'liability', true)
+        (p_business_id, '2300', 'Tax Payable', 'liability', true),
+        (p_business_id, '2400', 'Deferred Revenue', 'liability', true)
     ON CONFLICT (business_id, code) DO NOTHING;
 
     INSERT INTO fin_chart_of_accounts (business_id, code, name, account_type, is_system) VALUES
