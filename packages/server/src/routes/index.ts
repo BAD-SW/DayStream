@@ -32,6 +32,7 @@ import { communityRouter } from './community';
 import { locationsRouter } from './locations';
 import { scheduleRouter } from './schedule';
 import { checkoutRouter } from './checkout';
+import { prospectsRouter } from './prospects';
 import { authLimiter } from '../middleware/rate-limit';
 
 export const router = Router();
@@ -71,6 +72,7 @@ router.use('/v1/community', communityRouter);
 router.use('/v1/locations', locationsRouter);
 router.use('/v1/schedule', scheduleRouter);
 router.use('/v1/checkout', checkoutRouter);
+router.use('/v1/prospects', prospectsRouter);
 
 // Query Editor (authentication and authorization handled within the router)
 router.use('/v1/query-editor', queryEditorRouter);

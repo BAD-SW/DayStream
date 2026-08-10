@@ -15,6 +15,8 @@ import { TenantBusinesses } from './pages/TenantBusinesses';
 import { TenantBilling } from './pages/TenantBilling';
 import { TenantReports } from './pages/TenantReports';
 import { TenantUsers } from './pages/TenantUsers';
+import { Prospects } from './pages/Prospects';
+import { CoverageMap } from './pages/CoverageMap';
 import { Customers } from './pages/Customers';
 import { CustomerCreate } from './pages/CustomerCreate';
 import { CustomerDetail } from './pages/CustomerDetail';
@@ -283,6 +285,22 @@ export function App() {
           element={
             <ProtectedRoute requiredRole="Manager" layout="none">
               <AdminLayout><TenantReports /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/prospects"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><Prospects /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/coverage-map"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><CoverageMap /></AdminLayout>
             </ProtectedRoute>
           }
         />
