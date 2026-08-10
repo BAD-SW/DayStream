@@ -107,8 +107,23 @@ export async function addItem(orderId: string, input: AddItemInput) {
   if (orderRows.length === 0) throw new Error('Order not found');
   if (orderRows[0].status !== 'open') throw new Error('Order is not open');
 
+  // Prorate membership if not the 1st of the month
+  let unitPrice = input.unitPrice;
+  let itemNotes = input.notes || null;
+  if (input.itemType === 'membership') {
+    const today = new Date();
+    const dayOfMonth = today.getDate();
+    if (dayOfMonth > 1) {
+      const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      const remainingDays = daysInMonth - dayOfMonth + 1; // include today
+      const proratedPrice = Math.round(input.unitPrice * remainingDays / daysInMonth);
+      unitPrice = proratedPrice;
+      itemNotes = `Prorated: ${remainingDays}/${daysInMonth} days`;
+    }
+  }
+
   // Calculate tax on the net amount (unit_price * quantity - discount)
-  const grossAmount = input.unitPrice * input.quantity;
+  const grossAmount = unitPrice * input.quantity;
   const discount = input.discountAmount || 0;
   const netAmount = grossAmount - discount;
 
@@ -125,8 +140,8 @@ export async function addItem(orderId: string, input: AddItemInput) {
     `INSERT INTO fin_order_items (order_id, item_type, item_id, item_name, variant_id, variant_name, quantity, unit_price, discount_amount, tax_amount, total_price, credited_to, booking_id, notes)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
     [orderId, input.itemType, input.itemId || null, input.itemName, input.variantId || null, input.variantName || null,
-     input.quantity, input.unitPrice, discount, taxAmount, totalPrice,
-     input.creditedTo || null, input.bookingId || null, input.notes || null],
+     input.quantity, unitPrice, discount, taxAmount, totalPrice,
+     input.creditedTo || null, input.bookingId || null, itemNotes],
   );
 
   await recalculateOrderTotals(orderId);

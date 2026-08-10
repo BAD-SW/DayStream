@@ -11,6 +11,7 @@ export function Checkout() {
   const [searchParams] = useSearchParams();
   const bookingId = searchParams.get('appointment');
   const orderId = searchParams.get('order');
+  const isNewSale = searchParams.get('new') === 'true';
   const businessId = localStorage.getItem('business_id') || '';
 
   const [order, setOrder] = useState<Order | null>(null);
@@ -35,6 +36,11 @@ export function Checkout() {
         setOrder(o);
         // Update URL to include order ID
         window.history.replaceState(null, '', `/checkout?order=${o.id}`);
+      } else if (isNewSale) {
+        const created = await checkoutApi.createOrder({ business_id: businessId });
+        const o = await checkoutApi.getOrder(created.id);
+        setOrder(o);
+        window.history.replaceState(null, '', `/checkout?order=${o!.id}`);
       } else {
         setError('No appointment or order specified');
       }
@@ -43,7 +49,7 @@ export function Checkout() {
     } finally {
       setLoading(false);
     }
-  }, [orderId, bookingId, businessId]);
+  }, [orderId, bookingId, isNewSale, businessId]);
 
   useEffect(() => { loadOrder(); }, [loadOrder]);
 
