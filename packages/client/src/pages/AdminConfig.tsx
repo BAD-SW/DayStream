@@ -3,7 +3,7 @@ import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { apiClient } from '../api/client';
 
-type Tab = 'settings' | 'feature-flags' | 'email' | 'storage' | 'notifications' | 'logs' | 'query-history' | 'platform-billing';
+type Tab = 'settings' | 'feature-flags' | 'api-keys' | 'email' | 'storage' | 'notifications' | 'logs' | 'query-history' | 'platform-billing';
 
 export function AdminConfig() {
   const [activeTab, setActiveTab] = useState<Tab>('settings');
@@ -11,6 +11,7 @@ export function AdminConfig() {
   const tabs: { key: Tab; label: string }[] = [
     { key: 'settings', label: 'Settings' },
     { key: 'feature-flags', label: 'Feature Flags' },
+    { key: 'api-keys', label: 'API Keys' },
     { key: 'email', label: 'Email Server' },
     { key: 'storage', label: 'Storage' },
     { key: 'notifications', label: 'Notifications' },
@@ -41,6 +42,7 @@ export function AdminConfig() {
 
       {activeTab === 'settings' && <SettingsPanel />}
       {activeTab === 'feature-flags' && <FeatureFlagsPanel />}
+      {activeTab === 'api-keys' && <ApiKeysPanel />}
       {activeTab === 'email' && <EmailServerPanel />}
       {activeTab === 'storage' && <StoragePanel />}
       {activeTab === 'notifications' && <NotificationsPanel />}
@@ -239,6 +241,74 @@ const EMPTY_EMAIL: EmailConfig = {
   smtp_user: '', smtp_password: '',
   from_email: '', from_name: '', rate_limit_per_hour: 100,
 };
+
+function ApiKeysPanel() {
+  const [keys, setKeys] = useState<Record<string, string>>({ google_places: '' });
+  const [masked, setMasked] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    apiClient.get('/v1/admin/system-config/api-keys')
+      .then((res) => {
+        const data = res.data.data;
+        setMasked(data?.keys || {});
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const body: Record<string, string> = {};
+      // Only send non-empty values that aren't the masked placeholder
+      for (const [key, val] of Object.entries(keys)) {
+        if (val && !val.includes('...')) body[key] = val;
+      }
+      if (Object.keys(body).length === 0) { alert('No changes to save'); setSaving(false); return; }
+      await apiClient.put('/v1/admin/system-config/api-keys', body);
+      alert('API keys saved');
+      setKeys({ google_places: '' });
+      // Refresh masked display
+      const res = await apiClient.get('/v1/admin/system-config/api-keys');
+      setMasked(res.data.data?.keys || {});
+    } catch (err: any) { alert(err.response?.data?.error || 'Failed to save'); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <p style={styles.loading}>Loading...</p>;
+
+  return (
+    <div>
+      <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
+        Platform-level API keys for third-party integrations. Keys are stored securely and masked after saving.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '600px' }}>
+        <div>
+          <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>Google Places API Key</label>
+          <input
+            style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '13px', color: 'var(--color-text)', background: 'var(--color-background)', fontFamily: 'monospace' }}
+            type="text"
+            placeholder={masked.google_places || 'Enter API key...'}
+            value={keys.google_places}
+            onChange={(e) => setKeys({ ...keys, google_places: e.target.value })}
+          />
+          {masked.google_places && <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '2px', display: 'block' }}>Current: {masked.google_places}</span>}
+        </div>
+      </div>
+      <div style={{ marginTop: '16px' }}>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          style={{ padding: '8px 20px', background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}
+        >
+          {saving ? 'Saving...' : 'Save API Keys'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function EmailServerPanel() {
   const [form, setForm] = useState<EmailConfig>(EMPTY_EMAIL);

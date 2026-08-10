@@ -310,3 +310,41 @@ systemConfigRouter.get('/query-history', requirePermission('*:*'), async (req: R
     error(res, 'Failed to fetch query log', 'INTERNAL_ERROR', 500);
   }
 });
+
+
+// ============================================================
+// API Keys
+// ============================================================
+
+systemConfigRouter.get('/api-keys', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const data = await getSystemConfig('api_keys');
+    // Mask sensitive values for display
+    const masked: Record<string, any> = {};
+    if (data) {
+      for (const [key, value] of Object.entries(data)) {
+        if (typeof value === 'string' && value.length > 8) {
+          masked[key] = value.slice(0, 4) + '...' + value.slice(-4);
+        } else {
+          masked[key] = value ? '****' : '';
+        }
+      }
+    }
+    success(res, { keys: masked, configured: Object.keys(data || {}) });
+  } catch (err: any) { error(res, 'Failed to get API keys', 'INTERNAL_ERROR', 500); }
+});
+
+systemConfigRouter.put('/api-keys', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    // Merge with existing (don't overwrite keys not provided)
+    const existing = await getSystemConfig('api_keys') || {};
+    const updated = { ...existing, ...req.body };
+    // Remove empty values
+    for (const key of Object.keys(updated)) {
+      if (updated[key] === '' || updated[key] === null) delete updated[key];
+    }
+    await upsertSystemConfig('api_keys', updated, authReq.user.sub);
+    success(res, { saved: true });
+  } catch (err: any) { error(res, 'Failed to save API keys', 'INTERNAL_ERROR', 500); }
+});

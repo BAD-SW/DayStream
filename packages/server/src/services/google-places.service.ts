@@ -1,6 +1,16 @@
 import { logger } from '../middleware/logger';
+import { adminPool } from '../db/pool';
 
-const API_KEY = process.env.GOOGLE_PLACES_API_KEY;
+async function getApiKey(): Promise<string> {
+  // Try DB config first, fall back to env var
+  const { rows } = await adminPool.query(
+    `SELECT config_data FROM sys_system_configurations WHERE category = 'api_keys'`,
+  );
+  const keys = rows[0]?.config_data;
+  if (keys?.google_places) return keys.google_places;
+  if (process.env.GOOGLE_PLACES_API_KEY) return process.env.GOOGLE_PLACES_API_KEY;
+  throw new Error('GOOGLE_PLACES_API_KEY not configured. Set it under Configuration → API Keys.');
+}
 
 interface PlaceResult {
   place_id: string;
@@ -18,7 +28,7 @@ interface PlaceResult {
  * Returns up to 60 results (3 pages of 20).
  */
 export async function searchNearbyPlaces(lat: number, lng: number, radiusMeters: number, type: string): Promise<PlaceResult[]> {
-  if (!API_KEY) throw new Error('GOOGLE_PLACES_API_KEY not configured');
+  const API_KEY = await getApiKey();
 
   const results: PlaceResult[] = [];
   let nextPageToken: string | undefined;
@@ -84,7 +94,8 @@ export async function searchNearbyPlaces(lat: number, lng: number, radiusMeters:
  * Get place details (phone, website) for a specific place.
  */
 async function getPlaceDetails(placeId: string): Promise<{ phone?: string; website?: string; address?: string }> {
-  if (!API_KEY) return {};
+  let API_KEY: string;
+  try { API_KEY = await getApiKey(); } catch { return {}; }
 
   const url = new URL('https://maps.googleapis.com/maps/api/place/details/json');
   url.searchParams.set('key', API_KEY);
