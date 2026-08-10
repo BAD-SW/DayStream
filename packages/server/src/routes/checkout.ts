@@ -219,6 +219,19 @@ checkoutRouter.put('/orders/:id/credited-to', requirePermission('bookings:*'), a
   }
 });
 
+// PUT /api/v1/checkout/orders/:id/customer — Set customer on order
+checkoutRouter.put('/orders/:id/customer', requirePermission('bookings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const order = await checkoutService.updateOrderCustomer(req.params.id, businessId, req.body.customer_id || null);
+    success(res, order);
+  } catch (err: any) {
+    if (err.message.includes('not found') || err.message.includes('not open')) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, 'Failed to update customer', 'INTERNAL_ERROR', 500); }
+  }
+});
+
 // PUT /api/v1/checkout/orders/:id/complete — Complete order (process payment)
 checkoutRouter.put('/orders/:id/complete', requirePermission('bookings:*'), validate(completeSchema), async (req: Request, res: Response) => {
   try {

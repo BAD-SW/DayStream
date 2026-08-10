@@ -117,6 +117,11 @@ export async function updateOrderCreditedTo(orderId: string, businessId: string,
   return res.data.data;
 }
 
+export async function updateOrderCustomer(orderId: string, businessId: string, customerId: string | null): Promise<Order> {
+  const res = await apiClient.put(`/v1/checkout/orders/${orderId}/customer?business_id=${businessId}`, { customer_id: customerId });
+  return res.data.data;
+}
+
 export async function applyPromoCode(orderId: string, businessId: string, promoCode: string): Promise<Order> {
   const res = await apiClient.put(`/v1/checkout/orders/${orderId}/promo?business_id=${businessId}`, { promo_code: promoCode });
   return res.data.data;

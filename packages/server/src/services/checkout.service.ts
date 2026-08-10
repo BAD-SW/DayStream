@@ -243,6 +243,32 @@ export async function completeOrder(orderId: string, businessId: string, input: 
     // Don't fail the order completion if journaling fails
   }
 
+  // Auto-enroll customer in memberships purchased in this order
+  try {
+    const { rows: membershipItems } = await adminPool.query(
+      `SELECT item_id FROM fin_order_items WHERE order_id = $1 AND item_type = 'membership' AND item_id IS NOT NULL`,
+      [orderId],
+    );
+    if (membershipItems.length > 0 && orderRows[0].customer_id) {
+      const { enrollCustomer } = await import('./membership.service');
+      const today = new Date().toISOString().slice(0, 10);
+      for (const item of membershipItems) {
+        try {
+          await enrollCustomer({
+            planId: item.item_id,
+            businessId,
+            customerId: orderRows[0].customer_id,
+            startDate: today,
+          });
+        } catch (enrollErr: any) {
+          console.error(`[Enrollment] Failed to enroll customer in plan ${item.item_id}:`, enrollErr.message);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error('[Enrollment] Failed to process membership enrollments:', err.message);
+  }
+
   return getOrder(orderId);
 }
 
@@ -425,6 +451,19 @@ export async function updateOrderCreditedTo(orderId: string, businessId: string,
     `UPDATE fin_orders SET credited_to = $1, updated_at = NOW()
      WHERE id = $2 AND business_id = $3 AND status = 'open' RETURNING *`,
     [creditedTo, orderId, businessId],
+  );
+  if (rows.length === 0) throw new Error('Order not found or not open');
+  return getOrder(orderId);
+}
+
+/**
+ * Update the customer on an open order.
+ */
+export async function updateOrderCustomer(orderId: string, businessId: string, customerId: string | null) {
+  const { rows } = await adminPool.query(
+    `UPDATE fin_orders SET customer_id = $1, updated_at = NOW()
+     WHERE id = $2 AND business_id = $3 AND status = 'open' RETURNING *`,
+    [customerId, orderId, businessId],
   );
   if (rows.length === 0) throw new Error('Order not found or not open');
   return getOrder(orderId);

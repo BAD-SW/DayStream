@@ -229,16 +229,66 @@ export async function removePlanItem(itemId: string) {
 // --- Enrollments ---
 
 function calculatePeriodEnd(startDate: string, frequency: string): string {
-  const start = new Date(startDate);
+  const start = new Date(startDate + 'T00:00:00Z');
   switch (frequency) {
-    case 'weekly': start.setDate(start.getDate() + 7); break;
-    case 'biweekly': start.setDate(start.getDate() + 14); break;
-    case 'monthly': start.setMonth(start.getMonth() + 1); break;
-    case 'quarterly': start.setMonth(start.getMonth() + 3); break;
-    case 'annually': start.setFullYear(start.getFullYear() + 1); break;
-    default: start.setMonth(start.getMonth() + 1);
+    case 'weekly': start.setUTCDate(start.getUTCDate() + 6); break;
+    case 'biweekly': start.setUTCDate(start.getUTCDate() + 13); break;
+    case 'monthly': {
+      // Period ends on the last day of the current month
+      const lastDay = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0));
+      return lastDay.toISOString().split('T')[0];
+    }
+    case 'quarterly': {
+      // Period ends on the last day of the quarter's final month
+      const endMonth = start.getUTCMonth() + 3;
+      const lastDay = new Date(Date.UTC(start.getUTCFullYear(), endMonth, 0));
+      return lastDay.toISOString().split('T')[0];
+    }
+    case 'annually': {
+      // Period ends on the last day of the 12th month from start
+      const endMonth = start.getUTCMonth() + 12;
+      const lastDay = new Date(Date.UTC(start.getUTCFullYear(), endMonth, 0));
+      return lastDay.toISOString().split('T')[0];
+    }
+    default: {
+      const lastDay = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0));
+      return lastDay.toISOString().split('T')[0];
+    }
   }
   return start.toISOString().split('T')[0];
+}
+
+function calculateNextBillingDate(startDate: string, frequency: string): string {
+  const start = new Date(startDate + 'T00:00:00Z');
+  switch (frequency) {
+    case 'weekly': {
+      const next = new Date(start);
+      next.setUTCDate(next.getUTCDate() + 7);
+      return next.toISOString().split('T')[0];
+    }
+    case 'biweekly': {
+      const next = new Date(start);
+      next.setUTCDate(next.getUTCDate() + 14);
+      return next.toISOString().split('T')[0];
+    }
+    case 'monthly': {
+      // Next billing is always the 1st of the next month
+      const next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
+      return next.toISOString().split('T')[0];
+    }
+    case 'quarterly': {
+      const next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 3, 1));
+      return next.toISOString().split('T')[0];
+    }
+    case 'annually': {
+      const next = new Date(Date.UTC(start.getUTCFullYear() + 1, start.getUTCMonth(), 1));
+      return next.toISOString().split('T')[0];
+    }
+    default: {
+      const next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
+      return next.toISOString().split('T')[0];
+    }
+  }
 }
 
 export async function enrollCustomer(input: EnrollInput) {
@@ -247,7 +297,7 @@ export async function enrollCustomer(input: EnrollInput) {
   if (!plan) throw new Error('Plan not found');
 
   const periodEnd = calculatePeriodEnd(input.startDate, plan.billing_frequency);
-  const nextBillingDate = periodEnd;
+  const nextBillingDate = calculateNextBillingDate(input.startDate, plan.billing_frequency);
 
   const { rows } = await adminPool.query(
     `INSERT INTO mbr_enrollments (plan_id, business_id, customer_id, status, start_date, current_period_start, current_period_end, next_billing_date)

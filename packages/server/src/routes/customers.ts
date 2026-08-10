@@ -226,6 +226,101 @@ customersRouter.get('/scheduled-jobs/:id/history', requirePermission('settings:*
   } catch (err: any) { error(res, 'Failed to get job history', 'INTERNAL_ERROR', 500); }
 });
 
+// POST /api/v1/customers/scheduled-jobs/run — Run a process by type (no DB record needed)
+customersRouter.post('/scheduled-jobs/run', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { job_type, date_from, date_to, posting_date } = req.body;
+    if (!job_type) { error(res, 'job_type required', 'VALIDATION_ERROR', 400); return; }
+
+    const { jobRegistry } = await import('../jobs/job-registry');
+    const handler = jobRegistry[job_type];
+    if (!handler) { error(res, `Unknown process type: ${job_type}`, 'VALIDATION_ERROR', 400); return; }
+
+    // Get tenant_id for context
+    const authReq = req as AuthenticatedRequest;
+    const startTime = Date.now();
+
+    let result: any;
+    // For revenue_recognition, support date range and posting date
+    if (job_type === 'revenue_recognition' && date_from) {
+      const { recognizeRevenue } = await import('../services/revenue-recognition.service');
+      result = await recognizeRevenue(businessId, date_from, date_to || date_from, posting_date || undefined);
+    } else {
+      result = await handler({ businessId, tenantId: authReq.tenantId || '', config: {} });
+    }
+
+    const durationMs = Date.now() - startTime;
+    success(res, { status: 'success', duration_ms: durationMs, result });
+  } catch (err: any) { error(res, `Process failed: ${err.message}`, 'INTERNAL_ERROR', 500); }
+});
+
+// POST /api/v1/customers/scheduled-jobs/:id/run — Manual trigger with optional date range
+customersRouter.post('/scheduled-jobs/:id/run', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    // Load the job to get type and business context
+    const { rows: jobRows } = await adminPool.query(
+      'SELECT id, business_id, tenant_id, job_type, config FROM sys_scheduled_jobs WHERE id = $1',
+      [req.params.id],
+    );
+    if (jobRows.length === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
+    const job = jobRows[0];
+
+    const { date_from, date_to } = req.body || {};
+
+    // Record execution start
+    const { rows: execRows } = await adminPool.query(
+      `INSERT INTO sys_job_executions (job_id, business_id, job_type, started_at, status)
+       VALUES ($1, $2, $3, NOW(), 'running') RETURNING id`,
+      [job.id, job.business_id, job.job_type],
+    );
+    const executionId = execRows[0].id;
+    const startTime = Date.now();
+
+    try {
+      let result: any;
+
+      // For revenue_recognition, support date range override
+      if (job.job_type === 'revenue_recognition' && date_from) {
+        const { recognizeRevenue } = await import('../services/revenue-recognition.service');
+        result = await recognizeRevenue(job.business_id, date_from, date_to || date_from);
+      } else {
+        // Default: run the registered handler
+        const { jobRegistry } = await import('../jobs/job-registry');
+        const handler = jobRegistry[job.job_type];
+        if (!handler) { throw new Error(`Unknown job type: ${job.job_type}`); }
+        result = await handler({ businessId: job.business_id, tenantId: job.tenant_id, config: job.config || {} });
+      }
+
+      const durationMs = Date.now() - startTime;
+
+      // Record success
+      await adminPool.query(
+        `UPDATE sys_job_executions SET completed_at = NOW(), status = 'success', duration_ms = $1, result = $2 WHERE id = $3`,
+        [durationMs, JSON.stringify(result || {}), executionId],
+      );
+      await adminPool.query(
+        `UPDATE sys_scheduled_jobs SET last_run_at = NOW(), last_run_status = 'success', last_run_duration_ms = $1, last_error = NULL, updated_at = NOW() WHERE id = $2`,
+        [durationMs, job.id],
+      );
+
+      success(res, { executionId, status: 'success', duration_ms: durationMs, result });
+    } catch (err: any) {
+      const durationMs = Date.now() - startTime;
+      await adminPool.query(
+        `UPDATE sys_job_executions SET completed_at = NOW(), status = 'failed', duration_ms = $1, error = $2 WHERE id = $3`,
+        [durationMs, err.message, executionId],
+      ).catch(() => {});
+      await adminPool.query(
+        `UPDATE sys_scheduled_jobs SET last_run_at = NOW(), last_run_status = 'failed', last_run_duration_ms = $1, last_error = $2, updated_at = NOW() WHERE id = $3`,
+        [durationMs, err.message, job.id],
+      ).catch(() => {});
+      error(res, `Job failed: ${err.message}`, 'INTERNAL_ERROR', 500);
+    }
+  } catch (err: any) { error(res, 'Failed to run job', 'INTERNAL_ERROR', 500); }
+});
+
 // GET /api/v1/customers/export — Export to CSV (must be before /:id)
 customersRouter.get('/export', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {

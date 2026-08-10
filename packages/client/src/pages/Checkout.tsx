@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import * as checkoutApi from '../api/checkout';
+import * as customersApi from '../api/customers';
 import type { Order, OrderItem } from '../api/checkout';
 import { formatCurrency } from '../utils/currency';
 
@@ -22,6 +23,14 @@ export function Checkout() {
   const [showAddItem, setShowAddItem] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
+
+  // Customer search/create
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerResults, setCustomerResults] = useState<any[]>([]);
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [customerSearching, setCustomerSearching] = useState(false);
+  const [showCreateCustomer, setShowCreateCustomer] = useState(false);
+  const [newCustomerForm, setNewCustomerForm] = useState({ first_name: '', last_name: '', email: '', phone: '' });
 
   // Load order
   const loadOrder = useCallback(async () => {
@@ -71,7 +80,54 @@ export function Checkout() {
     loadOfferings();
   }, [businessId]);
 
+  // Customer search with debounce
+  useEffect(() => {
+    if (!customerSearch || customerSearch.length < 2) {
+      setCustomerResults([]);
+      setShowCustomerDropdown(false);
+      return;
+    }
+    setCustomerSearching(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const res = await customersApi.getCustomers(businessId, { search: customerSearch, limit: 10 });
+        setCustomerResults(res.data);
+        setShowCustomerDropdown(true);
+      } catch { setCustomerResults([]); }
+      finally { setCustomerSearching(false); }
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [customerSearch, businessId]);
+
   // Actions
+  const handleSetCustomer = async (customerId: string) => {
+    if (!order) return;
+    try {
+      const updated = await checkoutApi.updateOrderCustomer(order.id, businessId, customerId);
+      setOrder(updated);
+      setCustomerSearch('');
+      setShowCustomerDropdown(false);
+      setShowCreateCustomer(false);
+    } catch { /* silent */ }
+  };
+
+  const handleCreateAndSetCustomer = async () => {
+    if (!order || !newCustomerForm.first_name || !newCustomerForm.last_name) return;
+    try {
+      const customer = await customersApi.createCustomer({ ...newCustomerForm, business_id: businessId });
+      await handleSetCustomer(customer.id);
+      setNewCustomerForm({ first_name: '', last_name: '', email: '', phone: '' });
+    } catch (err: any) { alert(err?.response?.data?.message || 'Failed to create customer'); }
+  };
+
+  const handleRemoveCustomer = async () => {
+    if (!order) return;
+    try {
+      const updated = await checkoutApi.updateOrderCustomer(order.id, businessId, null);
+      setOrder(updated);
+    } catch { /* silent */ }
+  };
+
   const handleUpdateOrderCredit = async (userId: string | null) => {
     if (!order) return;
     try {
@@ -90,6 +146,12 @@ export function Checkout() {
 
   const handleComplete = async () => {
     if (!order) return;
+    // Require customer when order contains a membership or package
+    const requiresCustomer = order.items.some((item) => item.item_type === 'membership' || item.item_type === 'package');
+    if (requiresCustomer && !order.customer_id) {
+      alert('A customer is required when the order contains a membership or package.');
+      return;
+    }
     setCompleting(true);
     try {
       const completed = await checkoutApi.completeOrder(order.id, businessId, { payment_method: 'cash' });
@@ -124,7 +186,7 @@ export function Checkout() {
         <div>
           <h1 style={styles.title}>Checkout</h1>
           <span style={styles.orderNum}>{order.order_number}</span>
-          {order.customer_first_name && (
+          {order.customer_first_name && !isOpen && (
             <span style={styles.customer}> — {order.customer_first_name} {order.customer_last_name}</span>
           )}
         </div>
@@ -150,6 +212,59 @@ export function Checkout() {
           <Badge variant={isCompleted ? 'success' : isOpen ? 'info' : 'error'}>{order.status}</Badge>
         </div>
       </div>
+
+      {/* Customer selector */}
+      {isOpen && (
+        <div style={{ marginBottom: 'var(--space-md)', padding: '12px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-background)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)', minWidth: '70px' }}>Customer</span>
+            {order.customer_id ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>{order.customer_first_name} {order.customer_last_name}</span>
+                <button type="button" onClick={handleRemoveCustomer} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: '16px', lineHeight: 1 }}>×</button>
+              </div>
+            ) : (
+              <div style={{ position: 'relative', width: '300px', flexShrink: 0 }}>
+                <input
+                  style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px', boxSizing: 'border-box' }}
+                  type="text"
+                  value={customerSearch}
+                  onChange={(e) => setCustomerSearch(e.target.value)}
+                  placeholder="Search by name, email, or phone..."
+                  autoComplete="off"
+                  onFocus={() => { if (customerResults.length > 0) setShowCustomerDropdown(true); }}
+                  onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
+                />
+                {showCustomerDropdown && customerResults.length > 0 && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--color-surface, #fff)', border: '1px solid var(--color-border)', borderRadius: '4px', marginTop: '2px', zIndex: 100, maxHeight: '200px', overflow: 'auto' }}>
+                    {customerResults.map((c: any) => (
+                      <button key={c.id} type="button" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '13px', borderBottom: '1px solid var(--color-border)' }}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => handleSetCustomer(c.id)}>
+                        <strong>{c.first_name} {c.last_name}</strong>{c.email && <span style={{ marginLeft: '8px', color: 'var(--color-text-secondary)' }}>{c.email}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {customerSearching && <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginLeft: '4px' }}>Searching...</span>}
+              </div>
+            )}
+            {!order.customer_id && !showCreateCustomer && (
+              <span onClick={() => setShowCreateCustomer(true)} style={{ fontSize: '12px', color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap' }}>New Customer</span>
+            )}
+          </div>
+          {showCreateCustomer && !order.customer_id && (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
+              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px', width: '130px' }} placeholder="First name *" value={newCustomerForm.first_name} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, first_name: e.target.value })} />
+              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px', width: '130px' }} placeholder="Last name *" value={newCustomerForm.last_name} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, last_name: e.target.value })} />
+              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px', width: '180px' }} placeholder="Email" value={newCustomerForm.email} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, email: e.target.value })} />
+              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px', width: '130px' }} placeholder="Phone" value={newCustomerForm.phone} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, phone: e.target.value })} />
+              <Button size="sm" onClick={handleCreateAndSetCustomer}>Create</Button>
+              <button type="button" onClick={() => setShowCreateCustomer(false)} style={{ fontSize: '12px', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Line Items */}
       <div style={styles.card}>
