@@ -82,7 +82,12 @@ const createBillSchema = Joi.object({
   recurrence_interval: Joi.string().valid('monthly', 'quarterly', 'annually').allow(null),
 });
 
-const recordPaymentSchema = Joi.object({ amount: Joi.number().integer().min(1).required() });
+const recordPaymentSchema = Joi.object({
+  amount: Joi.number().integer().min(1).required(),
+  payment_date: Joi.string().isoDate().allow(null),
+  payment_method: Joi.string().max(50).allow('', null),
+  reference: Joi.string().max(100).allow('', null),
+});
 
 apRouter.get('/bills', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
@@ -132,7 +137,11 @@ apRouter.put('/bills/:id/pay', requirePermission('settings:*'), validate(recordP
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    const bill = await billsService.recordPayment(req.params.id, businessId, req.body.amount);
+    const bill = await billsService.recordPayment(req.params.id, businessId, req.body.amount, {
+      paymentDate: req.body.payment_date,
+      paymentMethod: req.body.payment_method,
+      reference: req.body.reference,
+    });
     if (!bill) { error(res, 'Bill not found', 'NOT_FOUND', 404); return; }
     success(res, bill);
   } catch (err: any) { error(res, 'Failed to record payment', 'INTERNAL_ERROR', 500); }
@@ -175,6 +184,38 @@ apRouter.post('/expenses', requirePermission('settings:*'), validate(createExpen
     });
     success(res, expense, undefined, 201);
   } catch (err: any) { error(res, 'Failed to create expense', 'INTERNAL_ERROR', 500); }
+});
+
+const updateExpenseSchema = Joi.object({
+  date: Joi.string().isoDate(),
+  amount: Joi.number().integer().min(1),
+  account_id: Joi.string().uuid().allow(null),
+  description: Joi.string().max(500).allow('', null),
+  vendor_id: Joi.string().uuid().allow(null),
+  payment_method: Joi.string().max(50).allow('', null),
+});
+
+apRouter.put('/expenses/:id', requirePermission('settings:*'), validate(updateExpenseSchema), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const updated = await expensesService.updateExpense(req.params.id, businessId, {
+      date: req.body.date, amount: req.body.amount, accountId: req.body.account_id,
+      description: req.body.description, vendorId: req.body.vendor_id, paymentMethod: req.body.payment_method,
+    });
+    if (!updated) { error(res, 'Expense not found', 'NOT_FOUND', 404); return; }
+    success(res, updated);
+  } catch (err: any) { error(res, 'Failed to update expense', 'INTERNAL_ERROR', 500); }
+});
+
+apRouter.delete('/expenses/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const deleted = await expensesService.deleteExpense(req.params.id, businessId);
+    if (!deleted) { error(res, 'Expense not found', 'NOT_FOUND', 404); return; }
+    success(res, { deleted: true });
+  } catch (err: any) { error(res, 'Failed to delete expense', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.put('/expenses/:id/approve', requirePermission('settings:*'), async (req: Request, res: Response) => {

@@ -125,7 +125,7 @@ export async function updateBill(id: string, businessId: string, updates: any): 
   return rows[0];
 }
 
-export async function recordPayment(id: string, businessId: string, amount: number): Promise<any> {
+export async function recordPayment(id: string, businessId: string, amount: number, options?: { paymentDate?: string; paymentMethod?: string; reference?: string }): Promise<any> {
   const { rows } = await adminPool.query('SELECT * FROM fin_bills WHERE id = $1 AND business_id = $2', [id, businessId]);
   if (rows.length === 0) return null;
   const bill = rows[0];
@@ -145,12 +145,12 @@ export async function recordPayment(id: string, businessId: string, amount: numb
         'SELECT v.name FROM fin_vendors v WHERE v.id = $1', [bill.vendor_id],
       );
       const vendorName = vendorRows[0]?.name || 'Unknown';
-      const entryDate = new Date().toISOString().slice(0, 10);
+      const entryDate = options?.paymentDate || new Date().toISOString().slice(0, 10);
 
       const { rows: entryRows } = await adminPool.query(
         `INSERT INTO fin_journal_entries (business_id, entry_date, description, reference_type, reference_id)
          VALUES ($1, $2, $3, 'bill_payment', $4) RETURNING *`,
-        [businessId, entryDate, `Payment - ${vendorName}${bill.invoice_number ? ` #${bill.invoice_number}` : ''}`, id],
+        [businessId, entryDate, `Payment - ${vendorName}${bill.invoice_number ? ` #${bill.invoice_number}` : ''}${options?.reference ? ` (${options.reference})` : ''}`, id],
       );
       const entryId = entryRows[0].id;
 
@@ -164,7 +164,7 @@ export async function recordPayment(id: string, businessId: string, amount: numb
       await adminPool.query(
         `INSERT INTO fin_journal_entry_lines (journal_entry_id, account_id, debit, credit, description)
          VALUES ($1, $2, 0, $3, $4)`,
-        [entryId, cashAccountId, amount, `Payment to ${vendorName}`],
+        [entryId, cashAccountId, amount, `Payment to ${vendorName} via ${options?.paymentMethod || 'cash'}`],
       );
     }
   } catch (err: any) {

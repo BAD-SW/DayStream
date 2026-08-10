@@ -10,9 +10,10 @@ interface TabsProps {
   items: TabItem[];
   defaultTab?: string;
   orientation?: 'horizontal' | 'vertical';
+  onTabChange?: (tabId: string) => void;
 }
 
-export function Tabs({ items, defaultTab, orientation = 'horizontal' }: TabsProps) {
+export function Tabs({ items, defaultTab, orientation = 'horizontal', onTabChange }: TabsProps) {
   const [active, setActive] = useState(defaultTab || items[0]?.id);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -36,6 +37,7 @@ export function Tabs({ items, defaultTab, orientation = 'horizontal' }: TabsProp
 
     e.preventDefault();
     setActive(items[newIndex].id);
+    onTabChange?.(items[newIndex].id);
     tabRefs.current[newIndex]?.focus();
   }
 
@@ -54,7 +56,7 @@ export function Tabs({ items, defaultTab, orientation = 'horizontal' }: TabsProp
               aria-selected={isActive}
               aria-controls={`tabpanel-${item.id}`}
               tabIndex={isActive ? 0 : -1}
-              onClick={() => setActive(item.id)}
+              onClick={() => { setActive(item.id); onTabChange?.(item.id); }}
               onKeyDown={(e) => handleKeyDown(e, index)}
               style={{
                 background: 'none', border: 'none', outline: 'none',

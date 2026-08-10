@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { Tabs } from '../design-system/components/navigation/Tabs';
@@ -14,16 +14,35 @@ export function AccountsPayable() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [journalEntries, setJournalEntries] = useState<any[]>([]);
-  const [expenseReport, setExpenseReport] = useState<any>(null);
-  const [reconciliation, setReconciliation] = useState<{ lines: any[]; status: any } | null>(null);
+  const [vendorSearch, setVendorSearch] = useState('');
+  const [billDateFrom, setBillDateFrom] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [billDateTo, setBillDateTo] = useState(() => {
+    return new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().slice(0, 10);
+  });
+  const [billStatusFilter, setBillStatusFilter] = useState('all');
+  const [expenseDateFrom, setExpenseDateFrom] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [expenseDateTo, setExpenseDateTo] = useState(() => {
+    return new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().slice(0, 10);
+  });
+  const [expenseAccountFilter, setExpenseAccountFilter] = useState('all');
+  const [expenseMethodFilter, setExpenseMethodFilter] = useState('all');
+  const [accountTypeFilter, setAccountTypeFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [editingVendor, setEditingVendor] = useState<any | null>(null);
   const [editVendorForm, setEditVendorForm] = useState<any>({});
   const [showVendorForm, setShowVendorForm] = useState(false);
   const [showBillForm, setShowBillForm] = useState(false);
-  const [billForm, setBillForm] = useState({ vendor_id: '', invoice_number: '', amount: '', due_date: '', description: '' });
+  const [billForm, setBillForm] = useState<any>({ vendor_id: '', invoice_number: '', amount: '', due_date: '', description: '', account_id: '' });
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [expenseForm, setExpenseForm] = useState({ date: new Date().toISOString().slice(0, 10), amount: '', account_id: '', description: '', payment_method: 'cash' });
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({ bill_id: '', amount: '', payment_date: '', payment_method: 'transfer', reference: '' });
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [editingAccount, setEditingAccount] = useState<any | null>(null);
   const [accountForm, setAccountForm] = useState({ code: '', name: '', account_type: 'expense', description: '' });
@@ -36,41 +55,49 @@ export function AccountsPayable() {
     return d.toISOString().slice(0, 10);
   });
   const [journalPage, setJournalPage] = useState(1);
-  const [reportDateFrom, setReportDateFrom] = useState(() => {
-    const d = new Date(); d.setMonth(d.getMonth() - 1);
-    return d.toISOString().slice(0, 10);
-  });
-  const [reportDateTo, setReportDateTo] = useState(() => new Date().toISOString().slice(0, 10));
-  const [statementId, setStatementId] = useState('');
   const businessId = localStorage.getItem('business_id') || '';
 
-  const loadData = useCallback(async () => {
-    if (!businessId) { setLoading(false); return; }
+  useEffect(() => { loadTab('vendors'); }, [businessId]);
+
+  async function loadTab(tabId: string) {
+    if (!businessId) return;
     setLoading(true);
     try {
-      const [v, b, e, accts, journal] = await Promise.all([
-        apApi.getVendors(businessId),
-        apApi.getBills(businessId),
-        apApi.getExpenses(businessId),
-        apApi.getAccounts(businessId),
-        apApi.getJournalEntries(businessId, { date_from: journalDateFrom, date_to: journalDateTo, page: journalPage }),
-      ]);
-      setVendors(v);
-      setBills(b);
-      setExpenses(e);
-      // Auto-seed chart of accounts if empty
-      if (Array.isArray(accts) && accts.length === 0) {
-        await apApi.seedAccounts(businessId);
-        const seeded = await apApi.getAccounts(businessId);
-        setAccounts(seeded);
-      } else {
+      if (tabId === 'vendors') {
+        const v = await apApi.getVendors(businessId);
+        setVendors(v);
+      } else if (tabId === 'bills') {
+        const [v, b] = await Promise.all([apApi.getVendors(businessId), apApi.getBills(businessId)]);
+        setVendors(v);
+        setBills(b);
+      } else if (tabId === 'expenses') {
+        const [e, accts] = await Promise.all([apApi.getExpenses(businessId), apApi.getAccounts(businessId)]);
+        setExpenses(e);
         setAccounts(accts);
+      } else if (tabId === 'accounts') {
+        const accts = await apApi.getAccounts(businessId);
+        if (Array.isArray(accts) && accts.length === 0) {
+          await apApi.seedAccounts(businessId);
+          const seeded = await apApi.getAccounts(businessId);
+          setAccounts(seeded);
+        } else {
+          setAccounts(accts);
+        }
+      } else if (tabId === 'journal') {
+        const [accts, journal] = await Promise.all([
+          apApi.getAccounts(businessId),
+          apApi.getJournalEntries(businessId, { date_from: journalDateFrom, date_to: journalDateTo, page: journalPage }),
+        ]);
+        setAccounts(accts);
+        setJournalEntries(Array.isArray(journal) ? journal : journal.data || []);
       }
-      setJournalEntries(Array.isArray(journal) ? journal : journal.data || []);
     } finally { setLoading(false); }
-  }, [businessId, journalDateFrom, journalDateTo, journalPage]);
+  }
 
-  useEffect(() => { loadData(); }, [loadData]);
+  // Reload journal when date filters change
+  useEffect(() => {
+    if (businessId) loadTab('journal');
+  }, [journalDateFrom, journalDateTo, journalPage]);
 
   // --- Archive Account ---
   async function handleArchiveAccount(id: string) {
@@ -113,7 +140,7 @@ export function AccountsPayable() {
           description: billForm.description || null,
           account_id: billForm.account_id || null,
         });
-        loadData();
+        loadTab('bills');
       } else {
         const created = await apApi.createBill({ business_id: businessId, vendor_id: billForm.vendor_id, invoice_number: billForm.invoice_number || null, amount: Math.round(parseFloat(billForm.amount) * 100), due_date: billForm.due_date, description: billForm.description || null, account_id: billForm.account_id || null });
         setBills((prev) => [...prev, created]);
@@ -122,16 +149,25 @@ export function AccountsPayable() {
     } catch { alert('Failed to save bill'); }
   }
 
-  async function handleApproveBill(id: string) {
-    await apApi.approveBill(id, businessId);
-    loadData();
+  async function handlePayBill(id: string) {
+    const bill = bills.find((b: any) => b.id === id);
+    const remaining = bill ? (bill.amount - bill.amount_paid) / 100 : 0;
+    setPaymentForm({ bill_id: id, amount: String(remaining.toFixed(2)), payment_date: new Date().toISOString().slice(0, 10), payment_method: 'transfer', reference: '' });
+    setShowPaymentForm(true);
   }
 
-  async function handlePayBill(id: string) {
-    const amount = prompt('Enter payment amount (€):');
-    if (!amount) return;
-    await apApi.payBill(id, businessId, Math.round(parseFloat(amount) * 100));
-    loadData();
+  async function submitPayment() {
+    if (!paymentForm.amount || !paymentForm.bill_id) return;
+    try {
+      await apApi.payBill(paymentForm.bill_id, businessId, {
+        amount: Math.round(parseFloat(paymentForm.amount) * 100),
+        payment_date: paymentForm.payment_date || undefined,
+        payment_method: paymentForm.payment_method || undefined,
+        reference: paymentForm.reference || undefined,
+      });
+      setShowPaymentForm(false);
+      loadTab('bills');
+    } catch { alert('Failed to record payment'); }
   }
 
   // --- Expenses ---
@@ -146,25 +182,55 @@ export function AccountsPayable() {
       return;
     }
     try {
-      const created = await apApi.createExpense({
-        business_id: businessId,
-        date: expenseForm.date,
-        amount: Math.round(parseFloat(expenseForm.amount) * 100),
-        account_id: expenseForm.account_id || null,
-        description: expenseForm.description || null,
-        payment_method: expenseForm.payment_method || 'cash',
-      });
-      setExpenses((prev: any[]) => [...prev, created]);
+      if ((expenseForm as any)._editId) {
+        const updated = await apApi.updateExpense((expenseForm as any)._editId, businessId, {
+          date: expenseForm.date,
+          amount: Math.round(parseFloat(expenseForm.amount) * 100),
+          account_id: expenseForm.account_id || null,
+          description: expenseForm.description || null,
+          payment_method: expenseForm.payment_method || 'cash',
+        });
+        setExpenses((prev: any[]) => prev.map((e) => e.id === (expenseForm as any)._editId ? { ...e, ...updated } : e));
+      } else {
+        const created = await apApi.createExpense({
+          business_id: businessId,
+          date: expenseForm.date,
+          amount: Math.round(parseFloat(expenseForm.amount) * 100),
+          account_id: expenseForm.account_id || null,
+          description: expenseForm.description || null,
+          payment_method: expenseForm.payment_method || 'cash',
+        });
+        setExpenses((prev: any[]) => [...prev, created]);
+      }
       setShowExpenseForm(false);
-    } catch { alert('Failed to create expense'); }
+    } catch { alert('Failed to save expense'); }
+  }
+
+  function openEditExpense(expense: any) {
+    setExpenseForm({
+      date: expense.date ? expense.date.split('T')[0] : '',
+      amount: String((expense.amount / 100).toFixed(2)),
+      account_id: expense.account_id || '',
+      description: expense.description || '',
+      payment_method: expense.payment_method || 'cash',
+      _editId: expense.id,
+    } as any);
+    setShowExpenseForm(true);
+  }
+
+  async function handleDeleteExpense(id: string) {
+    if (!confirm('Delete this expense? The associated journal entry will also be removed.')) return;
+    try {
+      await apApi.deleteExpense(id, businessId);
+      setExpenses((prev: any[]) => prev.filter((e) => e.id !== id));
+    } catch { alert('Failed to delete expense'); }
   }
 
   // --- Void Journal Entry ---
   async function handleVoidEntry(id: string) {
     if (!confirm('Void this journal entry? A reversing entry will be created.')) return;
     await apApi.voidJournalEntry(id, businessId);
-    const journal = await apApi.getJournalEntries(businessId);
-    setJournalEntries(Array.isArray(journal) ? journal : journal.entries || []);
+    loadTab('journal');
   }
 
   // --- Edit Vendor ---
@@ -193,52 +259,6 @@ export function AccountsPayable() {
     setEditingVendor(null);
   }
 
-  // --- Expense Report ---
-  async function loadExpenseReport() {
-    const report = await apApi.getExpenseReport(businessId, reportDateFrom, reportDateTo);
-    setExpenseReport(report);
-  }
-
-  // --- Bank Reconciliation ---
-  async function handleImportStatement() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json,.csv';
-    input.onchange = async (e: any) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const text = await file.text();
-      try {
-        const parsed = JSON.parse(text);
-        const result = await apApi.importStatement(
-          businessId,
-          parsed.account_name || 'Bank Account',
-          parsed.statement_date || new Date().toISOString().slice(0, 10),
-          parsed.lines || [],
-        );
-        if (result?.id) {
-          setStatementId(result.id);
-          await loadStatementDetails(result.id);
-        }
-      } catch { alert('Invalid file format. Expected JSON with account_name, statement_date, and lines array.'); }
-    };
-    input.click();
-  }
-
-  async function loadStatementDetails(id?: string) {
-    const sid = id || statementId;
-    if (!sid) return;
-    const data = await apApi.getStatementDetails(sid);
-    setReconciliation(data);
-  }
-
-  async function handleMatchLine(lineId: string) {
-    const journalEntryId = prompt('Enter the Journal Entry ID to match:');
-    if (!journalEntryId) return;
-    await apApi.matchReconciliationLine(lineId, journalEntryId);
-    await loadStatementDetails();
-  }
-
   // --- Column definitions ---
   const vendorCols = [
     { key: 'name', header: 'Vendor', sortable: true },
@@ -247,7 +267,10 @@ export function AccountsPayable() {
     { key: 'phone', header: 'Phone' },
     { key: 'payment_terms', header: 'Terms', render: (v: number) => v ? `Net ${v}` : '—' },
     { key: 'actions', header: '', render: (_: any, row: any) => (
-      <TableActionButton label="Edit" variant="edit" onClick={() => startEditVendor(row)} />
+      <div style={{ display: 'flex', gap: '4px' }}>
+        <TableActionButton label="Edit" variant="edit" onClick={() => startEditVendor(row)} />
+        <TableActionButton label="Archive" variant="archive" onClick={() => handleArchiveVendor(row.id)} />
+      </div>
     )},
   ];
 
@@ -255,12 +278,14 @@ export function AccountsPayable() {
     { key: 'vendor_name', header: 'Vendor', sortable: true },
     { key: 'invoice_number', header: 'Invoice #' },
     { key: 'amount', header: 'Amount', render: (v: number) => formatCurrency(v) },
+    { key: 'amount_paid', header: 'Paid', render: (v: number) => v > 0 ? formatCurrency(v) : '—' },
+    { key: 'balance', header: 'Balance', render: (_: any, row: any) => formatCurrency(row.amount - row.amount_paid) },
     { key: 'due_date', header: 'Due', sortable: true, render: (v: string) => new Date(v).toLocaleDateString() },
     { key: 'status', header: 'Status', sortable: true, render: (v: string) => <Badge variant={BILL_STATUS[v] || 'neutral'}>{v}</Badge> },
     { key: 'actions', header: '', render: (_: any, row: any) => (
       <div style={{ display: 'flex', gap: '4px' }}>
         <TableActionButton label="Edit" variant="edit" onClick={() => openEditBill(row)} />
-        {row.status !== 'paid' && <TableActionButton label="Pay" variant="activate" onClick={() => handlePayBill(row.id)} />}
+        {row.status !== 'paid' && <TableActionButton label="Record Payment" variant="activate" onClick={() => handlePayBill(row.id)} />}
       </div>
     )},
   ];
@@ -271,6 +296,12 @@ export function AccountsPayable() {
     { key: 'account_name', header: 'Account' },
     { key: 'description', header: 'Description' },
     { key: 'payment_method', header: 'Paid via' },
+    { key: 'actions', header: '', render: (_: any, row: any) => (
+      <div style={{ display: 'flex', gap: '4px' }}>
+        <TableActionButton label="Edit" variant="edit" onClick={() => openEditExpense(row)} />
+        <TableActionButton label="Delete" variant="delete" onClick={() => handleDeleteExpense(row.id)} />
+      </div>
+    )},
   ];
 
   const accountCols = [
@@ -312,7 +343,7 @@ export function AccountsPayable() {
         await apApi.createAccount({ business_id: businessId, ...accountForm });
       }
       setShowAddAccount(false);
-      loadData();
+      loadTab('accounts');
     } catch (err: any) {
       alert(err?.response?.data?.error || 'Failed to save account');
     }
@@ -321,20 +352,43 @@ export function AccountsPayable() {
   async function handleUnarchiveAccount(id: string) {
     try {
       await apApi.unarchiveAccount(id, businessId);
-      loadData();
+      loadTab('accounts');
     } catch (err: any) {
       alert(err?.response?.data?.error || 'Failed to unarchive');
     }
   }
 
-  const filteredAccounts = showArchived ? accounts : accounts.filter((a: any) => a.status === 'active');
+  // --- Archive Vendor ---
+  async function handleArchiveVendor(id: string) {
+    if (!confirm('Archive this vendor? It will no longer appear in active lists.')) return;
+    await apApi.updateVendor(id, businessId, { status: 'archived' });
+    setVendors((prev) => prev.filter((v) => v.id !== id));
+  }
+
+  const filteredAccounts = (() => {
+    let result = showArchived ? accounts : accounts.filter((a: any) => a.status === 'active');
+    if (accountTypeFilter !== 'all') {
+      result = result.filter((a: any) => a.account_type === accountTypeFilter);
+    }
+    return result;
+  })();
 
   const accountsContent = (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
-          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived
-        </label>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap', gap: '16px' }}>
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+          <label style={styles.fieldLabel}>Type <select style={styles.input} value={accountTypeFilter} onChange={(e) => setAccountTypeFilter(e.target.value)}>
+            <option value="all">All</option>
+            <option value="asset">Asset</option>
+            <option value="liability">Liability</option>
+            <option value="equity">Equity</option>
+            <option value="revenue">Revenue</option>
+            <option value="expense">Expense</option>
+          </select></label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived
+          </label>
+        </div>
         <button style={styles.primaryBtn} onClick={openAddAccount}>Add Account</button>
       </div>
       {showAddAccount && (
@@ -361,11 +415,17 @@ export function AccountsPayable() {
     const [expandedDate, setExpandedDate] = useState<string | null>(null);
     const [expandedEntry, setExpandedEntry] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<'orders' | 'accounts'>('orders');
+    const [journalAccountFilter, setJournalAccountFilter] = useState('all');
+
+    // Filter entries by account if selected
+    const filteredEntries = journalAccountFilter === 'all'
+      ? entries
+      : entries.filter((entry: any) => entry.lines?.some((line: any) => line.account_id === journalAccountFilter));
 
     function handleExportCsv() {
-      if (entries.length === 0) return;
+      if (filteredEntries.length === 0) return;
       const rows: string[] = ['Date,Entry Description,Reference Type,Account Code,Account Name,Debit,Credit'];
-      for (const entry of entries) {
+      for (const entry of filteredEntries) {
         const date = new Date(entry.entry_date).toLocaleDateString('sv-SE');
         for (const line of (entry.lines || [])) {
           rows.push([
@@ -391,7 +451,7 @@ export function AccountsPayable() {
 
     // Group entries by date
     const byDate = new Map<string, any[]>();
-    for (const entry of entries) {
+    for (const entry of filteredEntries) {
       const dateStr = new Date(entry.entry_date).toLocaleDateString();
       if (!byDate.has(dateStr)) byDate.set(dateStr, []);
       byDate.get(dateStr)!.push(entry);
@@ -399,12 +459,12 @@ export function AccountsPayable() {
 
     // For View 2: aggregate lines by account per date
     function getAccountSummary(dateEntries: any[]) {
-      const accountMap = new Map<string, { code: string; name: string; totalDebit: number; totalCredit: number; orders: { id: string; description: string; debit: number; credit: number }[] }>();
+      const accountMap = new Map<string, { accountId: string; code: string; name: string; totalDebit: number; totalCredit: number; orders: { id: string; description: string; debit: number; credit: number }[] }>();
       for (const entry of dateEntries) {
         for (const line of (entry.lines || [])) {
           const key = line.account_id;
           if (!accountMap.has(key)) {
-            accountMap.set(key, { code: line.account_code, name: line.account_name, totalDebit: 0, totalCredit: 0, orders: [] });
+            accountMap.set(key, { accountId: key, code: line.account_code, name: line.account_name, totalDebit: 0, totalCredit: 0, orders: [] });
           }
           const acct = accountMap.get(key)!;
           acct.totalDebit += line.debit;
@@ -412,7 +472,11 @@ export function AccountsPayable() {
           acct.orders.push({ id: entry.id, description: entry.description, debit: line.debit, credit: line.credit });
         }
       }
-      return Array.from(accountMap.values()).sort((a, b) => a.code.localeCompare(b.code));
+      let result = Array.from(accountMap.values()).sort((a, b) => a.code.localeCompare(b.code));
+      if (journalAccountFilter !== 'all') {
+        result = result.filter((a) => a.accountId === journalAccountFilter);
+      }
+      return result;
     }
 
     return (
@@ -420,6 +484,10 @@ export function AccountsPayable() {
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
           <label style={styles.fieldLabel}>From <input style={styles.input} type="date" value={journalDateFrom} onChange={(e) => { setJournalDateFrom(e.target.value); setJournalPage(1); }} /></label>
           <label style={styles.fieldLabel}>To <input style={styles.input} type="date" value={journalDateTo} onChange={(e) => { setJournalDateTo(e.target.value); setJournalPage(1); }} /></label>
+          <label style={styles.fieldLabel}>Account <select style={styles.input} value={journalAccountFilter} onChange={(e) => setJournalAccountFilter(e.target.value)}>
+            <option value="all">All Accounts</option>
+            {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
+          </select></label>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
             <button style={styles.secondaryBtn} onClick={handleExportCsv}>Export CSV</button>
             <button style={{ ...styles.secondaryBtn, fontWeight: viewMode === 'orders' ? 700 : 400 }} onClick={() => setViewMode('orders')}>By Order</button>
@@ -428,9 +496,9 @@ export function AccountsPayable() {
         </div>
 
         {ld && <p style={{ color: 'var(--color-text-secondary)' }}>Loading...</p>}
-        {!ld && entries.length === 0 && <p style={{ color: 'var(--color-text-secondary)', textAlign: 'center' }}>No journal entries for this period</p>}
+        {!ld && filteredEntries.length === 0 && <p style={{ color: 'var(--color-text-secondary)', textAlign: 'center' }}>No journal entries for this period</p>}
 
-        {!ld && entries.length > 0 && viewMode === 'orders' && (
+        {!ld && filteredEntries.length > 0 && viewMode === 'orders' && (
           <div>
             {Array.from(byDate.entries()).map(([dateStr, dateEntries]) => (
               <div key={dateStr} style={{ marginBottom: '4px' }}>
@@ -459,7 +527,7 @@ export function AccountsPayable() {
                         </div>
                         {expandedEntry === entry.id && entry.lines && (
                           <div style={{ paddingLeft: '20px', paddingBottom: '8px' }}>
-                            {entry.lines.map((line: any) => (
+                            {(journalAccountFilter === 'all' ? entry.lines : entry.lines.filter((l: any) => l.account_id === journalAccountFilter)).map((line: any) => (
                               <div key={line.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
                                 <span>{line.debit > 0 ? 'Debit' : 'Credit'}: {line.account_code} — {line.account_name}</span>
                                 <span>{formatCurrency(line.debit || line.credit)}</span>
@@ -476,10 +544,11 @@ export function AccountsPayable() {
           </div>
         )}
 
-        {!ld && entries.length > 0 && viewMode === 'accounts' && (
+        {!ld && filteredEntries.length > 0 && viewMode === 'accounts' && (
           <div>
             {Array.from(byDate.entries()).map(([dateStr, dateEntries]) => {
               const summary = getAccountSummary(dateEntries);
+              if (summary.length === 0) return null;
               return (
                 <div key={dateStr} style={{ marginBottom: '4px' }}>
                   <div
@@ -525,27 +594,17 @@ export function AccountsPayable() {
     );
   }
 
-  const reconLineCols = [
-    { key: 'date', header: 'Date', render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' },
-    { key: 'description', header: 'Description' },
-    { key: 'amount', header: 'Amount', render: (v: number) => formatCurrency(v) },
-    { key: 'matched', header: 'Status', render: (v: boolean) => <Badge variant={v ? 'success' : 'warning'}>{v ? 'Matched' : 'Unmatched'}</Badge> },
-    { key: 'actions', header: '', render: (_: any, row: any) => !row.matched ? (
-      <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); handleMatchLine(row.id); }} aria-label={`Match line ${row.description}`}>
-        🔗 Match
-      </button>
-    ) : null },
-  ];
 
   // --- Render ---
   return (
     <div style={styles.page}>
       <h1 style={styles.title}>Accounting</h1>
 
-      <Tabs items={[
+      <Tabs onTabChange={(tabId) => loadTab(tabId)} items={[
         { id: 'vendors', label: 'Vendors', content: (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-md)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+              <label style={styles.fieldLabel}>Search <input style={{ ...styles.input, width: '200px' }} type="text" placeholder="Filter by name..." value={vendorSearch} onChange={(e) => setVendorSearch(e.target.value)} /></label>
               <button style={styles.primaryBtn} onClick={openAddVendor}>Add Vendor</button>
             </div>
             {showVendorForm && (
@@ -567,13 +626,20 @@ export function AccountsPayable() {
                 </div>
               </div>
             )}
-            <Table columns={vendorCols} data={vendors} loading={loading} emptyMessage="No vendors" clientSort />
+            <Table columns={vendorCols} data={vendors.filter((v: any) => !vendorSearch || v.name?.toLowerCase().includes(vendorSearch.toLowerCase()))} loading={loading} emptyMessage="No vendors" clientSort />
           </div>
         ) },
         { id: 'bills', label: 'Bills', content: (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-md)' }}>
-              <button style={styles.primaryBtn} onClick={openAddBill}>Add Bill</button>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
+              <label style={styles.fieldLabel}>From <input style={styles.input} type="date" value={billDateFrom} onChange={(e) => setBillDateFrom(e.target.value)} /></label>
+              <label style={styles.fieldLabel}>To <input style={styles.input} type="date" value={billDateTo} onChange={(e) => setBillDateTo(e.target.value)} /></label>
+              <label style={styles.fieldLabel}>Status <select style={styles.input} value={billStatusFilter} onChange={(e) => setBillStatusFilter(e.target.value)}>
+                <option value="all">All</option>
+                <option value="draft">Draft</option>
+                <option value="paid">Paid</option>
+              </select></label>
+              <button style={{ ...styles.primaryBtn, marginLeft: 'auto' }} onClick={openAddBill}>Add Bill</button>
             </div>
             {showBillForm && (
               <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
@@ -597,13 +663,51 @@ export function AccountsPayable() {
                 </div>
               </div>
             )}
-            <Table columns={billCols} data={bills} loading={loading} emptyMessage="No bills" clientSort />
+            {showPaymentForm && (
+              <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <div><label style={styles.fieldLabel}>Amount (€) *</label><input style={{ ...styles.input, width: '100px' }} type="number" step="0.01" value={paymentForm.amount} onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>Payment Date</label><input style={styles.input} type="date" value={paymentForm.payment_date} onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>Method</label><select style={{ ...styles.input, width: '120px' }} value={paymentForm.payment_method} onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}>
+                    <option value="transfer">Transfer</option>
+                    <option value="cash">Cash</option>
+                    <option value="card">Card</option>
+                    <option value="check">Check</option>
+                    <option value="other">Other</option>
+                  </select></div>
+                  <div><label style={styles.fieldLabel}>Reference</label><input style={{ ...styles.input, width: '150px' }} value={paymentForm.reference} onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })} placeholder="Check #, transfer ref" /></div>
+                  <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                    <button style={styles.primaryBtn} onClick={submitPayment}>Record Payment</button>
+                    <button style={styles.secondaryBtn} onClick={() => setShowPaymentForm(false)}>Cancel</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            <Table columns={billCols} data={bills.filter((b: any) => {
+              if (billDateFrom && b.due_date && b.due_date.slice(0, 10) < billDateFrom) return false;
+              if (billDateTo && b.due_date && b.due_date.slice(0, 10) > billDateTo) return false;
+              if (billStatusFilter !== 'all' && b.status !== billStatusFilter) return false;
+              return true;
+            })} loading={loading} emptyMessage="No bills" clientSort />
           </div>
         ) },
         { id: 'expenses', label: 'Expenses', content: (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-md)' }}>
-              <button style={styles.primaryBtn} onClick={openAddExpense}>Add Expense</button>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
+              <label style={styles.fieldLabel}>From <input style={styles.input} type="date" value={expenseDateFrom} onChange={(e) => setExpenseDateFrom(e.target.value)} /></label>
+              <label style={styles.fieldLabel}>To <input style={styles.input} type="date" value={expenseDateTo} onChange={(e) => setExpenseDateTo(e.target.value)} /></label>
+              <label style={styles.fieldLabel}>Account <select style={styles.input} value={expenseAccountFilter} onChange={(e) => setExpenseAccountFilter(e.target.value)}>
+                <option value="all">All</option>
+                {accounts.filter((a: any) => a.account_type === 'expense' && a.status === 'active').map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
+              </select></label>
+              <label style={styles.fieldLabel}>Paid via <select style={styles.input} value={expenseMethodFilter} onChange={(e) => setExpenseMethodFilter(e.target.value)}>
+                <option value="all">All</option>
+                <option value="cash">Cash</option>
+                <option value="card">Card</option>
+                <option value="transfer">Transfer</option>
+                <option value="other">Other</option>
+              </select></label>
+              <button style={{ ...styles.primaryBtn, marginLeft: 'auto' }} onClick={openAddExpense}>Add Expense</button>
             </div>
             {showExpenseForm && (
               <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
@@ -622,13 +726,20 @@ export function AccountsPayable() {
                     <option value="other">Other</option>
                   </select></div>
                   <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
-                    <button style={styles.primaryBtn} onClick={saveExpense}>Create</button>
+                    <button style={styles.primaryBtn} onClick={saveExpense}>{(expenseForm as any)._editId ? 'Save' : 'Create'}</button>
                     <button style={styles.secondaryBtn} onClick={() => setShowExpenseForm(false)}>Cancel</button>
                   </div>
                 </div>
               </div>
             )}
-            <Table columns={expenseCols} data={expenses} loading={loading} emptyMessage="No expenses" clientSort />
+            <Table columns={expenseCols} data={expenses.filter((e: any) => {
+              const eDate = e.date ? e.date.slice(0, 10) : '';
+              if (expenseDateFrom && eDate < expenseDateFrom) return false;
+              if (expenseDateTo && eDate > expenseDateTo) return false;
+              if (expenseAccountFilter !== 'all' && e.account_id !== expenseAccountFilter) return false;
+              if (expenseMethodFilter !== 'all' && e.payment_method !== expenseMethodFilter) return false;
+              return true;
+            })} loading={loading} emptyMessage="No expenses" clientSort />
           </div>
         ) },
         { id: 'accounts', label: 'Chart of Accounts', content: accountsContent },

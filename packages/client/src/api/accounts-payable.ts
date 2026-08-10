@@ -32,8 +32,8 @@ export async function updateBill(id: string, businessId: string, data: any) {
 export async function approveBill(id: string, businessId: string) {
   await apiClient.put(`/v1/ap/bills/${id}/approve?business_id=${businessId}`);
 }
-export async function payBill(id: string, businessId: string, amount: number) {
-  const res = await apiClient.put(`/v1/ap/bills/${id}/pay?business_id=${businessId}`, { amount });
+export async function payBill(id: string, businessId: string, data: { amount: number; payment_date?: string; payment_method?: string; reference?: string }) {
+  const res = await apiClient.put(`/v1/ap/bills/${id}/pay?business_id=${businessId}`, data);
   return res.data.data;
 }
 
@@ -45,6 +45,13 @@ export async function getExpenses(businessId: string) {
 export async function createExpense(data: any) {
   const res = await apiClient.post('/v1/ap/expenses', data);
   return res.data.data;
+}
+export async function updateExpense(id: string, businessId: string, data: any) {
+  const res = await apiClient.put(`/v1/ap/expenses/${id}?business_id=${businessId}`, data);
+  return res.data.data;
+}
+export async function deleteExpense(id: string, businessId: string) {
+  await apiClient.delete(`/v1/ap/expenses/${id}?business_id=${businessId}`);
 }
 export async function approveExpense(id: string, businessId: string) {
   await apiClient.put(`/v1/ap/expenses/${id}/approve?business_id=${businessId}`);
