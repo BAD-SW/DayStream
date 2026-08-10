@@ -93,10 +93,12 @@ export const jobRegistry: Record<string, JobHandler> = {
     return { processed: atRiskCandidates.length + churnedCandidates.length, transitioned };
   },
 
-  // Billing processor (placeholder — will be implemented with Phase 10)
+  // Billing processor — recurring charges and membership lifecycle
   'billing_process': async (ctx) => {
-    logger.info(`Billing process triggered for business ${ctx.businessId} (not yet implemented)`);
-    return { status: 'not_implemented' };
+    const { autoResumeExpiredPauses } = await import('../services/membership.service');
+    const resumed = await autoResumeExpiredPauses(ctx.businessId);
+    logger.info(`Recurring charges triggered for business ${ctx.businessId}: ${resumed} paused membership(s) auto-resumed`);
+    return { status: 'checked', auto_resumed: resumed };
   },
 
   // Marketing campaign dispatch (checks for scheduled campaigns ready to send)

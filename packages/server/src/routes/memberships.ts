@@ -210,7 +210,8 @@ membershipsRouter.put('/:id/pause', requirePermission('services:*'), async (req:
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    const paused = await membershipService.pauseEnrollment(req.params.id, businessId);
+    const maxPauseDays = req.body.max_pause_days ? parseInt(req.body.max_pause_days) : undefined;
+    const paused = await membershipService.pauseEnrollment(req.params.id, businessId, maxPauseDays);
     if (!paused) { error(res, 'Enrollment not found or not active', 'NOT_FOUND', 404); return; }
     success(res, { paused: true });
   } catch (err: any) { error(res, 'Failed to pause enrollment', 'INTERNAL_ERROR', 500); }
@@ -225,6 +226,21 @@ membershipsRouter.put('/:id/resume', requirePermission('services:*'), async (req
     if (!resumed) { error(res, 'Enrollment not found or not paused', 'NOT_FOUND', 404); return; }
     success(res, { resumed: true });
   } catch (err: any) { error(res, 'Failed to resume enrollment', 'INTERNAL_ERROR', 500); }
+});
+
+// PUT /api/v1/memberships/:id/change-plan
+membershipsRouter.put('/:id/change-plan', requirePermission('services:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { plan_id } = req.body;
+    if (!plan_id) { error(res, 'plan_id required', 'VALIDATION_ERROR', 400); return; }
+    const result = await membershipService.changePlan(req.params.id, businessId, plan_id);
+    success(res, result);
+  } catch (err: any) {
+    if (err.message.includes('not found') || err.message.includes('Already on')) { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
+    error(res, 'Failed to change plan', 'INTERNAL_ERROR', 500);
+  }
 });
 
 // PUT /api/v1/memberships/:id/cancel

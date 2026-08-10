@@ -50,7 +50,7 @@ export async function recognizeRevenue(businessId: string, dateFrom: string, dat
 
   // Find all active enrollments that overlap with the requested date range
   const { rows: enrollments } = await adminPool.query(
-    `SELECT e.id, e.plan_id, e.current_period_start, e.current_period_end, p.price, p.name AS plan_name
+    `SELECT e.id, e.plan_id, e.current_period_start, e.current_period_end, e.paused_days_credit, p.price, p.name AS plan_name
      FROM mbr_enrollments e
      JOIN mbr_plans p ON p.id = e.plan_id
      WHERE e.business_id = $1
@@ -94,7 +94,11 @@ export async function recognizeRevenue(businessId: string, dateFrom: string, dat
     // How many days from period_start through dateTo (capped at period_end)?
     const effectiveStart = periodStart;
     const effectiveEnd = new Date(Math.min(new Date(dateTo + 'T00:00:00Z').getTime(), periodEnd.getTime()));
-    const daysCovered = Math.round((effectiveEnd.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    let daysCovered = Math.round((effectiveEnd.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+    // Subtract paused days (days with no service, no recognition)
+    const pausedDaysCredit = enrollment.paused_days_credit || 0;
+    daysCovered = Math.max(0, daysCovered - pausedDaysCredit);
 
     if (daysCovered <= 0) continue;
 

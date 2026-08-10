@@ -341,6 +341,7 @@ export function Checkout() {
             orderId={order.id}
             offerings={offerings}
             staffList={staffList}
+            customerId={order.customer_id}
             onAdded={(updated) => { setOrder(updated); setShowAddItem(false); }}
             onCancel={() => setShowAddItem(false)}
           />
@@ -395,10 +396,11 @@ export function Checkout() {
 // Inline Add Item Row
 // ============================================================
 
-function InlineAddItem({ orderId, offerings, staffList, onAdded, onCancel }: {
+function InlineAddItem({ orderId, offerings, staffList, customerId, onAdded, onCancel }: {
   orderId: string;
   offerings: { services: any[]; products: any[]; memberships: any[]; packages: any[] };
   staffList: any[];
+  customerId: string | null;
   onAdded: (order: Order) => void;
   onCancel: () => void;
 }) {
@@ -435,6 +437,20 @@ function InlineAddItem({ orderId, offerings, staffList, onAdded, onCancel }: {
 
   const handleAdd = async () => {
     if (!selectedItem) return;
+
+    // Warn if adding a membership and customer already has one
+    if (itemType === 'membership' && customerId) {
+      try {
+        const { apiClient } = await import('../api/client');
+        const res = await apiClient.get(`/v1/memberships/enrollments?business_id=${localStorage.getItem('business_id')}&customer_id=${customerId}&status=active`);
+        const enrollments = res.data.data || [];
+        const activeOrPaused = enrollments.filter((e: any) => e.status === 'active' || e.status === 'paused');
+        if (activeOrPaused.length > 0) {
+          if (!confirm('This customer already has an active membership. Are you sure you want to add another?')) return;
+        }
+      } catch { /* proceed if check fails */ }
+    }
+
     const price = selectedVariant?.price ?? selectedItem.price;
     const variantName = selectedVariant?.name || undefined;
 
