@@ -17,6 +17,7 @@ import { TenantReports } from './pages/TenantReports';
 import { TenantUsers } from './pages/TenantUsers';
 import { Prospects } from './pages/Prospects';
 import { CoverageMap } from './pages/CoverageMap';
+import { ProspectCategories } from './pages/ProspectCategories';
 import { Customers } from './pages/Customers';
 import { CustomerCreate } from './pages/CustomerCreate';
 import { CustomerDetail } from './pages/CustomerDetail';
@@ -301,6 +302,14 @@ export function App() {
           element={
             <ProtectedRoute requiredRole="Manager" layout="none">
               <AdminLayout><CoverageMap /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/prospect-categories"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><ProspectCategories /></AdminLayout>
             </ProtectedRoute>
           }
         />
