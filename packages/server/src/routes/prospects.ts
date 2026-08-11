@@ -16,7 +16,7 @@ prospectsRouter.use(authenticate);
 
 const updateTerritorySchema = Joi.object({
   location: Joi.string().max(200).required(),
-  territory_radius_km: Joi.number().integer().min(5).optional(),
+  territory_radius_km: Joi.number().integer().min(5).required(),
 });
 
 // PUT /api/v1/prospects/territories/:tenantId — Assign/update territory (system admin)
@@ -29,33 +29,30 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
     const geo = await geocodePostalCode(location);
     if (!geo) { error(res, 'Could not resolve location. Please check and try again.', 'VALIDATION_ERROR', 400); return; }
 
-    const radius = territory_radius_km || 50;
+    const radius = territory_radius_km;
+
+    // Generate H3 hexagons for the territory
+    const { generateTerritoryHexagons, saveTerritoryHexagons } = await import('../services/h3-territory.service');
+    const hexagons = generateTerritoryHexagons(geo.lat, geo.lng, radius);
+    await saveTerritoryHexagons(req.params.tenantId, hexagons);
+
+    // Update tenant record
     const { rows } = await adminPool.query(
-      `UPDATE sys_tenants SET territory_lat = $1, territory_lng = $2, territory_radius_km = $3, territory_address = $4,
-       territory_viewport_ne_lat = $5, territory_viewport_ne_lng = $6, territory_viewport_sw_lat = $7, territory_viewport_sw_lng = $8,
-       territory_geojson = $9, updated_at = NOW()
-       WHERE id = $10 RETURNING id, name, territory_lat, territory_lng, territory_radius_km, territory_address,
-       territory_viewport_ne_lat, territory_viewport_ne_lng, territory_viewport_sw_lat, territory_viewport_sw_lng, territory_geojson`,
-      [geo.lat, geo.lng, radius, location,
-       geo.viewport?.ne.lat || null, geo.viewport?.ne.lng || null,
-       geo.viewport?.sw.lat || null, geo.viewport?.sw.lng || null,
-       geo.geojson ? JSON.stringify(geo.geojson) : null,
-       req.params.tenantId],
+      `UPDATE sys_tenants SET territory_lat = $1, territory_lng = $2, territory_radius_km = $3, territory_address = $4, updated_at = NOW()
+       WHERE id = $5 RETURNING id, name, territory_lat, territory_lng, territory_radius_km, territory_address`,
+      [geo.lat, geo.lng, radius, location, req.params.tenantId],
     );
     if (rows.length === 0) { error(res, 'Tenant not found', 'NOT_FOUND', 404); return; }
-    success(res, rows[0]);
+    success(res, { ...rows[0], hexagon_count: hexagons.length });
   } catch (err: any) { error(res, err.message || 'Failed to update territory', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/prospects/territories — List all territories (system admin, for coverage map)
 prospectsRouter.get('/territories', requirePermission('*:*'), async (_req: Request, res: Response) => {
   try {
-    const { rows } = await adminPool.query(
-      `SELECT id, name, status, territory_lat, territory_lng, territory_radius_km, territory_address,
-       territory_viewport_ne_lat, territory_viewport_ne_lng, territory_viewport_sw_lat, territory_viewport_sw_lng, territory_geojson
-       FROM sys_tenants WHERE territory_lat IS NOT NULL ORDER BY name`,
-    );
-    success(res, rows);
+    const { getAllTerritories } = await import('../services/h3-territory.service');
+    const territories = await getAllTerritories();
+    success(res, territories);
   } catch (err: any) { error(res, 'Failed to list territories', 'INTERNAL_ERROR', 500); }
 });
 

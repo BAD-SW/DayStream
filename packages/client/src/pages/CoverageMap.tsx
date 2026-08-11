@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiClient } from '../api/client';
+import { cellToBoundary } from 'h3-js';
 
 interface Territory {
-  id: string;
+  tenantId: string;
   name: string;
   status: string;
-  territory_lat: number;
-  territory_lng: number;
-  territory_address: string;
+  location: string;
+  hexagons: string[];
 }
 
 const COLORS = ['#C9A96E', '#4A90A4', '#2E7D32', '#D32F2F', '#7B1FA2', '#F57C00', '#00838F', '#5D4037'];
@@ -33,7 +33,6 @@ export function CoverageMap() {
     if (!mapRef.current || !apiKey || territories.length === 0) return;
     if (mapInstanceRef.current) return;
 
-    // Load Google Maps script if not already loaded
     if (!(window as any).google?.maps) {
       const script = document.createElement('script');
       script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
@@ -55,48 +54,51 @@ export function CoverageMap() {
 
     const map = new google.maps.Map(mapRef.current, {
       zoom: 4,
-      center: { lat: territories[0]?.territory_lat || 39, lng: territories[0]?.territory_lng || -98 },
+      center: { lat: 39, lng: -98 }, // US center default
       mapTypeId: 'roadmap',
     });
     mapInstanceRef.current = map;
 
     const bounds = new google.maps.LatLngBounds();
 
-    territories.forEach((t, idx) => {
+    territories.forEach((territory, idx) => {
       const color = COLORS[idx % COLORS.length];
-      const position = { lat: t.territory_lat, lng: t.territory_lng };
 
-      // Add marker
-      const marker = new google.maps.Marker({
-        position,
-        map,
-        label: {
-          text: t.name,
-          color: '#fff',
-          fontSize: '11px',
-          fontWeight: '600',
-        },
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 12,
-          fillColor: color,
-          fillOpacity: 1,
-          strokeColor: '#fff',
-          strokeWeight: 2,
-        },
-      });
+      // Render each hexagon as a polygon
+      for (const hexId of territory.hexagons) {
+        try {
+          const boundary = cellToBoundary(hexId);
+          const paths = boundary.map(([lat, lng]) => ({ lat, lng }));
 
-      // Info window on click
-      const infoWindow = new google.maps.InfoWindow({
-        content: `<div style="font-size:13px"><strong>${t.name}</strong><br/>${t.territory_address}<br/><span style="color:${t.status === 'active' ? '#2E7D32' : '#999'}">${t.status}</span></div>`,
-      });
-      marker.addListener('click', () => infoWindow.open(map, marker));
+          const polygon = new google.maps.Polygon({
+            paths,
+            map,
+            strokeColor: color,
+            strokeOpacity: 0.8,
+            strokeWeight: 1,
+            fillColor: color,
+            fillOpacity: 0.25,
+          });
 
-      bounds.extend(position);
+          // Extend bounds
+          for (const point of paths) {
+            bounds.extend(point);
+          }
+
+          // Info window on click
+          polygon.addListener('click', (event: any) => {
+            const infoWindow = new google.maps.InfoWindow({
+              content: `<div style="font-size:13px"><strong>${territory.name}</strong><br/>${territory.location}<br/><span style="color:${territory.status === 'active' ? '#2E7D32' : '#999'}">${territory.status}</span></div>`,
+              position: event.latLng,
+            });
+            infoWindow.open(map);
+          });
+        } catch { /* skip invalid hexagons */ }
+      }
     });
 
-    if (territories.length > 0) {
-      map.fitBounds(bounds, { padding: 50 });
+    if (territories.length > 0 && !bounds.isEmpty()) {
+      map.fitBounds(bounds, { padding: 30 });
     }
   }
 
@@ -117,16 +119,16 @@ export function CoverageMap() {
         <p style={styles.muted}>No territories assigned yet. Edit a tenant to assign their territory.</p>
       )}
 
-      <div ref={mapRef} style={{ ...styles.map, display: territories.length === 0 ? 'none' : 'block' }} />
+      <div ref={mapRef} style={{ ...styles.map, display: territories.length === 0 || !apiKey ? 'none' : 'block' }} />
 
       {/* Legend */}
       {territories.length > 0 && (
         <div style={styles.legend}>
           {territories.map((t, idx) => (
-            <div key={t.id} style={styles.legendItem}>
+            <div key={t.tenantId} style={styles.legendItem}>
               <span style={{ ...styles.legendDot, background: COLORS[idx % COLORS.length] }} />
               <span style={styles.legendName}>{t.name}</span>
-              <span style={styles.legendDetail}>{t.territory_address}</span>
+              <span style={styles.legendDetail}>{t.location} ({t.hexagons.length} hexagons)</span>
             </div>
           ))}
         </div>

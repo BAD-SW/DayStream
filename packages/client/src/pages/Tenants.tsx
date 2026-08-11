@@ -277,6 +277,7 @@ export function Tenants() {
       if (editForm.territory_postal_code) {
         await apiClient.put(`/v1/prospects/territories/${selectedTenant.id}`, {
           location: editForm.territory_postal_code,
+          territory_radius_km: parseInt(editForm.territory_radius_km) || 50,
         });
       }
 
@@ -457,6 +458,10 @@ export function Tenants() {
                   <div style={styles.formGroup}>
                     <label style={styles.label}>Location</label>
                     <input style={styles.input} type="text" placeholder="e.g., Chicago, IL or South Florida" value={editForm.territory_postal_code} onChange={(e) => setEditForm({ ...editForm, territory_postal_code: e.target.value })} />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Radius (km)</label>
+                    <input style={styles.input} type="number" min="5" value={editForm.territory_radius_km} onChange={(e) => setEditForm({ ...editForm, territory_radius_km: e.target.value })} />
                   </div>
                 </div>
 
