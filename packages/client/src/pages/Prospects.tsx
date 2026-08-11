@@ -41,8 +41,7 @@ export function Prospects() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({ name: '', address: '', phone: '', website: '', category: '', notes: '' });
   const [editingNotes, setEditingNotes] = useState<Record<string, string>>({});
-  const [territory, setTerritory] = useState<{ postal_code: string; radius_km: number } | null>(null);
-  const [searchRadius, setSearchRadius] = useState(50);
+  const [territory, setTerritory] = useState<{ location: string } | null>(null);
 
   const fetchProspects = useCallback(async () => {
     setLoading(true);
@@ -72,8 +71,7 @@ export function Prospects() {
     apiClient.get('/v1/prospects/territory-info').then((res) => {
       const data = res.data.data;
       if (data) {
-        setTerritory({ postal_code: data.territory_address || '', radius_km: data.territory_radius_km || 50 });
-        setSearchRadius(data.territory_radius_km || 50);
+        setTerritory({ location: data.territory_address || '' });
       }
     }).catch((err) => { console.error('Failed to load territory info:', err.message); });
   }, [fetchProspects]);
@@ -144,7 +142,7 @@ export function Prospects() {
     // Start polling the prospect list to show results as they come in
     const pollInterval = setInterval(() => { fetchProspects(); }, 4000);
     try {
-      const res = await apiClient.post('/v1/prospects/generate', { search_radius_km: searchRadius });
+      const res = await apiClient.post('/v1/prospects/generate');
       const result = res.data.data || res.data;
       clearInterval(pollInterval);
       setGenerating(false);
@@ -195,12 +193,7 @@ export function Prospects() {
         <div style={styles.headerActions}>
           {territory && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
-              <span style={{ color: 'var(--color-text-secondary)' }}>Territory: <strong style={{ color: 'var(--color-text)' }}>{territory.postal_code}</strong></span>
-              <label style={{ color: 'var(--color-text-secondary)' }}>Radius:
-                <input type="number" min="5" max={territory.radius_km} value={searchRadius} onChange={(e) => setSearchRadius(Math.min(parseInt(e.target.value) || 5, territory.radius_km))}
-                  style={{ width: '55px', marginLeft: '4px', padding: '4px 6px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px', textAlign: 'center' as const }} />
-                <span style={{ marginLeft: '2px' }}>km</span>
-              </label>
+              <span style={{ color: 'var(--color-text-secondary)' }}>Location: <strong style={{ color: 'var(--color-text)' }}>{territory.location}</strong></span>
             </div>
           )}
           <Button onClick={handleGenerate} loading={generating} disabled={generating}>{generating ? 'Generating...' : 'Generate Prospects'}</Button>

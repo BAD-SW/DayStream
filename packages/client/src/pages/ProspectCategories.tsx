@@ -6,9 +6,113 @@ interface Category {
   id: string;
   google_type: string;
   label: string;
-  active: boolean;
   created_at: string;
 }
+
+const GOOGLE_PLACE_TYPES: { type: string; label: string }[] = [
+  { type: 'accounting', label: 'Accounting' },
+  { type: 'airport', label: 'Airport' },
+  { type: 'amusement_park', label: 'Amusement Park' },
+  { type: 'aquarium', label: 'Aquarium' },
+  { type: 'art_gallery', label: 'Art Gallery' },
+  { type: 'atm', label: 'ATM' },
+  { type: 'bakery', label: 'Bakery' },
+  { type: 'bank', label: 'Bank' },
+  { type: 'bar', label: 'Bar' },
+  { type: 'beauty_salon', label: 'Beauty Salon' },
+  { type: 'bicycle_store', label: 'Bicycle Store' },
+  { type: 'book_store', label: 'Book Store' },
+  { type: 'bowling_alley', label: 'Bowling Alley' },
+  { type: 'bus_station', label: 'Bus Station' },
+  { type: 'cafe', label: 'Cafe' },
+  { type: 'campground', label: 'Campground' },
+  { type: 'car_dealer', label: 'Car Dealer' },
+  { type: 'car_rental', label: 'Car Rental' },
+  { type: 'car_repair', label: 'Car Repair' },
+  { type: 'car_wash', label: 'Car Wash' },
+  { type: 'casino', label: 'Casino' },
+  { type: 'cemetery', label: 'Cemetery' },
+  { type: 'church', label: 'Church' },
+  { type: 'city_hall', label: 'City Hall' },
+  { type: 'clothing_store', label: 'Clothing Store' },
+  { type: 'convenience_store', label: 'Convenience Store' },
+  { type: 'courthouse', label: 'Courthouse' },
+  { type: 'dentist', label: 'Dentist' },
+  { type: 'department_store', label: 'Department Store' },
+  { type: 'doctor', label: 'Doctor' },
+  { type: 'drugstore', label: 'Drugstore' },
+  { type: 'electrician', label: 'Electrician' },
+  { type: 'electronics_store', label: 'Electronics Store' },
+  { type: 'embassy', label: 'Embassy' },
+  { type: 'fire_station', label: 'Fire Station' },
+  { type: 'florist', label: 'Florist' },
+  { type: 'funeral_home', label: 'Funeral Home' },
+  { type: 'furniture_store', label: 'Furniture Store' },
+  { type: 'gas_station', label: 'Gas Station' },
+  { type: 'gym', label: 'Gym' },
+  { type: 'hair_care', label: 'Hair Care' },
+  { type: 'hardware_store', label: 'Hardware Store' },
+  { type: 'health', label: 'Health & Wellness' },
+  { type: 'hindu_temple', label: 'Hindu Temple' },
+  { type: 'home_goods_store', label: 'Home Goods Store' },
+  { type: 'hospital', label: 'Hospital' },
+  { type: 'insurance_agency', label: 'Insurance Agency' },
+  { type: 'jewelry_store', label: 'Jewelry Store' },
+  { type: 'laundry', label: 'Laundry' },
+  { type: 'lawyer', label: 'Lawyer' },
+  { type: 'library', label: 'Library' },
+  { type: 'light_rail_station', label: 'Light Rail Station' },
+  { type: 'liquor_store', label: 'Liquor Store' },
+  { type: 'local_government_office', label: 'Local Government Office' },
+  { type: 'locksmith', label: 'Locksmith' },
+  { type: 'lodging', label: 'Lodging / Hotel' },
+  { type: 'meal_delivery', label: 'Meal Delivery' },
+  { type: 'meal_takeaway', label: 'Meal Takeaway' },
+  { type: 'mosque', label: 'Mosque' },
+  { type: 'movie_rental', label: 'Movie Rental' },
+  { type: 'movie_theater', label: 'Movie Theater' },
+  { type: 'moving_company', label: 'Moving Company' },
+  { type: 'museum', label: 'Museum' },
+  { type: 'night_club', label: 'Night Club' },
+  { type: 'painter', label: 'Painter' },
+  { type: 'park', label: 'Park' },
+  { type: 'parking', label: 'Parking' },
+  { type: 'pet_store', label: 'Pet Store' },
+  { type: 'pharmacy', label: 'Pharmacy' },
+  { type: 'physiotherapist', label: 'Physiotherapist' },
+  { type: 'plumber', label: 'Plumber' },
+  { type: 'police', label: 'Police' },
+  { type: 'post_office', label: 'Post Office' },
+  { type: 'primary_school', label: 'Primary School' },
+  { type: 'real_estate_agency', label: 'Real Estate Agency' },
+  { type: 'restaurant', label: 'Restaurant' },
+  { type: 'roofing_contractor', label: 'Roofing Contractor' },
+  { type: 'rv_park', label: 'RV Park' },
+  { type: 'school', label: 'School' },
+  { type: 'secondary_school', label: 'Secondary School' },
+  { type: 'shoe_store', label: 'Shoe Store' },
+  { type: 'shopping_mall', label: 'Shopping Mall' },
+  { type: 'spa', label: 'Spa' },
+  { type: 'stadium', label: 'Stadium' },
+  { type: 'storage', label: 'Storage' },
+  { type: 'store', label: 'Store (General)' },
+  { type: 'subway_station', label: 'Subway Station' },
+  { type: 'supermarket', label: 'Supermarket' },
+  { type: 'synagogue', label: 'Synagogue' },
+  { type: 'taxi_stand', label: 'Taxi Stand' },
+  { type: 'tourist_attraction', label: 'Tourist Attraction' },
+  { type: 'train_station', label: 'Train Station' },
+  { type: 'transit_station', label: 'Transit Station' },
+  { type: 'travel_agency', label: 'Travel Agency' },
+  { type: 'university', label: 'University' },
+  { type: 'veterinary_care', label: 'Veterinary Care' },
+  { type: 'zoo', label: 'Zoo' },
+  { type: 'yoga_studio', label: 'Yoga Studio' },
+  { type: 'pilates_studio', label: 'Pilates Studio' },
+  { type: 'personal_trainer', label: 'Personal Trainer' },
+  { type: 'massage', label: 'Massage Therapy' },
+  { type: 'swimming_pool', label: 'Swimming Pool' },
+];
 
 export function ProspectCategories() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -51,24 +155,30 @@ export function ProspectCategories() {
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Prospect Categories</h1>
-          <p style={styles.description}>Google Places business types used when generating prospect lists. Only active categories are searched.</p>
+          <p style={styles.description}>Google Places business types used when generating prospect lists.</p>
         </div>
         <Button onClick={() => setShowAdd(!showAdd)}>{showAdd ? 'Cancel' : 'Add Category'}</Button>
       </div>
 
       {showAdd && (
         <div style={styles.addForm}>
-          <input
+          <select
             style={styles.input}
-            type="text"
-            placeholder="Google type (e.g., yoga_studio)"
             value={form.google_type}
-            onChange={(e) => setForm({ ...form, google_type: e.target.value })}
-          />
+            onChange={(e) => {
+              const selected = GOOGLE_PLACE_TYPES.find(t => t.type === e.target.value);
+              setForm({ google_type: e.target.value, label: selected?.label || '' });
+            }}
+          >
+            <option value="">Select a category...</option>
+            {GOOGLE_PLACE_TYPES.filter(t => !categories.some(c => c.google_type === t.type)).map(t => (
+              <option key={t.type} value={t.type}>{t.label} ({t.type})</option>
+            ))}
+          </select>
           <input
             style={styles.input}
             type="text"
-            placeholder="Display label (e.g., Yoga Studio)"
+            placeholder="Display label"
             value={form.label}
             onChange={(e) => setForm({ ...form, label: e.target.value })}
           />
@@ -81,17 +191,13 @@ export function ProspectCategories() {
           <p style={styles.muted}>No categories configured.</p>
         ) : (
           categories.map((cat) => (
-            <div key={cat.id} style={{ ...styles.row, opacity: cat.active ? 1 : 0.5 }}>
+            <div key={cat.id} style={styles.row}>
               <div style={styles.rowInfo}>
                 <span style={styles.rowLabel}>{cat.label}</span>
                 <span style={styles.rowType}>{cat.google_type}</span>
               </div>
               <div style={styles.rowActions}>
-                {cat.active ? (
-                  <button style={styles.removeBtn} onClick={() => handleRemove(cat.id)}>Remove</button>
-                ) : (
-                  <span style={styles.inactiveTag}>Inactive</span>
-                )}
+                <button style={styles.removeBtn} onClick={() => handleRemove(cat.id)}>Remove</button>
               </div>
             </div>
           ))

@@ -15,24 +15,32 @@ prospectsRouter.use(authenticate);
 // ============================================================
 
 const updateTerritorySchema = Joi.object({
-  postal_code: Joi.string().max(20).required(),
-  territory_radius_km: Joi.number().integer().min(5).required(),
+  location: Joi.string().max(200).required(),
+  territory_radius_km: Joi.number().integer().min(5).optional(),
 });
 
 // PUT /api/v1/prospects/territories/:tenantId — Assign/update territory (system admin)
 prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate(updateTerritorySchema), async (req: Request, res: Response) => {
   try {
-    const { postal_code, territory_radius_km } = req.body;
+    const { location, territory_radius_km } = req.body;
 
-    // Geocode the postal code to get coordinates
+    // Geocode the location to get coordinates
     const { geocodePostalCode } = await import('../services/google-places.service');
-    const geo = await geocodePostalCode(postal_code);
-    if (!geo) { error(res, 'Could not resolve postal code. Please check and try again.', 'VALIDATION_ERROR', 400); return; }
+    const geo = await geocodePostalCode(location);
+    if (!geo) { error(res, 'Could not resolve location. Please check and try again.', 'VALIDATION_ERROR', 400); return; }
 
+    const radius = territory_radius_km || 50;
     const { rows } = await adminPool.query(
-      `UPDATE sys_tenants SET territory_lat = $1, territory_lng = $2, territory_radius_km = $3, territory_address = $4, updated_at = NOW()
-       WHERE id = $5 RETURNING id, name, territory_lat, territory_lng, territory_radius_km, territory_address`,
-      [geo.lat, geo.lng, territory_radius_km, postal_code, req.params.tenantId],
+      `UPDATE sys_tenants SET territory_lat = $1, territory_lng = $2, territory_radius_km = $3, territory_address = $4,
+       territory_viewport_ne_lat = $5, territory_viewport_ne_lng = $6, territory_viewport_sw_lat = $7, territory_viewport_sw_lng = $8,
+       territory_geojson = $9, updated_at = NOW()
+       WHERE id = $10 RETURNING id, name, territory_lat, territory_lng, territory_radius_km, territory_address,
+       territory_viewport_ne_lat, territory_viewport_ne_lng, territory_viewport_sw_lat, territory_viewport_sw_lng, territory_geojson`,
+      [geo.lat, geo.lng, radius, location,
+       geo.viewport?.ne.lat || null, geo.viewport?.ne.lng || null,
+       geo.viewport?.sw.lat || null, geo.viewport?.sw.lng || null,
+       geo.geojson ? JSON.stringify(geo.geojson) : null,
+       req.params.tenantId],
     );
     if (rows.length === 0) { error(res, 'Tenant not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
@@ -43,7 +51,8 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
 prospectsRouter.get('/territories', requirePermission('*:*'), async (_req: Request, res: Response) => {
   try {
     const { rows } = await adminPool.query(
-      `SELECT id, name, status, territory_lat, territory_lng, territory_radius_km, territory_address
+      `SELECT id, name, status, territory_lat, territory_lng, territory_radius_km, territory_address,
+       territory_viewport_ne_lat, territory_viewport_ne_lng, territory_viewport_sw_lat, territory_viewport_sw_lng, territory_geojson
        FROM sys_tenants WHERE territory_lat IS NOT NULL ORDER BY name`,
     );
     success(res, rows);
@@ -68,24 +77,35 @@ prospectsRouter.post('/categories', requirePermission('*:*'), async (req: Reques
     const { google_type, label } = req.body;
     if (!google_type || !label) { error(res, 'google_type and label required', 'VALIDATION_ERROR', 400); return; }
     const { rows } = await adminPool.query(
-      'INSERT INTO sys_prospect_categories (google_type, label) VALUES ($1, $2) ON CONFLICT (google_type) DO UPDATE SET label = $2, active = true RETURNING *',
+      'INSERT INTO sys_prospect_categories (google_type, label) VALUES ($1, $2) ON CONFLICT (google_type) DO UPDATE SET label = $2 RETURNING *',
       [google_type, label],
     );
     success(res, rows[0], undefined, 201);
   } catch (err: any) { error(res, 'Failed to add category', 'INTERNAL_ERROR', 500); }
 });
 
-// DELETE /api/v1/prospects/categories/:id — Remove a category (soft: set inactive)
+// DELETE /api/v1/prospects/categories/:id — Delete a category
 prospectsRouter.delete('/categories/:id', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
-    await adminPool.query('UPDATE sys_prospect_categories SET active = false WHERE id = $1', [req.params.id]);
+    await adminPool.query('DELETE FROM sys_prospect_categories WHERE id = $1', [req.params.id]);
     success(res, { deleted: true });
-  } catch (err: any) { error(res, 'Failed to remove category', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { error(res, 'Failed to delete category', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
 // Prospect List Management (Tenant Manager)
 // ============================================================
+
+// GET /api/v1/prospects/maps-key — Get API key for client-side Google Maps embed
+prospectsRouter.get('/maps-key', requirePermission('*:*'), async (_req: Request, res: Response) => {
+  try {
+    const { rows } = await adminPool.query(
+      `SELECT config_data FROM sys_system_configurations WHERE category = 'api_keys'`,
+    );
+    const key = rows[0]?.config_data?.google_places || null;
+    success(res, { key });
+  } catch (err: any) { error(res, 'Failed to get maps key', 'INTERNAL_ERROR', 500); }
+});
 
 // GET /api/v1/prospects/territory-info — Get current tenant's territory info
 prospectsRouter.get('/territory-info', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -212,35 +232,32 @@ prospectsRouter.post('/generate', requirePermission('settings:*'), async (req: R
 
     // Load tenant territory
     const { rows: tenantRows } = await adminPool.query(
-      'SELECT territory_lat, territory_lng, territory_radius_km FROM sys_tenants WHERE id = $1',
+      'SELECT territory_address, territory_lat, territory_lng, territory_radius_km FROM sys_tenants WHERE id = $1',
       [tenantId],
     );
-    if (tenantRows.length === 0 || !tenantRows[0].territory_lat) {
+    if (tenantRows.length === 0 || !tenantRows[0].territory_address) {
       error(res, 'No territory assigned. Contact your system administrator.', 'VALIDATION_ERROR', 400);
       return;
     }
-    const { territory_lat, territory_lng, territory_radius_km } = tenantRows[0];
-
-    // Use search radius from request body, capped at territory radius
-    const requestedRadius = req.body?.search_radius_km ? Math.min(parseInt(req.body.search_radius_km), territory_radius_km) : territory_radius_km;
+    const { territory_address, territory_lat, territory_lng } = tenantRows[0];
 
     // Load active categories
     const { rows: categories } = await adminPool.query(
-      'SELECT google_type FROM sys_prospect_categories WHERE active = true',
+      'SELECT google_type FROM sys_prospect_categories',
     );
     if (categories.length === 0) {
       error(res, 'No prospect categories configured. Contact your system administrator.', 'VALIDATION_ERROR', 400);
       return;
     }
 
-    // Call Google Places and insert per-category (so client polling sees results progressively)
-    const { searchNearbyPlaces } = await import('../services/google-places.service');
+    // Call Google Places Text Search per category (so client polling sees results progressively)
+    const { searchByText } = await import('../services/google-places.service');
     let newCount = 0;
     const returnedPlaceIds: string[] = [];
     const seenPlaceIds = new Set<string>();
 
     for (const cat of categories) {
-      const places = await searchNearbyPlaces(territory_lat, territory_lng, requestedRadius * 1000, cat.google_type);
+      const places = await searchByText(territory_address, cat.google_type);
 
       for (const place of places) {
         if (seenPlaceIds.has(place.place_id)) continue;

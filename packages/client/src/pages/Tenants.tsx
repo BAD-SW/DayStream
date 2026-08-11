@@ -273,11 +273,10 @@ export function Tenants() {
         setSelectedTenant(updated);
       }
 
-      // Save territory if postal code provided
+      // Save territory if location provided
       if (editForm.territory_postal_code) {
         await apiClient.put(`/v1/prospects/territories/${selectedTenant.id}`, {
-          postal_code: editForm.territory_postal_code,
-          territory_radius_km: parseInt(editForm.territory_radius_km) || 25,
+          location: editForm.territory_postal_code,
         });
       }
 
@@ -456,12 +455,8 @@ export function Tenants() {
 
                 <div style={styles.formRow}>
                   <div style={styles.formGroup}>
-                    <label style={styles.label}>Postal Code</label>
-                    <input style={styles.input} type="text" placeholder="e.g., 08001" value={editForm.territory_postal_code} onChange={(e) => setEditForm({ ...editForm, territory_postal_code: e.target.value })} />
-                  </div>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>Distance (km)</label>
-                    <input style={styles.input} type="number" min="5" value={editForm.territory_radius_km} onChange={(e) => setEditForm({ ...editForm, territory_radius_km: e.target.value })} />
+                    <label style={styles.label}>Location</label>
+                    <input style={styles.input} type="text" placeholder="e.g., Chicago, IL or South Florida" value={editForm.territory_postal_code} onChange={(e) => setEditForm({ ...editForm, territory_postal_code: e.target.value })} />
                   </div>
                 </div>
 
@@ -666,12 +661,8 @@ export function Tenants() {
                     <>
                       <div style={{ ...styles.formDivider, marginTop: '12px' }}>Territory</div>
                       <div style={styles.detailRow}>
-                        <span style={styles.detailLabel}>Postal Code</span>
+                        <span style={styles.detailLabel}>Location</span>
                         <span style={styles.detailValue}>{(selectedTenant as any).territory_address}</span>
-                      </div>
-                      <div style={styles.detailRow}>
-                        <span style={styles.detailLabel}>Distance</span>
-                        <span style={styles.detailValue}>{(selectedTenant as any).territory_radius_km} km</span>
                       </div>
                     </>
                   )}

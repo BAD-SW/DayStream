@@ -1,7 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiClient } from '../api/client';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 
 interface Territory {
   id: string;
@@ -9,7 +7,6 @@ interface Territory {
   status: string;
   territory_lat: number;
   territory_lng: number;
-  territory_radius_km: number;
   territory_address: string;
 }
 
@@ -18,81 +15,90 @@ const COLORS = ['#C9A96E', '#4A90A4', '#2E7D32', '#D32F2F', '#7B1FA2', '#F57C00'
 export function CoverageMap() {
   const [territories, setTerritories] = useState<Territory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [apiKey, setApiKey] = useState<string | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<L.Map | null>(null);
+  const mapInstanceRef = useRef<any>(null);
 
   useEffect(() => {
-    apiClient.get('/v1/prospects/territories')
-      .then((res) => setTerritories(res.data.data || []))
-      .catch(() => setTerritories([]))
-      .finally(() => setLoading(false));
+    Promise.all([
+      apiClient.get('/v1/prospects/territories').then((res) => res.data.data || []),
+      apiClient.get('/v1/prospects/maps-key').then((res) => res.data.data?.key || null).catch(() => null),
+    ]).then(([terr, key]) => {
+      setTerritories(terr);
+      setApiKey(key);
+    }).finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    if (loading || !mapRef.current) return;
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.remove();
-      mapInstanceRef.current = null;
+  const initMap = useCallback(() => {
+    if (!mapRef.current || !apiKey || territories.length === 0) return;
+    if (mapInstanceRef.current) return;
+
+    // Load Google Maps script if not already loaded
+    if (!(window as any).google?.maps) {
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
+      script.async = true;
+      script.onload = () => buildMap();
+      script.onerror = () => console.error('Failed to load Google Maps script');
+      document.head.appendChild(script);
+    } else {
+      buildMap();
     }
+  }, [apiKey, territories]);
 
-    // Default center (world view) if no territories
-    const defaultCenter: [number, number] = territories.length > 0
-      ? [territories[0].territory_lat, territories[0].territory_lng]
-      : [40, 0];
-    const defaultZoom = territories.length > 0 ? 6 : 2;
+  useEffect(() => { if (!loading) initMap(); }, [loading, initMap]);
 
-    const map = L.map(mapRef.current).setView(defaultCenter, defaultZoom);
+  function buildMap() {
+    if (!mapRef.current || mapInstanceRef.current) return;
+    const google = (window as any).google;
+    if (!google?.maps) return;
+
+    const map = new google.maps.Map(mapRef.current, {
+      zoom: 4,
+      center: { lat: territories[0]?.territory_lat || 39, lng: territories[0]?.territory_lng || -98 },
+      mapTypeId: 'roadmap',
+    });
     mapInstanceRef.current = map;
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
-      maxZoom: 18,
-    }).addTo(map);
+    const bounds = new google.maps.LatLngBounds();
 
-    // Add territory circles
-    const bounds = L.latLngBounds([]);
     territories.forEach((t, idx) => {
       const color = COLORS[idx % COLORS.length];
-      const circle = L.circle([t.territory_lat, t.territory_lng], {
-        radius: t.territory_radius_km * 1000,
-        color,
-        fillColor: color,
-        fillOpacity: 0.15,
-        weight: 2,
-      }).addTo(map);
+      const position = { lat: t.territory_lat, lng: t.territory_lng };
 
-      circle.bindPopup(`
-        <strong>${t.name}</strong><br/>
-        ${t.territory_address}<br/>
-        <em>Radius: ${t.territory_radius_km} km</em><br/>
-        <span style="color: ${t.status === 'active' ? '#2E7D32' : '#999'}">${t.status}</span>
-      `);
+      // Add marker
+      const marker = new google.maps.Marker({
+        position,
+        map,
+        label: {
+          text: t.name,
+          color: '#fff',
+          fontSize: '11px',
+          fontWeight: '600',
+        },
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 12,
+          fillColor: color,
+          fillOpacity: 1,
+          strokeColor: '#fff',
+          strokeWeight: 2,
+        },
+      });
 
-      // Add center marker with label
-      L.marker([t.territory_lat, t.territory_lng], {
-        icon: L.divIcon({
-          className: '',
-          html: `<div style="background:${color};color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;white-space:nowrap;font-weight:600;">${t.name}</div>`,
-          iconSize: [0, 0],
-          iconAnchor: [-5, 10],
-        }),
-      }).addTo(map);
+      // Info window on click
+      const infoWindow = new google.maps.InfoWindow({
+        content: `<div style="font-size:13px"><strong>${t.name}</strong><br/>${t.territory_address}<br/><span style="color:${t.status === 'active' ? '#2E7D32' : '#999'}">${t.status}</span></div>`,
+      });
+      marker.addListener('click', () => infoWindow.open(map, marker));
 
-      bounds.extend(circle.getBounds());
+      bounds.extend(position);
     });
 
-    // Fit map to show all territories
     if (territories.length > 0) {
-      map.fitBounds(bounds, { padding: [30, 30] });
+      map.fitBounds(bounds, { padding: 50 });
     }
-
-    return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-    };
-  }, [loading, territories]);
+  }
 
   if (loading) return <div style={styles.page}><p style={styles.muted}>Loading territories...</p></div>;
 
@@ -103,11 +109,15 @@ export function CoverageMap() {
         <span style={styles.count}>{territories.length} territory(ies) assigned</span>
       </div>
 
-      {territories.length === 0 ? (
-        <p style={styles.muted}>No territories assigned yet. Edit a tenant to assign their territory.</p>
-      ) : (
-        <div ref={mapRef} style={styles.map} />
+      {!apiKey && !loading && (
+        <p style={styles.muted}>Google Maps API key not configured. Set it under Configuration → API Keys.</p>
       )}
+
+      {territories.length === 0 && !loading && (
+        <p style={styles.muted}>No territories assigned yet. Edit a tenant to assign their territory.</p>
+      )}
+
+      <div ref={mapRef} style={{ ...styles.map, display: territories.length === 0 ? 'none' : 'block' }} />
 
       {/* Legend */}
       {territories.length > 0 && (
@@ -116,7 +126,7 @@ export function CoverageMap() {
             <div key={t.id} style={styles.legendItem}>
               <span style={{ ...styles.legendDot, background: COLORS[idx % COLORS.length] }} />
               <span style={styles.legendName}>{t.name}</span>
-              <span style={styles.legendDetail}>{t.territory_address} ({t.territory_radius_km} km)</span>
+              <span style={styles.legendDetail}>{t.territory_address}</span>
             </div>
           ))}
         </div>
