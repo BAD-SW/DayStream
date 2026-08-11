@@ -320,6 +320,20 @@ servicesRouter.put('/tax-categories/:id', requirePermission('services:*'), valid
   }
 });
 
+// DELETE /api/v1/services/tax-categories/:id
+servicesRouter.delete('/tax-categories/:id', requirePermission('services:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const deleted = await taxService.deleteTaxCategory(req.params.id, businessId);
+    if (!deleted) { error(res, 'Tax rate not found or in use', 'CONFLICT', 409); return; }
+    success(res, { deleted: true });
+  } catch (err: any) {
+    if (err.message.includes('in use')) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, 'Failed to delete tax rate', 'INTERNAL_ERROR', 500); }
+  }
+});
+
 // ============================================================
 // Service CRUD
 // ============================================================

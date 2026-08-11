@@ -275,9 +275,18 @@ export async function getTaxCategories(businessId: string): Promise<TaxCategory[
   return res.data.data;
 }
 
+export async function createTaxCategory(businessId: string, data: { name: string; rate: number; is_default?: boolean }): Promise<TaxCategory> {
+  const res = await apiClient.post('/v1/services/tax-categories', { business_id: businessId, ...data });
+  return res.data.data;
+}
+
 export async function updateTaxCategory(id: string, businessId: string, data: { name?: string; rate?: number; is_default?: boolean }): Promise<TaxCategory> {
   const res = await apiClient.put(`/v1/services/tax-categories/${id}?business_id=${businessId}`, data);
   return res.data.data;
+}
+
+export async function deleteTaxCategory(id: string, businessId: string): Promise<void> {
+  await apiClient.delete(`/v1/services/tax-categories/${id}?business_id=${businessId}`);
 }
 
 // --- Templates ---

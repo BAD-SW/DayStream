@@ -215,8 +215,11 @@ export function Receipt() {
           <thead>
             <tr>
               <th style={styles.thLeft}>{labels.item}</th>
+              <th style={styles.thLeft}>Variant</th>
               <th style={styles.thRight}>{labels.qty}</th>
               <th style={styles.thRight}>{labels.price}</th>
+              <th style={styles.thRight}>Adj</th>
+              <th style={styles.thRight}>{labels.tax}</th>
               <th style={styles.thRight}>{labels.total}</th>
             </tr>
           </thead>
@@ -225,11 +228,17 @@ export function Receipt() {
               <tr key={item.id}>
                 <td style={styles.tdLeft}>
                   {item.item_name}
-                  {item.variant_name && <span style={styles.variantText}> ({item.variant_name})</span>}
+                </td>
+                <td style={styles.tdLeft}>
+                  {item.variant_name || '—'}
                 </td>
                 <td style={styles.tdRight}>{item.quantity}</td>
                 <td style={styles.tdRight}>{formatCurrency(item.unit_price)}</td>
-                <td style={styles.tdRight}>{formatCurrency(item.total_price)}</td>
+                <td style={styles.tdRight}>
+                  {item.discount_amount > 0 ? `-${formatCurrency(item.discount_amount)}` : item.discount_amount < 0 ? `+${formatCurrency(Math.abs(item.discount_amount))}` : '—'}
+                </td>
+                <td style={styles.tdRight}>{item.tax_amount > 0 ? formatCurrency(item.tax_amount) : '—'}</td>
+                <td style={styles.tdRight}><strong>{formatCurrency(item.total_price)}</strong></td>
               </tr>
             ))}
           </tbody>
@@ -249,6 +258,12 @@ export function Receipt() {
               <span>-{formatCurrency(order.discount_amount)}</span>
             </div>
           )}
+          {order.discount_amount < 0 && (
+            <div style={styles.totalRow}>
+              <span>Surcharge{order.promo_code ? ` (${order.promo_code})` : ''}</span>
+              <span>+{formatCurrency(Math.abs(order.discount_amount))}</span>
+            </div>
+          )}
           {order.tax_amount > 0 && (
             <div style={styles.totalRow}>
               <span>{labels.tax}</span>
@@ -259,6 +274,18 @@ export function Receipt() {
             <span>{labels.total}</span>
             <span>{formatCurrency(order.total_amount)}</span>
           </div>
+          {order.status === 'completed' && (
+            <>
+              <div style={{ ...styles.totalRow, marginTop: '8px' }}>
+                <span>Payment ({order.payment_method})</span>
+                <span>-{formatCurrency(order.total_amount)}</span>
+              </div>
+              <div style={{ ...styles.totalRow, fontWeight: 700 }}>
+                <span>Total Due</span>
+                <span>{formatCurrency(0)}</span>
+              </div>
+            </>
+          )}
         </div>
 
         <hr style={styles.divider} />

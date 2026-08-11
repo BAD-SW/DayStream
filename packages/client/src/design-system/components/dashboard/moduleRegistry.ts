@@ -27,7 +27,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   { id: 'schedule', phase: 7, icon: '🗓️', titleKey: 'Schedule', descriptionKey: 'Staff scheduling and shift management', path: '/schedule', personas: ['business'], permission: 'staff:read' },
 
   // Accounting
-  { id: 'accounting', phase: 11, icon: '📊', titleKey: 'Accounting', descriptionKey: 'Accounts payable and receivables', path: '/accounts', personas: ['business'], permission: 'reports:*' },
+  { id: 'accounting', phase: 11, icon: '📊', titleKey: 'Accounting', descriptionKey: 'Accounts payable and receivables', path: '/accounting', personas: ['business'], permission: 'reports:*' },
 
   // Reports
   { id: 'reports', phase: 17, icon: '📈', titleKey: 'Reports', descriptionKey: 'Analytics and insights', path: '/reports', personas: ['business'], permission: 'reports:read' },
@@ -53,12 +53,15 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
 
   // Tenant-level modules
   { id: 'tenant-businesses', phase: 0, icon: '🏪', titleKey: 'Businesses', descriptionKey: 'Manage businesses', path: '/admin/businesses', personas: ['tenant'] },
+  { id: 'tenant-prospects', phase: 0, icon: '🎯', titleKey: 'Prospects', descriptionKey: 'Find potential businesses', path: '/admin/prospects', personas: ['tenant'] },
   { id: 'tenant-users', phase: 0, icon: '👤', titleKey: 'Users', descriptionKey: 'Manage tenant users', path: '/admin/tenant-users', personas: ['tenant'] },
   { id: 'tenant-billing', phase: 0, icon: '🧾', titleKey: 'Billing', descriptionKey: 'Billing and invoices', path: '/admin/billing', personas: ['tenant'] },
   { id: 'tenant-reports', phase: 0, icon: '📈', titleKey: 'Reports', descriptionKey: 'Tenant analytics', path: '/admin/reports', personas: ['tenant'] },
 
   // System-level modules
   { id: 'system-tenants', phase: 0, icon: '🏢', titleKey: 'Tenants', descriptionKey: 'Manage tenants', path: '/admin/tenants', personas: ['system'] },
+  { id: 'system-coverage', phase: 0, icon: '🗺️', titleKey: 'Coverage Map', descriptionKey: 'Territory coverage', path: '/admin/coverage-map', personas: ['system'] },
+  { id: 'system-prospect-categories', phase: 0, icon: '🏷️', titleKey: 'Prospect Categories', descriptionKey: 'Google Places types', path: '/admin/prospect-categories', personas: ['system'] },
   { id: 'system-users', phase: 0, icon: '👤', titleKey: 'Users', descriptionKey: 'Manage system and tenant users', path: '/admin/users', personas: ['system'] },
   { id: 'system-config', phase: 0, icon: '⚙️', titleKey: 'Configuration', descriptionKey: 'Platform settings', path: '/admin/config', personas: ['system'] },
   { id: 'system-audit', phase: 0, icon: '🔍', titleKey: 'Audit Log', descriptionKey: 'System activity', path: '/admin/audit-log', personas: ['system'] },

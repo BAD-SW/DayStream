@@ -83,3 +83,30 @@ export async function updateTaxCategory(id: string, businessId: string, updates:
 
   return rows[0];
 }
+
+/**
+ * Delete a tax category (only if not in use by any services/products).
+ */
+export async function deleteTaxCategory(id: string, businessId: string): Promise<boolean> {
+  // Check if in use
+  const { rows: inUse } = await adminPool.query(
+    `SELECT id FROM svc_services WHERE tax_category_id = $1 AND business_id = $2
+     UNION ALL
+     SELECT id FROM prd_merchandise WHERE tax_category_id = $1 AND business_id = $2
+     UNION ALL
+     SELECT id FROM mbr_plans WHERE tax_category_id = $1 AND business_id = $2
+     UNION ALL
+     SELECT id FROM pkg_packages WHERE tax_category_id = $1 AND business_id = $2
+     LIMIT 1`,
+    [id, businessId],
+  );
+  if (inUse.length > 0) {
+    throw new Error('Cannot delete tax rate that is in use by services or products');
+  }
+
+  const { rowCount } = await adminPool.query(
+    'DELETE FROM svc_tax_categories WHERE id = $1 AND business_id = $2',
+    [id, businessId],
+  );
+  return (rowCount ?? 0) > 0;
+}

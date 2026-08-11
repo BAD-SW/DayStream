@@ -510,6 +510,8 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
   const [plans, setPlans] = useState<any[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [enrolling, setEnrolling] = useState(false);
+  const [pausingEnrollmentId, setPausingEnrollmentId] = useState<string | null>(null);
+  const [pauseDays, setPauseDays] = useState<number>(15);
 
   const fetchEnrollments = useCallback(async () => {
     try {
@@ -545,8 +547,17 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
   };
 
   const handlePause = async (enrollmentId: string) => {
-    try { await apiClient.put(`/v1/memberships/${enrollmentId}/pause?business_id=${businessId}`); await fetchEnrollments(); }
-    catch { alert('Failed to pause'); }
+    setPausingEnrollmentId(enrollmentId);
+    setPauseDays(15);
+  };
+
+  const confirmPause = async () => {
+    if (!pausingEnrollmentId) return;
+    try {
+      await apiClient.put(`/v1/memberships/${pausingEnrollmentId}/pause?business_id=${businessId}`, { max_pause_days: pauseDays });
+      await fetchEnrollments();
+      setPausingEnrollmentId(null);
+    } catch { alert('Failed to pause'); }
   };
 
   const handleResume = async (enrollmentId: string) => {
@@ -570,12 +581,16 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
     if (!selectedPlanId || !showChangePlan) return;
     setEnrolling(true);
     try {
-      // Cancel old enrollment and create new one
-      await apiClient.put(`/v1/memberships/${showChangePlan.id}/cancel?business_id=${businessId}`);
-      await apiClient.post('/v1/memberships', { business_id: businessId, customer_id: customerId, plan_id: selectedPlanId, start_date: new Date().toISOString().split('T')[0] });
+      const res = await apiClient.put(`/v1/memberships/${showChangePlan.id}/change-plan?business_id=${businessId}`, { plan_id: selectedPlanId });
+      const result = res.data.data;
       await fetchEnrollments();
       setShowChangePlan(null);
       setSelectedPlanId('');
+      if (result.type === 'upgrade' && result.proratedCharge > 0) {
+        alert(`Upgraded to ${result.newPlan}. Prorated charge: €${(result.proratedCharge / 100).toFixed(2)}`);
+      } else if (result.type === 'downgrade') {
+        alert(`Downgrade to ${result.newPlan} will take effect at the start of the next billing period.`);
+      }
     } catch (err: any) { alert(err.response?.data?.error || 'Failed to change plan'); }
     finally { setEnrolling(false); }
   };
@@ -598,18 +613,44 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
             <div key={e.id} style={{ padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: '13px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <strong>{e.plan_name}</strong>
-                <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{e.billing_frequency}</span>
+                <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+                  {e.billing_frequency}
+                  {e.pending_plan_id && <span style={{ color: 'var(--color-info, #4A90A4)', marginLeft: '8px' }}>↓ Downgrade pending</span>}
+                </span>
               </div>
               <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
                 Since {new Date(e.start_date).toLocaleDateString()}
-                {e.next_billing_date && ` · Next billing: ${new Date(e.next_billing_date).toLocaleDateString()}`}
+                {e.cancelled_at ? (
+                  <span style={{ color: 'var(--color-error)' }}> · Cancels {new Date(e.current_period_end).toLocaleDateString()}</span>
+                ) : e.status === 'paused' ? (
+                  <span style={{ color: 'var(--color-warning, #E6A817)' }}> · Paused{e.resume_at ? ` · Resumes ${new Date(e.resume_at).toLocaleDateString()}` : ' indefinitely'}</span>
+                ) : (
+                  e.next_billing_date && ` · Next billing: ${new Date(e.next_billing_date).toLocaleDateString()}`
+                )}
               </div>
               <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                {e.status === 'active' && <button style={membershipActionStyle} onClick={() => handlePause(e.id)}>Pause</button>}
+                {e.status === 'active' && !e.cancelled_at && <button style={membershipActionStyle} onClick={() => handlePause(e.id)}>Pause</button>}
                 {e.status === 'paused' && <button style={membershipActionStyle} onClick={() => handleResume(e.id)}>Resume</button>}
-                <button style={membershipActionStyle} onClick={() => handleChangePlan(e)}>Change Plan</button>
-                {(e.status === 'active' || e.status === 'paused') && <button style={{ ...membershipActionStyle, color: 'var(--color-error)' }} onClick={() => handleCancel(e.id)}>Cancel</button>}
+                {!e.cancelled_at && <button style={membershipActionStyle} onClick={() => handleChangePlan(e)}>Change Plan</button>}
+                {(e.status === 'active' || e.status === 'paused') && !e.cancelled_at && <button style={{ ...membershipActionStyle, color: 'var(--color-error)' }} onClick={() => handleCancel(e.id)}>Cancel</button>}
               </div>
+              {pausingEnrollmentId === e.id && (
+                <div style={{ marginTop: '8px', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)' }}>
+                  <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '0 0 8px' }}>Pause duration</p>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                    {[15, 30, 45].map((d) => (
+                      <button key={d} type="button" onClick={() => setPauseDays(d)}
+                        style={{ padding: '6px 14px', fontSize: '13px', borderRadius: '20px', cursor: 'pointer', border: pauseDays === d ? '2px solid var(--color-primary)' : '1px solid var(--color-border)', background: pauseDays === d ? 'var(--color-primary)' : 'transparent', color: pauseDays === d ? '#fff' : 'var(--color-text)' }}>
+                        {d} days
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <Button size="sm" onClick={confirmPause}>Confirm Pause</Button>
+                    <Button size="sm" variant="secondary" onClick={() => setPausingEnrollmentId(null)}>Cancel</Button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

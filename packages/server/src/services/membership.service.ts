@@ -229,16 +229,66 @@ export async function removePlanItem(itemId: string) {
 // --- Enrollments ---
 
 function calculatePeriodEnd(startDate: string, frequency: string): string {
-  const start = new Date(startDate);
+  const start = new Date(startDate + 'T00:00:00Z');
   switch (frequency) {
-    case 'weekly': start.setDate(start.getDate() + 7); break;
-    case 'biweekly': start.setDate(start.getDate() + 14); break;
-    case 'monthly': start.setMonth(start.getMonth() + 1); break;
-    case 'quarterly': start.setMonth(start.getMonth() + 3); break;
-    case 'annually': start.setFullYear(start.getFullYear() + 1); break;
-    default: start.setMonth(start.getMonth() + 1);
+    case 'weekly': start.setUTCDate(start.getUTCDate() + 6); break;
+    case 'biweekly': start.setUTCDate(start.getUTCDate() + 13); break;
+    case 'monthly': {
+      // Period ends on the last day of the current month
+      const lastDay = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0));
+      return lastDay.toISOString().split('T')[0];
+    }
+    case 'quarterly': {
+      // Period ends on the last day of the quarter's final month
+      const endMonth = start.getUTCMonth() + 3;
+      const lastDay = new Date(Date.UTC(start.getUTCFullYear(), endMonth, 0));
+      return lastDay.toISOString().split('T')[0];
+    }
+    case 'annually': {
+      // Period ends on the last day of the 12th month from start
+      const endMonth = start.getUTCMonth() + 12;
+      const lastDay = new Date(Date.UTC(start.getUTCFullYear(), endMonth, 0));
+      return lastDay.toISOString().split('T')[0];
+    }
+    default: {
+      const lastDay = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0));
+      return lastDay.toISOString().split('T')[0];
+    }
   }
   return start.toISOString().split('T')[0];
+}
+
+function calculateNextBillingDate(startDate: string, frequency: string): string {
+  const start = new Date(startDate + 'T00:00:00Z');
+  switch (frequency) {
+    case 'weekly': {
+      const next = new Date(start);
+      next.setUTCDate(next.getUTCDate() + 7);
+      return next.toISOString().split('T')[0];
+    }
+    case 'biweekly': {
+      const next = new Date(start);
+      next.setUTCDate(next.getUTCDate() + 14);
+      return next.toISOString().split('T')[0];
+    }
+    case 'monthly': {
+      // Next billing is always the 1st of the next month
+      const next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
+      return next.toISOString().split('T')[0];
+    }
+    case 'quarterly': {
+      const next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 3, 1));
+      return next.toISOString().split('T')[0];
+    }
+    case 'annually': {
+      const next = new Date(Date.UTC(start.getUTCFullYear() + 1, start.getUTCMonth(), 1));
+      return next.toISOString().split('T')[0];
+    }
+    default: {
+      const next = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
+      return next.toISOString().split('T')[0];
+    }
+  }
 }
 
 export async function enrollCustomer(input: EnrollInput) {
@@ -246,8 +296,17 @@ export async function enrollCustomer(input: EnrollInput) {
   const plan = await getPlanById(input.planId, input.businessId);
   if (!plan) throw new Error('Plan not found');
 
+  // Prevent multiple active/paused memberships for the same customer
+  const { rows: existing } = await adminPool.query(
+    `SELECT id FROM mbr_enrollments WHERE customer_id = $1 AND business_id = $2 AND status IN ('active', 'paused')`,
+    [input.customerId, input.businessId],
+  );
+  if (existing.length > 0) {
+    throw new Error('Customer already has an active membership. Cancel or let the existing membership expire before enrolling in a new one.');
+  }
+
   const periodEnd = calculatePeriodEnd(input.startDate, plan.billing_frequency);
-  const nextBillingDate = periodEnd;
+  const nextBillingDate = calculateNextBillingDate(input.startDate, plan.billing_frequency);
 
   const { rows } = await adminPool.query(
     `INSERT INTO mbr_enrollments (plan_id, business_id, customer_id, status, start_date, current_period_start, current_period_end, next_billing_date)
@@ -308,28 +367,163 @@ export async function getEnrollmentById(id: string, businessId: string) {
   return rows[0] || null;
 }
 
-export async function pauseEnrollment(id: string, businessId: string) {
+export async function pauseEnrollment(id: string, businessId: string, maxPauseDays?: number) {
+  // Calculate auto-resume date if max pause days specified
+  let resumeAt: string | null = null;
+  if (maxPauseDays && maxPauseDays > 0) {
+    const resume = new Date();
+    resume.setDate(resume.getDate() + maxPauseDays);
+    resumeAt = resume.toISOString().split('T')[0];
+  }
+
   const { rowCount } = await adminPool.query(
-    "UPDATE mbr_enrollments SET status = 'paused', paused_at = NOW(), updated_at = NOW() WHERE id = $1 AND business_id = $2 AND status = 'active'",
-    [id, businessId],
+    `UPDATE mbr_enrollments SET status = 'paused', paused_at = NOW(), resume_at = $3, next_billing_date = NULL, updated_at = NOW()
+     WHERE id = $1 AND business_id = $2 AND status = 'active'`,
+    [id, businessId, resumeAt],
   );
   return (rowCount ?? 0) > 0;
 }
 
 export async function resumeEnrollment(id: string, businessId: string) {
-  const { rowCount } = await adminPool.query(
-    "UPDATE mbr_enrollments SET status = 'active', paused_at = NULL, updated_at = NOW() WHERE id = $1 AND business_id = $2 AND status = 'paused'",
+  // Load the enrollment to calculate paused days
+  const { rows: enrollRows } = await adminPool.query(
+    `SELECT * FROM mbr_enrollments WHERE id = $1 AND business_id = $2 AND status = 'paused'`,
     [id, businessId],
+  );
+  if (enrollRows.length === 0) return false;
+
+  const enrollment = enrollRows[0];
+  const pausedAt = new Date(enrollment.paused_at);
+  const today = new Date();
+
+  // Calculate paused days (exclusive of pause day and resume day — those are service days)
+  const pausedDays = Math.max(0, Math.round((today.getTime() - pausedAt.getTime()) / (1000 * 60 * 60 * 24)) - 1);
+
+  // Resume: keep original period, accumulate paused days credit for next billing discount
+  // Recalculate next_billing_date as 1st of next month from current_period_end
+  const periodEnd = new Date(enrollment.current_period_end);
+  const nextBillingDate = new Date(Date.UTC(periodEnd.getUTCFullYear(), periodEnd.getUTCMonth() + 1, 1)).toISOString().split('T')[0];
+
+  const { rowCount } = await adminPool.query(
+    `UPDATE mbr_enrollments SET status = 'active', paused_at = NULL, resume_at = NULL,
+       next_billing_date = $3, paused_days_credit = paused_days_credit + $4, updated_at = NOW()
+     WHERE id = $1 AND business_id = $2 AND status = 'paused'`,
+    [id, businessId, nextBillingDate, pausedDays],
   );
   return (rowCount ?? 0) > 0;
 }
 
+/**
+ * Auto-resume paused enrollments that have passed their resume_at date.
+ * Called by the scheduled job runner.
+ */
+export async function autoResumeExpiredPauses(businessId: string): Promise<number> {
+  const today = new Date().toISOString().split('T')[0];
+
+  const { rows } = await adminPool.query(
+    `SELECT id FROM mbr_enrollments WHERE business_id = $1 AND status = 'paused' AND resume_at IS NOT NULL AND resume_at <= $2`,
+    [businessId, today],
+  );
+
+  let resumed = 0;
+  for (const row of rows) {
+    const success = await resumeEnrollment(row.id, businessId);
+    if (success) resumed++;
+  }
+
+  return resumed;
+}
+
 export async function cancelEnrollment(id: string, businessId: string) {
-  const { rowCount } = await adminPool.query(
-    "UPDATE mbr_enrollments SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW() WHERE id = $1 AND business_id = $2 AND status IN ('active', 'paused')",
+  // Cancel at end of current period — membership stays active until period_end,
+  // then a process (or the recurring charge job) flips it to cancelled.
+  // This ensures revenue recognition continues through the paid period
+  // and recurring billing knows not to charge again.
+  const { rows } = await adminPool.query(
+    `UPDATE mbr_enrollments SET cancelled_at = NOW(), next_billing_date = NULL, updated_at = NOW()
+     WHERE id = $1 AND business_id = $2 AND status IN ('active', 'paused') AND cancelled_at IS NULL
+     RETURNING *`,
     [id, businessId],
   );
-  return (rowCount ?? 0) > 0;
+  return rows.length > 0;
+}
+
+// --- Plan Changes (Upgrade / Downgrade) ---
+
+interface ChangePlanResult {
+  type: 'upgrade' | 'downgrade';
+  previousPlan: string;
+  newPlan: string;
+  proratedCharge?: number; // cents, only for upgrades
+}
+
+/**
+ * Change a customer's membership plan.
+ * 
+ * Upgrade (new price > old price):
+ *   - Switch plan_id immediately
+ *   - Calculate prorated charge for remaining days: remaining_days × (new_daily - old_daily)
+ *   - Return the prorated amount (caller creates the charge/order)
+ * 
+ * Downgrade (new price < old price):
+ *   - Set pending_plan_id (applied at next billing cycle)
+ *   - Current period continues unchanged
+ */
+export async function changePlan(enrollmentId: string, businessId: string, newPlanId: string): Promise<ChangePlanResult> {
+  // Load current enrollment
+  const { rows: enrollRows } = await adminPool.query(
+    `SELECT e.*, p.price AS current_price, p.name AS current_plan_name
+     FROM mbr_enrollments e
+     JOIN mbr_plans p ON p.id = e.plan_id
+     WHERE e.id = $1 AND e.business_id = $2 AND e.status = 'active'`,
+    [enrollmentId, businessId],
+  );
+  if (enrollRows.length === 0) throw new Error('Enrollment not found or not active');
+  const enrollment = enrollRows[0];
+
+  if (enrollment.plan_id === newPlanId) throw new Error('Already on this plan');
+
+  // Load new plan
+  const { rows: newPlanRows } = await adminPool.query(
+    'SELECT id, price, name FROM mbr_plans WHERE id = $1 AND business_id = $2',
+    [newPlanId, businessId],
+  );
+  if (newPlanRows.length === 0) throw new Error('New plan not found');
+  const newPlan = newPlanRows[0];
+
+  const oldPrice = enrollment.current_price;
+  const newPrice = newPlan.price;
+
+  if (newPrice > oldPrice) {
+    // UPGRADE — immediate switch with prorated charge
+    const periodStart = new Date(enrollment.current_period_start);
+    const periodEnd = new Date(enrollment.current_period_end);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const daysInPeriod = Math.round((periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const remainingDays = Math.max(0, Math.round((periodEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+
+    const oldDailyRate = Math.round(oldPrice / daysInPeriod);
+    const newDailyRate = Math.round(newPrice / daysInPeriod);
+    const proratedCharge = Math.max(0, (newDailyRate - oldDailyRate) * remainingDays);
+
+    // Switch plan immediately, clear any pending downgrade
+    await adminPool.query(
+      `UPDATE mbr_enrollments SET plan_id = $1, pending_plan_id = NULL, updated_at = NOW() WHERE id = $2`,
+      [newPlanId, enrollmentId],
+    );
+
+    return { type: 'upgrade', previousPlan: enrollment.current_plan_name, newPlan: newPlan.name, proratedCharge };
+  } else {
+    // DOWNGRADE — defer to next billing cycle
+    await adminPool.query(
+      `UPDATE mbr_enrollments SET pending_plan_id = $1, updated_at = NOW() WHERE id = $2`,
+      [newPlanId, enrollmentId],
+    );
+
+    return { type: 'downgrade', previousPlan: enrollment.current_plan_name, newPlan: newPlan.name };
+  }
 }
 
 // --- Usage ---

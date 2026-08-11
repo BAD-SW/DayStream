@@ -94,7 +94,7 @@ const addItemSchema = Joi.object({
   quantity: Joi.number().integer().min(1).default(1),
   unit_price: Joi.number().integer().min(0).required(),
   discount_amount: Joi.number().integer().min(0).default(0),
-  tax_amount: Joi.number().integer().min(0).default(0),
+  tax_amount: Joi.number().integer().min(0).allow(null),
   credited_to: Joi.string().uuid().allow(null),
   booking_id: Joi.string().uuid().allow(null),
   notes: Joi.string().max(200).allow('', null),
@@ -112,7 +112,7 @@ checkoutRouter.post('/orders/:id/items', requirePermission('bookings:*'), valida
       quantity: req.body.quantity,
       unitPrice: req.body.unit_price,
       discountAmount: req.body.discount_amount,
-      taxAmount: req.body.tax_amount,
+      taxAmount: req.body.tax_amount !== undefined && req.body.tax_amount !== null ? req.body.tax_amount : undefined,
       creditedTo: req.body.credited_to,
       bookingId: req.body.booking_id,
       notes: req.body.notes,
@@ -216,6 +216,19 @@ checkoutRouter.put('/orders/:id/credited-to', requirePermission('bookings:*'), a
   } catch (err: any) {
     if (err.message.includes('not found') || err.message.includes('not open')) { error(res, err.message, 'CONFLICT', 409); }
     else { error(res, 'Failed to update credit', 'INTERNAL_ERROR', 500); }
+  }
+});
+
+// PUT /api/v1/checkout/orders/:id/customer — Set customer on order
+checkoutRouter.put('/orders/:id/customer', requirePermission('bookings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const order = await checkoutService.updateOrderCustomer(req.params.id, businessId, req.body.customer_id || null);
+    success(res, order);
+  } catch (err: any) {
+    if (err.message.includes('not found') || err.message.includes('not open')) { error(res, err.message, 'CONFLICT', 409); }
+    else { error(res, 'Failed to update customer', 'INTERNAL_ERROR', 500); }
   }
 });
 

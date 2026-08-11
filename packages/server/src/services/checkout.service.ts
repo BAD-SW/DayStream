@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { generateJournalEntries } from './order-journal.service';
 
 interface CreateOrderInput {
   businessId: string;
@@ -51,10 +52,10 @@ export async function createOrder(input: CreateOrderInput) {
  * Create an order pre-populated from a booking (service line item auto-added).
  */
 export async function createOrderFromBooking(bookingId: string, businessId: string, checkedOutBy: string) {
-  // Load booking with service/variant details
   const { rows: bookings } = await adminPool.query(
-    `SELECT b.*, s.name AS service_name, sv.name AS variant_name, sv.price AS variant_price,
-            c.id AS cust_id, c.first_name AS cust_first, c.last_name AS cust_last
+    `SELECT b.*, s.name AS service_name, s.tax_category_id,
+            sv.name AS variant_name, sv.price AS variant_price,
+            c.id AS cust_id
      FROM apt_bookings b
      JOIN svc_services s ON s.id = b.service_id
      LEFT JOIN svc_variants sv ON sv.id = b.variant_id
@@ -70,11 +71,8 @@ export async function createOrderFromBooking(bookingId: string, businessId: stri
   const { rows: existing } = await adminPool.query(
     `SELECT id FROM fin_orders WHERE booking_id = $1 AND status = 'open'`, [bookingId],
   );
-  if (existing.length > 0) {
-    return getOrder(existing[0].id);
-  }
+  if (existing.length > 0) return getOrder(existing[0].id);
 
-  // Create order
   const order = await createOrder({
     businessId,
     customerId: booking.cust_id || undefined,
@@ -83,7 +81,6 @@ export async function createOrderFromBooking(bookingId: string, businessId: stri
     creditedTo: booking.staff_id || undefined,
   });
 
-  // Add service as first line item (credited to the assigned staff)
   const price = booking.variant_price || booking.price || 0;
   await addItem(order.id, {
     itemType: 'service',
@@ -104,30 +101,55 @@ export async function createOrderFromBooking(bookingId: string, businessId: stri
  * Add a line item to an open order.
  */
 export async function addItem(orderId: string, input: AddItemInput) {
-  // Verify order is open
   const { rows: orderRows } = await adminPool.query(
     `SELECT id, status FROM fin_orders WHERE id = $1`, [orderId],
   );
   if (orderRows.length === 0) throw new Error('Order not found');
   if (orderRows[0].status !== 'open') throw new Error('Order is not open');
 
-  const totalPrice = (input.unitPrice * input.quantity) - (input.discountAmount || 0) + (input.taxAmount || 0);
+  // Prorate membership if not the 1st of the month
+  let unitPrice = input.unitPrice;
+  let itemNotes = input.notes || null;
+  if (input.itemType === 'membership') {
+    const today = new Date();
+    const dayOfMonth = today.getDate();
+    if (dayOfMonth > 1) {
+      const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      const remainingDays = daysInMonth - dayOfMonth + 1; // include today
+      const proratedPrice = Math.round(input.unitPrice * remainingDays / daysInMonth);
+      unitPrice = proratedPrice;
+      itemNotes = `Prorated: ${remainingDays}/${daysInMonth} days`;
+    }
+  }
+
+  // Calculate tax on the net amount (unit_price * quantity - discount)
+  const grossAmount = unitPrice * input.quantity;
+  const discount = input.discountAmount || 0;
+  const netAmount = grossAmount - discount;
+
+  let taxAmount = 0;
+  if (input.taxAmount !== undefined) {
+    taxAmount = input.taxAmount;
+  } else if (input.itemId) {
+    taxAmount = await calculateTaxOnAmount(input.itemType, input.itemId, netAmount);
+  }
+
+  const totalPrice = netAmount + taxAmount;
 
   const { rows } = await adminPool.query(
     `INSERT INTO fin_order_items (order_id, item_type, item_id, item_name, variant_id, variant_name, quantity, unit_price, discount_amount, tax_amount, total_price, credited_to, booking_id, notes)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
     [orderId, input.itemType, input.itemId || null, input.itemName, input.variantId || null, input.variantName || null,
-     input.quantity, input.unitPrice, input.discountAmount || 0, input.taxAmount || 0, totalPrice,
-     input.creditedTo || null, input.bookingId || null, input.notes || null],
+     input.quantity, unitPrice, discount, taxAmount, totalPrice,
+     input.creditedTo || null, input.bookingId || null, itemNotes],
   );
 
-  // Recalculate order totals
   await recalculateOrderTotals(orderId);
   return rows[0];
 }
 
 /**
- * Update a line item (change quantity, price, credited_to, etc.)
+ * Update a line item.
  */
 export async function updateItem(itemId: string, orderId: string, updates: Partial<AddItemInput>) {
   const { rows: existing } = await adminPool.query(
@@ -135,7 +157,6 @@ export async function updateItem(itemId: string, orderId: string, updates: Parti
   );
   if (existing.length === 0) throw new Error('Item not found');
 
-  // Verify order is open
   const { rows: orderRows } = await adminPool.query('SELECT status FROM fin_orders WHERE id = $1', [orderId]);
   if (orderRows[0]?.status !== 'open') throw new Error('Order is not open');
 
@@ -143,8 +164,17 @@ export async function updateItem(itemId: string, orderId: string, updates: Parti
   const quantity = updates.quantity ?? item.quantity;
   const unitPrice = updates.unitPrice ?? item.unit_price;
   const discount = updates.discountAmount ?? item.discount_amount;
-  const tax = updates.taxAmount ?? item.tax_amount;
-  const totalPrice = (unitPrice * quantity) - discount + tax;
+  const netAmount = (unitPrice * quantity) - discount;
+
+  // Recalculate tax on the new net amount
+  let tax = item.tax_amount;
+  if (updates.quantity !== undefined || updates.unitPrice !== undefined || updates.discountAmount !== undefined) {
+    tax = await calculateTaxOnAmount(item.item_type, item.item_id, netAmount);
+  } else if (updates.taxAmount !== undefined) {
+    tax = updates.taxAmount;
+  }
+
+  const totalPrice = netAmount + tax;
 
   const { rows } = await adminPool.query(
     `UPDATE fin_order_items SET
@@ -186,7 +216,6 @@ export async function completeOrder(orderId: string, businessId: string, input: 
   if (orderRows.length === 0) throw new Error('Order not found');
   if (orderRows[0].status !== 'open') throw new Error('Order is not open');
 
-  // Check order has items
   const { rows: items } = await adminPool.query(
     'SELECT id FROM fin_order_items WHERE order_id = $1', [orderId],
   );
@@ -199,7 +228,6 @@ export async function completeOrder(orderId: string, businessId: string, input: 
     [input.paymentMethod, input.paymentReference || null, input.checkedOutBy, orderId],
   );
 
-  // Mark associated booking as completed if present
   if (orderRows[0].booking_id) {
     await adminPool.query(
       `UPDATE apt_bookings SET status = 'completed' WHERE id = $1 AND status IN ('checked_in', 'in_progress')`,
@@ -207,20 +235,54 @@ export async function completeOrder(orderId: string, businessId: string, input: 
     );
   }
 
+  // Auto-generate journal entries for accounting
+  try {
+    await generateJournalEntries(orderId, businessId, input.checkedOutBy);
+  } catch (err: any) {
+    console.error('[Journal] Failed to generate entries:', err.message, err.stack);
+    // Don't fail the order completion if journaling fails
+  }
+
+  // Auto-enroll customer in memberships purchased in this order
+  try {
+    const { rows: membershipItems } = await adminPool.query(
+      `SELECT item_id FROM fin_order_items WHERE order_id = $1 AND item_type = 'membership' AND item_id IS NOT NULL`,
+      [orderId],
+    );
+    if (membershipItems.length > 0 && orderRows[0].customer_id) {
+      const { enrollCustomer } = await import('./membership.service');
+      const today = new Date().toISOString().slice(0, 10);
+      for (const item of membershipItems) {
+        try {
+          await enrollCustomer({
+            planId: item.item_id,
+            businessId,
+            customerId: orderRows[0].customer_id,
+            startDate: today,
+          });
+        } catch (enrollErr: any) {
+          console.error(`[Enrollment] Failed to enroll customer in plan ${item.item_id}:`, enrollErr.message);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error('[Enrollment] Failed to process membership enrollments:', err.message);
+  }
+
   return getOrder(orderId);
 }
 
 /**
  * Apply a promotional code to an open order.
+ * Distributes discount/premium directly onto qualifying line items.
  */
 export async function applyPromoCode(orderId: string, businessId: string, promoCode: string) {
-  // Verify order is open
   const { rows: orderRows } = await adminPool.query(
     'SELECT * FROM fin_orders WHERE id = $1 AND business_id = $2 AND status = $3', [orderId, businessId, 'open'],
   );
   if (orderRows.length === 0) throw new Error('Order not found or not open');
 
-  // Find the promotion (case-insensitive match on promo_code)
+  // Find and validate promotion
   const { rows: promos } = await adminPool.query(
     `SELECT * FROM prm_promotions WHERE business_id = $1 AND LOWER(promo_code) = LOWER($2) AND status = 'active'`,
     [businessId, promoCode.trim()],
@@ -228,10 +290,9 @@ export async function applyPromoCode(orderId: string, businessId: string, promoC
   if (promos.length === 0) throw new Error('Invalid promotion code');
   const promo = promos[0];
 
-  // Check date validity
+  // Date validation
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
-
   if (promo.date_from) {
     const fromStr = typeof promo.date_from === 'string' ? promo.date_from.split('T')[0] : promo.date_from.toISOString().slice(0, 10);
     if (today < fromStr) throw new Error('Promotion has not started yet');
@@ -240,129 +301,115 @@ export async function applyPromoCode(orderId: string, businessId: string, promoC
     const toStr = typeof promo.date_to === 'string' ? promo.date_to.split('T')[0] : promo.date_to.toISOString().slice(0, 10);
     if (today > toStr) throw new Error('Promotion has expired');
   }
-
-  // Check day of week validity
   if (promo.days_of_week && promo.days_of_week.length > 0) {
-    const currentDay = now.getDay(); // 0=Sun, 6=Sat
-    if (!promo.days_of_week.includes(currentDay)) {
-      throw new Error('Promotion is not valid on this day of the week');
-    }
+    if (!promo.days_of_week.includes(now.getDay())) throw new Error('Promotion is not valid on this day of the week');
   }
-
-  // Check time of day validity
   if (promo.time_from && promo.time_to) {
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    const [fh, fm] = (typeof promo.time_from === 'string' ? promo.time_from : promo.time_from.toString()).split(':').map(Number);
-    const [th, tm] = (typeof promo.time_to === 'string' ? promo.time_to : promo.time_to.toString()).split(':').map(Number);
-    const fromMinutes = fh * 60 + fm;
-    const toMinutes = th * 60 + tm;
-    if (currentMinutes < fromMinutes || currentMinutes > toMinutes) {
-      throw new Error('Promotion is not valid at this time of day');
-    }
+    const mins = now.getHours() * 60 + now.getMinutes();
+    const [fh, fm] = String(promo.time_from).split(':').map(Number);
+    const [th, tm] = String(promo.time_to).split(':').map(Number);
+    if (mins < fh * 60 + fm || mins > th * 60 + tm) throw new Error('Promotion is not valid at this time of day');
   }
-
-  // Check max redemptions
   if (promo.max_redemptions && promo.redemption_count >= promo.max_redemptions) {
     throw new Error('Promotion has reached its maximum redemptions');
   }
 
-  // Calculate discount based on qualifying line items
-  const order = orderRows[0];
-
-  // Load order items to check scope
+  // Load items and determine scope
   const { rows: items } = await adminPool.query(
     'SELECT * FROM fin_order_items WHERE order_id = $1', [orderId],
   );
 
-  // Determine which items qualify based on applies_to scope
+  const hasServiceScope = promo.service_ids && promo.service_ids.length > 0;
+  const hasVariantScope = promo.variant_ids && promo.variant_ids.length > 0;
+  const hasMerchScope = promo.merchandise_ids && promo.merchandise_ids.length > 0;
+  const hasAnyScope = hasServiceScope || hasMerchScope;
+
+  // Identify qualifying items and their pre-tax amounts
+  const qualifyingItems: Array<{ id: string; itemType: string; itemId: string; grossAmount: number }> = [];
   let qualifyingTotal = 0;
-  const qualifyingItems: string[] = [];
 
   for (const item of items) {
     let qualifies = false;
-
-    // Determine if service_ids/variant_ids/merchandise_ids impose restrictions
-    const hasServiceScope = promo.service_ids && promo.service_ids.length > 0;
-    const hasVariantScope = promo.variant_ids && promo.variant_ids.length > 0;
-    const hasMerchScope = promo.merchandise_ids && promo.merchandise_ids.length > 0;
-    const hasAnyScope = hasServiceScope || hasMerchScope;
-
     if (!hasAnyScope) {
-      // No item-level restrictions — applies to everything
       qualifies = true;
-    } else {
-      // Check against specific item scopes
-      if (item.item_type === 'service' && hasServiceScope) {
-        if (promo.service_ids.includes(item.item_id)) {
-          // Service matches — now check variant if variants are scoped
-          if (hasVariantScope) {
-            qualifies = item.variant_id ? promo.variant_ids.includes(item.variant_id) : false;
-          } else {
-            qualifies = true;
-          }
-        }
-      } else if (item.item_type === 'product' && hasMerchScope) {
-        if (promo.merchandise_ids.includes(item.item_id)) {
-          qualifies = true;
-        }
-      }
-      // memberships and packages don't qualify unless explicitly in a scope list
+    } else if (item.item_type === 'service' && hasServiceScope && promo.service_ids.includes(item.item_id)) {
+      qualifies = hasVariantScope ? (item.variant_id ? promo.variant_ids.includes(item.variant_id) : false) : true;
+    } else if (item.item_type === 'product' && hasMerchScope && promo.merchandise_ids.includes(item.item_id)) {
+      qualifies = true;
     }
 
     if (qualifies) {
-      qualifyingTotal += item.total_price;
-      qualifyingItems.push(`${item.item_name} (${item.item_type}): ${item.total_price}`);
+      const gross = item.unit_price * item.quantity;
+      qualifyingItems.push({ id: item.id, itemType: item.item_type, itemId: item.item_id, grossAmount: gross });
+      qualifyingTotal += gross;
     }
   }
 
-  console.log(`[Promo] Code: ${promoCode}, Type: ${promo.type}, Value: ${promo.value}`);
-  console.log(`[Promo] Applies to: ${promo.applies_to}`);
-  console.log(`[Promo] Service IDs: ${JSON.stringify(promo.service_ids)}`);
-  console.log(`[Promo] Variant IDs: ${JSON.stringify(promo.variant_ids)}`);
-  console.log(`[Promo] Merch IDs: ${JSON.stringify(promo.merchandise_ids)}`);
-  console.log(`[Promo] Order subtotal: ${order.subtotal}`);
-  console.log(`[Promo] Items in order:`);
-  for (const item of items) {
-    console.log(`[Promo]   - ${item.item_name} (${item.item_type}) item_id=${item.item_id} variant_id=${item.variant_id} total=${item.total_price}`);
-  }
-  console.log(`[Promo] Qualifying items total: ${qualifyingTotal}`);
-  console.log(`[Promo] Qualifying items: ${qualifyingItems.join(', ') || 'none'}`);
-
   if (qualifyingTotal <= 0) throw new Error('Promotion code does not apply to items in this order');
 
-  let discountAmount = 0;
+  // Calculate total promo amount
+  let promoAmount = 0;
+  let isDiscount = true;
 
   if (promo.type === 'discount_percentage') {
-    // value is the percentage as a whole number (e.g., 10 = 10%)
-    discountAmount = Math.round(qualifyingTotal * promo.value / 100);
-    console.log(`[Promo] Percentage discount: ${promo.value}% of ${qualifyingTotal} = ${discountAmount} cents`);
+    promoAmount = Math.round(qualifyingTotal * promo.value / 100);
   } else if (promo.type === 'discount_fixed') {
-    // value is cents
-    discountAmount = Math.min(promo.value, qualifyingTotal);
-    console.log(`[Promo] Fixed discount: ${promo.value} cents (capped at qualifying total ${qualifyingTotal})`);
+    promoAmount = Math.min(promo.value, qualifyingTotal);
+  } else if (promo.type === 'premium_percentage') {
+    promoAmount = Math.round(qualifyingTotal * promo.value / 100);
+    isDiscount = false;
+  } else if (promo.type === 'premium_fixed') {
+    promoAmount = promo.value;
+    isDiscount = false;
   } else if (promo.type === 'price_override') {
-    throw new Error('This promotion type cannot be applied as a code');
-  } else if (promo.type === 'premium_percentage' || promo.type === 'premium_fixed') {
-    throw new Error('This promotion type adds a surcharge and cannot be applied as a discount code');
+    throw new Error('Price override promotions cannot be applied as a code');
   }
 
-  if (discountAmount <= 0) throw new Error('Promotion does not apply to this order');
+  if (promoAmount <= 0) throw new Error('Promotion code does not apply to items in this order');
 
-  console.log(`[Promo] Final discount: ${discountAmount} cents applied to order ${orderId}`);
+  // Distribute promo amount to each qualifying line item proportionally
+  let distributed = 0;
+  for (let i = 0; i < qualifyingItems.length; i++) {
+    const qi = qualifyingItems[i];
+    let itemPromo: number;
 
-  // Apply to order
-  const totalAmount = order.subtotal - discountAmount + order.tax_amount;
+    // Last item gets the remainder to avoid rounding errors
+    if (i === qualifyingItems.length - 1) {
+      itemPromo = promoAmount - distributed;
+    } else {
+      itemPromo = Math.round(promoAmount * qi.grossAmount / qualifyingTotal);
+    }
+    distributed += itemPromo;
+
+    // Calculate the new discount and net amount for this item
+    const itemDiscount = isDiscount ? itemPromo : -itemPromo; // negative discount = surcharge
+    const netAmount = qi.grossAmount - itemDiscount;
+
+    // Recalculate tax on the net amount using this item's own rate
+    const tax = await calculateTaxOnAmount(qi.itemType, qi.itemId, netAmount);
+    const totalPrice = netAmount + tax;
+
+    // Update the line item
+    await adminPool.query(
+      `UPDATE fin_order_items SET discount_amount = $1, tax_amount = $2, total_price = $3 WHERE id = $4`,
+      [itemDiscount, tax, totalPrice, qi.id],
+    );
+  }
+
+  // Store promo reference on order
   await adminPool.query(
-    `UPDATE fin_orders SET promo_code = $1, promotion_id = $2, discount_amount = $3, total_amount = $4, updated_at = NOW()
-     WHERE id = $5`,
-    [promoCode.trim(), promo.id, discountAmount, Math.max(0, totalAmount), orderId],
+    `UPDATE fin_orders SET promo_code = $1, promotion_id = $2, updated_at = NOW() WHERE id = $3`,
+    [promoCode.trim(), promo.id, orderId],
   );
 
+  // Recalculate order totals (pure sum of line items)
+  await recalculateOrderTotals(orderId);
   return getOrder(orderId);
 }
 
 /**
  * Remove a promotional code from an open order.
+ * Resets discounts on all line items and recalculates tax.
  */
 export async function removePromoCode(orderId: string, businessId: string) {
   const { rows } = await adminPool.query(
@@ -370,14 +417,29 @@ export async function removePromoCode(orderId: string, businessId: string) {
   );
   if (rows.length === 0) throw new Error('Order not found or not open');
 
-  const order = rows[0];
-  const totalAmount = order.subtotal + order.tax_amount;
-  await adminPool.query(
-    `UPDATE fin_orders SET promo_code = NULL, promotion_id = NULL, discount_amount = 0, total_amount = $1, updated_at = NOW()
-     WHERE id = $2`,
-    [totalAmount, orderId],
+  // Reset all line item discounts and recalculate their tax
+  const { rows: items } = await adminPool.query(
+    'SELECT * FROM fin_order_items WHERE order_id = $1', [orderId],
   );
 
+  for (const item of items) {
+    if (item.discount_amount !== 0) {
+      const grossAmount = item.unit_price * item.quantity;
+      const tax = await calculateTaxOnAmount(item.item_type, item.item_id, grossAmount);
+      const totalPrice = grossAmount + tax;
+      await adminPool.query(
+        `UPDATE fin_order_items SET discount_amount = 0, tax_amount = $1, total_price = $2 WHERE id = $3`,
+        [tax, totalPrice, item.id],
+      );
+    }
+  }
+
+  await adminPool.query(
+    `UPDATE fin_orders SET promo_code = NULL, promotion_id = NULL, updated_at = NOW() WHERE id = $1`,
+    [orderId],
+  );
+
+  await recalculateOrderTotals(orderId);
   return getOrder(orderId);
 }
 
@@ -389,6 +451,19 @@ export async function updateOrderCreditedTo(orderId: string, businessId: string,
     `UPDATE fin_orders SET credited_to = $1, updated_at = NOW()
      WHERE id = $2 AND business_id = $3 AND status = 'open' RETURNING *`,
     [creditedTo, orderId, businessId],
+  );
+  if (rows.length === 0) throw new Error('Order not found or not open');
+  return getOrder(orderId);
+}
+
+/**
+ * Update the customer on an open order.
+ */
+export async function updateOrderCustomer(orderId: string, businessId: string, customerId: string | null) {
+  const { rows } = await adminPool.query(
+    `UPDATE fin_orders SET customer_id = $1, updated_at = NOW()
+     WHERE id = $2 AND business_id = $3 AND status = 'open' RETURNING *`,
+    [customerId, orderId, businessId],
   );
   if (rows.length === 0) throw new Error('Order not found or not open');
   return getOrder(orderId);
@@ -473,68 +548,60 @@ export async function getOrders(businessId: string, filters?: {
 }
 
 /**
- * Recalculate order totals from line items.
+ * Calculate tax for an item based on its tax category rate, applied to a given net amount.
+ */
+async function calculateTaxOnAmount(itemType: string, itemId: string | null, netAmount: number): Promise<number> {
+  if (!itemId || netAmount <= 0) return 0;
+
+  let taxCategoryId: string | null = null;
+
+  if (itemType === 'service') {
+    const { rows } = await adminPool.query('SELECT tax_category_id FROM svc_services WHERE id = $1', [itemId]);
+    if (rows.length > 0) taxCategoryId = rows[0].tax_category_id;
+  } else if (itemType === 'product') {
+    const { rows } = await adminPool.query('SELECT tax_category_id FROM prd_merchandise WHERE id = $1', [itemId]);
+    if (rows.length > 0) taxCategoryId = rows[0].tax_category_id;
+  } else if (itemType === 'membership') {
+    const { rows } = await adminPool.query('SELECT tax_category_id FROM mbr_plans WHERE id = $1', [itemId]);
+    if (rows.length > 0) taxCategoryId = rows[0].tax_category_id;
+  } else if (itemType === 'package') {
+    const { rows } = await adminPool.query('SELECT tax_category_id FROM pkg_packages WHERE id = $1', [itemId]);
+    if (rows.length > 0) taxCategoryId = rows[0].tax_category_id;
+  }
+
+  if (!taxCategoryId) return 0;
+
+  const { rows: taxRows } = await adminPool.query('SELECT rate FROM svc_tax_categories WHERE id = $1', [taxCategoryId]);
+  if (taxRows.length === 0) return 0;
+
+  const rate = taxRows[0].rate; // basis points (2100 = 21%)
+  return Math.round(netAmount * rate / 10000);
+}
+
+/**
+ * Calculate tax for an item using unit_price * quantity (for addItem when no discount yet).
+ */
+export async function calculateTaxForItem(itemType: string, itemId: string | null, unitPrice: number, quantity: number): Promise<number> {
+  return calculateTaxOnAmount(itemType, itemId, unitPrice * quantity);
+}
+
+/**
+ * Recalculate order totals as a pure sum of line items.
  */
 async function recalculateOrderTotals(orderId: string) {
   const { rows } = await adminPool.query(
-    `SELECT COALESCE(SUM(unit_price * quantity), 0)::int AS subtotal,
-            COALESCE(SUM(tax_amount), 0)::int AS tax,
-            COALESCE(SUM(discount_amount), 0)::int AS item_discount
+    `SELECT
+       COALESCE(SUM(unit_price * quantity), 0)::int AS subtotal,
+       COALESCE(SUM(tax_amount), 0)::int AS tax,
+       COALESCE(SUM(discount_amount), 0)::int AS discount,
+       COALESCE(SUM(total_price), 0)::int AS total
      FROM fin_order_items WHERE order_id = $1`,
     [orderId],
   );
-  const { subtotal, tax, item_discount } = rows[0];
-
-  // Check if a promo is applied — if so, recalculate promo discount against new subtotal
-  const { rows: orderRows } = await adminPool.query(
-    'SELECT promotion_id FROM fin_orders WHERE id = $1', [orderId],
-  );
-  let promoDiscount = 0;
-  if (orderRows[0]?.promotion_id) {
-    const { rows: promoRows } = await adminPool.query(
-      'SELECT type, value, service_ids, variant_ids, merchandise_ids FROM prm_promotions WHERE id = $1',
-      [orderRows[0].promotion_id],
-    );
-    if (promoRows.length > 0) {
-      const promo = promoRows[0];
-      // Recalculate qualifying total
-      const { rows: items } = await adminPool.query(
-        'SELECT item_type, item_id, variant_id, total_price FROM fin_order_items WHERE order_id = $1', [orderId],
-      );
-      const hasServiceScope = promo.service_ids && promo.service_ids.length > 0;
-      const hasVariantScope = promo.variant_ids && promo.variant_ids.length > 0;
-      const hasMerchScope = promo.merchandise_ids && promo.merchandise_ids.length > 0;
-      const hasAnyScope = hasServiceScope || hasMerchScope;
-
-      let qualifyingTotal = 0;
-      for (const item of items) {
-        if (!hasAnyScope) {
-          qualifyingTotal += item.total_price;
-        } else if (item.item_type === 'service' && hasServiceScope && promo.service_ids.includes(item.item_id)) {
-          if (hasVariantScope) {
-            if (item.variant_id && promo.variant_ids.includes(item.variant_id)) qualifyingTotal += item.total_price;
-          } else {
-            qualifyingTotal += item.total_price;
-          }
-        } else if (item.item_type === 'product' && hasMerchScope && promo.merchandise_ids.includes(item.item_id)) {
-          qualifyingTotal += item.total_price;
-        }
-      }
-
-      if (promo.type === 'discount_percentage') {
-        promoDiscount = Math.round(qualifyingTotal * promo.value / 100);
-      } else if (promo.type === 'discount_fixed') {
-        promoDiscount = Math.min(promo.value, qualifyingTotal);
-      }
-    }
-  }
-
-  const totalDiscount = item_discount + promoDiscount;
-  const totalAmount = subtotal + tax - totalDiscount;
 
   await adminPool.query(
     `UPDATE fin_orders SET subtotal = $1, tax_amount = $2, discount_amount = $3, total_amount = $4, updated_at = NOW()
      WHERE id = $5`,
-    [subtotal, tax, totalDiscount, Math.max(0, totalAmount), orderId],
+    [rows[0].subtotal, rows[0].tax, rows[0].discount, rows[0].total, orderId],
   );
 }

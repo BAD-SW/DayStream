@@ -9,7 +9,7 @@ import { Table } from '../design-system/components/data/Table';
 import { apiClient } from '../api/client';
 import * as servicesApi from '../api/services';
 
-const VALID_TABS = ['staff', 'resources', 'locations', 'categories'] as const;
+const VALID_TABS = ['staff', 'resources', 'locations', 'categories', 'taxes'] as const;
 type Tab = typeof VALID_TABS[number];
 
 export function Business() {
@@ -23,9 +23,9 @@ export function Business() {
         <h1 style={styles.title}>Business Setup</h1>
       </div>
       <div style={styles.tabBar}>
-        {(['staff', 'resources', 'locations', 'categories'] as const).map((tab) => {
+        {(['staff', 'resources', 'locations', 'categories', 'taxes'] as const).map((tab) => {
           const isActive = activeTab === tab;
-          const labels: Record<string, string> = { staff: 'Staff', resources: 'Resources', locations: 'Locations', categories: 'Categories' };
+          const labels: Record<string, string> = { staff: 'Staff', resources: 'Resources', locations: 'Locations', categories: 'Categories', taxes: 'Taxes' };
           return (
             <button key={tab} onClick={() => setActiveTab(tab)}
               style={{
@@ -45,6 +45,7 @@ export function Business() {
       {activeTab === 'resources' && <Resources />}
       {activeTab === 'locations' && <Locations />}
       {activeTab === 'categories' && <CategoriesTab />}
+      {activeTab === 'taxes' && <TaxesTab />}
     </div>
   );
 }
@@ -210,6 +211,127 @@ function NoteCategoriesSection({ businessId }: { businessId: string }) {
         )}
       </div>
       <Table columns={columns} data={categories} loading={loading} emptyMessage="No note categories defined" clientSort />
+    </div>
+  );
+}
+
+// --- Taxes Tab ---
+
+function TaxesTab() {
+  const businessId = localStorage.getItem('business_id') || '';
+  const [taxes, setTaxes] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: '', rate: '', is_default: false });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!businessId) { setLoading(false); return; }
+    servicesApi.getTaxCategories(businessId).then(setTaxes).catch(() => []).finally(() => setLoading(false));
+  }, [businessId]);
+
+  const refresh = () => {
+    servicesApi.getTaxCategories(businessId).then(setTaxes).catch(() => {});
+  };
+
+  const openAdd = () => {
+    setEditingId(null);
+    setForm({ name: '', rate: '0', is_default: false });
+    setShowAdd(true);
+  };
+
+  const openEdit = (tax: any) => {
+    setEditingId(tax.id);
+    setForm({ name: tax.name, rate: String(tax.rate / 100), is_default: tax.is_default });
+    setShowAdd(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim() || !form.rate) return;
+    setSaving(true);
+    try {
+      const rateInBasisPoints = Math.round(parseFloat(form.rate) * 100);
+      if (editingId) {
+        await servicesApi.updateTaxCategory(editingId, businessId, { name: form.name.trim(), rate: rateInBasisPoints, is_default: form.is_default });
+      } else {
+        await servicesApi.createTaxCategory(businessId, { name: form.name.trim(), rate: rateInBasisPoints, is_default: form.is_default });
+      }
+      setShowAdd(false);
+      refresh();
+    } catch (err: any) {
+      alert(err?.response?.data?.error || 'Failed to save tax rate');
+    } finally { setSaving(false); }
+  };
+
+  const handleDelete = async (tax: any) => {
+    if (!confirm(`Delete "${tax.name}" tax rate?`)) return;
+    try {
+      await servicesApi.deleteTaxCategory(tax.id, businessId);
+      refresh();
+    } catch (err: any) {
+      alert(err?.response?.data?.error || 'Failed to delete tax rate');
+    }
+  };
+
+  if (loading) return <div style={{ padding: 'var(--space-lg)', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading...</div>;
+
+  return (
+    <div>
+      <div style={catStyles.toolbar}>
+        <h3 style={catStyles.sectionTitle}>Tax Rates</h3>
+        <div style={{ flex: 1 }} />
+        <Button size="sm" variant="secondary" onClick={openAdd}>Add Tax Rate</Button>
+      </div>
+
+      {showAdd && (
+        <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px auto', gap: 'var(--space-md)', alignItems: 'end' }}>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 500, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Name</label>
+              <input style={catStyles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. IVA Standard" />
+            </div>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 500, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Rate (%)</label>
+              <input type="number" step="0.01" min="0" max="100" style={catStyles.input} value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value })} placeholder="21" />
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-text)', cursor: 'pointer', paddingBottom: '4px' }}>
+              <input type="checkbox" checked={form.is_default} onChange={(e) => setForm({ ...form, is_default: e.target.checked })} style={{ width: '14px', height: '14px' }} /> Default
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', marginTop: 'var(--space-md)' }}>
+            <Button size="sm" onClick={handleSave} loading={saving}>{editingId ? 'Save' : 'Create'}</Button>
+            <Button size="sm" variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {taxes.length === 0 && !showAdd && (
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>No tax rates defined. Add tax rates that can be assigned to services and products.</p>
+      )}
+
+      {taxes.length > 0 && (
+        <Table
+          columns={[
+            { key: 'name', header: 'Name', sortable: true },
+            { key: 'rate', header: 'Rate', sortable: true, render: (val: number) => `${(val / 100).toFixed(2)}%` },
+            { key: 'is_default', header: 'Default', render: (val: boolean) => val ? <Badge variant="info">Default</Badge> : null },
+            {
+              key: 'id', header: '',
+              render: (_: any, row: any) => (
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                  <button onClick={(e) => { e.stopPropagation(); openEdit(row); }} style={catStyles.deleteBtn} title="Edit">✏️</button>
+                  <button onClick={(e) => { e.stopPropagation(); handleDelete(row); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>
+                </div>
+              ),
+            },
+          ]}
+          data={taxes}
+          loading={false}
+          emptyMessage="No tax rates defined"
+          clientSort
+        />
+      )}
     </div>
   );
 }

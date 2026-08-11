@@ -1,4 +1,5 @@
 import { evaluateScheduledTransitions } from '../services/customer-lifecycle.service';
+import { recognizeRevenueForYesterday } from '../services/revenue-recognition.service';
 import { logger } from '../middleware/logger';
 
 /**
@@ -92,10 +93,12 @@ export const jobRegistry: Record<string, JobHandler> = {
     return { processed: atRiskCandidates.length + churnedCandidates.length, transitioned };
   },
 
-  // Billing processor (placeholder — will be implemented with Phase 10)
+  // Billing processor — recurring charges and membership lifecycle
   'billing_process': async (ctx) => {
-    logger.info(`Billing process triggered for business ${ctx.businessId} (not yet implemented)`);
-    return { status: 'not_implemented' };
+    const { autoResumeExpiredPauses } = await import('../services/membership.service');
+    const resumed = await autoResumeExpiredPauses(ctx.businessId);
+    logger.info(`Recurring charges triggered for business ${ctx.businessId}: ${resumed} paused membership(s) auto-resumed`);
+    return { status: 'checked', auto_resumed: resumed };
   },
 
   // Marketing campaign dispatch (checks for scheduled campaigns ready to send)
@@ -110,6 +113,12 @@ export const jobRegistry: Record<string, JobHandler> = {
     logger.info(`Report aggregation triggered for business ${ctx.businessId}`);
     return { status: 'checked' };
   },
+
+  // Revenue recognition — moves deferred revenue to membership revenue daily
+  'revenue_recognition': async (ctx) => {
+    const result = await recognizeRevenueForYesterday(ctx.businessId);
+    return result;
+  },
 };
 
 /**
@@ -117,9 +126,10 @@ export const jobRegistry: Record<string, JobHandler> = {
  */
 export function getAvailableJobTypes(): Array<{ type: string; label: string; description: string; defaultFrequency: string }> {
   return [
+    { type: 'revenue_recognition', label: 'Revenue Recognition', description: 'Recognize deferred membership revenue daily', defaultFrequency: 'daily' },
+    { type: 'billing_process', label: 'Recurring Charges', description: 'Process scheduled payments for active memberships', defaultFrequency: 'daily' },
+    { type: 'campaign_dispatch', label: 'Campaigns', description: 'Send scheduled marketing campaigns', defaultFrequency: 'every_15min' },
     { type: 'lifecycle_evaluation', label: 'Customer Lifecycle', description: 'Automatically transition inactive customers through lifecycle stages', defaultFrequency: 'daily' },
-    { type: 'billing_process', label: 'Billing Processor', description: 'Process scheduled payments for active subscriptions', defaultFrequency: 'daily' },
-    { type: 'campaign_dispatch', label: 'Campaign Dispatch', description: 'Send scheduled marketing campaigns', defaultFrequency: 'every_15min' },
-    { type: 'report_aggregation', label: 'Report Aggregation', description: 'Aggregate daily metrics for reporting dashboards', defaultFrequency: 'daily' },
+    { type: 'report_aggregation', label: 'Reporting', description: 'Aggregate daily metrics for reporting dashboards', defaultFrequency: 'daily' },
   ];
 }

@@ -10,6 +10,7 @@ export interface OrderItem {
   item_type: 'service' | 'product' | 'membership' | 'package';
   item_id: string | null;
   item_name: string;
+  variant_id: string | null;
   variant_name: string | null;
   quantity: number;
   unit_price: number;
@@ -113,6 +114,11 @@ export async function completeOrder(orderId: string, businessId: string, data: {
 
 export async function updateOrderCreditedTo(orderId: string, businessId: string, creditedTo: string | null): Promise<Order> {
   const res = await apiClient.put(`/v1/checkout/orders/${orderId}/credited-to?business_id=${businessId}`, { credited_to: creditedTo });
+  return res.data.data;
+}
+
+export async function updateOrderCustomer(orderId: string, businessId: string, customerId: string | null): Promise<Order> {
+  const res = await apiClient.put(`/v1/checkout/orders/${orderId}/customer?business_id=${businessId}`, { customer_id: customerId });
   return res.data.data;
 }
 

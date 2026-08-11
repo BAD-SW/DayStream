@@ -197,19 +197,35 @@ function calculateNextRun(job: any): string {
     nextRun.setHours(hours, minutes, 0, 0);
     if (nextRun <= nowInTz) nextRun.setDate(nextRun.getDate() + 1);
   } else if (frequency === 'weekly') {
-    // Next occurrence of the specified day
+    // Next occurrence of any of the specified days
     nextRun = new Date(nowInTz);
     nextRun.setHours(hours, minutes, 0, 0);
-    const targetDay = job.day_of_week ?? 1; // default Monday
-    const daysUntil = (targetDay - nextRun.getDay() + 7) % 7 || 7;
-    nextRun.setDate(nextRun.getDate() + daysUntil);
+    const targetDays: number[] = Array.isArray(job.day_of_week) ? job.day_of_week : [job.day_of_week ?? 1];
+    // Find the smallest positive offset to a target day
+    let minOffset = 8;
+    for (const targetDay of targetDays) {
+      let offset = (targetDay - nextRun.getDay() + 7) % 7;
+      if (offset === 0 && nextRun <= nowInTz) offset = 7;
+      if (offset < minOffset) minOffset = offset;
+    }
+    if (minOffset === 0 && nextRun > nowInTz) { /* today, still in the future */ }
+    else nextRun.setDate(nextRun.getDate() + (minOffset || 1));
   } else if (frequency === 'monthly') {
-    // Next occurrence of the specified day of month
+    // Next occurrence of the specified day of month (-1 = last day)
     nextRun = new Date(nowInTz);
     nextRun.setHours(hours, minutes, 0, 0);
     const targetDay = job.day_of_month ?? 1;
-    nextRun.setDate(targetDay);
-    if (nextRun <= nowInTz) nextRun.setMonth(nextRun.getMonth() + 1);
+    if (targetDay === -1) {
+      // Last day of current month
+      nextRun.setMonth(nextRun.getMonth() + 1, 0); // day 0 = last day of previous month
+      if (nextRun <= nowInTz) {
+        // Move to last day of next month
+        nextRun.setMonth(nextRun.getMonth() + 2, 0);
+      }
+    } else {
+      nextRun.setDate(targetDay);
+      if (nextRun <= nowInTz) nextRun.setMonth(nextRun.getMonth() + 1);
+    }
   } else {
     // Fallback: tomorrow
     nextRun = new Date(nowInTz);

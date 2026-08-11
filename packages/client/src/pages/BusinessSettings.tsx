@@ -3,7 +3,7 @@ import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
 import { useBusinessSettings } from '../context/BusinessSettingsContext';
 
-type SettingsTab = 'system' | 'lifecycle' | 'scheduled-jobs' | 'notifications' | 'payment-methods' | 'integrations';
+type SettingsTab = 'system' | 'lifecycle' | 'processes' | 'notifications' | 'payment-methods' | 'integrations';
 
 export function BusinessSettings() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('system');
@@ -11,7 +11,7 @@ export function BusinessSettings() {
   const tabs: { key: SettingsTab; label: string }[] = [
     { key: 'system', label: 'System' },
     { key: 'lifecycle', label: 'Customer Lifecycle' },
-    { key: 'scheduled-jobs', label: 'Scheduled Jobs' },
+    { key: 'processes', label: 'Processes' },
     { key: 'notifications', label: 'Notifications' },
     { key: 'payment-methods', label: 'Payment Methods' },
     { key: 'integrations', label: 'Integrations' },
@@ -40,7 +40,7 @@ export function BusinessSettings() {
       </div>
       {activeTab === 'system' && <SystemSettings />}
       {activeTab === 'lifecycle' && <LifecycleSettings />}
-      {activeTab === 'scheduled-jobs' && <ScheduledJobsSettings />}
+      {activeTab === 'processes' && <ProcessesSettings />}
       {activeTab === 'notifications' && <NotificationSettings />}
       {activeTab === 'payment-methods' && <PaymentMethodsSettings />}
       {activeTab === 'integrations' && <IntegrationsSettings />}
@@ -217,141 +217,184 @@ function LifecycleSettings() {
 }
 
 // ============================================================
-// Scheduled Jobs Settings
+// Processes Settings
 // ============================================================
 
-function ScheduledJobsSettings() {
+const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function ProcessesSettings() {
   const businessId = localStorage.getItem('business_id') || '';
+  const [processTypes, setProcessTypes] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
-  const [jobTypes, setJobTypes] = useState<any[]>([]);
+  const [businessTimezone, setBusinessTimezone] = useState('UTC');
   const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
-  const [addForm, setAddForm] = useState({ job_type: '', schedule_time: '02:00', schedule_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, frequency: 'daily' });
-  const [selectedHistory, setSelectedHistory] = useState<{ jobId: string; entries: any[] } | null>(null);
+  const [expandedProcess, setExpandedProcess] = useState<string | null>(null);
+  const [runPanel, setRunPanel] = useState<string | null>(null);
+  const [runForm, setRunForm] = useState({ dateFrom: '', dateTo: '', postingDate: '' });
+  const [runResult, setRunResult] = useState<any>(null);
+  const [running, setRunning] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState<any>(null);
+  const [selectedHistory, setSelectedHistory] = useState<{ type: string; entries: any[] } | null>(null);
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
     Promise.all([
+      apiClient.get('/v1/customers/scheduled-jobs/types').then(r => r.data.data),
       apiClient.get(`/v1/customers/scheduled-jobs?business_id=${businessId}`).then(r => r.data.data),
-      apiClient.get(`/v1/customers/scheduled-jobs/types`).then(r => r.data.data),
-    ]).then(([j, t]) => { setJobs(j || []); setJobTypes(t || []); }).catch(() => {}).finally(() => setLoading(false));
+      apiClient.get('/v1/admin/businesses').then(r => {
+        const biz = r.data.data?.find((b: any) => b.id === businessId);
+        return biz?.timezone || 'UTC';
+      }),
+    ]).then(([types, existingJobs, tz]) => {
+      setProcessTypes(types || []);
+      setJobs(existingJobs || []);
+      setBusinessTimezone(tz);
+    }).catch(() => {}).finally(() => setLoading(false));
   }, [businessId]);
 
-  const handleAdd = async () => {
+  const getJobForType = (type: string) => jobs.find((j: any) => j.job_type === type);
+
+  const handleRunNow = (type: string) => {
+    if (runPanel === type) { setRunPanel(null); setRunResult(null); return; }
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+    setRunPanel(type);
+    setRunForm({ dateFrom: yesterday, dateTo: today, postingDate: today });
+    setRunResult(null);
+  };
+
+  const executeRun = async () => {
+    if (!runPanel) return;
+    setRunning(true);
+    setRunResult(null);
     try {
-      const res = await apiClient.post(`/v1/customers/scheduled-jobs?business_id=${businessId}`, addForm);
-      setJobs([...jobs, res.data.data]);
-      setShowAdd(false);
-      setAddForm({ job_type: '', schedule_time: '02:00', schedule_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, frequency: 'daily' });
-    } catch { alert('Failed to create job'); }
+      const body: any = { job_type: runPanel };
+      if (runForm.dateFrom) body.date_from = runForm.dateFrom;
+      if (runForm.dateTo) body.date_to = runForm.dateTo;
+      if (runForm.postingDate) body.posting_date = runForm.postingDate;
+      const res = await apiClient.post(`/v1/customers/scheduled-jobs/run?business_id=${businessId}`, body);
+      setRunResult(res.data.data);
+    } catch (err: any) {
+      setRunResult({ status: 'failed', error: err.response?.data?.message || err.message });
+    } finally { setRunning(false); }
   };
 
-  const handleToggle = async (id: string) => {
-    const res = await apiClient.put(`/v1/customers/scheduled-jobs/${id}/toggle`);
-    setJobs(jobs.map(j => j.id === id ? { ...j, enabled: res.data.data.enabled } : j));
+  const handleScheduleToggle = async (type: string) => {
+    const existingJob = getJobForType(type);
+    if (existingJob) {
+      const res = await apiClient.put(`/v1/customers/scheduled-jobs/${existingJob.id}/toggle`);
+      setJobs(jobs.map((j: any) => j.id === existingJob.id ? { ...j, enabled: res.data.data.enabled } : j));
+    } else {
+      setScheduleForm({ type, frequency: 'daily', schedule_time: '02:00', day_of_week: [1, 2, 3, 4, 5], day_of_month: 1 });
+    }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this scheduled job?')) return;
-    await apiClient.delete(`/v1/customers/scheduled-jobs/${id}`);
-    setJobs(jobs.filter(j => j.id !== id));
+  const saveSchedule = async () => {
+    if (!scheduleForm) return;
+    try {
+      const res = await apiClient.post(`/v1/customers/scheduled-jobs?business_id=${businessId}`, {
+        job_type: scheduleForm.type,
+        schedule_time: scheduleForm.schedule_time,
+        schedule_timezone: businessTimezone,
+        frequency: scheduleForm.frequency,
+        day_of_week: scheduleForm.frequency === 'weekly' ? scheduleForm.day_of_week : null,
+        day_of_month: scheduleForm.frequency === 'monthly' ? scheduleForm.day_of_month : null,
+      });
+      setJobs([...jobs.filter((j: any) => j.job_type !== scheduleForm.type), res.data.data]);
+      setScheduleForm(null);
+    } catch { alert('Failed to save schedule'); }
   };
 
-  const handleViewHistory = async (jobId: string) => {
-    if (selectedHistory?.jobId === jobId) { setSelectedHistory(null); return; }
-    const res = await apiClient.get(`/v1/customers/scheduled-jobs/${jobId}/history`);
-    setSelectedHistory({ jobId, entries: res.data.data || [] });
+  const handleDeleteSchedule = async (type: string) => {
+    const job = getJobForType(type);
+    if (!job) return;
+    if (!confirm('Remove the schedule for this process?')) return;
+    await apiClient.delete(`/v1/customers/scheduled-jobs/${job.id}`);
+    setJobs(jobs.filter((j: any) => j.id !== job.id));
   };
 
-  const getJobLabel = (type: string) => jobTypes.find(t => t.type === type)?.label || type;
+  const handleViewHistory = async (type: string) => {
+    if (selectedHistory?.type === type) { setSelectedHistory(null); return; }
+    const job = getJobForType(type);
+    if (!job) { setSelectedHistory({ type, entries: [] }); return; }
+    const res = await apiClient.get(`/v1/customers/scheduled-jobs/${job.id}/history`);
+    setSelectedHistory({ type, entries: res.data.data || [] });
+  };
 
   if (loading) return <p style={styles.muted}>Loading...</p>;
 
   return (
     <div style={styles.section}>
-      <h2 style={styles.sectionTitle}>Scheduled Jobs</h2>
+      <h2 style={styles.sectionTitle}>Processes</h2>
       <p style={styles.description}>
-        Configure automated processes that run on a schedule. Each job runs at the specified time in your business timezone.
+        Automated business processes. Run any process manually or configure a recurring schedule. Timezone: <strong>{businessTimezone}</strong>
       </p>
 
-      <div style={{ marginBottom: '16px' }}>
-        <Button onClick={() => setShowAdd(!showAdd)}>{showAdd ? 'Cancel' : 'Add Job'}</Button>
-      </div>
-
-      {showAdd && (
-        <div style={{ border: '1px solid var(--color-border)', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-          <div style={styles.fieldRow}>
-            <div style={styles.field}>
-              <label style={styles.label}>Job Type</label>
-              <select style={{ ...styles.input, maxWidth: '300px' }} value={addForm.job_type} onChange={(e) => setAddForm({ ...addForm, job_type: e.target.value })}>
-                <option value="">Select...</option>
-                {jobTypes.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
-              </select>
-            </div>
-            <div style={styles.field}>
-              <label style={styles.label}>Frequency</label>
-              <select style={styles.input} value={addForm.frequency} onChange={(e) => setAddForm({ ...addForm, frequency: e.target.value })}>
-                <option value="every_15min">Every 15 minutes</option>
-                <option value="hourly">Hourly</option>
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-              </select>
-            </div>
-          </div>
-          <div style={styles.fieldRow}>
-            <div style={styles.field}>
-              <label style={styles.label}>Run Time</label>
-              <input style={styles.input} type="time" value={addForm.schedule_time} onChange={(e) => setAddForm({ ...addForm, schedule_time: e.target.value })} />
-            </div>
-            <div style={styles.field}>
-              <label style={styles.label}>Timezone</label>
-              <input style={{ ...styles.input, maxWidth: '250px' }} value={addForm.schedule_timezone} onChange={(e) => setAddForm({ ...addForm, schedule_timezone: e.target.value })} />
-            </div>
-          </div>
-          {addForm.job_type && (
-            <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>
-              {jobTypes.find(t => t.type === addForm.job_type)?.description}
-            </p>
-          )}
-          <Button onClick={handleAdd}>Create Job</Button>
-        </div>
-      )}
-
-      {jobs.length === 0 ? (
-        <p style={styles.muted}>No scheduled jobs configured. Add a job to automate recurring tasks.</p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {jobs.map((job) => (
-            <div key={job.id}>
-              <div style={{ border: '1px solid var(--color-border)', borderRadius: '8px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {processTypes.map((proc: any) => {
+          const job = getJobForType(proc.type);
+          const isExpanded = expandedProcess === proc.type;
+          return (
+            <div key={proc.type} style={{ border: '1px solid var(--color-border)', borderRadius: '8px', overflow: 'hidden' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: isExpanded ? 'var(--color-background)' : undefined }}
+                onClick={() => setExpandedProcess(isExpanded ? null : proc.type)}>
                 <div>
-                  <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{getJobLabel(job.job_type)}</span>
-                  <span style={{ marginLeft: '12px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                    {job.frequency} at {job.schedule_time} ({job.schedule_timezone})
-                  </span>
-                  {job.last_run_at && (
-                    <span style={{ marginLeft: '12px', fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                      Last: {new Date(job.last_run_at).toLocaleString()} ({job.last_run_status})
-                    </span>
-                  )}
-                  {job.consecutive_failures > 0 && (
-                    <span style={{ marginLeft: '8px', fontSize: '11px', color: 'var(--color-error)' }}>
-                      ⚠ {job.consecutive_failures} failure(s)
-                    </span>
-                  )}
+                  <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{proc.label}</span>
+                  <span style={{ marginLeft: '12px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{proc.description}</span>
                 </div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px' }} onClick={() => handleViewHistory(job.id)}>History</button>
-                  <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px', color: job.enabled ? 'var(--color-success)' : 'var(--color-text-secondary)' }} onClick={() => handleToggle(job.id)}>
-                    {job.enabled ? '● Enabled' : '○ Disabled'}
-                  </button>
-                  <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px', color: 'var(--color-error)' }} onClick={() => handleDelete(job.id)}>Delete</button>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                  {job && (
+                    <span style={{ fontSize: '11px', color: job.enabled ? 'var(--color-success)' : 'var(--color-text-muted)', marginRight: '4px' }}>
+                      {job.enabled ? `● ${job.frequency} at ${job.schedule_time}` : '○ Disabled'}
+                    </span>
+                  )}
+                  <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px' }} onClick={() => handleRunNow(proc.type)}>Run</button>
+                  <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px' }} onClick={() => { setExpandedProcess(expandedProcess === proc.type ? null : proc.type); if (!job && expandedProcess !== proc.type) handleScheduleToggle(proc.type); }}>Schedule</button>
+                  <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px' }} onClick={() => handleViewHistory(proc.type)}>History</button>
                 </div>
               </div>
-              {selectedHistory?.jobId === job.id && selectedHistory && (
-                <div style={{ marginLeft: '16px', marginTop: '4px', borderLeft: '2px solid var(--color-border)', paddingLeft: '12px', marginBottom: '8px' }}>
-                  {selectedHistory.entries.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>No execution history</p> : (
+
+              {runPanel === proc.type && (
+                <div style={{ padding: '8px 16px 12px', borderTop: '1px solid var(--color-border)', background: 'var(--color-background)' }}>
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>From
+                      <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '150px' }} type="date" value={runForm.dateFrom} onChange={(e) => setRunForm({ ...runForm, dateFrom: e.target.value })} />
+                    </label>
+                    <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>To
+                      <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '150px' }} type="date" value={runForm.dateTo} onChange={(e) => setRunForm({ ...runForm, dateTo: e.target.value })} />
+                    </label>
+                    {(proc.type === 'revenue_recognition' || proc.type === 'billing_process') && (
+                      <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Posting Date
+                        <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '150px' }} type="date" value={runForm.postingDate} onChange={(e) => setRunForm({ ...runForm, postingDate: e.target.value })} />
+                      </label>
+                    )}
+                    <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 14px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: 'var(--color-primary)' }} onClick={executeRun} disabled={running}>
+                      {running ? 'Running...' : 'Execute'}
+                    </button>
+                  </div>
+                  {runResult && (
+                    <div style={{ marginTop: '8px', fontSize: '12px', padding: '8px', borderRadius: '4px', background: runResult.status === 'failed' ? 'var(--color-error-bg, #fff0f0)' : 'var(--color-success-bg, #f0fff0)', color: runResult.status === 'failed' ? 'var(--color-error)' : 'var(--color-success)' }}>
+                      {runResult.status === 'failed' ? (
+                        <span>Failed: {runResult.error}</span>
+                      ) : (
+                        <span>
+                          Success ({runResult.duration_ms}ms)
+                          {runResult.result?.journalEntriesCreated !== undefined && (
+                            <> — {runResult.result.journalEntriesCreated} entries created, {runResult.result.datesProcessed} dates processed, {runResult.result.skipped} skipped</>
+                          )}
+                          {runResult.result?.transitioned !== undefined && (
+                            <> — {runResult.result.transitioned} customers transitioned</>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {selectedHistory?.type === proc.type && selectedHistory && (
+                <div style={{ padding: '8px 16px 12px', borderTop: '1px solid var(--color-border)' }}>
+                  {selectedHistory.entries.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: 0 }}>No execution history</p> : (
                     selectedHistory.entries.slice(0, 10).map((e: any) => (
                       <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0', borderBottom: '1px solid var(--color-border)' }}>
                         <span>{new Date(e.started_at).toLocaleString()}</span>
@@ -361,10 +404,79 @@ function ScheduledJobsSettings() {
                   )}
                 </div>
               )}
+
+              {isExpanded && (
+                <div style={{ padding: '12px 16px', borderTop: '1px solid var(--color-border)' }}>
+                  {job ? (
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>
+                        Schedule: <strong>{job.frequency}</strong> at <strong>{job.schedule_time}</strong>
+                        {job.frequency === 'weekly' && job.day_of_week != null && <> on <strong>{(Array.isArray(job.day_of_week) ? job.day_of_week : [job.day_of_week]).map((d: number) => DAYS_OF_WEEK[d]?.slice(0, 3)).join(', ')}</strong></>}
+                        {job.frequency === 'monthly' && job.day_of_month != null && <> on day <strong>{job.day_of_month === -1 ? 'Last day' : job.day_of_month}</strong></>}
+                      </span>
+                      <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px', color: job.enabled ? 'var(--color-success)' : 'var(--color-text-secondary)' }} onClick={() => handleScheduleToggle(proc.type)}>
+                        {job.enabled ? '● Enabled' : '○ Disabled'}
+                      </button>
+                      <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px', color: 'var(--color-error)' }} onClick={() => handleDeleteSchedule(proc.type)}>Remove Schedule</button>
+                      {job.last_run_at && (
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Last: {new Date(job.last_run_at).toLocaleString()} ({job.last_run_status})</span>
+                      )}
+                    </div>
+                  ) : scheduleForm?.type === proc.type ? (
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div>
+                        <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Frequency</label>
+                        <select style={{ ...styles.input, marginLeft: '4px' }} value={scheduleForm.frequency} onChange={(e) => setScheduleForm({ ...scheduleForm, frequency: e.target.value })}>
+                          <option value="every_15min">Every 15 min</option>
+                          <option value="hourly">Hourly</option>
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                          <option value="monthly">Monthly</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Time</label>
+                        <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '100px' }} type="time" value={scheduleForm.schedule_time} onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })} />
+                      </div>
+                      {scheduleForm.frequency === 'weekly' && (
+                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                          <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginRight: '4px' }}>Days</label>
+                          {DAYS_OF_WEEK.map((d, i) => {
+                            const selected = (scheduleForm.day_of_week || []).includes(i);
+                            return (
+                              <button key={i} type="button" style={{ padding: '2px 8px', fontSize: '11px', cursor: 'pointer', borderRadius: '4px', border: '1px solid var(--color-border)', background: selected ? 'var(--color-primary)' : 'transparent', color: selected ? '#fff' : 'var(--color-text-secondary)' }}
+                                onClick={() => {
+                                  const days = scheduleForm.day_of_week || [];
+                                  const updated = selected ? days.filter((x: number) => x !== i) : [...days, i].sort();
+                                  setScheduleForm({ ...scheduleForm, day_of_week: updated });
+                                }}>{d.slice(0, 3)}</button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {scheduleForm.frequency === 'monthly' && (
+                        <div>
+                          <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Day of Month</label>
+                          <select style={{ ...styles.input, marginLeft: '4px' }} value={scheduleForm.day_of_month} onChange={(e) => setScheduleForm({ ...scheduleForm, day_of_month: parseInt(e.target.value) })}>
+                            {Array.from({ length: 31 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}
+                            <option value={-1}>Last day</option>
+                          </select>
+                        </div>
+                      )}
+                      <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 12px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: 'var(--color-primary)' }} onClick={saveSchedule}>Save</button>
+                      <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px' }} onClick={() => setScheduleForm(null)}>Cancel</button>
+                    </div>
+                  ) : (
+                    <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 12px', cursor: 'pointer', fontSize: '12px' }} onClick={() => handleScheduleToggle(proc.type)}>
+                      Add Schedule
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
     </div>
   );
 }

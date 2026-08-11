@@ -55,6 +55,9 @@ interface EditTenantForm {
   billing_method: string;
   signup_date: string;
   next_billing_date: string;
+  // Territory
+  territory_postal_code: string;
+  territory_radius_km: string;
   // Receiving account (where business payments go)
   receiving_bank_name: string;
   receiving_account_holder: string;
@@ -112,7 +115,7 @@ export function Tenants() {
 
   // Edit mode state
   const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState<EditTenantForm>({ name: '', default_language: '', currency: '', timezone: '' });
+  const [editForm, setEditForm] = useState<EditTenantForm>({ name: '', default_language: '', currency: '', timezone: '', territory_postal_code: '', territory_radius_km: '25' } as EditTenantForm);
   const [editError, setEditError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -223,6 +226,8 @@ export function Tenants() {
       receiving_account_number: (tenant as any).receiving_account_number || '',
       receiving_routing_number: (tenant as any).receiving_routing_number || '',
       receiving_iban: (tenant as any).receiving_iban || '',
+      territory_postal_code: (tenant as any).territory_address || '',
+      territory_radius_km: (tenant as any).territory_radius_km ? String((tenant as any).territory_radius_km) : '25',
       payment_bank_name: (tenant as any).payment_bank_name || '',
       payment_account_holder: (tenant as any).payment_account_holder || '',
       payment_account_number: (tenant as any).payment_account_number || '',
@@ -257,14 +262,25 @@ export function Tenants() {
       if (editForm.signup_date !== (selectedTenant.signup_date || '')) body.signup_date = editForm.signup_date || null;
       if (editForm.next_billing_date !== (selectedTenant.next_billing_date || '')) body.next_billing_date = editForm.next_billing_date || null;
 
-      if (Object.keys(body).length === 0) {
+      if (Object.keys(body).length === 0 && !editForm.territory_postal_code) {
         setEditing(false);
         return;
       }
 
-      const res = await apiClient.put(`/v1/admin/tenants/${selectedTenant.id}`, body);
-      const updated = res.data.data;
-      setSelectedTenant(updated);
+      if (Object.keys(body).length > 0) {
+        const res = await apiClient.put(`/v1/admin/tenants/${selectedTenant.id}`, body);
+        const updated = res.data.data;
+        setSelectedTenant(updated);
+      }
+
+      // Save territory if postal code provided
+      if (editForm.territory_postal_code) {
+        await apiClient.put(`/v1/prospects/territories/${selectedTenant.id}`, {
+          postal_code: editForm.territory_postal_code,
+          territory_radius_km: parseInt(editForm.territory_radius_km) || 25,
+        });
+      }
+
       setEditing(false);
       fetchTenants();
     } catch (err: any) {
@@ -434,6 +450,19 @@ export function Tenants() {
                   >
                     {TIMEZONES.map((tz) => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
                   </select>
+                </div>
+
+                <div style={styles.formDivider}>Territory</div>
+
+                <div style={styles.formRow}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Postal Code</label>
+                    <input style={styles.input} type="text" placeholder="e.g., 08001" value={editForm.territory_postal_code} onChange={(e) => setEditForm({ ...editForm, territory_postal_code: e.target.value })} />
+                  </div>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Distance (km)</label>
+                    <input style={styles.input} type="number" min="5" value={editForm.territory_radius_km} onChange={(e) => setEditForm({ ...editForm, territory_radius_km: e.target.value })} />
+                  </div>
                 </div>
 
                 <div style={styles.formDivider}>Owner Details</div>
@@ -633,6 +662,19 @@ export function Tenants() {
                     <span style={styles.detailLabel}>Language</span>
                     <span style={styles.detailValue}>{selectedTenant.default_language}</span>
                   </div>
+                  {(selectedTenant as any).territory_address && (
+                    <>
+                      <div style={{ ...styles.formDivider, marginTop: '12px' }}>Territory</div>
+                      <div style={styles.detailRow}>
+                        <span style={styles.detailLabel}>Postal Code</span>
+                        <span style={styles.detailValue}>{(selectedTenant as any).territory_address}</span>
+                      </div>
+                      <div style={styles.detailRow}>
+                        <span style={styles.detailLabel}>Distance</span>
+                        <span style={styles.detailValue}>{(selectedTenant as any).territory_radius_km} km</span>
+                      </div>
+                    </>
+                  )}
                   {selectedTenant.owner && (
                     <>
                       <div style={{ ...styles.formDivider, marginTop: '12px' }}>Owner</div>

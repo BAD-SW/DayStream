@@ -15,6 +15,9 @@ import { TenantBusinesses } from './pages/TenantBusinesses';
 import { TenantBilling } from './pages/TenantBilling';
 import { TenantReports } from './pages/TenantReports';
 import { TenantUsers } from './pages/TenantUsers';
+import { Prospects } from './pages/Prospects';
+import { CoverageMap } from './pages/CoverageMap';
+import { ProspectCategories } from './pages/ProspectCategories';
 import { Customers } from './pages/Customers';
 import { CustomerCreate } from './pages/CustomerCreate';
 import { CustomerDetail } from './pages/CustomerDetail';
@@ -138,6 +141,7 @@ export function App() {
 
         {/* Payroll & AP */}
         <Route path="/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
+        <Route path="/accounting" element={<ProtectedRoute><AccountsPayable /></ProtectedRoute>} />
         <Route path="/ap" element={<ProtectedRoute><AccountsPayable /></ProtectedRoute>} />
 
         {/* Business (Staff, Resources, Locations) */}
@@ -282,6 +286,30 @@ export function App() {
           element={
             <ProtectedRoute requiredRole="Manager" layout="none">
               <AdminLayout><TenantReports /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/prospects"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><Prospects /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/coverage-map"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><CoverageMap /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/prospect-categories"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><ProspectCategories /></AdminLayout>
             </ProtectedRoute>
           }
         />

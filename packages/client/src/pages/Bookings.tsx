@@ -120,6 +120,7 @@ export function Bookings() {
         <h1 style={styles.title}>Appointments</h1>
         <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
           <button style={styles.navBtn} onClick={() => navigate('/bookings/new')}>New Appointment</button>
+          <button style={styles.navBtn} onClick={() => navigate('/checkout?new=true')}>New Sale</button>
           <button style={styles.navBtn} onClick={() => navigate('/bookings/calendar')}>Calendar</button>
         </div>
       </div>

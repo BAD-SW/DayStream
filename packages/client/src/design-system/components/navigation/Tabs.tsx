@@ -10,9 +10,10 @@ interface TabsProps {
   items: TabItem[];
   defaultTab?: string;
   orientation?: 'horizontal' | 'vertical';
+  onTabChange?: (tabId: string) => void;
 }
 
-export function Tabs({ items, defaultTab, orientation = 'horizontal' }: TabsProps) {
+export function Tabs({ items, defaultTab, orientation = 'horizontal', onTabChange }: TabsProps) {
   const [active, setActive] = useState(defaultTab || items[0]?.id);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -36,6 +37,7 @@ export function Tabs({ items, defaultTab, orientation = 'horizontal' }: TabsProp
 
     e.preventDefault();
     setActive(items[newIndex].id);
+    onTabChange?.(items[newIndex].id);
     tabRefs.current[newIndex]?.focus();
   }
 
@@ -54,7 +56,7 @@ export function Tabs({ items, defaultTab, orientation = 'horizontal' }: TabsProp
               aria-selected={isActive}
               aria-controls={`tabpanel-${item.id}`}
               tabIndex={isActive ? 0 : -1}
-              onClick={() => setActive(item.id)}
+              onClick={() => { setActive(item.id); onTabChange?.(item.id); }}
               onKeyDown={(e) => handleKeyDown(e, index)}
               style={{
                 background: 'none', border: 'none', outline: 'none',
@@ -94,7 +96,7 @@ export function Tabs({ items, defaultTab, orientation = 'horizontal' }: TabsProp
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  tabList: { display: 'flex', gap: 'var(--space-xs)', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-md)' },
+  tabList: { display: 'flex', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-md)', justifyContent: 'space-evenly', width: '80%' },
   tabListVertical: { display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)', borderRight: '1px solid var(--color-border)', paddingRight: 'var(--space-md)', minWidth: '150px' },
   containerVertical: { display: 'flex', gap: 'var(--space-md)' },
   tab: {

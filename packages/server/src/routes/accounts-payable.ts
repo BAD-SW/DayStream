@@ -28,6 +28,7 @@ const createVendorSchema = Joi.object({
   tax_id: Joi.string().max(50).allow('', null),
   payment_terms: Joi.number().integer().min(0).default(30),
   category: Joi.string().max(50).allow('', null),
+  default_account_id: Joi.string().uuid().allow('', null),
   notes: Joi.string().max(1000).allow('', null),
 });
 
@@ -45,7 +46,7 @@ apRouter.post('/vendors', requirePermission('settings:*'), validate(createVendor
     const vendor = await vendorsService.createVendor({
       businessId: req.body.business_id, name: req.body.name, contactName: req.body.contact_name,
       email: req.body.email, phone: req.body.phone, address: req.body.address,
-      taxId: req.body.tax_id, paymentTerms: req.body.payment_terms, category: req.body.category, notes: req.body.notes,
+      taxId: req.body.tax_id, paymentTerms: req.body.payment_terms, category: req.body.category, defaultAccountId: req.body.default_account_id, notes: req.body.notes,
     });
     success(res, vendor, undefined, 201);
   } catch (err: any) { error(res, 'Failed to create vendor', 'INTERNAL_ERROR', 500); }
@@ -72,6 +73,7 @@ const createBillSchema = Joi.object({
   amount: Joi.number().integer().min(1).required(),
   due_date: Joi.string().isoDate().required(),
   description: Joi.string().max(500).allow('', null),
+  account_id: Joi.string().uuid().allow(null),
   line_items: Joi.array().items(Joi.object({
     description: Joi.string().required(), quantity: Joi.number().required(),
     unit_price: Joi.number().integer().required(), account_id: Joi.string().uuid().allow(null),
@@ -80,7 +82,12 @@ const createBillSchema = Joi.object({
   recurrence_interval: Joi.string().valid('monthly', 'quarterly', 'annually').allow(null),
 });
 
-const recordPaymentSchema = Joi.object({ amount: Joi.number().integer().min(1).required() });
+const recordPaymentSchema = Joi.object({
+  amount: Joi.number().integer().min(1).required(),
+  payment_date: Joi.string().isoDate().allow(null),
+  payment_method: Joi.string().max(50).allow('', null),
+  reference: Joi.string().max(100).allow('', null),
+});
 
 apRouter.get('/bills', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
@@ -93,13 +100,26 @@ apRouter.get('/bills', requirePermission('settings:*'), async (req: Request, res
 
 apRouter.post('/bills', requirePermission('settings:*'), validate(createBillSchema), async (req: Request, res: Response) => {
   try {
+    const authReq = req as AuthenticatedRequest;
     const bill = await billsService.createBill({
       businessId: req.body.business_id, vendorId: req.body.vendor_id, invoiceNumber: req.body.invoice_number,
       amount: req.body.amount, dueDate: req.body.due_date, description: req.body.description,
+      accountId: req.body.account_id,
       lineItems: req.body.line_items, isRecurring: req.body.is_recurring, recurrenceInterval: req.body.recurrence_interval,
+      createdBy: authReq.user.sub,
     });
     success(res, bill, undefined, 201);
   } catch (err: any) { error(res, 'Failed to create bill', 'INTERNAL_ERROR', 500); }
+});
+
+apRouter.put('/bills/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const bill = await billsService.updateBill(req.params.id, businessId, req.body);
+    if (!bill) { error(res, 'Bill not found', 'NOT_FOUND', 404); return; }
+    success(res, bill);
+  } catch (err: any) { error(res, 'Failed to update bill', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.put('/bills/:id/approve', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -117,7 +137,11 @@ apRouter.put('/bills/:id/pay', requirePermission('settings:*'), validate(recordP
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    const bill = await billsService.recordPayment(req.params.id, businessId, req.body.amount);
+    const bill = await billsService.recordPayment(req.params.id, businessId, req.body.amount, {
+      paymentDate: req.body.payment_date,
+      paymentMethod: req.body.payment_method,
+      reference: req.body.reference,
+    });
     if (!bill) { error(res, 'Bill not found', 'NOT_FOUND', 404); return; }
     success(res, bill);
   } catch (err: any) { error(res, 'Failed to record payment', 'INTERNAL_ERROR', 500); }
@@ -160,6 +184,38 @@ apRouter.post('/expenses', requirePermission('settings:*'), validate(createExpen
     });
     success(res, expense, undefined, 201);
   } catch (err: any) { error(res, 'Failed to create expense', 'INTERNAL_ERROR', 500); }
+});
+
+const updateExpenseSchema = Joi.object({
+  date: Joi.string().isoDate(),
+  amount: Joi.number().integer().min(1),
+  account_id: Joi.string().uuid().allow(null),
+  description: Joi.string().max(500).allow('', null),
+  vendor_id: Joi.string().uuid().allow(null),
+  payment_method: Joi.string().max(50).allow('', null),
+});
+
+apRouter.put('/expenses/:id', requirePermission('settings:*'), validate(updateExpenseSchema), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const updated = await expensesService.updateExpense(req.params.id, businessId, {
+      date: req.body.date, amount: req.body.amount, accountId: req.body.account_id,
+      description: req.body.description, vendorId: req.body.vendor_id, paymentMethod: req.body.payment_method,
+    });
+    if (!updated) { error(res, 'Expense not found', 'NOT_FOUND', 404); return; }
+    success(res, updated);
+  } catch (err: any) { error(res, 'Failed to update expense', 'INTERNAL_ERROR', 500); }
+});
+
+apRouter.delete('/expenses/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const deleted = await expensesService.deleteExpense(req.params.id, businessId);
+    if (!deleted) { error(res, 'Expense not found', 'NOT_FOUND', 404); return; }
+    success(res, { deleted: true });
+  } catch (err: any) { error(res, 'Failed to delete expense', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.put('/expenses/:id/approve', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -222,6 +278,37 @@ apRouter.put('/accounts/:id/archive', requirePermission('settings:*'), async (re
     if (!result.success) { error(res, result.error!, 'VALIDATION_ERROR', 400); return; }
     success(res, { archived: true });
   } catch (err: any) { error(res, 'Failed to archive account', 'INTERNAL_ERROR', 500); }
+});
+
+// PUT /api/v1/ap/accounts/:id/unarchive
+apRouter.put('/accounts/:id/unarchive', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const result = await coaService.unarchiveAccount(req.params.id, businessId);
+    if (!result.success) { error(res, result.error!, 'VALIDATION_ERROR', 400); return; }
+    success(res, { unarchived: true });
+  } catch (err: any) { error(res, 'Failed to unarchive account', 'INTERNAL_ERROR', 500); }
+});
+
+// PUT /api/v1/ap/accounts/:id
+const updateAccountSchema = Joi.object({
+  name: Joi.string().min(1).max(100),
+  description: Joi.string().max(500).allow('', null),
+  code: Joi.string().min(1).max(20),
+}).min(1);
+
+apRouter.put('/accounts/:id', requirePermission('settings:*'), validate(updateAccountSchema), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const account = await coaService.updateAccount(req.params.id, businessId, req.body);
+    if (!account) { error(res, 'Account not found', 'NOT_FOUND', 404); return; }
+    success(res, account);
+  } catch (err: any) {
+    if (err.message.includes('duplicate') || err.message.includes('unique')) { error(res, 'Account code already exists', 'DUPLICATE', 409); }
+    else { error(res, 'Failed to update account', 'INTERNAL_ERROR', 500); }
+  }
 });
 
 // POST /api/v1/ap/accounts/seed — Seed defaults
