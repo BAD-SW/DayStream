@@ -6,13 +6,62 @@ const H3_RESOLUTION = 6; // ~7km edge length, good for regional franchise territ
 const HEX_EDGE_LENGTH_KM = 7;
 
 /**
- * Generate H3 hexagon indexes for a territory defined by center + radius.
+ * Generate H3 hexagon indexes for a territory.
+ * If a boundary polygon is available (from Nominatim), fills the polygon shape.
+ * Otherwise falls back to point + radius disk.
  */
-export function generateTerritoryHexagons(lat: number, lng: number, radiusKm: number): string[] {
+export function generateTerritoryHexagons(lat: number, lng: number, radiusKm: number, boundaryPolygon?: number[][]): string[] {
+  if (boundaryPolygon && boundaryPolygon.length >= 3) {
+    // Use polygon fill — fills the exact boundary shape
+    try {
+      const hexagons = h3.polygonToCells(boundaryPolygon, H3_RESOLUTION);
+      if (hexagons.length > 0) {
+        logger.info(`[H3Territory] Generated ${hexagons.length} hexagons from boundary polygon`);
+        if (hexagons.length > 5000) {
+          logger.warn(`[H3Territory] Territory has ${hexagons.length} hexagons — capping at 5000`);
+          return hexagons.slice(0, 5000);
+        }
+        return hexagons;
+      }
+    } catch (err: any) {
+      logger.error(`[H3Territory] polygonToCells failed: ${err.message}, falling back to gridDisk`);
+    }
+  }
+
+  // Fallback: point + radius disk
   const centerHex = h3.latLngToCell(lat, lng, H3_RESOLUTION);
   const ringSize = Math.ceil(radiusKm / (HEX_EDGE_LENGTH_KM * 1.5));
   const hexagons = h3.gridDisk(centerHex, ringSize);
+  logger.info(`[H3Territory] Generated ${hexagons.length} hexagons from gridDisk (radius=${radiusKm}km, rings=${ringSize})`);
   return hexagons;
+}
+
+/**
+ * Extract a flat coordinate array from GeoJSON for use with h3.polygonToCells.
+ * GeoJSON uses [lng, lat] — H3 expects [lat, lng].
+ */
+export function geojsonToH3Polygon(geojson: any): number[][] | null {
+  if (!geojson) return null;
+
+  let coords: number[][];
+
+  if (geojson.type === 'Polygon') {
+    // Take the outer ring (first array)
+    coords = geojson.coordinates[0];
+  } else if (geojson.type === 'MultiPolygon') {
+    // Take the largest polygon (most coordinates)
+    let largest = geojson.coordinates[0][0];
+    for (const poly of geojson.coordinates) {
+      if (poly[0].length > largest.length) largest = poly[0];
+    }
+    coords = largest;
+  } else {
+    return null;
+  }
+
+  // GeoJSON is [lng, lat], H3 expects [lat, lng]
+  const h3Coords = coords.map(([lng, lat]: number[]) => [lat, lng]);
+  return h3Coords.length >= 3 ? h3Coords : null;
 }
 
 /**
@@ -24,20 +73,24 @@ export async function saveTerritoryHexagons(tenantId: string, hexagons: string[]
 
   if (hexagons.length === 0) return 0;
 
-  // Batch insert
-  const values: string[] = [];
-  const params: any[] = [];
-  let idx = 1;
+  // Batch insert in chunks of 500 to avoid param limits
+  const chunkSize = 500;
+  for (let i = 0; i < hexagons.length; i += chunkSize) {
+    const chunk = hexagons.slice(i, i + chunkSize);
+    const values: string[] = [];
+    const params: any[] = [];
+    let idx = 1;
 
-  for (const hex of hexagons) {
-    values.push(`($${idx++}, $${idx++})`);
-    params.push(tenantId, hex);
+    for (const hex of chunk) {
+      values.push(`($${idx++}, $${idx++})`);
+      params.push(tenantId, hex);
+    }
+
+    await adminPool.query(
+      `INSERT INTO prp_tenant_territories (tenant_id, h3_index) VALUES ${values.join(', ')} ON CONFLICT DO NOTHING`,
+      params,
+    );
   }
-
-  await adminPool.query(
-    `INSERT INTO prp_tenant_territories (tenant_id, h3_index) VALUES ${values.join(', ')} ON CONFLICT DO NOTHING`,
-    params,
-  );
 
   logger.info(`[H3Territory] Saved ${hexagons.length} hexagons for tenant ${tenantId}`);
   return hexagons.length;

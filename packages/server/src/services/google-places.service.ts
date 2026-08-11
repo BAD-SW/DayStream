@@ -110,24 +110,23 @@ export async function geocodePostalCode(location: string): Promise<{ lat: number
     sw: { lat: viewport.southwest.lat, lng: viewport.southwest.lng },
   } : undefined;
 
-  // Try Nominatim for boundary polygon (using the Google-resolved coordinates to narrow the search)
+  // Try Nominatim forward search for boundary polygon (works for countries, states, cities)
   let geojson: any = undefined;
   try {
-    const nomUrl = new URL('https://nominatim.openstreetmap.org/reverse');
-    nomUrl.searchParams.set('lat', String(coords.lat));
-    nomUrl.searchParams.set('lon', String(coords.lng));
+    const nomUrl = new URL('https://nominatim.openstreetmap.org/search');
+    nomUrl.searchParams.set('q', location);
     nomUrl.searchParams.set('format', 'json');
     nomUrl.searchParams.set('polygon_geojson', '1');
-    nomUrl.searchParams.set('zoom', '8'); // region-level detail
+    nomUrl.searchParams.set('limit', '1');
 
     const nomResponse = await fetch(nomUrl.toString(), {
       headers: { 'User-Agent': 'DayStream/1.0 (prospect-management)' },
     });
 
     if (nomResponse.ok) {
-      const nomData = await nomResponse.json() as any;
-      if (nomData.geojson && (nomData.geojson.type === 'Polygon' || nomData.geojson.type === 'MultiPolygon')) {
-        geojson = nomData.geojson;
+      const nomData = await nomResponse.json() as any[];
+      if (nomData.length > 0 && nomData[0].geojson && (nomData[0].geojson.type === 'Polygon' || nomData[0].geojson.type === 'MultiPolygon')) {
+        geojson = nomData[0].geojson;
       }
     }
   } catch { /* Boundary polygon is optional */ }

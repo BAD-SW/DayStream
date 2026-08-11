@@ -16,7 +16,7 @@ prospectsRouter.use(authenticate);
 
 const updateTerritorySchema = Joi.object({
   location: Joi.string().max(200).required(),
-  territory_radius_km: Joi.number().integer().min(5).required(),
+  territory_radius_km: Joi.number().integer().min(5).default(50),
 });
 
 // PUT /api/v1/prospects/territories/:tenantId — Assign/update territory (system admin)
@@ -31,10 +31,19 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
 
     const radius = territory_radius_km;
 
-    // Generate H3 hexagons for the territory
-    const { generateTerritoryHexagons, saveTerritoryHexagons } = await import('../services/h3-territory.service');
-    const hexagons = generateTerritoryHexagons(geo.lat, geo.lng, radius);
-    await saveTerritoryHexagons(req.params.tenantId, hexagons);
+    // Generate H3 hexagons asynchronously (don't block the save response)
+    const { generateTerritoryHexagons, saveTerritoryHexagons, geojsonToH3Polygon } = await import('../services/h3-territory.service');
+    const boundaryPolygon = geo.geojson ? geojsonToH3Polygon(geo.geojson) : null;
+
+    // Fire and forget — hexagons generate in the background
+    (async () => {
+      try {
+        const hexagons = generateTerritoryHexagons(geo.lat, geo.lng, radius, boundaryPolygon || undefined);
+        await saveTerritoryHexagons(req.params.tenantId, hexagons);
+      } catch (err: any) {
+        console.error(`[H3Territory] Background hex generation failed: ${err.message}`);
+      }
+    })();
 
     // Update tenant record
     const { rows } = await adminPool.query(
@@ -43,7 +52,7 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
       [geo.lat, geo.lng, radius, location, req.params.tenantId],
     );
     if (rows.length === 0) { error(res, 'Tenant not found', 'NOT_FOUND', 404); return; }
-    success(res, { ...rows[0], hexagon_count: hexagons.length });
+    success(res, { ...rows[0], hexagons_generating: true });
   } catch (err: any) { error(res, err.message || 'Failed to update territory', 'INTERNAL_ERROR', 500); }
 });
 

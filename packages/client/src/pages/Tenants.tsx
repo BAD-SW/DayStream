@@ -282,7 +282,12 @@ export function Tenants() {
       }
 
       setEditing(false);
-      fetchTenants();
+      // Refresh tenant list and selected tenant detail
+      const tenantsRes = await apiClient.get('/v1/admin/tenants');
+      const updatedTenants = tenantsRes.data.data;
+      setTenants(updatedTenants);
+      const updatedTenant = updatedTenants.find((t: any) => t.id === selectedTenant.id);
+      if (updatedTenant) setSelectedTenant(updatedTenant);
     } catch (err: any) {
       setEditError(err.response?.data?.message || 'Failed to update tenant');
     } finally {
