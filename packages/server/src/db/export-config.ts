@@ -23,6 +23,7 @@
 import { adminPool } from './pool';
 import * as fs from 'fs';
 import * as path from 'path';
+import bcrypt from 'bcrypt';
 
 const BUSINESS_ID = '83e81f01-93eb-4895-a9a6-c44912748978';
 
@@ -91,9 +92,11 @@ BEGIN;
   const { rows: users } = await adminPool.query(
     'SELECT * FROM usr_users WHERE tenant_id = $1 ORDER BY created_at', [tenantId]
   );
+  // Real bcrypt hash (not a placeholder string) so exported accounts can actually log in.
+  const passwordHash = await bcrypt.hash('password123', 12);
   output += `-- usr_users (${users.length} rows) - passwords excluded, set to bcrypt hash of 'password123'\n`;
   for (const u of users) {
-    output += `INSERT INTO usr_users (id, tenant_id, business_id, email, password_hash, first_name, last_name, role, persona, status, email_verified, created_at) VALUES (${escapeSQL(u.id)}, ${escapeSQL(u.tenant_id)}, ${escapeSQL(u.business_id)}, ${escapeSQL(u.email)}, '$2b$12$LJ3a4xq5YzKzV.1e6H6n8OJ5v7u5u5u5u5u5u5u5u5u5u5u5u5u5u', ${escapeSQL(u.first_name)}, ${escapeSQL(u.last_name)}, ${escapeSQL(u.role)}, ${escapeSQL(u.persona)}, ${escapeSQL(u.status)}, TRUE, ${escapeSQL(u.created_at?.toISOString?.() || u.created_at)}) ON CONFLICT (id) DO NOTHING;\n`;
+    output += `INSERT INTO usr_users (id, tenant_id, business_id, email, password_hash, first_name, last_name, role, persona, status, email_verified, created_at) VALUES (${escapeSQL(u.id)}, ${escapeSQL(u.tenant_id)}, ${escapeSQL(u.business_id)}, ${escapeSQL(u.email)}, ${escapeSQL(passwordHash)}, ${escapeSQL(u.first_name)}, ${escapeSQL(u.last_name)}, ${escapeSQL(u.role)}, ${escapeSQL(u.persona)}, ${escapeSQL(u.status)}, TRUE, ${escapeSQL(u.created_at?.toISOString?.() || u.created_at)}) ON CONFLICT (id) DO NOTHING;\n`;
   }
   output += '\n';
 

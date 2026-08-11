@@ -16,7 +16,8 @@ interface CreateBookingInput {
   notes?: string;
   createdBy: string;
   tenantId: string;
-  overrideRules?: boolean;  // staff can override lead time etc.
+  overrideRules?: boolean;  // staff can override lead time, staff hours, AND resource capacity
+  participantCount?: number; // headcount this booking occupies on its resource; default 1
 }
 
 interface BookingFilters {
@@ -56,6 +57,7 @@ export async function createBooking(input: CreateBookingInput) {
 
   const startTime = new Date(input.startTime);
   const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
+  const participantCount = input.participantCount && input.participantCount >= 1 ? Math.floor(input.participantCount) : 1;
 
   // Calculate price with applicable rules
   let price = basePrice;
@@ -233,46 +235,30 @@ export async function createBooking(input: CreateBookingInput) {
     );
     if (availRules.length > 0 && availRules[0].resource_ids && availRules[0].resource_ids.length > 0) {
       const requiredResourceIds: string[] = availRules[0].resource_ids;
-      // Find an available resource (max concurrent under capacity for this time)
+      // Find an available resource with enough remaining headcount for this booking
       for (const resId of requiredResourceIds) {
-        const { rows: resRows } = await adminPool.query('SELECT capacity FROM res_resources WHERE id = $1', [resId]);
-        const capacity = resRows[0]?.capacity || 1;
-        const { rows: overlapping } = await adminPool.query(
-          `SELECT start_time, end_time FROM apt_bookings
-           WHERE resource_id = $1 AND start_time < $3 AND end_time > $2
-             AND status IN ('pending', 'confirmed', 'in_progress')`,
-          [resId, startTime.toISOString(), endTime.toISOString()],
-        );
-        // Check max concurrent at any point within the proposed slot
-        if (overlapping.length < capacity) {
-          resourceId = resId;
-          break;
-        }
-        const checkPoints = [startTime.getTime()];
-        for (const ob of overlapping) {
-          const obStart = new Date(ob.start_time).getTime();
-          const obEnd = new Date(ob.end_time).getTime();
-          if (obStart > startTime.getTime() && obStart < endTime.getTime()) checkPoints.push(obStart);
-          if (obEnd > startTime.getTime() && obEnd < endTime.getTime()) checkPoints.push(obEnd - 1);
-        }
-        const maxConcurrent = checkPoints.reduce((max, t) => {
-          const concurrent = overlapping.filter((ob: any) =>
-            new Date(ob.start_time).getTime() <= t && new Date(ob.end_time).getTime() > t
-          ).length;
-          return Math.max(max, concurrent);
-        }, 0);
-        if (maxConcurrent < capacity) {
+        const remaining = await getResourceRemainingCapacity(resId, startTime, endTime);
+        if (remaining >= participantCount) {
           resourceId = resId;
           break;
         }
       }
-      if (!resourceId) throw new Error('Resource has a conflicting booking at this time');
+      if (!resourceId && !input.overrideRules) throw new Error('Resource has a conflicting booking at this time');
+      if (!resourceId) resourceId = requiredResourceIds[0]; // override: still need *a* resource on the row
     }
   }
 
   if (resourceId) {
-    const resourceConflict = await checkResourceConflict(resourceId, startTime, endTime);
-    if (resourceConflict) throw new Error('Resource has a conflicting booking at this time');
+    const remaining = await getResourceRemainingCapacity(resourceId, startTime, endTime);
+    if (participantCount > remaining) {
+      if (!input.overrideRules) {
+        throw new Error(`Only ${Math.max(remaining, 0)} spot(s) remaining — exceeds resource capacity for this slot`);
+      }
+      // overrideRules: allow through. The booking is still inserted with its real
+      // participant_count below, so this time window now correctly reads as over capacity
+      // for anyone else computing remaining/fill-state afterwards — that's the highlight signal
+      // the calendar (feature 31) uses, no separate flag needed.
+    }
   }
 
   // For shared/group: check capacity
@@ -308,15 +294,15 @@ export async function createBooking(input: CreateBookingInput) {
   // Insert booking
   const { rows } = await adminPool.query(
     `INSERT INTO apt_bookings (business_id, customer_id, walk_in_name, service_id, variant_id, staff_id, resource_id,
-       start_time, end_time, buffer_before, buffer_after, status, booking_reference, booking_type, price, notes, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+       start_time, end_time, buffer_before, buffer_after, status, booking_reference, booking_type, price, notes, created_by, participant_count)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
      RETURNING *`,
     [
       input.businessId, input.customerId || null, input.walkInName || null, input.serviceId, input.variantId,
       staffId, resourceId,
       startTime.toISOString(), endTime.toISOString(),
       bufferBefore, bufferAfter, status, bookingReference, bookingType, price,
-      input.notes || null, input.createdBy,
+      input.notes || null, input.createdBy, participantCount,
     ],
   );
 
@@ -514,7 +500,13 @@ async function checkStaffConflict(staffId: string, startTime: Date, endTime: Dat
   return holds.length > 0;
 }
 
-async function checkResourceConflict(resourceId: string, startTime: Date, endTime: Date): Promise<boolean> {
+/**
+ * Remaining capacity (in participants) for a resource across a proposed time window, accounting
+ * for real interval overlap and each existing booking's actual participant_count — not just a
+ * count of overlapping booking rows. Replaces the old boolean-only checkResourceConflict; used
+ * both for auto-assigning a resource and for gating/reporting capacity on the chosen one.
+ */
+async function getResourceRemainingCapacity(resourceId: string, startTime: Date, endTime: Date): Promise<number> {
   // Get resource capacity
   const { rows: resRows } = await adminPool.query(
     'SELECT capacity FROM res_resources WHERE id = $1', [resourceId],
@@ -523,7 +515,7 @@ async function checkResourceConflict(resourceId: string, startTime: Date, endTim
 
   // Get overlapping bookings
   const { rows: overlapping } = await adminPool.query(
-    `SELECT start_time, end_time FROM apt_bookings
+    `SELECT start_time, end_time, participant_count FROM apt_bookings
      WHERE resource_id = $1
        AND start_time < $3
        AND end_time > $2
@@ -531,10 +523,10 @@ async function checkResourceConflict(resourceId: string, startTime: Date, endTim
     [resourceId, startTime.toISOString(), endTime.toISOString()],
   );
 
-  // Quick exit: total overlapping is under capacity
-  if (overlapping.length < capacity) return false;
+  if (overlapping.length === 0) return capacity;
 
-  // Check max concurrent at any point within the proposed slot
+  // Max concurrent *headcount* at any point within the proposed slot — sample at each
+  // overlapping booking's start/end boundaries and sum participant_count.
   const checkPoints = [startTime.getTime()];
   for (const ob of overlapping) {
     const obStart = new Date(ob.start_time).getTime();
@@ -542,13 +534,13 @@ async function checkResourceConflict(resourceId: string, startTime: Date, endTim
     if (obStart > startTime.getTime() && obStart < endTime.getTime()) checkPoints.push(obStart);
     if (obEnd > startTime.getTime() && obEnd < endTime.getTime()) checkPoints.push(obEnd - 1);
   }
-  const maxConcurrent = checkPoints.reduce((max, t) => {
-    const concurrent = overlapping.filter((ob: any) =>
-      new Date(ob.start_time).getTime() <= t && new Date(ob.end_time).getTime() > t
-    ).length;
+  const maxConcurrentParticipants = checkPoints.reduce((max, t) => {
+    const concurrent = overlapping
+      .filter((ob: any) => new Date(ob.start_time).getTime() <= t && new Date(ob.end_time).getTime() > t)
+      .reduce((sum: number, ob: any) => sum + (ob.participant_count || 1), 0);
     return Math.max(max, concurrent);
   }, 0);
-  return maxConcurrent >= capacity;
+  return capacity - maxConcurrentParticipants;
 }
 
 async function checkCustomerConflict(customerId: string, startTime: Date, endTime: Date): Promise<boolean> {

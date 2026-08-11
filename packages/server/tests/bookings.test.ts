@@ -83,10 +83,10 @@ describe('Booking CRUD API', () => {
     // Create staff
     STAFF_ID = '00000000-0000-0000-0000-000000000070';
     await adminPool.query(
-      `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
-       VALUES ($1, $2, 'booking-staff@example.com', 'Booking', 'Staff', 'hashed', 'therapist', 'active')
+      `INSERT INTO usr_users (id, tenant_id, business_id, email, first_name, last_name, password_hash, role, status)
+       VALUES ($1, $2, $3, 'booking-staff@example.com', 'Booking', 'Staff', 'hashed', 'therapist', 'active')
        ON CONFLICT (id) DO UPDATE SET first_name = 'Booking'`,
-      [STAFF_ID, TENANT_ID],
+      [STAFF_ID, TENANT_ID, BUSINESS_ID],
     );
     await adminPool.query(
       `INSERT INTO svc_staff (service_id, user_id, is_primary) VALUES ($1, $2, true)
@@ -182,10 +182,10 @@ describe('Booking CRUD API', () => {
       // Create a second staff member
       const staffId2 = '00000000-0000-0000-0000-000000000071';
       await adminPool.query(
-        `INSERT INTO usr_users (id, tenant_id, email, first_name, last_name, password_hash, role, status)
-         VALUES ($1, $2, 'booking-staff2@example.com', 'Booking', 'Staff2', 'hashed', 'therapist', 'active')
+        `INSERT INTO usr_users (id, tenant_id, business_id, email, first_name, last_name, password_hash, role, status)
+         VALUES ($1, $2, $3, 'booking-staff2@example.com', 'Booking', 'Staff2', 'hashed', 'therapist', 'active')
          ON CONFLICT (id) DO UPDATE SET first_name = 'Booking'`,
-        [staffId2, TENANT_ID],
+        [staffId2, TENANT_ID, BUSINESS_ID],
       );
       await adminPool.query(
         `INSERT INTO svc_staff (service_id, user_id, is_primary) VALUES ($1, $2, false)
@@ -321,6 +321,52 @@ describe('Booking CRUD API', () => {
         undefined, ownerToken,
       );
       expect(statusCode).toBe(404);
+    });
+  });
+
+  describe('PUT /api/v1/bookings/:id — Update (edit-screen parity with booking creation)', () => {
+    it('updates participant_count', async () => {
+      const { statusCode, body } = await request(
+        'PUT', `/api/v1/bookings/${BOOKING_ID}?business_id=${BUSINESS_ID}`,
+        { participant_count: 3 }, ownerToken,
+      );
+      expect(statusCode).toBe(200);
+      expect(body.data.participant_count).toBe(3);
+
+      // Confirm it persisted, not just echoed back in the response.
+      const { body: refetched } = await request(
+        'GET', `/api/v1/bookings/${BOOKING_ID}?business_id=${BUSINESS_ID}`,
+        undefined, ownerToken,
+      );
+      expect(refetched.data.participant_count).toBe(3);
+    });
+
+    it('converts a customer booking to a walk-in (customer_id cleared, walk_in_name set)', async () => {
+      const { statusCode, body } = await request(
+        'PUT', `/api/v1/bookings/${BOOKING_ID}?business_id=${BUSINESS_ID}`,
+        { customer_id: null, walk_in_name: 'Drop-in Dana' }, ownerToken,
+      );
+      expect(statusCode).toBe(200);
+      expect(body.data.customer_id).toBeNull();
+      expect(body.data.walk_in_name).toBe('Drop-in Dana');
+    });
+
+    it('converts a walk-in booking back to a real customer (walk_in_name cleared)', async () => {
+      const { statusCode, body } = await request(
+        'PUT', `/api/v1/bookings/${BOOKING_ID}?business_id=${BUSINESS_ID}`,
+        { customer_id: CUSTOMER_ID, walk_in_name: null }, ownerToken,
+      );
+      expect(statusCode).toBe(200);
+      expect(body.data.customer_id).toBe(CUSTOMER_ID);
+      expect(body.data.walk_in_name).toBeNull();
+    });
+
+    it('rejects a participant_count below 1', async () => {
+      const { statusCode } = await request(
+        'PUT', `/api/v1/bookings/${BOOKING_ID}?business_id=${BUSINESS_ID}`,
+        { participant_count: 0 }, ownerToken,
+      );
+      expect(statusCode).toBe(400);
     });
   });
 });

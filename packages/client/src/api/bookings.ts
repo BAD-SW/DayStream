@@ -5,12 +5,20 @@ import { apiClient } from './client';
 export interface Booking {
   id: string;
   booking_reference: string;
+  service_id: string;
   service_name: string;
+  variant_id: string;
   variant_name?: string;
-  customer_first_name: string;
-  customer_last_name: string;
+  customer_id: string | null;
+  customer_first_name: string | null;
+  customer_last_name: string | null;
+  customer_email?: string;
+  walk_in_name?: string | null;
+  staff_id: string | null;
   staff_first_name?: string;
   staff_last_name?: string;
+  resource_id: string | null;
+  participant_count: number;
   start_time: string;
   end_time: string;
   status: string;
@@ -35,6 +43,55 @@ export interface CalendarDay {
   count: number;
 }
 
+export type PaymentStatus = 'paid' | 'partial' | 'unpaid';
+
+export interface CalendarBooking {
+  id: string;
+  service_id: string;
+  service_name: string;
+  customer_name: string;
+  staff_id: string | null;
+  staff_name: string;
+  start_time: string;
+  end_time: string;
+  status: string;
+  booking_type: string;
+  booking_reference: string;
+  resource_id: string | null;
+  resource_capacity: number | null;
+  service_max_capacity: number | null;
+  participant_count: number;
+  participants?: number;
+  payment_status: PaymentStatus;
+}
+
+/** A contiguous window during which a resource's or staff member's concurrent headcount (booked)
+ *  and capacity ceiling stayed constant. */
+export interface CapacitySegment {
+  start_time: string;
+  end_time: string;
+  booked: number;
+  capacity: number;
+}
+
+export interface ResourceBlock {
+  start_time: string;
+  end_time: string;
+  reason: string | null;
+}
+
+export interface CalendarResponse {
+  view: 'day' | 'week' | 'month';
+  date: string;
+  start_date: string;
+  end_date: string;
+  bookings?: CalendarBooking[];
+  days?: CalendarDay[];
+  resourceTimelines?: Record<string, CapacitySegment[]>;
+  staffTimelines?: Record<string, CapacitySegment[]>;
+  resourceBlocks?: Record<string, ResourceBlock[]>;
+}
+
 // --- Availability ---
 
 export async function getAvailability(businessId: string, serviceId: string, dateFrom: string, dateTo: string, staffId?: string, variantId?: string) {
@@ -45,11 +102,25 @@ export async function getAvailability(businessId: string, serviceId: string, dat
   return res.data.data as AvailableSlot[];
 }
 
+export type DayStatus = 'available' | 'unavailable' | 'closed';
+
+export interface DayAvailabilityResponse {
+  timezone: string;
+  days: Record<string, DayStatus>;
+}
+
+export async function getAvailabilityDays(businessId: string, serviceId: string, variantId: string, month: string, participantCount?: number): Promise<DayAvailabilityResponse> {
+  const params = new URLSearchParams({ business_id: businessId, service_id: serviceId, variant_id: variantId, month });
+  if (participantCount) params.set('participant_count', String(participantCount));
+  const res = await apiClient.get(`/v1/bookings/availability/days?${params}`);
+  return res.data.data;
+}
+
 // --- Booking CRUD ---
 
 export async function createBooking(data: {
   business_id: string; customer_id?: string; walk_in_name?: string; service_id: string; variant_id: string;
-  staff_id?: string; start_time: string; notes?: string; override_rules?: boolean;
+  staff_id?: string; start_time: string; notes?: string; override_rules?: boolean; participant_count?: number;
 }) {
   const res = await apiClient.post('/v1/bookings', data);
   return res.data.data;
@@ -113,7 +184,8 @@ export async function rescheduleBooking(id: string, businessId: string, startTim
 
 export async function updateBooking(id: string, businessId: string, data: {
   service_id?: string; variant_id?: string; staff_id?: string | null;
-  start_time?: string; notes?: string | null; customer_id?: string;
+  start_time?: string; notes?: string | null; customer_id?: string | null;
+  walk_in_name?: string | null; participant_count?: number;
 }) {
   const res = await apiClient.put(`/v1/bookings/${id}?business_id=${businessId}`, data);
   return res.data.data;
@@ -132,10 +204,10 @@ export async function releaseHold(holdId: string) {
 
 // --- Calendar ---
 
-export async function getCalendar(businessId: string, view: 'day' | 'week' | 'month', date: string, filters?: { staff_id?: string; service_id?: string }) {
+export async function getCalendar(businessId: string, view: 'day' | 'week' | 'month', date: string, filters?: { staff_id?: string; service_ids?: string[] }): Promise<CalendarResponse> {
   const params = new URLSearchParams({ business_id: businessId, view, date });
   if (filters?.staff_id) params.set('staff_id', filters.staff_id);
-  if (filters?.service_id) params.set('service_id', filters.service_id);
+  if (filters?.service_ids?.length) params.set('service_id', filters.service_ids.join(','));
   const res = await apiClient.get(`/v1/bookings/calendar?${params}`);
   return res.data.data;
 }

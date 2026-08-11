@@ -57,6 +57,12 @@
   --color-info-dark: #3A7A8E;
   --color-info-bg: rgba(74, 144, 164, 0.1);
 
+  /* Semantic — Capacity override (feature 31 amendment: admin-approved over-capacity booking).
+     Distinct from --color-error: error means "blocked", this means "intentionally allowed past
+     the limit" — a different message to a staff member reading the calendar. */
+  --color-capacity-override: #8B5CF6;
+  --color-capacity-override-bg: rgba(139, 92, 246, 0.1);
+
   /* Sidebar */
   --color-sidebar-bg: #1A1A1A;
   --color-sidebar-border: rgba(255, 255, 255, 0.08);
@@ -73,4 +79,14 @@
 
   /* Overlay */
   --color-overlay: rgba(0, 0, 0, 0.5);
+
+  /* Calendar service colour palette (feature 31: capacity-aware-calendar) */
+  --cal-service-color-1: #4A90A4; /* Recovery Blue */
+  --cal-service-color-2: #C9A96E; /* Warm Gold */
+  --cal-service-color-3: #7B9E6B; /* Sage Green */
+  --cal-service-color-4: #A4756A; /* Terracotta */
+  --cal-service-color-5: #7A6AA4; /* Lavender */
+  --cal-service-color-6: #A44A7B; /* Rose */
+  --cal-service-color-7: #4AA47B; /* Mint */
+  --cal-service-color-8: #A4934A; /* Olive */
 }

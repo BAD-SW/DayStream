@@ -1,13 +1,16 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Alert } from '../design-system/components/feedback/Alert';
 import * as bookingsApi from '../api/bookings';
 import * as servicesApi from '../api/services';
 import * as customersApi from '../api/customers';
+import * as resourcesApi from '../api/resources';
 import type { ServiceVariant } from '../api/services';
 import { apiClient } from '../api/client';
 import { formatCurrency } from '../utils/currency';
+import { ParticipantCountField } from '../components/booking/ParticipantCountField';
+import { AvailabilityCalendar } from '../components/booking/AvailabilityCalendar';
 
 interface SlotCombo {
   start_time: string;
@@ -15,9 +18,11 @@ interface SlotCombo {
   duration: number;
   location_id: string | null;
   location_name: string | null;
-  staff_id: string;
-  staff_first_name: string;
-  staff_last_name: string;
+  // Absent for staff-less (booking_type: 'resource') services.
+  staff_id?: string;
+  staff_first_name?: string;
+  staff_last_name?: string;
+  capacity_remaining?: number;
 }
 
 export function BookingEdit() {
@@ -25,15 +30,21 @@ export function BookingEdit() {
   const navigate = useNavigate();
   const businessId = localStorage.getItem('business_id') || '';
 
-  const [booking, setBooking] = useState<any>(null);
+  const [booking, setBooking] = useState<bookingsApi.Booking | null>(null);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
   const [services, setServices] = useState<any[]>([]);
   const [variants, setVariants] = useState<ServiceVariant[]>([]);
   const [businessTimezone, setBusinessTimezone] = useState('UTC');
+
+  // All combinations from API
   const [allCombos, setAllCombos] = useState<SlotCombo[]>([]);
   const [combosLoading, setCombosLoading] = useState(false);
-  const [pageLoading, setPageLoading] = useState(true);
 
   // Customer search
+  const [isWalkIn, setIsWalkIn] = useState(false);
+  const [walkInName, setWalkInName] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [customerResults, setCustomerResults] = useState<any[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
@@ -43,16 +54,33 @@ export function BookingEdit() {
   // Selections
   const [selectedService, setSelectedService] = useState('');
   const [selectedVariant, setSelectedVariant] = useState('');
-  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [initialMonth, setInitialMonth] = useState<string | undefined>(undefined);
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
 
+  // Participant count / resource capacity (matches the "New Booking" flow, feature 32)
+  const [participantCount, setParticipantCount] = useState(1);
+  const [resourceCapacity, setResourceCapacity] = useState(1);
+  const [overrideCapacity, setOverrideCapacity] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Load booking + services + timezone on mount
+  // Set to true only by an actual user interaction (a select's onChange, a calendar day click) —
+  // never by the initial hydration from the loaded booking. The reactive effects below use this
+  // to skip their "user changed this, reset downstream selections" behaviour during hydration;
+  // otherwise pre-filling selectedService/selectedVariant/selectedDate etc. from the loaded
+  // booking would immediately be wiped out by the same effects that exist to clear stale
+  // selections when a *user* changes an earlier field. A plain boolean latch (never reset back to
+  // false) is used rather than a timer-based guard: there is only ever one hydration, so once the
+  // user has touched the form for the first time every subsequent change is user-driven anyway —
+  // no race with React's effect-flush timing is possible this way.
+  const userInteractedRef = useRef(false);
+
+  // Load the booking, service list, and business timezone; hydrate all form state from it.
   useEffect(() => {
     if (!businessId || !id) return;
     Promise.all([
@@ -65,18 +93,24 @@ export function BookingEdit() {
       const biz = bizRes.data.data?.find((b: any) => b.id === businessId);
       if (biz?.timezone) setBusinessTimezone(biz.timezone);
 
-      // Pre-fill selections from booking
+      const bkDate = bk.start_time.slice(0, 10);
       setSelectedService(bk.service_id);
       setSelectedVariant(bk.variant_id);
-      setSelectedDate(bk.start_time.split('T')[0]);
+      setSelectedDate(bkDate);
+      setInitialMonth(bkDate.slice(0, 7));
       setSelectedTime(bk.start_time);
+      setSelectedStaff(bk.staff_id || null);
       setNotes(bk.notes || '');
-      setSelectedCustomer({ id: bk.customer_id, first_name: bk.customer_first_name, last_name: bk.customer_last_name, email: '' });
-      if (bk.staff_id) setSelectedStaff(bk.staff_id);
+      setParticipantCount(bk.participant_count || 1);
 
-      // Load variants for the service
-      servicesApi.getVariants(bk.service_id).then(setVariants);
-    }).catch(() => { setError('Failed to load booking'); })
+      if (bk.customer_id) {
+        setIsWalkIn(false);
+        setSelectedCustomer({ id: bk.customer_id, first_name: bk.customer_first_name, last_name: bk.customer_last_name, email: bk.customer_email || '' });
+      } else {
+        setIsWalkIn(true);
+        setWalkInName(bk.walk_in_name || '');
+      }
+    }).catch(() => setLoadError('Failed to load booking'))
       .finally(() => setPageLoading(false));
   }, [businessId, id]);
 
@@ -103,23 +137,138 @@ export function BookingEdit() {
   useEffect(() => {
     if (!selectedService) { setVariants([]); return; }
     servicesApi.getVariants(selectedService).then(setVariants);
+    if (!userInteractedRef.current) return;
+    setSelectedVariant('');
+    setAllCombos([]);
+    resetFilters();
   }, [selectedService]);
 
-  // Fetch combinations when service + variant + date set
+  // Load the service's linked resource capacity (drives whether ParticipantCountField shows)
   useEffect(() => {
-    if (!selectedService || !selectedVariant || !selectedDate) { setAllCombos([]); return; }
+    if (!selectedService) { setResourceCapacity(1); return; }
+    servicesApi.getAvailability(selectedService).then((rules: any[]) => {
+      const resourceIds = rules.flatMap((r: any) => r.resource_ids || []);
+      if (resourceIds.length === 0) { setResourceCapacity(1); return; }
+      return resourcesApi.getResource(resourceIds[0], businessId);
+    }).then((resource: any) => {
+      if (resource?.capacity) setResourceCapacity(resource.capacity);
+      else setResourceCapacity(1);
+    }).catch(() => setResourceCapacity(1));
+  }, [selectedService, businessId]);
+
+  // Reset participant count whenever the variant (or service, which clears the variant) changes
+  useEffect(() => {
+    if (!userInteractedRef.current) return;
+    setParticipantCount(1);
+    setOverrideCapacity(false);
+  }, [selectedVariant]);
+
+  // If the currently selected time slot no longer has enough capacity for the new participant
+  // count, clear the selection so the user must pick a slot that actually fits — unless they're
+  // deliberately overriding the capacity limit, in which case keep the over-capacity selection.
+  useEffect(() => {
+    if (!selectedTime || overrideCapacity) return;
+    const combo = allCombos.find((c) => c.start_time === selectedTime);
+    if (combo && (combo.capacity_remaining ?? Infinity) < participantCount) {
+      setSelectedTime(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [participantCount, overrideCapacity]);
+
+  // Check if business is closed on selected date (per location)
+  const [businessClosed, setBusinessClosed] = useState<string | null>(null);
+  const [locationStatuses, setLocationStatuses] = useState<Map<string, { status: 'open' | 'closed' | 'modified'; label?: string; hours?: string }>>(new Map());
+
+  useEffect(() => {
+    if (!selectedDate || !businessId) { setBusinessClosed(null); setLocationStatuses(new Map()); return; }
+    apiClient.get(`/v1/locations?business_id=${businessId}`).then(async (locRes) => {
+      const locs = locRes.data.data || [];
+      if (locs.length === 0) { setBusinessClosed(null); setLocationStatuses(new Map()); return; }
+
+      const dayOfWeek = new Date(selectedDate + 'T12:00:00').getDay();
+      const year = new Date(selectedDate).getFullYear();
+      const statuses = new Map<string, { status: 'open' | 'closed' | 'modified'; label?: string; hours?: string }>();
+
+      for (const loc of locs) {
+        try {
+          // Check overrides
+          const overridesRes = await apiClient.get(`/v1/locations/${loc.id}/hours/overrides?year=${year}`);
+          const overrides = overridesRes.data.data || [];
+          const dayOverride = overrides.find((o: any) => o.override_date.split('T')[0] === selectedDate);
+
+          if (dayOverride) {
+            if (dayOverride.is_closed) {
+              statuses.set(loc.id, { status: 'closed', label: dayOverride.label || 'Holiday' });
+              continue;
+            } else if (dayOverride.open_time && dayOverride.close_time) {
+              const openStr = new Date(`2000-01-01T${dayOverride.open_time}`).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+              const closeStr = new Date(`2000-01-01T${dayOverride.close_time}`).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+              statuses.set(loc.id, { status: 'modified', label: dayOverride.label, hours: `${openStr}–${closeStr}` });
+              continue;
+            }
+          }
+
+          // Check regular hours
+          const hoursRes = await apiClient.get(`/v1/locations/${loc.id}/hours`);
+          const hours = hoursRes.data.data || [];
+          const dayHours = hours.find((h: any) => h.day_of_week === dayOfWeek);
+
+          if (dayHours && dayHours.is_closed) {
+            statuses.set(loc.id, { status: 'closed', label: 'Closed this day' });
+          } else {
+            statuses.set(loc.id, { status: 'open' });
+          }
+        } catch {
+          statuses.set(loc.id, { status: 'open' });
+        }
+      }
+
+      setLocationStatuses(statuses);
+
+      // Only show full "business closed" message if ALL locations are closed
+      const allClosed = locs.every((loc: any) => statuses.get(loc.id)?.status === 'closed');
+      if (allClosed) {
+        const firstLabel = statuses.values().next().value?.label;
+        setBusinessClosed(firstLabel ? `Closed — ${firstLabel}` : 'All locations closed');
+      } else {
+        setBusinessClosed(null);
+      }
+    }).catch(() => { setBusinessClosed(null); setLocationStatuses(new Map()); });
+  }, [selectedDate, businessId]);
+
+  // Fetch availability combinations when service + variant + date are set (and business is open)
+  useEffect(() => {
+    if (!selectedService || !selectedVariant || !selectedDate || businessClosed) { setAllCombos([]); return; }
     setCombosLoading(true);
     apiClient.get('/v1/bookings/availability/combinations', {
-      params: { service_id: selectedService, business_id: businessId, date_from: selectedDate, date_to: selectedDate, variant_id: selectedVariant },
+      params: { service_id: selectedService, business_id: businessId, date_from: selectedDate, date_to: selectedDate, variant_id: selectedVariant, participant_count: participantCount },
     }).then((res) => {
       const data = res.data.data;
       setAllCombos(data.slots || []);
       if (data.timezone) setBusinessTimezone(data.timezone);
     }).catch(() => setAllCombos([]))
       .finally(() => setCombosLoading(false));
-  }, [selectedService, selectedVariant, selectedDate, businessId]);
+    if (userInteractedRef.current) resetFilters();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedService, selectedVariant, selectedDate, businessId, businessClosed]);
 
-  // Derived filters
+  function resetFilters() {
+    setSelectedLocation(null);
+    setSelectedStaff(null);
+    setSelectedTime(null);
+  }
+
+  // Derived: filter combos based on current selections
+  const filteredCombos = useMemo(() => {
+    return allCombos.filter((c) => {
+      if (selectedLocation && c.location_id !== selectedLocation) return false;
+      if (selectedStaff && c.staff_id !== selectedStaff) return false;
+      if (selectedTime && c.start_time !== selectedTime) return false;
+      return true;
+    });
+  }, [allCombos, selectedLocation, selectedStaff, selectedTime]);
+
+  // Derive available options for each dimension from filtered combos
   const availableLocations = useMemo(() => {
     const combos = allCombos.filter((c) => {
       if (selectedStaff && c.staff_id !== selectedStaff) return false;
@@ -127,7 +276,9 @@ export function BookingEdit() {
       return true;
     });
     const map = new Map<string, string>();
-    for (const c of combos) { if (c.location_id && c.location_name) map.set(c.location_id, c.location_name); }
+    for (const c of combos) {
+      if (c.location_id && c.location_name) map.set(c.location_id, c.location_name);
+    }
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
   }, [allCombos, selectedStaff, selectedTime]);
 
@@ -138,46 +289,49 @@ export function BookingEdit() {
       return true;
     });
     const map = new Map<string, { id: string; name: string }>();
-    for (const c of combos) { if (!map.has(c.staff_id)) map.set(c.staff_id, { id: c.staff_id, name: `${c.staff_first_name} ${c.staff_last_name}` }); }
+    for (const c of combos) {
+      if (c.staff_id && !map.has(c.staff_id)) map.set(c.staff_id, { id: c.staff_id, name: `${c.staff_first_name} ${c.staff_last_name}` });
+    }
     return Array.from(map.values());
   }, [allCombos, selectedLocation, selectedTime]);
 
-  const availableTimes = useMemo(() => {
+  // Deduped, per-time slot list (location/staff filtered) for the AvailabilityCalendar's SlotPicker
+  const daySlots = useMemo(() => {
     const combos = allCombos.filter((c) => {
       if (selectedLocation && c.location_id !== selectedLocation) return false;
       if (selectedStaff && c.staff_id !== selectedStaff) return false;
       return true;
     });
-    const set = new Set<string>();
-    for (const c of combos) set.add(c.start_time);
-    return Array.from(set).sort();
+    const map = new Map<string, number | undefined>();
+    for (const c of combos) {
+      if (!map.has(c.start_time)) map.set(c.start_time, c.capacity_remaining);
+    }
+    return Array.from(map.entries())
+      .map(([start_time, capacity_remaining]) => ({ start_time, capacity_remaining }))
+      .sort((a, b) => a.start_time.localeCompare(b.start_time));
   }, [allCombos, selectedLocation, selectedStaff]);
 
-  const filteredCombos = useMemo(() => {
-    return allCombos.filter((c) => {
-      if (selectedLocation && c.location_id !== selectedLocation) return false;
-      if (selectedStaff && c.staff_id !== selectedStaff) return false;
-      if (selectedTime && c.start_time !== selectedTime) return false;
-      return true;
-    });
-  }, [allCombos, selectedLocation, selectedStaff, selectedTime]);
-
-  const canSave = selectedCustomer && selectedService && selectedVariant && selectedTime && filteredCombos.length > 0;
+  // Can we save?
+  const canSave = (selectedCustomer || isWalkIn) && selectedService && selectedVariant && selectedTime && filteredCombos.length > 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSave || !id) return;
+
+    // Pick the first matching combo for the booking
     const combo = filteredCombos[0];
     setLoading(true);
     setError('');
     try {
       await bookingsApi.updateBooking(id, businessId, {
-        customer_id: selectedCustomer.id,
+        customer_id: isWalkIn ? null : selectedCustomer.id,
+        walk_in_name: isWalkIn ? (walkInName || 'Walk-in') : null,
         service_id: selectedService,
         variant_id: selectedVariant,
-        staff_id: combo.staff_id,
+        staff_id: combo.staff_id || null,
         start_time: combo.start_time,
         notes: notes || undefined,
+        participant_count: participantCount,
       });
       navigate('/bookings');
     } catch (err: any) {
@@ -188,7 +342,7 @@ export function BookingEdit() {
   };
 
   if (pageLoading) return <p style={{ padding: '24px', color: 'var(--color-text-secondary)' }}>Loading booking...</p>;
-  if (!booking) return <Alert variant="error">Booking not found</Alert>;
+  if (loadError || !booking) return <Alert variant="error">{loadError || 'Booking not found'}</Alert>;
 
   return (
     <div style={styles.page}>
@@ -199,7 +353,16 @@ export function BookingEdit() {
       <form onSubmit={handleSubmit} style={styles.form}>
         {/* Customer */}
         <div style={styles.field}>
-          <label style={styles.label}>Customer *</label>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+            <label style={styles.label}>Customer {!isWalkIn && '*'}</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={isWalkIn} onChange={(e) => { setIsWalkIn(e.target.checked); if (e.target.checked) setSelectedCustomer(null); }} style={{ width: '14px', height: '14px' }} />
+              Walk-in
+            </label>
+          </div>
+          {isWalkIn ? (
+            <input style={styles.input} value={walkInName} onChange={(e) => setWalkInName(e.target.value)} placeholder="Name (optional)" />
+          ) : (
           <div style={styles.searchWrapper}>
             {selectedCustomer ? (
               <div style={styles.selectedCustomer}>
@@ -207,11 +370,16 @@ export function BookingEdit() {
                 <button type="button" style={styles.clearBtn} onClick={() => { setSelectedCustomer(null); setCustomerSearch(''); }}>×</button>
               </div>
             ) : (
-              <input style={styles.input} type="text" value={customerSearch}
+              <input
+                style={styles.input}
+                type="text"
+                value={customerSearch}
                 onChange={(e) => setCustomerSearch(e.target.value)}
-                placeholder="Search by name, email, or phone..." autoComplete="off"
+                placeholder="Search by name, email, or phone..."
+                autoComplete="off"
                 onFocus={() => { if (customerResults.length > 0) setShowCustomerDropdown(true); }}
-                onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)} />
+                onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
+              />
             )}
             {showCustomerDropdown && customerResults.length > 0 && (
               <div style={styles.dropdown}>
@@ -225,13 +393,18 @@ export function BookingEdit() {
                 ))}
               </div>
             )}
+            {customerSearching && <span style={styles.hint}>Searching...</span>}
+            {!customerSearching && customerSearch.length >= 2 && customerResults.length === 0 && !selectedCustomer && (
+              <span style={styles.hint}>No customers found</span>
+            )}
           </div>
+          )}
         </div>
 
         {/* Service */}
         <div style={styles.field}>
-          <label style={styles.label}>Service *</label>
-          <select style={styles.select} value={selectedService} onChange={(e) => { setSelectedService(e.target.value); setSelectedVariant(''); setSelectedTime(null); setAllCombos([]); }}>
+          <label style={styles.label} htmlFor="booking-service-select">Service *</label>
+          <select id="booking-service-select" style={styles.select} value={selectedService} onChange={(e) => { userInteractedRef.current = true; setSelectedService(e.target.value); }} required>
             <option value="">Select a service...</option>
             {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
@@ -240,8 +413,8 @@ export function BookingEdit() {
         {/* Variant */}
         {variants.length > 0 && (
           <div style={styles.field}>
-            <label style={styles.label}>Duration / Option *</label>
-            <select style={styles.select} value={selectedVariant} onChange={(e) => { setSelectedVariant(e.target.value); setSelectedTime(null); setAllCombos([]); }}>
+            <label style={styles.label} htmlFor="booking-variant-select">Duration / Option *</label>
+            <select id="booking-variant-select" style={styles.select} value={selectedVariant} onChange={(e) => { userInteractedRef.current = true; setSelectedVariant(e.target.value); }} required>
               <option value="">Select an option...</option>
               {variants.filter((v) => v.status === 'active').map((v) => (
                 <option key={v.id} value={v.id}>{v.name} — {v.duration} min — {formatCurrency(v.price)}</option>
@@ -250,63 +423,98 @@ export function BookingEdit() {
           </div>
         )}
 
-        {/* Date */}
-        {selectedVariant && (
+        {/* Participant count (only for multi-capacity resources) */}
+        {selectedVariant && resourceCapacity > 1 && (
           <div style={styles.field}>
-            <label style={styles.label}>Date *</label>
-            <input type="date" style={styles.input} value={selectedDate}
-              onChange={(e) => { setSelectedDate(e.target.value); setSelectedTime(null); }}
-              min={new Date().toISOString().slice(0, 10)} required />
+            <ParticipantCountField
+              value={participantCount}
+              onChange={setParticipantCount}
+              maxCapacity={resourceCapacity}
+              remainingCapacity={selectedTime ? allCombos.find((c) => c.start_time === selectedTime)?.capacity_remaining : undefined}
+              overrideCapacity={overrideCapacity}
+            />
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)', cursor: 'pointer', marginTop: '4px' }}>
+              <input type="checkbox" checked={overrideCapacity} onChange={(e) => setOverrideCapacity(e.target.checked)} style={{ width: '14px', height: '14px' }} />
+              Override capacity limit
+            </label>
           </div>
         )}
 
-        {/* Multi-filter panel */}
-        {selectedDate && !combosLoading && allCombos.length > 0 && (
+        {/* Availability calendar (day picker → slot picker) */}
+        {selectedVariant && (
+          <AvailabilityCalendar
+            serviceId={selectedService}
+            variantId={selectedVariant}
+            businessId={businessId}
+            participantCount={participantCount}
+            selectedDate={selectedDate}
+            onDateSelect={(date) => { userInteractedRef.current = true; setSelectedDate(date); resetFilters(); }}
+            onDateClear={() => { userInteractedRef.current = true; setSelectedDate(null); resetFilters(); }}
+            slots={daySlots}
+            slotsLoading={combosLoading}
+            selectedTime={selectedTime}
+            onSlotSelect={(t) => setSelectedTime(t)}
+            overrideCapacity={overrideCapacity}
+            businessTimezone={businessTimezone}
+            initialMonth={initialMonth}
+          />
+        )}
+
+        {/* Location / Staff filters (shown once a day's slots have loaded) */}
+        {selectedDate && !combosLoading && !businessClosed && allCombos.length > 0 && (availableLocations.length > 0 || availableStaff.length > 0) && (
           <div style={styles.filterPanel}>
+            {/* Locations column */}
             {availableLocations.length > 0 && (
               <div style={styles.filterColumn}>
                 <label style={styles.filterLabel}>Location</label>
-                <button type="button" style={{ ...styles.filterOption, ...(selectedLocation === null ? styles.filterOptionActive : {}) }}
+                <button type="button"
+                  style={{ ...styles.filterOption, ...(selectedLocation === null ? styles.filterOptionActive : {}) }}
                   onClick={() => setSelectedLocation(null)}>Any</button>
-                {availableLocations.map((l) => (
-                  <button key={l.id} type="button"
-                    style={{ ...styles.filterOption, ...(selectedLocation === l.id ? styles.filterOptionActive : {}) }}
-                    onClick={() => setSelectedLocation(selectedLocation === l.id ? null : l.id)}>{l.name}</button>
+                {availableLocations.map((l) => {
+                  const locStatus = locationStatuses.get(l.id);
+                  const isClosed = locStatus?.status === 'closed';
+                  return (
+                    <button key={l.id} type="button"
+                      disabled={isClosed}
+                      style={{ ...styles.filterOption, ...(selectedLocation === l.id ? styles.filterOptionActive : {}), ...(isClosed ? { opacity: 0.5, cursor: 'not-allowed', textDecoration: 'line-through' } : {}) }}
+                      onClick={() => !isClosed && setSelectedLocation(selectedLocation === l.id ? null : l.id)}>
+                      {l.name}
+                      {isClosed && <span style={{ fontSize: '10px', display: 'block', color: 'var(--color-error)' }}>{locStatus?.label || 'Closed'}</span>}
+                      {locStatus?.status === 'modified' && <span style={{ fontSize: '10px', display: 'block', color: 'var(--color-text-muted)' }}>{locStatus.hours}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Staff column — omitted entirely for staff-less (booking_type: 'resource') services */}
+            {availableStaff.length > 0 && (
+              <div style={styles.filterColumn}>
+                <label style={styles.filterLabel}>Staff</label>
+                <button type="button"
+                  style={{ ...styles.filterOption, ...(selectedStaff === null ? styles.filterOptionActive : {}) }}
+                  onClick={() => setSelectedStaff(null)}>Any</button>
+                {availableStaff.map((s) => (
+                  <button key={s.id} type="button"
+                    style={{ ...styles.filterOption, ...(selectedStaff === s.id ? styles.filterOptionActive : {}) }}
+                    onClick={() => setSelectedStaff(selectedStaff === s.id ? null : s.id)}>{s.name}</button>
                 ))}
               </div>
             )}
-            <div style={styles.filterColumn}>
-              <label style={styles.filterLabel}>Staff</label>
-              <button type="button" style={{ ...styles.filterOption, ...(selectedStaff === null ? styles.filterOptionActive : {}) }}
-                onClick={() => setSelectedStaff(null)}>Any</button>
-              {availableStaff.map((s) => (
-                <button key={s.id} type="button"
-                  style={{ ...styles.filterOption, ...(selectedStaff === s.id ? styles.filterOptionActive : {}) }}
-                  onClick={() => setSelectedStaff(selectedStaff === s.id ? null : s.id)}>{s.name}</button>
-              ))}
-            </div>
-            <div style={styles.filterColumn}>
-              <label style={styles.filterLabel}>Time *</label>
-              <div style={styles.timeGrid}>
-                {availableTimes.map((t) => (
-                  <button key={t} type="button"
-                    style={{ ...styles.timeBtn, ...(selectedTime === t ? styles.timeBtnActive : {}) }}
-                    onClick={() => setSelectedTime(selectedTime === t ? null : t)}>
-                    {new Date(t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone: businessTimezone })}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         )}
 
-        {selectedDate && combosLoading && <p style={styles.hint}>Loading availability...</p>}
-        {selectedDate && !combosLoading && allCombos.length === 0 && <p style={styles.hint}>No availability for this date</p>}
+        {selectedDate && businessClosed && (
+          <div style={{ padding: 'var(--space-md)', border: '1px solid var(--color-error)', borderRadius: 'var(--radius-md)', background: 'var(--color-error-bg, rgba(211,47,47,0.05))', marginBottom: 'var(--space-md)' }}>
+            <p style={{ margin: 0, fontSize: 'var(--font-size-sm)', color: 'var(--color-error)', fontWeight: 600 }}>{businessClosed}</p>
+            <p style={{ margin: '4px 0 0', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>No appointments can be booked on this date.</p>
+          </div>
+        )}
 
         {/* Notes */}
         <div style={styles.field}>
           <label style={styles.label}>Notes (optional)</label>
-          <textarea style={styles.textarea} value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Internal notes..." />
+          <textarea style={styles.textarea} value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Internal notes for this booking..." />
         </div>
 
         {/* Actions */}
@@ -341,8 +549,5 @@ const styles: Record<string, React.CSSProperties> = {
   filterLabel: { fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: '4px' },
   filterOption: { padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'none', cursor: 'pointer', fontSize: '13px', color: 'var(--color-text)', textAlign: 'left' as const, fontFamily: 'var(--font-family)', transition: 'all 0.15s ease' },
   filterOptionActive: { borderColor: 'var(--color-accent, #C9A96E)', background: 'var(--color-accent, #C9A96E)', color: '#1A1A1A', fontWeight: 600 },
-  timeGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: '4px', maxHeight: '300px', overflow: 'auto' },
-  timeBtn: { padding: '6px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--color-text)', textAlign: 'center' as const, fontFamily: 'var(--font-family)', transition: 'all 0.15s ease' },
-  timeBtnActive: { borderColor: 'var(--color-accent, #C9A96E)', background: 'var(--color-accent, #C9A96E)', color: '#1A1A1A', fontWeight: 600 },
   actions: { display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-md)', marginTop: 'var(--space-md)' },
 };

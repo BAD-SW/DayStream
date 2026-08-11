@@ -75,6 +75,100 @@ bookingsRouter.get('/availability/combinations', requirePermission('bookings:rea
   }
 });
 
+/** Whether every active location for a business is closed on a given date (override, else regular hours). */
+async function isDayClosedForBusiness(businessId: string, dateStr: string): Promise<boolean> {
+  const { rows: locs } = await adminPool.query(
+    "SELECT id FROM sys_locations WHERE business_id = $1 AND status = 'active'",
+    [businessId],
+  );
+  if (locs.length === 0) return false; // no locations configured — don't block on closure
+
+  const dayOfWeek = new Date(dateStr + 'T12:00:00Z').getUTCDay();
+
+  for (const loc of locs) {
+    const { rows: overrides } = await adminPool.query(
+      'SELECT is_closed FROM sys_location_hour_overrides WHERE location_id = $1 AND override_date = $2',
+      [loc.id, dateStr],
+    );
+    if (overrides.length > 0) {
+      if (!overrides[0].is_closed) return false; // at least one location open via override
+      continue;
+    }
+    const { rows: hours } = await adminPool.query(
+      'SELECT is_closed FROM sys_location_hours WHERE location_id = $1 AND day_of_week = $2',
+      [loc.id, dayOfWeek],
+    );
+    if (hours.length === 0 || !hours[0].is_closed) return false; // at least one location open
+  }
+  return true; // every location closed
+}
+
+/**
+ * Decide a day's availability status from its slot list. A slot's `capacity_remaining` of
+ * `undefined` means the slot carries no resource-capacity constraint (unlimited), so it must
+ * default to `Infinity`, not `1` — defaulting to `1` would wrongly mark unconstrained days
+ * unavailable for any participantCount > 1.
+ */
+export function computeDayStatus(
+  slots: Array<{ capacity_remaining?: number }>,
+  participantCount: number,
+  isClosed: boolean,
+): 'available' | 'unavailable' | 'closed' {
+  if (slots.length === 0) return isClosed ? 'closed' : 'unavailable';
+  const hasCapacity = slots.some((slot) => (slot.capacity_remaining ?? Infinity) >= participantCount);
+  return hasCapacity ? 'available' : 'unavailable';
+}
+
+export function getDaysInMonth(month: string): string[] {
+  const [year, mon] = month.split('-').map(Number);
+  const daysInMonth = new Date(Date.UTC(year, mon, 0)).getUTCDate();
+  const days: string[] = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    days.push(`${year}-${String(mon).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+  }
+  return days;
+}
+
+// GET /api/v1/bookings/availability/days — Per-day availability status for a month (feature 32)
+bookingsRouter.get('/availability/days', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const serviceId = req.query.service_id as string;
+    const variantId = req.query.variant_id as string;
+    const businessId = req.query.business_id as string;
+    const month = req.query.month as string;
+
+    if (!serviceId || !variantId || !businessId || !month) {
+      error(res, 'service_id, variant_id, business_id, and month are required', 'VALIDATION_ERROR', 400);
+      return;
+    }
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      error(res, 'month must be in YYYY-MM format', 'VALIDATION_ERROR', 400);
+      return;
+    }
+
+    const participantCountRaw = req.query.participant_count as string | undefined;
+    const participantCount = participantCountRaw ? parseInt(participantCountRaw, 10) : 1;
+
+    const days = getDaysInMonth(month);
+    const result: Record<string, 'available' | 'unavailable' | 'closed'> = {};
+    let timezone = 'UTC';
+
+    for (const day of days) {
+      const availability = await availabilityService.getAvailabilityCombinations({
+        serviceId, businessId, variantId, dateFrom: day, dateTo: day,
+      });
+      timezone = availability.timezone;
+
+      const isClosed = availability.slots.length === 0 ? await isDayClosedForBusiness(businessId, day) : false;
+      result[day] = computeDayStatus(availability.slots, participantCount, isClosed);
+    }
+
+    success(res, { timezone, days: result });
+  } catch (err: any) {
+    error(res, 'Failed to load day availability', 'INTERNAL_ERROR', 500);
+  }
+});
+
 // GET /api/v1/bookings/calendar — (registered before /:id)
 import * as calendarServiceForward from '../services/booking-calendar.service';
 import * as notificationsServiceForward from '../services/booking-notifications.service';
@@ -86,10 +180,11 @@ bookingsRouter.get('/calendar', requirePermission('bookings:read'), async (req: 
     const view = (req.query.view as string) || 'day';
     if (!['day', 'week', 'month'].includes(view)) { error(res, 'view must be day, week, or month', 'VALIDATION_ERROR', 400); return; }
     const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+    const serviceIds = (req.query.service_id as string | undefined)?.split(',').filter(Boolean);
     const result = await calendarServiceForward.getCalendar({
       businessId, view: view as 'day' | 'week' | 'month', date,
       staffId: req.query.staff_id as string, resourceId: req.query.resource_id as string,
-      serviceId: req.query.service_id as string, status: req.query.status as string,
+      serviceIds, status: req.query.status as string,
     });
     success(res, result);
   } catch (err: any) {
@@ -147,6 +242,7 @@ const createBookingSchema = Joi.object({
   start_time: Joi.string().isoDate().required(),
   notes: Joi.string().max(500).allow('', null),
   override_rules: Joi.boolean().default(false),
+  participant_count: Joi.number().integer().min(1).default(1),
 });
 
 // POST /api/v1/bookings — Create booking
@@ -166,6 +262,7 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
       createdBy: authReq.user.sub,
       tenantId: authReq.tenantId,
       overrideRules: req.body.override_rules,
+      participantCount: req.body.participant_count,
     });
 
     success(res, booking, undefined, 201);
@@ -387,7 +484,9 @@ const updateBookingSchema = Joi.object({
   staff_id: Joi.string().uuid().allow(null),
   start_time: Joi.string().isoDate(),
   notes: Joi.string().allow('', null),
-  customer_id: Joi.string().uuid(),
+  customer_id: Joi.string().uuid().allow(null),
+  walk_in_name: Joi.string().allow('', null),
+  participant_count: Joi.number().integer().min(1),
 });
 
 bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBookingSchema), async (req: Request, res: Response) => {
@@ -405,6 +504,8 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
     if (req.body.variant_id !== undefined) updates.variant_id = req.body.variant_id;
     if (req.body.staff_id !== undefined) updates.staff_id = req.body.staff_id;
     if (req.body.customer_id !== undefined) updates.customer_id = req.body.customer_id;
+    if (req.body.walk_in_name !== undefined) updates.walk_in_name = req.body.walk_in_name || null;
+    if (req.body.participant_count !== undefined) updates.participant_count = req.body.participant_count;
     if (req.body.notes !== undefined) updates.notes = req.body.notes;
 
     // If start_time changes, recalculate end_time based on variant duration

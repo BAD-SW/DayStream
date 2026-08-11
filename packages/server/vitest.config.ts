@@ -9,7 +9,9 @@ export default defineConfig({
       DB_HOST: 'localhost',
       DB_PORT: '5432',
       DB_USER: 'postgres',
-      DB_PASSWORD: 'postgres',
+      // DB_PASSWORD intentionally NOT hardcoded here — dotenv (loaded by src/config)
+      // fills it in from the real .env value. A stale hardcoded password here previously
+      // shadowed the actual local Postgres credentials and broke every DB-backed test.
       DB_NAME: 'daystream_dev',
       DB_APP_USER: 'daystream_app',
       DB_APP_PASSWORD: 'daystream_app_dev',

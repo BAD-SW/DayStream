@@ -1,0 +1,105 @@
+.slot-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md, 12px);
+}
+
+.slot-picker__back {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.slot-picker__back:hover {
+  color: var(--color-text);
+}
+
+.slot-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 6px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.slot-picker__slot {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: var(--font-family);
+  color: var(--color-text);
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.slot-picker__slot--available {
+  border: 1px solid var(--color-success);
+}
+
+.slot-picker__slot--over-capacity {
+  border: 1px solid var(--color-error);
+  color: var(--color-text-secondary);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Over capacity but clickable because "Override capacity limit" is checked — same purple as the
+   calendar's over-capacity badge, full opacity and a normal cursor so it reads as clickable. */
+.slot-picker__slot--overriding {
+  border: 1px solid var(--color-capacity-override);
+  color: var(--color-capacity-override);
+  font-weight: 600;
+}
+
+.slot-picker__slot--overriding:hover {
+  background: var(--color-capacity-override-bg, rgba(139, 92, 246, 0.1));
+}
+
+.slot-picker__slot--selected {
+  border-color: var(--color-accent, var(--color-primary));
+  background: var(--color-accent, var(--color-primary));
+  color: var(--color-text-inverse);
+  font-weight: 600;
+}
+
+.slot-picker__slot:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.slot-picker__empty {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.slot-picker__loading {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-lg, 24px);
+}
+
+.slot-picker__spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: slot-picker-spin 0.7s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slot-picker__spinner {
+    animation-duration: 1.4s;
+  }
+}
+
+@keyframes slot-picker-spin {
+  to { transform: rotate(360deg); }
+}

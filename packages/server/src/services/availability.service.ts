@@ -16,9 +16,10 @@ interface AvailableSlotCombo {
   duration: number;      // minutes
   location_id: string | null;
   location_name: string | null;
-  staff_id: string;
-  staff_first_name: string;
-  staff_last_name: string;
+  // Absent entirely for staff-less (booking_type: 'resource') services — no staff dimension.
+  staff_id?: string;
+  staff_first_name?: string;
+  staff_last_name?: string;
   capacity_remaining?: number;
 }
 
@@ -64,8 +65,8 @@ export async function getAvailableSlots(query: AvailabilityQuery): Promise<Avail
       });
     }
     const slot = slotMap.get(key)!;
-    if (!slot.available_staff.find(s => s.id === combo.staff_id)) {
-      slot.available_staff.push({ id: combo.staff_id, first_name: combo.staff_first_name, last_name: combo.staff_last_name });
+    if (combo.staff_id && !slot.available_staff.find(s => s.id === combo.staff_id)) {
+      slot.available_staff.push({ id: combo.staff_id, first_name: combo.staff_first_name!, last_name: combo.staff_last_name! });
     }
   }
   return Array.from(slotMap.values());
@@ -180,7 +181,7 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
   let resourceCapacities = new Map<string, number>();
   if (ruleResourceIds.length > 0) {
     const { rows: resBookings } = await adminPool.query(
-      `SELECT resource_id, start_time, end_time
+      `SELECT resource_id, start_time, end_time, participant_count
        FROM apt_bookings
        WHERE business_id = $1
          AND resource_id = ANY($2)
@@ -322,9 +323,13 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
 
         if (availableStaffForSlot.length === 0 && needsStaff) continue;
 
-        // Check resource availability for this slot (if resources are required by this window)
+        // Check resource availability for this slot (if resources are required by this window).
+        // resourceIds are alternatives (any one of them satisfies the window), so the slot's
+        // reported capacity_remaining is the best (max) remaining headcount across them, and the
+        // slot is only excluded when every alternative is fully booked.
+        let slotCapacityRemaining: number | undefined;
         if (window.resourceIds && window.resourceIds.length > 0) {
-          const allResourcesBooked = window.resourceIds.every((resId: string) => {
+          const remainingByResource = window.resourceIds.map((resId: string) => {
             const cap = resourceCapacities.get(resId) || 1;
             // Find all bookings that overlap this slot for this resource
             const overlapping = resourceBookings.filter((rb: any) =>
@@ -332,9 +337,10 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
               new Date(rb.start_time) < slotEnd &&
               new Date(rb.end_time) > slotStart
             );
-            // Check max concurrent at any point within the slot
-            // Sample at each overlapping booking's start/end boundaries
-            if (overlapping.length < cap) return false; // quick exit: can't exceed capacity
+            if (overlapping.length === 0) return cap;
+            // Max concurrent *headcount* at any point within the slot — sample at each
+            // overlapping booking's start/end boundaries and sum participant_count, not just
+            // count bookings (a single booking can occupy more than one capacity unit).
             const checkPoints = [slotStart.getTime()];
             for (const ob of overlapping) {
               const obStart = new Date(ob.start_time).getTime();
@@ -342,15 +348,16 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
               if (obStart > slotStart.getTime() && obStart < slotEnd.getTime()) checkPoints.push(obStart);
               if (obEnd > slotStart.getTime() && obEnd < slotEnd.getTime()) checkPoints.push(obEnd - 1);
             }
-            const maxConcurrent = checkPoints.reduce((max, t) => {
-              const concurrent = overlapping.filter((ob: any) =>
-                new Date(ob.start_time).getTime() <= t && new Date(ob.end_time).getTime() > t
-              ).length;
+            const maxConcurrentParticipants = checkPoints.reduce((max, t) => {
+              const concurrent = overlapping
+                .filter((ob: any) => new Date(ob.start_time).getTime() <= t && new Date(ob.end_time).getTime() > t)
+                .reduce((sum: number, ob: any) => sum + (ob.participant_count || 1), 0);
               return Math.max(max, concurrent);
             }, 0);
-            return maxConcurrent >= cap;
+            return cap - maxConcurrentParticipants;
           });
-          if (allResourcesBooked) continue;
+          slotCapacityRemaining = Math.max(...remainingByResource);
+          if (slotCapacityRemaining <= 0) continue;
         }
 
         // Determine which locations are valid for this window
@@ -358,27 +365,59 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
           ? serviceLocations.filter(l => window.locationIds!.includes(l.id))
           : serviceLocations;
 
-        // Generate combos: for each available staff × each valid location
-        for (const staff of availableStaffForSlot) {
-          const staffLocationIds = staffLocationMap.get(staff.user_id);
+        if (needsStaff) {
+          // Generate combos: for each available staff × each valid location
+          for (const staff of availableStaffForSlot) {
+            const staffLocationIds = staffLocationMap.get(staff.user_id);
 
+            for (const loc of windowLocations) {
+              // If staff has location assignments, only include if they work at this location
+              if (staffLocationIds && staffLocationIds.length > 0 && !staffLocationIds.includes(loc.id)) continue;
+
+              slots.push({
+                start_time: slotStart.toISOString(),
+                end_time: slotEnd.toISOString(),
+                duration,
+                location_id: loc.id,
+                location_name: loc.name,
+                staff_id: staff.user_id,
+                staff_first_name: staff.first_name,
+                staff_last_name: staff.last_name,
+                capacity_remaining: slotCapacityRemaining,
+              });
+            }
+
+            // If no locations defined at all, still include the slot without a location
+            if (windowLocations.length === 0) {
+              slots.push({
+                start_time: slotStart.toISOString(),
+                end_time: slotEnd.toISOString(),
+                duration,
+                location_id: null,
+                location_name: null,
+                staff_id: staff.user_id,
+                staff_first_name: staff.first_name,
+                staff_last_name: staff.last_name,
+                capacity_remaining: slotCapacityRemaining,
+              });
+            }
+          }
+        } else {
+          // Resource-type (or otherwise staff-less) service: no staff dimension at all — one
+          // combo per valid location (or one combo total when no locations are configured).
+          // Not nested inside a staff loop, so this correctly still runs even when the business
+          // has zero staff members (previously a resource-type service with no staff generated
+          // no slots at all, since the combo push lived inside `for (const staff of ...)`).
           for (const loc of windowLocations) {
-            // If staff has location assignments, only include if they work at this location
-            if (staffLocationIds && staffLocationIds.length > 0 && !staffLocationIds.includes(loc.id)) continue;
-
             slots.push({
               start_time: slotStart.toISOString(),
               end_time: slotEnd.toISOString(),
               duration,
               location_id: loc.id,
               location_name: loc.name,
-              staff_id: staff.user_id,
-              staff_first_name: staff.first_name,
-              staff_last_name: staff.last_name,
+              capacity_remaining: slotCapacityRemaining,
             });
           }
-
-          // If no locations defined at all, still include the slot without a location
           if (windowLocations.length === 0) {
             slots.push({
               start_time: slotStart.toISOString(),
@@ -386,9 +425,7 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
               duration,
               location_id: null,
               location_name: null,
-              staff_id: staff.user_id,
-              staff_first_name: staff.first_name,
-              staff_last_name: staff.last_name,
+              capacity_remaining: slotCapacityRemaining,
             });
           }
         }

@@ -1,0 +1,145 @@
+.day-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm, 8px);
+}
+
+.day-picker__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.day-picker__nav {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.day-picker__nav:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.day-picker__month-label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+}
+
+.day-picker__body {
+  position: relative;
+}
+
+.day-picker__weekdays,
+.day-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.day-picker__weekday {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+  padding-bottom: 4px;
+}
+
+.day-picker__cell {
+  aspect-ratio: 1;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-inverse);
+  font-size: 13px;
+  font-family: var(--font-family);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.day-picker__cell--blank {
+  background: none;
+  cursor: default;
+}
+
+.day-picker__cell--past {
+  opacity: 0.4;
+}
+
+.day-picker__cell:disabled {
+  cursor: not-allowed;
+}
+
+.day-picker__cell:not(:disabled):hover {
+  filter: brightness(1.1);
+}
+
+.day-picker__cell:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.day-picker__loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-modal, rgba(0, 0, 0, 0.4));
+  border-radius: var(--radius-md);
+}
+
+.day-picker__spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: day-picker-spin 0.7s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .day-picker__spinner {
+    animation-duration: 1.4s;
+  }
+}
+
+@keyframes day-picker-spin {
+  to { transform: rotate(360deg); }
+}
+
+.day-picker__error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: var(--space-md);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md);
+  background: var(--color-error-bg, rgba(211, 47, 47, 0.05));
+}
+
+.day-picker__error-message {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-error);
+}
+
+.day-picker__retry {
+  background: none;
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md);
+  color: var(--color-error);
+  padding: 6px 12px;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
