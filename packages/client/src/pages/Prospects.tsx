@@ -10,12 +10,13 @@ interface Prospect {
   website?: string;
   category: string;
   rating?: number;
+  distance_km?: number;
   status: string;
   notes?: string;
   dismissed_at?: string;
 }
 
-type SortField = 'name' | 'address' | 'category' | 'rating' | 'status' | 'notes';
+type SortField = 'name' | 'address' | 'category' | 'rating' | 'distance_km' | 'status' | 'notes';
 type SortDir = 'asc' | 'desc';
 
 const STATUS_OPTIONS = [
@@ -40,6 +41,8 @@ export function Prospects() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({ name: '', address: '', phone: '', website: '', category: '', notes: '' });
   const [editingNotes, setEditingNotes] = useState<Record<string, string>>({});
+  const [territory, setTerritory] = useState<{ postal_code: string; radius_km: number } | null>(null);
+  const [searchRadius, setSearchRadius] = useState(50);
 
   const fetchProspects = useCallback(async () => {
     setLoading(true);
@@ -65,6 +68,14 @@ export function Prospects() {
 
   useEffect(() => {
     fetchProspects();
+    // Load territory info
+    apiClient.get('/v1/prospects/territory-info').then((res) => {
+      const data = res.data.data;
+      if (data) {
+        setTerritory({ postal_code: data.territory_address || '', radius_km: data.territory_radius_km || 50 });
+        setSearchRadius(data.territory_radius_km || 50);
+      }
+    }).catch((err) => { console.error('Failed to load territory info:', err.message); });
   }, [fetchProspects]);
 
   const handleSort = (field: SortField) => {
@@ -77,11 +88,17 @@ export function Prospects() {
   };
 
   const sortedProspects = [...prospects].sort((a, b) => {
-    const aVal = (a[sortField] ?? '') as string | number;
-    const bVal = (b[sortField] ?? '') as string | number;
-    const cmp = typeof aVal === 'number' && typeof bVal === 'number'
-      ? aVal - bVal
-      : String(aVal).localeCompare(String(bVal));
+    const numericFields = ['rating', 'distance_km'];
+    const aRaw = a[sortField] ?? '';
+    const bRaw = b[sortField] ?? '';
+    let cmp: number;
+    if (numericFields.includes(sortField)) {
+      const aNum = Number(aRaw) || 0;
+      const bNum = Number(bRaw) || 0;
+      cmp = aNum - bNum;
+    } else {
+      cmp = String(aRaw).localeCompare(String(bRaw));
+    }
     return sortDir === 'asc' ? cmp : -cmp;
   });
 
@@ -119,14 +136,23 @@ export function Prospects() {
     }
   };
 
+  const [generating, setGenerating] = useState(false);
+
   const handleGenerate = async () => {
     if (!window.confirm('Generate new prospects? This will search for businesses in your area.')) return;
+    setGenerating(true);
+    // Start polling the prospect list to show results as they come in
+    const pollInterval = setInterval(() => { fetchProspects(); }, 4000);
     try {
-      const res = await apiClient.post('/v1/prospects/generate');
+      const res = await apiClient.post('/v1/prospects/generate', { search_radius_km: searchRadius });
       const result = res.data.data || res.data;
-      alert(`${result.added ?? 0} new prospects added, ${result.already_existed ?? 0} already existed, ${result.marked_inactive ?? 0} marked inactive`);
+      clearInterval(pollInterval);
+      setGenerating(false);
       fetchProspects();
+      alert(`${result.new_added ?? result.added ?? 0} new prospects added, ${result.total_returned ?? 0} total found, ${result.inactive_marked ?? 0} marked inactive`);
     } catch (err: any) {
+      clearInterval(pollInterval);
+      setGenerating(false);
       alert(err.response?.data?.error || 'Failed to generate prospects');
     }
   };
@@ -162,9 +188,22 @@ export function Prospects() {
     <div style={styles.page}>
       {/* Header */}
       <div style={styles.header}>
-        <h1 style={styles.title}>Prospects</h1>
+        <div>
+          <h1 style={styles.title}>Prospects</h1>
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{sortedProspects.length} prospect{sortedProspects.length !== 1 ? 's' : ''}</span>
+        </div>
         <div style={styles.headerActions}>
-          <Button onClick={handleGenerate}>Generate Prospects</Button>
+          {territory && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+              <span style={{ color: 'var(--color-text-secondary)' }}>Territory: <strong style={{ color: 'var(--color-text)' }}>{territory.postal_code}</strong></span>
+              <label style={{ color: 'var(--color-text-secondary)' }}>Radius:
+                <input type="number" min="5" max={territory.radius_km} value={searchRadius} onChange={(e) => setSearchRadius(Math.min(parseInt(e.target.value) || 5, territory.radius_km))}
+                  style={{ width: '55px', marginLeft: '4px', padding: '4px 6px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px', textAlign: 'center' as const }} />
+                <span style={{ marginLeft: '2px' }}>km</span>
+              </label>
+            </div>
+          )}
+          <Button onClick={handleGenerate} loading={generating} disabled={generating}>{generating ? 'Generating...' : 'Generate Prospects'}</Button>
           <button style={styles.exportLink} onClick={handleExport}>Export CSV</button>
         </div>
       </div>
@@ -291,13 +330,13 @@ export function Prospects() {
           <table style={styles.table}>
             <thead>
               <tr>
-                {(['name', 'address', 'category', 'rating', 'status', 'notes'] as SortField[]).map((field) => (
+                {(['name', 'address', 'category', 'rating', 'distance_km', 'status', 'notes'] as SortField[]).map((field) => (
                   <th
                     key={field}
                     style={styles.th}
                     onClick={() => handleSort(field)}
                   >
-                    {field.charAt(0).toUpperCase() + field.slice(1)}{renderSortIndicator(field)}
+                    {field === 'distance_km' ? 'Distance' : field.charAt(0).toUpperCase() + field.slice(1)}{renderSortIndicator(field)}
                   </th>
                 ))}
                 <th style={styles.th}>Actions</th>
@@ -306,10 +345,13 @@ export function Prospects() {
             <tbody>
               {sortedProspects.map((prospect, idx) => (
                 <tr key={prospect.id} style={idx % 2 === 0 ? styles.rowEven : styles.rowOdd}>
-                  <td style={styles.td}>{prospect.name}</td>
+                  <td style={styles.td}>
+                    <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(prospect.name + ' ' + (prospect.address || ''))}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-text)', textDecoration: 'underline' }}>{prospect.name}</a>
+                  </td>
                   <td style={styles.td}>{prospect.address}</td>
                   <td style={styles.td}>{prospect.category}</td>
                   <td style={styles.td}>{prospect.rating ?? '—'}</td>
+                  <td style={styles.td}>{prospect.distance_km != null ? `${prospect.distance_km} km` : '—'}</td>
                   <td style={styles.td}>
                     <select
                       value={prospect.status}
