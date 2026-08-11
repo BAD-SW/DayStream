@@ -149,20 +149,8 @@ prospectsRouter.get('/', requirePermission('settings:*'), async (req: Request, r
 
     const where = conditions.join(' AND ');
 
-    // Get territory center for distance calculation
-    const { rows: tenantInfo } = await adminPool.query(
-      'SELECT territory_lat, territory_lng FROM sys_tenants WHERE id = $1',
-      [tenantId],
-    );
-    const tLat = tenantInfo[0]?.territory_lat;
-    const tLng = tenantInfo[0]?.territory_lng;
-
-    const distanceExpr = tLat && tLng
-      ? `, ROUND((6371 * acos(LEAST(1.0, cos(radians(${tLat})) * cos(radians(lat)) * cos(radians(lng) - radians(${tLng})) + sin(radians(${tLat})) * sin(radians(lat)))))::numeric, 1) AS distance_km`
-      : ', NULL AS distance_km';
-
     const { rows } = await adminPool.query(
-      `SELECT *${distanceExpr} FROM prp_prospects WHERE ${where} ORDER BY created_at DESC`,
+      `SELECT * FROM prp_prospects WHERE ${where} ORDER BY created_at DESC`,
       params,
     );
     success(res, rows);

@@ -464,10 +464,6 @@ export function Tenants() {
                     <label style={styles.label}>Location</label>
                     <input style={styles.input} type="text" placeholder="e.g., Chicago, IL or South Florida" value={editForm.territory_postal_code} onChange={(e) => setEditForm({ ...editForm, territory_postal_code: e.target.value })} />
                   </div>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>Radius (km)</label>
-                    <input style={styles.input} type="number" min="5" value={editForm.territory_radius_km} onChange={(e) => setEditForm({ ...editForm, territory_radius_km: e.target.value })} />
-                  </div>
                 </div>
 
                 <div style={styles.formDivider}>Owner Details</div>

@@ -36,10 +36,13 @@ export async function searchByText(location: string, type: string): Promise<Plac
   const results: PlaceResult[] = [];
   let nextPageToken: string | undefined;
 
+  // Combine type + location for better results (e.g., "spa in Western New York")
+  const query = `${type.replace(/_/g, ' ')} in ${location}`;
+
   for (let page = 0; page < 3; page++) {
     const url = new URL('https://maps.googleapis.com/maps/api/place/textsearch/json');
     url.searchParams.set('key', API_KEY);
-    url.searchParams.set('query', location);
+    url.searchParams.set('query', query);
     url.searchParams.set('type', type);
     if (nextPageToken) {
       url.searchParams.set('pagetoken', nextPageToken);
@@ -78,7 +81,7 @@ export async function searchByText(location: string, type: string): Promise<Plac
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
 
-  logger.info(`[GooglePlaces] Found ${results.length} places for type=${type} in "${location}"`);
+  logger.info(`[GooglePlaces] Found ${results.length} places for type=${type} in "${location}" (query="${query}")`);
   return results;
 }
 

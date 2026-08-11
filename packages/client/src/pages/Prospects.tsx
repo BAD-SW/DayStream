@@ -10,13 +10,12 @@ interface Prospect {
   website?: string;
   category: string;
   rating?: number;
-  distance_km?: number;
   status: string;
   notes?: string;
   dismissed_at?: string;
 }
 
-type SortField = 'name' | 'address' | 'category' | 'rating' | 'distance_km' | 'status' | 'notes';
+type SortField = 'name' | 'address' | 'category' | 'rating' | 'status' | 'notes';
 type SortDir = 'asc' | 'desc';
 
 const STATUS_OPTIONS = [
@@ -86,7 +85,7 @@ export function Prospects() {
   };
 
   const sortedProspects = [...prospects].sort((a, b) => {
-    const numericFields = ['rating', 'distance_km'];
+    const numericFields = ['rating'];
     const aRaw = a[sortField] ?? '';
     const bRaw = b[sortField] ?? '';
     let cmp: number;
@@ -323,13 +322,13 @@ export function Prospects() {
           <table style={styles.table}>
             <thead>
               <tr>
-                {(['name', 'address', 'category', 'rating', 'distance_km', 'status', 'notes'] as SortField[]).map((field) => (
+                {(['name', 'address', 'category', 'rating', 'status', 'notes'] as SortField[]).map((field) => (
                   <th
                     key={field}
                     style={styles.th}
                     onClick={() => handleSort(field)}
                   >
-                    {field === 'distance_km' ? 'Distance' : field.charAt(0).toUpperCase() + field.slice(1)}{renderSortIndicator(field)}
+                    {field.charAt(0).toUpperCase() + field.slice(1)}{renderSortIndicator(field)}
                   </th>
                 ))}
                 <th style={styles.th}>Actions</th>
@@ -344,7 +343,6 @@ export function Prospects() {
                   <td style={styles.td}>{prospect.address}</td>
                   <td style={styles.td}>{prospect.category}</td>
                   <td style={styles.td}>{prospect.rating ?? '—'}</td>
-                  <td style={styles.td}>{prospect.distance_km != null ? `${prospect.distance_km} km` : '—'}</td>
                   <td style={styles.td}>
                     <select
                       value={prospect.status}
