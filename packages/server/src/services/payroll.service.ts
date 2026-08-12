@@ -113,7 +113,7 @@ export async function runPayroll(periodId: string, businessId: string, tenantId:
       grossPay += amount;
     }
 
-    // Apply deductions
+    // Apply deductions (manual deductions + auto tax calculations)
     const { rows: deductions } = await adminPool.query(
       `SELECT * FROM fin_payroll_deductions
        WHERE user_id = $1 AND business_id = $2 AND status = 'active'
@@ -124,6 +124,40 @@ export async function runPayroll(periodId: string, businessId: string, tenantId:
     let totalDeductionAmount = 0;
     const deductionBreakdown: any[] = [];
 
+    // Auto-calculate taxes from tax tables
+    const { calculateTaxes, getEmployeeTaxProfile } = await import('./tax-calculation.service');
+    const taxProfile = await getEmployeeTaxProfile(businessId, userId);
+    if (taxProfile && grossPay > 0) {
+      // Get business pay frequency (default monthly)
+      const { rows: bizRows } = await adminPool.query(
+        'SELECT config_data FROM sys_business_configurations WHERE business_id = $1 AND key = $2',
+        [businessId, 'payroll.frequency'],
+      );
+      const payFrequency = bizRows[0]?.config_data || 'monthly';
+
+      // Get YTD gross for wage base calculations
+      const { rows: ytdRows } = await adminPool.query(
+        `SELECT COALESCE(SUM(gross_pay), 0)::int AS ytd_gross FROM fin_payroll_entries
+         WHERE user_id = $1 AND status = 'finalized'
+           AND pay_period_id IN (SELECT id FROM fin_pay_periods WHERE business_id = $2 AND period_start >= $3)`,
+        [userId, businessId, `${new Date().getFullYear()}-01-01`],
+      );
+      const ytdGross = ytdRows[0]?.ytd_gross || 0;
+
+      const taxResult = await calculateTaxes(grossPay, taxProfile, payFrequency, ytdGross);
+
+      if (taxResult.incomeTax > 0) {
+        totalDeductionAmount += taxResult.incomeTax;
+        deductionBreakdown.push({ name: 'Income Tax', type: 'tax', calculation: 'progressive', value: 0, amount: taxResult.incomeTax });
+      }
+
+      for (const flatTax of taxResult.flatTaxes.filter(t => t.type === 'employee')) {
+        totalDeductionAmount += flatTax.amount;
+        deductionBreakdown.push({ name: flatTax.name, type: 'tax', calculation: 'flat', value: 0, amount: flatTax.amount });
+      }
+    }
+
+    // Manual deductions (benefits, loans, etc.)
     for (const ded of deductions) {
       let deductionAmount = 0;
       if (ded.calculation_type === 'percentage') {
