@@ -6,6 +6,7 @@ interface Prospect {
   id: string;
   name: string;
   address: string;
+  city?: string;
   phone?: string;
   website?: string;
   category: string;
@@ -15,7 +16,7 @@ interface Prospect {
   dismissed_at?: string;
 }
 
-type SortField = 'name' | 'address' | 'category' | 'rating' | 'status' | 'notes';
+type SortField = 'name' | 'address' | 'city' | 'category' | 'rating' | 'status' | 'notes';
 type SortDir = 'asc' | 'desc';
 
 const STATUS_OPTIONS = [
@@ -136,26 +137,45 @@ export function Prospects() {
   };
 
   const [generating, setGenerating] = useState(false);
+  const [showGeneratePanel, setShowGeneratePanel] = useState(false);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+  const [allCategoryMappings, setAllCategoryMappings] = useState<{ id: string; ui_category_name: string }[]>([]);
+
+  const handleOpenGenerate = async () => {
+    // Load category mappings for selection
+    try {
+      const res = await apiClient.get('/v1/prospects/categories');
+      const cats = res.data.data || [];
+      setAllCategoryMappings(cats);
+      setSelectedCategoryIds(cats.map((c: any) => c.id));
+      setShowGeneratePanel(true);
+    } catch { alert('Failed to load categories'); }
+  };
+
+  const toggleCategory = (id: string) => {
+    setSelectedCategoryIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
 
   const handleGenerate = async () => {
+    if (selectedCategoryIds.length === 0) { alert('Select at least one category'); return; }
     // Fetch preview first to show the search plan
     try {
-      const preview = await apiClient.get('/v1/prospects/generate/preview');
+      const preview = await apiClient.get(`/v1/prospects/generate/preview?category_ids=${selectedCategoryIds.join(',')}`);
       const plan = preview.data.data;
       const msg = `Search Plan:\n\n` +
         `• ${plan.search_centers} search areas × ${plan.categories} categories = ${plan.estimated_api_calls} API calls\n` +
-        `• Estimated cost: $${plan.estimated_cost_usd}\n` +
-        `• Dense areas may trigger additional drill-down searches\n\n` +
+        `• Estimated cost: $${plan.estimated_cost_usd}\n\n` +
         `Proceed?`;
       if (!window.confirm(msg)) return;
     } catch {
       if (!window.confirm('Generate new prospects? Could not load preview.')) return;
     }
+    setShowGeneratePanel(false);
     setGenerating(true);
     // Start polling the prospect list to show results as they come in
     const pollInterval = setInterval(() => { fetchProspects(); }, 4000);
     try {
-      const res = await apiClient.post('/v1/prospects/generate');
+      const res = await apiClient.post('/v1/prospects/generate', { category_ids: selectedCategoryIds });
       const result = res.data.data || res.data;
       clearInterval(pollInterval);
       setGenerating(false);
@@ -209,7 +229,7 @@ export function Prospects() {
               <span style={{ color: 'var(--color-text-secondary)' }}>Location: <strong style={{ color: 'var(--color-text)' }}>{territory.location}</strong></span>
             </div>
           )}
-          <Button onClick={handleGenerate} loading={generating} disabled={generating}>{generating ? 'Generating...' : 'Generate Prospects'}</Button>
+          <Button onClick={handleOpenGenerate} loading={generating} disabled={generating}>{generating ? 'Generating...' : 'Generate Prospects'}</Button>
           <button style={styles.exportLink} onClick={handleExport}>Export CSV</button>
         </div>
       </div>
@@ -253,6 +273,29 @@ export function Prospects() {
           Show Dismissed
         </label>
       </div>
+
+      {/* Generate Panel - Category Selection */}
+      {showGeneratePanel && (
+        <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-background)' }}>
+          <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)', margin: '0 0 8px' }}>Select categories to search:</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: '6px', marginBottom: '12px' }}>
+            {allCategoryMappings.map((cat) => {
+              const selected = selectedCategoryIds.includes(cat.id);
+              return (
+                <button key={cat.id} type="button" onClick={() => toggleCategory(cat.id)}
+                  style={{ padding: '4px 12px', fontSize: '12px', borderRadius: '16px', cursor: 'pointer', border: '1px solid var(--color-border)', background: selected ? 'var(--color-primary)' : 'transparent', color: selected ? '#fff' : 'var(--color-text)' }}>
+                  {cat.ui_category_name}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <Button size="sm" onClick={handleGenerate} disabled={selectedCategoryIds.length === 0}>Search Selected</Button>
+            <button type="button" onClick={() => setShowGeneratePanel(false)} style={{ fontSize: '12px', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+            <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginLeft: 'auto' }}>{selectedCategoryIds.length} of {allCategoryMappings.length} selected</span>
+          </div>
+        </div>
+      )}
 
       {/* Add Form Toggle */}
       <div style={styles.addFormToggle}>
@@ -336,7 +379,7 @@ export function Prospects() {
           <table style={styles.table}>
             <thead>
               <tr>
-                {(['name', 'address', 'category', 'rating', 'status', 'notes'] as SortField[]).map((field) => (
+                {(['name', 'address', 'city', 'category', 'rating', 'status', 'notes'] as SortField[]).map((field) => (
                   <th
                     key={field}
                     style={styles.th}
@@ -355,6 +398,7 @@ export function Prospects() {
                     <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(prospect.name + ' ' + (prospect.address || ''))}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-text)', textDecoration: 'underline' }}>{prospect.name}</a>
                   </td>
                   <td style={styles.td}>{prospect.address}</td>
+                  <td style={styles.td}>{prospect.city || '—'}</td>
                   <td style={styles.td}>{prospect.category}</td>
                   <td style={styles.td}>{prospect.rating ?? '—'}</td>
                   <td style={styles.td}>

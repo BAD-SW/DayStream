@@ -247,7 +247,11 @@ prospectsRouter.get('/generate/preview', requirePermission('settings:*'), async 
     const { getSearchCoordinates } = await import('../services/h3-territory.service');
     const { coordinates, parentResolution } = await getSearchCoordinates(tenantId);
 
-    const { rows: categoryMappings } = await adminPool.query('SELECT google_search_strings FROM prp_category_mappings WHERE active = true');
+    const categoryIds = req.query.category_ids ? String(req.query.category_ids).split(',') : null;
+    const catQuery = categoryIds
+      ? `SELECT google_search_strings FROM prp_category_mappings WHERE active = true AND id = ANY($1)`
+      : `SELECT google_search_strings FROM prp_category_mappings WHERE active = true`;
+    const { rows: categoryMappings } = await adminPool.query(catQuery, categoryIds ? [categoryIds] : []);
 
     const searchCenters = coordinates.length;
     const categoryCount = categoryMappings.length;
@@ -284,9 +288,11 @@ prospectsRouter.post('/generate', requirePermission('settings:*'), async (req: R
     const { territory_address, territory_lat, territory_lng } = tenantRows[0];
 
     // Load active category mappings (semantic keyword arrays)
-    const { rows: categoryMappings } = await adminPool.query(
-      'SELECT ui_category_name, google_search_strings, api_exclusion_types FROM prp_category_mappings WHERE active = true ORDER BY display_order',
-    );
+    const categoryIds = req.body?.category_ids || null;
+    const catQuery = categoryIds
+      ? `SELECT ui_category_name, google_search_strings, api_exclusion_types FROM prp_category_mappings WHERE active = true AND id = ANY($1) ORDER BY display_order`
+      : `SELECT ui_category_name, google_search_strings, api_exclusion_types FROM prp_category_mappings WHERE active = true ORDER BY display_order`;
+    const { rows: categoryMappings } = await adminPool.query(catQuery, categoryIds ? [categoryIds] : []);
     if (categoryMappings.length === 0) {
       error(res, 'No prospect categories configured. Contact your system administrator.', 'VALIDATION_ERROR', 400);
       return;
@@ -337,14 +343,14 @@ prospectsRouter.post('/generate', requirePermission('settings:*'), async (req: R
           returnedPlaceIds.push(place.place_id);
 
           await adminPool.query(
-            `INSERT INTO prp_prospects (tenant_id, google_place_id, name, address, phone, website, category, rating, review_count, lat, lng, source)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'api')
+            `INSERT INTO prp_prospects (tenant_id, google_place_id, name, address, city, phone, website, category, rating, review_count, lat, lng, source)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'api')
              ON CONFLICT (tenant_id, google_place_id) DO UPDATE SET
-               name = EXCLUDED.name, address = EXCLUDED.address, phone = EXCLUDED.phone,
+               name = EXCLUDED.name, address = EXCLUDED.address, city = EXCLUDED.city, phone = EXCLUDED.phone,
                website = EXCLUDED.website, rating = EXCLUDED.rating, review_count = EXCLUDED.review_count,
                lat = EXCLUDED.lat, lng = EXCLUDED.lng,
                is_active = true, updated_at = NOW()`,
-            [tenantId, place.place_id, place.name, place.address, place.phone || null, place.website || null, catMap.ui_category_name, place.rating || null, place.review_count || 0, place.lat || null, place.lng || null],
+            [tenantId, place.place_id, place.name, place.address, place.city || null, place.phone || null, place.website || null, catMap.ui_category_name, place.rating || null, place.review_count || 0, place.lat || null, place.lng || null],
           );
           newCount++;
         }

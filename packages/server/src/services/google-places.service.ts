@@ -16,6 +16,7 @@ interface PlaceResult {
   place_id: string;
   name: string;
   address: string;
+  city?: string;
   lat?: number;
   lng?: number;
   phone?: string;
@@ -23,6 +24,29 @@ interface PlaceResult {
   category?: string;
   rating?: number;
   review_count?: number;
+}
+
+/**
+ * Extract city from a formatted address string.
+ * Heuristic: for most addresses, the city is typically the segment before the postal code/country.
+ */
+function extractCity(address: string): string | undefined {
+  if (!address) return undefined;
+  const parts = address.split(',').map(s => s.trim());
+  // Usually: street, city, state/region, country — or variations
+  // Try to find a segment that looks like a city (not a number/postal code, not the last segment which is often country)
+  if (parts.length >= 3) {
+    // Skip last part (country), skip parts with postal codes
+    for (let i = parts.length - 2; i >= 1; i--) {
+      const part = parts[i];
+      // Skip if it's mostly numbers (postal code)
+      if (/^\d{3,}/.test(part)) continue;
+      // Skip if it contains a postal code pattern
+      if (/\d{4,}/.test(part)) continue;
+      return part;
+    }
+  }
+  return parts.length >= 2 ? parts[1] : undefined;
 }
 
 /**
@@ -63,10 +87,12 @@ export async function searchByKeyword(lat: number, lng: number, radiusMeters: nu
       const placeTypes: string[] = place.types || [];
       if (exclusionTypes.length > 0 && exclusionTypes.some(ex => placeTypes.includes(ex))) continue;
 
+      const formattedAddress = place.formatted_address || place.vicinity || '';
       results.push({
         place_id: place.place_id,
         name: place.name,
-        address: place.formatted_address || place.vicinity || '',
+        address: formattedAddress,
+        city: extractCity(formattedAddress),
         lat: place.geometry?.location?.lat,
         lng: place.geometry?.location?.lng,
         category: keyword,
