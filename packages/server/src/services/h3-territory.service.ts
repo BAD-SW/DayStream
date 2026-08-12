@@ -30,9 +30,9 @@ export async function generateTerritoryHexagons(lat: number, lng: number, radius
       const hexagons = h3.polygonToCells(boundaryPolygon, resolution);
       if (hexagons.length > 0) {
         logger.info(`[H3Territory] Generated ${hexagons.length} hexagons from boundary polygon (resolution=${resolution})`);
-        if (hexagons.length > 5000) {
-          logger.warn(`[H3Territory] Territory has ${hexagons.length} hexagons — capping at 5000`);
-          return hexagons.slice(0, 5000);
+        if (hexagons.length > 10000) {
+          logger.warn(`[H3Territory] Territory has ${hexagons.length} hexagons — capping at 10000`);
+          return hexagons.slice(0, 10000);
         }
         return hexagons;
       }
@@ -107,22 +107,67 @@ export async function saveTerritoryHexagons(tenantId: string, hexagons: string[]
     );
   }
 
-  // Update is_searchable based on population data (if available)
-  // A hex is searchable if any of its resolution-8 children have population > 50
-  // For simplicity: check if the hex itself or its parent area has population
-  await adminPool.query(
-    `UPDATE prp_tenant_territories tt
-     SET is_searchable = EXISTS (
-       SELECT 1 FROM prp_population_lookup pl
-       WHERE pl.h3_index LIKE (LEFT(tt.h3_index, 8) || '%')
-       AND pl.population > 50
-     )
-     WHERE tt.tenant_id = $1`,
-    [tenantId],
-  ).catch(() => {
-    // If population table is empty or query fails, keep all as searchable
-    logger.info(`[H3Territory] Population filter not applied (table may be empty)`);
-  });
+  // Update is_searchable based on population data (if available for this region)
+  const { rows: popCount } = await adminPool.query('SELECT 1 FROM prp_population_lookup LIMIT 1').catch(() => ({ rows: [] }));
+  if (popCount.length > 0) {
+    try {
+      const { rows: terrHexes } = await adminPool.query(
+        'SELECT h3_index FROM prp_tenant_territories WHERE tenant_id = $1', [tenantId],
+      );
+
+      // Build all res-8 children for the territory
+      const hexToChildren = new Map<string, string[]>();
+      const allChildren: string[] = [];
+      for (const row of terrHexes) {
+        const children = h3.cellToChildren(row.h3_index, 8);
+        hexToChildren.set(row.h3_index, children);
+        allChildren.push(...children);
+      }
+
+      // Check if population data exists for this region at all
+      // Sample a few children — if none exist in population table, skip filtering (no data for this area)
+      const sampleSize = Math.min(100, allChildren.length);
+      const sample = allChildren.slice(0, sampleSize);
+      const { rows: sampleCheck } = await adminPool.query(
+        `SELECT COUNT(*) as cnt FROM prp_population_lookup WHERE h3_index = ANY($1)`,
+        [sample],
+      );
+      const sampleHits = parseInt(sampleCheck[0]?.cnt || '0');
+
+      if (sampleHits === 0) {
+        // No population data for this region — skip filtering, keep all searchable
+        logger.info(`[H3Territory] No population data found for this region — skipping filter`);
+      } else {
+        // Population data exists — find populated children
+        const populatedChildren = new Set<string>();
+        for (let i = 0; i < allChildren.length; i += 5000) {
+          const chunk = allChildren.slice(i, i + 5000);
+          const { rows: popRows } = await adminPool.query(
+            `SELECT h3_index FROM prp_population_lookup WHERE h3_index = ANY($1) AND population > 50`,
+            [chunk],
+          );
+          for (const r of popRows) populatedChildren.add(r.h3_index);
+        }
+
+        // Mark territory hexes with no populated children as non-searchable
+        const nonSearchable: string[] = [];
+        for (const [hex, children] of hexToChildren) {
+          const hasPopulation = children.some(c => populatedChildren.has(c));
+          if (!hasPopulation) nonSearchable.push(hex);
+        }
+
+        if (nonSearchable.length > 0) {
+          await adminPool.query(
+            `UPDATE prp_tenant_territories SET is_searchable = false WHERE tenant_id = $1 AND h3_index = ANY($2)`,
+            [tenantId, nonSearchable],
+          );
+        }
+        logger.info(`[H3Territory] Population filter: ${nonSearchable.length}/${terrHexes.length} hexagons marked non-searchable`);
+      }
+    } catch (err: any) {
+      logger.warn(`[H3Territory] Population filter failed: ${err.message}`);
+    }
+  }
 
   logger.info(`[H3Territory] Saved ${hexagons.length} hexagons for tenant ${tenantId}`);
   return hexagons.length;

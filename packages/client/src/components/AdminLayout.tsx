@@ -18,6 +18,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     ? [
         { to: '/dashboard', label: 'Admin Dashboard' },
         { to: '/admin/tenants', label: 'Tenants' },
+        { to: '/admin/coverage-map', label: 'Coverage Map' },
+        { to: '/admin/prospect-categories', label: 'Prospect Categories' },
         { to: '/admin/users', label: 'Users' },
         { to: '/admin/config', label: 'Configuration' },
         { to: '/admin/audit-log', label: 'Audit Log' },
@@ -26,6 +28,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     : [
         { to: '/dashboard', label: 'Dashboard' },
         { to: '/admin/businesses', label: 'Businesses' },
+        { to: '/admin/prospects', label: 'Prospects' },
         { to: '/admin/tenant-users', label: 'Users' },
         { to: '/admin/billing', label: 'Billing' },
         { to: '/admin/reports', label: 'Reports' },

@@ -54,9 +54,6 @@ export function Prospects() {
       const res = await apiClient.get(`/v1/prospects?${params.toString()}`);
       const data: Prospect[] = res.data.data || res.data || [];
       setProspects(data);
-
-      const uniqueCategories = Array.from(new Set(data.map((p) => p.category).filter(Boolean)));
-      setCategories(uniqueCategories);
     } catch {
       setProspects([]);
     } finally {
@@ -73,6 +70,11 @@ export function Prospects() {
         setTerritory({ location: data.territory_address || '' });
       }
     }).catch((err) => { console.error('Failed to load territory info:', err.message); });
+    // Load categories from admin configuration
+    apiClient.get('/v1/prospects/categories').then((res) => {
+      const cats = res.data.data || [];
+      setCategories(cats.map((c: any) => c.google_type));
+    }).catch(() => {});
   }, [fetchProspects]);
 
   const handleSort = (field: SortField) => {

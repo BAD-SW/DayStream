@@ -32,19 +32,12 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
 
     const radius = territory_radius_km;
 
-    // Generate H3 hexagons asynchronously (don't block the save response)
+    // Generate H3 hexagons and save (synchronous — must complete before response)
     const { generateTerritoryHexagons, saveTerritoryHexagons, geojsonToH3Polygon } = await import('../services/h3-territory.service');
     const boundaryPolygon = geo.geojson ? geojsonToH3Polygon(geo.geojson) : null;
 
-    // Fire and forget — hexagons generate in the background
-    (async () => {
-      try {
-        const hexagons = await generateTerritoryHexagons(geo.lat, geo.lng, radius, boundaryPolygon || undefined);
-        await saveTerritoryHexagons(req.params.tenantId, hexagons);
-      } catch (err: any) {
-        console.error(`[H3Territory] Background hex generation failed: ${err.message}`);
-      }
-    })();
+    const hexagons = await generateTerritoryHexagons(geo.lat, geo.lng, radius, boundaryPolygon || undefined);
+    await saveTerritoryHexagons(req.params.tenantId, hexagons);
 
     // Update tenant record
     const { rows } = await adminPool.query(
@@ -71,7 +64,7 @@ prospectsRouter.get('/territories', requirePermission('*:*'), async (_req: Reque
 // ============================================================
 
 // GET /api/v1/prospects/categories — List all categories
-prospectsRouter.get('/categories', requirePermission('*:*'), async (_req: Request, res: Response) => {
+prospectsRouter.get('/categories', requirePermission('settings:*'), async (_req: Request, res: Response) => {
   try {
     const { rows } = await adminPool.query('SELECT * FROM sys_prospect_categories ORDER BY label');
     success(res, rows);
