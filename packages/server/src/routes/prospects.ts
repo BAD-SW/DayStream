@@ -63,31 +63,57 @@ prospectsRouter.get('/territories', requirePermission('*:*'), async (_req: Reque
 // Prospect Categories (System Admin)
 // ============================================================
 
-// GET /api/v1/prospects/categories — List all categories
-prospectsRouter.get('/categories', requirePermission('settings:*'), async (_req: Request, res: Response) => {
+// GET /api/v1/prospects/categories — List all category mappings
+prospectsRouter.get('/categories', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
-    const { rows } = await adminPool.query('SELECT * FROM sys_prospect_categories ORDER BY label');
+    const includeInactive = req.query.include_inactive === 'true';
+    const where = includeInactive ? '' : 'WHERE active = true';
+    const { rows } = await adminPool.query(`SELECT * FROM prp_category_mappings ${where} ORDER BY display_order`);
     success(res, rows);
   } catch (err: any) { error(res, 'Failed to list categories', 'INTERNAL_ERROR', 500); }
 });
 
-// POST /api/v1/prospects/categories — Add a category
+// POST /api/v1/prospects/categories — Add a category mapping
 prospectsRouter.post('/categories', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
-    const { google_type, label } = req.body;
-    if (!google_type || !label) { error(res, 'google_type and label required', 'VALIDATION_ERROR', 400); return; }
+    const { ui_category_name, google_search_strings, api_exclusion_types } = req.body;
+    if (!ui_category_name || !google_search_strings || google_search_strings.length === 0) {
+      error(res, 'ui_category_name and google_search_strings required', 'VALIDATION_ERROR', 400); return;
+    }
     const { rows } = await adminPool.query(
-      'INSERT INTO sys_prospect_categories (google_type, label) VALUES ($1, $2) ON CONFLICT (google_type) DO UPDATE SET label = $2 RETURNING *',
-      [google_type, label],
+      `INSERT INTO prp_category_mappings (ui_category_name, google_search_strings, api_exclusion_types)
+       VALUES ($1, $2, $3) RETURNING *`,
+      [ui_category_name, google_search_strings, api_exclusion_types || []],
     );
     success(res, rows[0], undefined, 201);
   } catch (err: any) { error(res, 'Failed to add category', 'INTERNAL_ERROR', 500); }
 });
 
-// DELETE /api/v1/prospects/categories/:id — Delete a category
+// PUT /api/v1/prospects/categories/:id — Update a category mapping
+prospectsRouter.put('/categories/:id', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const { ui_category_name, google_search_strings, api_exclusion_types, active } = req.body;
+    const fields: string[] = [];
+    const params: any[] = [];
+    let idx = 1;
+    if (ui_category_name !== undefined) { fields.push(`ui_category_name = $${idx++}`); params.push(ui_category_name); }
+    if (google_search_strings !== undefined) { fields.push(`google_search_strings = $${idx++}`); params.push(google_search_strings); }
+    if (api_exclusion_types !== undefined) { fields.push(`api_exclusion_types = $${idx++}`); params.push(api_exclusion_types); }
+    if (active !== undefined) { fields.push(`active = $${idx++}`); params.push(active); }
+    if (fields.length === 0) { error(res, 'Nothing to update', 'VALIDATION_ERROR', 400); return; }
+    params.push(req.params.id);
+    const { rows } = await adminPool.query(
+      `UPDATE prp_category_mappings SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`, params,
+    );
+    if (rows.length === 0) { error(res, 'Category not found', 'NOT_FOUND', 404); return; }
+    success(res, rows[0]);
+  } catch (err: any) { error(res, 'Failed to update category', 'INTERNAL_ERROR', 500); }
+});
+
+// DELETE /api/v1/prospects/categories/:id — Delete a category mapping
 prospectsRouter.delete('/categories/:id', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
-    await adminPool.query('DELETE FROM sys_prospect_categories WHERE id = $1', [req.params.id]);
+    await adminPool.query('DELETE FROM prp_category_mappings WHERE id = $1', [req.params.id]);
     success(res, { deleted: true });
   } catch (err: any) { error(res, 'Failed to delete category', 'INTERNAL_ERROR', 500); }
 });
@@ -221,12 +247,12 @@ prospectsRouter.get('/generate/preview', requirePermission('settings:*'), async 
     const { getSearchCoordinates } = await import('../services/h3-territory.service');
     const { coordinates, parentResolution } = await getSearchCoordinates(tenantId);
 
-    const { rows: categories } = await adminPool.query('SELECT google_type FROM sys_prospect_categories');
+    const { rows: categoryMappings } = await adminPool.query('SELECT google_search_strings FROM prp_category_mappings WHERE active = true');
 
     const searchCenters = coordinates.length;
-    const categoryCount = categories.length;
+    const categoryCount = categoryMappings.length;
     const estimatedCalls = searchCenters * categoryCount;
-    const estimatedCost = (estimatedCalls / 1000 * 17).toFixed(2);
+    const estimatedCost = (estimatedCalls / 1000 * 32).toFixed(2); // Text Search is $32/1000
 
     success(res, {
       search_centers: searchCenters,
@@ -234,7 +260,7 @@ prospectsRouter.get('/generate/preview', requirePermission('settings:*'), async 
       parent_resolution: parentResolution,
       estimated_api_calls: estimatedCalls,
       estimated_cost_usd: estimatedCost,
-      note: 'Dense areas that hit 60 results will trigger additional drill-down searches',
+      note: 'Each category searches all its keywords in a single combined query per hex center.',
     });
   } catch (err: any) { error(res, 'Failed to generate preview', 'INTERNAL_ERROR', 500); }
 });
@@ -257,46 +283,56 @@ prospectsRouter.post('/generate', requirePermission('settings:*'), async (req: R
     }
     const { territory_address, territory_lat, territory_lng } = tenantRows[0];
 
-    // Load active categories
-    const { rows: categories } = await adminPool.query(
-      'SELECT google_type FROM sys_prospect_categories',
+    // Load active category mappings (semantic keyword arrays)
+    const { rows: categoryMappings } = await adminPool.query(
+      'SELECT ui_category_name, google_search_strings, api_exclusion_types FROM prp_category_mappings WHERE active = true ORDER BY display_order',
     );
-    if (categories.length === 0) {
+    if (categoryMappings.length === 0) {
       error(res, 'No prospect categories configured. Contact your system administrator.', 'VALIDATION_ERROR', 400);
       return;
     }
 
-    // Call Google Places using parent hex aggregation (efficient: ~20 centers per category)
+    // Call Google Places using parent hex aggregation + keyword Text Search
     const { getSearchCoordinates, getSubCells } = await import('../services/h3-territory.service');
-    const { searchHexArea } = await import('../services/google-places.service');
+    const { searchByKeyword } = await import('../services/google-places.service');
+    const h3 = await import('h3-js');
 
     const { coordinates: searchCoords, parentResolution } = await getSearchCoordinates(tenantId);
     let newCount = 0;
     const returnedPlaceIds: string[] = [];
     const seenPlaceIds = new Set<string>();
 
-    // Radius per parent hex (covers the hex area)
+    // Get all territory hexagons for geo-filtering results
+    const { rows: terrHexRows } = await adminPool.query(
+      'SELECT h3_index FROM prp_tenant_territories WHERE tenant_id = $1', [tenantId],
+    );
+    const territoryHexSet = new Set(terrHexRows.map((r: any) => r.h3_index));
+
+    // Radius per parent hex
     const radiusM = parentResolution <= 4 ? 25000 : parentResolution === 5 ? 10000 : 8000;
 
-    logger.info(`[Prospects] Searching ${searchCoords.length} parent hexagons × ${categories.length} categories (resolution ${parentResolution})`);
+    // Count total categories
+    logger.info(`[Prospects] Searching ${searchCoords.length} hexagons × ${categoryMappings.length} categories`);
 
-    for (const cat of categories) {
+    for (const catMap of categoryMappings) {
+      const exclusions: string[] = catMap.api_exclusion_types || [];
+      const keywords: string[] = catMap.google_search_strings || [];
+
+      // Combine all keywords into a single OR query for efficiency
+      const optimizedQuery = keywords.join(' OR ');
+
       for (const coord of searchCoords) {
-        const places = await searchHexArea(coord.lat, coord.lng, radiusM, cat.google_type);
+        const places = await searchByKeyword(coord.lat, coord.lng, radiusM, optimizedQuery, exclusions, territory_address);
 
-        // Dynamic density zoom: if we hit 60 results, drill into sub-cells
-        let allPlaces = places;
-        if (places.length >= 60) {
-          logger.info(`[Prospects] Hit 60-cap for ${cat.google_type} at ${coord.lat.toFixed(2)},${coord.lng.toFixed(2)} — drilling into sub-cells`);
-          const subCoords = getSubCells(coord.parentHex, 6);
-          for (const sub of subCoords) {
-            const subPlaces = await searchHexArea(sub.lat, sub.lng, 5000, cat.google_type);
-            allPlaces = allPlaces.concat(subPlaces);
-          }
-        }
-
-        for (const place of allPlaces) {
+        for (const place of places) {
           if (seenPlaceIds.has(place.place_id)) continue;
+
+          // Geo-filter: reject results outside the territory
+          if (place.lat && place.lng) {
+            const placeHex = h3.latLngToCell(place.lat, place.lng, 7);
+            if (!territoryHexSet.has(placeHex)) continue;
+          }
+
           seenPlaceIds.add(place.place_id);
           returnedPlaceIds.push(place.place_id);
 
@@ -308,7 +344,7 @@ prospectsRouter.post('/generate', requirePermission('settings:*'), async (req: R
                website = EXCLUDED.website, rating = EXCLUDED.rating, review_count = EXCLUDED.review_count,
                lat = EXCLUDED.lat, lng = EXCLUDED.lng,
                is_active = true, updated_at = NOW()`,
-            [tenantId, place.place_id, place.name, place.address, place.phone || null, place.website || null, place.category || null, place.rating || null, place.review_count || 0, place.lat || null, place.lng || null],
+            [tenantId, place.place_id, place.name, place.address, place.phone || null, place.website || null, catMap.ui_category_name, place.rating || null, place.review_count || 0, place.lat || null, place.lng || null],
           );
           newCount++;
         }
@@ -331,7 +367,7 @@ prospectsRouter.post('/generate', requirePermission('settings:*'), async (req: R
     await adminPool.query(
       `INSERT INTO prp_generation_log (tenant_id, new_count, total_returned, inactive_marked, cost_cents)
        VALUES ($1, $2, $3, $4, $5)`,
-      [tenantId, newCount, seenPlaceIds.size, inactiveMarked, Math.ceil(categories.length * 1.7)],
+      [tenantId, newCount, seenPlaceIds.size, inactiveMarked, Math.ceil(categoryMappings.length * searchCoords.length * 3.2)],
     );
 
     success(res, { total_returned: seenPlaceIds.size, new_added: newCount, inactive_marked: inactiveMarked });

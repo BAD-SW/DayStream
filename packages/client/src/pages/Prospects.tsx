@@ -73,7 +73,7 @@ export function Prospects() {
     // Load categories from admin configuration
     apiClient.get('/v1/prospects/categories').then((res) => {
       const cats = res.data.data || [];
-      setCategories(cats.map((c: any) => c.google_type));
+      setCategories(cats.map((c: any) => c.ui_category_name));
     }).catch(() => {});
   }, [fetchProspects]);
 

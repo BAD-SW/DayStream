@@ -26,6 +26,64 @@ interface PlaceResult {
 }
 
 /**
+ * Search for places using Text Search with a keyword near a specific location.
+ * Combines hex-center location bias with natural language keyword for better relevance.
+ * Post-filters results by exclusion types.
+ */
+export async function searchByKeyword(lat: number, lng: number, radiusMeters: number, keyword: string, exclusionTypes: string[], locationName?: string): Promise<PlaceResult[]> {
+  const API_KEY = await getApiKey();
+  const results: PlaceResult[] = [];
+  let nextPageToken: string | undefined;
+
+  // Append location name to query for geographic restriction
+  const query = locationName ? `${keyword} in ${locationName}` : keyword;
+
+  for (let page = 0; page < 3; page++) {
+    const url = new URL('https://maps.googleapis.com/maps/api/place/textsearch/json');
+    url.searchParams.set('key', API_KEY);
+    url.searchParams.set('query', query);
+    url.searchParams.set('location', `${lat},${lng}`);
+    url.searchParams.set('radius', String(radiusMeters));
+    if (nextPageToken) {
+      url.searchParams.set('pagetoken', nextPageToken);
+    }
+
+    const response = await fetch(url.toString());
+    if (!response.ok) break;
+
+    const data = await response.json() as any;
+    if (data.status === 'ZERO_RESULTS') break;
+    if (data.status !== 'OK') {
+      logger.error(`[GooglePlaces] TextSearch error: ${data.status} - ${data.error_message || ''}`);
+      break;
+    }
+
+    for (const place of (data.results || [])) {
+      // Post-filter: exclude businesses with undesirable types
+      const placeTypes: string[] = place.types || [];
+      if (exclusionTypes.length > 0 && exclusionTypes.some(ex => placeTypes.includes(ex))) continue;
+
+      results.push({
+        place_id: place.place_id,
+        name: place.name,
+        address: place.formatted_address || place.vicinity || '',
+        lat: place.geometry?.location?.lat,
+        lng: place.geometry?.location?.lng,
+        category: keyword,
+        rating: place.rating || undefined,
+        review_count: place.user_ratings_total || 0,
+      });
+    }
+
+    nextPageToken = data.next_page_token;
+    if (!nextPageToken) break;
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+
+  return results;
+}
+
+/**
  * Search for places using Google Nearby Search from a specific point.
  * Used for per-hexagon searching to break the 60-result cap.
  * Returns up to 60 results (3 pages of 20).
@@ -56,6 +114,10 @@ export async function searchHexArea(lat: number, lng: number, radiusMeters: numb
     }
 
     for (const place of (data.results || [])) {
+      // Post-filter: only include if the requested type is in the place's actual types
+      const placeTypes: string[] = place.types || [];
+      if (!placeTypes.includes(type)) continue;
+
       results.push({
         place_id: place.place_id,
         name: place.name,
