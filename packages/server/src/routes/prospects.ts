@@ -5,6 +5,7 @@ import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { requirePermission } from '../auth/permissions';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
+import { logger } from '../middleware/logger';
 
 export const prospectsRouter = Router();
 
@@ -38,7 +39,7 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
     // Fire and forget — hexagons generate in the background
     (async () => {
       try {
-        const hexagons = generateTerritoryHexagons(geo.lat, geo.lng, radius, boundaryPolygon || undefined);
+        const hexagons = await generateTerritoryHexagons(geo.lat, geo.lng, radius, boundaryPolygon || undefined);
         await saveTerritoryHexagons(req.params.tenantId, hexagons);
       } catch (err: any) {
         console.error(`[H3Territory] Background hex generation failed: ${err.message}`);
@@ -217,6 +218,34 @@ prospectsRouter.put('/:id/dismiss', requirePermission('settings:*'), async (req:
   } catch (err: any) { error(res, 'Failed to dismiss prospect', 'INTERNAL_ERROR', 500); }
 });
 
+// GET /api/v1/prospects/generate/preview — Preview search plan (how many API calls)
+prospectsRouter.get('/generate/preview', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const tenantId = authReq.tenantId;
+    if (!tenantId) { error(res, 'Tenant context required', 'VALIDATION_ERROR', 400); return; }
+
+    const { getSearchCoordinates } = await import('../services/h3-territory.service');
+    const { coordinates, parentResolution } = await getSearchCoordinates(tenantId);
+
+    const { rows: categories } = await adminPool.query('SELECT google_type FROM sys_prospect_categories');
+
+    const searchCenters = coordinates.length;
+    const categoryCount = categories.length;
+    const estimatedCalls = searchCenters * categoryCount;
+    const estimatedCost = (estimatedCalls / 1000 * 17).toFixed(2);
+
+    success(res, {
+      search_centers: searchCenters,
+      categories: categoryCount,
+      parent_resolution: parentResolution,
+      estimated_api_calls: estimatedCalls,
+      estimated_cost_usd: estimatedCost,
+      note: 'Dense areas that hit 60 results will trigger additional drill-down searches',
+    });
+  } catch (err: any) { error(res, 'Failed to generate preview', 'INTERNAL_ERROR', 500); }
+});
+
 // POST /api/v1/prospects/generate — Generate/refresh prospect list from Google Places
 prospectsRouter.post('/generate', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
@@ -244,31 +273,52 @@ prospectsRouter.post('/generate', requirePermission('settings:*'), async (req: R
       return;
     }
 
-    // Call Google Places Text Search per category (so client polling sees results progressively)
-    const { searchByText } = await import('../services/google-places.service');
+    // Call Google Places using parent hex aggregation (efficient: ~20 centers per category)
+    const { getSearchCoordinates, getSubCells } = await import('../services/h3-territory.service');
+    const { searchHexArea } = await import('../services/google-places.service');
+
+    const { coordinates: searchCoords, parentResolution } = await getSearchCoordinates(tenantId);
     let newCount = 0;
     const returnedPlaceIds: string[] = [];
     const seenPlaceIds = new Set<string>();
 
+    // Radius per parent hex (covers the hex area)
+    const radiusM = parentResolution <= 4 ? 25000 : parentResolution === 5 ? 10000 : 8000;
+
+    logger.info(`[Prospects] Searching ${searchCoords.length} parent hexagons × ${categories.length} categories (resolution ${parentResolution})`);
+
     for (const cat of categories) {
-      const places = await searchByText(territory_address, cat.google_type);
+      for (const coord of searchCoords) {
+        const places = await searchHexArea(coord.lat, coord.lng, radiusM, cat.google_type);
 
-      for (const place of places) {
-        if (seenPlaceIds.has(place.place_id)) continue;
-        seenPlaceIds.add(place.place_id);
-        returnedPlaceIds.push(place.place_id);
+        // Dynamic density zoom: if we hit 60 results, drill into sub-cells
+        let allPlaces = places;
+        if (places.length >= 60) {
+          logger.info(`[Prospects] Hit 60-cap for ${cat.google_type} at ${coord.lat.toFixed(2)},${coord.lng.toFixed(2)} — drilling into sub-cells`);
+          const subCoords = getSubCells(coord.parentHex, 6);
+          for (const sub of subCoords) {
+            const subPlaces = await searchHexArea(sub.lat, sub.lng, 5000, cat.google_type);
+            allPlaces = allPlaces.concat(subPlaces);
+          }
+        }
 
-        await adminPool.query(
-          `INSERT INTO prp_prospects (tenant_id, google_place_id, name, address, phone, website, category, rating, review_count, lat, lng, source)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'api')
-           ON CONFLICT (tenant_id, google_place_id) DO UPDATE SET
-             name = EXCLUDED.name, address = EXCLUDED.address, phone = EXCLUDED.phone,
-             website = EXCLUDED.website, rating = EXCLUDED.rating, review_count = EXCLUDED.review_count,
-             lat = EXCLUDED.lat, lng = EXCLUDED.lng,
-             is_active = true, updated_at = NOW()`,
-          [tenantId, place.place_id, place.name, place.address, place.phone || null, place.website || null, place.category || null, place.rating || null, place.review_count || 0, place.lat || null, place.lng || null],
-        );
-        newCount++;
+        for (const place of allPlaces) {
+          if (seenPlaceIds.has(place.place_id)) continue;
+          seenPlaceIds.add(place.place_id);
+          returnedPlaceIds.push(place.place_id);
+
+          await adminPool.query(
+            `INSERT INTO prp_prospects (tenant_id, google_place_id, name, address, phone, website, category, rating, review_count, lat, lng, source)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'api')
+             ON CONFLICT (tenant_id, google_place_id) DO UPDATE SET
+               name = EXCLUDED.name, address = EXCLUDED.address, phone = EXCLUDED.phone,
+               website = EXCLUDED.website, rating = EXCLUDED.rating, review_count = EXCLUDED.review_count,
+               lat = EXCLUDED.lat, lng = EXCLUDED.lng,
+               is_active = true, updated_at = NOW()`,
+            [tenantId, place.place_id, place.name, place.address, place.phone || null, place.website || null, place.category || null, place.rating || null, place.review_count || 0, place.lat || null, place.lng || null],
+          );
+          newCount++;
+        }
       }
     }
 

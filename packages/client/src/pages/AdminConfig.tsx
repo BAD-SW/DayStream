@@ -40,7 +40,7 @@ export function AdminConfig() {
         ))}
       </div>
 
-      {activeTab === 'settings' && <SettingsPanel />}
+      {activeTab === 'settings' && <><SettingsPanel /><ProspectSettingsPanel /></>}
       {activeTab === 'feature-flags' && <FeatureFlagsPanel />}
       {activeTab === 'api-keys' && <ApiKeysPanel />}
       {activeTab === 'email' && <EmailServerPanel />}
@@ -137,6 +137,51 @@ function SettingsPanel() {
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ProspectSettingsPanel() {
+  const [resolution, setResolution] = useState(5);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    apiClient.get('/v1/admin/system-config/prospects')
+      .then((res) => { setResolution(res.data.data?.h3_resolution || 5); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await apiClient.put('/v1/admin/system-config/prospects', { h3_resolution: resolution });
+      alert('Prospect settings saved. Re-save territories to apply new resolution.');
+    } catch { alert('Failed to save'); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <p style={styles.loading}>Loading...</p>;
+
+  return (
+    <div style={{ marginTop: '24px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
+      <h3 style={{ margin: '0 0 8px', fontSize: '14px', fontWeight: 600, color: 'var(--color-text)' }}>Prospect Search Settings</h3>
+      <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '0 0 12px' }}>
+        Search resolution determines how territory hexagons are collapsed for API searches. Lower = fewer, larger search areas (fewer API calls, cheaper). Coverage map always uses resolution 7 for sharp borders.
+      </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <label style={{ fontSize: '13px', color: 'var(--color-text)' }}>Search Resolution:</label>
+        <select style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px' }} value={resolution} onChange={(e) => setResolution(parseInt(e.target.value))}>
+          <option value={4}>4 — ~22km edge (country-level, fewest calls)</option>
+          <option value={5}>5 — ~8km edge (regional, balanced)</option>
+          <option value={6}>6 — ~7km edge (city-level, precise borders)</option>
+          <option value={7}>7 — ~2.6km edge (neighborhood, most calls)</option>
+        </select>
+        <button onClick={handleSave} disabled={saving} style={{ padding: '6px 16px', background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}>
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
     </div>
   );
 }

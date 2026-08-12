@@ -136,7 +136,19 @@ export function Prospects() {
   const [generating, setGenerating] = useState(false);
 
   const handleGenerate = async () => {
-    if (!window.confirm('Generate new prospects? This will search for businesses in your area.')) return;
+    // Fetch preview first to show the search plan
+    try {
+      const preview = await apiClient.get('/v1/prospects/generate/preview');
+      const plan = preview.data.data;
+      const msg = `Search Plan:\n\n` +
+        `• ${plan.search_centers} search areas × ${plan.categories} categories = ${plan.estimated_api_calls} API calls\n` +
+        `• Estimated cost: $${plan.estimated_cost_usd}\n` +
+        `• Dense areas may trigger additional drill-down searches\n\n` +
+        `Proceed?`;
+      if (!window.confirm(msg)) return;
+    } catch {
+      if (!window.confirm('Generate new prospects? Could not load preview.')) return;
+    }
     setGenerating(true);
     // Start polling the prospect list to show results as they come in
     const pollInterval = setInterval(() => { fetchProspects(); }, 4000);

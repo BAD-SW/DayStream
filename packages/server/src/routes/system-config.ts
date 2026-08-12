@@ -348,3 +348,23 @@ systemConfigRouter.put('/api-keys', requirePermission('*:*'), async (req: Reques
     success(res, { saved: true });
   } catch (err: any) { error(res, 'Failed to save API keys', 'INTERNAL_ERROR', 500); }
 });
+
+
+// ============================================================
+// Prospect Settings
+// ============================================================
+
+systemConfigRouter.get('/prospects', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const data = await getSystemConfig('prospects');
+    success(res, data || { h3_resolution: 5 });
+  } catch (err: any) { error(res, 'Failed to get prospect settings', 'INTERNAL_ERROR', 500); }
+});
+
+systemConfigRouter.put('/prospects', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    await upsertSystemConfig('prospects', req.body, authReq.user.sub);
+    success(res, { saved: true });
+  } catch (err: any) { error(res, 'Failed to save prospect settings', 'INTERNAL_ERROR', 500); }
+});

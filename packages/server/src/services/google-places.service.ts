@@ -26,6 +26,57 @@ interface PlaceResult {
 }
 
 /**
+ * Search for places using Google Nearby Search from a specific point.
+ * Used for per-hexagon searching to break the 60-result cap.
+ * Returns up to 60 results (3 pages of 20).
+ */
+export async function searchHexArea(lat: number, lng: number, radiusMeters: number, type: string): Promise<PlaceResult[]> {
+  const API_KEY = await getApiKey();
+  const results: PlaceResult[] = [];
+  let nextPageToken: string | undefined;
+
+  for (let page = 0; page < 3; page++) {
+    const url = new URL('https://maps.googleapis.com/maps/api/place/nearbysearch/json');
+    url.searchParams.set('key', API_KEY);
+    url.searchParams.set('location', `${lat},${lng}`);
+    url.searchParams.set('radius', String(radiusMeters));
+    url.searchParams.set('type', type);
+    if (nextPageToken) {
+      url.searchParams.set('pagetoken', nextPageToken);
+    }
+
+    const response = await fetch(url.toString());
+    if (!response.ok) break;
+
+    const data = await response.json() as any;
+    if (data.status === 'ZERO_RESULTS') break;
+    if (data.status !== 'OK') {
+      logger.error(`[GooglePlaces] Nearby error: ${data.status} - ${data.error_message || ''}`);
+      break;
+    }
+
+    for (const place of (data.results || [])) {
+      results.push({
+        place_id: place.place_id,
+        name: place.name,
+        address: place.vicinity || place.formatted_address || '',
+        lat: place.geometry?.location?.lat,
+        lng: place.geometry?.location?.lng,
+        category: type,
+        rating: place.rating || undefined,
+        review_count: place.user_ratings_total || 0,
+      });
+    }
+
+    nextPageToken = data.next_page_token;
+    if (!nextPageToken) break;
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+
+  return results;
+}
+
+/**
  * Search for places using Google Places Text Search API.
  * Uses the territory location as the query region and the category type as a filter.
  * Returns up to 60 results (3 pages of 20).

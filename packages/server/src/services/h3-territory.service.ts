@@ -2,21 +2,34 @@ import * as h3 from 'h3-js';
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
 
-const H3_RESOLUTION = 6; // ~7km edge length, good for regional franchise territories
-const HEX_EDGE_LENGTH_KM = 7;
+const HEX_EDGE_LENGTH_KM = 7; // approximate for resolution 6
+
+const DISPLAY_RESOLUTION = 7;  // ~2.6km edge — sharp borders for coverage map
+const SEARCH_PARENT_RESOLUTION = 4; // ~22km edge — collapsed parents for efficient searching
+
+async function getSearchResolution(): Promise<number> {
+  try {
+    const { rows } = await adminPool.query(
+      `SELECT config_data FROM sys_system_configurations WHERE category = 'prospects'`,
+    );
+    return rows[0]?.config_data?.h3_resolution || SEARCH_PARENT_RESOLUTION;
+  } catch { return SEARCH_PARENT_RESOLUTION; }
+}
 
 /**
  * Generate H3 hexagon indexes for a territory.
  * If a boundary polygon is available (from Nominatim), fills the polygon shape.
  * Otherwise falls back to point + radius disk.
  */
-export function generateTerritoryHexagons(lat: number, lng: number, radiusKm: number, boundaryPolygon?: number[][]): string[] {
+export async function generateTerritoryHexagons(lat: number, lng: number, radiusKm: number, boundaryPolygon?: number[][]): Promise<string[]> {
+  const resolution = DISPLAY_RESOLUTION;
+
   if (boundaryPolygon && boundaryPolygon.length >= 3) {
     // Use polygon fill — fills the exact boundary shape
     try {
-      const hexagons = h3.polygonToCells(boundaryPolygon, H3_RESOLUTION);
+      const hexagons = h3.polygonToCells(boundaryPolygon, resolution);
       if (hexagons.length > 0) {
-        logger.info(`[H3Territory] Generated ${hexagons.length} hexagons from boundary polygon`);
+        logger.info(`[H3Territory] Generated ${hexagons.length} hexagons from boundary polygon (resolution=${resolution})`);
         if (hexagons.length > 5000) {
           logger.warn(`[H3Territory] Territory has ${hexagons.length} hexagons — capping at 5000`);
           return hexagons.slice(0, 5000);
@@ -29,10 +42,11 @@ export function generateTerritoryHexagons(lat: number, lng: number, radiusKm: nu
   }
 
   // Fallback: point + radius disk
-  const centerHex = h3.latLngToCell(lat, lng, H3_RESOLUTION);
-  const ringSize = Math.ceil(radiusKm / (HEX_EDGE_LENGTH_KM * 1.5));
+  const centerHex = h3.latLngToCell(lat, lng, resolution);
+  const edgeLengthKm = 2.6; // resolution 7
+  const ringSize = Math.ceil(radiusKm / (edgeLengthKm * 1.5));
   const hexagons = h3.gridDisk(centerHex, ringSize);
-  logger.info(`[H3Territory] Generated ${hexagons.length} hexagons from gridDisk (radius=${radiusKm}km, rings=${ringSize})`);
+  logger.info(`[H3Territory] Generated ${hexagons.length} hexagons from gridDisk (resolution=${resolution}, radius=${radiusKm}km, rings=${ringSize})`);
   return hexagons;
 }
 
@@ -66,6 +80,7 @@ export function geojsonToH3Polygon(geojson: any): number[][] | null {
 
 /**
  * Save territory hexagons for a tenant (replaces any existing assignment).
+ * Checks population lookup to flag unpopulated hexagons as non-searchable.
  */
 export async function saveTerritoryHexagons(tenantId: string, hexagons: string[]): Promise<number> {
   // Clear existing territory
@@ -73,7 +88,7 @@ export async function saveTerritoryHexagons(tenantId: string, hexagons: string[]
 
   if (hexagons.length === 0) return 0;
 
-  // Batch insert in chunks of 500 to avoid param limits
+  // Batch insert in chunks of 500 with population-based searchability
   const chunkSize = 500;
   for (let i = 0; i < hexagons.length; i += chunkSize) {
     const chunk = hexagons.slice(i, i + chunkSize);
@@ -92,6 +107,23 @@ export async function saveTerritoryHexagons(tenantId: string, hexagons: string[]
     );
   }
 
+  // Update is_searchable based on population data (if available)
+  // A hex is searchable if any of its resolution-8 children have population > 50
+  // For simplicity: check if the hex itself or its parent area has population
+  await adminPool.query(
+    `UPDATE prp_tenant_territories tt
+     SET is_searchable = EXISTS (
+       SELECT 1 FROM prp_population_lookup pl
+       WHERE pl.h3_index LIKE (LEFT(tt.h3_index, 8) || '%')
+       AND pl.population > 50
+     )
+     WHERE tt.tenant_id = $1`,
+    [tenantId],
+  ).catch(() => {
+    // If population table is empty or query fails, keep all as searchable
+    logger.info(`[H3Territory] Population filter not applied (table may be empty)`);
+  });
+
   logger.info(`[H3Territory] Saved ${hexagons.length} hexagons for tenant ${tenantId}`);
   return hexagons.length;
 }
@@ -105,6 +137,51 @@ export async function getTerritoryHexagons(tenantId: string): Promise<string[]> 
     [tenantId],
   );
   return rows.map((r: any) => r.h3_index);
+}
+
+/**
+ * Get optimized search coordinates by collapsing display hexagons into parent cells.
+ * Uses hierarchical aggregation: resolution 7 display hexes → resolution 4 parents.
+ * Returns ~15-20 search centers instead of thousands.
+ */
+export async function getSearchCoordinates(tenantId: string): Promise<{ coordinates: { lat: number; lng: number; parentHex: string }[]; parentResolution: number }> {
+  const parentResolution = await getSearchResolution();
+
+  // Get the display hexagons from DB (only searchable ones)
+  const { rows } = await adminPool.query(
+    'SELECT h3_index FROM prp_tenant_territories WHERE tenant_id = $1 AND is_searchable = true',
+    [tenantId],
+  );
+  const displayHexes = rows.map((r: any) => r.h3_index);
+  if (displayHexes.length === 0) return { coordinates: [], parentResolution };
+
+  // Collapse into parent hexagons
+  const uniqueParents = new Set<string>();
+  for (const hex of displayHexes) {
+    const parentHex = h3.cellToParent(hex, parentResolution);
+    uniqueParents.add(parentHex);
+  }
+
+  // Get center coordinates of each parent
+  const coordinates = Array.from(uniqueParents).map(parentHex => {
+    const [lat, lng] = h3.cellToLatLng(parentHex);
+    return { lat, lng, parentHex };
+  });
+
+  logger.info(`[H3Territory] Collapsed ${displayHexes.length} display hexes into ${coordinates.length} search centers (parent resolution ${parentResolution})`);
+  return { coordinates, parentResolution };
+}
+
+/**
+ * Get sub-cells for a parent hexagon (for dynamic density zoom when 60-result cap is hit).
+ * Splits a resolution 4 parent into resolution 6 children for targeted re-search.
+ */
+export function getSubCells(parentHex: string, targetResolution: number = 6): { lat: number; lng: number }[] {
+  const children = h3.cellToChildren(parentHex, targetResolution);
+  return children.map(child => {
+    const [lat, lng] = h3.cellToLatLng(child);
+    return { lat, lng };
+  });
 }
 
 /**

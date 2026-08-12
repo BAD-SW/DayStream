@@ -33,13 +33,27 @@ export function CoverageMap() {
     if (!mapRef.current || !apiKey || territories.length === 0) return;
     if (mapInstanceRef.current) return;
 
+    const tryBuild = () => {
+      if ((window as any).google?.maps?.Map) {
+        buildMap();
+      } else {
+        setTimeout(tryBuild, 200);
+      }
+    };
+
     if (!(window as any).google?.maps) {
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
-      script.async = true;
-      script.onload = () => buildMap();
-      script.onerror = () => console.error('Failed to load Google Maps script');
-      document.head.appendChild(script);
+      // Check if script already exists
+      const existing = document.querySelector('script[src*="maps.googleapis.com"]');
+      if (!existing) {
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
+        script.async = true;
+        script.onload = () => tryBuild();
+        script.onerror = () => console.error('Failed to load Google Maps script');
+        document.head.appendChild(script);
+      } else {
+        tryBuild();
+      }
     } else {
       buildMap();
     }
