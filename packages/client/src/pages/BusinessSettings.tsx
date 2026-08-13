@@ -85,6 +85,7 @@ function SystemSettings() {
   if (loading) return <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>Loading...</p>;
 
   return (
+    <>
     <div style={settingStyles.section}>
       <h3 style={settingStyles.sectionTitle}>Scheduling</h3>
       <div style={settingStyles.settingRow}>
@@ -110,6 +111,7 @@ function SystemSettings() {
       </div>
     </div>
     <PayrollFrequencySettings />
+    </>
   );
 }
 
