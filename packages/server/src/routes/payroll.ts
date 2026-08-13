@@ -377,3 +377,61 @@ payrollRouter.put('/tax-profiles/:userId', requirePermission('staff:*'), async (
     success(res, profile);
   } catch (err: any) { error(res, 'Failed to update tax profile', 'INTERNAL_ERROR', 500); }
 });
+
+
+// ============================================================
+// Pay Frequency Settings
+// ============================================================
+
+// GET /api/v1/payroll/settings — Get payroll settings for business
+payrollRouter.get('/settings', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { rows } = await adminPool.query(
+      'SELECT pay_frequency, pay_period_start_date FROM sys_businesses WHERE id = $1',
+      [businessId],
+    );
+    success(res, rows[0] || { pay_frequency: 'monthly', pay_period_start_date: null });
+  } catch (err: any) { error(res, 'Failed to get payroll settings', 'INTERNAL_ERROR', 500); }
+});
+
+// PUT /api/v1/payroll/settings — Update payroll settings
+payrollRouter.put('/settings', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { pay_frequency, pay_period_start_date } = req.body;
+    await adminPool.query(
+      'UPDATE sys_businesses SET pay_frequency = $1, pay_period_start_date = $2 WHERE id = $3',
+      [pay_frequency || 'monthly', pay_period_start_date || null, businessId],
+    );
+    success(res, { saved: true });
+  } catch (err: any) { error(res, 'Failed to save payroll settings', 'INTERNAL_ERROR', 500); }
+});
+
+// ============================================================
+// Auto-generated Pay Periods
+// ============================================================
+
+import { getUnprocessedPeriods, getFinalizedPeriods } from '../services/pay-period.service';
+
+// GET /api/v1/payroll/periods/unprocessed — Get pending periods (auto-generates if needed)
+payrollRouter.get('/periods/unprocessed', requirePermission('staff:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const periods = await getUnprocessedPeriods(businessId);
+    success(res, periods);
+  } catch (err: any) { error(res, 'Failed to get unprocessed periods', 'INTERNAL_ERROR', 500); }
+});
+
+// GET /api/v1/payroll/periods/history — Get finalized periods
+payrollRouter.get('/periods/history', requirePermission('staff:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const periods = await getFinalizedPeriods(businessId);
+    success(res, periods);
+  } catch (err: any) { error(res, 'Failed to get finalized periods', 'INTERNAL_ERROR', 500); }
+});

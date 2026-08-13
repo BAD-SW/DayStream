@@ -1,27 +1,18 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
-import {
-  getPayPeriods,
-  openPayPeriod,
-  runPayroll,
-  finalizePayroll,
-  getPayrollEntries,
-} from '../api/payroll';
+import { runPayroll, finalizePayroll, getPayrollEntries } from '../api/payroll';
 import { Button } from '../design-system/components/actions/Button';
 import { formatCurrency } from '../utils/currency';
 
 interface PayPeriod {
   id: string;
-  business_id: string;
   period_start: string;
   period_end: string;
   status: 'open' | 'processing' | 'finalized';
-  created_at: string;
 }
 
 interface PayrollEntry {
   id: string;
-  period_id: string;
   user_id: string;
   first_name: string;
   last_name: string;
@@ -31,125 +22,109 @@ interface PayrollEntry {
   total_deductions: number;
   net_pay: number;
   status: string;
-  compensation_breakdown: Record<string, number>;
-  deduction_breakdown: Record<string, number>;
-}
-
-interface TaxProfile {
-  user_id: string;
-  first_name: string;
-  last_name: string;
-  country_code: string;
-  state_code: string;
-  filing_status: string;
-  allowances: number;
-  additional_withholding: number;
-  exempt: boolean;
+  breakdown: any;
 }
 
 export function PayrollTab() {
   const businessId = localStorage.getItem('business_id') || '';
+  const [activeView, setActiveView] = useState<'current' | 'history'>('current');
 
-  const [periods, setPeriods] = useState<PayPeriod[]>([]);
-  const [periodsLoading, setPeriodsLoading] = useState(true);
-  const [expandedPeriodId, setExpandedPeriodId] = useState<string | null>(null);
+  // Current/Unprocessed
+  const [unprocessedPeriods, setUnprocessedPeriods] = useState<PayPeriod[]>([]);
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string>('');
   const [entries, setEntries] = useState<PayrollEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const [entriesLoading, setEntriesLoading] = useState(false);
+  const [running, setRunning] = useState(false);
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
 
-  const [showNewPeriodForm, setShowNewPeriodForm] = useState(false);
-  const [newPeriodStart, setNewPeriodStart] = useState('');
-  const [newPeriodEnd, setNewPeriodEnd] = useState('');
-  const [creatingPeriod, setCreatingPeriod] = useState(false);
+  // History
+  const [historyPeriods, setHistoryPeriods] = useState<PayPeriod[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string>('');
+  const [historyEntries, setHistoryEntries] = useState<PayrollEntry[]>([]);
+  const [historyEntriesLoading, setHistoryEntriesLoading] = useState(false);
 
-  const [taxProfiles, setTaxProfiles] = useState<TaxProfile[]>([]);
-  const [taxProfilesLoading, setTaxProfilesLoading] = useState(false);
+  // Tax profiles
   const [taxSectionOpen, setTaxSectionOpen] = useState(false);
+  const [taxProfiles, setTaxProfiles] = useState<any[]>([]);
+  const [taxProfilesLoading, setTaxProfilesLoading] = useState(false);
   const [editingTaxUserId, setEditingTaxUserId] = useState<string | null>(null);
-  const [taxEditForm, setTaxEditForm] = useState({
-    country_code: 'US',
-    state_code: '',
-    filing_status: 'single',
-    allowances: 0,
-    additional_withholding: 0,
-    exempt: false,
-  });
+  const [taxEditForm, setTaxEditForm] = useState({ country_code: 'US', state_code: '', filing_status: 'single', allowances: 0, additional_withholding: 0, exempt: false });
 
-  // Load pay periods
+  // Load unprocessed periods
   useEffect(() => {
-    if (!businessId) {
-      setPeriodsLoading(false);
-      return;
-    }
-    loadPeriods();
+    if (!businessId) { setLoading(false); return; }
+    loadUnprocessed();
   }, [businessId]);
 
-  const loadPeriods = async () => {
-    setPeriodsLoading(true);
+  const loadUnprocessed = async () => {
+    setLoading(true);
     try {
-      const data = await getPayPeriods(businessId);
-      setPeriods(data);
-    } catch {
-      setPeriods([]);
-    } finally {
-      setPeriodsLoading(false);
-    }
+      const res = await apiClient.get(`/v1/payroll/periods/unprocessed?business_id=${businessId}`);
+      const periods = res.data.data || [];
+      setUnprocessedPeriods(periods);
+      if (periods.length > 0 && !selectedPeriodId) setSelectedPeriodId(periods[0].id);
+    } catch { setUnprocessedPeriods([]); }
+    finally { setLoading(false); }
   };
 
-  // Load entries for expanded period
-  const handleExpandPeriod = async (periodId: string) => {
-    if (expandedPeriodId === periodId) {
-      setExpandedPeriodId(null);
-      setEntries([]);
-      return;
-    }
-    setExpandedPeriodId(periodId);
-    setExpandedEntryId(null);
+  // Load entries when period selected
+  useEffect(() => {
+    if (!selectedPeriodId) { setEntries([]); return; }
+    loadEntries(selectedPeriodId);
+  }, [selectedPeriodId]);
+
+  const loadEntries = async (periodId: string) => {
     setEntriesLoading(true);
     try {
       const data = await getPayrollEntries(periodId);
-      setEntries(data);
-    } catch {
-      setEntries([]);
-    } finally {
-      setEntriesLoading(false);
-    }
+      setEntries(data || []);
+    } catch { setEntries([]); }
+    finally { setEntriesLoading(false); }
   };
 
-  // Create new pay period
-  const handleCreatePeriod = async () => {
-    if (!newPeriodStart || !newPeriodEnd) return;
-    setCreatingPeriod(true);
+  const handleRunPayroll = async () => {
+    if (!selectedPeriodId) return;
+    setRunning(true);
     try {
-      await openPayPeriod({
-        business_id: businessId,
-        period_start: newPeriodStart,
-        period_end: newPeriodEnd,
-      });
-      setShowNewPeriodForm(false);
-      setNewPeriodStart('');
-      setNewPeriodEnd('');
-      await loadPeriods();
-    } finally {
-      setCreatingPeriod(false);
-    }
+      await runPayroll(selectedPeriodId, businessId);
+      await loadEntries(selectedPeriodId);
+      await loadUnprocessed();
+    } catch (err: any) { alert(err?.response?.data?.error || 'Failed to run payroll'); }
+    finally { setRunning(false); }
   };
 
-  // Run payroll for a period
-  const handleRunPayroll = async (periodId: string) => {
-    await runPayroll(periodId, businessId);
-    await loadPeriods();
-    if (expandedPeriodId === periodId) {
-      const data = await getPayrollEntries(periodId);
-      setEntries(data);
-    }
+  const handleFinalize = async () => {
+    if (!selectedPeriodId) return;
+    if (!confirm('Finalize this pay period? This cannot be undone.')) return;
+    try {
+      await finalizePayroll(selectedPeriodId, businessId);
+      await loadUnprocessed();
+      setSelectedPeriodId(unprocessedPeriods.length > 1 ? unprocessedPeriods[0].id : '');
+      setEntries([]);
+    } catch (err: any) { alert(err?.response?.data?.error || 'Failed to finalize'); }
   };
 
-  // Finalize a period
-  const handleFinalizePayroll = async (periodId: string) => {
-    await finalizePayroll(periodId, businessId);
-    await loadPeriods();
+  // History
+  const loadHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await apiClient.get(`/v1/payroll/periods/history?business_id=${businessId}`);
+      setHistoryPeriods(res.data.data || []);
+    } catch { setHistoryPeriods([]); }
+    finally { setHistoryLoading(false); }
   };
+
+  useEffect(() => {
+    if (activeView === 'history' && historyPeriods.length === 0) loadHistory();
+  }, [activeView]);
+
+  useEffect(() => {
+    if (!selectedHistoryId) { setHistoryEntries([]); return; }
+    setHistoryEntriesLoading(true);
+    getPayrollEntries(selectedHistoryId).then(setHistoryEntries).catch(() => setHistoryEntries([])).finally(() => setHistoryEntriesLoading(false));
+  }, [selectedHistoryId]);
 
   // Tax profiles
   const loadTaxProfiles = async () => {
@@ -157,572 +132,202 @@ export function PayrollTab() {
     try {
       const res = await apiClient.get(`/v1/payroll/tax-profiles?business_id=${businessId}`);
       setTaxProfiles(res.data.data || []);
-    } catch {
-      setTaxProfiles([]);
-    } finally {
-      setTaxProfilesLoading(false);
-    }
-  };
-
-  const handleToggleTaxSection = () => {
-    const next = !taxSectionOpen;
-    setTaxSectionOpen(next);
-    if (next && taxProfiles.length === 0) {
-      loadTaxProfiles();
-    }
-  };
-
-  const handleEditTaxProfile = (profile: TaxProfile) => {
-    setEditingTaxUserId(profile.user_id);
-    setTaxEditForm({
-      country_code: profile.country_code || 'US',
-      state_code: profile.state_code || '',
-      filing_status: profile.filing_status || 'single',
-      allowances: profile.allowances || 0,
-      additional_withholding: profile.additional_withholding || 0,
-      exempt: profile.exempt || false,
-    });
+    } catch { setTaxProfiles([]); }
+    finally { setTaxProfilesLoading(false); }
   };
 
   const handleSaveTaxProfile = async () => {
     if (!editingTaxUserId) return;
     try {
-      await apiClient.put(`/v1/payroll/tax-profiles/${editingTaxUserId}`, {
-        business_id: businessId,
-        ...taxEditForm,
-      });
+      await apiClient.put(`/v1/payroll/tax-profiles/${editingTaxUserId}`, { business_id: businessId, ...taxEditForm });
       setEditingTaxUserId(null);
       await loadTaxProfiles();
-    } catch {
-      // handle error silently
-    }
+    } catch { alert('Failed to save tax profile'); }
   };
 
-  const getStatusBadgeStyle = (status: string): React.CSSProperties => {
-    if (status === 'finalized') return { ...styles.badge, background: 'var(--color-success, #22c55e)', color: '#fff' };
-    if (status === 'processing') return { ...styles.badge, background: 'var(--color-primary, #3b82f6)', color: '#fff' };
-    return { ...styles.badge, background: 'var(--color-border, #e5e7eb)', color: 'var(--color-text, #111827)' };
-  };
+  const selectedPeriod = unprocessedPeriods.find(p => p.id === selectedPeriodId);
 
   return (
-    <div style={styles.container}>
-      {/* Pay Periods Section */}
-      <div style={styles.section}>
-        <div style={styles.sectionHeader}>
-          <h2 style={styles.sectionTitle}>Pay Periods</h2>
-          <Button size="sm" onClick={() => setShowNewPeriodForm(!showNewPeriodForm)}>
-            New Period
-          </Button>
-        </div>
+    <div>
+      {/* View Toggle */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+        <button onClick={() => setActiveView('current')} style={{ ...styles.viewBtn, ...(activeView === 'current' ? styles.viewBtnActive : {}) }}>Current</button>
+        <button onClick={() => setActiveView('history')} style={{ ...styles.viewBtn, ...(activeView === 'history' ? styles.viewBtnActive : {}) }}>History</button>
+        <button onClick={() => { setTaxSectionOpen(!taxSectionOpen); if (!taxSectionOpen && taxProfiles.length === 0) loadTaxProfiles(); }} style={{ ...styles.viewBtn, ...(taxSectionOpen ? styles.viewBtnActive : {}) }}>Tax Profiles</button>
+      </div>
 
-        {showNewPeriodForm && (
-          <div style={styles.inlineForm}>
-            <div style={styles.formRow}>
-              <div style={styles.formField}>
-                <label style={styles.label}>Period Start</label>
-                <input
-                  type="date"
-                  style={styles.input}
-                  value={newPeriodStart}
-                  onChange={(e) => setNewPeriodStart(e.target.value)}
-                />
-              </div>
-              <div style={styles.formField}>
-                <label style={styles.label}>Period End</label>
-                <input
-                  type="date"
-                  style={styles.input}
-                  value={newPeriodEnd}
-                  onChange={(e) => setNewPeriodEnd(e.target.value)}
-                />
-              </div>
-              <div style={styles.formActions}>
-                <Button size="sm" onClick={handleCreatePeriod} loading={creatingPeriod}>
-                  Create
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowNewPeriodForm(false)}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {periodsLoading ? (
-          <p style={styles.loadingText}>Loading pay periods...</p>
-        ) : periods.length === 0 ? (
-          <p style={styles.emptyText}>No pay periods found.</p>
-        ) : (
-          <div style={styles.periodsList}>
-            {periods.map((period) => (
-              <div key={period.id}>
-                <div
-                  style={{
-                    ...styles.periodRow,
-                    background: expandedPeriodId === period.id
-                      ? 'var(--color-background, #f9fafb)'
-                      : 'transparent',
-                  }}
-                  onClick={() => handleExpandPeriod(period.id)}
-                >
-                  <div style={styles.periodInfo}>
-                    <span style={styles.periodDates}>
-                      {new Date(period.period_start).toLocaleDateString()} — {new Date(period.period_end).toLocaleDateString()}
-                    </span>
-                    <span style={getStatusBadgeStyle(period.status)}>{period.status}</span>
-                  </div>
-                  <div style={styles.periodActions}>
-                    {period.status === 'open' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={(e) => { e.stopPropagation(); handleRunPayroll(period.id); }}
-                      >
-                        Run Payroll
-                      </Button>
-                    )}
-                    {period.status === 'processing' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={(e) => { e.stopPropagation(); handleFinalizePayroll(period.id); }}
-                      >
-                        Finalize
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Expanded entries */}
-                {expandedPeriodId === period.id && (
-                  <div style={styles.entriesContainer}>
-                    {entriesLoading ? (
-                      <p style={styles.loadingText}>Loading entries...</p>
-                    ) : entries.length === 0 ? (
-                      <p style={styles.emptyText}>No payroll entries for this period.</p>
-                    ) : (
-                      <table style={styles.table}>
-                        <thead>
-                          <tr>
-                            <th style={styles.th}>Name</th>
-                            <th style={styles.th}>Hours Worked</th>
-                            <th style={styles.th}>Sessions</th>
-                            <th style={styles.th}>Gross Pay</th>
-                            <th style={styles.th}>Deductions</th>
-                            <th style={styles.th}>Net Pay</th>
-                            <th style={styles.th}>Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {entries.map((entry, idx) => (
-                            <>
-                              <tr
-                                key={entry.id}
-                                style={{
-                                  ...styles.tr,
-                                  background: idx % 2 === 0
-                                    ? 'transparent'
-                                    : 'var(--color-background, #f9fafb)',
-                                  cursor: 'pointer',
-                                }}
-                                onClick={() =>
-                                  setExpandedEntryId(expandedEntryId === entry.id ? null : entry.id)
-                                }
-                              >
-                                <td style={styles.td}>{entry.first_name} {entry.last_name}</td>
-                                <td style={styles.td}>{entry.hours_worked ?? '—'}</td>
-                                <td style={styles.td}>{entry.sessions_delivered ?? '—'}</td>
-                                <td style={styles.td}>{formatCurrency(entry.gross_pay)}</td>
-                                <td style={styles.td}>{formatCurrency(entry.total_deductions)}</td>
-                                <td style={styles.td}>{formatCurrency(entry.net_pay)}</td>
-                                <td style={styles.td}>
-                                  <span style={getStatusBadgeStyle(entry.status)}>{entry.status}</span>
-                                </td>
-                              </tr>
-                              {expandedEntryId === entry.id && (
-                                <tr key={`${entry.id}-breakdown`}>
-                                  <td colSpan={7} style={styles.breakdownCell}>
-                                    <div style={styles.breakdownContainer}>
-                                      <div style={styles.breakdownSection}>
-                                        <strong style={styles.breakdownTitle}>Compensation Breakdown</strong>
-                                        {entry.compensation_breakdown &&
-                                        Object.keys(entry.compensation_breakdown).length > 0 ? (
-                                          <ul style={styles.breakdownList}>
-                                            {Object.entries(entry.compensation_breakdown).map(([key, val]) => (
-                                              <li key={key} style={styles.breakdownItem}>
-                                                <span>{key}</span>
-                                                <span>{formatCurrency(val)}</span>
-                                              </li>
-                                            ))}
-                                          </ul>
-                                        ) : (
-                                          <p style={styles.emptyText}>No breakdown available</p>
-                                        )}
-                                      </div>
-                                      <div style={styles.breakdownSection}>
-                                        <strong style={styles.breakdownTitle}>Deduction Breakdown</strong>
-                                        {entry.deduction_breakdown &&
-                                        Object.keys(entry.deduction_breakdown).length > 0 ? (
-                                          <ul style={styles.breakdownList}>
-                                            {Object.entries(entry.deduction_breakdown).map(([key, val]) => (
-                                              <li key={key} style={styles.breakdownItem}>
-                                                <span>{key}</span>
-                                                <span>{formatCurrency(val)}</span>
-                                              </li>
-                                            ))}
-                                          </ul>
-                                        ) : (
-                                          <p style={styles.emptyText}>No breakdown available</p>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </td>
-                                </tr>
-                              )}
-                            </>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
+      {/* Current/Unprocessed View */}
+      {activeView === 'current' && !taxSectionOpen && (
+        <div>
+          {loading ? <p style={styles.muted}>Loading...</p> : unprocessedPeriods.length === 0 ? (
+            <p style={styles.muted}>No outstanding pay periods. Configure pay frequency in Settings → System.</p>
+          ) : (
+            <div>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '16px' }}>
+                <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Period:</label>
+                <select value={selectedPeriodId} onChange={(e) => setSelectedPeriodId(e.target.value)} style={styles.select}>
+                  {unprocessedPeriods.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {new Date(p.period_start).toLocaleDateString()} — {new Date(p.period_end).toLocaleDateString()} ({p.status})
+                    </option>
+                  ))}
+                </select>
+                {selectedPeriod?.status === 'open' && (
+                  <Button size="sm" onClick={handleRunPayroll} loading={running}>Run Payroll</Button>
+                )}
+                {selectedPeriod?.status === 'processing' && (
+                  <Button size="sm" onClick={handleFinalize}>Finalize</Button>
                 )}
               </div>
-            ))}
-          </div>
-        )}
-      </div>
 
-      {/* Employee Tax Profiles Section (Collapsible) */}
-      <div style={styles.section}>
-        <div
-          style={{ ...styles.sectionHeader, cursor: 'pointer' }}
-          onClick={handleToggleTaxSection}
-        >
-          <h2 style={styles.sectionTitle}>
-            {taxSectionOpen ? '▾' : '▸'} Employee Tax Profiles
-          </h2>
+              {entriesLoading ? <p style={styles.muted}>Loading entries...</p> : entries.length === 0 ? (
+                <p style={styles.muted}>No entries yet. Click "Run Payroll" to calculate.</p>
+              ) : (
+                <EntriesTable entries={entries} expandedId={expandedEntryId} onToggle={setExpandedEntryId} />
+              )}
+            </div>
+          )}
         </div>
+      )}
 
-        {taxSectionOpen && (
-          <div style={styles.taxContainer}>
-            {taxProfilesLoading ? (
-              <p style={styles.loadingText}>Loading tax profiles...</p>
-            ) : taxProfiles.length === 0 ? (
-              <p style={styles.emptyText}>No tax profiles found.</p>
-            ) : (
-              <div style={styles.taxList}>
-                {taxProfiles.map((profile) => (
-                  <div key={profile.user_id} style={styles.taxCard}>
-                    {editingTaxUserId === profile.user_id ? (
-                      <div style={styles.taxEditForm}>
-                        <div style={styles.taxEditGrid}>
-                          <div style={styles.formField}>
-                            <label style={styles.label}>Country</label>
-                            <select
-                              style={styles.input}
-                              value={taxEditForm.country_code}
-                              onChange={(e) =>
-                                setTaxEditForm({ ...taxEditForm, country_code: e.target.value })
-                              }
-                            >
-                              <option value="US">US</option>
-                              <option value="ES">ES</option>
-                            </select>
-                          </div>
-                          <div style={styles.formField}>
-                            <label style={styles.label}>State</label>
-                            <input
-                              type="text"
-                              style={styles.input}
-                              value={taxEditForm.state_code}
-                              onChange={(e) =>
-                                setTaxEditForm({ ...taxEditForm, state_code: e.target.value })
-                              }
-                            />
-                          </div>
-                          <div style={styles.formField}>
-                            <label style={styles.label}>Filing Status</label>
-                            <select
-                              style={styles.input}
-                              value={taxEditForm.filing_status}
-                              onChange={(e) =>
-                                setTaxEditForm({ ...taxEditForm, filing_status: e.target.value })
-                              }
-                            >
-                              <option value="single">Single</option>
-                              <option value="married">Married</option>
-                              <option value="head_of_household">Head of Household</option>
-                            </select>
-                          </div>
-                          <div style={styles.formField}>
-                            <label style={styles.label}>Allowances</label>
-                            <input
-                              type="number"
-                              min="0"
-                              style={styles.input}
-                              value={taxEditForm.allowances}
-                              onChange={(e) =>
-                                setTaxEditForm({ ...taxEditForm, allowances: parseInt(e.target.value) || 0 })
-                              }
-                            />
-                          </div>
-                          <div style={styles.formField}>
-                            <label style={styles.label}>Additional Withholding</label>
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              style={styles.input}
-                              value={(taxEditForm.additional_withholding / 100).toFixed(2)}
-                              onChange={(e) =>
-                                setTaxEditForm({
-                                  ...taxEditForm,
-                                  additional_withholding: Math.round(parseFloat(e.target.value || '0') * 100),
-                                })
-                              }
-                            />
-                          </div>
-                          <div style={{ ...styles.formField, display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '20px' }}>
-                            <input
-                              type="checkbox"
-                              checked={taxEditForm.exempt}
-                              onChange={(e) =>
-                                setTaxEditForm({ ...taxEditForm, exempt: e.target.checked })
-                              }
-                            />
-                            <label style={{ fontSize: '13px', color: 'var(--color-text, #111827)' }}>Exempt</label>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                          <Button size="sm" onClick={handleSaveTaxProfile}>Save</Button>
-                          <Button size="sm" variant="ghost" onClick={() => setEditingTaxUserId(null)}>Cancel</Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={styles.taxCardContent}>
-                        <div style={styles.taxCardInfo}>
-                          <span style={styles.taxName}>{profile.first_name} {profile.last_name}</span>
-                          <span style={styles.taxDetail}>
-                            {profile.country_code || '—'} · {profile.state_code || '—'} · {profile.filing_status || '—'} · {profile.allowances ?? 0} allowances
-                            {profile.exempt && ' · Exempt'}
-                          </span>
-                        </div>
-                        <Button size="sm" variant="outline" onClick={() => handleEditTaxProfile(profile)}>
-                          Edit
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                ))}
+      {/* History View */}
+      {activeView === 'history' && !taxSectionOpen && (
+        <div>
+          {historyLoading ? <p style={styles.muted}>Loading history...</p> : historyPeriods.length === 0 ? (
+            <p style={styles.muted}>No finalized pay periods.</p>
+          ) : (
+            <div>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '16px' }}>
+                <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Period:</label>
+                <select value={selectedHistoryId} onChange={(e) => setSelectedHistoryId(e.target.value)} style={styles.select}>
+                  <option value="">Select a period...</option>
+                  {historyPeriods.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {new Date(p.period_start).toLocaleDateString()} — {new Date(p.period_end).toLocaleDateString()}
+                    </option>
+                  ))}
+                </select>
               </div>
-            )}
-          </div>
-        )}
-      </div>
+              {historyEntriesLoading ? <p style={styles.muted}>Loading...</p> : historyEntries.length > 0 && (
+                <EntriesTable entries={historyEntries} expandedId={expandedEntryId} onToggle={setExpandedEntryId} />
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tax Profiles View */}
+      {taxSectionOpen && (
+        <div>
+          {taxProfilesLoading ? <p style={styles.muted}>Loading...</p> : taxProfiles.length === 0 ? (
+            <p style={styles.muted}>No staff found.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {taxProfiles.map((profile: any) => (
+                <div key={profile.user_id} style={styles.taxCard}>
+                  {editingTaxUserId === profile.user_id ? (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                      <div><label style={styles.label}>Country</label><select style={styles.input} value={taxEditForm.country_code} onChange={(e) => setTaxEditForm({ ...taxEditForm, country_code: e.target.value })}><option value="US">US</option><option value="ES">ES</option></select></div>
+                      <div><label style={styles.label}>State</label><input style={styles.input} value={taxEditForm.state_code} onChange={(e) => setTaxEditForm({ ...taxEditForm, state_code: e.target.value })} /></div>
+                      <div><label style={styles.label}>Filing Status</label><select style={styles.input} value={taxEditForm.filing_status} onChange={(e) => setTaxEditForm({ ...taxEditForm, filing_status: e.target.value })}><option value="single">Single</option><option value="married">Married</option><option value="head_of_household">Head of Household</option></select></div>
+                      <div><label style={styles.label}>Allowances</label><input style={styles.input} type="number" min="0" value={taxEditForm.allowances} onChange={(e) => setTaxEditForm({ ...taxEditForm, allowances: parseInt(e.target.value) || 0 })} /></div>
+                      <div><label style={styles.label}>Exempt</label><input type="checkbox" checked={taxEditForm.exempt} onChange={(e) => setTaxEditForm({ ...taxEditForm, exempt: e.target.checked })} /></div>
+                      <Button size="sm" onClick={handleSaveTaxProfile}>Save</Button>
+                      <button style={styles.linkBtn} onClick={() => setEditingTaxUserId(null)}>Cancel</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)' }}>{profile.first_name} {profile.last_name}</span>
+                        <span style={{ marginLeft: '12px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                          {profile.country_code || '—'} · {profile.filing_status || 'Not set'} · {profile.allowances ?? 0} allowances
+                          {profile.exempt && ' · Exempt'}
+                        </span>
+                      </div>
+                      <button style={styles.linkBtn} onClick={() => { setEditingTaxUserId(profile.user_id); setTaxEditForm({ country_code: profile.country_code || 'US', state_code: profile.state_code || '', filing_status: profile.filing_status || 'single', allowances: profile.allowances || 0, additional_withholding: profile.additional_withholding || 0, exempt: profile.exempt || false }); }}>Edit</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EntriesTable({ entries, expandedId, onToggle }: { entries: any[]; expandedId: string | null; onToggle: (id: string | null) => void }) {
+  const totals = entries.reduce((acc, e) => ({ gross: acc.gross + e.gross_pay, deductions: acc.deductions + e.total_deductions, net: acc.net + e.net_pay }), { gross: 0, deductions: 0, net: 0 });
+
+  return (
+    <div>
+      <table style={styles.table}>
+        <thead>
+          <tr>
+            <th style={styles.th}>Employee</th>
+            <th style={styles.th}>Hours</th>
+            <th style={styles.th}>Sessions</th>
+            <th style={styles.th}>Gross Pay</th>
+            <th style={styles.th}>Deductions</th>
+            <th style={styles.th}>Net Pay</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((entry: any, idx: number) => (
+            <>
+              <tr key={entry.id} style={{ background: idx % 2 === 0 ? 'transparent' : 'var(--color-background)', cursor: 'pointer' }} onClick={() => onToggle(expandedId === entry.id ? null : entry.id)}>
+                <td style={styles.td}>{entry.first_name} {entry.last_name}</td>
+                <td style={styles.td}>{entry.hours_worked ?? '—'}</td>
+                <td style={styles.td}>{entry.sessions_delivered ?? '—'}</td>
+                <td style={styles.td}>{formatCurrency(entry.gross_pay)}</td>
+                <td style={styles.td}>{formatCurrency(entry.total_deductions)}</td>
+                <td style={styles.td}><strong>{formatCurrency(entry.net_pay)}</strong></td>
+              </tr>
+              {expandedId === entry.id && entry.breakdown && (
+                <tr key={`${entry.id}-bd`}>
+                  <td colSpan={6} style={{ padding: '8px 16px', background: 'var(--color-background)', fontSize: '12px' }}>
+                    <div style={{ display: 'flex', gap: '24px' }}>
+                      <div>
+                        <strong>Compensation</strong>
+                        {(entry.breakdown.compensation || []).map((c: any, i: number) => (
+                          <div key={i}>{c.type}: {formatCurrency(c.amount)}{c.hours ? ` (${c.hours}h)` : ''}{c.sessions ? ` (${c.sessions} sessions)` : ''}</div>
+                        ))}
+                      </div>
+                      <div>
+                        <strong>Deductions</strong>
+                        {(entry.breakdown.deductions || []).map((d: any, i: number) => (
+                          <div key={i}>{d.name}: {formatCurrency(d.amount)}</div>
+                        ))}
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </>
+          ))}
+          <tr style={{ borderTop: '2px solid var(--color-border)', fontWeight: 600 }}>
+            <td style={styles.td} colSpan={3}>Totals</td>
+            <td style={styles.td}>{formatCurrency(totals.gross)}</td>
+            <td style={styles.td}>{formatCurrency(totals.deductions)}</td>
+            <td style={styles.td}>{formatCurrency(totals.net)}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '24px',
-  },
-  section: {
-    border: '1px solid var(--color-border, #e5e7eb)',
-    borderRadius: '8px',
-    padding: '16px',
-  },
-  sectionHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '12px',
-  },
-  sectionTitle: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: 'var(--color-text, #111827)',
-    margin: 0,
-  },
-  inlineForm: {
-    border: '1px solid var(--color-border, #e5e7eb)',
-    borderRadius: '6px',
-    padding: '12px',
-    marginBottom: '12px',
-    background: 'var(--color-background, #f9fafb)',
-  },
-  formRow: {
-    display: 'flex',
-    gap: '12px',
-    alignItems: 'flex-end',
-    flexWrap: 'wrap' as const,
-  },
-  formField: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '4px',
-  },
-  formActions: {
-    display: 'flex',
-    gap: '8px',
-    alignItems: 'center',
-  },
-  label: {
-    fontSize: '12px',
-    fontWeight: 500,
-    color: 'var(--color-text-secondary, #6b7280)',
-  },
-  input: {
-    border: '1px solid var(--color-border, #e5e7eb)',
-    borderRadius: '4px',
-    padding: '6px 10px',
-    fontSize: '13px',
-    color: 'var(--color-text, #111827)',
-    background: '#fff',
-    outline: 'none',
-    minWidth: '140px',
-  },
-  loadingText: {
-    fontSize: '13px',
-    color: 'var(--color-text-secondary, #6b7280)',
-  },
-  emptyText: {
-    fontSize: '13px',
-    color: 'var(--color-text-secondary, #6b7280)',
-  },
-  periodsList: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '1px',
-  },
-  periodRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '10px 12px',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    border: '1px solid var(--color-border, #e5e7eb)',
-    marginBottom: '4px',
-  },
-  periodInfo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  periodDates: {
-    fontSize: '13px',
-    color: 'var(--color-text, #111827)',
-    fontWeight: 500,
-  },
-  periodActions: {
-    display: 'flex',
-    gap: '8px',
-  },
-  badge: {
-    display: 'inline-block',
-    padding: '2px 8px',
-    borderRadius: '10px',
-    fontSize: '11px',
-    fontWeight: 600,
-    textTransform: 'capitalize' as const,
-  },
-  entriesContainer: {
-    padding: '8px 12px 12px',
-    marginBottom: '8px',
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse' as const,
-    fontSize: '13px',
-  },
-  th: {
-    textAlign: 'left' as const,
-    padding: '8px 10px',
-    fontSize: '12px',
-    fontWeight: 600,
-    color: 'var(--color-text-secondary, #6b7280)',
-    borderBottom: '1px solid var(--color-border, #e5e7eb)',
-  },
-  tr: {
-    borderBottom: '1px solid var(--color-border, #e5e7eb)',
-  },
-  td: {
-    padding: '8px 10px',
-    fontSize: '13px',
-    color: 'var(--color-text, #111827)',
-  },
-  breakdownCell: {
-    padding: '12px',
-    background: 'var(--color-background, #f9fafb)',
-    borderBottom: '1px solid var(--color-border, #e5e7eb)',
-  },
-  breakdownContainer: {
-    display: 'flex',
-    gap: '24px',
-    flexWrap: 'wrap' as const,
-  },
-  breakdownSection: {
-    flex: '1 1 200px',
-  },
-  breakdownTitle: {
-    fontSize: '12px',
-    color: 'var(--color-text-secondary, #6b7280)',
-    display: 'block',
-    marginBottom: '6px',
-  },
-  breakdownList: {
-    listStyle: 'none',
-    margin: 0,
-    padding: 0,
-  },
-  breakdownItem: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '12px',
-    color: 'var(--color-text, #111827)',
-    padding: '2px 0',
-  },
-  taxContainer: {
-    marginTop: '4px',
-  },
-  taxList: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '6px',
-  },
-  taxCard: {
-    border: '1px solid var(--color-border, #e5e7eb)',
-    borderRadius: '6px',
-    padding: '10px 12px',
-  },
-  taxCardContent: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  taxCardInfo: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '2px',
-  },
-  taxName: {
-    fontSize: '13px',
-    fontWeight: 500,
-    color: 'var(--color-text, #111827)',
-  },
-  taxDetail: {
-    fontSize: '12px',
-    color: 'var(--color-text-secondary, #6b7280)',
-  },
-  taxEditForm: {
-    padding: '4px 0',
-  },
-  taxEditGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '12px',
-  },
+  muted: { fontSize: '13px', color: 'var(--color-text-secondary)' },
+  select: { padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px', color: 'var(--color-text)', background: 'var(--color-background)' },
+  viewBtn: { padding: '6px 14px', fontSize: '13px', border: '1px solid var(--color-border)', borderRadius: '4px', background: 'transparent', color: 'var(--color-text)', cursor: 'pointer' },
+  viewBtnActive: { background: 'var(--color-primary)', color: '#fff', borderColor: 'var(--color-primary)' },
+  table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '13px' },
+  th: { textAlign: 'left' as const, padding: '8px 12px', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '2px solid var(--color-border)' },
+  td: { padding: '8px 12px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)' },
+  taxCard: { padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '6px' },
+  label: { fontSize: '11px', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '2px' },
+  input: { padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '12px' },
+  linkBtn: { background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: '12px' },
 };

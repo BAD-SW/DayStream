@@ -109,6 +109,70 @@ function SystemSettings() {
         </label>
       </div>
     </div>
+    <PayrollFrequencySettings />
+  );
+}
+
+function PayrollFrequencySettings() {
+  const businessId = localStorage.getItem('business_id') || '';
+  const [payFrequency, setPayFrequency] = useState('monthly');
+  const [startDate, setStartDate] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!businessId) { setLoading(false); return; }
+    apiClient.get(`/v1/payroll/settings?business_id=${businessId}`)
+      .then((res) => {
+        const data = res.data.data;
+        if (data) {
+          setPayFrequency(data.pay_frequency || 'monthly');
+          setStartDate(data.pay_period_start_date ? data.pay_period_start_date.slice(0, 10) : '');
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [businessId]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await apiClient.put(`/v1/payroll/settings?business_id=${businessId}`, {
+        pay_frequency: payFrequency,
+        pay_period_start_date: startDate || null,
+      });
+    } catch { alert('Failed to save payroll settings'); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return null;
+
+  return (
+    <div style={settingStyles.section}>
+      <h3 style={settingStyles.sectionTitle}>Payroll</h3>
+      <div style={{ ...settingStyles.settingRow, flexDirection: 'column' as const, gap: '12px' }}>
+        <div style={settingStyles.settingInfo}>
+          <label style={settingStyles.settingLabel}>Pay Frequency</label>
+          <p style={settingStyles.settingDesc}>How often employees are paid. Pay periods are automatically generated based on this setting.</p>
+        </div>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' as const }}>
+          <div>
+            <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Frequency</label>
+            <select value={payFrequency} onChange={(e) => setPayFrequency(e.target.value)} style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px' }}>
+              <option value="weekly">Weekly</option>
+              <option value="biweekly">Bi-weekly (every 2 weeks)</option>
+              <option value="semi_monthly">Semi-monthly (1st & 16th)</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Period Start Reference Date</label>
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px' }} />
+          </div>
+          <Button onClick={handleSave} loading={saving} size="sm">Save</Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
