@@ -331,3 +331,49 @@ payrollRouter.get('/tax-documents', requirePermission('staff:read'), async (req:
     success(res, docs);
   } catch (err: any) { error(res, 'Failed to list tax documents', 'INTERNAL_ERROR', 500); }
 });
+
+
+// ============================================================
+// Employee Tax Profiles
+// ============================================================
+
+import { getEmployeeTaxProfile, upsertEmployeeTaxProfile } from '../services/tax-calculation.service';
+
+// GET /api/v1/payroll/tax-profiles — List all staff with their tax profiles
+payrollRouter.get('/tax-profiles', requirePermission('staff:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+
+    // Get all active staff and their tax profiles
+    const { rows } = await adminPool.query(
+      `SELECT u.id AS user_id, u.first_name, u.last_name,
+              tp.country_code, tp.state_code, tp.filing_status, tp.allowances, tp.additional_withholding, tp.exempt
+       FROM usr_users u
+       JOIN stf_profiles sp ON sp.user_id = u.id
+       LEFT JOIN pay_employee_tax_profiles tp ON tp.user_id = u.id AND tp.business_id = $1
+       WHERE sp.tenant_id = (SELECT tenant_id FROM sys_businesses WHERE id = $1)
+         AND sp.status = 'active'
+       ORDER BY u.last_name, u.first_name`,
+      [businessId],
+    );
+    success(res, rows);
+  } catch (err: any) { error(res, 'Failed to list tax profiles', 'INTERNAL_ERROR', 500); }
+});
+
+// PUT /api/v1/payroll/tax-profiles/:userId — Create or update an employee's tax profile
+payrollRouter.put('/tax-profiles/:userId', requirePermission('staff:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.body.business_id;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const profile = await upsertEmployeeTaxProfile(businessId, req.params.userId, {
+      country_code: req.body.country_code,
+      state_code: req.body.state_code,
+      filing_status: req.body.filing_status,
+      allowances: req.body.allowances,
+      additional_withholding: req.body.additional_withholding,
+      exempt: req.body.exempt,
+    });
+    success(res, profile);
+  } catch (err: any) { error(res, 'Failed to update tax profile', 'INTERNAL_ERROR', 500); }
+});

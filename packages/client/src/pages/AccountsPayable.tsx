@@ -5,6 +5,7 @@ import { Tabs } from '../design-system/components/navigation/Tabs';
 import { TableActionButton } from '../design-system/components/actions/TableActionButton';
 import * as apApi from '../api/accounts-payable';
 import { formatCurrency } from '../utils/currency';
+import { PayrollTab } from './PayrollTab';
 
 const BILL_STATUS: Record<string, 'success' | 'warning' | 'error' | 'neutral'> = { draft: 'neutral', pending: 'neutral', approved: 'info' as any, paid: 'success', overdue: 'error', void: 'error' };
 
@@ -744,6 +745,7 @@ export function AccountsPayable() {
         ) },
         { id: 'accounts', label: 'Chart of Accounts', content: accountsContent },
         { id: 'journal', label: 'Journal', content: <JournalTab entries={journalEntries} loading={loading} onVoid={handleVoidEntry} /> },
+        { id: 'payroll', label: 'Payroll', content: <PayrollTab /> },
       ]} />
     </div>
   );
