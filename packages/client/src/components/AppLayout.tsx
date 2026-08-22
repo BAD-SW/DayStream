@@ -5,9 +5,9 @@ import { useContextManager, getPermissionsFromRole } from '../context/ContextMan
 import { useBusinessSettings } from '../context/BusinessSettingsContext';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { ContextSwitcher } from './ContextSwitcher';
-import { ContextBreadcrumb } from './ContextBreadcrumb';
 import { ThemeModeToggle } from '../design-system/themes/ThemeModeToggle';
 import { getVisibleModules } from '../design-system/components/dashboard/moduleRegistry';
+import { Logo } from '../design-system/components/layout/Logo';
 import { Profile } from '../pages/Profile';
 
 interface AppLayoutProps {
@@ -45,9 +45,19 @@ export function AppLayout({ children }: AppLayoutProps) {
           <button onClick={() => setSidebarOpen(!sidebarOpen)} style={styles.menuBtn} aria-label="Toggle sidebar">
             ☰
           </button>
+          {/* Brand wordmark always comes first (standard placement), followed by the
+              active tenant/business context. Previously the ContextSwitcher was rendered
+              *before* a plain-text "DayStream" wordmark with no visual separation, so
+              whenever the active context's display name was itself "DayStream" (e.g. the
+              platform-placeholder seed business, or a system-persona user who hasn't
+              switched context — see PLATFORM_DISPLAY_NAME in ContextManager.tsx) the
+              header read as "DayStream" twice. The Logo mark (day-cell + flow + accent
+              dot) plus a divider now makes the two pieces visually distinct regardless. */}
+          <Link to="/dashboard" style={styles.logoLink}>
+            <Logo size={26} />
+          </Link>
+          <span style={styles.headerDivider} aria-hidden="true">/</span>
           <ContextSwitcher />
-          <ContextBreadcrumb />
-          <h1 style={styles.logo}>DayStream</h1>
         </div>
         <div style={styles.headerRight}>
           <LanguageSwitcher />
@@ -143,11 +153,16 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '4px 8px',
     borderRadius: '4px',
   },
-  logo: {
-    fontSize: '18px',
-    fontWeight: 600,
-    margin: 0,
-    color: 'var(--color-primary)',
+  logoLink: {
+    display: 'flex',
+    alignItems: 'center',
+    textDecoration: 'none',
+    flexShrink: 0,
+  },
+  headerDivider: {
+    fontSize: '14px',
+    color: 'var(--color-border)',
+    userSelect: 'none' as const,
   },
   userName: {
     fontSize: '13px',

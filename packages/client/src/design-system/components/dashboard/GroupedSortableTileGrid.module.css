@@ -1,0 +1,27 @@
+.wrapper {
+  /* DashboardShell's tilesSection is itself a CSS grid; span the full row so this
+     grid isn't squeezed into a single track of that outer grid's column count. */
+  grid-column: 1 / -1;
+}
+
+.groupsGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-lg);
+}
+
+@media (min-width: 1024px) {
+  .groupsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.resetBtn {
+  margin-top: var(--space-md);
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  text-decoration: underline;
+}

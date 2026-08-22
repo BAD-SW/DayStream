@@ -12,6 +12,7 @@
   --color-surface-active: #EDE7D9;
   --color-surface-elevated: #FDFBF7;
   --color-surface-modal: #FFFFFF;
+  --row-hover-bg: #F3EEE1;
 
   /* Sidebar */
   --color-sidebar-bg: #F7F3EA;
@@ -51,4 +52,19 @@
   --color-warning: #d97706;
   --color-info: #2563eb;
   --color-capacity-override: #7C3AED;
+
+  /* Customer lifecycle stage pills — exact values from ui-guidelines-and-theming.md §3,
+     each pair verified to clear 4.5:1 contrast. */
+  --stage-lead-bg: #EDE7D8;
+  --stage-lead-fg: #5B5B54;
+  --stage-trial-bg: #E4EEF7;
+  --stage-trial-fg: #33587F;
+  --stage-active-bg: #E9F0E5;
+  --stage-active-fg: #4B6B45;
+  --stage-at-risk-bg: #FBE8D3;
+  --stage-at-risk-fg: #9A5B23;
+  --stage-churned-bg: #F5E3DE;
+  --stage-churned-fg: #8B4A3A;
+  --stage-winback-bg: #EDE8F6;
+  --stage-winback-fg: #5B4E8A;
 }

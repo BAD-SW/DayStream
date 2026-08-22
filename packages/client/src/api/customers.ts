@@ -24,6 +24,13 @@ export interface CustomerFilters {
   limit?: number;
   sort?: string;
   order?: 'asc' | 'desc';
+  ref?: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string;
+  created_from?: string;
+  created_to?: string;
 }
 
 export interface PaginatedResponse<T> {
@@ -58,6 +65,13 @@ export async function getCustomers(businessId: string, filters: CustomerFilters 
   if (filters.limit) params.set('limit', String(filters.limit));
   if (filters.sort) params.set('sort', filters.sort);
   if (filters.order) params.set('order', filters.order);
+  if (filters.ref) params.set('ref', filters.ref);
+  if (filters.first_name) params.set('first_name', filters.first_name);
+  if (filters.last_name) params.set('last_name', filters.last_name);
+  if (filters.email) params.set('email', filters.email);
+  if (filters.phone) params.set('phone', filters.phone);
+  if (filters.created_from) params.set('created_from', filters.created_from);
+  if (filters.created_to) params.set('created_to', filters.created_to);
 
   const res = await apiClient.get(`/v1/customers?${params}`);
   return res.data;
@@ -184,10 +198,19 @@ export async function executeImport(data: { csv_text: string; mapping: Record<st
   return res.data.data;
 }
 
-export function getExportUrl(businessId: string, filters?: { lifecycle_stage?: string; search?: string }): string {
+export function getExportUrl(businessId: string, filters?: CustomerFilters): string {
   const params = new URLSearchParams({ business_id: businessId });
   if (filters?.lifecycle_stage) params.set('lifecycle_stage', filters.lifecycle_stage);
   if (filters?.search) params.set('search', filters.search);
+  if (filters?.ref) params.set('ref', filters.ref);
+  if (filters?.first_name) params.set('first_name', filters.first_name);
+  if (filters?.last_name) params.set('last_name', filters.last_name);
+  if (filters?.email) params.set('email', filters.email);
+  if (filters?.phone) params.set('phone', filters.phone);
+  if (filters?.created_from) params.set('created_from', filters.created_from);
+  if (filters?.created_to) params.set('created_to', filters.created_to);
+  if (filters?.sort) params.set('sort', filters.sort);
+  if (filters?.order) params.set('order', filters.order);
   return `/api/v1/customers/export?${params}`;
 }
 

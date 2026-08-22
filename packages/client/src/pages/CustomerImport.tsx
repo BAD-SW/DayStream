@@ -5,6 +5,22 @@ import * as customersApi from '../api/customers';
 
 type Step = 'upload' | 'mapping' | 'validation' | 'confirm';
 
+const REQUIRED_FIELDS = ['email', 'first_name', 'last_name'];
+const REQUIRED_LABELS: Record<string, string> = { email: 'Email', first_name: 'First Name', last_name: 'Last Name' };
+
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = rows.map((r) => r.map((cell) => {
+    const str = String(cell ?? '');
+    return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+  }).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 export function CustomerImport() {
   const [step, setStep] = useState<Step>('upload');
   const [csvText, setCsvText] = useState('');
@@ -55,8 +71,11 @@ export function CustomerImport() {
     reader.readAsText(file);
   };
 
+  const missingRequired = REQUIRED_FIELDS.filter((field) => !Object.values(mapping).includes(field));
+
   // Step 2: Validate
   const handleValidate = async () => {
+    if (missingRequired.length > 0) return;
     setLoading(true);
     try {
       const result = await customersApi.validateImport({
@@ -138,9 +157,14 @@ export function CustomerImport() {
               </div>
             ))}
           </div>
+          {missingRequired.length > 0 && (
+            <Alert variant="error">
+              Map a column to each required field before validating: {missingRequired.map((f) => REQUIRED_LABELS[f]).join(', ')}.
+            </Alert>
+          )}
           <div style={styles.actions}>
             <Button onClick={() => setStep('upload')}>Back</Button>
-            <Button onClick={handleValidate}>{loading ? 'Validating...' : 'Validate'}</Button>
+            <Button onClick={handleValidate} disabled={missingRequired.length > 0}>{loading ? 'Validating...' : 'Validate'}</Button>
           </div>
         </div>
       )}
@@ -192,13 +216,27 @@ export function CustomerImport() {
           </div>
           {importResult.errors.length > 0 && (
             <div style={styles.errorList}>
-              <h3 style={styles.errorTitle}>Skipped Rows</h3>
+              <div style={styles.errorListHeader}>
+                <h3 style={styles.errorTitle}>Skipped Rows</h3>
+                <Button
+                  variant="outline"
+                  onClick={() => downloadCsv(
+                    `customer-import-errors-${new Date().toISOString().split('T')[0]}.csv`,
+                    [['row', 'field', 'reason'], ...importResult.errors.map((err: any) => [String(err.row), err.field, err.message])],
+                  )}
+                >
+                  Download errors CSV
+                </Button>
+              </div>
               {importResult.errors.slice(0, 10).map((err: any, i: number) => (
                 <div key={i} style={styles.errorRow}>
                   <span>Row {err.row}</span>
                   <span>{err.field}: {err.message}</span>
                 </div>
               ))}
+              {importResult.errors.length > 10 && (
+                <p style={styles.moreErrors}>...and {importResult.errors.length - 10} more — download the CSV above for the full list.</p>
+              )}
             </div>
           )}
           <Button onClick={() => { setStep('upload'); setCsvText(''); setHeaders([]); setMapping({}); setValidationResult(null); setImportResult(null); }}>
@@ -230,6 +268,7 @@ const styles: Record<string, React.CSSProperties> = {
   actions: { display: 'flex', gap: 'var(--space-md)', marginTop: 'var(--space-lg)' },
   stats: { display: 'flex', gap: 'var(--space-lg)', marginBottom: 'var(--space-md)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
   errorList: { marginTop: 'var(--space-md)', maxHeight: '300px', overflow: 'auto' },
+  errorListHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)' },
   errorTitle: { fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-semibold)' as any, marginBottom: 'var(--space-sm)' },
   errorRow: { display: 'flex', gap: 'var(--space-md)', padding: 'var(--space-xs) 0', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' },
   moreErrors: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-disabled)', marginTop: 'var(--space-sm)' },

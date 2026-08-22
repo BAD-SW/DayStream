@@ -96,6 +96,13 @@ customersRouter.get('/', requirePermission('customers:read'), async (req: Reques
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
       sort: req.query.sort as string,
       order: req.query.order as 'asc' | 'desc',
+      ref: req.query.ref as string,
+      first_name: req.query.first_name as string,
+      last_name: req.query.last_name as string,
+      email: req.query.email as string,
+      phone: req.query.phone as string,
+      created_from: req.query.created_from as string,
+      created_to: req.query.created_to as string,
     });
 
     success(res, result.customers, {
@@ -342,7 +349,16 @@ customersRouter.get('/export', requirePermission('customers:read'), async (req: 
     const csv = await exportCustomers(businessId, {
       lifecycle_stage: req.query.lifecycle_stage as string,
       search: req.query.search as string,
-    });
+      ref: req.query.ref as string,
+      first_name: req.query.first_name as string,
+      last_name: req.query.last_name as string,
+      email: req.query.email as string,
+      phone: req.query.phone as string,
+      created_from: req.query.created_from as string,
+      created_to: req.query.created_to as string,
+      sort: req.query.sort as string,
+      order: req.query.order as 'asc' | 'desc',
+    }, ['reference_number', 'first_name', 'last_name', 'email', 'phone', 'lifecycle_stage', 'created_at']);
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="customers-export.csv"');
@@ -777,7 +793,7 @@ const importExecuteSchema = Joi.object({
 // POST /api/v1/customers/import/validate — Dry-run validation
 customersRouter.post('/import/validate', requirePermission('customers:*'), validate(importValidateSchema), async (req: Request, res: Response) => {
   try {
-    const result = importService.validateImport(req.body.csv_text, req.body.mapping);
+    const result = await importService.validateImport(req.body.csv_text, req.body.mapping, req.body.business_id);
     success(res, result);
   } catch (err: any) {
     error(res, 'Failed to validate import', 'INTERNAL_ERROR', 500);

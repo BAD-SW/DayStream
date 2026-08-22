@@ -1,16 +1,22 @@
 export interface ThemeConfig {
   colorPrimary?: string;
+  colorSecondary?: string;
   colorAccent?: string;
   colorBackground?: string;
   colorSurface?: string;
   colorText?: string;
   fontFamily?: string;
+  /** Root font-size in px (e.g. "15px") — every --font-size-* token is defined in `rem`,
+   * so scaling the document root scales the whole type scale proportionally. Applied
+   * directly to `documentElement.style.fontSize`, not as a custom property (see below). */
+  fontSizeBase?: string;
   borderRadiusBase?: string;
   logoUrl?: string;
 }
 
-const TOKEN_MAP: Record<keyof Omit<ThemeConfig, 'logoUrl'>, string> = {
+const TOKEN_MAP: Record<keyof Omit<ThemeConfig, 'logoUrl' | 'fontSizeBase'>, string> = {
   colorPrimary: '--color-primary',
+  colorSecondary: '--color-secondary',
   colorAccent: '--color-accent',
   colorBackground: '--color-background',
   colorSurface: '--color-surface',
@@ -48,6 +54,12 @@ export function applyTheme(config: ThemeConfig | null): void {
       root.style.removeProperty(cssVar);
     }
   });
+
+  if (config?.fontSizeBase) {
+    root.style.fontSize = config.fontSizeBase;
+  } else {
+    root.style.fontSize = '';
+  }
 }
 
 /** Removes all context-supplied overrides, restoring platform default styling. */

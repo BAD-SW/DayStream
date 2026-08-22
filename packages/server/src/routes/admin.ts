@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Joi from 'joi';
+import multer from 'multer';
 import { validate } from '../middleware/validate';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { requirePermission } from '../auth/permissions';
@@ -9,8 +10,16 @@ import * as configService from '../services/config.service';
 import * as featureFlagService from '../services/feature-flag.service';
 import { logAudit, queryAuditLog } from '../services/audit.service';
 import { hashPassword } from '../services/auth.service';
+import { storage } from '../services/storage.service';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
+
+const uploadLogo = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+// Curated font list (ui-guidelines-and-theming.md §7) — not free-text, to avoid the
+// licensing/glyph/hinting risk of arbitrary uploaded fonts.
+const CURATED_FONTS = ['System Default', 'Inter', 'Merriweather', 'Source Sans 3'];
+const VALID_FONT_SIZES = [14, 15, 16, 17];
 
 export const adminRouter = Router();
 
@@ -246,7 +255,7 @@ adminRouter.get('/businesses', tenantContext, requirePermission('settings:*'), a
   try {
     const authReq = req as AuthenticatedRequest;
     const { rows } = await adminPool.query(
-      'SELECT id, name, slug, status, email, phone, address, default_language, currency, timezone, primary_color, billing_frequency, billing_amount, billing_method, created_at, updated_at FROM sys_businesses WHERE tenant_id = $1 ORDER BY name',
+      'SELECT id, name, slug, status, email, phone, address, default_language, currency, timezone, primary_color, secondary_color, font_family, base_font_size, billing_frequency, billing_amount, billing_method, created_at, updated_at FROM sys_businesses WHERE tenant_id = $1 ORDER BY name',
       [authReq.tenantId],
     );
     success(res, rows);
@@ -259,7 +268,7 @@ adminRouter.get('/businesses', tenantContext, requirePermission('settings:*'), a
 adminRouter.post('/businesses', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { name, slug, email, phone, address, default_language, currency, timezone, primary_color, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date, owner_email, owner_first_name, owner_last_name, owner_password } = req.body;
+    const { name, slug, email, phone, address, default_language, currency, timezone, primary_color, secondary_color, font_family, base_font_size, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date, owner_email, owner_first_name, owner_last_name, owner_password } = req.body;
     if (!name) { error(res, 'Name is required', 'VALIDATION_ERROR', 400); return; }
     if (!owner_email || !owner_first_name || !owner_last_name || !owner_password) {
       error(res, 'Owner details (email, first name, last name, password) are required', 'VALIDATION_ERROR', 400);
@@ -280,11 +289,13 @@ adminRouter.post('/businesses', tenantContext, requirePermission('settings:*'), 
     try {
       await client.query('BEGIN');
 
-      // Create the business
+      // Create the business. Appearance fields (primary/secondary color, font family/size)
+      // are intentionally optional — NULL means "not customized, inherit the tenant's
+      // theme" (see 104_theme_cascade.sql) rather than forcing a hardcoded default here.
       const { rows: bizRows } = await client.query(
-        `INSERT INTO sys_businesses (tenant_id, name, slug, email, phone, address, default_language, currency, timezone, primary_color, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
-        [tenantId, name, businessSlug, email || null, phone || null, address || null, default_language || 'en', currency || 'EUR', timezone || 'UTC', primary_color || '#C9A96E', freq, billing_amount ?? 0, billing_method || 'tbd', signupDt, nextBilling],
+        `INSERT INTO sys_businesses (tenant_id, name, slug, email, phone, address, default_language, currency, timezone, primary_color, secondary_color, font_family, base_font_size, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
+        [tenantId, name, businessSlug, email || null, phone || null, address || null, default_language || 'en', currency || 'EUR', timezone || 'UTC', primary_color || null, secondary_color || null, font_family || null, base_font_size || null, freq, billing_amount ?? 0, billing_method || 'tbd', signupDt, nextBilling],
       );
       const business = bizRows[0];
 
@@ -362,7 +373,7 @@ adminRouter.post('/businesses', tenantContext, requirePermission('settings:*'), 
 adminRouter.put('/businesses/:id', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { name, slug, email, phone, address, default_language, currency, timezone, primary_color, status, billing_frequency, billing_amount, billing_method } = req.body;
+    const { name, slug, email, phone, address, default_language, currency, timezone, primary_color, secondary_color, font_family, base_font_size, status, billing_frequency, billing_amount, billing_method } = req.body;
     const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
@@ -375,6 +386,9 @@ adminRouter.put('/businesses/:id', tenantContext, requirePermission('settings:*'
     if (currency !== undefined) { fields.push(`currency = $${idx++}`); values.push(currency); }
     if (timezone !== undefined) { fields.push(`timezone = $${idx++}`); values.push(timezone); }
     if (primary_color !== undefined) { fields.push(`primary_color = $${idx++}`); values.push(primary_color); }
+    if (secondary_color !== undefined) { fields.push(`secondary_color = $${idx++}`); values.push(secondary_color); }
+    if (font_family !== undefined) { fields.push(`font_family = $${idx++}`); values.push(font_family); }
+    if (base_font_size !== undefined) { fields.push(`base_font_size = $${idx++}`); values.push(base_font_size); }
     if (status !== undefined) { fields.push(`status = $${idx++}`); values.push(status); }
     if (billing_frequency !== undefined) { fields.push(`billing_frequency = $${idx++}`); values.push(billing_frequency); }
     if (billing_amount !== undefined) { fields.push(`billing_amount = $${idx++}`); values.push(billing_amount); }
@@ -433,7 +447,10 @@ adminRouter.get('/config', tenantContext, requirePermission('settings:*'), async
   try {
     const authReq = req as AuthenticatedRequest;
     const config = await configService.getAllConfig(authReq.tenantId);
-    success(res, config);
+    // Which keys this tenant has explicitly overridden vs. inherited from the platform
+    // default — the theme cascade UI needs this to show "customized" vs "inherited".
+    const overridden = await configService.getOverriddenKeys(authReq.tenantId, Object.keys(config));
+    success(res, config, { overridden: Array.from(overridden) });
   } catch (err: any) {
     error(res, 'Failed to get configuration', 'INTERNAL_ERROR', 500);
   }
@@ -470,6 +487,78 @@ adminRouter.put('/config/:key', tenantContext, requirePermission('settings:*'), 
     } else {
       error(res, 'Failed to update configuration', 'INTERNAL_ERROR', 500);
     }
+  }
+});
+
+// DELETE /api/v1/admin/config/:key — Reset a tenant override back to the system default
+adminRouter.delete('/config/:key', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    await configService.deleteConfig(authReq.tenantId, req.params.key);
+    const value = await configService.getConfig(authReq.tenantId, req.params.key);
+    success(res, { key: req.params.key, value });
+  } catch (err: any) {
+    error(res, 'Failed to reset configuration', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// --- System Default Theme (Super Admin only) ---
+// The top of the theme cascade: system default -> tenant override (sys_tenant_configurations,
+// above) -> business override (sys_businesses columns). Editing here changes the
+// `default_value` on sys_configuration_definitions itself, which every tenant/business
+// that hasn't customized a given field already falls back to via config.service.ts's
+// COALESCE — so this needs no separate propagation logic.
+
+const THEME_KEYS = ['brand.primary_color', 'brand.secondary_color', 'brand.logo_url', 'brand.font_family', 'brand.base_font_size'];
+
+adminRouter.get('/system-theme', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const { rows } = await adminPool.query(
+      'SELECT key, default_value FROM sys_configuration_definitions WHERE key = ANY($1)',
+      [THEME_KEYS],
+    );
+    const result: Record<string, string> = {};
+    for (const row of rows) result[row.key] = row.default_value;
+    success(res, result);
+  } catch (err: any) {
+    error(res, 'Failed to get system theme', 'INTERNAL_ERROR', 500);
+  }
+});
+
+const systemThemeSchema = Joi.object({
+  primary_color: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/),
+  secondary_color: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/),
+  logo_url: Joi.string().uri().allow(''),
+  font_family: Joi.string().valid(...CURATED_FONTS),
+  base_font_size: Joi.number().valid(...VALID_FONT_SIZES),
+}).min(1);
+
+adminRouter.put('/system-theme', requirePermission('*:*'), validate(systemThemeSchema), async (req: Request, res: Response) => {
+  try {
+    const fieldToKey: Record<string, string> = {
+      primary_color: 'brand.primary_color',
+      secondary_color: 'brand.secondary_color',
+      logo_url: 'brand.logo_url',
+      font_family: 'brand.font_family',
+      base_font_size: 'brand.base_font_size',
+    };
+    for (const [field, key] of Object.entries(fieldToKey)) {
+      if (req.body[field] !== undefined) {
+        await adminPool.query(
+          'UPDATE sys_configuration_definitions SET default_value = $1 WHERE key = $2',
+          [String(req.body[field]), key],
+        );
+      }
+    }
+    const { rows } = await adminPool.query(
+      'SELECT key, default_value FROM sys_configuration_definitions WHERE key = ANY($1)',
+      [THEME_KEYS],
+    );
+    const result: Record<string, string> = {};
+    for (const row of rows) result[row.key] = row.default_value;
+    success(res, result);
+  } catch (err: any) {
+    error(res, 'Failed to update system theme', 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -583,11 +672,14 @@ adminRouter.get('/my-context', tenantContext, async (req: Request, res: Response
       return;
     }
 
-    let business: { id: string; name: string; primary_color: string | null } | null = null;
+    let business: {
+      id: string; name: string; primary_color: string | null; timezone: string | null;
+      secondary_color: string | null; font_family: string | null; base_font_size: number | null; logo_url: string | null;
+    } | null = null;
     const businessId = req.query.business_id as string | undefined;
     if (businessId) {
       const { rows: bizRows } = await adminPool.query(
-        'SELECT id, name, primary_color FROM sys_businesses WHERE id = $1 AND tenant_id = $2',
+        'SELECT id, name, primary_color, timezone, secondary_color, font_family, base_font_size, logo_url FROM sys_businesses WHERE id = $1 AND tenant_id = $2',
         [businessId, authReq.tenantId],
       );
       business = bizRows[0] || null;
@@ -1478,5 +1570,79 @@ adminRouter.put('/businesses/:id/settings', tenantContext, requirePermission('se
     success(res, rows[0]);
   } catch (err: any) {
     error(res, 'Failed to update settings', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/admin/businesses/:id/appearance — Get per-business theme (ui-guidelines-and-theming.md §7)
+adminRouter.get('/businesses/:id/appearance', tenantContext, requirePermission('settings:read'), async (req: Request, res: Response) => {
+  try {
+    const { rows } = await adminPool.query(
+      'SELECT logo_url, primary_color, secondary_color, font_family, base_font_size FROM sys_businesses WHERE id = $1',
+      [req.params.id],
+    );
+    if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    success(res, rows[0]);
+  } catch (err: any) {
+    error(res, 'Failed to get appearance settings', 'INTERNAL_ERROR', 500);
+  }
+});
+
+const appearanceSchema = Joi.object({
+  // All fields nullable: null means "not customized, inherit from the tenant/platform
+  // default" (see 104_theme_cascade.sql) rather than a forced concrete value.
+  primary_color: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).allow(null),
+  secondary_color: Joi.string().pattern(/^#[0-9A-Fa-f]{6}$/).allow(null),
+  font_family: Joi.string().valid(...CURATED_FONTS).allow(null),
+  base_font_size: Joi.number().valid(...VALID_FONT_SIZES).allow(null),
+}).min(1);
+
+// PUT /api/v1/admin/businesses/:id/appearance — Update per-business theme
+adminRouter.put('/businesses/:id/appearance', tenantContext, requirePermission('settings:*'), validate(appearanceSchema), async (req: Request, res: Response) => {
+  try {
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    for (const key of ['primary_color', 'secondary_color', 'font_family', 'base_font_size'] as const) {
+      if (req.body[key] !== undefined) {
+        fields.push(`${key} = $${idx++}`);
+        values.push(req.body[key]);
+      }
+    }
+
+    fields.push('updated_at = NOW()');
+    values.push(req.params.id);
+
+    const { rows } = await adminPool.query(
+      `UPDATE sys_businesses SET ${fields.join(', ')} WHERE id = $${idx}
+       RETURNING logo_url, primary_color, secondary_color, font_family, base_font_size`,
+      values,
+    );
+    if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    success(res, rows[0]);
+  } catch (err: any) {
+    error(res, 'Failed to update appearance settings', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// POST /api/v1/admin/businesses/:id/logo — Upload business logo
+adminRouter.post('/businesses/:id/logo', tenantContext, requirePermission('settings:*'), uploadLogo.single('logo'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    if (!req.file) { error(res, 'No logo file provided', 'VALIDATION_ERROR', 400); return; }
+
+    const ext = req.file.originalname.split('.').pop() || 'png';
+    const relativePath = `businesses/${authReq.tenantId}/${req.params.id}-logo.${ext}`;
+    await storage.save(relativePath, req.file.buffer);
+    const logoUrl = storage.getUrl(relativePath);
+
+    const { rows } = await adminPool.query(
+      'UPDATE sys_businesses SET logo_url = $1, updated_at = NOW() WHERE id = $2 RETURNING logo_url',
+      [logoUrl, req.params.id],
+    );
+    if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    success(res, rows[0]);
+  } catch (err: any) {
+    error(res, 'Failed to upload logo', 'INTERNAL_ERROR', 500);
   }
 });

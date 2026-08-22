@@ -1,3 +1,5 @@
+import { isValidPhoneNumber } from 'libphonenumber-js';
+import { countryNameToIso2 } from '@daystream/shared';
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
 import { logger } from '../middleware/logger';
@@ -82,13 +84,22 @@ function parseLine(line: string): string[] {
 /**
  * Validate import rows against schema.
  * Returns errors with row numbers and field details.
+ *
+ * When `businessId` is provided, also batch-checks emails against existing customers so
+ * duplicates surface in the dry-run preview, not just at commit time (customers-page-
+ * requirements.md §A1's acceptance criterion — the preview must show duplicate-email rows).
  */
-export function validateRows(rows: ImportRow[], mapping: ColumnMapping): ValidationError[] {
+export async function validateRows(
+  rows: ImportRow[],
+  mapping: ColumnMapping,
+  businessId?: string,
+): Promise<ValidationError[]> {
   const errors: ValidationError[] = [];
+  const mappedRows = rows.map((row) => applyMapping(row, mapping));
 
-  for (let i = 0; i < rows.length; i++) {
+  for (let i = 0; i < mappedRows.length; i++) {
     const rowNum = i + 2; // +2 for 1-indexed + header row
-    const mapped = applyMapping(rows[i], mapping);
+    const mapped = mappedRows[i];
 
     // Check required fields
     for (const field of REQUIRED_FIELDS) {
@@ -107,6 +118,32 @@ export function validateRows(rows: ImportRow[], mapping: ColumnMapping): Validat
       const date = new Date(mapped.date_of_birth);
       if (isNaN(date.getTime())) {
         errors.push({ row: rowNum, field: 'date_of_birth', message: 'Invalid date format' });
+      }
+    }
+
+    // Validate phone against the row's country, when both are present.
+    if (mapped.phone && mapped.phone.trim() !== '' && mapped.country) {
+      const iso2 = countryNameToIso2(mapped.country);
+      if (iso2 && !isValidPhoneNumber(mapped.phone, iso2 as any)) {
+        errors.push({ row: rowNum, field: 'phone', message: `Invalid phone number for ${mapped.country}` });
+      }
+    }
+  }
+
+  // Batch duplicate-email check against existing customers in this business.
+  if (businessId) {
+    const emails = mappedRows.map((m) => m.email?.trim().toLowerCase()).filter((e): e is string => !!e);
+    if (emails.length > 0) {
+      const { rows: existing } = await adminPool.query(
+        'SELECT LOWER(email) AS email FROM cus_customers WHERE business_id = $1 AND LOWER(email) = ANY($2)',
+        [businessId, emails],
+      );
+      const existingEmails = new Set(existing.map((r) => r.email));
+      for (let i = 0; i < mappedRows.length; i++) {
+        const email = mappedRows[i].email?.trim().toLowerCase();
+        if (email && existingEmails.has(email)) {
+          errors.push({ row: i + 2, field: 'email', message: 'Duplicate email in business' });
+        }
       }
     }
   }
@@ -130,12 +167,13 @@ function applyMapping(row: ImportRow, mapping: ColumnMapping): Record<string, st
 /**
  * Dry-run: validate CSV without importing.
  */
-export function validateImport(
+export async function validateImport(
   csvText: string,
   mapping: ColumnMapping,
-): { valid: boolean; total: number; errors: ValidationError[] } {
+  businessId?: string,
+): Promise<{ valid: boolean; total: number; errors: ValidationError[] }> {
   const { rows } = parseCSV(csvText);
-  const errors = validateRows(rows, mapping);
+  const errors = await validateRows(rows, mapping, businessId);
   return { valid: errors.length === 0, total: rows.length, errors };
 }
 
@@ -150,7 +188,7 @@ export async function executeImport(
   userId: string,
 ): Promise<ImportResult> {
   const { rows } = parseCSV(csvText);
-  const errors = validateRows(rows, mapping);
+  const errors = await validateRows(rows, mapping, businessId);
 
   // Get row numbers with errors
   const errorRows = new Set(errors.map((e) => e.row));
@@ -222,9 +260,23 @@ export async function executeImport(
 /**
  * Export customers to CSV format.
  */
+interface ExportFilters {
+  lifecycle_stage?: string;
+  search?: string;
+  ref?: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string;
+  created_from?: string;
+  created_to?: string;
+  sort?: string;
+  order?: 'asc' | 'desc';
+}
+
 export async function exportCustomers(
   businessId: string,
-  filters?: { lifecycle_stage?: string; search?: string },
+  filters?: ExportFilters,
   columns?: string[],
 ): Promise<string> {
   const conditions = ['business_id = $1', "status != 'anonymized'"];
@@ -242,9 +294,37 @@ export async function exportCustomers(
     paramIndex++;
   }
 
+  const containsFilters: [string | undefined, string][] = [
+    [filters?.ref, 'reference_number'],
+    [filters?.first_name, 'first_name'],
+    [filters?.last_name, 'last_name'],
+    [filters?.email, 'email'],
+    [filters?.phone, 'phone'],
+  ];
+  for (const [value, column] of containsFilters) {
+    if (value) {
+      conditions.push(`${column} ILIKE $${paramIndex}`);
+      params.push(`%${value}%`);
+      paramIndex++;
+    }
+  }
+
+  if (filters?.created_from) {
+    conditions.push(`created_at >= $${paramIndex++}`);
+    params.push(filters.created_from);
+  }
+  if (filters?.created_to) {
+    conditions.push(`created_at < ($${paramIndex++}::date + INTERVAL '1 day')`);
+    params.push(filters.created_to);
+  }
+
+  const sortWhitelist = ['first_name', 'last_name', 'email', 'phone', 'reference_number', 'created_at', 'lifecycle_stage'];
+  const sort = sortWhitelist.includes(filters?.sort || '') ? filters!.sort : 'last_name';
+  const order = filters?.order === 'desc' ? 'DESC' : 'ASC';
+
   const where = conditions.join(' AND ');
   const { rows } = await adminPool.query(
-    `SELECT * FROM cus_customers WHERE ${where} ORDER BY last_name, first_name`,
+    `SELECT * FROM cus_customers WHERE ${where} ORDER BY ${sort} ${order}${sort !== 'first_name' ? ', first_name' : ''}`,
     params,
   );
 

@@ -15,6 +15,14 @@
   --font-size-3xl: 2rem;       /* 32px */
   --font-size-4xl: 3rem;       /* 48px */
 
+  /* Role-specific sizes (ui-guidelines-and-theming.md §2) — distinct named roles rather
+     than repurposing the general xs/sm/lg scale above, so this widened hierarchy only
+     applies where a component explicitly opts in, not to the ~45 existing call sites
+     of --font-size-2xl etc. across the app. */
+  --font-size-page-title: 1.75rem;      /* 28px, was ~24px */
+  --font-size-section-header: 1.0625rem; /* 17px — new role, none existed before */
+  --font-size-table-header: 0.8125rem;   /* 13px, was ~12px */
+
   /* Font weights */
   --font-weight-light: 300;
   --font-weight-regular: 400;

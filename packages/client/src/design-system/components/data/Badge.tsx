@@ -1,6 +1,9 @@
 interface BadgeProps {
   children: string;
   variant?: 'success' | 'warning' | 'error' | 'info' | 'neutral';
+  /** Escape hatch for palettes beyond the 5 fixed variants above (e.g. per-stage pill colors). */
+  bg?: string;
+  fg?: string;
 }
 
 const variantColors: Record<string, { bg: string; color: string }> = {
@@ -11,7 +14,7 @@ const variantColors: Record<string, { bg: string; color: string }> = {
   neutral: { bg: 'var(--color-surface)', color: 'var(--color-text-secondary)' },
 };
 
-export function Badge({ children, variant = 'neutral' }: BadgeProps) {
+export function Badge({ children, variant = 'neutral', bg, fg }: BadgeProps) {
   const colors = variantColors[variant];
   return (
     <span
@@ -19,12 +22,12 @@ export function Badge({ children, variant = 'neutral' }: BadgeProps) {
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '2px 8px',
+        padding: '5px 13px',
         borderRadius: 'var(--radius-full)',
-        fontSize: 'var(--font-size-xs)',
-        fontWeight: 'var(--font-weight-medium)' as any,
-        background: colors.bg,
-        color: colors.color,
+        fontSize: '12.5px',
+        fontWeight: 'var(--font-weight-bold)' as any,
+        background: bg ?? colors.bg,
+        color: fg ?? colors.color,
         minWidth: '60px',
       }}
     >

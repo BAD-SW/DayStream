@@ -1,4 +1,5 @@
 import { ReactNode, useState } from 'react';
+import cssStyles from './Table.module.css';
 
 interface TableColumn<T> {
   key: string;
@@ -28,6 +29,8 @@ interface TableProps<T> {
   rowId?: (row: T) => string;
   // Responsive
   mobileCardMode?: boolean;
+  /** Optional second header row (e.g. per-column filter inputs), one cell per column in the same order. */
+  filterRow?: ReactNode;
 }
 
 export function Table<T extends Record<string, any>>({
@@ -46,6 +49,7 @@ export function Table<T extends Record<string, any>>({
   onSelectionChange,
   rowId = (row) => row.id,
   mobileCardMode,
+  filterRow,
 }: TableProps<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -104,7 +108,7 @@ export function Table<T extends Record<string, any>>({
     );
   }
 
-  if (data.length === 0) {
+  if (data.length === 0 && !filterRow) {
     return <div style={styles.empty}>{emptyMessage}</div>;
   }
 
@@ -161,14 +165,28 @@ export function Table<T extends Record<string, any>>({
                 </th>
               ))}
             </tr>
+            {filterRow && (
+              <tr style={styles.filterRow}>
+                {selectable && <th style={styles.th} />}
+                {filterRow}
+              </tr>
+            )}
           </thead>
           <tbody>
+            {data.length === 0 && (
+              <tr>
+                <td style={styles.td} colSpan={columns.length + (selectable ? 1 : 0)}>
+                  <div style={styles.empty}>{emptyMessage}</div>
+                </td>
+              </tr>
+            )}
             {sortedData.map((row, rowIndex) => {
               const id = rowId(row);
               return (
                 <tr
                   key={rowIndex}
-                  style={{ ...styles.tr, ...(selectedIds.includes(id) ? styles.trSelected : {}), ...(onRowClick ? { cursor: 'pointer' } : {}) }}
+                  className={onRowClick ? cssStyles.rowClickable : undefined}
+                  style={{ ...styles.tr, ...(selectedIds.includes(id) ? styles.trSelected : {}) }}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
                 >
                   {selectable && (
@@ -182,9 +200,12 @@ export function Table<T extends Record<string, any>>({
                       />
                     </td>
                   )}
-                  {columns.map((col) => (
+                  {columns.map((col, colIndex) => (
                     <td key={col.key} style={styles.td}>
                       {col.render ? col.render(row[col.key], row) : row[col.key]}
+                      {onRowClick && colIndex === columns.length - 1 && (
+                        <span className={cssStyles.rowEditAffordance}>Edit &rsaquo;</span>
+                      )}
                     </td>
                   ))}
                 </tr>
@@ -223,15 +244,15 @@ function renderPagination(page: number, totalPages: number, onPageChange: (p: nu
 
 const styles: Record<string, React.CSSProperties> = {
   wrapper: { overflowX: 'auto' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: '15px' },
   th: {
     textAlign: 'left',
     padding: 'var(--space-sm) var(--space-md)',
-    fontSize: 'var(--font-size-xs)',
-    fontWeight: 'var(--font-weight-semibold)' as any,
+    fontSize: 'var(--font-size-table-header)',
+    fontWeight: 'var(--font-weight-bold)' as any,
     color: 'var(--color-text-secondary)',
     textTransform: 'uppercase',
-    letterSpacing: 'var(--letter-spacing-wider)',
+    letterSpacing: '0.04em',
     borderBottom: '1px solid var(--color-border)',
     whiteSpace: 'nowrap',
     userSelect: 'none',
@@ -241,8 +262,11 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'background var(--duration-fast) var(--ease-default)',
     height: '40px',
   },
+  filterRow: {
+    borderBottom: '1px solid var(--color-border)',
+  },
   trSelected: { background: 'var(--color-surface-hover)' },
-  td: { padding: 'var(--space-sm) var(--space-md)', color: 'var(--color-text)' },
+  td: { padding: 'var(--space-md) var(--space-md)', color: 'var(--color-text)' },
   sortIcon: { color: 'var(--color-text-disabled)', fontSize: '12px' },
   empty: { padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' },
   loading: { display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', padding: 'var(--space-md)' },

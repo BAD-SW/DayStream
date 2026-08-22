@@ -57,6 +57,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   { id: 'tenant-users', phase: 0, icon: '👤', titleKey: 'Users', descriptionKey: 'Manage tenant users', path: '/admin/tenant-users', personas: ['tenant'] },
   { id: 'tenant-billing', phase: 0, icon: '🧾', titleKey: 'Billing', descriptionKey: 'Billing and invoices', path: '/admin/billing', personas: ['tenant'] },
   { id: 'tenant-reports', phase: 0, icon: '📈', titleKey: 'Reports', descriptionKey: 'Tenant analytics', path: '/admin/reports', personas: ['tenant'] },
+  { id: 'tenant-settings', phase: 0, icon: '⚙️', titleKey: 'Settings', descriptionKey: 'Tenant configuration', path: '/admin/tenant-settings', personas: ['tenant'] },
 
   // System-level modules
   { id: 'system-tenants', phase: 0, icon: '🏢', titleKey: 'Tenants', descriptionKey: 'Manage tenants', path: '/admin/tenants', personas: ['system'] },

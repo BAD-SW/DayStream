@@ -4,6 +4,7 @@ import { useContextManager } from '../../../context/ContextManager';
 import { DashboardShell } from './DashboardShell';
 import { KpiCard } from './KpiCard';
 import { SortableTileGrid } from './SortableTileGrid';
+import { GroupedSortableTileGrid } from './GroupedSortableTileGrid';
 import { getVisibleModules } from './moduleRegistry';
 import { Persona } from '@daystream/shared';
 import { apiClient } from '../../../api/client';
@@ -130,7 +131,7 @@ export function PersonaDashboard() {
             ))}
           </>
         }
-        tiles={<SortableTileGrid modules={tiles} />}
+        tiles={persona === 'business' ? <GroupedSortableTileGrid modules={tiles} /> : <SortableTileGrid modules={tiles} />}
       />
 
       {/* Detail Modal */}

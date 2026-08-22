@@ -1,0 +1,57 @@
+.group {
+  border: var(--border-width-thin) solid var(--color-border);
+  border-left: 4px solid var(--group-accent-dark);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  padding: var(--space-md) var(--space-md) var(--space-md) calc(var(--space-md) - 4px);
+}
+
+:global([data-theme='light']) .group {
+  border-left-color: var(--group-accent);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--group-accent-dark) 20%, transparent);
+  color: var(--group-accent-dark);
+}
+
+:global([data-theme='light']) .badge {
+  background: color-mix(in srgb, var(--group-accent) 13%, transparent);
+  color: var(--group-accent);
+}
+
+.label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.03em;
+  color: var(--color-text);
+}
+
+/* auto-fit, not auto-fill: with auto-fill the grid reserves as many
+   minmax(176px,1fr) tracks as could physically fit the container width, and any
+   track left without a tile still takes up its full share of space — this is
+   what produced the empty box-shaped gaps next to groups with fewer tiles (e.g.
+   Back Office/Admin's 2 tiles, or Front Desk/Growth's 3). auto-fit collapses
+   those empty tracks to 0 width and lets the real tiles' 1fr share expand to
+   fill the freed space, so every group's tiles stretch to fill their row with
+   no leftover whitespace, however many tiles the group has. */
+.tileGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+  gap: var(--space-md);
+}

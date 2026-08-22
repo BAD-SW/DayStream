@@ -6,35 +6,27 @@
   width: 100%;
 }
 
+/* auto-fit (not auto-fill): collapses empty trailing tracks and lets the actual
+   cards expand to fill the row via the 1fr in minmax(), so the row always spans
+   the full available width with no leftover whitespace regardless of how many
+   KPI cards a given persona renders (e.g. 3 for business, 4+ for tenant/system). */
 .kpiSection {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--space-sm);
 }
 
-@media (min-width: 768px) {
-  .kpiSection {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
+/* Flat (non-grouped) module grid — used by non-business personas. Same auto-fit
+   reasoning as .kpiSection above: a fixed column count (repeat(2/3/4,1fr)) leaves
+   a visible gap whenever the module count doesn't divide evenly into that many
+   columns, so this fills evenly no matter how many modules are visible. */
 .tilesSection {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: var(--space-md);
 }
 
-@media (min-width: 768px) {
-  .tilesSection {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
 @media (min-width: 1024px) {
-  .tilesSection {
-    grid-template-columns: repeat(4, 1fr);
-  }
-
   .shell {
     padding: var(--space-xl);
   }

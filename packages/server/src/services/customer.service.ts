@@ -24,6 +24,14 @@ interface CustomerFilters {
   limit?: number;
   sort?: string;
   order?: 'asc' | 'desc';
+  // Per-column filters (customers-page-requirements.md §A3) — all "contains", combine with AND.
+  ref?: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string;
+  created_from?: string;
+  created_to?: string;
 }
 
 export async function createCustomer(input: CreateCustomerInput) {
@@ -87,6 +95,32 @@ export async function getCustomers(businessId: string, filters: CustomerFilters)
   if (filters.lifecycle_stage) {
     conditions.push(`lifecycle_stage = $${paramIndex}`);
     params.push(filters.lifecycle_stage);
+    paramIndex++;
+  }
+
+  const containsFilters: [string | undefined, string][] = [
+    [filters.ref, 'reference_number'],
+    [filters.first_name, 'first_name'],
+    [filters.last_name, 'last_name'],
+    [filters.email, 'email'],
+    [filters.phone, 'phone'],
+  ];
+  for (const [value, column] of containsFilters) {
+    if (value) {
+      conditions.push(`${column} ILIKE $${paramIndex}`);
+      params.push(`%${value}%`);
+      paramIndex++;
+    }
+  }
+
+  if (filters.created_from) {
+    conditions.push(`created_at >= $${paramIndex}`);
+    params.push(filters.created_from);
+    paramIndex++;
+  }
+  if (filters.created_to) {
+    conditions.push(`created_at < ($${paramIndex}::date + INTERVAL '1 day')`);
+    params.push(filters.created_to);
     paramIndex++;
   }
 

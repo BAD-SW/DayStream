@@ -4,3 +4,4 @@ export { Stack } from './Stack';
 export { PageShell } from './PageShell';
 export { Header } from './Header';
 export { SidebarNav } from './SidebarNav';
+export { Logo, LogoMark } from './Logo';

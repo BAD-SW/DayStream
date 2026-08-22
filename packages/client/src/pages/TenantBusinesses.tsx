@@ -7,6 +7,14 @@ import { apiClient } from '../api/client';
 import { TIMEZONES } from '../utils/timezones';
 import { CurrencyInput } from '../components/CurrencyInput';
 import { formatCurrency } from '../utils/currency';
+import { ThemeEditorFields, ThemeField } from '../design-system/components/forms/ThemeEditorFields';
+
+const THEME_TO_FORM_FIELD: Record<ThemeField, 'primary_color' | 'secondary_color' | 'font_family' | 'base_font_size'> = {
+  primaryColor: 'primary_color',
+  secondaryColor: 'secondary_color',
+  fontFamily: 'font_family',
+  baseFontSize: 'base_font_size',
+};
 
 interface Business {
   id: string;
@@ -19,7 +27,10 @@ interface Business {
   default_language: string;
   currency: string;
   timezone: string;
-  primary_color: string;
+  primary_color: string | null;
+  secondary_color: string | null;
+  font_family: string | null;
+  base_font_size: number | null;
   billing_frequency: string;
   billing_amount: number;
   billing_method: string;
@@ -38,7 +49,12 @@ interface BusinessForm {
   default_language: string;
   currency: string;
   timezone: string;
-  primary_color: string;
+  // Appearance fields are optional (null = "not customized, inherit the tenant's theme" —
+  // see 104_theme_cascade.sql), so theming can be part of setup without forcing a choice.
+  primary_color: string | null;
+  secondary_color: string | null;
+  font_family: string | null;
+  base_font_size: number | null;
   billing_frequency: string;
   billing_amount: number; // stored as cents
   billing_method: string;
@@ -60,7 +76,8 @@ interface BusinessForm {
 
 const EMPTY_FORM: BusinessForm = {
   name: '', slug: '', email: '', phone: '', address: '',
-  default_language: 'en', currency: 'EUR', timezone: 'UTC', primary_color: '#C9A96E',
+  default_language: 'en', currency: 'EUR', timezone: 'UTC',
+  primary_color: null, secondary_color: null, font_family: null, base_font_size: null,
   billing_frequency: 'monthly', billing_amount: 0, billing_method: 'tbd',
   signup_date: '', next_billing_date: '',
   payment_bank_name: '', payment_account_holder: '', payment_account_number: '',
@@ -105,7 +122,11 @@ export function TenantBusinesses() {
     setForm({
       name: biz.name, slug: biz.slug, email: biz.email || '', phone: biz.phone || '',
       address: biz.address || '', default_language: biz.default_language,
-      currency: biz.currency, timezone: biz.timezone, primary_color: biz.primary_color,
+      currency: biz.currency, timezone: biz.timezone,
+      primary_color: biz.primary_color ?? null,
+      secondary_color: biz.secondary_color ?? null,
+      font_family: biz.font_family ?? null,
+      base_font_size: biz.base_font_size ?? null,
       billing_frequency: biz.billing_frequency || 'monthly',
       billing_amount: biz.billing_amount || 0,
       billing_method: biz.billing_method || 'tbd',
@@ -213,7 +234,7 @@ export function TenantBusinesses() {
                   <DetailRow label="Language" value={selectedBiz.default_language} />
                   <DetailRow label="Currency" value={selectedBiz.currency} />
                   <DetailRow label="Timezone" value={selectedBiz.timezone} />
-                  <DetailRow label="Brand Color" value={selectedBiz.primary_color} />
+                  <DetailRow label="Brand Color" value={selectedBiz.primary_color || 'Inherited from tenant'} />
                   <DetailRow label="Billing Frequency" value={selectedBiz.billing_frequency?.charAt(0).toUpperCase() + selectedBiz.billing_frequency?.slice(1) || '—'} />
                   <DetailRow label="Billing Amount" value={selectedBiz.billing_amount ? formatCurrency(selectedBiz.billing_amount, selectedBiz.currency) : '—'} />
                   <DetailRow label="Billing Method" value={selectedBiz.billing_method === 'tbd' ? 'TBD' : selectedBiz.billing_method} />
@@ -365,13 +386,23 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
           </select>
         </div>
       </div>
-      <div style={styles.formGroup}>
-        <label style={styles.label}>Brand Color</label>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <input type="color" value={form.primary_color} onChange={(e) => setForm({ ...form, primary_color: e.target.value })} style={{ width: '36px', height: '36px', border: 'none', cursor: 'pointer' }} />
-          <input style={{ ...styles.input, maxWidth: '100px' }} value={form.primary_color} onChange={(e) => setForm({ ...form, primary_color: e.target.value })} />
-        </div>
+      <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
+        Appearance {isCreate && '(optional — leave blank to inherit the tenant’s theme)'}
       </div>
+      <ThemeEditorFields
+        values={{
+          primaryColor: form.primary_color,
+          secondaryColor: form.secondary_color,
+          fontFamily: form.font_family,
+          baseFontSize: form.base_font_size,
+        }}
+        onChange={(field, value) => {
+          const formField = THEME_TO_FORM_FIELD[field];
+          setForm({ ...form, [formField]: value });
+        }}
+        inherited={{}}
+        inheritedLabel="tenant"
+      />
       <div style={styles.formRow}>
         <div style={styles.formGroup}>
           <label style={styles.label}>Billing Frequency</label>

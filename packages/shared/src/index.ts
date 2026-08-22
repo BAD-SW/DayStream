@@ -26,6 +26,8 @@ export { ERROR_CODES } from './constants/error-codes';
 export { CONFIG_KEYS } from './constants/config-keys';
 export { SUPPORTED_LANGUAGES, SUPPORTED_CURRENCIES } from './constants/supported';
 export type { SupportedLanguage, SupportedCurrency } from './constants/supported';
+export { COUNTRIES, countryNameToIso2, countryNameToDialCode, iso2ToCountry } from './constants/countries';
+export type { CountryInfo } from './constants/countries';
 
 // Utilities
 export { formatCurrency } from './utils/currency';

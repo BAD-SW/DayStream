@@ -1,0 +1,235 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>DayStream — Add Customer (mockup)</title>
+</head>
+<body>
+<style>
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text-dark); }
+    :root {
+      --bg: #F7F3EA;
+      --card: #FDFCFA;
+      --card-header-bg: #F8F5EE;
+      --card-border: #EDE7D8;
+      --tan-border: #E5DDCD;
+      --text-dark: #1E1E1C;
+      --text-body: #2A2A28;
+      --text-label: #4A4A44;
+      --text-gray: #5B5B54;
+      --text-muted: #8C8C82;
+      --gold: #C9A96E;
+      --gold-deep: #B8935A;
+      --dark-pill: #242424;
+      --row-hover-bg: #F3EEE1;
+      --error: #B3492E;
+      --error-bg: #FBEEE9;
+      --success: #4B6B45;
+    }
+    a { color: var(--gold-deep); }
+    a:hover { color: #8A6A3A; }
+    .app { display:flex; flex-direction:column; }
+    .topbar { background:#fff; border-bottom:1px solid var(--card-border); height:64px; display:flex; align-items:center; justify-content:space-between; padding:0 24px; flex-shrink:0; }
+    .topbar-left { display:flex; align-items:center; gap:14px; }
+    .hamburger { display:flex; flex-direction:column; gap:4px; width:20px; }
+    .hamburger span { display:block; height:2px; background:#2A2A28; border-radius:1px; }
+    .org-strong { font-size:15px; font-weight:700; color:#1E1E1C; }
+    .org-light { font-size:14px; color:#8C8C82; }
+    .brand { font-family: Georgia, 'Times New Roman', serif; font-weight:700; font-size:20px; color: var(--gold-deep); letter-spacing:0.01em; }
+    .topbar-right { display:flex; align-items:center; gap:14px; }
+    .lang-pill { background:var(--dark-pill); color:#fff; font-size:13px; border-radius:20px; padding:8px 14px; display:flex; align-items:center; gap:6px; }
+    .icon-btn { width:34px; height:34px; border-radius:50%; border:1px solid #D8D2C2; display:flex; align-items:center; justify-content:center; color:#2A2A28; flex-shrink:0; }
+    .username { font-size:14px; color:#2A2A28; font-weight:500; }
+    .gear-chip { width:30px; height:30px; border-radius:50%; background:linear-gradient(135deg,#E7DEFB,#D9C9F5); display:flex; align-items:center; justify-content:center; color:#7C5FB0; flex-shrink:0; }
+    .signout-btn { border:1px solid var(--tan-border); background:#fff; color:#3A3A36; font-size:13.5px; font-weight:600; border-radius:8px; padding:9px 16px; }
+    .body-row { display:flex; }
+    .sidebar { width:212px; flex-shrink:0; border-right:1px solid var(--card-border); padding:20px 0; display:flex; flex-direction:column; gap:2px; }
+    .nav-item { padding:9px 24px; font-size:14px; color:#5B5B54; }
+    .nav-item.active { color:#1E1E1C; font-weight:700; }
+    .content { flex:1; padding:32px 40px 56px; }
+
+    .page-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; }
+    .page-title { font-size:28px; font-weight:700; color:var(--text-dark); }
+    .breadcrumb { font-size:13px; color:var(--text-muted); margin-bottom:6px; }
+    .page-intro { font-size:14.5px; color:var(--text-gray); max-width:640px; line-height:1.55; margin-top:4px; }
+
+    .btn { display:inline-flex; align-items:center; gap:7px; border-radius:8px; font-size:14px; font-weight:600; padding:11px 20px; cursor:pointer; border:1px solid transparent; }
+    .btn-outline { background:#fff; border:1px solid var(--tan-border); color:#3A3A36; }
+    .btn-outline:hover { background:var(--card-header-bg); }
+    .btn-primary { background:var(--gold); color:#fff; }
+    .btn-primary:hover { background:var(--gold-deep); }
+    .btn-row { display:flex; gap:12px; }
+
+    .stat-strip { display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:14px; margin-bottom:22px; }
+    .stat-tile { background:var(--card); border:1px solid var(--card-border); border-radius:12px; padding:16px; text-align:center; }
+    .stat-tile-num { font-size:26px; font-weight:700; color:var(--text-dark); }
+    .stat-tile-label { font-size:12px; font-weight:600; letter-spacing:0.03em; color:var(--text-muted); margin-top:4px; }
+
+    .table-card { background:var(--card); border:1px solid var(--card-border); border-radius:14px; overflow:hidden; }
+    table.data-table { width:100%; border-collapse:collapse; }
+    .data-table thead th { text-align:left; padding:12px 16px 4px; font-size:13px; font-weight:700; letter-spacing:0.04em; color:var(--text-gray); background:var(--card-header-bg); border-bottom:none; white-space:nowrap; }
+    .data-table thead .filter-row th { padding:4px 16px 12px; background:var(--card-header-bg); border-bottom:1px solid var(--card-border); }
+    .filter-input, .filter-select { width:100%; font-size:12.5px; padding:6px 9px; border:1px solid var(--card-border); border-radius:6px; background:#fff; color:var(--text-body); }
+    .filter-date-btn { width:100%; font-size:12.5px; padding:6px 9px; border:1px solid var(--card-border); border-radius:6px; background:#fff; color:var(--text-body); text-align:left; cursor:pointer; }
+    .data-table tbody td { padding:15px 16px; font-size:15px; color:var(--text-body); border-bottom:1px solid var(--card-border); }
+    .data-table tbody tr { position:relative; }
+    .data-table tbody tr:hover, .data-table tbody tr.hover-demo { background:var(--row-hover-bg); cursor:pointer; }
+    .data-table tbody tr:last-child td { border-bottom:none; }
+    .row-edit-affordance { opacity:0; color:var(--text-muted); font-size:14px; font-weight:600; float:right; }
+    .data-table tbody tr:hover .row-edit-affordance, .data-table tbody tr.hover-demo .row-edit-affordance { opacity:1; }
+    .avatar { width:30px; height:30px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; margin-right:10px; vertical-align:middle; }
+    .name-cell { display:flex; align-items:center; }
+
+    .pill { display:inline-block; padding:5px 13px; border-radius:20px; font-size:12.5px; font-weight:700; }
+    .pill-lead { background:#EDE7D8; color:#5B5B54; }
+    .pill-trial { background:#E4EEF7; color:#33587F; }
+    .pill-active { background:#E9F0E5; color:#4B6B45; }
+    .pill-at-risk { background:#FBE8D3; color:#9A5B23; }
+    .pill-churned { background:#F5E3DE; color:#8B4A3A; }
+    .pill-winback { background:#EDE8F6; color:#5B4E8A; }
+
+    .form-shell { max-width:760px; }
+    .form-section { margin-bottom:32px; }
+    .form-section-title { font-size:17px; font-weight:700; color:var(--text-dark); margin-bottom:16px; padding-bottom:10px; border-bottom:1px solid var(--card-border); }
+    .form-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:20px 20px; }
+    .field { display:flex; flex-direction:column; gap:7px; }
+    .field label { font-size:13.5px; font-weight:600; color:var(--text-label); }
+    .field label .req { color:var(--gold-deep); }
+    .field input, .field select { font-size:15px; padding:12px 14px; border:1px solid var(--card-border); border-radius:9px; background:#fff; color:var(--text-body); }
+    .field input:focus, .field select:focus { outline:2px solid var(--gold); outline-offset:1px; border-color:var(--gold); }
+    .field.error input { border-color:var(--error); background:var(--error-bg); }
+    .field.error .err-msg { font-size:12.5px; color:var(--error); }
+    .phone-row { display:flex; gap:8px; }
+    .phone-row select { flex:0 0 108px; }
+    .phone-row input { flex:1; }
+    .help-text { font-size:12px; color:var(--text-muted); }
+
+    .appearance-layout { display:grid; grid-template-columns:1.15fr 0.85fr; gap:28px; align-items:start; }
+    .settings-card { background:var(--card); border:1px solid var(--card-border); border-radius:14px; padding:24px; margin-bottom:20px; }
+    .settings-card-title { font-size:15.5px; font-weight:700; color:var(--text-dark); margin-bottom:16px; }
+    .dropzone { border:1.5px dashed var(--tan-border); border-radius:12px; padding:24px; display:flex; align-items:center; gap:16px; }
+    .logo-preview { width:56px; height:56px; border-radius:12px; background:linear-gradient(135deg,#C9A96E,#8A6A3A); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:18px; flex-shrink:0; }
+    .dropzone-text { font-size:13.5px; color:var(--text-gray); }
+    .dropzone-text strong { color:var(--text-dark); }
+    .segmented { display:flex; border:1px solid var(--card-border); border-radius:9px; overflow:hidden; width:fit-content; }
+    .segmented button { border:none; background:#fff; padding:9px 16px; font-size:14px; font-weight:600; color:var(--text-gray); cursor:pointer; border-right:1px solid var(--card-border); }
+    .segmented button:last-child { border-right:none; }
+    .segmented button.selected { background:var(--gold); color:#fff; }
+    .color-row { display:flex; align-items:center; gap:12px; }
+    .color-swatch { width:38px; height:38px; border-radius:9px; border:1px solid var(--card-border); flex-shrink:0; }
+    .color-hex { font-size:14px; padding:9px 12px; border:1px solid var(--card-border); border-radius:8px; width:110px; }
+    .contrast-note { font-size:12.5px; margin-top:8px; display:flex; align-items:center; gap:6px; }
+    .contrast-good { color:var(--success); }
+    .contrast-warn { color:#9A5B23; }
+    .preview-panel { position:sticky; top:24px; background:#fff; border:1px solid var(--card-border); border-radius:14px; overflow:hidden; }
+    .preview-label { font-size:12px; font-weight:700; letter-spacing:0.05em; color:var(--text-muted); padding:14px 18px 0; }
+    .preview-note { font-size:12px; color:var(--text-muted); padding:0 18px 14px; }
+    .preview-frame { border-top:1px solid var(--card-border); padding:20px; background:#FCFBF8; }
+</style>
+<div class="app">
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="hamburger"><span></span><span></span><span></span></div>
+    <span class="org-strong">Transcend Health</span>
+    <span class="org-light">Transcend Health</span>
+    <span class="brand">DayStream</span>
+  </div>
+  <div class="topbar-right">
+    <div class="lang-pill">English &#9662;</div>
+    <div class="icon-btn">&#9789;</div>
+    <span class="username">Nicole Santos</span>
+    <div class="gear-chip"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.4-2-3.4-2.3.8a7.6 7.6 0 0 0-2.6-1.5L14 2.5h-4l-.5 2.5a7.6 7.6 0 0 0-2.6 1.5l-2.3-.8-2 3.4 2 1.4a7.6 7.6 0 0 0 0 3l-2 1.4 2 3.4 2.3-.8a7.6 7.6 0 0 0 2.6 1.5l.5 2.5h4l.5-2.5a7.6 7.6 0 0 0 2.6-1.5l2.3.8 2-3.4-2-1.4Z"/></svg></div>
+    <div class="signout-btn">Sign Out</div>
+  </div>
+</div>
+<div class="body-row">
+  <div class="sidebar"><div class="nav-item">Dashboard</div>
+<div class="nav-item active">Customers</div>
+<div class="nav-item">Appointments</div>
+<div class="nav-item">Schedule (Disabled)</div>
+<div class="nav-item">Accounting</div>
+<div class="nav-item">Reports</div>
+<div class="nav-item">Marketing</div>
+<div class="nav-item">Offerings</div>
+<div class="nav-item">Business Setup</div>
+<div class="nav-item">Website</div>
+<div class="nav-item">Settings</div></div>
+  <div class="content">
+
+    <div class="breadcrumb">&larr; Back to Customers</div>
+    <div class="page-title" style="margin-bottom:28px;">Add Customer</div>
+    <div class="form-shell">
+      <div class="form-section">
+        <div class="form-section-title">Basic Info</div>
+        <div class="form-grid">
+          <div class="field">
+            <label>First Name <span class="req">*</span></label>
+            <input type="text" placeholder="">
+          </div>
+          <div class="field">
+            <label>Last Name <span class="req">*</span></label>
+            <input type="text" placeholder="">
+          </div>
+          <div class="field" style="grid-column:1 / -1;">
+            <label>Email <span class="req">*</span></label>
+            <input type="text" placeholder="">
+          </div>
+          <div class="field error" style="grid-column:1 / -1;">
+            <label>Phone</label>
+            <div class="phone-row">
+              <select>
+                <option>&#127466;&#127480; +34</option>
+                <option>&#127468;&#127463; +44</option>
+                <option>&#127482;&#127480; +1</option>
+              </select>
+              <input type="text" value="66666">
+            </div>
+            <span class="err-msg">Enter a valid phone number for the selected country (Spain, +34).</span>
+          </div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="form-section-title">Details</div>
+        <div class="form-grid">
+          <div class="field">
+            <label>Date of Birth</label>
+            <input type="text" placeholder="dd / mm / yyyy">
+          </div>
+          <div class="field">
+            <label>Gender</label>
+            <select>
+              <option>&mdash;</option>
+              <option>Female</option>
+              <option>Male</option>
+              <option>Prefer not to say</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Language</label>
+            <select><option>English</option><option>Spanish</option></select>
+          </div>
+          <div class="field">
+            <label>Country</label>
+            <select>
+              <option>Search country&hellip;</option>
+              <option>Spain</option>
+              <option>United Kingdom</option>
+              <option>United States</option>
+              <option>Germany</option>
+            </select>
+            <span class="help-text">Searchable — showing 4 of ~195</span>
+          </div>
+        </div>
+      </div>
+      <div class="btn-row" style="justify-content:flex-end;">
+        <div class="btn btn-outline">Cancel</div>
+        <div class="btn btn-primary">Create Customer</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+</body>
+</html>

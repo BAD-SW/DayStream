@@ -5,10 +5,37 @@ import { applyTheme, resetToDefault, ThemeConfig } from '../../context/ThemeMana
 
 interface BusinessTheme {
   primaryColor?: string;
+  secondaryColor?: string;
   accentColor?: string;
   logoUrl?: string;
   fontFamily?: string;
+  fontSizeBase?: string;
   borderRadius?: 'sharp' | 'rounded' | 'pill';
+}
+
+/** Curated font list (ui-guidelines-and-theming.md §7) → actual CSS font-family stack. */
+export const FONT_STACKS: Record<string, string> = {
+  'Inter': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+  'Merriweather': "'Merriweather', Georgia, 'Times New Roman', serif",
+  'Source Sans 3': "'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+};
+
+const GOOGLE_FONT_HREFS: Record<string, string> = {
+  'Inter': 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
+  'Merriweather': 'https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&display=swap',
+  'Source Sans 3': 'https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&display=swap',
+};
+
+/** Loads a curated Google Font on demand — only the one selected, never all of them upfront. */
+export function loadGoogleFont(fontFamily: string | undefined): void {
+  if (!fontFamily || !GOOGLE_FONT_HREFS[fontFamily]) return;
+  const id = `google-font-${fontFamily.replace(/\s+/g, '-').toLowerCase()}`;
+  if (document.getElementById(id)) return;
+  const link = document.createElement('link');
+  link.id = id;
+  link.rel = 'stylesheet';
+  link.href = GOOGLE_FONT_HREFS[fontFamily];
+  document.head.appendChild(link);
 }
 
 interface ThemeContextValue {
@@ -102,28 +129,54 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        // Tenant-level layer: brand.* config for the active tenant (the apiClient interceptor
-        // injects X-Context-Tenant-Id automatically when this differs from the caller's own JWT tenant).
+        // Tenant-level layer: brand.* config for the active tenant. getAllConfig()
+        // (server-side) already COALESCEs each key to the platform-wide default from
+        // sys_configuration_definitions when the tenant hasn't overridden it, so this one
+        // fetch transparently covers both the "system default" and "tenant override" rungs
+        // of the cascade (the apiClient interceptor injects X-Context-Tenant-Id automatically
+        // when this differs from the caller's own JWT tenant).
         const configRes = await apiClient.get('/v1/admin/config');
         const config = configRes.data.data || {};
         const merged: ThemeConfig = {
           colorPrimary: config['brand.primary_color'] || undefined,
+          colorSecondary: config['brand.secondary_color'] || undefined,
           logoUrl: config['brand.logo_url'] || undefined,
+          fontSizeBase: config['brand.base_font_size'] ? `${config['brand.base_font_size']}px` : undefined,
         };
+        let fontFamilyLabel: string | undefined = config['brand.font_family'] || undefined;
 
-        // Business-level layer: overrides the tenant color when a business is in scope.
+        // Business-level layer: overrides the tenant/system value per-field when a
+        // business is in scope and has explicitly customized that field (NULL columns —
+        // see 104_theme_cascade.sql — mean "not customized," so they simply don't override).
         if (activeContext.contextLevel === 'business' && activeContext.businessId) {
           try {
             const bizRes = await apiClient.get('/v1/admin/my-context', { params: { business_id: activeContext.businessId } });
             const business = bizRes.data.data?.business;
             if (business?.primary_color) merged.colorPrimary = business.primary_color;
+            if (business?.secondary_color) merged.colorSecondary = business.secondary_color;
+            if (business?.logo_url) merged.logoUrl = business.logo_url;
+            if (business?.base_font_size) merged.fontSizeBase = `${business.base_font_size}px`;
+            if (business?.font_family) fontFamilyLabel = business.font_family;
           } catch {
-            // Fall back to the tenant-level color only
+            // Fall back to the tenant-level values only
           }
         }
 
+        if (fontFamilyLabel && fontFamilyLabel !== 'System Default') {
+          loadGoogleFont(fontFamilyLabel);
+          merged.fontFamily = FONT_STACKS[fontFamilyLabel];
+        } else {
+          fontFamilyLabel = undefined;
+        }
+
         if (cancelled) return;
-        setBusinessTheme({ primaryColor: merged.colorPrimary, logoUrl: merged.logoUrl });
+        setBusinessTheme({
+          primaryColor: merged.colorPrimary,
+          secondaryColor: merged.colorSecondary,
+          logoUrl: merged.logoUrl,
+          fontFamily: fontFamilyLabel,
+          fontSizeBase: merged.fontSizeBase,
+        });
         applyTheme(merged);
       } catch {
         if (!cancelled) {

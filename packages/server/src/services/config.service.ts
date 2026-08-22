@@ -95,6 +95,30 @@ export async function setConfig(
 }
 
 /**
+ * Remove a tenant's override for a key, reverting it to the system default
+ * (theme cascade "reset to inherited" — see 104_theme_cascade.sql).
+ */
+export async function deleteConfig(tenantId: string, key: string): Promise<void> {
+  await adminPool.query(
+    'DELETE FROM sys_tenant_configurations WHERE tenant_id = $1 AND key = $2',
+    [tenantId, key],
+  );
+  cache.delete(cacheKey(tenantId, key));
+}
+
+/**
+ * Which of the given keys does this tenant have an explicit override for?
+ * Used to distinguish "customized" from "inherited from platform default" in the UI.
+ */
+export async function getOverriddenKeys(tenantId: string, keys: string[]): Promise<Set<string>> {
+  const { rows } = await adminPool.query(
+    'SELECT key FROM sys_tenant_configurations WHERE tenant_id = $1 AND key = ANY($2)',
+    [tenantId, keys],
+  );
+  return new Set(rows.map((r) => r.key));
+}
+
+/**
  * Get all configuration for a tenant (defaults merged with overrides).
  */
 export async function getAllConfig(tenantId: string): Promise<Record<string, unknown>> {

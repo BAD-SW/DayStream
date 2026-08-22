@@ -12,6 +12,7 @@ import { AuditLog } from './pages/AuditLog';
 import { QueryEditorPage } from './pages/QueryEditorPage';
 import { PersonaDashboard } from './design-system/components/dashboard/PersonaDashboard';
 import { TenantBusinesses } from './pages/TenantBusinesses';
+import { TenantSettings } from './pages/TenantSettings';
 import { TenantBilling } from './pages/TenantBilling';
 import { TenantReports } from './pages/TenantReports';
 import { TenantUsers } from './pages/TenantUsers';
@@ -262,6 +263,14 @@ export function App() {
           element={
             <ProtectedRoute requiredRole="Manager" layout="none">
               <AdminLayout><TenantBusinesses /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/tenant-settings"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><TenantSettings /></AdminLayout>
             </ProtectedRoute>
           }
         />

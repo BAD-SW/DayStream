@@ -1,0 +1,19 @@
+.rowClickable {
+  cursor: pointer;
+}
+
+.rowClickable:hover {
+  background: var(--row-hover-bg);
+}
+
+.rowEditAffordance {
+  opacity: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  float: right;
+}
+
+.rowClickable:hover .rowEditAffordance {
+  opacity: 1;
+}

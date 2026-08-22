@@ -17,6 +17,11 @@
   --color-surface-active: #333333;
   --color-surface-modal: #2A2A2A;
 
+  /* Row hover — a distinct "this is clickable" affordance for list/table rows.
+     Deliberately not --color-surface-hover, which already means "tile hover" on the Dashboard;
+     rows need their own token so the two affordances can diverge if needed. */
+  --row-hover-bg: rgba(201, 169, 110, 0.08);
+
   /* Text */
   --color-text: #F5F5F3;
   --color-text-secondary: #B0B0B0;
@@ -32,6 +37,10 @@
   --color-accent: #4A90A4;
   --color-accent-hover: #6BA8BC;
   --color-accent-contrast: #FFFFFF;
+
+  /* Per-business secondary brand color (ui-guidelines-and-theming.md §7) — defaults to
+     the platform accent until a business sets its own via Appearance settings. */
+  --color-secondary: var(--color-accent);
 
   /* Semantic — Success */
   --color-success: #2E7D32;
@@ -62,6 +71,23 @@
      the limit" — a different message to a staff member reading the calendar. */
   --color-capacity-override: #8B5CF6;
   --color-capacity-override-bg: rgba(139, 92, 246, 0.1);
+
+  /* Customer lifecycle stage pills (ui-guidelines-and-theming.md §3) — light-mode
+     values (see themes/light.css) match the hue families already introduced by the
+     Dashboard tile-grouping work, so status colors and dashboard-group colors read
+     as one system. Dark-mode values below are lightened for contrast on dark bg. */
+  --stage-lead-bg: rgba(150, 150, 140, 0.16);
+  --stage-lead-fg: #C9C9BE;
+  --stage-trial-bg: rgba(111, 160, 216, 0.18);
+  --stage-trial-fg: #8FB8E8;
+  --stage-active-bg: rgba(143, 191, 134, 0.18);
+  --stage-active-fg: #A9D49E;
+  --stage-at-risk-bg: rgba(224, 164, 104, 0.18);
+  --stage-at-risk-fg: #E8B77E;
+  --stage-churned-bg: rgba(212, 122, 96, 0.18);
+  --stage-churned-fg: #E29B82;
+  --stage-winback-bg: rgba(169, 138, 209, 0.18);
+  --stage-winback-fg: #C4A8E8;
 
   /* Sidebar */
   --color-sidebar-bg: #1A1A1A;
