@@ -45,12 +45,15 @@ export function Reports() {
                   <button
                     key={report.id}
                     type="button"
-                    style={styles.tile}
-                    onClick={() => navigate(`/reports/run/${report.id}`)}
+                    disabled={report.comingSoon}
+                    aria-disabled={report.comingSoon}
+                    style={{ ...styles.tile, ...(report.comingSoon ? styles.tileDisabled : {}) }}
+                    onClick={report.comingSoon ? undefined : () => navigate(`/reports/run/${report.id}`)}
                   >
                     <span style={styles.tileIcon} aria-hidden="true">{report.icon}</span>
                     <span style={styles.tileTitle}>{report.title}</span>
                     <span style={styles.tileDescription}>{report.description}</span>
+                    {report.comingSoon && <span style={styles.comingSoonBadge}>Coming soon</span>}
                   </button>
                 ))}
               </div>
@@ -91,7 +94,26 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'var(--font-family)',
     transition: 'border-color var(--duration-fast) var(--ease-default)',
   },
+  tileDisabled: {
+    cursor: 'default',
+    opacity: 0.55,
+    background: 'var(--color-surface-hover)',
+    borderStyle: 'dashed',
+  },
   tileIcon: { fontSize: '24px' },
   tileTitle: { fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
   tileDescription: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
+  comingSoonBadge: {
+    marginTop: '6px',
+    alignSelf: 'flex-start',
+    fontSize: '10px',
+    fontWeight: 'var(--font-weight-bold)' as any,
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    color: 'var(--color-text-secondary)',
+    background: 'var(--color-surface)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-sm)',
+    padding: '2px 6px',
+  },
 };
