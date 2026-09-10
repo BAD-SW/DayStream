@@ -1,0 +1,343 @@
+import { useMemo, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import type { ReportRunResult, ReportExportFormat } from '@daystream/shared';
+import { Button } from '../../design-system/components/actions/Button';
+import { Table } from '../../design-system/components/data/Table';
+import { useContextManager } from '../../context/ContextManager';
+import * as reportsApi from '../../api/reports';
+import { REPORT_CATALOG } from './reportCatalog';
+import { formatReportValue, columnAlign, isNumericType } from './reportFormat';
+
+function findCatalogEntry(reportId: string) {
+  for (const category of REPORT_CATALOG) {
+    const entry = category.reports.find((r) => r.id === reportId);
+    if (entry) return entry;
+  }
+  return null;
+}
+
+function isoDaysAgo(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+function isoToday(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function ReportRunner() {
+  const { reportId = '' } = useParams();
+  const navigate = useNavigate();
+  const { activeContext } = useContextManager();
+  const businessId = activeContext.businessId;
+
+  const entry = findCatalogEntry(reportId);
+
+  const [fromDate, setFromDate] = useState<string>(isoDaysAgo(29));
+  const [toDate, setToDate] = useState<string>(isoToday());
+  const [result, setResult] = useState<ReportRunResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState<ReportExportFormat | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [groupBy, setGroupBy] = useState<string[]>([]);
+
+  const rangeInvalid = !fromDate || !toDate || fromDate > toDate;
+
+  const groupableColumns = result?.columns.filter((c) => c.groupable) ?? [];
+
+  function toggleGroupBy(key: string) {
+    setGroupBy((g) => (g.includes(key) ? g.filter((k) => k !== key) : [...g, key]));
+  }
+
+  async function handleRun() {
+    if (rangeInvalid) {
+      setErrorMsg('Please choose a From date on or before the To date.');
+      return;
+    }
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      const data = await reportsApi.runReport(reportId, { start_date: fromDate, end_date: toDate });
+      setResult(data);
+      setFilters({});
+      setGroupBy([]);
+    } catch {
+      setErrorMsg('Failed to run report. Check that a business is selected and try again.');
+      setResult(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleExport(format: ReportExportFormat) {
+    if (rangeInvalid) return;
+    setExporting(format);
+    try {
+      const blob = await reportsApi.exportRunReport(reportId, format, { start_date: fromDate, end_date: toDate });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${reportId}_${fromDate}_${toDate}.${format}`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setErrorMsg(`Failed to export ${format.toUpperCase()}.`);
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  // Client-side per-column filtering over the returned rows.
+  const filteredRows = useMemo(() => {
+    if (!result) return [];
+    const active = Object.entries(filters).filter(([, v]) => v.trim() !== '');
+    if (active.length === 0) return result.rows;
+    return result.rows.filter((row) =>
+      active.every(([key, val]) => {
+        const cell = row[key];
+        if (cell == null) return false;
+        return String(cell).toLowerCase().includes(val.trim().toLowerCase());
+      }),
+    );
+  }, [result, filters]);
+
+  // Totals recomputed from the currently filtered rows.
+  const filteredTotals = useMemo(() => {
+    if (!result) return {};
+    const totals: Record<string, number> = {};
+    for (const col of result.columns) {
+      if (col.total && isNumericType(col.type)) {
+        totals[col.key] = filteredRows.reduce((sum, row) => sum + (Number(row[col.key]) || 0), 0);
+      }
+    }
+    return totals;
+  }, [result, filteredRows]);
+
+  // Grouped view: sections keyed by the selected group-by column values, each
+  // with its own subtotals. Only active when at least one groupable column is selected.
+  const groups = useMemo(() => {
+    if (!result || groupBy.length === 0) return null;
+    const totalCols = result.columns.filter((c) => c.total && isNumericType(c.type));
+    const map = new Map<string, { label: string; rows: Record<string, any>[]; subtotals: Record<string, number> }>();
+    for (const row of filteredRows) {
+      const label = groupBy.map((k) => String(row[k] ?? '—')).join(' · ');
+      let g = map.get(label);
+      if (!g) {
+        g = { label, rows: [], subtotals: {} };
+        for (const col of totalCols) g.subtotals[col.key] = 0;
+        map.set(label, g);
+      }
+      g.rows.push(row);
+      for (const col of totalCols) g.subtotals[col.key] += Number(row[col.key]) || 0;
+    }
+    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [result, filteredRows, groupBy]);
+
+  const columns = useMemo(() => {
+    if (!result) return [];
+    const currency = result.meta.currency;
+    return result.columns.map((col) => ({
+      key: col.key,
+      header: col.header,
+      sortable: true,
+      width: col.width,
+      render: (value: any) => (
+        <span style={{ display: 'block', textAlign: columnAlign(col) }}>
+          {formatReportValue(value, col.type, currency)}
+        </span>
+      ),
+    }));
+  }, [result]);
+
+  if (!entry) {
+    return (
+      <div style={styles.page}>
+        <Button variant="ghost" onClick={() => navigate('/reports')}>← Reports</Button>
+        <p style={styles.errorText}>Unknown report: {reportId}</p>
+      </div>
+    );
+  }
+
+  const hasTotals = result?.columns.some((c) => c.total) ?? false;
+
+  const filterRow = result ? (
+    <>
+      {result.columns.map((col) => (
+        <th key={col.key} style={styles.filterCell}>
+          {col.filterable ? (
+            <input
+              type="text"
+              value={filters[col.key] || ''}
+              placeholder="Filter…"
+              onChange={(e) => setFilters((f) => ({ ...f, [col.key]: e.target.value }))}
+              style={styles.filterInput}
+              aria-label={`Filter by ${col.header}`}
+            />
+          ) : null}
+        </th>
+      ))}
+    </>
+  ) : undefined;
+
+  return (
+    <div style={styles.page}>
+      <div style={styles.headerRow}>
+        <div>
+          <Button variant="ghost" onClick={() => navigate('/reports')}>← Reports</Button>
+          <h1 style={styles.title}>{entry.title}</h1>
+          <p style={styles.description}>{entry.description}</p>
+        </div>
+      </div>
+
+      <div style={styles.controlBar}>
+        <div style={styles.dateField}>
+          <label htmlFor="report-from" style={styles.dateLabel}>From</label>
+          <input
+            id="report-from"
+            type="date"
+            value={fromDate}
+            max={toDate || undefined}
+            onChange={(e) => setFromDate(e.target.value)}
+            style={styles.dateInput}
+          />
+        </div>
+        <div style={styles.dateField}>
+          <label htmlFor="report-to" style={styles.dateLabel}>To</label>
+          <input
+            id="report-to"
+            type="date"
+            value={toDate}
+            min={fromDate || undefined}
+            onChange={(e) => setToDate(e.target.value)}
+            style={styles.dateInput}
+          />
+        </div>
+        <Button variant="primary" onClick={handleRun} loading={loading} disabled={!businessId || rangeInvalid}>
+          Run
+        </Button>
+        {result && groupableColumns.length > 0 && (
+          <div style={styles.groupInline}>
+            <span style={styles.groupBarLabel}>Group by</span>
+            {groupableColumns.map((col) => (
+              <label key={col.key} style={styles.groupCheck}>
+                <input
+                  type="checkbox"
+                  checked={groupBy.includes(col.key)}
+                  onChange={() => toggleGroupBy(col.key)}
+                />
+                {col.header}
+              </label>
+            ))}
+          </div>
+        )}
+        <div style={styles.spacer} />
+        <Button variant="outline" onClick={() => handleExport('csv')} loading={exporting === 'csv'} disabled={!result}>
+          Save as CSV
+        </Button>
+        <Button variant="outline" onClick={() => handleExport('pdf')} loading={exporting === 'pdf'} disabled={!result}>
+          Save as PDF
+        </Button>
+      </div>
+
+      {!businessId && (
+        <p style={styles.hint}>Select a business to run this report.</p>
+      )}
+      {errorMsg && <p style={styles.errorText}>{errorMsg}</p>}
+
+      {result && (
+        <div style={styles.tableCard}>
+          <div style={styles.resultMeta}>
+            <span>{result.meta.businessName}</span>
+            <span>
+              {filteredRows.length} of {result.rows.length} rows · {result.meta.dateRange.start} to {result.meta.dateRange.end}
+            </span>
+          </div>
+
+          {groups ? (
+            <>
+              {groups.map((g) => (
+                <div key={g.label} style={styles.groupSection}>
+                  <div style={styles.groupHeader}>{g.label} <span style={styles.groupCount}>({g.rows.length})</span></div>
+                  <Table
+                    columns={columns}
+                    data={g.rows}
+                    clientSort
+                    emptyMessage="No rows"
+                  />
+                  {hasTotals && (
+                    <div style={styles.subtotalRow}>
+                      {result.columns.map((col, idx) => (
+                        <span key={col.key} style={{ ...styles.totalCell, textAlign: columnAlign(col), flex: 1 }}>
+                          {idx === 0
+                            ? 'Subtotal'
+                            : col.total && g.subtotals[col.key] != null
+                              ? formatReportValue(g.subtotals[col.key], col.type, result.meta.currency)
+                              : ''}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </>
+          ) : (
+            <Table
+              columns={columns}
+              data={filteredRows}
+              clientSort
+              filterRow={filterRow}
+              emptyMessage="No data for the selected range"
+            />
+          )}
+
+          {hasTotals && filteredRows.length > 0 && (
+            <div style={styles.totalsRow}>
+              {result.columns.map((col, idx) => (
+                <span key={col.key} style={{ ...styles.totalCell, textAlign: columnAlign(col), flex: 1 }}>
+                  {idx === 0
+                    ? 'Grand Total'
+                    : col.total && filteredTotals[col.key] != null
+                      ? formatReportValue(filteredTotals[col.key], col.type, result.meta.currency)
+                      : ''}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!result && !loading && businessId && (
+        <p style={styles.hint}>Choose a date range and select Run to generate the report.</p>
+      )}
+    </div>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  page: { padding: 'var(--space-lg)' },
+  headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-md)' },
+  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 'var(--space-sm) 0 0' },
+  description: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', margin: '4px 0 0' },
+  controlBar: { display: 'flex', alignItems: 'flex-end', gap: 'var(--space-md)', marginBottom: 'var(--space-md)', flexWrap: 'wrap' },
+  dateField: { display: 'flex', flexDirection: 'column', gap: '4px' },
+  dateLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-medium)' as any },
+  dateInput: { fontSize: 'var(--font-size-sm)', padding: '7px 9px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
+  spacer: { flex: 1 },
+  hint: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' },
+  errorText: { color: 'var(--color-danger, #b3261e)', fontSize: 'var(--font-size-sm)' },
+  tableCard: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
+  resultMeta: { display: 'flex', justifyContent: 'space-between', padding: 'var(--space-sm) var(--space-md)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' },
+  filterCell: { padding: '4px var(--space-md)', borderBottom: '1px solid var(--color-border)' },
+  filterInput: { width: '100%', fontSize: 'var(--font-size-xs)', padding: '4px 6px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-surface)', color: 'var(--color-text)' },
+  totalsRow: { display: 'flex', padding: 'var(--space-sm) var(--space-md)', borderTop: '2px solid var(--color-border)', background: 'var(--color-surface-hover)', fontWeight: 'var(--font-weight-bold)' as any, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
+  totalCell: { padding: '0 var(--space-md)' },
+  groupInline: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', paddingBottom: '7px', marginLeft: '10px' },
+  groupBarLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-bold)' as any, textTransform: 'uppercase', letterSpacing: '0.04em' },
+  groupCheck: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', cursor: 'pointer' },
+  groupSection: { borderBottom: '1px solid var(--color-border)' },
+  groupHeader: { padding: 'var(--space-sm) var(--space-md)', background: 'var(--color-surface-hover)', fontWeight: 'var(--font-weight-bold)' as any, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
+  groupCount: { color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-medium)' as any, fontSize: 'var(--font-size-xs)' },
+  subtotalRow: { display: 'flex', padding: '6px var(--space-md)', background: 'var(--color-surface)', fontWeight: 'var(--font-weight-medium)' as any, fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderTop: '1px solid var(--color-border)' },
+};

@@ -1,61 +1,97 @@
-import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button } from '../design-system/components/actions/Button';
-import * as reportsApi from '../api/reports';
+import { useAuth } from '../context/AuthContext';
+import { getPermissionsFromRole } from '../context/ContextManager';
+import { REPORT_CATALOG, ReportCatalogEntry } from './reports/reportCatalog';
+
+function matchPermission(userPerm: string, required: string): boolean {
+  if (userPerm === '*:*') return true;
+  if (userPerm === required) return true;
+  const [ur, ua] = userPerm.split(':');
+  const [rr] = required.split(':');
+  return ur === rr && ua === '*';
+}
 
 export function Reports() {
   const navigate = useNavigate();
-  const [dashboard, setDashboard] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const permissions = getPermissionsFromRole(user?.role || '');
 
-  useEffect(() => {
-    reportsApi.getDashboard().then(setDashboard).catch(() => {}).finally(() => setLoading(false));
-  }, []);
-
-  const reportPages = [
-    { path: '/reports/revenue', label: 'Revenue', icon: '💰' },
-    { path: '/reports/bookings', label: 'Bookings', icon: '📅' },
-    { path: '/reports/memberships', label: 'Memberships', icon: '🎫' },
-    { path: '/reports/staff', label: 'Staff', icon: '👥' },
-    { path: '/reports/resources', label: 'Resources', icon: '🏢' },
-    { path: '/reports/customers', label: 'Customers', icon: '🧑' },
-    { path: '/reports/marketing', label: 'Marketing', icon: '📧' },
-    { path: '/reports/financial', label: 'Financial', icon: '📊' },
-  ];
+  function canView(entry: ReportCatalogEntry): boolean {
+    const required = entry.permission || 'reports:read';
+    return permissions.some((p) => matchPermission(p, required));
+  }
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Reports & Analytics</h1>
-        <Button variant="ghost" onClick={() => navigate('/reports/scheduled')}>Scheduled Reports</Button>
-      </div>
+    <div style={styles.page}>
+      <h1 style={styles.pageTitle}>Reports &amp; Analytics</h1>
+      <p style={styles.pageSubtitle}>Run detailed reports over any date range, filter on screen, and save as PDF or CSV.</p>
 
-      {/* KPI Cards */}
-      {loading ? <div>Loading...</div> : dashboard?.widgets && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {dashboard.widgets.slice(0, 4).map((w: any) => (
-            <div key={w.id} className="border rounded-lg p-4">
-              <div className="text-sm text-gray-500">{w.title}</div>
-              <div className="text-2xl font-bold mt-1">
-                {w.data?.length > 0 ? w.data[w.data.length - 1]?.metric_value ?? '—' : '—'}
+      <div style={styles.categories}>
+        {REPORT_CATALOG.map((category) => {
+          const visibleReports = category.reports.filter(canView);
+          if (visibleReports.length === 0) return null;
+
+          return (
+            <section
+              key={category.id}
+              style={{ ...styles.category, ['--group-accent' as any]: category.accentColor }}
+            >
+              <div style={styles.categoryHeader}>
+                <span style={{ ...styles.accentBar, background: category.accentColor }} aria-hidden="true" />
+                <h2 style={styles.categoryLabel}>{category.label}</h2>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Report Navigation */}
-      <h2 className="text-lg font-medium mb-4">Reports</h2>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {reportPages.map((r) => (
-          <div key={r.path}
-            className="border rounded-lg p-4 cursor-pointer hover:border-blue-300 transition text-center"
-            onClick={() => navigate(r.path)}>
-            <div className="text-2xl mb-2">{r.icon}</div>
-            <div className="font-medium">{r.label}</div>
-          </div>
-        ))}
+              <div style={styles.tileGrid}>
+                {visibleReports.map((report) => (
+                  <button
+                    key={report.id}
+                    type="button"
+                    style={styles.tile}
+                    onClick={() => navigate(`/reports/run/${report.id}`)}
+                  >
+                    <span style={styles.tileIcon} aria-hidden="true">{report.icon}</span>
+                    <span style={styles.tileTitle}>{report.title}</span>
+                    <span style={styles.tileDescription}>{report.description}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          );
+        })}
       </div>
     </div>
   );
 }
+
+const styles: Record<string, React.CSSProperties> = {
+  page: { padding: 'var(--space-lg)' },
+  pageTitle: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
+  pageSubtitle: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', margin: '4px 0 var(--space-lg)' },
+  categories: { display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' },
+  category: {
+    background: 'var(--color-surface)',
+    border: '1px solid var(--color-border)',
+    borderLeft: '4px solid var(--group-accent, var(--color-primary))',
+    borderRadius: 'var(--radius-md)',
+    padding: 'var(--space-md)',
+  },
+  categoryHeader: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' },
+  accentBar: { width: '10px', height: '10px', borderRadius: '3px', display: 'inline-block' },
+  categoryLabel: { fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
+  tileGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 'var(--space-md)' },
+  tile: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    textAlign: 'left',
+    padding: 'var(--space-md)',
+    background: 'var(--color-surface)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-family)',
+    transition: 'border-color var(--duration-fast) var(--ease-default)',
+  },
+  tileIcon: { fontSize: '24px' },
+  tileTitle: { fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
+  tileDescription: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
+};

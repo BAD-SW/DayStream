@@ -13,3 +13,19 @@ export async function getScheduledReports() { const r = await apiClient.get('/v1
 export async function createScheduledReport(data: Record<string, any>) { const r = await apiClient.post('/v1/reports/scheduled', data); return r.data.data; }
 export async function triggerAggregation(date?: string) { const r = await apiClient.post('/v1/reports/aggregate', { date }); return r.data.data; }
 export async function exportReport(type: string, params?: Record<string, any>) { const r = await apiClient.get(`/v1/reports/${type}/export`, { params }); return r.data; }
+
+// --- Report Framework (generic run + export by report id) ---
+import type { ReportRunResult, ReportExportFormat } from '@daystream/shared';
+
+export async function runReport(reportId: string, params: { start_date: string; end_date: string }): Promise<ReportRunResult> {
+  const r = await apiClient.get(`/v1/reports/run/${reportId}`, { params });
+  return r.data.data;
+}
+
+export async function exportRunReport(reportId: string, format: ReportExportFormat, params: { start_date: string; end_date: string }): Promise<Blob> {
+  const r = await apiClient.get(`/v1/reports/run/${reportId}/export`, {
+    params: { ...params, format },
+    responseType: 'blob',
+  });
+  return r.data;
+}

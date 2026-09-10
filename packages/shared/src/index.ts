@@ -19,6 +19,14 @@ export type {
   ContextSwitchAuditEntry,
   ContextState,
 } from './types/context';
+export type {
+  ReportColumn,
+  ReportColumnType,
+  ReportColumnAlign,
+  ReportRunMeta,
+  ReportRunResult,
+  ReportExportFormat,
+} from './reports/types';
 
 // Constants
 export { USER_ROLES, PERSONAS } from './constants/roles';

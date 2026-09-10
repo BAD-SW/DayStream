@@ -68,6 +68,7 @@ import { SequenceCreate } from './pages/SequenceCreate';
 import { SequenceDetail } from './pages/SequenceDetail';
 import { Reports } from './pages/Reports';
 import { ReportView } from './pages/ReportView';
+import { ReportRunner } from './pages/reports/ReportRunner';
 import { ScheduledReports } from './pages/ScheduledReports';
 import { CMS } from './pages/CMS';
 import { CMSBlog } from './pages/CMSBlog';
@@ -178,6 +179,7 @@ export function App() {
 
         {/* Reports */}
         <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+        <Route path="/reports/run/:reportId" element={<ProtectedRoute><ReportRunner /></ProtectedRoute>} />
         <Route path="/reports/revenue" element={<ProtectedRoute><ReportView /></ProtectedRoute>} />
         <Route path="/reports/bookings" element={<ProtectedRoute><ReportView /></ProtectedRoute>} />
         <Route path="/reports/memberships" element={<ProtectedRoute><ReportView /></ProtectedRoute>} />

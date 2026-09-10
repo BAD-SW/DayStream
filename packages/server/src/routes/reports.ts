@@ -13,10 +13,76 @@ import * as customersService from '../services/report-customers.service';
 import * as financialService from '../services/report-financial.service';
 import * as schedulingService from '../services/report-scheduling.service';
 import * as exportService from '../services/report-export.service';
+import { getReportDefinition } from '../services/reports/registry';
+import { runReport } from '../services/reports/run.service';
+import { toCsv, toPdf, exportFilename } from '../services/reports/export.service';
 
 export const reportsRouter = Router();
 reportsRouter.use(authenticate);
 reportsRouter.use(tenantContext);
+
+// --- Report Framework (generic run + export, keyed by report id) ---
+
+/** Resolve the business id the same way business-scoped report routes do. */
+function resolveBusinessId(req: Request): string | null {
+  return (req.headers['x-business-id'] as string)
+    || (req.query.business_id as string)
+    || null;
+}
+
+function resolveDateRange(req: Request): { start: string; end: string } {
+  const start = (req.query.start_date as string) || new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+  const end = (req.query.end_date as string) || new Date().toISOString().split('T')[0];
+  return { start, end };
+}
+
+reportsRouter.get('/run/:reportId', requirePermission('reports:read'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const definition = getReportDefinition(req.params.reportId);
+    if (!definition) { error(res, 'Unknown report', 'NOT_FOUND', 404); return; }
+
+    const businessId = resolveBusinessId(req);
+    if (!businessId) { error(res, 'Business ID is required', 'MISSING_BUSINESS_ID', 400); return; }
+
+    const { start, end } = resolveDateRange(req);
+    const result = await runReport(definition, { tenantId: authReq.tenantId, businessId, start, end });
+    success(res, result);
+  } catch (err: any) {
+    error(res, 'Failed to run report', 'INTERNAL_ERROR', 500);
+  }
+});
+
+reportsRouter.get('/run/:reportId/export', requirePermission('reports:read'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const definition = getReportDefinition(req.params.reportId);
+    if (!definition) { error(res, 'Unknown report', 'NOT_FOUND', 404); return; }
+
+    const format = (req.query.format as string) || 'csv';
+    if (format !== 'csv' && format !== 'pdf') { error(res, 'Unsupported format', 'BAD_REQUEST', 400); return; }
+
+    const businessId = resolveBusinessId(req);
+    if (!businessId) { error(res, 'Business ID is required', 'MISSING_BUSINESS_ID', 400); return; }
+
+    const { start, end } = resolveDateRange(req);
+    const result = await runReport(definition, { tenantId: authReq.tenantId, businessId, start, end });
+    const filename = exportFilename(result, format);
+
+    if (format === 'pdf') {
+      const buffer = await toPdf(result);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(buffer);
+    } else {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(toCsv(result));
+    }
+  } catch (err: any) {
+    error(res, 'Failed to export report', 'INTERNAL_ERROR', 500);
+  }
+});
 
 // --- Dashboard ---
 reportsRouter.get('/dashboard', requirePermission('reports:read'), async (req: Request, res: Response) => {
