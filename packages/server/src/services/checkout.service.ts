@@ -128,19 +128,24 @@ export async function addItem(orderId: string, input: AddItemInput) {
   const netAmount = grossAmount - discount;
 
   let taxAmount = 0;
+  let taxCategoryId: string | null = null;
+  let taxRate: number | null = null;
   if (input.taxAmount !== undefined) {
     taxAmount = input.taxAmount;
   } else if (input.itemId) {
-    taxAmount = await calculateTaxOnAmount(input.itemType, input.itemId, netAmount);
+    const applied = await calculateTaxOnAmount(input.itemType, input.itemId, netAmount);
+    taxAmount = applied.amount;
+    taxCategoryId = applied.taxCategoryId;
+    taxRate = applied.rate;
   }
 
   const totalPrice = netAmount + taxAmount;
 
   const { rows } = await adminPool.query(
-    `INSERT INTO fin_order_items (order_id, item_type, item_id, item_name, variant_id, variant_name, quantity, unit_price, discount_amount, tax_amount, total_price, credited_to, booking_id, notes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
+    `INSERT INTO fin_order_items (order_id, item_type, item_id, item_name, variant_id, variant_name, quantity, unit_price, discount_amount, tax_amount, tax_category_id, tax_rate, total_price, credited_to, booking_id, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING *`,
     [orderId, input.itemType, input.itemId || null, input.itemName, input.variantId || null, input.variantName || null,
-     input.quantity, unitPrice, discount, taxAmount, totalPrice,
+     input.quantity, unitPrice, discount, taxAmount, taxCategoryId, taxRate, totalPrice,
      input.creditedTo || null, input.bookingId || null, itemNotes],
   );
 
@@ -168,8 +173,13 @@ export async function updateItem(itemId: string, orderId: string, updates: Parti
 
   // Recalculate tax on the new net amount
   let tax = item.tax_amount;
+  let taxCategoryId = item.tax_category_id;
+  let taxRate = item.tax_rate;
   if (updates.quantity !== undefined || updates.unitPrice !== undefined || updates.discountAmount !== undefined) {
-    tax = await calculateTaxOnAmount(item.item_type, item.item_id, netAmount);
+    const applied = await calculateTaxOnAmount(item.item_type, item.item_id, netAmount);
+    tax = applied.amount;
+    taxCategoryId = applied.taxCategoryId;
+    taxRate = applied.rate;
   } else if (updates.taxAmount !== undefined) {
     tax = updates.taxAmount;
   }
@@ -179,11 +189,11 @@ export async function updateItem(itemId: string, orderId: string, updates: Parti
   const { rows } = await adminPool.query(
     `UPDATE fin_order_items SET
        quantity = $1, unit_price = $2, discount_amount = $3, tax_amount = $4, total_price = $5,
-       credited_to = $6, notes = $7
-     WHERE id = $8 RETURNING *`,
+       credited_to = $6, notes = $7, tax_category_id = $8, tax_rate = $9
+     WHERE id = $10 RETURNING *`,
     [quantity, unitPrice, discount, tax, totalPrice,
      updates.creditedTo !== undefined ? updates.creditedTo || null : item.credited_to,
-     updates.notes !== undefined ? updates.notes : item.notes, itemId],
+     updates.notes !== undefined ? updates.notes : item.notes, taxCategoryId, taxRate, itemId],
   );
 
   await recalculateOrderTotals(orderId);
@@ -386,13 +396,14 @@ export async function applyPromoCode(orderId: string, businessId: string, promoC
     const netAmount = qi.grossAmount - itemDiscount;
 
     // Recalculate tax on the net amount using this item's own rate
-    const tax = await calculateTaxOnAmount(qi.itemType, qi.itemId, netAmount);
+    const applied = await calculateTaxOnAmount(qi.itemType, qi.itemId, netAmount);
+    const tax = applied.amount;
     const totalPrice = netAmount + tax;
 
     // Update the line item
     await adminPool.query(
-      `UPDATE fin_order_items SET discount_amount = $1, tax_amount = $2, total_price = $3 WHERE id = $4`,
-      [itemDiscount, tax, totalPrice, qi.id],
+      `UPDATE fin_order_items SET discount_amount = $1, tax_amount = $2, total_price = $3, tax_category_id = $4, tax_rate = $5 WHERE id = $6`,
+      [itemDiscount, tax, totalPrice, applied.taxCategoryId, applied.rate, qi.id],
     );
   }
 
@@ -425,11 +436,12 @@ export async function removePromoCode(orderId: string, businessId: string) {
   for (const item of items) {
     if (item.discount_amount !== 0) {
       const grossAmount = item.unit_price * item.quantity;
-      const tax = await calculateTaxOnAmount(item.item_type, item.item_id, grossAmount);
+      const applied = await calculateTaxOnAmount(item.item_type, item.item_id, grossAmount);
+      const tax = applied.amount;
       const totalPrice = grossAmount + tax;
       await adminPool.query(
-        `UPDATE fin_order_items SET discount_amount = 0, tax_amount = $1, total_price = $2 WHERE id = $3`,
-        [tax, totalPrice, item.id],
+        `UPDATE fin_order_items SET discount_amount = 0, tax_amount = $1, total_price = $2, tax_category_id = $3, tax_rate = $4 WHERE id = $5`,
+        [tax, totalPrice, applied.taxCategoryId, applied.rate, item.id],
       );
     }
   }
@@ -550,8 +562,15 @@ export async function getOrders(businessId: string, filters?: {
 /**
  * Calculate tax for an item based on its tax category rate, applied to a given net amount.
  */
-async function calculateTaxOnAmount(itemType: string, itemId: string | null, netAmount: number): Promise<number> {
-  if (!itemId || netAmount <= 0) return 0;
+/** Tax applied to a line, with the category and rate captured as-charged for audit. */
+interface AppliedTax {
+  amount: number;              // cents
+  taxCategoryId: string | null;
+  rate: number | null;         // basis points (2100 = 21%)
+}
+
+async function calculateTaxOnAmount(itemType: string, itemId: string | null, netAmount: number): Promise<AppliedTax> {
+  if (!itemId || netAmount <= 0) return { amount: 0, taxCategoryId: null, rate: null };
 
   let taxCategoryId: string | null = null;
 
@@ -569,20 +588,22 @@ async function calculateTaxOnAmount(itemType: string, itemId: string | null, net
     if (rows.length > 0) taxCategoryId = rows[0].tax_category_id;
   }
 
-  if (!taxCategoryId) return 0;
+  if (!taxCategoryId) return { amount: 0, taxCategoryId: null, rate: null };
 
   const { rows: taxRows } = await adminPool.query('SELECT rate FROM svc_tax_categories WHERE id = $1', [taxCategoryId]);
-  if (taxRows.length === 0) return 0;
+  if (taxRows.length === 0) return { amount: 0, taxCategoryId: null, rate: null };
 
   const rate = taxRows[0].rate; // basis points (2100 = 21%)
-  return Math.round(netAmount * rate / 10000);
+  return { amount: Math.round(netAmount * rate / 10000), taxCategoryId, rate };
 }
 
 /**
  * Calculate tax for an item using unit_price * quantity (for addItem when no discount yet).
+ * Returns only the amount, for callers that just need the number.
  */
 export async function calculateTaxForItem(itemType: string, itemId: string | null, unitPrice: number, quantity: number): Promise<number> {
-  return calculateTaxOnAmount(itemType, itemId, unitPrice * quantity);
+  const { amount } = await calculateTaxOnAmount(itemType, itemId, unitPrice * quantity);
+  return amount;
 }
 
 /**

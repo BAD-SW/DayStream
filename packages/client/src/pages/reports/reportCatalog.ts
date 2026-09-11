@@ -38,7 +38,7 @@ export const REPORT_CATALOG: ReportCategory[] = [
       { id: 'revenue', title: 'Revenue', description: 'Posted revenue by transaction, item, and customer', icon: '💰' },
       { id: 'payments-received', title: 'Payments Received', description: 'Payments and refunds from checkout and recorded entries', icon: '🧾' },
       { id: 'outstanding-invoices', title: 'Outstanding Invoices', description: 'Unpaid and overdue balances', icon: '📄', comingSoon: true },
-      { id: 'tax-summary', title: 'Tax Summary', description: 'Tax collected by rate and period', icon: '🏛️', comingSoon: true },
+      { id: 'tax-summary', title: 'Tax Summary', description: 'Sales tax collected by category and rate', icon: '🏛️' },
     ],
   },
   {

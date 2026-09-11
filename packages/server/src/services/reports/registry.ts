@@ -1,6 +1,7 @@
 import { ReportDefinition } from './types';
 import { revenueReport } from './definitions/revenue.report';
 import { paymentsReceivedReport } from './definitions/payments-received.report';
+import { taxSummaryReport } from './definitions/tax-summary.report';
 
 /**
  * Central registry of report definitions. Adding a new report is a matter of
@@ -10,6 +11,7 @@ import { paymentsReceivedReport } from './definitions/payments-received.report';
 const DEFINITIONS: Record<string, ReportDefinition> = {
   [revenueReport.id]: revenueReport,
   [paymentsReceivedReport.id]: paymentsReceivedReport,
+  [taxSummaryReport.id]: taxSummaryReport,
 };
 
 export function getReportDefinition(id: string): ReportDefinition | null {
