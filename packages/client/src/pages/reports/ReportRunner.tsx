@@ -138,11 +138,20 @@ export function ReportRunner() {
   const columns = useMemo(() => {
     if (!result) return [];
     const currency = result.meta.currency;
+    // Proportional column weights by type, so every group table (fixed layout)
+    // shares identical column widths and lines up down the page.
+    const weightFor = (col: typeof result.columns[number]) => {
+      if (col.type === 'currency' || col.type === 'number' || col.type === 'percent') return 1;
+      if (col.type === 'date') return 1;
+      return 2; // text columns get more room
+    };
+    const totalWeight = result.columns.reduce((sum, c) => sum + weightFor(c), 0);
     return result.columns.map((col) => ({
       key: col.key,
       header: col.header,
       sortable: true,
-      width: col.width,
+      width: col.width || `${((weightFor(col) / totalWeight) * 100).toFixed(2)}%`,
+      align: columnAlign(col),
       render: (value: any) => (
         <span style={{ display: 'block', textAlign: columnAlign(col) }}>
           {formatReportValue(value, col.type, currency)}
@@ -150,6 +159,22 @@ export function ReportRunner() {
       ),
     }));
   }, [result]);
+
+  // Build a footer-cells array (one per column, same order) for a totals row so
+  // it renders inside the table and shares the exact column widths.
+  function buildFooterCells(label: string, totals: Record<string, number>) {
+    if (!result) return [];
+    const currency = result.meta.currency;
+    return result.columns.map((col, idx) => ({
+      align: columnAlign(col),
+      content:
+        idx === 0
+          ? label
+          : col.total && totals[col.key] != null
+            ? formatReportValue(totals[col.key], col.type, currency)
+            : '',
+    }));
+  }
 
   if (!entry) {
     return (
@@ -257,53 +282,42 @@ export function ReportRunner() {
 
           {groups ? (
             <>
-              {groups.map((g) => (
-                <div key={g.label} style={styles.groupSection}>
-                  <div style={styles.groupHeader}>{g.label} <span style={styles.groupCount}>({g.rows.length})</span></div>
-                  <Table
-                    columns={columns}
-                    data={g.rows}
-                    clientSort
-                    emptyMessage="No rows"
-                  />
-                  {hasTotals && (
-                    <div style={styles.subtotalRow}>
-                      {result.columns.map((col, idx) => (
-                        <span key={col.key} style={{ ...styles.totalCell, textAlign: columnAlign(col), flex: 1 }}>
-                          {idx === 0
-                            ? 'Subtotal'
-                            : col.total && g.subtotals[col.key] != null
-                              ? formatReportValue(g.subtotals[col.key], col.type, result.meta.currency)
-                              : ''}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
+              {groups.map((g, groupIdx) => {
+                const isLast = groupIdx === groups.length - 1;
+                const footerRows = [];
+                if (hasTotals) {
+                  footerRows.push({ cells: buildFooterCells('Subtotal', g.subtotals) });
+                  // The grand total rides on the last group's table so it shares
+                  // that table's exact column widths and stays aligned.
+                  if (isLast && filteredRows.length > 0) {
+                    footerRows.push({ cells: buildFooterCells('Grand Total', filteredTotals), strong: true });
+                  }
+                }
+                return (
+                  <div key={g.label} style={styles.groupSection}>
+                    <div style={styles.groupHeader}>{g.label} <span style={styles.groupCount}>({g.rows.length})</span></div>
+                    <Table
+                      columns={columns}
+                      data={g.rows}
+                      clientSort
+                      fixedLayout
+                      emptyMessage="No rows"
+                      footerRows={footerRows.length > 0 ? footerRows : undefined}
+                    />
+                  </div>
+                );
+              })}
             </>
           ) : (
             <Table
               columns={columns}
               data={filteredRows}
               clientSort
+              fixedLayout
               filterRow={filterRow}
               emptyMessage="No data for the selected range"
+              footerRows={hasTotals && filteredRows.length > 0 ? [{ cells: buildFooterCells('Grand Total', filteredTotals), strong: true }] : undefined}
             />
-          )}
-
-          {hasTotals && filteredRows.length > 0 && (
-            <div style={styles.totalsRow}>
-              {result.columns.map((col, idx) => (
-                <span key={col.key} style={{ ...styles.totalCell, textAlign: columnAlign(col), flex: 1 }}>
-                  {idx === 0
-                    ? 'Grand Total'
-                    : col.total && filteredTotals[col.key] != null
-                      ? formatReportValue(filteredTotals[col.key], col.type, result.meta.currency)
-                      : ''}
-                </span>
-              ))}
-            </div>
           )}
         </div>
       )}
@@ -331,13 +345,10 @@ const styles: Record<string, React.CSSProperties> = {
   resultMeta: { display: 'flex', justifyContent: 'space-between', padding: 'var(--space-sm) var(--space-md)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' },
   filterCell: { padding: '4px var(--space-md)', borderBottom: '1px solid var(--color-border)' },
   filterInput: { width: '100%', fontSize: 'var(--font-size-xs)', padding: '4px 6px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-surface)', color: 'var(--color-text)' },
-  totalsRow: { display: 'flex', padding: 'var(--space-sm) var(--space-md)', borderTop: '2px solid var(--color-border)', background: 'var(--color-surface-hover)', fontWeight: 'var(--font-weight-bold)' as any, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
-  totalCell: { padding: '0 var(--space-md)' },
   groupInline: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', paddingBottom: '7px', marginLeft: '10px' },
   groupBarLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-bold)' as any, textTransform: 'uppercase', letterSpacing: '0.04em' },
   groupCheck: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', cursor: 'pointer' },
   groupSection: { borderBottom: '1px solid var(--color-border)' },
   groupHeader: { padding: 'var(--space-sm) var(--space-md)', background: 'var(--color-surface-hover)', fontWeight: 'var(--font-weight-bold)' as any, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
   groupCount: { color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-medium)' as any, fontSize: 'var(--font-size-xs)' },
-  subtotalRow: { display: 'flex', padding: '6px var(--space-md)', background: 'var(--color-surface)', fontWeight: 'var(--font-weight-medium)' as any, fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderTop: '1px solid var(--color-border)' },
 };

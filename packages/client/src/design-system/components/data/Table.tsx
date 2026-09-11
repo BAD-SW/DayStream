@@ -7,6 +7,8 @@ interface TableColumn<T> {
   sortable?: boolean;
   render?: (value: any, row: T) => ReactNode;
   width?: string;
+  /** Header text alignment. Defaults to left. */
+  align?: 'left' | 'right' | 'center';
 }
 
 interface TableProps<T> {
@@ -31,6 +33,20 @@ interface TableProps<T> {
   mobileCardMode?: boolean;
   /** Optional second header row (e.g. per-column filter inputs), one cell per column in the same order. */
   filterRow?: ReactNode;
+  /**
+   * Optional footer row (e.g. totals / subtotals). One entry per column in the
+   * same order; rendered as a real table row so it shares the column widths.
+   */
+  footerRows?: {
+    cells: { content: ReactNode; align?: 'left' | 'right' | 'center' }[];
+    strong?: boolean;
+  }[];
+  /**
+   * Use a fixed table layout so columns take their widths from the column
+   * definitions instead of their content. Needed when multiple tables must
+   * share identical column widths (e.g. grouped report sections).
+   */
+  fixedLayout?: boolean;
 }
 
 export function Table<T extends Record<string, any>>({
@@ -50,6 +66,8 @@ export function Table<T extends Record<string, any>>({
   rowId = (row) => row.id,
   mobileCardMode,
   filterRow,
+  footerRows,
+  fixedLayout,
 }: TableProps<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -108,7 +126,7 @@ export function Table<T extends Record<string, any>>({
     );
   }
 
-  if (data.length === 0 && !filterRow) {
+  if (data.length === 0 && !filterRow && !footerRows) {
     return <div style={styles.empty}>{emptyMessage}</div>;
   }
 
@@ -136,7 +154,7 @@ export function Table<T extends Record<string, any>>({
   return (
     <div>
       <div style={styles.wrapper}>
-        <table style={styles.table}>
+        <table style={{ ...styles.table, ...(fixedLayout ? { tableLayout: 'fixed' as const } : {}) }}>
           <thead>
             <tr>
               {selectable && (
@@ -152,7 +170,7 @@ export function Table<T extends Record<string, any>>({
               {columns.map((col) => (
                 <th
                   key={col.key}
-                  style={{ ...styles.th, width: col.width, cursor: col.sortable ? 'pointer' : 'default' }}
+                  style={{ ...styles.th, width: col.width, textAlign: col.align || 'left', cursor: col.sortable ? 'pointer' : 'default' }}
                   onClick={col.sortable ? () => handleSort(col.key) : undefined}
                   aria-sort={sortKey === col.key ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
                 >
@@ -212,6 +230,20 @@ export function Table<T extends Record<string, any>>({
               );
             })}
           </tbody>
+          {footerRows && footerRows.length > 0 && (
+            <tfoot>
+              {footerRows.map((fr, rowIdx) => (
+                <tr key={rowIdx} style={fr.strong ? styles.footerRowStrong : styles.footerRow}>
+                  {selectable && <td style={styles.footerCell} />}
+                  {fr.cells.map((cell, i) => (
+                    <td key={columns[i]?.key ?? i} style={{ ...styles.footerCell, textAlign: cell.align || 'left' }}>
+                      {cell.content}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tfoot>
+          )}
         </table>
       </div>
       {page && totalPages && onPageChange && renderPagination(page, totalPages, onPageChange)}
@@ -266,7 +298,10 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid var(--color-border)',
   },
   trSelected: { background: 'var(--color-surface-hover)' },
-  td: { padding: 'var(--space-md) var(--space-md)', color: 'var(--color-text)' },
+  td: { padding: 'var(--space-md) var(--space-md)', color: 'var(--color-text)', wordBreak: 'break-word' },
+  footerRow: { borderTop: '1px solid var(--color-border)', background: 'var(--color-surface)' },
+  footerRowStrong: { borderTop: '2px solid var(--color-border)', background: 'var(--color-surface-hover)' },
+  footerCell: { padding: 'var(--space-sm) var(--space-md)', color: 'var(--color-text)', fontWeight: 'var(--font-weight-bold)' as any, fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap' },
   sortIcon: { color: 'var(--color-text-disabled)', fontSize: '12px' },
   empty: { padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' },
   loading: { display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', padding: 'var(--space-md)' },

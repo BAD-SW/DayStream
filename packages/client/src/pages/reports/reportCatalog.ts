@@ -47,7 +47,7 @@ export const REPORT_CATALOG: ReportCategory[] = [
     accentColor: '#C77B3E',
     accentColorDark: '#E0A468',
     reports: [
-      { id: 'sales-by-item', title: 'Sales by Item', description: 'Gross sales grouped by item', icon: '🛒', comingSoon: true },
+      { id: 'sales-by-item', title: 'Sales by Item', description: 'Every item sold with quantity, gross, discount, and net', icon: '🛒' },
       { id: 'sales-by-staff', title: 'Sales by Staff', description: 'Sales attributed to each staff member', icon: '🧑‍💼', comingSoon: true },
       { id: 'discounts-promotions', title: 'Discounts & Promotions', description: 'Discount usage and impact', icon: '🏷️', comingSoon: true },
     ],

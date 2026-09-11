@@ -30,7 +30,8 @@ export function formatReportValue(
 /** Default column alignment derived from type unless explicitly overridden. */
 export function columnAlign(col: ReportColumn): 'left' | 'right' | 'center' {
   if (col.align) return col.align;
-  return col.type === 'currency' || col.type === 'number' ? 'right' : 'left';
+  // Numeric columns are centered so the header label and values line up.
+  return col.type === 'currency' || col.type === 'number' || col.type === 'percent' ? 'center' : 'left';
 }
 
 /** True for column types whose raw value should be compared numerically when filtering. */
