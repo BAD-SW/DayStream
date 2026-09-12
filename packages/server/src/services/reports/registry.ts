@@ -5,6 +5,7 @@ import { taxSummaryReport } from './definitions/tax-summary.report';
 import { salesByItemReport } from './definitions/sales-by-item.report';
 import { salesByStaffReport } from './definitions/sales-by-staff.report';
 import { discountsPromotionsReport } from './definitions/discounts-promotions.report';
+import { bookingsSummaryReport } from './definitions/bookings-summary.report';
 
 /**
  * Central registry of report definitions. Adding a new report is a matter of
@@ -18,6 +19,7 @@ const DEFINITIONS: Record<string, ReportDefinition> = {
   [salesByItemReport.id]: salesByItemReport,
   [salesByStaffReport.id]: salesByStaffReport,
   [discountsPromotionsReport.id]: discountsPromotionsReport,
+  [bookingsSummaryReport.id]: bookingsSummaryReport,
 };
 
 export function getReportDefinition(id: string): ReportDefinition | null {
