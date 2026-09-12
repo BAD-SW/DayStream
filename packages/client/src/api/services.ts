@@ -37,6 +37,7 @@ export interface ServiceVariant {
   capacity_override?: number;
   display_order: number;
   status: string;
+  no_show_fee?: number | null;
 }
 
 export interface ServiceImage {

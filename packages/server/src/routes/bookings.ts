@@ -448,7 +448,7 @@ bookingsRouter.put('/:id/no-show', requirePermission('bookings:*'), async (req: 
       error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INVALID_TRANSITION', status);
       return;
     }
-    success(res, result.booking);
+    success(res, { ...result.booking, no_show_fee: result.no_show_fee ?? 0 });
   } catch (err: any) {
     error(res, 'Failed to mark no-show', 'INTERNAL_ERROR', 500);
   }

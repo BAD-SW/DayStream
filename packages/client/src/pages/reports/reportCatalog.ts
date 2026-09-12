@@ -59,7 +59,7 @@ export const REPORT_CATALOG: ReportCategory[] = [
     accentColorDark: '#6FA0D8',
     reports: [
       { id: 'bookings-summary', title: 'Bookings Summary', description: 'Bookings by date with service, staff, status, and price', icon: '📅' },
-      { id: 'cancellations-no-shows', title: 'Cancellations & No-Shows', description: 'Missed and cancelled appointments', icon: '🚫', comingSoon: true },
+      { id: 'cancellations-no-shows', title: 'Cancellations & No-Shows', description: 'Missed and cancelled appointments with lost value', icon: '🚫' },
       { id: 'utilization-by-service', title: 'Utilization by Service', description: 'Capacity used per service', icon: '📊', comingSoon: true },
     ],
   },

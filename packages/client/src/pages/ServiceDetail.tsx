@@ -276,6 +276,7 @@ function VariantsCard({ service }: { service: Service; onUpdate: (s: Service) =>
               <div style={{ flex: 1 }}>
                 <strong>{v.name}</strong> — {v.duration} min — {formatCurrency(v.price)}
                 {v.pricing_model === 'subscription' && <Badge variant="info">{`Sub: ${v.billing_interval || 'monthly'}`}</Badge>}
+                {v.no_show_fee != null && v.no_show_fee > 0 && <Badge variant="neutral">{`No-show: ${formatCurrency(v.no_show_fee)}`}</Badge>}
               </div>
               <Badge variant={STATUS_VARIANTS[v.status] || 'neutral'}>{v.status}</Badge>
               <button style={styles.editBtn} onClick={() => { setEditingVariant(v); setShowModal(true); }} title="Edit">✏️</button>
@@ -306,8 +307,12 @@ function ServiceVariantModal({ serviceId, variant, onClose, onSaved }: { service
     pricing_model: variant?.pricing_model || 'per_session',
     billing_interval: variant?.billing_interval || 'monthly',
     included_sessions: variant?.included_sessions ? String(variant.included_sessions) : '',
+    no_show_fee: variant?.no_show_fee ?? null,
   });
   const [priceDisplay, setPriceDisplay] = useState(variant ? (variant.price / 100).toFixed(2) : '0.00');
+  const [noShowFeeDisplay, setNoShowFeeDisplay] = useState(
+    variant?.no_show_fee != null ? (variant.no_show_fee / 100).toFixed(2) : '',
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -322,6 +327,8 @@ function ServiceVariantModal({ serviceId, variant, onClose, onSaved }: { service
         data.billing_interval = form.billing_interval;
         data.included_sessions = form.included_sessions ? parseInt(form.included_sessions) : null;
       }
+      // No-show fee: blank = null (no fee); otherwise cents
+      data.no_show_fee = noShowFeeDisplay.trim() === '' ? null : Math.round(parseFloat(noShowFeeDisplay) * 100);
       if (variant) {
         await servicesApi.updateVariant(serviceId, variant.id, data);
       } else {
@@ -355,6 +362,13 @@ function ServiceVariantModal({ serviceId, variant, onClose, onSaved }: { service
             <input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay}
               onChange={(e) => setPriceDisplay(e.target.value)}
               onBlur={() => { const cents = Math.round(parseFloat(priceDisplay || '0') * 100); setForm({ ...form, price: cents }); setPriceDisplay((cents / 100).toFixed(2)); }}
+            />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>No-Show Fee (blank = none)</label>
+            <input style={styles.input} type="number" step="0.01" min="0" placeholder="0.00" value={noShowFeeDisplay}
+              onChange={(e) => setNoShowFeeDisplay(e.target.value)}
+              onBlur={() => { if (noShowFeeDisplay.trim() !== '') setNoShowFeeDisplay((Math.round(parseFloat(noShowFeeDisplay || '0') * 100) / 100).toFixed(2)); }}
             />
           </div>
           <div style={styles.formGroup}>

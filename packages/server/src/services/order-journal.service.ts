@@ -4,10 +4,11 @@ import { adminPool } from '../db/pool';
  * Account code mappings for item types.
  */
 const REVENUE_ACCOUNT_CODES: Record<string, string> = {
-  service: '4100',     // Service Revenue
-  product: '4300',     // Product Revenue
-  membership: '4200',  // Membership Revenue (used for recognition later)
-  package: '4500',     // Package Revenue (used for recognition later)
+  service: '4100',      // Service Revenue
+  product: '4300',      // Product Revenue
+  membership: '4200',   // Membership Revenue (used for recognition later)
+  package: '4500',      // Package Revenue (used for recognition later)
+  no_show_fee: '4600',  // No-Show Fee Revenue (immediate)
 };
 
 // Items that go to deferred revenue instead of direct revenue at point of sale

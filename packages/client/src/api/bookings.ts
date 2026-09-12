@@ -28,6 +28,7 @@ export interface Booking {
   created_at: string;
   recurring_series_id?: string;
   waitlist_entry_id?: string;
+  no_show_fee?: number | null;
 }
 
 export interface AvailableSlot {

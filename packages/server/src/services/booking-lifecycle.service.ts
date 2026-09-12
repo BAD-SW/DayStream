@@ -18,6 +18,7 @@ interface TransitionResult {
   booking?: any;
   error?: string;
   cancellation_fee?: number;
+  no_show_fee?: number;
 }
 
 /**
@@ -184,10 +185,53 @@ export async function completeBooking(bookingId: string, businessId: string, use
 }
 
 /**
- * Mark a booking as no-show.
+ * Mark a booking as no-show. If the booked variant has a no-show fee, charge it:
+ * a paid "No-Show Fee" order is created (posting to No-Show Fee Revenue), and the
+ * charge is recorded on apt_no_show_records. Bookings whose variant has no fee
+ * simply transition to no_show with no charge.
  */
 export async function noShowBooking(bookingId: string, businessId: string, userId: string, tenantId: string): Promise<TransitionResult> {
-  return transitionStatus(bookingId, businessId, 'no_show', userId, tenantId);
+  // Resolve the booked variant's no-show fee before transitioning.
+  const { rows: bkRows } = await adminPool.query(
+    `SELECT b.customer_id, b.staff_id, sv.no_show_fee
+     FROM apt_bookings b
+     LEFT JOIN svc_variants sv ON sv.id = b.variant_id
+     WHERE b.id = $1 AND b.business_id = $2`,
+    [bookingId, businessId],
+  );
+  const feeAmount: number = bkRows[0]?.no_show_fee ?? 0;
+
+  const result = await transitionStatus(bookingId, businessId, 'no_show', userId, tenantId);
+  if (!result.success) return result;
+
+  if (feeAmount > 0) {
+    try {
+      const { chargeNoShowFee } = await import('./checkout.service');
+      await chargeNoShowFee({
+        bookingId,
+        businessId,
+        customerId: bkRows[0]?.customer_id || null,
+        creditedTo: bkRows[0]?.staff_id || null,
+        feeAmount,
+        checkedOutBy: userId,
+      });
+
+      // Record the charge on the no-show record (create if the check-in
+      // subsystem hasn't already made one).
+      await adminPool.query(
+        `INSERT INTO apt_no_show_records (tenant_id, booking_id, customer_id, fee_amount, fee_charged)
+         VALUES ($1, $2, $3, $4, true)
+         ON CONFLICT (booking_id) DO UPDATE SET fee_amount = $4, fee_charged = true`,
+        [tenantId, bookingId, bkRows[0]?.customer_id || null, feeAmount],
+      );
+    } catch (err: any) {
+      logger.error('No-show fee charge failed', { bookingId, error: err.message });
+      // Don't fail the no-show transition if charging fails; report fee unbilled.
+      return { ...result, no_show_fee: 0 };
+    }
+  }
+
+  return { ...result, no_show_fee: feeAmount };
 }
 
 /**

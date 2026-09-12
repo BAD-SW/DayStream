@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
+import { ConfirmDialog } from '../design-system/components/feedback/ConfirmDialog';
+import { formatCurrency } from '../utils/currency';
 import * as bookingsApi from '../api/bookings';
 import type { Booking } from '../api/bookings';
 
@@ -24,6 +26,7 @@ export function Bookings() {
   const [businessTimezone, setBusinessTimezone] = useState('UTC');
   const [staffList, setStaffList] = useState<any[]>([]);
   const [serviceList, setServiceList] = useState<any[]>([]);
+  const [pendingNoShow, setPendingNoShow] = useState<Booking | null>(null);
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -106,7 +109,7 @@ export function Bookings() {
           {row.status === 'pending' && <ActionBtn label="Confirm" onClick={() => handleAction('confirm', row)} />}
           {row.status === 'confirmed' && <ActionBtn label="Check-in" onClick={() => handleAction('check-in', row)} />}
           {row.status === 'confirmed' && <ActionBtn label="Cancel" onClick={() => handleAction('cancel', row)} />}
-          {row.status === 'confirmed' && <ActionBtn label="No-show" onClick={() => handleAction('no-show', row)} />}
+          {row.status === 'confirmed' && <ActionBtn label="No-show" onClick={() => setPendingNoShow(row)} />}
           {row.status === 'checked_in' && <ActionBtn label="Check-out" onClick={() => handleAction('checkout', row)} />}
           {row.status === 'checked_in' && <ActionBtn label="Reset" onClick={() => handleAction('reset', row)} />}
         </div>
@@ -156,6 +159,20 @@ export function Bookings() {
       </div>
 
       <Table columns={columns} data={bookings} loading={loading} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No bookings found" mobileCardMode clientSort onRowClick={(row) => navigate(`/bookings/${row.id}/edit`)} />
+
+      <ConfirmDialog
+        open={!!pendingNoShow}
+        title="Mark as No-Show"
+        message={
+          pendingNoShow?.no_show_fee && pendingNoShow.no_show_fee > 0
+            ? `This will cancel the appointment and charge the customer a no-show fee of ${formatCurrency(pendingNoShow.no_show_fee)} to their card on file. Proceed?`
+            : 'This will mark the appointment as a no-show and free up the time. No fee is configured for this service, so the customer will not be charged. Proceed?'
+        }
+        confirmLabel={pendingNoShow?.no_show_fee && pendingNoShow.no_show_fee > 0 ? 'Charge & Mark No-Show' : 'Mark No-Show'}
+        variant="destructive"
+        onClose={() => setPendingNoShow(null)}
+        onConfirm={() => { if (pendingNoShow) handleAction('no-show', pendingNoShow); }}
+      />
 
     </div>
   );

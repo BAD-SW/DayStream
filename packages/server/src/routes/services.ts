@@ -558,6 +558,7 @@ const createVariantSchema = Joi.object({
   sessions_rollover: Joi.boolean().default(false),
   capacity_override: Joi.number().integer().min(1).allow(null),
   display_order: Joi.number().integer().min(0).default(0),
+  no_show_fee: Joi.number().integer().min(0).allow(null),
 });
 
 const updateVariantSchema = Joi.object({
@@ -571,6 +572,7 @@ const updateVariantSchema = Joi.object({
   capacity_override: Joi.number().integer().min(1).allow(null),
   display_order: Joi.number().integer().min(0),
   status: Joi.string().valid('active', 'inactive'),
+  no_show_fee: Joi.number().integer().min(0).allow(null),
 }).min(1);
 
 // GET /api/v1/services/:id/variants — List variants
@@ -597,6 +599,7 @@ servicesRouter.post('/:id/variants', requirePermission('services:*'), validate(c
       sessionsRollover: req.body.sessions_rollover,
       capacityOverride: req.body.capacity_override,
       displayOrder: req.body.display_order,
+      noShowFee: req.body.no_show_fee,
     });
     success(res, variant, undefined, 201);
   } catch (err: any) {
@@ -622,6 +625,7 @@ servicesRouter.put('/:id/variants/:variantId', requirePermission('services:*'), 
       capacityOverride: req.body.capacity_override,
       displayOrder: req.body.display_order,
       status: req.body.status,
+      noShowFee: req.body.no_show_fee,
     });
 
     if (!variant) { error(res, 'Variant not found', 'NOT_FOUND', 404); return; }

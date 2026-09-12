@@ -11,6 +11,7 @@ interface CreateVariantInput {
   sessionsRollover?: boolean;
   capacityOverride?: number | null;
   displayOrder?: number;
+  noShowFee?: number | null;
 }
 
 interface UpdateVariantInput {
@@ -24,6 +25,7 @@ interface UpdateVariantInput {
   capacityOverride?: number | null;
   displayOrder?: number;
   status?: string;
+  noShowFee?: number | null;
 }
 
 /**
@@ -36,8 +38,8 @@ export async function createVariant(input: CreateVariantInput) {
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO svc_variants (service_id, name, duration, price, pricing_model, billing_interval, included_sessions, sessions_rollover, capacity_override, display_order)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `INSERT INTO svc_variants (service_id, name, duration, price, pricing_model, billing_interval, included_sessions, sessions_rollover, capacity_override, display_order, no_show_fee)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`,
     [
       input.serviceId,
@@ -50,6 +52,7 @@ export async function createVariant(input: CreateVariantInput) {
       input.pricingModel === 'subscription' ? (input.sessionsRollover ?? false) : false,
       input.capacityOverride ?? null,
       input.displayOrder ?? 0,
+      input.noShowFee ?? null,
     ],
   );
 
@@ -103,6 +106,7 @@ export async function updateVariant(variantId: string, serviceId: string, update
   if (updates.capacityOverride !== undefined) { fields.push(`capacity_override = $${idx++}`); values.push(updates.capacityOverride); }
   if (updates.displayOrder !== undefined) { fields.push(`display_order = $${idx++}`); values.push(updates.displayOrder); }
   if (updates.status !== undefined) { fields.push(`status = $${idx++}`); values.push(updates.status); }
+  if (updates.noShowFee !== undefined) { fields.push(`no_show_fee = $${idx++}`); values.push(updates.noShowFee); }
 
   if (fields.length === 0) return current;
 

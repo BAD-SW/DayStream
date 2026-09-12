@@ -402,9 +402,11 @@ export async function getBookings(filters: BookingFilters) {
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
       `SELECT b.*, s.name AS service_name, c.first_name AS customer_first_name, c.last_name AS customer_last_name,
-              u.first_name AS staff_first_name, u.last_name AS staff_last_name
+              u.first_name AS staff_first_name, u.last_name AS staff_last_name,
+              sv.no_show_fee
        FROM apt_bookings b
        JOIN svc_services s ON s.id = b.service_id
+       LEFT JOIN svc_variants sv ON sv.id = b.variant_id
        LEFT JOIN cus_customers c ON c.id = b.customer_id
        LEFT JOIN usr_users u ON u.id = b.staff_id
        WHERE ${where}

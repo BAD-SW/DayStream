@@ -11,7 +11,7 @@ interface CreateOrderInput {
 }
 
 interface AddItemInput {
-  itemType: 'service' | 'product' | 'membership' | 'package';
+  itemType: 'service' | 'product' | 'membership' | 'package' | 'no_show_fee';
   itemId?: string;
   itemName: string;
   variantId?: string;
@@ -280,6 +280,52 @@ export async function completeOrder(orderId: string, businessId: string, input: 
   }
 
   return getOrder(orderId);
+}
+
+/**
+ * Charge a no-show fee for a booking. Creates a completed (paid) order with a
+ * single "No-Show Fee" line item, which posts to No-Show Fee Revenue (4600) via
+ * the standard journal path — so it appears on the Payments, Sales, and Revenue
+ * reports like any other sale. Returns the created order.
+ *
+ * The fee amount comes from the booked variant's no_show_fee (fixed cents).
+ * No tax is applied to the fee. Caller is responsible for having already set the
+ * booking to 'no_show' and for recording it on apt_no_show_records.
+ */
+export async function chargeNoShowFee(input: {
+  bookingId: string;
+  businessId: string;
+  customerId?: string | null;
+  creditedTo?: string | null;
+  feeAmount: number;      // cents
+  checkedOutBy: string;
+  paymentMethod?: 'cash' | 'card' | 'transfer' | 'other';
+}) {
+  const order = await createOrder({
+    businessId: input.businessId,
+    customerId: input.customerId || undefined,
+    bookingId: input.bookingId,
+    checkedOutBy: input.checkedOutBy,
+    creditedTo: input.creditedTo || undefined,
+    notes: 'No-show fee',
+  });
+
+  await addItem(order.id, {
+    itemType: 'no_show_fee',
+    itemName: 'No-Show Fee',
+    quantity: 1,
+    unitPrice: input.feeAmount,
+    taxAmount: 0,
+    creditedTo: input.creditedTo || undefined,
+    bookingId: input.bookingId,
+  });
+
+  await completeOrder(order.id, input.businessId, {
+    paymentMethod: input.paymentMethod || 'card',
+    checkedOutBy: input.checkedOutBy,
+  });
+
+  return getOrder(order.id);
 }
 
 /**
