@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { ReportRunResult, ReportExportFormat } from '@daystream/shared';
+import type { ReportRunResult, ReportExportFormat, ReportColumn } from '@daystream/shared';
 import { Button } from '../../design-system/components/actions/Button';
 import { Table } from '../../design-system/components/data/Table';
 import { useContextManager } from '../../context/ContextManager';
@@ -14,6 +14,43 @@ function findCatalogEntry(reportId: string) {
     if (entry) return entry;
   }
   return null;
+}
+
+/** Build design-system Table columns from a report column set, with fixed-layout
+ *  proportional widths and per-type value formatting. Shared by the single-table
+ *  view and each section of a multi-section report. */
+function buildTableColumns(cols: ReportColumn[], currency: string) {
+  const weightFor = (col: ReportColumn) => {
+    if (col.type === 'currency' || col.type === 'number' || col.type === 'percent') return 1;
+    if (col.type === 'date') return 1;
+    return 2; // text columns get more room
+  };
+  const totalWeight = cols.reduce((sum, c) => sum + weightFor(c), 0) || 1;
+  return cols.map((col) => ({
+    key: col.key,
+    header: col.header,
+    sortable: true,
+    width: col.width || `${((weightFor(col) / totalWeight) * 100).toFixed(2)}%`,
+    align: columnAlign(col),
+    render: (value: any) => (
+      <span style={{ display: 'block', textAlign: columnAlign(col) }}>
+        {formatReportValue(value, col.type, currency)}
+      </span>
+    ),
+  }));
+}
+
+/** Build a footer-cells row (label in first cell, totals in totaled columns). */
+function buildFooterCellsFor(cols: ReportColumn[], totals: Record<string, number>, currency: string, label: string) {
+  return cols.map((col, idx) => ({
+    align: columnAlign(col),
+    content:
+      idx === 0
+        ? label
+        : col.total && totals[col.key] != null
+          ? formatReportValue(totals[col.key], col.type, currency)
+          : '',
+  }));
 }
 
 function isoDaysAgo(days: number): string {
@@ -135,45 +172,13 @@ export function ReportRunner() {
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
   }, [result, filteredRows, groupBy]);
 
-  const columns = useMemo(() => {
-    if (!result) return [];
-    const currency = result.meta.currency;
-    // Proportional column weights by type, so every group table (fixed layout)
-    // shares identical column widths and lines up down the page.
-    const weightFor = (col: typeof result.columns[number]) => {
-      if (col.type === 'currency' || col.type === 'number' || col.type === 'percent') return 1;
-      if (col.type === 'date') return 1;
-      return 2; // text columns get more room
-    };
-    const totalWeight = result.columns.reduce((sum, c) => sum + weightFor(c), 0);
-    return result.columns.map((col) => ({
-      key: col.key,
-      header: col.header,
-      sortable: true,
-      width: col.width || `${((weightFor(col) / totalWeight) * 100).toFixed(2)}%`,
-      align: columnAlign(col),
-      render: (value: any) => (
-        <span style={{ display: 'block', textAlign: columnAlign(col) }}>
-          {formatReportValue(value, col.type, currency)}
-        </span>
-      ),
-    }));
-  }, [result]);
+  const columns = useMemo(() => (result ? buildTableColumns(result.columns, result.meta.currency) : []), [result]);
 
   // Build a footer-cells array (one per column, same order) for a totals row so
   // it renders inside the table and shares the exact column widths.
   function buildFooterCells(label: string, totals: Record<string, number>) {
     if (!result) return [];
-    const currency = result.meta.currency;
-    return result.columns.map((col, idx) => ({
-      align: columnAlign(col),
-      content:
-        idx === 0
-          ? label
-          : col.total && totals[col.key] != null
-            ? formatReportValue(totals[col.key], col.type, currency)
-            : '',
-    }));
+    return buildFooterCellsFor(result.columns, totals, result.meta.currency, label);
   }
 
   if (!entry) {
@@ -276,11 +281,36 @@ export function ReportRunner() {
           <div style={styles.resultMeta}>
             <span>{result.meta.businessName}</span>
             <span>
-              {filteredRows.length} of {result.rows.length} rows · {result.meta.dateRange.start} to {result.meta.dateRange.end}
+              {result.sections
+                ? `${result.meta.dateRange.start} to ${result.meta.dateRange.end}`
+                : `${filteredRows.length} of ${result.rows.length} rows · ${result.meta.dateRange.start} to ${result.meta.dateRange.end}`}
             </span>
           </div>
 
-          {groups ? (
+          {result.sections ? (
+            <>
+              {result.sections.map((section, secIdx) => {
+                const secCols = buildTableColumns(section.columns, result.meta.currency);
+                const hasSecTotals = section.columns.some((c) => c.total);
+                const isLastSection = secIdx === result.sections!.length - 1;
+                return (
+                  <div key={section.id} style={{ ...styles.groupSection, ...(isLastSection ? {} : styles.sectionGap) }}>
+                    <div style={styles.groupHeader}>{section.title} <span style={styles.groupCount}>({section.rows.length})</span></div>
+                    <Table
+                      columns={secCols}
+                      data={section.rows}
+                      clientSort
+                      fixedLayout
+                      emptyMessage="No data for the selected range"
+                      footerRows={hasSecTotals && section.rows.length > 0
+                        ? [{ cells: buildFooterCellsFor(section.columns, section.totals, result.meta.currency, 'Total'), strong: true }]
+                        : undefined}
+                    />
+                  </div>
+                );
+              })}
+            </>
+          ) : groups ? (
             <>
               {groups.map((g, groupIdx) => {
                 const isLast = groupIdx === groups.length - 1;
@@ -349,6 +379,7 @@ const styles: Record<string, React.CSSProperties> = {
   groupBarLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-bold)' as any, textTransform: 'uppercase', letterSpacing: '0.04em' },
   groupCheck: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', cursor: 'pointer' },
   groupSection: { borderBottom: '1px solid var(--color-border)' },
+  sectionGap: { marginBottom: 'var(--space-xl)' },
   groupHeader: { padding: 'var(--space-sm) var(--space-md)', background: 'var(--color-surface-hover)', fontWeight: 'var(--font-weight-bold)' as any, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
   groupCount: { color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-medium)' as any, fontSize: 'var(--font-size-xs)' },
 };

@@ -25,6 +25,7 @@ export type {
   ReportColumnAlign,
   ReportRunMeta,
   ReportRunResult,
+  ReportSection,
   ReportExportFormat,
 } from './reports/types';
 

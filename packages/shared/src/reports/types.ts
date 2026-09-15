@@ -39,11 +39,32 @@ export interface ReportRunMeta {
   currency: string;
 }
 
-export interface ReportRunResult {
+/**
+ * A named section within a multi-section report. Each section is its own table
+ * with its own columns, rows, and totals — used when one report needs to present
+ * distinct datasets side by side (e.g. Staff Utilization + Resource Utilization).
+ */
+export interface ReportSection {
+  id: string;
+  title: string;
   columns: ReportColumn[];
   rows: Record<string, any>[];
   /** Keyed by column key, for columns declared with `total: true`. */
   totals: Record<string, number>;
+}
+
+export interface ReportRunResult {
+  /**
+   * Single-table reports populate columns/rows/totals. Multi-section reports
+   * instead populate `sections` (and leave columns/rows empty). The runner
+   * renders sections stacked when present, otherwise the single table.
+   */
+  columns: ReportColumn[];
+  rows: Record<string, any>[];
+  /** Keyed by column key, for columns declared with `total: true`. */
+  totals: Record<string, number>;
+  /** Present for multi-section reports; each renders as its own titled table. */
+  sections?: ReportSection[];
   meta: ReportRunMeta;
 }
 

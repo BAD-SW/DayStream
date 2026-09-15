@@ -7,6 +7,7 @@ import { salesByStaffReport } from './definitions/sales-by-staff.report';
 import { discountsPromotionsReport } from './definitions/discounts-promotions.report';
 import { bookingsSummaryReport } from './definitions/bookings-summary.report';
 import { cancellationsNoShowsReport } from './definitions/cancellations-no-shows.report';
+import { utilizationReport } from './definitions/utilization.report';
 
 /**
  * Central registry of report definitions. Adding a new report is a matter of
@@ -22,6 +23,7 @@ const DEFINITIONS: Record<string, ReportDefinition> = {
   [discountsPromotionsReport.id]: discountsPromotionsReport,
   [bookingsSummaryReport.id]: bookingsSummaryReport,
   [cancellationsNoShowsReport.id]: cancellationsNoShowsReport,
+  [utilizationReport.id]: utilizationReport,
 };
 
 export function getReportDefinition(id: string): ReportDefinition | null {

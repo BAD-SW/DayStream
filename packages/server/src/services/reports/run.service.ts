@@ -1,40 +1,59 @@
-import { ReportRunResult } from '@daystream/shared';
+import { ReportColumn, ReportRunResult, ReportSection } from '@daystream/shared';
 import { adminPool } from '../../db/pool';
 import { ReportContext, ReportDefinition } from './types';
 
+/** Sum `total: true` numeric/currency columns over a row set. */
+function computeTotals(columns: ReportColumn[], rows: Record<string, any>[]): Record<string, number> {
+  const totals: Record<string, number> = {};
+  for (const col of columns) {
+    if (col.total && (col.type === 'currency' || col.type === 'number')) {
+      totals[col.key] = rows.reduce((sum, row) => sum + (Number(row[col.key]) || 0), 0);
+    }
+  }
+  return totals;
+}
+
 /**
- * Runs a report definition and assembles a full ReportRunResult: rows from the
- * definition's query, server-side totals for `total: true` columns, and meta
+ * Runs a report definition and assembles a full ReportRunResult. Single-table
+ * reports (columns + run) populate columns/rows/totals; section-based reports
+ * (buildSections) populate the sections array instead. Both carry meta
  * (business name + currency, date range, generated timestamp).
  */
 export async function runReport(
   definition: ReportDefinition,
   ctx: ReportContext,
 ): Promise<ReportRunResult> {
-  const rows = await definition.run(ctx);
+  const { businessName, currency } = await resolveBusinessMeta(ctx.businessId);
+  const meta = {
+    reportId: definition.id,
+    title: definition.title,
+    businessName,
+    dateRange: { start: ctx.start, end: ctx.end },
+    generatedAt: new Date().toISOString(),
+    currency,
+  };
 
-  // Server-side totals over the full result set.
-  const totals: Record<string, number> = {};
-  for (const col of definition.columns) {
-    if (col.total && (col.type === 'currency' || col.type === 'number')) {
-      totals[col.key] = rows.reduce((sum, row) => sum + (Number(row[col.key]) || 0), 0);
-    }
+  // Multi-section report
+  if (definition.buildSections) {
+    const built = await definition.buildSections(ctx);
+    const sections: ReportSection[] = built.map((s) => ({
+      id: s.id,
+      title: s.title,
+      columns: s.columns,
+      rows: s.rows,
+      totals: computeTotals(s.columns, s.rows),
+    }));
+    return { columns: [], rows: [], totals: {}, sections, meta };
   }
 
-  const { businessName, currency } = await resolveBusinessMeta(ctx.businessId);
-
+  // Single-table report
+  const columns = definition.columns ?? [];
+  const rows = definition.run ? await definition.run(ctx) : [];
   return {
-    columns: definition.columns,
+    columns,
     rows,
-    totals,
-    meta: {
-      reportId: definition.id,
-      title: definition.title,
-      businessName,
-      dateRange: { start: ctx.start, end: ctx.end },
-      generatedAt: new Date().toISOString(),
-      currency,
-    },
+    totals: computeTotals(columns, rows),
+    meta,
   };
 }
 

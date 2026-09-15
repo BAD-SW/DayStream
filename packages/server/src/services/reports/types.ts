@@ -12,15 +12,30 @@ export interface ReportContext {
   end: string;
 }
 
+/** One section of a multi-section report: its own columns and rows. */
+export interface ReportSectionDef {
+  id: string;
+  title: string;
+  columns: ReportColumn[];
+  rows: Record<string, any>[];
+}
+
 /**
  * A report definition: the shared contract that makes adding a new report a
  * matter of declaring columns plus a query, with no new UI or endpoints.
+ *
+ * Most reports are single-table: provide `columns` + `run`. A report that needs
+ * to present multiple distinct datasets provides `buildSections` instead, which
+ * returns one section per table (each with its own columns/rows).
  */
 export interface ReportDefinition {
   /** Stable identifier, e.g. 'revenue'. Must match the client catalog entry id. */
   id: string;
   title: string;
-  columns: ReportColumn[];
-  /** Returns raw rows (money in cents, dates as ISO/date) keyed by column key. */
-  run: (ctx: ReportContext) => Promise<Record<string, any>[]>;
+  /** Single-table reports: the column set. Omitted for section-based reports. */
+  columns?: ReportColumn[];
+  /** Single-table reports: returns raw rows keyed by column key. */
+  run?: (ctx: ReportContext) => Promise<Record<string, any>[]>;
+  /** Multi-section reports: returns one section per table. */
+  buildSections?: (ctx: ReportContext) => Promise<ReportSectionDef[]>;
 }
