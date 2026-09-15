@@ -80,9 +80,9 @@ export const REPORT_CATALOG: ReportCategory[] = [
     accentColor: '#4FA3A5',
     accentColorDark: '#73C4C6',
     reports: [
-      { id: 'new-customers', title: 'New Customers', description: 'Customers acquired in the period', icon: '🧑', comingSoon: true },
-      { id: 'customer-retention', title: 'Retention', description: 'Retention and churn over time', icon: '📈', comingSoon: true },
-      { id: 'customer-lifetime-value', title: 'Lifetime Value', description: 'Average revenue per customer', icon: '💎', comingSoon: true },
+      { id: 'new-customers', title: 'New Customers', description: 'Customers acquired in the period', icon: '🧑' },
+      { id: 'customer-retention', title: 'Retention', description: 'Customer retention and churn by lifecycle stage', icon: '📈' },
+      { id: 'customer-lifetime-value', title: 'Lifetime Value', description: 'Recognized revenue to date per customer', icon: '💎' },
     ],
   },
   {

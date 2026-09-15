@@ -11,6 +11,9 @@ import { utilizationReport } from './definitions/utilization.report';
 import { activeMembershipsReport } from './definitions/active-memberships.report';
 import { newCancelledMembershipsReport } from './definitions/new-cancelled-memberships.report';
 import { membershipRecognizedRevenueReport } from './definitions/membership-recognized-revenue.report';
+import { newCustomersReport } from './definitions/new-customers.report';
+import { customerLifetimeValueReport } from './definitions/customer-lifetime-value.report';
+import { customerRetentionReport } from './definitions/customer-retention.report';
 
 /**
  * Central registry of report definitions. Adding a new report is a matter of
@@ -30,6 +33,9 @@ const DEFINITIONS: Record<string, ReportDefinition> = {
   [activeMembershipsReport.id]: activeMembershipsReport,
   [newCancelledMembershipsReport.id]: newCancelledMembershipsReport,
   [membershipRecognizedRevenueReport.id]: membershipRecognizedRevenueReport,
+  [newCustomersReport.id]: newCustomersReport,
+  [customerLifetimeValueReport.id]: customerLifetimeValueReport,
+  [customerRetentionReport.id]: customerRetentionReport,
 };
 
 export function getReportDefinition(id: string): ReportDefinition | null {

@@ -16,6 +16,10 @@ import { ReportDefinition } from '../types';
  * whose Current Period End is in the past still appears; the column makes that
  * visible.
  *
+ * LTV = recognized membership revenue to date for that CUSTOMER, summed across
+ * ALL of their enrollments (so a long-tenured member who paused still shows
+ * their accumulated membership value). Pre-tax, from fin_revenue_recognized.
+ *
  * Uses adminPool scoped by business_id, matching the other reports.
  */
 export const activeMembershipsReport: ReportDefinition = {
@@ -30,6 +34,7 @@ export const activeMembershipsReport: ReportDefinition = {
     { key: 'current_period_end', header: 'Current Period End', type: 'date', filterable: true },
     { key: 'next_billing', header: 'Next Billing', type: 'date', filterable: true },
     { key: 'price', header: 'Price', type: 'currency', total: true },
+    { key: 'ltv', header: 'LTV', type: 'currency', total: true },
   ],
   run: async (ctx) => {
     const { rows } = await adminPool.query(
@@ -41,7 +46,13 @@ export const activeMembershipsReport: ReportDefinition = {
               e.start_date,
               e.current_period_end,
               e.next_billing_date AS next_billing,
-              p.price::int AS price
+              p.price::int AS price,
+              COALESCE((
+                SELECT SUM(rr.amount_recognized)
+                  FROM fin_revenue_recognized rr
+                  JOIN mbr_enrollments e2 ON e2.id = rr.enrollment_id
+                 WHERE e2.customer_id = e.customer_id AND e2.business_id = e.business_id
+              ), 0)::int AS ltv
          FROM mbr_enrollments e
          JOIN mbr_plans p ON p.id = e.plan_id
          JOIN cus_customers c ON c.id = e.customer_id

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { ReportRunResult, ReportExportFormat, ReportColumn } from '@daystream/shared';
 import { Button } from '../../design-system/components/actions/Button';
@@ -53,10 +53,9 @@ function buildFooterCellsFor(cols: ReportColumn[], totals: Record<string, number
   }));
 }
 
-function isoDaysAgo(days: number): string {
+function isoFirstOfMonth(): string {
   const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
 function isoToday(): string {
@@ -71,7 +70,7 @@ export function ReportRunner() {
 
   const entry = findCatalogEntry(reportId);
 
-  const [fromDate, setFromDate] = useState<string>(isoDaysAgo(29));
+  const [fromDate, setFromDate] = useState<string>(isoFirstOfMonth());
   const [toDate, setToDate] = useState<string>(isoToday());
   const [result, setResult] = useState<ReportRunResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -88,11 +87,8 @@ export function ReportRunner() {
     setGroupBy((g) => (g.includes(key) ? g.filter((k) => k !== key) : [...g, key]));
   }
 
-  async function handleRun() {
-    if (rangeInvalid) {
-      setErrorMsg('Please choose a From date on or before the To date.');
-      return;
-    }
+  const handleRun = useCallback(async () => {
+    if (!businessId || !reportId || !fromDate || !toDate || fromDate > toDate) return;
     setLoading(true);
     setErrorMsg(null);
     try {
@@ -106,7 +102,19 @@ export function ReportRunner() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [businessId, reportId, fromDate, toDate]);
+
+  // Auto-run: generate the report on open and whenever the date range (or the
+  // active business/report) changes. A short debounce coalesces the rapid
+  // updates a date picker emits so we issue one request per settled range.
+  // The Run button is intentionally omitted — changing a date IS the run.
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    if (!businessId || rangeInvalid) return;
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => { void handleRun(); }, 300);
+    return () => clearTimeout(debounceRef.current);
+  }, [businessId, rangeInvalid, handleRun]);
 
   async function handleExport(format: ReportExportFormat) {
     if (rangeInvalid) return;
@@ -244,9 +252,7 @@ export function ReportRunner() {
             style={styles.dateInput}
           />
         </div>
-        <Button variant="primary" onClick={handleRun} loading={loading} disabled={!businessId || rangeInvalid}>
-          Run
-        </Button>
+        {loading && <span style={styles.runningHint}>Running…</span>}
         {result && groupableColumns.length > 0 && (
           <div style={styles.groupInline}>
             <span style={styles.groupBarLabel}>Group by</span>
@@ -273,6 +279,9 @@ export function ReportRunner() {
 
       {!businessId && (
         <p style={styles.hint}>Select a business to run this report.</p>
+      )}
+      {businessId && rangeInvalid && (
+        <p style={styles.hint}>Choose a From date on or before the To date.</p>
       )}
       {errorMsg && <p style={styles.errorText}>{errorMsg}</p>}
 
@@ -352,8 +361,8 @@ export function ReportRunner() {
         </div>
       )}
 
-      {!result && !loading && businessId && (
-        <p style={styles.hint}>Choose a date range and select Run to generate the report.</p>
+      {!result && !loading && businessId && !rangeInvalid && (
+        <p style={styles.hint}>Generating report…</p>
       )}
     </div>
   );
@@ -370,6 +379,7 @@ const styles: Record<string, React.CSSProperties> = {
   dateInput: { fontSize: 'var(--font-size-sm)', padding: '7px 9px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
   spacer: { flex: 1 },
   hint: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' },
+  runningHint: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', paddingBottom: '9px' },
   errorText: { color: 'var(--color-danger, #b3261e)', fontSize: 'var(--font-size-sm)' },
   tableCard: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
   resultMeta: { display: 'flex', justifyContent: 'space-between', padding: 'var(--space-sm) var(--space-md)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' },
