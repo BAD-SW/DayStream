@@ -156,6 +156,12 @@ export function Table<T extends Record<string, any>>({
       <div style={styles.wrapper}>
         <table style={{ ...styles.table, ...(fixedLayout ? { tableLayout: 'fixed' as const } : {}) }}>
           <thead>
+            {filterRow && (
+              <tr style={styles.filterRow}>
+                {selectable && <th style={styles.th} />}
+                {filterRow}
+              </tr>
+            )}
             <tr>
               {selectable && (
                 <th style={{ ...styles.th, width: '40px' }}>
@@ -183,12 +189,6 @@ export function Table<T extends Record<string, any>>({
                 </th>
               ))}
             </tr>
-            {filterRow && (
-              <tr style={styles.filterRow}>
-                {selectable && <th style={styles.th} />}
-                {filterRow}
-              </tr>
-            )}
           </thead>
           <tbody>
             {data.length === 0 && (
@@ -286,7 +286,9 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: 'uppercase',
     letterSpacing: '0.04em',
     borderBottom: '1px solid var(--color-border)',
-    whiteSpace: 'nowrap',
+    whiteSpace: 'normal',
+    overflowWrap: 'break-word',
+    verticalAlign: 'bottom',
     userSelect: 'none',
   },
   tr: {

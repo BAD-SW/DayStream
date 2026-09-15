@@ -69,7 +69,7 @@ export const REPORT_CATALOG: ReportCategory[] = [
     accentColor: '#8064B0',
     accentColorDark: '#A98AD1',
     reports: [
-      { id: 'active-memberships', title: 'Active Memberships', description: 'Current active enrollments', icon: '🎫', comingSoon: true },
+      { id: 'active-memberships', title: 'Active Memberships', description: 'Current active and paused memberships by plan', icon: '🎫' },
       { id: 'new-cancelled-memberships', title: 'New & Cancelled', description: 'Enrollment changes in the period', icon: '🔄', comingSoon: true },
       { id: 'membership-recognized-revenue', title: 'Recognized Revenue', description: 'Membership revenue recognized over time', icon: '💠', comingSoon: true },
     ],

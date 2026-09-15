@@ -8,6 +8,7 @@ import { discountsPromotionsReport } from './definitions/discounts-promotions.re
 import { bookingsSummaryReport } from './definitions/bookings-summary.report';
 import { cancellationsNoShowsReport } from './definitions/cancellations-no-shows.report';
 import { utilizationReport } from './definitions/utilization.report';
+import { activeMembershipsReport } from './definitions/active-memberships.report';
 
 /**
  * Central registry of report definitions. Adding a new report is a matter of
@@ -24,6 +25,7 @@ const DEFINITIONS: Record<string, ReportDefinition> = {
   [bookingsSummaryReport.id]: bookingsSummaryReport,
   [cancellationsNoShowsReport.id]: cancellationsNoShowsReport,
   [utilizationReport.id]: utilizationReport,
+  [activeMembershipsReport.id]: activeMembershipsReport,
 };
 
 export function getReportDefinition(id: string): ReportDefinition | null {
