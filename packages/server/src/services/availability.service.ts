@@ -10,7 +10,7 @@ interface AvailabilityQuery {
   variantId?: string;    // optional: override duration from variant
 }
 
-interface AvailableSlotCombo {
+export interface AvailableSlotCombo {
   start_time: string;    // ISO 8601 UTC
   end_time: string;
   duration: number;      // minutes

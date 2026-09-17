@@ -48,3 +48,5 @@ yarn-error.log*
 
 # Local file storage (images, uploads)
 packages/server/storage/
+.vercel
+.env*

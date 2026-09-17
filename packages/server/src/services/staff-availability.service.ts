@@ -1,6 +1,6 @@
 import { adminPool } from '../db/pool';
 
-interface TimeBlock {
+export interface TimeBlock {
   start_time: string;
   end_time: string;
 }

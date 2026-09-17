@@ -2,7 +2,7 @@ import { adminPool } from '../db/pool';
 import { getConfig } from './checkin-config.service';
 import { getCustomerNoShowCount } from './checkin-noshow.service';
 
-interface ValidationResult {
+export interface ValidationResult {
   pass: boolean;
   warnings: string[];
   errors: string[];

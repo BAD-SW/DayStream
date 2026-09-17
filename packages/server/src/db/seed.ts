@@ -1,4 +1,5 @@
 import bcrypt from 'bcrypt';
+import crypto from 'node:crypto';
 import { adminPool } from './pool';
 
 // Fixed seed UUIDs for idempotent seeding
