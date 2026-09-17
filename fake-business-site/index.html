@@ -281,13 +281,14 @@
                         own src origin is the SERVER's origin, a different deployment (see design.md's
                         "Phase 3 correction" note under Widget Script) — omit this locally only if both
                         happen to share an origin, which they do not in this project's dev setup.
-  Point `src` and `data-app-url` at your deployed Render/Vercel URLs once Phase 4 ships; for local
-  testing against `npm run dev`, the values below are correct as-is.
+  Currently pointed at the deployed Render/Vercel URLs (Phase 4). For local testing against
+  `npm run dev` instead, swap these back to `http://localhost:4001/widget/daystream-widget.js`
+  and `data-app-url="http://localhost:4000"`.
 -->
 <script
-  src="http://localhost:4001/widget/daystream-widget.js"
+  src="https://daystream-ys5i.onrender.com/widget/daystream-widget.js"
   data-business-id="83e81f01-93eb-4895-a9a6-c44912748978"
-  data-app-url="http://localhost:4000"
+  data-app-url="https://daystream-app.vercel.app"
 ></script>
 
 </body>
