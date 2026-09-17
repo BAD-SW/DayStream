@@ -16,6 +16,7 @@ import { customerLifetimeValueReport } from './definitions/customer-lifetime-val
 import { customerRetentionReport } from './definitions/customer-retention.report';
 import { staffPerformanceReport } from './definitions/staff-performance.report';
 import { commissionsReport } from './definitions/commissions.report';
+import { payrollSummaryReport } from './definitions/payroll-summary.report';
 
 /**
  * Central registry of report definitions. Adding a new report is a matter of
@@ -40,6 +41,7 @@ const DEFINITIONS: Record<string, ReportDefinition> = {
   [customerRetentionReport.id]: customerRetentionReport,
   [staffPerformanceReport.id]: staffPerformanceReport,
   [commissionsReport.id]: commissionsReport,
+  [payrollSummaryReport.id]: payrollSummaryReport,
 };
 
 export function getReportDefinition(id: string): ReportDefinition | null {

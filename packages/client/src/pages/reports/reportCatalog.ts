@@ -93,7 +93,7 @@ export const REPORT_CATALOG: ReportCategory[] = [
     reports: [
       { id: 'staff-performance', title: 'Staff Performance', description: 'Bookings and revenue per staff member', icon: '👥' },
       { id: 'commissions', title: 'Commissions', description: 'Commission earned per order, by staff', icon: '💵' },
-      { id: 'payroll-summary', title: 'Payroll Summary', description: 'Gross, deductions, and net by period', icon: '🧮', comingSoon: true },
+      { id: 'payroll-summary', title: 'Payroll Summary', description: 'Base, commission, gross, deductions, and net by staff and period', icon: '🧮' },
     ],
   },
   {
