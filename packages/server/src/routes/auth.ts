@@ -128,6 +128,7 @@ authRouter.post('/login', validate(loginSchema), async (req: Request, res: Respo
     } else if (err.message === 'Invalid credentials') {
       res.status(401).json({ error: err.message, code: 'INVALID_CREDENTIALS' });
     } else {
+      console.error('Login error:', err);
       res.status(500).json({ error: 'Login failed', code: 'INTERNAL_ERROR' });
     }
   }
