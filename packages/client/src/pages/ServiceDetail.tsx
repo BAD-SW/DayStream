@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
+import { CopyWidgetSnippetButton } from '../components/CopyWidgetSnippetButton';
 import { MultiSelect } from '../design-system/components/forms/MultiSelect';
 import * as servicesApi from '../api/services';
 import type { Service, ServiceVariant, ServiceCategory, AvailabilityRule } from '../api/services';
@@ -52,6 +53,13 @@ export function ServiceDetail() {
         <div style={styles.headerRight}>
           <Badge variant={STATUS_VARIANTS[service.status] || 'neutral'}>{service.status}</Badge>
           <span style={styles.duration}>{service.default_duration} min</span>
+          <CopyWidgetSnippetButton
+            productId={service.id}
+            productName={service.name}
+            action="book"
+            enabled={service.online_booking_enabled}
+            disabledReason="Enable online booking to get a widget snippet"
+          />
         </div>
       </div>
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
+import { CopyWidgetSnippetButton } from '../components/CopyWidgetSnippetButton';
 import { apiClient } from '../api/client';
 import { formatCurrency } from '../utils/currency';
 
@@ -75,6 +76,13 @@ export function MembershipDetail() {
           <Badge variant={STATUS_VARIANTS[plan.status] || 'neutral'}>{plan.status}</Badge>
           <span style={styles.price}>{formatCurrency(plan.price)}/period</span>
           <span style={styles.enrolled}>{plan.active_enrollments} enrolled</span>
+          <CopyWidgetSnippetButton
+            productId={plan.id}
+            productName={plan.name}
+            action="purchase"
+            enabled={plan.status === 'active'}
+            disabledReason="Activate this plan to get a widget snippet"
+          />
         </div>
       </div>
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
+import { CopyWidgetSnippetButton } from '../components/CopyWidgetSnippetButton';
 import { apiClient } from '../api/client';
 import { formatCurrency } from '../utils/currency';
 
@@ -40,6 +41,13 @@ export function PackageDetail() {
           <Badge variant={STATUS_VARIANTS[pkg.status] || 'neutral'}>{pkg.status}</Badge>
           <span style={styles.price}>{formatCurrency(pkg.price)}</span>
           <span style={styles.sold}>{pkg.active_purchases || 0} sold</span>
+          <CopyWidgetSnippetButton
+            productId={pkg.id}
+            productName={pkg.name}
+            action="purchase"
+            enabled={pkg.status === 'active'}
+            disabledReason="Activate this package to get a widget snippet"
+          />
         </div>
       </div>
       <PackageForm pkg={pkg} businessId={businessId} onUpdate={setPkg} />
