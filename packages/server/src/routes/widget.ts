@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { validate } from '../middleware/validate';
-import { widgetCors, widgetMutationLimiter, requireValidBusinessId } from '../middleware/widget-cors';
+import { widgetCors, widgetMutationLimiter, requireValidBusinessId, enforceAllowedOrigin } from '../middleware/widget-cors';
 import { success, error } from '../utils/response';
 import * as widgetService from '../services/widget-booking.service';
 import { WidgetError } from '../services/widget-booking.service';
@@ -10,6 +10,14 @@ import { WidgetError } from '../services/widget-booking.service';
 export const widgetRouter = Router();
 
 widgetRouter.use(widgetCors);
+
+// Requirements 12.2 / 12.5 — every route below gets both checks explicitly, not via a
+// blanket router.use(): Express only populates req.params for a route AFTER matching
+// it, so a :business_id path param isn't visible to generic pre-route middleware —
+// only to middleware listed on the specific route that declares it. (Confirmed the hard
+// way: an earlier router.use() version 400'd every single request, including valid
+// ones, because req.params.business_id was always empty at that point.)
+const businessIdChecks = [requireValidBusinessId, enforceAllowedOrigin];
 
 function handleWidgetError(res: Response, err: unknown, fallback: string): void {
   if (err instanceof WidgetError) {
@@ -22,7 +30,7 @@ function handleWidgetError(res: Response, err: unknown, fallback: string): void 
 
 // ── Public: business, products, availability ────────────────────────────────
 
-widgetRouter.get('/business/:business_id', requireValidBusinessId, async (req: Request, res: Response) => {
+widgetRouter.get('/business/:business_id', ...businessIdChecks, async (req: Request, res: Response) => {
   try {
     const info = await widgetService.getBusinessInfo(req.params.business_id);
     success(res, info);
@@ -31,7 +39,7 @@ widgetRouter.get('/business/:business_id', requireValidBusinessId, async (req: R
   }
 });
 
-widgetRouter.get('/business/:business_id/products', requireValidBusinessId, async (req: Request, res: Response) => {
+widgetRouter.get('/business/:business_id/products', ...businessIdChecks, async (req: Request, res: Response) => {
   try {
     const products = await widgetService.getProducts(req.params.business_id);
     success(res, products);
@@ -40,7 +48,7 @@ widgetRouter.get('/business/:business_id/products', requireValidBusinessId, asyn
   }
 });
 
-widgetRouter.get('/business/:business_id/products/:product_id', requireValidBusinessId, async (req: Request, res: Response) => {
+widgetRouter.get('/business/:business_id/products/:product_id', ...businessIdChecks, async (req: Request, res: Response) => {
   try {
     const product = await widgetService.getProductDetail(req.params.business_id, req.params.product_id);
     success(res, product);
@@ -49,7 +57,7 @@ widgetRouter.get('/business/:business_id/products/:product_id', requireValidBusi
   }
 });
 
-widgetRouter.get('/availability', async (req: Request, res: Response) => {
+widgetRouter.get('/availability', ...businessIdChecks, async (req: Request, res: Response) => {
   try {
     const { business_id, service_id, variant_id, month } = req.query as Record<string, string>;
     if (!business_id || !service_id || !variant_id || !month) {
@@ -63,7 +71,7 @@ widgetRouter.get('/availability', async (req: Request, res: Response) => {
   }
 });
 
-widgetRouter.get('/availability/slots', async (req: Request, res: Response) => {
+widgetRouter.get('/availability/slots', ...businessIdChecks, async (req: Request, res: Response) => {
   try {
     const { business_id, service_id, variant_id, date_from, date_to } = req.query as Record<string, string>;
     if (!business_id || !service_id || !variant_id || !date_from || !date_to) {
@@ -89,7 +97,7 @@ const holdSchema = Joi.object({
   start_time: Joi.string().isoDate().required(),
 });
 
-widgetRouter.post('/availability/hold', authenticate, validate(holdSchema), async (req: Request, res: Response) => {
+widgetRouter.post('/availability/hold', ...businessIdChecks, authenticate, validate(holdSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const hold = await widgetService.holdSlot({
@@ -111,7 +119,7 @@ const customerSchema = Joi.object({
   phone: Joi.string().max(50).allow('', null),
 });
 
-widgetRouter.post('/customer', authenticate, validate(customerSchema), async (req: Request, res: Response) => {
+widgetRouter.post('/customer', ...businessIdChecks, authenticate, validate(customerSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const result = await widgetService.findOrCreateCustomer(req.body.business_id, authReq.user as any, req.body.phone || undefined);
@@ -132,7 +140,7 @@ const bookingSchema = Joi.object({
   hold_id: Joi.string().uuid().allow(null),
 });
 
-widgetRouter.post('/booking', authenticate, validate(bookingSchema), async (req: Request, res: Response) => {
+widgetRouter.post('/booking', ...businessIdChecks, authenticate, validate(bookingSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const booking = await widgetService.createWidgetBooking({
@@ -162,7 +170,7 @@ const paySchema = Joi.object({
   business_id: Joi.string().uuid().required(),
 });
 
-widgetRouter.post('/booking/:booking_id/pay', authenticate, widgetMutationLimiter, validate(paySchema), async (req: Request, res: Response) => {
+widgetRouter.post('/booking/:booking_id/pay', ...businessIdChecks, authenticate, widgetMutationLimiter, validate(paySchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const result = await widgetService.payForBooking(req.params.booking_id, req.body.business_id, authReq.user as any);
@@ -182,7 +190,7 @@ const packagePurchaseSchema = Joi.object({
 
 widgetRouter.use(['/package-purchase', '/membership-enrollment'], widgetMutationLimiter);
 
-widgetRouter.post('/package-purchase', authenticate, validate(packagePurchaseSchema), async (req: Request, res: Response) => {
+widgetRouter.post('/package-purchase', ...businessIdChecks, authenticate, validate(packagePurchaseSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const result = await widgetService.purchaseWidgetPackage({
@@ -196,7 +204,7 @@ widgetRouter.post('/package-purchase', authenticate, validate(packagePurchaseSch
   }
 });
 
-widgetRouter.post('/package-purchase/:purchase_id/pay', authenticate, validate(paySchema), async (req: Request, res: Response) => {
+widgetRouter.post('/package-purchase/:purchase_id/pay', ...businessIdChecks, authenticate, validate(paySchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const result = await widgetService.payForPackagePurchase(req.params.purchase_id, req.body.business_id, authReq.user as any);
@@ -213,7 +221,7 @@ const membershipEnrollmentSchema = Joi.object({
   start_date: Joi.string().isoDate().required(),
 });
 
-widgetRouter.post('/membership-enrollment', authenticate, validate(membershipEnrollmentSchema), async (req: Request, res: Response) => {
+widgetRouter.post('/membership-enrollment', ...businessIdChecks, authenticate, validate(membershipEnrollmentSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const result = await widgetService.enrollWidgetMembership({
@@ -228,7 +236,7 @@ widgetRouter.post('/membership-enrollment', authenticate, validate(membershipEnr
   }
 });
 
-widgetRouter.post('/membership-enrollment/:enrollment_id/pay', authenticate, validate(paySchema), async (req: Request, res: Response) => {
+widgetRouter.post('/membership-enrollment/:enrollment_id/pay', ...businessIdChecks, authenticate, validate(paySchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const result = await widgetService.payForMembershipEnrollment(req.params.enrollment_id, req.body.business_id, authReq.user as any);

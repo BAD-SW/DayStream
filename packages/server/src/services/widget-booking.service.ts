@@ -1,4 +1,6 @@
+import crypto from 'node:crypto';
 import { adminPool } from '../db/pool';
+import { logger } from '../middleware/logger';
 import { createBooking, getBookingById } from './booking.service';
 import { createHold } from './slot-hold.service';
 import { queueBookingConfirmation } from './booking-notifications.service';
@@ -8,6 +10,11 @@ import { computeDayStatus, getDaysInMonth, isDayClosedForBusiness } from '../rou
 import * as availabilityService from './availability.service';
 import { purchasePackage } from './package.service';
 import { enrollCustomer } from './membership.service';
+
+/** Requirement 15.4 — never log a raw email, only its hash, for booking-attempt audit entries. */
+function hashEmail(email: string): string {
+  return crypto.createHash('sha256').update(email.toLowerCase()).digest('hex');
+}
 
 export class WidgetError extends Error {
   constructor(message: string, public status: number) {
@@ -283,6 +290,12 @@ export async function createWidgetBooking(dto: CreateWidgetBookingDto, user: Aut
   const { rows: bizRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [dto.businessId]);
   const initialStatus = config.require_payment_before_confirmation ? 'pending' : 'confirmed';
 
+  // Requirement 15.4 — log the attempt (business_id, hashed email, product_id, requested
+  // start time, outcome) via the existing logger, regardless of whether it succeeds.
+  const attemptMeta = {
+    businessId: dto.businessId, hashedEmail: hashEmail(email), productId: dto.serviceId, startTime: dto.startTime,
+  };
+
   let booking;
   try {
     booking = await createBooking({
@@ -299,8 +312,11 @@ export async function createWidgetBooking(dto: CreateWidgetBookingDto, user: Aut
       source: 'widget',
     });
   } catch (err: any) {
+    logger.warn('Widget booking attempt failed', { ...attemptMeta, outcome: 'failed', reason: err.message });
     throw new WidgetError(err.message || 'Failed to create booking', 422);
   }
+
+  logger.info('Widget booking attempt succeeded', { ...attemptMeta, outcome: 'succeeded', bookingId: booking.id });
 
   const full = await getBookingById(booking.id, dto.businessId);
 
@@ -319,9 +335,21 @@ export async function payForBooking(bookingId: string, businessId: string, user:
   const booking = await getBookingById(bookingId, businessId);
   if (!booking) throw new WidgetError('Booking not found', 404);
   if (booking.customer_email !== email) throw new WidgetError('Not authorized for this booking', 401);
-  if (booking.status === 'confirmed') throw new WidgetError('Booking is already confirmed', 409);
 
   const { rows: bizRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
+
+  // Requirement 15.3 — every /pay call against a real, correctly-addressed target is
+  // recorded, not only successful ones; re-attempting payment on an already-confirmed
+  // booking is the one realistic "failed" case v1's simulated payment can produce (there's
+  // no real processor to decline a card).
+  if (booking.status === 'confirmed') {
+    await adminPool.query(
+      `INSERT INTO wgt_widget_transactions (tenant_id, business_id, booking_id, customer_id, amount_cents, currency, payment_method, status)
+       VALUES ($1, $2, $3, $4, $5, 'EUR', 'simulated', 'failed')`,
+      [bizRows[0].tenant_id, businessId, bookingId, booking.customer_id, booking.price],
+    );
+    throw new WidgetError('Booking is already confirmed', 409);
+  }
 
   const { rows: txRows } = await adminPool.query(
     `INSERT INTO wgt_widget_transactions (tenant_id, business_id, booking_id, customer_id, amount_cents, currency, payment_method, status)
@@ -406,9 +434,18 @@ export async function payForPackagePurchase(purchaseId: string, businessId: stri
   const purchase = rows[0];
   if (!purchase) throw new WidgetError('Purchase not found', 404);
   if (purchase.customer_email !== email) throw new WidgetError('Not authorized for this purchase', 401);
-  if (purchase.status === 'active') throw new WidgetError('Purchase is already confirmed', 409);
 
   const { rows: bizRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
+
+  if (purchase.status === 'active') {
+    await adminPool.query(
+      `INSERT INTO wgt_widget_transactions (tenant_id, business_id, purchase_id, customer_id, amount_cents, currency, payment_method, status)
+       VALUES ($1, $2, $3, $4, $5, 'EUR', 'simulated', 'failed')`,
+      [bizRows[0].tenant_id, businessId, purchaseId, purchase.customer_id, purchase.price],
+    );
+    throw new WidgetError('Purchase is already confirmed', 409);
+  }
+
   const { rows: txRows } = await adminPool.query(
     `INSERT INTO wgt_widget_transactions (tenant_id, business_id, purchase_id, customer_id, amount_cents, currency, payment_method, status)
      VALUES ($1, $2, $3, $4, $5, 'EUR', 'simulated', 'completed')
@@ -463,9 +500,18 @@ export async function payForMembershipEnrollment(enrollmentId: string, businessI
   const enrollment = rows[0];
   if (!enrollment) throw new WidgetError('Enrollment not found', 404);
   if (enrollment.customer_email !== email) throw new WidgetError('Not authorized for this enrollment', 401);
-  if (enrollment.status === 'active') throw new WidgetError('Enrollment is already confirmed', 409);
 
   const { rows: bizRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
+
+  if (enrollment.status === 'active') {
+    await adminPool.query(
+      `INSERT INTO wgt_widget_transactions (tenant_id, business_id, enrollment_id, customer_id, amount_cents, currency, payment_method, status)
+       VALUES ($1, $2, $3, $4, $5, 'EUR', 'simulated', 'failed')`,
+      [bizRows[0].tenant_id, businessId, enrollmentId, enrollment.customer_id, enrollment.price],
+    );
+    throw new WidgetError('Enrollment is already confirmed', 409);
+  }
+
   const { rows: txRows } = await adminPool.query(
     `INSERT INTO wgt_widget_transactions (tenant_id, business_id, enrollment_id, customer_id, amount_cents, currency, payment_method, status)
      VALUES ($1, $2, $3, $4, $5, 'EUR', 'simulated', 'completed')
