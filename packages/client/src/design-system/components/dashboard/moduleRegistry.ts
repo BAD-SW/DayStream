@@ -21,7 +21,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   { id: 'customers', phase: 5, icon: '👥', titleKey: 'Customers', descriptionKey: 'Manage customer accounts', path: '/customers', personas: ['business'], permission: 'customers:read' },
 
   // Appointments
-  { id: 'appointments', phase: 7, icon: '📅', titleKey: 'Appointments', descriptionKey: 'Schedule and manage appointments', path: '/bookings', personas: ['business', 'customer'], permission: 'bookings:read' },
+  { id: 'appointments', phase: 7, icon: '📅', titleKey: 'Bookings/Orders', descriptionKey: 'Appointments and order history', path: '/bookings', personas: ['business', 'customer'], permission: 'bookings:read' },
 
   // Schedule
   { id: 'schedule', phase: 7, icon: '🗓️', titleKey: 'Schedule', descriptionKey: 'Staff scheduling and shift management', path: '/schedule', personas: ['business'], permission: 'staff:read' },

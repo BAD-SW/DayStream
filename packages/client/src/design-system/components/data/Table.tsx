@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react';
+import { CSSProperties, ReactNode, useState } from 'react';
 import cssStyles from './Table.module.css';
 
 interface TableColumn<T> {
@@ -9,6 +9,8 @@ interface TableColumn<T> {
   width?: string;
   /** Header text alignment. Defaults to left. */
   align?: 'left' | 'right' | 'center';
+  /** Optional extra style for this column's header cell (e.g. whiteSpace). */
+  headerStyle?: CSSProperties;
 }
 
 interface TableProps<T> {
@@ -176,7 +178,7 @@ export function Table<T extends Record<string, any>>({
               {columns.map((col) => (
                 <th
                   key={col.key}
-                  style={{ ...styles.th, width: col.width, textAlign: col.align || 'left', cursor: col.sortable ? 'pointer' : 'default' }}
+                  style={{ ...styles.th, width: col.width, textAlign: col.align || 'left', cursor: col.sortable ? 'pointer' : 'default', ...col.headerStyle }}
                   onClick={col.sortable ? () => handleSort(col.key) : undefined}
                   aria-sort={sortKey === col.key ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
                 >

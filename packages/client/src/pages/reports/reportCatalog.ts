@@ -91,8 +91,8 @@ export const REPORT_CATALOG: ReportCategory[] = [
     accentColor: '#B5654A',
     accentColorDark: '#D8896F',
     reports: [
-      { id: 'staff-performance', title: 'Staff Performance', description: 'Bookings and revenue per staff member', icon: '👥', comingSoon: true },
-      { id: 'commissions', title: 'Commissions', description: 'Commission earned by staff', icon: '💵', comingSoon: true },
+      { id: 'staff-performance', title: 'Staff Performance', description: 'Bookings and revenue per staff member', icon: '👥' },
+      { id: 'commissions', title: 'Commissions', description: 'Commission earned per order, by staff', icon: '💵' },
       { id: 'payroll-summary', title: 'Payroll Summary', description: 'Gross, deductions, and net by period', icon: '🧮', comingSoon: true },
     ],
   },

@@ -124,6 +124,7 @@ export function Bookings() {
         <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
           <button style={styles.navBtn} onClick={() => navigate('/bookings/new')}>New Appointment</button>
           <button style={styles.navBtn} onClick={() => navigate('/checkout?new=true')}>New Sale</button>
+          <button style={styles.navBtn} onClick={() => navigate('/orders')}>Orders</button>
           <button style={styles.navBtn} onClick={() => navigate('/bookings/calendar')}>Calendar</button>
         </div>
       </div>

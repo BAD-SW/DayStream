@@ -32,6 +32,7 @@ import { ServiceCategories } from './pages/ServiceCategories';
 import { Bookings } from './pages/Bookings';
 import { BookingCalendar } from './pages/BookingCalendar';
 import { Checkout as CheckoutPage } from './pages/Checkout';
+import { Orders } from './pages/Orders';
 import { Receipt } from './pages/Receipt';
 import { BookingFlow } from './pages/BookingFlow';
 import { Schedule } from './pages/Schedule';
@@ -122,6 +123,7 @@ export function App() {
         <Route path="/bookings/:id/edit" element={<ProtectedRoute><BookingEdit /></ProtectedRoute>} />
         <Route path="/bookings/calendar" element={<ProtectedRoute><BookingCalendar /></ProtectedRoute>} />
         <Route path="/checkout" element={<ProtectedRoute><CheckoutPage /></ProtectedRoute>} />
+        <Route path="/orders" element={<ProtectedRoute><Orders /></ProtectedRoute>} />
         <Route path="/receipt/:id" element={<ProtectedRoute><Receipt /></ProtectedRoute>} />
         <Route path="/book/:serviceSlug" element={<ProtectedRoute><BookingFlow /></ProtectedRoute>} />
 

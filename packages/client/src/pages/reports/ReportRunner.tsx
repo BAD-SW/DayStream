@@ -32,6 +32,8 @@ function buildTableColumns(cols: ReportColumn[], currency: string) {
     sortable: true,
     width: col.width || `${((weightFor(col) / totalWeight) * 100).toFixed(2)}%`,
     align: columnAlign(col),
+    // Keep report headers on a single line; the column widths give them room.
+    headerStyle: { whiteSpace: 'nowrap' as const },
     render: (value: any) => (
       <span style={{ display: 'block', textAlign: columnAlign(col) }}>
         {formatReportValue(value, col.type, currency)}
