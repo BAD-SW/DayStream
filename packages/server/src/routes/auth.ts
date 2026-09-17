@@ -89,7 +89,7 @@ authRouter.post('/register', validate(registerSchema), async (req: Request, res:
 authRouter.post('/login', validate(loginSchema), async (req: Request, res: Response) => {
   try {
     const { tenant_id, email, password } = req.body;
-    const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
+    const ip = req.ip || '';
     const userAgent = req.headers['user-agent'] || '';
 
     const result = await authService.loginUser(tenant_id, email, password, ip, userAgent);

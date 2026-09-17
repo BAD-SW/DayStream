@@ -13,6 +13,13 @@ import { adminPool } from './db/pool';
 
 export const app = express();
 
+// Render (and its own edge/CDN in front of it) sits in front of this app, so every
+// request arrives with an X-Forwarded-For chain, not a direct connection — without this,
+// req.ip resolves to Render's own internal proxy address (useless for rate limiting/audit),
+// and any code reading the raw header directly gets the whole comma-separated chain instead
+// of a single IP (broke inet-typed columns — see auth.service.ts's recordLoginAttempt).
+app.set('trust proxy', true);
+
 // Request ID middleware
 app.use((req, res, next) => {
   const requestId = req.headers['x-request-id'] as string || uuidv4();
