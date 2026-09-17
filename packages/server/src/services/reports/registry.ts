@@ -7,6 +7,16 @@ import { salesByStaffReport } from './definitions/sales-by-staff.report';
 import { discountsPromotionsReport } from './definitions/discounts-promotions.report';
 import { bookingsSummaryReport } from './definitions/bookings-summary.report';
 import { cancellationsNoShowsReport } from './definitions/cancellations-no-shows.report';
+import { utilizationReport } from './definitions/utilization.report';
+import { activeMembershipsReport } from './definitions/active-memberships.report';
+import { newCancelledMembershipsReport } from './definitions/new-cancelled-memberships.report';
+import { membershipRecognizedRevenueReport } from './definitions/membership-recognized-revenue.report';
+import { newCustomersReport } from './definitions/new-customers.report';
+import { customerLifetimeValueReport } from './definitions/customer-lifetime-value.report';
+import { customerRetentionReport } from './definitions/customer-retention.report';
+import { staffPerformanceReport } from './definitions/staff-performance.report';
+import { commissionsReport } from './definitions/commissions.report';
+import { payrollSummaryReport } from './definitions/payroll-summary.report';
 
 /**
  * Central registry of report definitions. Adding a new report is a matter of
@@ -22,6 +32,16 @@ const DEFINITIONS: Record<string, ReportDefinition> = {
   [discountsPromotionsReport.id]: discountsPromotionsReport,
   [bookingsSummaryReport.id]: bookingsSummaryReport,
   [cancellationsNoShowsReport.id]: cancellationsNoShowsReport,
+  [utilizationReport.id]: utilizationReport,
+  [activeMembershipsReport.id]: activeMembershipsReport,
+  [newCancelledMembershipsReport.id]: newCancelledMembershipsReport,
+  [membershipRecognizedRevenueReport.id]: membershipRecognizedRevenueReport,
+  [newCustomersReport.id]: newCustomersReport,
+  [customerLifetimeValueReport.id]: customerLifetimeValueReport,
+  [customerRetentionReport.id]: customerRetentionReport,
+  [staffPerformanceReport.id]: staffPerformanceReport,
+  [commissionsReport.id]: commissionsReport,
+  [payrollSummaryReport.id]: payrollSummaryReport,
 };
 
 export function getReportDefinition(id: string): ReportDefinition | null {

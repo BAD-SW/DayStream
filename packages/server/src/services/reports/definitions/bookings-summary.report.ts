@@ -21,7 +21,7 @@ export const bookingsSummaryReport: ReportDefinition = {
     { key: 'reference', header: 'Reference', type: 'text', filterable: true },
     { key: 'service', header: 'Service', type: 'text', filterable: true, groupable: true },
     { key: 'staff', header: 'Staff', type: 'text', filterable: true, groupable: true },
-    { key: 'customer', header: 'Customer', type: 'text', filterable: true },
+    { key: 'customer', header: 'Customer', type: 'text', filterable: true, link: { to: 'customer', idKey: 'customer_id' } },
     { key: 'status', header: 'Status', type: 'text', filterable: true, groupable: true },
     { key: 'price', header: 'Price', type: 'currency', total: true },
   ],
@@ -40,6 +40,7 @@ export const bookingsSummaryReport: ReportDefinition = {
                 NULLIF(TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')), ''),
                 '—'
               ) AS customer,
+              c.id AS customer_id,
               INITCAP(REPLACE(b.status, '_', ' ')) AS status,
               b.price::int AS price
          FROM apt_bookings b

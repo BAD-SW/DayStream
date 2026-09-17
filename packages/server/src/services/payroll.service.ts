@@ -2,6 +2,7 @@ import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
 import { getEffectiveRules } from './compensation.service';
 import { getUserSummary, generateFromBookings } from './time-tracking.service';
+import { commissionTotalsByStaff } from './commission.service';
 import { logger } from '../middleware/logger';
 
 interface PayPeriodInput {
@@ -72,19 +73,40 @@ export async function runPayroll(periodId: string, businessId: string, tenantId:
   let totalDeductions = 0;
   let totalNet = 0;
 
+  // Order-based commission + per-session totals for every staff member in one
+  // pass, keyed by user_id. Computed from completed orders in the period via the
+  // shared commission service (single source of truth with the Commissions report).
+  const commissionForStaff = await commissionTotalsByStaff({
+    businessId,
+    start: period.period_start,
+    end: period.period_end,
+  });
+
   for (const staff of staffWithRules) {
     const userId = staff.user_id;
 
-    // Get time/session/revenue summary
+    // Get time/session/revenue summary (hourly uses hours; commission/per_session
+    // no longer use booking revenue/sessions — see below).
     const summary = await getUserSummary(userId, businessId, period.period_start, period.period_end);
 
     // Get effective compensation rules
     const rules = await getEffectiveRules(userId, businessId, period.period_end);
 
+    // Order-based commission + per-session totals for the period. Commission is
+    // earned on COMPLETED-order line items credited to the staff member (locked-in
+    // revenue), computed by the shared commission service — the SAME computation
+    // the Commissions report uses, so payroll (Posted) and the report agree. Rule
+    // matching, scoping, and precedence are handled inside that service, so the
+    // per-rule loop below no longer computes commission/per_session itself.
+    const orderCommission = commissionForStaff.get(userId) || { commission: 0, perSession: 0 };
+
     // Calculate gross pay
     let grossPay = 0;
     const breakdown: any[] = [];
 
+    // Hourly and salary remain rule-driven; commission/per_session come from the
+    // order-based totals (added once, after the loop) to avoid double-counting a
+    // staff member's multiple commission rules.
     for (const rule of rules) {
       let amount = 0;
       switch (rule.rule_type) {
@@ -94,23 +116,22 @@ export async function runPayroll(periodId: string, businessId: string, tenantId:
           amount = Math.round(regularHours * rule.rate + overtimeHours * rule.rate * parseFloat(rule.overtime_multiplier));
           breakdown.push({ type: 'hourly', hours: summary.total_hours, regular: regularHours, overtime: overtimeHours, amount });
           break;
-        case 'per_session':
-          amount = summary.total_sessions * rule.rate;
-          breakdown.push({ type: 'per_session', sessions: summary.total_sessions, rate: rule.rate, amount });
-          break;
-        case 'commission':
-          const eligibleRevenue = rule.threshold_amount
-            ? Math.max(0, summary.total_revenue - rule.threshold_amount)
-            : summary.total_revenue;
-          amount = Math.round(eligibleRevenue * rule.rate / 10000); // rate in basis points
-          breakdown.push({ type: 'commission', revenue: summary.total_revenue, eligible: eligibleRevenue, rate_bps: rule.rate, amount });
-          break;
         case 'salary':
           amount = rule.rate; // Fixed per period
           breakdown.push({ type: 'salary', amount });
           break;
+        // 'commission' and 'per_session' are handled from orderCommission below.
       }
       grossPay += amount;
+    }
+
+    if (orderCommission.commission !== 0) {
+      breakdown.push({ type: 'commission', basis: 'orders', amount: orderCommission.commission });
+      grossPay += orderCommission.commission;
+    }
+    if (orderCommission.perSession !== 0) {
+      breakdown.push({ type: 'per_session', basis: 'orders', amount: orderCommission.perSession });
+      grossPay += orderCommission.perSession;
     }
 
     // Apply deductions (manual deductions + auto tax calculations)

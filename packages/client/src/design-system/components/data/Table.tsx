@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react';
+import { CSSProperties, ReactNode, useState } from 'react';
 import cssStyles from './Table.module.css';
 
 interface TableColumn<T> {
@@ -9,6 +9,8 @@ interface TableColumn<T> {
   width?: string;
   /** Header text alignment. Defaults to left. */
   align?: 'left' | 'right' | 'center';
+  /** Optional extra style for this column's header cell (e.g. whiteSpace). */
+  headerStyle?: CSSProperties;
 }
 
 interface TableProps<T> {
@@ -156,6 +158,12 @@ export function Table<T extends Record<string, any>>({
       <div style={styles.wrapper}>
         <table style={{ ...styles.table, ...(fixedLayout ? { tableLayout: 'fixed' as const } : {}) }}>
           <thead>
+            {filterRow && (
+              <tr style={styles.filterRow}>
+                {selectable && <th style={styles.th} />}
+                {filterRow}
+              </tr>
+            )}
             <tr>
               {selectable && (
                 <th style={{ ...styles.th, width: '40px' }}>
@@ -170,7 +178,7 @@ export function Table<T extends Record<string, any>>({
               {columns.map((col) => (
                 <th
                   key={col.key}
-                  style={{ ...styles.th, width: col.width, textAlign: col.align || 'left', cursor: col.sortable ? 'pointer' : 'default' }}
+                  style={{ ...styles.th, width: col.width, textAlign: col.align || 'left', cursor: col.sortable ? 'pointer' : 'default', ...col.headerStyle }}
                   onClick={col.sortable ? () => handleSort(col.key) : undefined}
                   aria-sort={sortKey === col.key ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
                 >
@@ -183,12 +191,6 @@ export function Table<T extends Record<string, any>>({
                 </th>
               ))}
             </tr>
-            {filterRow && (
-              <tr style={styles.filterRow}>
-                {selectable && <th style={styles.th} />}
-                {filterRow}
-              </tr>
-            )}
           </thead>
           <tbody>
             {data.length === 0 && (
@@ -286,7 +288,9 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: 'uppercase',
     letterSpacing: '0.04em',
     borderBottom: '1px solid var(--color-border)',
-    whiteSpace: 'nowrap',
+    whiteSpace: 'normal',
+    overflowWrap: 'break-word',
+    verticalAlign: 'bottom',
     userSelect: 'none',
   },
   tr: {

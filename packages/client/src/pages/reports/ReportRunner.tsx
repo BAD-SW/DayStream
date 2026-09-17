@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { ReportRunResult, ReportExportFormat } from '@daystream/shared';
+import type { ReportRunResult, ReportExportFormat, ReportColumn } from '@daystream/shared';
 import { Button } from '../../design-system/components/actions/Button';
 import { Table } from '../../design-system/components/data/Table';
 import { useContextManager } from '../../context/ContextManager';
@@ -16,10 +16,76 @@ function findCatalogEntry(reportId: string) {
   return null;
 }
 
-function isoDaysAgo(days: number): string {
+/** Build design-system Table columns from a report column set, with fixed-layout
+ *  proportional widths and per-type value formatting. Shared by the single-table
+ *  view and each section of a multi-section report. */
+function buildTableColumns(cols: ReportColumn[], currency: string) {
+  const weightFor = (col: ReportColumn) => {
+    if (col.type === 'currency' || col.type === 'number' || col.type === 'percent') return 1;
+    if (col.type === 'date') return 1;
+    return 2; // text columns get more room
+  };
+  const totalWeight = cols.reduce((sum, c) => sum + weightFor(c), 0) || 1;
+  return cols.map((col) => ({
+    key: col.key,
+    header: col.header,
+    sortable: true,
+    width: col.width || `${((weightFor(col) / totalWeight) * 100).toFixed(2)}%`,
+    align: columnAlign(col),
+    // Keep report headers on a single line; the column widths give them room.
+    headerStyle: { whiteSpace: 'nowrap' as const },
+    render: (value: any, row: Record<string, any>) => {
+      const formatted = formatReportValue(value, col.type, currency);
+      const href = col.link ? linkHref(col.link, row?.[col.link.idKey]) : null;
+      return (
+        <span style={{ display: 'block', textAlign: columnAlign(col) }}>
+          {href ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={styles.cellLink}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {formatted}
+            </a>
+          ) : (
+            formatted
+          )}
+        </span>
+      );
+    },
+  }));
+}
+
+/** Map a column link descriptor + row id to a detail-page href, or null when
+ *  there's no id (so the cell renders as plain text rather than a dead link). */
+function linkHref(link: { to: 'customer' | 'order'; idKey: string }, id: unknown): string | null {
+  if (id == null || id === '') return null;
+  const encoded = encodeURIComponent(String(id));
+  switch (link.to) {
+    case 'customer': return `/customers/${encoded}`;
+    case 'order': return `/receipt/${encoded}`;
+    default: return null;
+  }
+}
+
+/** Build a footer-cells row (label in first cell, totals in totaled columns). */
+function buildFooterCellsFor(cols: ReportColumn[], totals: Record<string, number>, currency: string, label: string) {
+  return cols.map((col, idx) => ({
+    align: columnAlign(col),
+    content:
+      idx === 0
+        ? label
+        : col.total && totals[col.key] != null
+          ? formatReportValue(totals[col.key], col.type, currency)
+          : '',
+  }));
+}
+
+function isoFirstOfMonth(): string {
   const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
 function isoToday(): string {
@@ -34,7 +100,7 @@ export function ReportRunner() {
 
   const entry = findCatalogEntry(reportId);
 
-  const [fromDate, setFromDate] = useState<string>(isoDaysAgo(29));
+  const [fromDate, setFromDate] = useState<string>(isoFirstOfMonth());
   const [toDate, setToDate] = useState<string>(isoToday());
   const [result, setResult] = useState<ReportRunResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -51,11 +117,8 @@ export function ReportRunner() {
     setGroupBy((g) => (g.includes(key) ? g.filter((k) => k !== key) : [...g, key]));
   }
 
-  async function handleRun() {
-    if (rangeInvalid) {
-      setErrorMsg('Please choose a From date on or before the To date.');
-      return;
-    }
+  const handleRun = useCallback(async () => {
+    if (!businessId || !reportId || !fromDate || !toDate || fromDate > toDate) return;
     setLoading(true);
     setErrorMsg(null);
     try {
@@ -69,7 +132,19 @@ export function ReportRunner() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [businessId, reportId, fromDate, toDate]);
+
+  // Auto-run: generate the report on open and whenever the date range (or the
+  // active business/report) changes. A short debounce coalesces the rapid
+  // updates a date picker emits so we issue one request per settled range.
+  // The Run button is intentionally omitted — changing a date IS the run.
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    if (!businessId || rangeInvalid) return;
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => { void handleRun(); }, 300);
+    return () => clearTimeout(debounceRef.current);
+  }, [businessId, rangeInvalid, handleRun]);
 
   async function handleExport(format: ReportExportFormat) {
     if (rangeInvalid) return;
@@ -135,45 +210,13 @@ export function ReportRunner() {
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
   }, [result, filteredRows, groupBy]);
 
-  const columns = useMemo(() => {
-    if (!result) return [];
-    const currency = result.meta.currency;
-    // Proportional column weights by type, so every group table (fixed layout)
-    // shares identical column widths and lines up down the page.
-    const weightFor = (col: typeof result.columns[number]) => {
-      if (col.type === 'currency' || col.type === 'number' || col.type === 'percent') return 1;
-      if (col.type === 'date') return 1;
-      return 2; // text columns get more room
-    };
-    const totalWeight = result.columns.reduce((sum, c) => sum + weightFor(c), 0);
-    return result.columns.map((col) => ({
-      key: col.key,
-      header: col.header,
-      sortable: true,
-      width: col.width || `${((weightFor(col) / totalWeight) * 100).toFixed(2)}%`,
-      align: columnAlign(col),
-      render: (value: any) => (
-        <span style={{ display: 'block', textAlign: columnAlign(col) }}>
-          {formatReportValue(value, col.type, currency)}
-        </span>
-      ),
-    }));
-  }, [result]);
+  const columns = useMemo(() => (result ? buildTableColumns(result.columns, result.meta.currency) : []), [result]);
 
   // Build a footer-cells array (one per column, same order) for a totals row so
   // it renders inside the table and shares the exact column widths.
   function buildFooterCells(label: string, totals: Record<string, number>) {
     if (!result) return [];
-    const currency = result.meta.currency;
-    return result.columns.map((col, idx) => ({
-      align: columnAlign(col),
-      content:
-        idx === 0
-          ? label
-          : col.total && totals[col.key] != null
-            ? formatReportValue(totals[col.key], col.type, currency)
-            : '',
-    }));
+    return buildFooterCellsFor(result.columns, totals, result.meta.currency, label);
   }
 
   if (!entry) {
@@ -239,9 +282,7 @@ export function ReportRunner() {
             style={styles.dateInput}
           />
         </div>
-        <Button variant="primary" onClick={handleRun} loading={loading} disabled={!businessId || rangeInvalid}>
-          Run
-        </Button>
+        {loading && <span style={styles.runningHint}>Running…</span>}
         {result && groupableColumns.length > 0 && (
           <div style={styles.groupInline}>
             <span style={styles.groupBarLabel}>Group by</span>
@@ -269,6 +310,9 @@ export function ReportRunner() {
       {!businessId && (
         <p style={styles.hint}>Select a business to run this report.</p>
       )}
+      {businessId && rangeInvalid && (
+        <p style={styles.hint}>Choose a From date on or before the To date.</p>
+      )}
       {errorMsg && <p style={styles.errorText}>{errorMsg}</p>}
 
       {result && (
@@ -276,11 +320,36 @@ export function ReportRunner() {
           <div style={styles.resultMeta}>
             <span>{result.meta.businessName}</span>
             <span>
-              {filteredRows.length} of {result.rows.length} rows · {result.meta.dateRange.start} to {result.meta.dateRange.end}
+              {result.sections
+                ? `${result.meta.dateRange.start} to ${result.meta.dateRange.end}`
+                : `${filteredRows.length} of ${result.rows.length} rows · ${result.meta.dateRange.start} to ${result.meta.dateRange.end}`}
             </span>
           </div>
 
-          {groups ? (
+          {result.sections ? (
+            <>
+              {result.sections.map((section, secIdx) => {
+                const secCols = buildTableColumns(section.columns, result.meta.currency);
+                const hasSecTotals = section.columns.some((c) => c.total);
+                const isLastSection = secIdx === result.sections!.length - 1;
+                return (
+                  <div key={section.id} style={{ ...styles.groupSection, ...(isLastSection ? {} : styles.sectionGap) }}>
+                    <div style={styles.groupHeader}>{section.title} <span style={styles.groupCount}>({section.rows.length})</span></div>
+                    <Table
+                      columns={secCols}
+                      data={section.rows}
+                      clientSort
+                      fixedLayout
+                      emptyMessage="No data for the selected range"
+                      footerRows={hasSecTotals && section.rows.length > 0
+                        ? [{ cells: buildFooterCellsFor(section.columns, section.totals, result.meta.currency, 'Total'), strong: true }]
+                        : undefined}
+                    />
+                  </div>
+                );
+              })}
+            </>
+          ) : groups ? (
             <>
               {groups.map((g, groupIdx) => {
                 const isLast = groupIdx === groups.length - 1;
@@ -322,8 +391,8 @@ export function ReportRunner() {
         </div>
       )}
 
-      {!result && !loading && businessId && (
-        <p style={styles.hint}>Choose a date range and select Run to generate the report.</p>
+      {!result && !loading && businessId && !rangeInvalid && (
+        <p style={styles.hint}>Generating report…</p>
       )}
     </div>
   );
@@ -340,6 +409,8 @@ const styles: Record<string, React.CSSProperties> = {
   dateInput: { fontSize: 'var(--font-size-sm)', padding: '7px 9px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
   spacer: { flex: 1 },
   hint: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' },
+  runningHint: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', paddingBottom: '9px' },
+  cellLink: { color: 'var(--color-accent)', textDecoration: 'none', fontWeight: 'var(--font-weight-medium)' as any },
   errorText: { color: 'var(--color-danger, #b3261e)', fontSize: 'var(--font-size-sm)' },
   tableCard: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
   resultMeta: { display: 'flex', justifyContent: 'space-between', padding: 'var(--space-sm) var(--space-md)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' },
@@ -349,6 +420,7 @@ const styles: Record<string, React.CSSProperties> = {
   groupBarLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-bold)' as any, textTransform: 'uppercase', letterSpacing: '0.04em' },
   groupCheck: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', cursor: 'pointer' },
   groupSection: { borderBottom: '1px solid var(--color-border)' },
+  sectionGap: { marginBottom: 'var(--space-xl)' },
   groupHeader: { padding: 'var(--space-sm) var(--space-md)', background: 'var(--color-surface-hover)', fontWeight: 'var(--font-weight-bold)' as any, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
   groupCount: { color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-medium)' as any, fontSize: 'var(--font-size-xs)' },
 };
