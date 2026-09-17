@@ -9,11 +9,14 @@ import { CurrencyInput } from '../components/CurrencyInput';
 import { formatCurrency } from '../utils/currency';
 import { ThemeEditorFields, ThemeField } from '../design-system/components/forms/ThemeEditorFields';
 
-const THEME_TO_FORM_FIELD: Record<ThemeField, 'primary_color' | 'secondary_color' | 'font_family' | 'base_font_size'> = {
+const THEME_TO_FORM_FIELD: Record<ThemeField, 'base_theme' | 'primary_color' | 'secondary_color' | 'title_color' | 'font_family' | 'base_font_size' | 'favicon_url'> = {
+  baseTheme: 'base_theme',
   primaryColor: 'primary_color',
   secondaryColor: 'secondary_color',
+  titleColor: 'title_color',
   fontFamily: 'font_family',
   baseFontSize: 'base_font_size',
+  faviconUrl: 'favicon_url',
 };
 
 interface Business {
@@ -29,8 +32,11 @@ interface Business {
   timezone: string;
   primary_color: string | null;
   secondary_color: string | null;
+  title_color: string | null;
   font_family: string | null;
   base_font_size: number | null;
+  base_theme: string | null;
+  favicon_url: string | null;
   billing_frequency: string;
   billing_amount: number;
   billing_method: string;
@@ -53,8 +59,11 @@ interface BusinessForm {
   // see 104_theme_cascade.sql), so theming can be part of setup without forcing a choice.
   primary_color: string | null;
   secondary_color: string | null;
+  title_color: string | null;
   font_family: string | null;
   base_font_size: number | null;
+  base_theme: string | null;
+  favicon_url: string | null;
   billing_frequency: string;
   billing_amount: number; // stored as cents
   billing_method: string;
@@ -77,7 +86,8 @@ interface BusinessForm {
 const EMPTY_FORM: BusinessForm = {
   name: '', slug: '', email: '', phone: '', address: '',
   default_language: 'en', currency: 'EUR', timezone: 'UTC',
-  primary_color: null, secondary_color: null, font_family: null, base_font_size: null,
+  primary_color: null, secondary_color: null, title_color: null, font_family: null, base_font_size: null,
+  base_theme: null, favicon_url: null,
   billing_frequency: 'monthly', billing_amount: 0, billing_method: 'tbd',
   signup_date: '', next_billing_date: '',
   payment_bank_name: '', payment_account_holder: '', payment_account_number: '',
@@ -125,8 +135,11 @@ export function TenantBusinesses() {
       currency: biz.currency, timezone: biz.timezone,
       primary_color: biz.primary_color ?? null,
       secondary_color: biz.secondary_color ?? null,
+      title_color: biz.title_color ?? null,
       font_family: biz.font_family ?? null,
       base_font_size: biz.base_font_size ?? null,
+      base_theme: biz.base_theme ?? null,
+      favicon_url: biz.favicon_url ?? null,
       billing_frequency: biz.billing_frequency || 'monthly',
       billing_amount: biz.billing_amount || 0,
       billing_method: biz.billing_method || 'tbd',
@@ -391,10 +404,13 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
       </div>
       <ThemeEditorFields
         values={{
+          baseTheme: form.base_theme,
           primaryColor: form.primary_color,
           secondaryColor: form.secondary_color,
+          titleColor: form.title_color,
           fontFamily: form.font_family,
           baseFontSize: form.base_font_size,
+          faviconUrl: form.favicon_url,
         }}
         onChange={(field, value) => {
           const formField = THEME_TO_FORM_FIELD[field];

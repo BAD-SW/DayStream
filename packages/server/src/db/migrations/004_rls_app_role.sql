@@ -9,8 +9,15 @@ BEGIN
 END
 $$;
 
--- Grant usage on the database
-GRANT CONNECT ON DATABASE daystream_dev TO daystream_app;
+-- Grant usage on the database. Dynamic rather than a hardcoded 'daystream_dev' — that
+-- name is a local-dev-only convention and doesn't exist on managed hosts (e.g. Neon's
+-- default database is 'neondb'), so a literal reference broke any fresh migration run
+-- against a differently-named database (spec 38 Phase 4).
+DO $$
+BEGIN
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO daystream_app', current_database());
+END
+$$;
 GRANT USAGE ON SCHEMA public TO daystream_app;
 
 -- Grant table-level permissions (all current and future tables)
@@ -31,8 +38,11 @@ CREATE POLICY tenant_isolation_users ON users
     TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
 
--- Also allow the postgres superuser full access (for migrations, seeds)
-CREATE POLICY admin_full_access_users ON users
-    FOR ALL
-    TO postgres
-    USING (true);
+-- Also allow the connecting admin/owner role full access (for migrations, seeds) — the
+-- role is named 'postgres' locally but varies on managed hosts (e.g. Neon's is
+-- 'neondb_owner'), so it's captured dynamically via current_user rather than hardcoded.
+DO $$
+BEGIN
+  EXECUTE format('CREATE POLICY admin_full_access_users ON users FOR ALL TO %I USING (true)', current_user);
+END
+$$;

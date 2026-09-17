@@ -155,37 +155,37 @@ ALTER TABLE tenant_sites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenant_sites FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_tenant_sites ON tenant_sites FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_tenant_sites ON tenant_sites FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_tenant_sites ON tenant_sites FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE site_pages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE site_pages FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_site_pages ON site_pages FOR ALL TO daystream_app
     USING (site_id IN (SELECT id FROM tenant_sites WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_site_pages ON site_pages FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_site_pages ON site_pages FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE blog_posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE blog_posts FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_blog_posts ON blog_posts FOR ALL TO daystream_app
     USING (site_id IN (SELECT id FROM tenant_sites WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_blog_posts ON blog_posts FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_blog_posts ON blog_posts FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE media_files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media_files FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_media_files ON media_files FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_media_files ON media_files FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_media_files ON media_files FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE form_submissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE form_submissions FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_form_submissions ON form_submissions FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_form_submissions ON form_submissions FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_form_submissions ON form_submissions FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE site_navigation ENABLE ROW LEVEL SECURITY;
 ALTER TABLE site_navigation FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_site_navigation ON site_navigation FOR ALL TO daystream_app
     USING (site_id IN (SELECT id FROM tenant_sites WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_site_navigation ON site_navigation FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_site_navigation ON site_navigation FOR ALL TO CURRENT_USER USING (true);
 
 -- ============================================================
 -- 9. Grant Permissions

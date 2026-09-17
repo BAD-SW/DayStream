@@ -84,25 +84,25 @@ ALTER TABLE report_daily_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE report_daily_metrics FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_report_daily_metrics ON report_daily_metrics FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_report_daily_metrics ON report_daily_metrics FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_report_daily_metrics ON report_daily_metrics FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE dashboard_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE dashboard_configs FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_dashboard_configs ON dashboard_configs FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_dashboard_configs ON dashboard_configs FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_dashboard_configs ON dashboard_configs FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE scheduled_reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scheduled_reports FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_scheduled_reports ON scheduled_reports FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_scheduled_reports ON scheduled_reports FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_scheduled_reports ON scheduled_reports FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE report_delivery_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE report_delivery_log FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_report_delivery_log ON report_delivery_log FOR ALL TO daystream_app
     USING (scheduled_report_id IN (SELECT id FROM scheduled_reports WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_report_delivery_log ON report_delivery_log FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_report_delivery_log ON report_delivery_log FOR ALL TO CURRENT_USER USING (true);
 
 -- ============================================================
 -- 6. Grant Permissions

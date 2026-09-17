@@ -175,7 +175,7 @@ CREATE POLICY tenant_isolation_customers ON customers
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
 
 CREATE POLICY admin_full_access_customers ON customers
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Customer notes
@@ -187,7 +187,7 @@ CREATE POLICY tenant_isolation_customer_notes ON customer_notes
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_customer_notes ON customer_notes
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Note categories
@@ -199,7 +199,7 @@ CREATE POLICY tenant_isolation_note_categories ON note_categories
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_note_categories ON note_categories
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Tags
@@ -211,7 +211,7 @@ CREATE POLICY tenant_isolation_tags ON tags
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_tags ON tags
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Customer tags
@@ -223,7 +223,7 @@ CREATE POLICY tenant_isolation_customer_tags ON customer_tags
     USING (customer_id IN (SELECT id FROM customers WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_customer_tags ON customer_tags
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Custom fields
@@ -235,7 +235,7 @@ CREATE POLICY tenant_isolation_custom_fields ON customer_custom_fields
     USING (customer_id IN (SELECT id FROM customers WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_custom_fields ON customer_custom_fields
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Activities
@@ -247,7 +247,7 @@ CREATE POLICY tenant_isolation_activities ON customer_activities
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_activities ON customer_activities
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Segments
@@ -259,7 +259,7 @@ CREATE POLICY tenant_isolation_segments ON segments
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_segments ON segments
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Customer preferences
@@ -271,7 +271,7 @@ CREATE POLICY tenant_isolation_preferences ON customer_preferences
     USING (customer_id IN (SELECT id FROM customers WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_preferences ON customer_preferences
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- ============================================================

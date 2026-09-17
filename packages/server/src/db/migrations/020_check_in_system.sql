@@ -112,31 +112,31 @@ ALTER TABLE check_in_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE check_in_records FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_check_in_records ON check_in_records FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_check_in_records ON check_in_records FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_check_in_records ON check_in_records FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE check_in_qr_codes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE check_in_qr_codes FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_check_in_qr_codes ON check_in_qr_codes FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_check_in_qr_codes ON check_in_qr_codes FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_check_in_qr_codes ON check_in_qr_codes FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE no_show_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE no_show_records FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_no_show_records ON no_show_records FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_no_show_records ON no_show_records FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_no_show_records ON no_show_records FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE check_in_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE check_in_config FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_check_in_config ON check_in_config FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_check_in_config ON check_in_config FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_check_in_config ON check_in_config FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE kiosk_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kiosk_sessions FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_kiosk_sessions ON kiosk_sessions FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_kiosk_sessions ON kiosk_sessions FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_kiosk_sessions ON kiosk_sessions FOR ALL TO CURRENT_USER USING (true);
 
 -- ============================================================
 -- 7. Grant Permissions

@@ -221,7 +221,7 @@ CREATE POLICY tenant_isolation_bookings ON bookings
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_bookings ON bookings
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Booking status history
@@ -233,7 +233,7 @@ CREATE POLICY tenant_isolation_booking_history ON booking_status_history
     USING (booking_id IN (SELECT id FROM bookings WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
 
 CREATE POLICY admin_full_access_booking_history ON booking_status_history
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Slot holds
@@ -245,7 +245,7 @@ CREATE POLICY tenant_isolation_slot_holds ON slot_holds
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_slot_holds ON slot_holds
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Waitlist
@@ -257,7 +257,7 @@ CREATE POLICY tenant_isolation_waitlist ON waitlist_entries
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_waitlist ON waitlist_entries
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Recurring series
@@ -269,7 +269,7 @@ CREATE POLICY tenant_isolation_recurring ON recurring_booking_series
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_recurring ON recurring_booking_series
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Staff schedules
@@ -281,7 +281,7 @@ CREATE POLICY tenant_isolation_staff_schedules ON staff_schedules
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_staff_schedules ON staff_schedules
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Staff time off
@@ -293,7 +293,7 @@ CREATE POLICY tenant_isolation_staff_time_off ON staff_time_off
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_staff_time_off ON staff_time_off
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Notification queue
@@ -305,7 +305,7 @@ CREATE POLICY tenant_isolation_notifications ON notification_queue
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_notifications ON notification_queue
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- ============================================================

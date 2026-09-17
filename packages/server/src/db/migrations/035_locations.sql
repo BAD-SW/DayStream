@@ -90,7 +90,7 @@ CREATE POLICY tenant_isolation_locations ON locations
     ));
 
 CREATE POLICY admin_full_access_locations ON locations
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- ============================================================

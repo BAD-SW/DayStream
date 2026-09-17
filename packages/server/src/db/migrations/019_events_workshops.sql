@@ -222,55 +222,55 @@ ALTER TABLE event_types ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_types FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_event_types ON event_types FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_event_types ON event_types FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_event_types ON event_types FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE event_series ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_series FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_event_series ON event_series FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_event_series ON event_series FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_event_series ON event_series FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE recurring_event_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recurring_event_templates FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_recurring_templates ON recurring_event_templates FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_recurring_templates ON recurring_event_templates FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_recurring_templates ON recurring_event_templates FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE events FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_events ON events FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_events ON events FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_events ON events FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE event_facilitators ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_facilitators FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_event_facilitators ON event_facilitators FOR ALL TO daystream_app
     USING (event_id IN (SELECT id FROM events WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_event_facilitators ON event_facilitators FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_event_facilitators ON event_facilitators FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE event_ticket_tiers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_ticket_tiers FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_event_ticket_tiers ON event_ticket_tiers FOR ALL TO daystream_app
     USING (event_id IN (SELECT id FROM events WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_event_ticket_tiers ON event_ticket_tiers FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_event_ticket_tiers ON event_ticket_tiers FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE event_registrations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_registrations FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_event_registrations ON event_registrations FOR ALL TO daystream_app
     USING (event_id IN (SELECT id FROM events WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_event_registrations ON event_registrations FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_event_registrations ON event_registrations FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE event_waitlist ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_waitlist FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_event_waitlist ON event_waitlist FOR ALL TO daystream_app
     USING (event_id IN (SELECT id FROM events WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_event_waitlist ON event_waitlist FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_event_waitlist ON event_waitlist FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE event_communications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_communications FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_event_communications ON event_communications FOR ALL TO daystream_app
     USING (event_id IN (SELECT id FROM events WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_event_communications ON event_communications FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_event_communications ON event_communications FOR ALL TO CURRENT_USER USING (true);
 
 -- ============================================================
 -- 11. Grant Permissions

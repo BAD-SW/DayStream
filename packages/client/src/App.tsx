@@ -80,6 +80,7 @@ import { BusinessSettings } from './pages/BusinessSettings';
 import { Locations } from './pages/Locations';
 import { LocationDetail } from './pages/LocationDetail';
 import { LocationCreate } from './pages/LocationCreate';
+import { BookingWidget } from './pages/BookingWidget';
 
 export function App() {
   return (
@@ -87,6 +88,9 @@ export function App() {
       <Routes>
         {/* Public routes */}
         <Route path="/login" element={<Login />} />
+
+        {/* Embeddable booking widget (spec 38) — standalone, no admin chrome, no auth gate */}
+        <Route path="/booking-widget" element={<BookingWidget />} />
 
         {/* Main dashboard — persona-based */}
         <Route path="/dashboard" element={<ProtectedRoute><PersonaDashboard /></ProtectedRoute>} />

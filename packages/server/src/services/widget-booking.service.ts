@@ -1,0 +1,299 @@
+import { adminPool } from '../db/pool';
+import { createBooking, getBookingById } from './booking.service';
+import { createHold } from './slot-hold.service';
+import { queueBookingConfirmation } from './booking-notifications.service';
+import { createActivity } from './customer-activity.service';
+import { resolveForBusiness } from './theme.service';
+import { computeDayStatus, getDaysInMonth, isDayClosedForBusiness } from '../routes/bookings';
+import * as availabilityService from './availability.service';
+
+export class WidgetError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+    this.name = 'WidgetError';
+  }
+}
+
+interface WidgetConfig {
+  tenant_id: string;
+  business_id: string;
+  is_enabled: boolean;
+  require_payment_before_confirmation: boolean;
+  allowed_origins: string[] | null;
+}
+
+/** Loads the widget config for a business, or throws 403/404 per Requirement 4.8 / 12.6. */
+export async function requireEnabledWidget(businessId: string): Promise<WidgetConfig> {
+  const { rows: bizRows } = await adminPool.query('SELECT id, tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
+  if (bizRows.length === 0) throw new WidgetError('Business not found', 404);
+
+  const { rows } = await adminPool.query('SELECT * FROM wgt_widget_configs WHERE business_id = $1', [businessId]);
+  const config = rows[0];
+  if (!config || !config.is_enabled) throw new WidgetError('Widget is not enabled for this business', 403);
+  return config;
+}
+
+/** Requirement 12.2 — validates the Origin header against allowed_origins, when configured. */
+export function assertOriginAllowed(config: WidgetConfig, origin: string | undefined): void {
+  if (!config.allowed_origins || config.allowed_origins.length === 0) return;
+  if (!origin || !config.allowed_origins.includes(origin)) throw new WidgetError('Origin not permitted', 403);
+}
+
+export async function getBusinessInfo(businessId: string) {
+  const config = await requireEnabledWidget(businessId);
+  const { rows } = await adminPool.query(
+    'SELECT id, name, logo_url, tenant_id FROM sys_businesses WHERE id = $1',
+    [businessId],
+  );
+  const business = rows[0];
+  const theme = await resolveForBusiness(businessId, adminPool);
+  return {
+    id: business.id,
+    name: business.name,
+    logo_url: business.logo_url,
+    tenant_id: business.tenant_id,
+    theme,
+    require_payment_before_confirmation: config.require_payment_before_confirmation,
+  };
+}
+
+export async function getProducts(businessId: string) {
+  await requireEnabledWidget(businessId);
+  const { rows } = await adminPool.query(
+    `SELECT s.id, s.name, s.short_description, s.booking_type,
+            json_agg(json_build_object('id', v.id, 'name', v.name, 'duration', v.duration, 'price', v.price) ORDER BY v.display_order) AS variants
+     FROM svc_services s
+     JOIN svc_variants v ON v.service_id = s.id AND v.status = 'active'
+     WHERE s.business_id = $1 AND s.status = 'active' AND s.online_booking_enabled = true
+     GROUP BY s.id
+     ORDER BY s.display_order`,
+    [businessId],
+  );
+  return rows.map((r: any) => ({ ...r, product_type: 'service' }));
+}
+
+export async function getProductDetail(businessId: string, productId: string) {
+  await requireEnabledWidget(businessId);
+  const { rows } = await adminPool.query(
+    `SELECT s.id, s.name, s.description, s.short_description, s.booking_type, s.default_duration
+     FROM svc_services s
+     WHERE s.id = $1 AND s.business_id = $2 AND s.status = 'active' AND s.online_booking_enabled = true`,
+    [productId, businessId],
+  );
+  if (rows.length === 0) throw new WidgetError('Product not found', 404);
+
+  const { rows: variants } = await adminPool.query(
+    `SELECT id, name, duration, price FROM svc_variants WHERE service_id = $1 AND status = 'active' ORDER BY display_order`,
+    [productId],
+  );
+  return { ...rows[0], product_type: 'service', variants };
+}
+
+/** Mirrors GET /bookings/availability/days (bookings.ts) exactly — same helpers, same logic. */
+export async function getAvailabilityDays(businessId: string, serviceId: string, variantId: string, month: string) {
+  await requireEnabledWidget(businessId);
+  const days = getDaysInMonth(month);
+  const result: Record<string, 'available' | 'unavailable' | 'closed'> = {};
+  let timezone = 'UTC';
+  for (const day of days) {
+    const availability = await availabilityService.getAvailabilityCombinations({
+      serviceId, businessId, variantId, dateFrom: day, dateTo: day,
+    });
+    timezone = availability.timezone;
+    const isClosed = availability.slots.length === 0 ? await isDayClosedForBusiness(businessId, day) : false;
+    result[day] = computeDayStatus(availability.slots, 1, isClosed);
+  }
+  return { timezone, days: result };
+}
+
+/**
+ * Returns the same rich (time x location x staff) combinations the admin booking flow
+ * uses — not the collapsed "available_staff per time" shape — so the widget can offer the
+ * same location/staff selection a business owner already gets in BookingCreate.tsx, and so
+ * a specific chosen combo's staff_id can be sent to createBooking() rather than
+ * auto-picking the first available one.
+ */
+export async function getAvailabilitySlots(businessId: string, serviceId: string, variantId: string, dateFrom: string, dateTo: string) {
+  await requireEnabledWidget(businessId);
+  const result = await availabilityService.getAvailabilityCombinations({ businessId, serviceId, variantId, dateFrom, dateTo });
+  return result.slots;
+}
+
+interface HoldDto { businessId: string; serviceId: string; variantId: string; startTime: string; userId: string }
+
+export async function holdSlot(dto: HoldDto) {
+  await requireEnabledWidget(dto.businessId);
+  const { rows: variantRows } = await adminPool.query('SELECT duration FROM svc_variants WHERE id = $1', [dto.variantId]);
+  if (variantRows.length === 0) throw new WidgetError('Variant not found', 404);
+  const start = new Date(dto.startTime);
+  const end = new Date(start.getTime() + variantRows[0].duration * 60 * 1000);
+  const hold = await createHold({
+    businessId: dto.businessId,
+    serviceId: dto.serviceId,
+    variantId: dto.variantId,
+    startTime: start.toISOString(),
+    endTime: end.toISOString(),
+    heldBy: dto.userId,
+  });
+  return hold;
+}
+
+// The JWT carries only { sub, tid, role, permissions } — no email claim — so every widget
+// function that needs the caller's email resolves it from usr_users by sub.
+interface AuthUser { sub: string; tid: string; role: string }
+
+/** Requirement 6.5 — only a 'customer' persona JWT may use the widget's customer/booking endpoints. */
+export function assertCustomerRole(user: AuthUser): void {
+  if (user.role !== 'Customer') throw new WidgetError('This action requires a customer account', 401);
+}
+
+async function resolveAuthEmail(userId: string): Promise<string> {
+  const { rows } = await adminPool.query('SELECT email FROM usr_users WHERE id = $1', [userId]);
+  if (rows.length === 0) throw new WidgetError('Account not found', 404);
+  return rows[0].email;
+}
+
+export async function findOrCreateCustomer(businessId: string, user: AuthUser, phone: string | undefined) {
+  await requireEnabledWidget(businessId);
+  assertCustomerRole(user);
+
+  const { rows: bizRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
+  const tenantId = bizRows[0]?.tenant_id;
+  if (!tenantId || tenantId !== user.tid) throw new WidgetError('Not authorized for this business', 403);
+
+  // usr_users has no phone column — only cus_customers does — so phone is collected at the
+  // Customer Details step (Requirement 3.9) and passed in here, not sourced from the account.
+  const { rows: userRows } = await adminPool.query('SELECT email, first_name, last_name FROM usr_users WHERE id = $1', [user.sub]);
+  const authAccount = userRows[0];
+  if (!authAccount) throw new WidgetError('Account not found', 404);
+
+  const { rows: existing } = await adminPool.query(
+    'SELECT id, first_name, last_name, email, phone FROM cus_customers WHERE business_id = $1 AND email = $2',
+    [businessId, authAccount.email],
+  );
+  if (existing.length > 0) {
+    if (phone && !existing[0].phone) {
+      await adminPool.query('UPDATE cus_customers SET phone = $1, updated_at = NOW() WHERE id = $2', [phone, existing[0].id]);
+      existing[0].phone = phone;
+    }
+    return { customer: existing[0], isNew: false };
+  }
+
+  const { rows: created } = await adminPool.query(
+    `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, phone, lifecycle_stage, status, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'lead', 'active', $8)
+     RETURNING id, first_name, last_name, email, phone`,
+    [
+      tenantId, businessId, `CUS-${Date.now().toString(36).toUpperCase()}`,
+      authAccount.email, authAccount.first_name, authAccount.last_name, phone || null, user.sub,
+    ],
+  );
+  const customer = created[0];
+
+  await createActivity({
+    customerId: customer.id,
+    businessId,
+    activityType: 'widget_registration',
+    description: 'Registered via the booking widget',
+    metadata: { source: 'widget' },
+    createdBy: user.sub,
+  });
+
+  return { customer, isNew: true };
+}
+
+interface CreateWidgetBookingDto {
+  businessId: string;
+  customerId: string;
+  serviceId: string;
+  variantId: string;
+  startTime: string;
+  staffId?: string;
+  notes?: string;
+  holdId?: string;
+}
+
+export async function createWidgetBooking(dto: CreateWidgetBookingDto, user: AuthUser) {
+  const config = await requireEnabledWidget(dto.businessId);
+  assertCustomerRole(user);
+
+  const email = await resolveAuthEmail(user.sub);
+  const { rows: custRows } = await adminPool.query(
+    'SELECT id, tenant_id FROM cus_customers WHERE id = $1 AND business_id = $2 AND email = $3',
+    [dto.customerId, dto.businessId, email],
+  );
+  if (custRows.length === 0) throw new WidgetError('Not authorized for this customer', 401);
+
+  if (dto.holdId) {
+    const { rows: holdRows } = await adminPool.query(
+      `SELECT * FROM apt_slot_holds WHERE id = $1 AND business_id = $2 AND service_id = $3 AND variant_id = $4
+         AND start_time = $5 AND held_by = $6 AND expires_at > NOW()`,
+      [dto.holdId, dto.businessId, dto.serviceId, dto.variantId, new Date(dto.startTime).toISOString(), user.sub],
+    );
+    if (holdRows.length === 0) throw new WidgetError('Slot hold expired or does not match', 409);
+  }
+
+  const { rows: bizRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [dto.businessId]);
+  const initialStatus = config.require_payment_before_confirmation ? 'pending' : 'confirmed';
+
+  let booking;
+  try {
+    booking = await createBooking({
+      businessId: dto.businessId,
+      customerId: dto.customerId,
+      serviceId: dto.serviceId,
+      variantId: dto.variantId,
+      staffId: dto.staffId,
+      startTime: dto.startTime,
+      notes: dto.notes,
+      createdBy: user.sub,
+      tenantId: bizRows[0].tenant_id,
+      initialStatus,
+      source: 'widget',
+    });
+  } catch (err: any) {
+    throw new WidgetError(err.message || 'Failed to create booking', 422);
+  }
+
+  const full = await getBookingById(booking.id, dto.businessId);
+
+  if (!config.require_payment_before_confirmation) {
+    await queueBookingConfirmation(full, email);
+  }
+
+  return full;
+}
+
+export async function payForBooking(bookingId: string, businessId: string, user: AuthUser) {
+  await requireEnabledWidget(businessId);
+  assertCustomerRole(user);
+
+  const email = await resolveAuthEmail(user.sub);
+  const booking = await getBookingById(bookingId, businessId);
+  if (!booking) throw new WidgetError('Booking not found', 404);
+  if (booking.customer_email !== email) throw new WidgetError('Not authorized for this booking', 401);
+  if (booking.status === 'confirmed') throw new WidgetError('Booking is already confirmed', 409);
+
+  const { rows: bizRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
+
+  const { rows: txRows } = await adminPool.query(
+    `INSERT INTO wgt_widget_transactions (tenant_id, business_id, booking_id, customer_id, amount_cents, currency, payment_method, status)
+     VALUES ($1, $2, $3, $4, $5, 'EUR', 'simulated', 'completed')
+     RETURNING id`,
+    [bizRows[0].tenant_id, businessId, bookingId, booking.customer_id, booking.price],
+  );
+
+  await adminPool.query(
+    `UPDATE apt_bookings SET status = 'confirmed', updated_at = NOW() WHERE id = $1`,
+    [bookingId],
+  );
+  await adminPool.query(
+    `INSERT INTO apt_booking_status_history (booking_id, from_status, to_status, changed_by) VALUES ($1, 'pending', 'confirmed', $2)`,
+    [bookingId, user.sub],
+  );
+
+  const confirmedBooking = await getBookingById(bookingId, businessId);
+  await queueBookingConfirmation(confirmedBooking, email);
+
+  return { status: 'confirmed', transaction_id: txRows[0].id };
+}

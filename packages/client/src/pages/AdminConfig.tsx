@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
-import { ThemeEditorFields, ThemeValues, ThemeField } from '../design-system/components/forms/ThemeEditorFields';
+import { ThemeGallery } from './settings/ThemeGallery';
 import { apiClient } from '../api/client';
 
 type Tab = 'settings' | 'feature-flags' | 'api-keys' | 'email' | 'storage' | 'notifications' | 'logs' | 'query-history' | 'platform-billing' | 'default-theme';
@@ -19,7 +19,7 @@ export function AdminConfig() {
     { key: 'logs', label: 'Server Logs' },
     { key: 'query-history', label: 'Query Log' },
     { key: 'platform-billing', label: 'Platform Billing' },
-    { key: 'default-theme', label: 'Default Theme' },
+    { key: 'default-theme', label: 'Themes' },
   ];
 
   return (
@@ -919,74 +919,14 @@ function PlatformBillingPanel() {
 }
 
 // ============================================================
-// Default Theme Panel — the top of the system -> tenant -> business theme cascade
+// Themes Panel — Theme Setup module (spec 37): pick, customise, and apply named
+// themes at system scope. Supersedes the old flat "Platform Default Theme" panel.
 // ============================================================
 
-const SYSTEM_THEME_KEY_MAP: Record<ThemeField, string> = {
-  primaryColor: 'brand.primary_color',
-  secondaryColor: 'brand.secondary_color',
-  fontFamily: 'brand.font_family',
-  baseFontSize: 'brand.base_font_size',
-};
-
 function DefaultThemePanel() {
-  const [values, setValues] = useState<ThemeValues>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    apiClient.get('/v1/admin/system-theme')
-      .then((res) => {
-        const d = res.data.data || {};
-        setValues({
-          primaryColor: d['brand.primary_color'] || null,
-          secondaryColor: d['brand.secondary_color'] || null,
-          fontFamily: d['brand.font_family'] || null,
-          baseFontSize: d['brand.base_font_size'] ? Number(d['brand.base_font_size']) : null,
-        });
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  function handleChange(field: ThemeField, value: string | number | null) {
-    setValues((v) => ({ ...v, [field]: value }));
-  }
-
-  const handleSave = async () => {
-    setSaving(true); setMessage(null);
-    try {
-      const body: Record<string, string | number> = {};
-      (Object.keys(SYSTEM_THEME_KEY_MAP) as ThemeField[]).forEach((field) => {
-        const value = values[field];
-        if (value !== null && value !== undefined) {
-          const apiField = SYSTEM_THEME_KEY_MAP[field].replace('brand.', '');
-          body[apiField] = value;
-        }
-      });
-      await apiClient.put('/v1/admin/system-theme', body);
-      setMessage('Platform default theme saved. Any tenant or business that hasn’t customized these fields will pick it up immediately.');
-    } catch (err: any) { setMessage(err.response?.data?.error || 'Failed to save'); }
-    finally { setSaving(false); }
-  };
-
-  if (loading) return <p style={styles.loading}>Loading...</p>;
-
-  return (
-    <div style={styles.panel}>
-      <h3 style={styles.panelTitle}>Platform Default Theme</h3>
-      <p style={styles.panelSubtext}>
-        The base look every tenant and business starts from. A tenant or business that hasn&rsquo;t
-        customized a given field (color, font, size) inherits it from here.
-      </p>
-      {message && <div style={styles.successMsg}>{message}</div>}
-      <ThemeEditorFields values={values} onChange={handleChange} />
-      <div style={{ ...styles.formActions, marginTop: 'var(--space-lg)' }}>
-        <Button onClick={handleSave} loading={saving}>Save Default Theme</Button>
-      </div>
-    </div>
-  );
+  // Deliberately does NOT use styles.panel (maxWidth: 720px) — the theme gallery/editor's
+  // multi-column layout needs real width; that cap was squeezing it into 2 narrow columns.
+  return <ThemeGallery persona="system" />;
 }
 
 // ============================================================

@@ -246,79 +246,79 @@ ALTER TABLE staff_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff_profiles FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_staff_profiles ON staff_profiles FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_staff_profiles ON staff_profiles FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_staff_profiles ON staff_profiles FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE staff_qualifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff_qualifications FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_staff_qualifications ON staff_qualifications FOR ALL TO daystream_app
     USING (staff_id IN (SELECT id FROM staff_profiles WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_staff_qualifications ON staff_qualifications FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_staff_qualifications ON staff_qualifications FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE service_qualification_requirements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE service_qualification_requirements FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_service_qual_reqs ON service_qualification_requirements FOR ALL TO daystream_app
     USING (service_id IN (SELECT id FROM services WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
-CREATE POLICY admin_full_access_service_qual_reqs ON service_qualification_requirements FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_service_qual_reqs ON service_qualification_requirements FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE availability_patterns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE availability_patterns FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_availability_patterns ON availability_patterns FOR ALL TO daystream_app
     USING (staff_id IN (SELECT id FROM staff_profiles WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_availability_patterns ON availability_patterns FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_availability_patterns ON availability_patterns FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE availability_pattern_slots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE availability_pattern_slots FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_availability_pattern_slots ON availability_pattern_slots FOR ALL TO daystream_app
     USING (pattern_id IN (SELECT id FROM availability_patterns WHERE staff_id IN (SELECT id FROM staff_profiles WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
-CREATE POLICY admin_full_access_availability_pattern_slots ON availability_pattern_slots FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_availability_pattern_slots ON availability_pattern_slots FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE availability_overrides ENABLE ROW LEVEL SECURITY;
 ALTER TABLE availability_overrides FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_availability_overrides ON availability_overrides FOR ALL TO daystream_app
     USING (staff_id IN (SELECT id FROM staff_profiles WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_availability_overrides ON availability_overrides FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_availability_overrides ON availability_overrides FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE leave_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE leave_requests FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_leave_requests ON leave_requests FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_leave_requests ON leave_requests FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_leave_requests ON leave_requests FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE leave_balances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE leave_balances FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_leave_balances ON leave_balances FOR ALL TO daystream_app
     USING (staff_id IN (SELECT id FROM staff_profiles WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_leave_balances ON leave_balances FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_leave_balances ON leave_balances FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE staff_service_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff_service_assignments FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_staff_service_assignments ON staff_service_assignments FOR ALL TO daystream_app
     USING (staff_id IN (SELECT id FROM staff_profiles WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_staff_service_assignments ON staff_service_assignments FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_staff_service_assignments ON staff_service_assignments FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE staff_location_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff_location_assignments FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_staff_location_assignments ON staff_location_assignments FOR ALL TO daystream_app
     USING (staff_id IN (SELECT id FROM staff_profiles WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_staff_location_assignments ON staff_location_assignments FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_staff_location_assignments ON staff_location_assignments FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE staff_capacity_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff_capacity_config FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_staff_capacity_config ON staff_capacity_config FOR ALL TO daystream_app
     USING (staff_id IN (SELECT id FROM staff_profiles WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_staff_capacity_config ON staff_capacity_config FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_staff_capacity_config ON staff_capacity_config FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE staff_capacity_overrides ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff_capacity_overrides FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_staff_capacity_overrides ON staff_capacity_overrides FOR ALL TO daystream_app
     USING (staff_id IN (SELECT id FROM staff_profiles WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_staff_capacity_overrides ON staff_capacity_overrides FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_staff_capacity_overrides ON staff_capacity_overrides FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE staff_notification_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff_notification_preferences FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_staff_notification_prefs ON staff_notification_preferences FOR ALL TO daystream_app
     USING (staff_id IN (SELECT id FROM staff_profiles WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_staff_notification_prefs ON staff_notification_preferences FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_staff_notification_prefs ON staff_notification_preferences FOR ALL TO CURRENT_USER USING (true);
 
 -- ============================================================
 -- 15. Grant permissions

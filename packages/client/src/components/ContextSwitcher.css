@@ -9,6 +9,7 @@
   font-weight: 600;
   color: var(--color-text);
   padding: 4px 8px;
+  gap: 8px;
 }
 
 .context-switcher__trigger {

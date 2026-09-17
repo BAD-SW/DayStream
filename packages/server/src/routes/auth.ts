@@ -11,6 +11,7 @@ export const authRouter = Router();
 
 const registerSchema = Joi.object({
   tenant_id: Joi.string().uuid().required(),
+  business_id: Joi.string().uuid().required(),
   email: Joi.string().email({ tlds: false }).required(),
   password: Joi.string()
     .min(10)
@@ -58,8 +59,8 @@ const resetPasswordSchema = Joi.object({
 // POST /api/v1/auth/register
 authRouter.post('/register', validate(registerSchema), async (req: Request, res: Response) => {
   try {
-    const { tenant_id, email, password, first_name, last_name } = req.body;
-    const result = await authService.registerUser(tenant_id, email, password, first_name, last_name);
+    const { tenant_id, business_id, email, password, first_name, last_name } = req.body;
+    const result = await authService.registerUser(tenant_id, business_id, email, password, first_name, last_name);
 
     res.status(201).json({
       data: {

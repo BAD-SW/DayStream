@@ -29,7 +29,7 @@ CREATE POLICY query_history_user_scope ON query_history
     USING (user_id = current_setting('app.current_user_id')::uuid);
 
 CREATE POLICY admin_full_access_query_history ON query_history
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Index for user history lookups (sorted by newest first)
@@ -66,7 +66,7 @@ CREATE POLICY saved_queries_user_scope ON saved_queries
     USING (user_id = current_setting('app.current_user_id')::uuid);
 
 CREATE POLICY admin_full_access_saved_queries ON saved_queries
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Index for user lookups (sorted by most recently updated)

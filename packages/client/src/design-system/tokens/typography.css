@@ -23,8 +23,16 @@
   --font-size-section-header: 1.0625rem; /* 17px — new role, none existed before */
   --font-size-table-header: 0.8125rem;   /* 13px, was ~12px */
 
+  /* Theme Setup role aliases — the same role-specific sizes above, exposed under the
+     names the Theme Editor's token set uses (37-theme-setup). */
+  --font-size-title: var(--font-size-page-title);
+  --font-size-subtitle: var(--font-size-xl);
+  --font-size-body: 0.9375rem; /* 15px — matches the app's long-standing base font size */
+  --font-size-small: var(--font-size-table-header);
+
   /* Font weights */
   --font-weight-light: 300;
+  --font-weight-normal: var(--font-weight-regular);
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;

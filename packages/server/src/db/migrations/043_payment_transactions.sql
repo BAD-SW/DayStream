@@ -45,7 +45,7 @@ CREATE POLICY tenant_isolation_pay_transactions ON pay_transactions
   ));
 
 CREATE POLICY admin_full_access_pay_transactions ON pay_transactions
-  FOR ALL TO postgres USING (true);
+  FOR ALL TO CURRENT_USER USING (true);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON pay_transactions TO daystream_app;
 

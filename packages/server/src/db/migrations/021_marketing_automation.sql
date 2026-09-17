@@ -227,61 +227,61 @@ ALTER TABLE message_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE message_templates FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_message_templates ON message_templates FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_message_templates ON message_templates FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_message_templates ON message_templates FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE campaigns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE campaigns FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_campaigns ON campaigns FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_campaigns ON campaigns FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_campaigns ON campaigns FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE campaign_recipients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE campaign_recipients FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_campaign_recipients ON campaign_recipients FOR ALL TO daystream_app
     USING (campaign_id IN (SELECT id FROM campaigns WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_campaign_recipients ON campaign_recipients FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_campaign_recipients ON campaign_recipients FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE sequences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sequences FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_sequences ON sequences FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_sequences ON sequences FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_sequences ON sequences FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE sequence_steps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sequence_steps FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_sequence_steps ON sequence_steps FOR ALL TO daystream_app
     USING (sequence_id IN (SELECT id FROM sequences WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_sequence_steps ON sequence_steps FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_sequence_steps ON sequence_steps FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE sequence_connections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sequence_connections FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_sequence_connections ON sequence_connections FOR ALL TO daystream_app
     USING (sequence_id IN (SELECT id FROM sequences WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_sequence_connections ON sequence_connections FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_sequence_connections ON sequence_connections FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE sequence_enrollments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sequence_enrollments FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_sequence_enrollments ON sequence_enrollments FOR ALL TO daystream_app
     USING (sequence_id IN (SELECT id FROM sequences WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_sequence_enrollments ON sequence_enrollments FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_sequence_enrollments ON sequence_enrollments FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE sequence_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sequence_history FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_sequence_history ON sequence_history FOR ALL TO daystream_app
     USING (sequence_id IN (SELECT id FROM sequences WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_sequence_history ON sequence_history FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_sequence_history ON sequence_history FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE communication_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE communication_preferences FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_communication_preferences ON communication_preferences FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_communication_preferences ON communication_preferences FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_communication_preferences ON communication_preferences FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE lead_funnels ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lead_funnels FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_lead_funnels ON lead_funnels FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_lead_funnels ON lead_funnels FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_lead_funnels ON lead_funnels FOR ALL TO CURRENT_USER USING (true);
 
 -- ============================================================
 -- 12. Grant Permissions

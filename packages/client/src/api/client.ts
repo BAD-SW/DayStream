@@ -1,8 +1,11 @@
 import axios from 'axios';
 import { ActiveContext } from '@daystream/shared';
 
+// In local dev, relative '/api' is forwarded to the local server by Vite's own proxy
+// (vite.config.ts). The deployed client has no such proxy, so VITE_API_URL (set to the
+// Render URL) makes every call absolute instead (spec 38 Phase 4).
 export const apiClient = axios.create({
-  baseURL: '/api',
+  baseURL: `${import.meta.env.VITE_API_URL || ''}/api`,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -92,7 +95,7 @@ apiClient.interceptors.response.use(
       }
 
       try {
-        const res = await axios.post('/api/v1/auth/refresh', { refresh_token: refreshToken });
+        const res = await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/v1/auth/refresh`, { refresh_token: refreshToken });
         const { access_token, refresh_token: newRefresh } = res.data.data;
 
         localStorage.setItem('access_token', access_token);

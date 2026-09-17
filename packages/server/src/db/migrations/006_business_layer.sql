@@ -116,7 +116,7 @@ CREATE POLICY tenant_isolation_businesses ON businesses
 
 CREATE POLICY admin_full_access_businesses ON businesses
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 ALTER TABLE business_configurations ENABLE ROW LEVEL SECURITY;
@@ -132,7 +132,7 @@ CREATE POLICY tenant_isolation_business_configurations ON business_configuration
 
 CREATE POLICY admin_full_access_business_configurations ON business_configurations
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 ALTER TABLE customer_businesses ENABLE ROW LEVEL SECURITY;
@@ -147,7 +147,7 @@ CREATE POLICY tenant_isolation_customer_businesses ON customer_businesses
 
 CREATE POLICY admin_full_access_customer_businesses ON customer_businesses
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 -- ============================================================

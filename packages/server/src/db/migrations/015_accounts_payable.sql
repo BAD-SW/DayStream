@@ -328,91 +328,91 @@ ALTER TABLE compensation_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compensation_rules FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_compensation_rules ON compensation_rules FOR ALL TO daystream_app
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_compensation_rules ON compensation_rules FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_compensation_rules ON compensation_rules FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE payroll_deductions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payroll_deductions FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_payroll_deductions ON payroll_deductions FOR ALL TO daystream_app
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_payroll_deductions ON payroll_deductions FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_payroll_deductions ON payroll_deductions FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE pay_periods ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pay_periods FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_pay_periods ON pay_periods FOR ALL TO daystream_app
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_pay_periods ON pay_periods FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_pay_periods ON pay_periods FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE payroll_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payroll_entries FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_payroll_entries ON payroll_entries FOR ALL TO daystream_app
     USING (pay_period_id IN (SELECT id FROM pay_periods WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
-CREATE POLICY admin_full_access_payroll_entries ON payroll_entries FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_payroll_entries ON payroll_entries FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE time_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE time_entries FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_time_entries ON time_entries FOR ALL TO daystream_app
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_time_entries ON time_entries FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_time_entries ON time_entries FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE vendors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vendors FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_vendors ON vendors FOR ALL TO daystream_app
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_vendors ON vendors FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_vendors ON vendors FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE bills ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bills FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_bills ON bills FOR ALL TO daystream_app
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_bills ON bills FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_bills ON bills FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE bill_line_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bill_line_items FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_bill_line_items ON bill_line_items FOR ALL TO daystream_app
     USING (bill_id IN (SELECT id FROM bills WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
-CREATE POLICY admin_full_access_bill_line_items ON bill_line_items FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_bill_line_items ON bill_line_items FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expenses FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_expenses ON expenses FOR ALL TO daystream_app
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_expenses ON expenses FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_expenses ON expenses FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE chart_of_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chart_of_accounts FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_chart_of_accounts ON chart_of_accounts FOR ALL TO daystream_app
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_chart_of_accounts ON chart_of_accounts FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_chart_of_accounts ON chart_of_accounts FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE journal_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE journal_entries FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_journal_entries ON journal_entries FOR ALL TO daystream_app
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_journal_entries ON journal_entries FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_journal_entries ON journal_entries FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE journal_entry_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE journal_entry_lines FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_journal_entry_lines ON journal_entry_lines FOR ALL TO daystream_app
     USING (journal_entry_id IN (SELECT id FROM journal_entries WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
-CREATE POLICY admin_full_access_journal_entry_lines ON journal_entry_lines FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_journal_entry_lines ON journal_entry_lines FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE bank_statements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bank_statements FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_bank_statements ON bank_statements FOR ALL TO daystream_app
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_bank_statements ON bank_statements FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_bank_statements ON bank_statements FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE bank_statement_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bank_statement_lines FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_bank_statement_lines ON bank_statement_lines FOR ALL TO daystream_app
     USING (statement_id IN (SELECT id FROM bank_statements WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
-CREATE POLICY admin_full_access_bank_statement_lines ON bank_statement_lines FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_bank_statement_lines ON bank_statement_lines FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE tax_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tax_documents FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_tax_documents ON tax_documents FOR ALL TO daystream_app
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_tax_documents ON tax_documents FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_tax_documents ON tax_documents FOR ALL TO CURRENT_USER USING (true);
 
 -- ============================================================
 -- 14. Grant permissions

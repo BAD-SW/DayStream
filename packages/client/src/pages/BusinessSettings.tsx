@@ -2,9 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
 import { useBusinessSettings } from '../context/BusinessSettingsContext';
-import { applyTheme } from '../context/ThemeManager';
-import { FONT_STACKS, loadGoogleFont } from '../design-system/themes/ThemeProvider';
-import { ThemeEditorFields, ThemeValues, ThemeField } from '../design-system/components/forms/ThemeEditorFields';
+import { ThemeGallery } from './settings/ThemeGallery';
 
 type SettingsTab = 'system' | 'lifecycle' | 'processes' | 'notifications' | 'payment-methods' | 'integrations' | 'appearance';
 
@@ -684,140 +682,12 @@ function IntegrationsSettings() {
 }
 
 // ============================================================
-// Appearance Settings (ui-guidelines-and-theming.md §7)
+// Appearance Settings — Theme Setup module (spec 37)
 // ============================================================
 
-const BUSINESS_APPEARANCE_KEY_MAP: Record<ThemeField, string> = {
-  primaryColor: 'primary_color',
-  secondaryColor: 'secondary_color',
-  fontFamily: 'font_family',
-  baseFontSize: 'base_font_size',
-};
-
 function AppearanceSettings() {
-  const businessId = localStorage.getItem('business_id') || '';
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [values, setValues] = useState<ThemeValues>({});
-  const [inherited, setInherited] = useState<ThemeValues>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!businessId) { setLoading(false); return; }
-    Promise.all([
-      apiClient.get(`/v1/admin/businesses/${businessId}/appearance`),
-      apiClient.get('/v1/admin/config'), // resolved tenant/platform values, for "inherited from tenant"
-    ])
-      .then(([bizRes, configRes]) => {
-        const d = bizRes.data.data || {};
-        setLogoUrl(d.logo_url || null);
-        setValues({
-          primaryColor: d.primary_color ?? null,
-          secondaryColor: d.secondary_color ?? null,
-          fontFamily: d.font_family ?? null,
-          baseFontSize: d.base_font_size ?? null,
-        });
-        const config = configRes.data.data || {};
-        setInherited({
-          primaryColor: config['brand.primary_color'] ?? null,
-          secondaryColor: config['brand.secondary_color'] ?? null,
-          fontFamily: config['brand.font_family'] ?? null,
-          baseFontSize: config['brand.base_font_size'] ? Number(config['brand.base_font_size']) : null,
-        });
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [businessId]);
-
-  function handleChange(field: ThemeField, value: string | number | null) {
-    setValues((v) => ({ ...v, [field]: value }));
-  }
-
-  const handleSave = async () => {
-    setSaving(true);
-    setMessage(null);
-    try {
-      let newLogoUrl = logoUrl;
-      if (logoFile) {
-        const formData = new FormData();
-        formData.append('logo', logoFile);
-        // Let the browser set its own multipart/form-data header (with the required
-        // boundary) rather than the JSON Content-Type this apiClient defaults to.
-        const uploadRes = await apiClient.post(`/v1/admin/businesses/${businessId}/logo`, formData, {
-          headers: { 'Content-Type': undefined },
-        });
-        newLogoUrl = uploadRes.data.data.logo_url;
-        setLogoUrl(newLogoUrl);
-        setLogoFile(null);
-      }
-
-      const body: Record<string, string | number | null> = {};
-      (Object.keys(BUSINESS_APPEARANCE_KEY_MAP) as ThemeField[]).forEach((field) => {
-        body[BUSINESS_APPEARANCE_KEY_MAP[field]] = values[field] ?? null;
-      });
-      await apiClient.put(`/v1/admin/businesses/${businessId}/appearance`, body);
-
-      // Apply immediately app-wide (ThemeProvider will also re-derive this from
-      // /my-context on the next context load/login, keeping it consistent on reload).
-      // A reset (null) field falls back to whatever it's inheriting from the tenant.
-      const effective = (field: ThemeField) => values[field] ?? inherited[field] ?? undefined;
-      const effectiveFont = effective('fontFamily') as string | undefined;
-      loadGoogleFont(effectiveFont && effectiveFont !== 'System Default' ? effectiveFont : undefined);
-      const effectiveSize = effective('baseFontSize') as number | undefined;
-      applyTheme({
-        colorPrimary: effective('primaryColor') as string | undefined,
-        colorSecondary: effective('secondaryColor') as string | undefined,
-        fontFamily: effectiveFont && effectiveFont !== 'System Default' ? FONT_STACKS[effectiveFont] : undefined,
-        fontSizeBase: effectiveSize ? `${effectiveSize}px` : undefined,
-      });
-
-      setMessage('Appearance saved.');
-    } catch {
-      setMessage('Failed to save appearance settings.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) return <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>Loading...</p>;
-
-  return (
-    <div>
-      <div style={appearanceStyles.card}>
-        <h3 style={appearanceStyles.cardTitle}>Logo</h3>
-        <label style={appearanceStyles.dropzone}>
-          <input type="file" accept="image/png,image/svg+xml,image/jpeg" style={{ display: 'none' }}
-            onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />
-          {logoUrl && !logoFile ? (
-            <img src={logoUrl} alt="Business logo" style={appearanceStyles.logoImg} />
-          ) : (
-            <div style={appearanceStyles.logoPreview}>{logoFile ? '✓' : 'B'}</div>
-          )}
-          <div style={appearanceStyles.dropzoneText}>
-            {logoFile ? <strong>{logoFile.name}</strong> : <><strong>Click to upload</strong> a logo — PNG or SVG, at least 256×256px.</>}
-          </div>
-        </label>
-      </div>
-
-      {message && <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', marginBottom: 'var(--space-md)' }}>{message}</p>}
-      <ThemeEditorFields values={values} onChange={handleChange} inherited={inherited} inheritedLabel="tenant" />
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-lg)' }}>
-        <Button onClick={handleSave} loading={saving}>Save Appearance</Button>
-      </div>
-    </div>
-  );
+  return <ThemeGallery persona="business" />;
 }
-
-const appearanceStyles: Record<string, React.CSSProperties> = {
-  card: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-lg)', marginBottom: 'var(--space-lg)' },
-  cardTitle: { fontSize: 'var(--font-size-section-header)', fontWeight: 700 as any, color: 'var(--color-text)', margin: '0 0 var(--space-md) 0' },
-  dropzone: { border: '1.5px dashed var(--color-border-hover)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-lg)', display: 'flex', alignItems: 'center', gap: 'var(--space-md)', cursor: 'pointer' },
-  logoPreview: { width: '56px', height: '56px', borderRadius: 'var(--radius-lg)', background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-active))', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '18px', flexShrink: 0 },
-  logoImg: { width: '56px', height: '56px', borderRadius: 'var(--radius-lg)', objectFit: 'contain', flexShrink: 0, background: '#fff' },
-  dropzoneText: { fontSize: '13.5px', color: 'var(--color-text-secondary)' },
-};
 
 
 // ============================================================
@@ -825,7 +695,7 @@ const appearanceStyles: Record<string, React.CSSProperties> = {
 // ============================================================
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { padding: 'var(--space-lg)', maxWidth: '900px', margin: '0 auto' },
+  page: { padding: 'var(--space-lg)', maxWidth: '1600px', margin: '0 auto' },
   title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
   tabBar: { display: 'flex', gap: '0', borderBottom: '1px solid var(--color-border)', marginBottom: '24px' },
   tab: { background: 'none', border: 'none', borderBottom: '2px solid transparent', padding: '10px 16px', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },

@@ -183,7 +183,7 @@ CREATE POLICY tenant_isolation_membership_plans ON membership_plans
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_membership_plans ON membership_plans
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Plan service access
@@ -195,7 +195,7 @@ CREATE POLICY tenant_isolation_plan_service_access ON plan_service_access
     USING (plan_id IN (SELECT id FROM membership_plans WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
 
 CREATE POLICY admin_full_access_plan_service_access ON plan_service_access
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Plan benefits
@@ -207,7 +207,7 @@ CREATE POLICY tenant_isolation_plan_benefits ON plan_benefits
     USING (plan_id IN (SELECT id FROM membership_plans WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
 
 CREATE POLICY admin_full_access_plan_benefits ON plan_benefits
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Memberships
@@ -219,7 +219,7 @@ CREATE POLICY tenant_isolation_memberships ON memberships
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_memberships ON memberships
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Credit transactions
@@ -231,7 +231,7 @@ CREATE POLICY tenant_isolation_credit_transactions ON credit_transactions
     USING (membership_id IN (SELECT id FROM memberships WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
 
 CREATE POLICY admin_full_access_credit_transactions ON credit_transactions
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Membership status history
@@ -243,7 +243,7 @@ CREATE POLICY tenant_isolation_membership_history ON membership_status_history
     USING (membership_id IN (SELECT id FROM memberships WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
 
 CREATE POLICY admin_full_access_membership_history ON membership_status_history
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- ============================================================

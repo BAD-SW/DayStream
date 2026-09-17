@@ -199,6 +199,7 @@ export async function isPasswordInHistory(userId: string, password: string): Pro
 
 export async function registerUser(
   tenantId: string,
+  businessId: string,
   email: string,
   password: string,
   firstName: string,
@@ -213,11 +214,13 @@ export async function registerUser(
   const passwordHash = await hashPassword(password);
 
   // Use adminPool for writes (RLS requires tenant context for select but admin for insert)
+  // usr_users.business_id is NOT NULL (migration 037) — a self-registered customer account
+  // belongs to the specific business they registered through (spec 38's widget flow).
   const { rows } = await adminPool.query(
-    `INSERT INTO usr_users (tenant_id, email, first_name, last_name, password_hash, role, status)
-     VALUES ($1, $2, $3, $4, $5, 'customer', 'active')
-     RETURNING id, tenant_id, email, first_name, last_name, role, status, created_at`,
-    [tenantId, email, firstName, lastName, passwordHash],
+    `INSERT INTO usr_users (tenant_id, business_id, email, first_name, last_name, password_hash, role, status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'customer', 'active')
+     RETURNING id, tenant_id, business_id, email, first_name, last_name, role, status, created_at`,
+    [tenantId, businessId, email, firstName, lastName, passwordHash],
   );
 
   const user = rows[0];

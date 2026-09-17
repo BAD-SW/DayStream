@@ -112,11 +112,19 @@ function recordAuditEntry(userId: string, previousContext: ActiveContext, newCon
 }
 
 /**
- * Fetches the caller's own tenant/business display names. Used to label the initial default
- * context (before any switch has occurred) and to fill in the breadcrumb's tenant-name segment,
- * which isn't otherwise carried on a business-level SwitchableContext entry.
+ * Fetches the caller's own tenant/business display names (and business logo/theme info). Used
+ * to label the initial default context (before any switch has occurred) and to fill in the
+ * breadcrumb's tenant-name segment, which isn't otherwise carried on a business-level
+ * SwitchableContext entry.
+ *
+ * logoUrl is read from `data.business.logo_url` — the server's `/v1/admin/my-context` response
+ * already includes it (see packages/server/src/routes/admin.ts), it just wasn't being consumed
+ * here. Without it, a business/customer persona's ActiveContext never gets a logoUrl on initial
+ * load (buildContextFromTarget only runs on an explicit switch, a path business/customer users
+ * can't reach — the switcher is non-interactive for them), so an uploaded business logo had no
+ * way to reach the header at all.
  */
-async function fetchContextNames(ctx: ActiveContext): Promise<{ tenantName?: string; businessName?: string; primaryColor?: string }> {
+async function fetchContextNames(ctx: ActiveContext): Promise<{ tenantName?: string; businessName?: string; primaryColor?: string; logoUrl?: string }> {
   if (ctx.contextLevel === 'system') return {};
   try {
     const params = ctx.businessId ? { business_id: ctx.businessId } : undefined;
@@ -126,6 +134,7 @@ async function fetchContextNames(ctx: ActiveContext): Promise<{ tenantName?: str
       tenantName: data.tenant?.name,
       businessName: data.business?.name,
       primaryColor: data.business?.primary_color || undefined,
+      logoUrl: data.business?.logo_url || undefined,
     };
   } catch {
     return {};
@@ -251,13 +260,17 @@ export function ContextProvider({ children }: { children: ReactNode }) {
           resolved = stored;
         }
 
-        if (resolved.contextLevel !== 'system' && (!resolved.displayName || !resolved.tenantDisplayName)) {
-          const { tenantName, businessName } = await fetchContextNames(resolved);
+        // Also re-fetch when logoUrl is missing, not just when displayName/tenantDisplayName are —
+        // a context cached in sessionStorage from before logoUrl was plumbed through here would
+        // otherwise never pick up a business's uploaded logo without a full sessionStorage clear.
+        if (resolved.contextLevel !== 'system' && (!resolved.displayName || !resolved.tenantDisplayName || !resolved.logoUrl)) {
+          const { tenantName, businessName, logoUrl } = await fetchContextNames(resolved);
           const fallbackName = resolved.contextLevel === 'business' ? 'Business' : 'Organization';
           resolved = {
             ...resolved,
             displayName: resolved.displayName || (resolved.contextLevel === 'business' ? businessName : tenantName) || fallbackName,
             tenantDisplayName: resolved.tenantDisplayName || tenantName,
+            logoUrl: resolved.logoUrl || logoUrl,
           };
         }
 

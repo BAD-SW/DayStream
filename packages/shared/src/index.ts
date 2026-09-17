@@ -27,6 +27,17 @@ export type {
   ReportRunResult,
   ReportExportFormat,
 } from './reports/types';
+export type {
+  ThemeScope,
+  BuiltInThemeId,
+  CfgTheme,
+  ThemeListItem,
+  ResolvedTheme,
+  CreateThemeDto,
+  UpdateThemeDto,
+  ApplyThemeDto,
+  ApplyThemeResponse,
+} from './types/theme';
 
 // Constants
 export { USER_ROLES, PERSONAS } from './constants/roles';

@@ -189,7 +189,7 @@ CREATE POLICY tenant_isolation_pricing_rules ON pricing_rules
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_pricing_rules ON pricing_rules
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Discount codes
@@ -201,7 +201,7 @@ CREATE POLICY tenant_isolation_discount_codes ON discount_codes
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_discount_codes ON discount_codes
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Discount code usage
@@ -213,7 +213,7 @@ CREATE POLICY tenant_isolation_discount_usage ON discount_code_usage
     USING (code_id IN (SELECT id FROM discount_codes WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
 
 CREATE POLICY admin_full_access_discount_usage ON discount_code_usage
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Pricing bundles
@@ -225,7 +225,7 @@ CREATE POLICY tenant_isolation_pricing_bundles ON pricing_bundles
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_pricing_bundles ON pricing_bundles
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Corporate accounts
@@ -237,7 +237,7 @@ CREATE POLICY tenant_isolation_corporate_accounts ON corporate_accounts
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_corporate_accounts ON corporate_accounts
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Price history
@@ -249,7 +249,7 @@ CREATE POLICY tenant_isolation_price_history ON price_history
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_price_history ON price_history
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- ============================================================

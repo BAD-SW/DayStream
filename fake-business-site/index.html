@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Transcend Health — Wellness &amp; Recovery Packages</title>
+<!--
+  Local_Test_Page / Fake_Business_Site (spec 38, Requirement 16).
+  Modelled on transcendhealth.eu's "Wellness & Recovery Packages" page layout —
+  not a Squarespace export, a small hand-built page carrying the same brand
+  colors/logo and the same kind of product-card grid, so the widget can be tested
+  against a genuinely separate origin (serve this with e.g. `npx serve fake-business-site`
+  on its own port, not opened as a file:// page and not served by the DayStream app itself).
+
+  The three Widget_Buttons below use REAL DayStream ids from the seeded Transcend
+  Mallorca business (services, not packages — Phase 5 adds package/membership
+  purchase; until then only product_type='service' bookings complete end-to-end).
+  In the real product (Phase 6), these ids come from "Copy widget snippet" in the
+  DayStream admin, never hand-typed — they're hand-typed here only because this
+  harness predates that admin feature.
+-->
+<style>
+  :root {
+    --brand-primary: #DB2777;
+    --brand-primary-hover: #E14E8F;
+    --brand-accent: #00A3BF;
+    --brand-ink: #241521;
+    --brand-muted: #7a6a76;
+    --brand-bg: #FAF6F3;
+    --brand-card-bg: #FFFFFF;
+    --brand-border: #ECE1E7;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: 'Georgia', 'Iowan Old Style', serif;
+    background: var(--brand-bg);
+    color: var(--brand-ink);
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 2rem;
+    background: #ffffff;
+    border-bottom: 1px solid var(--brand-border);
+  }
+
+  header .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  header .brand img {
+    height: 34px;
+    width: auto;
+  }
+
+  header .brand span {
+    font-size: 1.15rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  header nav a {
+    margin-left: 1.5rem;
+    color: var(--brand-ink);
+    text-decoration: none;
+    font-size: 0.9rem;
+    letter-spacing: 0.03em;
+  }
+
+  .hero {
+    text-align: center;
+    padding: 4rem 1.5rem 2.5rem;
+  }
+
+  .hero h1 {
+    font-size: 2.4rem;
+    margin: 0 0 0.75rem;
+    font-weight: 400;
+  }
+
+  .hero p {
+    color: var(--brand-muted);
+    max-width: 560px;
+    margin: 0 auto;
+    font-family: system-ui, sans-serif;
+    line-height: 1.5;
+  }
+
+  .packages {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.5rem;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 1.5rem 4rem;
+  }
+
+  .package-card {
+    background: var(--brand-card-bg);
+    border: 1px solid var(--brand-border);
+    border-radius: 14px;
+    padding: 2rem 1.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    text-align: center;
+  }
+
+  .package-card .icon {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 0.5rem;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+  }
+
+  .package-card h2 {
+    font-size: 1.3rem;
+    font-weight: 400;
+    margin: 0;
+  }
+
+  .package-card p.blurb {
+    color: var(--brand-muted);
+    font-family: system-ui, sans-serif;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    flex: 1;
+  }
+
+  .package-card .price {
+    font-family: system-ui, sans-serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--brand-primary);
+  }
+
+  .package-card .price small {
+    font-size: 0.8rem;
+    font-weight: 400;
+    color: var(--brand-muted);
+  }
+
+  .book-btn {
+    font-family: system-ui, sans-serif;
+    background: var(--brand-primary);
+    color: #ffffff;
+    border: none;
+    border-radius: 999px;
+    padding: 0.75rem 1.5rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 150ms ease;
+  }
+
+  .book-btn:hover {
+    background: var(--brand-primary-hover);
+  }
+
+  footer {
+    text-align: center;
+    padding: 2rem 1rem 3rem;
+    color: var(--brand-muted);
+    font-family: system-ui, sans-serif;
+    font-size: 0.8rem;
+  }
+
+  #confirmation-banner {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translate(-50%, 120%);
+    background: var(--brand-ink);
+    color: #fff;
+    font-family: system-ui, sans-serif;
+    padding: 0.9rem 1.5rem;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    transition: transform 250ms ease;
+    z-index: 999999;
+  }
+
+  #confirmation-banner.visible {
+    transform: translate(-50%, 0);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <img src="https://images.squarespace-cdn.com/content/v1/656e01b187c03b187543dbc4/d87a8972-cec5-42b5-8a06-d7d1f18bf8d0/Logo+Dourada.png?format=1500w" alt="Transcend Health" />
+    <span>Transcend Health</span>
+  </div>
+  <nav>
+    <a href="#">Studio</a>
+    <a href="#">Team</a>
+    <a href="#">Packages</a>
+    <a href="#">Contact</a>
+  </nav>
+</header>
+
+<section class="hero">
+  <h1>Wellness &amp; Recovery Packages</h1>
+  <p>Restore, recover, and recharge with Transcend Mallorca's signature treatments — book directly below, no account juggling, no redirects.</p>
+</section>
+
+<section class="packages">
+  <article class="package-card">
+    <div class="icon">🔴</div>
+    <h2>Red Light Therapy</h2>
+    <p class="blurb">A focused session designed to support cellular energy, skin health, and muscle recovery.</p>
+    <div class="price">€30 <small>/ 20 min</small></div>
+    <button
+      type="button"
+      class="book-btn"
+      data-daystream-product="cc54745c-7806-4ff5-acda-70a261f5d77d"
+      data-daystream-action="book"
+    >Book Now</button>
+  </article>
+
+  <article class="package-card">
+    <div class="icon">💆</div>
+    <h2>Sport Massage</h2>
+    <p class="blurb">Deep tissue work targeting recovery after training, tension release, and mobility.</p>
+    <div class="price">€90 <small>/ 60 min</small></div>
+    <button
+      type="button"
+      class="book-btn"
+      data-daystream-product="b2d8abda-b29d-4dd1-afef-a9dc47817f09"
+      data-daystream-action="book"
+    >Book Now</button>
+  </article>
+
+  <article class="package-card">
+    <div class="icon">🏋️</div>
+    <h2>Personal Training</h2>
+    <p class="blurb">One-to-one coaching tailored to your goals, with a dedicated Transcend trainer.</p>
+    <div class="price">€80 <small>/ 60 min</small></div>
+    <button
+      type="button"
+      class="book-btn"
+      data-daystream-product="d0528393-925c-45dd-b56c-d7e01582fbb3"
+      data-daystream-action="book"
+    >Book Now</button>
+  </article>
+</section>
+
+<footer>
+  Local_Test_Page for DayStream's embeddable booking widget (spec 38, Phase 3) — not a real business site.
+</footer>
+
+<div id="confirmation-banner"></div>
+
+<script>
+  // Demonstrates the integration point a real business's site JS would use — Requirement 2.7.
+  window.addEventListener('daystreamBookingConfirmed', function (e) {
+    var banner = document.getElementById('confirmation-banner');
+    banner.textContent = 'Booked! Reference ' + (e.detail && e.detail.bookingReference ? e.detail.bookingReference : '') + ' — check your email for confirmation.';
+    banner.classList.add('visible');
+    setTimeout(function () { banner.classList.remove('visible'); }, 6000);
+  });
+</script>
+
+<!--
+  Widget_Script — two attributes:
+    data-business-id  the DayStream business this page books for (Transcend Mallorca, seeded demo data)
+    data-app-url       the DayStream CLIENT app's own origin (serves /booking-widget); this script's
+                        own src origin is the SERVER's origin, a different deployment (see design.md's
+                        "Phase 3 correction" note under Widget Script) — omit this locally only if both
+                        happen to share an origin, which they do not in this project's dev setup.
+  Point `src` and `data-app-url` at your deployed Render/Vercel URLs once Phase 4 ships; for local
+  testing against `npm run dev`, the values below are correct as-is.
+-->
+<script
+  src="http://localhost:4001/widget/daystream-widget.js"
+  data-business-id="83e81f01-93eb-4895-a9a6-c44912748978"
+  data-app-url="http://localhost:4000"
+></script>
+
+</body>
+</html>

@@ -257,7 +257,7 @@ CREATE POLICY tenant_isolation_tax_categories ON tax_categories
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_tax_categories ON tax_categories
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Cancellation policies
@@ -269,7 +269,7 @@ CREATE POLICY tenant_isolation_cancellation_policies ON cancellation_policies
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_cancellation_policies ON cancellation_policies
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Service categories
@@ -281,7 +281,7 @@ CREATE POLICY tenant_isolation_service_categories ON service_categories
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_service_categories ON service_categories
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Services
@@ -293,7 +293,7 @@ CREATE POLICY tenant_isolation_services ON services
     USING (business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
 
 CREATE POLICY admin_full_access_services ON services
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Service variants
@@ -305,7 +305,7 @@ CREATE POLICY tenant_isolation_service_variants ON service_variants
     USING (service_id IN (SELECT id FROM services WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
 
 CREATE POLICY admin_full_access_service_variants ON service_variants
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Service images
@@ -317,7 +317,7 @@ CREATE POLICY tenant_isolation_service_images ON service_images
     USING (service_id IN (SELECT id FROM services WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
 
 CREATE POLICY admin_full_access_service_images ON service_images
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Service staff
@@ -329,7 +329,7 @@ CREATE POLICY tenant_isolation_service_staff ON service_staff
     USING (service_id IN (SELECT id FROM services WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
 
 CREATE POLICY admin_full_access_service_staff ON service_staff
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Service resources
@@ -341,7 +341,7 @@ CREATE POLICY tenant_isolation_service_resources ON service_resources
     USING (service_id IN (SELECT id FROM services WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
 
 CREATE POLICY admin_full_access_service_resources ON service_resources
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- Availability rules
@@ -353,7 +353,7 @@ CREATE POLICY tenant_isolation_availability_rules ON service_availability_rules
     USING (service_id IN (SELECT id FROM services WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
 
 CREATE POLICY admin_full_access_availability_rules ON service_availability_rules
-    FOR ALL TO postgres
+    FOR ALL TO CURRENT_USER
     USING (true);
 
 -- ============================================================

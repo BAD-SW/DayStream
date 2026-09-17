@@ -3,12 +3,19 @@ import { meetsWcagAA } from '../../utils/contrast';
 
 const CURATED_FONTS = ['System Default', 'Inter', 'Merriweather', 'Source Sans 3'];
 const FONT_SIZES = [14, 15, 16, 17] as const;
+const BASE_THEMES = [
+  { value: 'classic', label: 'Classic' },
+  { value: 'bold-business', label: 'Bold Business' },
+] as const;
 
 export interface ThemeValues {
+  baseTheme?: string | null;
   primaryColor?: string | null;
   secondaryColor?: string | null;
+  titleColor?: string | null;
   fontFamily?: string | null;
   baseFontSize?: number | null;
+  faviconUrl?: string | null;
 }
 
 export type ThemeField = keyof ThemeValues;
@@ -25,17 +32,23 @@ interface ThemeEditorFieldsProps {
 }
 
 interface ResolvedTheme {
+  baseTheme: string;
   primaryColor: string;
   secondaryColor: string;
+  titleColor: string;
   fontFamily: string;
   baseFontSize: number;
+  faviconUrl: string;
 }
 
 const DEFAULTS: ResolvedTheme = {
+  baseTheme: 'classic',
   primaryColor: '#C9A96E',
   secondaryColor: '#4A7FB5',
+  titleColor: '#F5F5F3',
   fontFamily: 'System Default',
   baseFontSize: 15,
+  faviconUrl: '',
 };
 
 /**
@@ -46,10 +59,13 @@ const DEFAULTS: ResolvedTheme = {
  */
 export function ThemeEditorFields({ values, onChange, inherited, inheritedLabel }: ThemeEditorFieldsProps) {
   const resolved: ResolvedTheme = {
+    baseTheme: values.baseTheme ?? inherited?.baseTheme ?? DEFAULTS.baseTheme,
     primaryColor: values.primaryColor ?? inherited?.primaryColor ?? DEFAULTS.primaryColor,
     secondaryColor: values.secondaryColor ?? inherited?.secondaryColor ?? DEFAULTS.secondaryColor,
+    titleColor: values.titleColor ?? inherited?.titleColor ?? DEFAULTS.titleColor,
     fontFamily: values.fontFamily ?? inherited?.fontFamily ?? DEFAULTS.fontFamily,
     baseFontSize: values.baseFontSize ?? inherited?.baseFontSize ?? DEFAULTS.baseFontSize,
+    faviconUrl: values.faviconUrl ?? inherited?.faviconUrl ?? DEFAULTS.faviconUrl,
   };
   const fontStack = resolved.fontFamily !== 'System Default' ? FONT_STACKS[resolved.fontFamily] : 'var(--font-family)';
   const primaryContrast = meetsWcagAA('#FFFFFF', resolved.primaryColor);
@@ -75,6 +91,22 @@ export function ThemeEditorFields({ values, onChange, inherited, inheritedLabel 
   return (
     <div style={styles.layout}>
       <div>
+        <div style={styles.card}>
+          <div style={styles.labelRow}>
+            <h3 style={styles.cardTitle}>Base Theme</h3>
+            <InheritToggle field="baseTheme" />
+          </div>
+          <div style={styles.segmented}>
+            {BASE_THEMES.map(({ value, label }) => (
+              <button key={value} type="button"
+                disabled={!!inherited && values.baseTheme === null}
+                style={{ ...styles.segmentBtn, ...(resolved.baseTheme === value ? styles.segmentBtnActive : {}) }}
+                onClick={() => onChange('baseTheme', value)}
+              >{label}</button>
+            ))}
+          </div>
+        </div>
+
         <div style={styles.card}>
           <h3 style={styles.cardTitle}>Typography</h3>
           <div style={{ marginBottom: 'var(--space-lg)' }}>
@@ -140,14 +172,37 @@ export function ThemeEditorFields({ values, onChange, inherited, inheritedLabel 
               {secondaryContrast ? '✓ Passes contrast with white text' : '⚠ Low contrast with white text — consider a darker shade'}
             </div>
           </div>
+          <div style={{ marginTop: 'var(--space-lg)' }}>
+            <div style={styles.labelRow}>
+              <label style={styles.label}>Title / heading color</label>
+              <InheritToggle field="titleColor" />
+            </div>
+            <div style={styles.colorRow}>
+              <input type="color" value={resolved.titleColor} disabled={!!inherited && values.titleColor === null}
+                onChange={(e) => onChange('titleColor', e.target.value)} style={styles.colorSwatch} />
+              <input type="text" value={resolved.titleColor} disabled={!!inherited && values.titleColor === null}
+                onChange={(e) => onChange('titleColor', e.target.value)} style={styles.colorHex} />
+            </div>
+          </div>
+        </div>
+
+        <div style={styles.card}>
+          <h3 style={styles.cardTitle}>Favicon</h3>
+          <div style={styles.labelRow}>
+            <label style={styles.label}>Favicon URL</label>
+            <InheritToggle field="faviconUrl" />
+          </div>
+          <input type="text" placeholder="https://…/favicon.png" value={resolved.faviconUrl}
+            disabled={!!inherited && values.faviconUrl === null}
+            onChange={(e) => onChange('faviconUrl', e.target.value)} style={{ ...styles.select, marginTop: '7px' }} />
         </div>
       </div>
 
-      <div style={styles.previewPanel}>
+      <div style={styles.previewPanel} data-base-theme={resolved.baseTheme === 'bold-business' ? 'bold-business' : undefined}>
         <div style={styles.previewLabel}>LIVE PREVIEW</div>
         <p style={styles.previewNote}>Updates as you edit — not saved until you click Save.</p>
         <div style={styles.previewFrame}>
-          <div style={{ fontFamily: fontStack, fontSize: `${resolved.baseFontSize + 5}px`, fontWeight: 700, color: 'var(--color-text)', marginBottom: '12px' }}>
+          <div style={{ fontFamily: fontStack, fontSize: `${resolved.baseFontSize + 5}px`, fontWeight: 700, color: resolved.titleColor, marginBottom: '12px' }}>
             Book an appointment
           </div>
           <div style={{ fontFamily: fontStack, fontSize: `${resolved.baseFontSize}px`, color: 'var(--color-text-secondary)', marginBottom: '16px', lineHeight: 1.5 }}>

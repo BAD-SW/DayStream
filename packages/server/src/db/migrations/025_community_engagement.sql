@@ -276,92 +276,92 @@ CREATE INDEX idx_reviews_customer ON reviews(customer_id);
 ALTER TABLE community_posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE community_posts FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_community_posts ON community_posts FOR ALL TO daystream_app USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_community_posts ON community_posts FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_community_posts ON community_posts FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE community_reactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE community_reactions FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_community_reactions ON community_reactions FOR ALL TO daystream_app USING (post_id IN (SELECT id FROM community_posts WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_community_reactions ON community_reactions FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_community_reactions ON community_reactions FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE community_comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE community_comments FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_community_comments ON community_comments FOR ALL TO daystream_app USING (post_id IN (SELECT id FROM community_posts WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_community_comments ON community_comments FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_community_comments ON community_comments FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE challenges ENABLE ROW LEVEL SECURITY;
 ALTER TABLE challenges FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_challenges ON challenges FOR ALL TO daystream_app USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_challenges ON challenges FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_challenges ON challenges FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE challenge_participants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE challenge_participants FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_challenge_participants ON challenge_participants FOR ALL TO daystream_app USING (challenge_id IN (SELECT id FROM challenges WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_challenge_participants ON challenge_participants FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_challenge_participants ON challenge_participants FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE customer_points ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customer_points FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_customer_points ON customer_points FOR ALL TO daystream_app USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_customer_points ON customer_points FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_customer_points ON customer_points FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE badges ENABLE ROW LEVEL SECURITY;
 ALTER TABLE badges FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_badges ON badges FOR ALL TO daystream_app USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_badges ON badges FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_badges ON badges FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE customer_badges ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customer_badges FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_customer_badges ON customer_badges FOR ALL TO daystream_app USING (badge_id IN (SELECT id FROM badges WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_customer_badges ON customer_badges FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_customer_badges ON customer_badges FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE customer_streaks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customer_streaks FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_customer_streaks ON customer_streaks FOR ALL TO daystream_app USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_customer_streaks ON customer_streaks FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_customer_streaks ON customer_streaks FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE vod_content ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vod_content FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_vod_content ON vod_content FOR ALL TO daystream_app USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_vod_content ON vod_content FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_vod_content ON vod_content FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE vod_progress ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vod_progress FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_vod_progress ON vod_progress FOR ALL TO daystream_app USING (content_id IN (SELECT id FROM vod_content WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_vod_progress ON vod_progress FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_vod_progress ON vod_progress FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE courses FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_courses ON courses FOR ALL TO daystream_app USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_courses ON courses FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_courses ON courses FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE course_lessons ENABLE ROW LEVEL SECURITY;
 ALTER TABLE course_lessons FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_course_lessons ON course_lessons FOR ALL TO daystream_app USING (course_id IN (SELECT id FROM courses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_course_lessons ON course_lessons FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_course_lessons ON course_lessons FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE course_enrollments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE course_enrollments FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_course_enrollments ON course_enrollments FOR ALL TO daystream_app USING (course_id IN (SELECT id FROM courses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_course_enrollments ON course_enrollments FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_course_enrollments ON course_enrollments FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE course_lesson_progress ENABLE ROW LEVEL SECURITY;
 ALTER TABLE course_lesson_progress FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_course_lesson_progress ON course_lesson_progress FOR ALL TO daystream_app USING (enrollment_id IN (SELECT id FROM course_enrollments WHERE course_id IN (SELECT id FROM courses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
-CREATE POLICY admin_full_access_course_lesson_progress ON course_lesson_progress FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_course_lesson_progress ON course_lesson_progress FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE referral_codes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE referral_codes FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_referral_codes ON referral_codes FOR ALL TO daystream_app USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_referral_codes ON referral_codes FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_referral_codes ON referral_codes FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE referrals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE referrals FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_referrals ON referrals FOR ALL TO daystream_app USING (referral_code_id IN (SELECT id FROM referral_codes WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_referrals ON referrals FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_referrals ON referrals FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reviews FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_reviews ON reviews FOR ALL TO daystream_app USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_reviews ON reviews FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_reviews ON reviews FOR ALL TO CURRENT_USER USING (true);
 
 -- ============================================================
 -- 9. Grant Permissions

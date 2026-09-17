@@ -8,8 +8,13 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Grant minimal permissions
-GRANT CONNECT ON DATABASE daystream_dev TO daystream_query_reader;
+-- Grant minimal permissions. Database name is dynamic, not hardcoded — 'daystream_dev'
+-- is a local-only convention (see 004_rls_app_role.sql's equivalent fix).
+DO $$
+BEGIN
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO daystream_query_reader', current_database());
+END
+$$;
 GRANT USAGE ON SCHEMA public TO daystream_query_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO daystream_query_reader;
 

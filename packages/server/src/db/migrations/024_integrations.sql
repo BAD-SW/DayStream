@@ -132,37 +132,37 @@ ALTER TABLE integration_connections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE integration_connections FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_integration_connections ON integration_connections FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_integration_connections ON integration_connections FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_integration_connections ON integration_connections FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE integration_sync_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE integration_sync_log FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_integration_sync_log ON integration_sync_log FOR ALL TO daystream_app
     USING (connection_id IN (SELECT id FROM integration_connections WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_integration_sync_log ON integration_sync_log FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_integration_sync_log ON integration_sync_log FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE webhook_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE webhook_subscriptions FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_webhook_subscriptions ON webhook_subscriptions FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_webhook_subscriptions ON webhook_subscriptions FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_webhook_subscriptions ON webhook_subscriptions FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE webhook_deliveries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE webhook_deliveries FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_webhook_deliveries ON webhook_deliveries FOR ALL TO daystream_app
     USING (subscription_id IN (SELECT id FROM webhook_subscriptions WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_webhook_deliveries ON webhook_deliveries FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_webhook_deliveries ON webhook_deliveries FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api_keys FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_api_keys ON api_keys FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_api_keys ON api_keys FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_api_keys ON api_keys FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE ical_feeds ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ical_feeds FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_ical_feeds ON ical_feeds FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_ical_feeds ON ical_feeds FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_ical_feeds ON ical_feeds FOR ALL TO CURRENT_USER USING (true);
 
 -- ============================================================
 -- 8. Grant Permissions

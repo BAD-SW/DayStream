@@ -173,55 +173,55 @@ ALTER TABLE resource_types ENABLE ROW LEVEL SECURITY;
 ALTER TABLE resource_types FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_resource_types ON resource_types FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_resource_types ON resource_types FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_resource_types ON resource_types FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE resources ENABLE ROW LEVEL SECURITY;
 ALTER TABLE resources FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_resources ON resources FOR ALL TO daystream_app
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
-CREATE POLICY admin_full_access_resources ON resources FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_resources ON resources FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE resource_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE resource_schedules FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_resource_schedules ON resource_schedules FOR ALL TO daystream_app
     USING (resource_id IN (SELECT id FROM resources WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_resource_schedules ON resource_schedules FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_resource_schedules ON resource_schedules FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE resource_schedule_slots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE resource_schedule_slots FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_resource_schedule_slots ON resource_schedule_slots FOR ALL TO daystream_app
     USING (schedule_id IN (SELECT id FROM resource_schedules WHERE resource_id IN (SELECT id FROM resources WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
-CREATE POLICY admin_full_access_resource_schedule_slots ON resource_schedule_slots FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_resource_schedule_slots ON resource_schedule_slots FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE resource_schedule_blocks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE resource_schedule_blocks FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_resource_schedule_blocks ON resource_schedule_blocks FOR ALL TO daystream_app
     USING (resource_id IN (SELECT id FROM resources WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_resource_schedule_blocks ON resource_schedule_blocks FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_resource_schedule_blocks ON resource_schedule_blocks FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE resource_bookings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE resource_bookings FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_resource_bookings ON resource_bookings FOR ALL TO daystream_app
     USING (resource_id IN (SELECT id FROM resources WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_resource_bookings ON resource_bookings FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_resource_bookings ON resource_bookings FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE service_resource_requirements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE service_resource_requirements FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_service_resource_reqs ON service_resource_requirements FOR ALL TO daystream_app
     USING (service_id IN (SELECT id FROM services WHERE business_id IN (SELECT id FROM businesses WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid)));
-CREATE POLICY admin_full_access_service_resource_reqs ON service_resource_requirements FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_service_resource_reqs ON service_resource_requirements FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE resource_dependencies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE resource_dependencies FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_resource_dependencies ON resource_dependencies FOR ALL TO daystream_app
     USING (resource_id IN (SELECT id FROM resources WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_resource_dependencies ON resource_dependencies FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_resource_dependencies ON resource_dependencies FOR ALL TO CURRENT_USER USING (true);
 
 ALTER TABLE resource_maintenance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE resource_maintenance FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_resource_maintenance ON resource_maintenance FOR ALL TO daystream_app
     USING (resource_id IN (SELECT id FROM resources WHERE tenant_id = current_setting('app.current_tenant_id', true)::uuid));
-CREATE POLICY admin_full_access_resource_maintenance ON resource_maintenance FOR ALL TO postgres USING (true);
+CREATE POLICY admin_full_access_resource_maintenance ON resource_maintenance FOR ALL TO CURRENT_USER USING (true);
 
 -- ============================================================
 -- 10. Grant Permissions

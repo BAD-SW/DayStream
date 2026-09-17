@@ -1,17 +1,8 @@
-import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
-import { apiClient } from '../../api/client';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { useContextManager } from '../../context/ContextManager';
-import { applyTheme, resetToDefault, ThemeConfig } from '../../context/ThemeManager';
-
-interface BusinessTheme {
-  primaryColor?: string;
-  secondaryColor?: string;
-  accentColor?: string;
-  logoUrl?: string;
-  fontFamily?: string;
-  fontSizeBase?: string;
-  borderRadius?: 'sharp' | 'rounded' | 'pill';
-}
+import { applyBaseTheme, applyResolvedTokens, resetToDefault } from '../../context/ThemeManager';
+import { resolveTheme, resolveThemeForTenant, resolveThemeForSystem } from '../../api/themes';
+import { ResolvedTheme } from '@daystream/shared';
 
 /** Curated font list (ui-guidelines-and-theming.md §7) → actual CSS font-family stack. */
 export const FONT_STACKS: Record<string, string> = {
@@ -41,7 +32,16 @@ export function loadGoogleFont(fontFamily: string | undefined): void {
 interface ThemeContextValue {
   mode: 'dark' | 'light';
   toggleMode: () => void;
-  businessTheme: BusinessTheme | null;
+  /** The last theme resolved via GET /v1/themes/resolve for the active business context
+   * (Theme Setup module) — null while browsing at tenant/system level with no business
+   * selected, since resolution is always business-scoped. Used by the Theme Gallery to
+   * mark the correct card "Active" without a separate fetch. */
+  resolvedTheme: ResolvedTheme | null;
+  /** Re-resolves and re-applies the theme for the current context. Call this after
+   * successfully applying a theme (Theme Setup module) so the change shows up live —
+   * applying only writes the database; nothing else re-triggers the resolve-on-load
+   * effect, since the active context itself hasn't changed. */
+  refreshTheme: () => Promise<void>;
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
@@ -103,7 +103,7 @@ function persistToApi(mode: 'dark' | 'light'): void {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<'dark' | 'light'>(detectSystemPreference);
-  const [businessTheme, setBusinessTheme] = useState<BusinessTheme | null>(null);
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme | null>(null);
   const { activeContext } = useContextManager();
   const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -113,82 +113,40 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     safeSetItem('theme-mode', mode);
   }, [mode]);
 
-  // Load and apply theme overrides for the active context (system → tenant → business cascade).
-  // Driven by ContextManager's activeContext rather than raw JWT role, so switching context
-  // (not just logging in as a given persona) re-applies the correct branding.
-  useEffect(() => {
-    let cancelled = false;
+  // Resolve and apply the active theme (Theme Setup module) for the active context —
+  // business-scoped when a business is selected, tenant-scoped when only a tenant is
+  // selected, and platform-scoped otherwise, so the admin chrome itself (which has no
+  // business in view) still reflects a theme applied at tenant or system scope.
+  // A generation counter (not a plain effect-cleanup flag) guards against a stale
+  // in-flight request winning a race against a newer one, since refreshTheme is also
+  // called imperatively (not just from the effect) after a manual "Apply" action.
+  const requestGenerationRef = useRef(0);
 
-    async function loadContextTheme() {
-      if (activeContext.contextLevel === 'system') {
-        if (!cancelled) {
-          setBusinessTheme(null);
-          resetToDefault();
-        }
-        return;
-      }
-
-      try {
-        // Tenant-level layer: brand.* config for the active tenant. getAllConfig()
-        // (server-side) already COALESCEs each key to the platform-wide default from
-        // sys_configuration_definitions when the tenant hasn't overridden it, so this one
-        // fetch transparently covers both the "system default" and "tenant override" rungs
-        // of the cascade (the apiClient interceptor injects X-Context-Tenant-Id automatically
-        // when this differs from the caller's own JWT tenant).
-        const configRes = await apiClient.get('/v1/admin/config');
-        const config = configRes.data.data || {};
-        const merged: ThemeConfig = {
-          colorPrimary: config['brand.primary_color'] || undefined,
-          colorSecondary: config['brand.secondary_color'] || undefined,
-          logoUrl: config['brand.logo_url'] || undefined,
-          fontSizeBase: config['brand.base_font_size'] ? `${config['brand.base_font_size']}px` : undefined,
-        };
-        let fontFamilyLabel: string | undefined = config['brand.font_family'] || undefined;
-
-        // Business-level layer: overrides the tenant/system value per-field when a
-        // business is in scope and has explicitly customized that field (NULL columns —
-        // see 104_theme_cascade.sql — mean "not customized," so they simply don't override).
-        if (activeContext.contextLevel === 'business' && activeContext.businessId) {
-          try {
-            const bizRes = await apiClient.get('/v1/admin/my-context', { params: { business_id: activeContext.businessId } });
-            const business = bizRes.data.data?.business;
-            if (business?.primary_color) merged.colorPrimary = business.primary_color;
-            if (business?.secondary_color) merged.colorSecondary = business.secondary_color;
-            if (business?.logo_url) merged.logoUrl = business.logo_url;
-            if (business?.base_font_size) merged.fontSizeBase = `${business.base_font_size}px`;
-            if (business?.font_family) fontFamilyLabel = business.font_family;
-          } catch {
-            // Fall back to the tenant-level values only
-          }
-        }
-
-        if (fontFamilyLabel && fontFamilyLabel !== 'System Default') {
-          loadGoogleFont(fontFamilyLabel);
-          merged.fontFamily = FONT_STACKS[fontFamilyLabel];
-        } else {
-          fontFamilyLabel = undefined;
-        }
-
-        if (cancelled) return;
-        setBusinessTheme({
-          primaryColor: merged.colorPrimary,
-          secondaryColor: merged.colorSecondary,
-          logoUrl: merged.logoUrl,
-          fontFamily: fontFamilyLabel,
-          fontSizeBase: merged.fontSizeBase,
-        });
-        applyTheme(merged);
-      } catch {
-        if (!cancelled) {
-          setBusinessTheme(null);
-          resetToDefault();
-        }
-      }
+  const refreshTheme = useCallback(async () => {
+    const generation = ++requestGenerationRef.current;
+    try {
+      const resolved = activeContext.contextLevel === 'business' && activeContext.businessId
+        ? await resolveTheme(activeContext.businessId)
+        : activeContext.contextLevel === 'tenant' && activeContext.tenantId
+          ? await resolveThemeForTenant(activeContext.tenantId)
+          : await resolveThemeForSystem();
+      if (requestGenerationRef.current !== generation) return;
+      setResolvedTheme(resolved);
+      applyBaseTheme(resolved.base_theme === 'bold-business' ? 'bold-business' : null);
+      applyResolvedTokens(resolved.tokens);
+      const fontFamilyLabel = resolved.tokens['--font-family'];
+      if (fontFamilyLabel && fontFamilyLabel !== 'System Default') loadGoogleFont(fontFamilyLabel);
+    } catch {
+      if (requestGenerationRef.current !== generation) return;
+      setResolvedTheme(null);
+      applyBaseTheme(null);
+      resetToDefault();
     }
-
-    loadContextTheme();
-    return () => { cancelled = true; };
   }, [activeContext.contextLevel, activeContext.tenantId, activeContext.businessId]);
+
+  useEffect(() => {
+    refreshTheme();
+  }, [refreshTheme]);
 
   function toggleMode() {
     const root = document.documentElement;
@@ -217,7 +175,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <ThemeContext.Provider value={{ mode, toggleMode, businessTheme }}>
+    <ThemeContext.Provider value={{ mode, toggleMode, resolvedTheme, refreshTheme }}>
       {children}
     </ThemeContext.Provider>
   );

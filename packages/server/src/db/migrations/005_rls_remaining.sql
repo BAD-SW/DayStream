@@ -11,7 +11,7 @@ CREATE POLICY tenant_isolation_tenants ON tenants
 
 CREATE POLICY admin_full_access_tenants ON tenants
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 -- RLS on login_attempts
@@ -25,7 +25,7 @@ CREATE POLICY tenant_isolation_login_attempts ON login_attempts
 
 CREATE POLICY admin_full_access_login_attempts ON login_attempts
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 -- RLS on refresh_tokens (scoped by user, not tenant directly)
@@ -40,7 +40,7 @@ CREATE POLICY app_access_refresh_tokens ON refresh_tokens
 
 CREATE POLICY admin_full_access_refresh_tokens ON refresh_tokens
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 -- RLS on password_history
@@ -54,7 +54,7 @@ CREATE POLICY app_access_password_history ON password_history
 
 CREATE POLICY admin_full_access_password_history ON password_history
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 -- RLS on user_roles
@@ -68,7 +68,7 @@ CREATE POLICY tenant_isolation_user_roles ON user_roles
 
 CREATE POLICY admin_full_access_user_roles ON user_roles
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 -- RLS on audit_log
@@ -82,7 +82,7 @@ CREATE POLICY tenant_isolation_audit_log ON audit_log
 
 CREATE POLICY admin_full_access_audit_log ON audit_log
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 -- RLS on consent_records
@@ -96,7 +96,7 @@ CREATE POLICY tenant_isolation_consent_records ON consent_records
 
 CREATE POLICY admin_full_access_consent_records ON consent_records
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 -- RLS on deletion_requests
@@ -110,7 +110,7 @@ CREATE POLICY tenant_isolation_deletion_requests ON deletion_requests
 
 CREATE POLICY admin_full_access_deletion_requests ON deletion_requests
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 -- RLS on tenant_configurations
@@ -124,7 +124,7 @@ CREATE POLICY tenant_isolation_tenant_configurations ON tenant_configurations
 
 CREATE POLICY admin_full_access_tenant_configurations ON tenant_configurations
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 -- RLS on feature_flag_overrides
@@ -138,7 +138,7 @@ CREATE POLICY tenant_isolation_feature_flag_overrides ON feature_flag_overrides
 
 CREATE POLICY admin_full_access_feature_flag_overrides ON feature_flag_overrides
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 -- Tables without tenant_id (system-level, open to app role)
@@ -156,7 +156,7 @@ CREATE POLICY app_access_roles ON roles
 
 CREATE POLICY admin_full_access_roles ON roles
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 -- configuration_definitions and feature_flags are system-level, no tenant scoping needed
@@ -170,7 +170,7 @@ CREATE POLICY app_read_config_definitions ON configuration_definitions
 
 CREATE POLICY admin_full_access_config_definitions ON configuration_definitions
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 ALTER TABLE feature_flags ENABLE ROW LEVEL SECURITY;
@@ -183,7 +183,7 @@ CREATE POLICY app_read_feature_flags ON feature_flags
 
 CREATE POLICY admin_full_access_feature_flags ON feature_flags
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 -- oauth_links scoped by tenant
@@ -197,7 +197,7 @@ CREATE POLICY tenant_isolation_oauth_links ON oauth_links
 
 CREATE POLICY admin_full_access_oauth_links ON oauth_links
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 -- user_mfa and mfa_backup_codes: open to app role (looked up by user_id)
@@ -211,7 +211,7 @@ CREATE POLICY app_access_user_mfa ON user_mfa
 
 CREATE POLICY admin_full_access_user_mfa ON user_mfa
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);
 
 ALTER TABLE mfa_backup_codes ENABLE ROW LEVEL SECURITY;
@@ -224,5 +224,5 @@ CREATE POLICY app_access_mfa_backup_codes ON mfa_backup_codes
 
 CREATE POLICY admin_full_access_mfa_backup_codes ON mfa_backup_codes
     FOR ALL
-    TO postgres
+    TO CURRENT_USER
     USING (true);

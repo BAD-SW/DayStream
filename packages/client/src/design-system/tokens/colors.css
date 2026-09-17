@@ -27,6 +27,11 @@
   --color-text-secondary: #B0B0B0;
   --color-text-disabled: #8A8A8A;
   --color-text-inverse: #1A1A1A;
+  /* Heading/title color — a distinct, independently configurable token (Theme Setup);
+     defaults to --color-text so it's a no-op until a scope customizes it. */
+  --color-text-title: var(--color-text);
+  --color-text-body: var(--color-text);
+  --color-text-muted: var(--color-text-disabled);
 
   /* Border */
   --color-border: #333333;
@@ -41,6 +46,11 @@
   /* Per-business secondary brand color (ui-guidelines-and-theming.md §7) — defaults to
      the platform accent until a business sets its own via Appearance settings. */
   --color-secondary: var(--color-accent);
+  --color-secondary-hover: var(--color-accent-hover);
+  --color-secondary-contrast: var(--color-accent-contrast);
+
+  /* Divider — a distinct role for the Theme Setup module; defaults to --color-border. */
+  --color-divider: var(--color-border);
 
   /* Semantic — Success */
   --color-success: #2E7D32;

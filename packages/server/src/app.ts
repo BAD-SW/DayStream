@@ -55,8 +55,12 @@ app.use((req, res, next) => {
 });
 
 // CORS
+// CLIENT_URL defaults to the local Vite dev server; in production it's the deployed
+// Vercel client URL (spec 38 Phase 4) — the old hardcoded `localhost:${config.port}`
+// fallback for non-development NODE_ENV pointed at the API's OWN port, not the client's,
+// which could never have been a working origin for any real deployment.
 app.use(cors({
-  origin: `http://localhost:${config.nodeEnv === 'development' ? 4000 : config.port}`,
+  origin: config.clientUrl,
   credentials: true,
 }));
 
@@ -65,6 +69,15 @@ app.use(cookieParser());
 
 // Body parsing
 app.use(express.json({ limit: '1mb' }));
+
+// Serve the embeddable booking widget script — Requirement 1.1: publicly accessible,
+// unauthenticated, cacheable. Lives outside src/ (packages/server/static/) so it needs
+// no build step and resolves the same way from both `tsx src/index.ts` (dev) and
+// `node dist/index.js` (prod) — '../static' from either src/app.ts or dist/app.js lands
+// on the same sibling folder.
+app.use('/widget', express.static(path.join(__dirname, '../static'), {
+  maxAge: '5m',
+}));
 
 // Serve uploaded files from storage (reads path from database config)
 app.use('/storage', async (req, res, next) => {

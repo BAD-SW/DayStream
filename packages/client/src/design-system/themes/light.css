@@ -30,6 +30,8 @@
   --color-text-secondary: #666666;
   --color-text-muted: #999999;
   --color-text-inverse: #F5F5F3;
+  --color-text-title: var(--color-text);
+  --color-text-body: var(--color-text);
 
   /* Brand / Primary */
   --color-primary: #C89B3C;
@@ -40,6 +42,11 @@
   /* Borders */
   --color-border: #E5DDCD;
   --color-border-hover: #D8CEBA;
+  --color-divider: var(--color-border);
+
+  /* Secondary (Theme Setup) */
+  --color-secondary-hover: var(--color-accent-hover);
+  --color-secondary-contrast: var(--color-accent-contrast);
 
   /* Shadows */
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.04);

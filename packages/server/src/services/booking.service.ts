@@ -18,6 +18,8 @@ interface CreateBookingInput {
   tenantId: string;
   overrideRules?: boolean;  // staff can override lead time, staff hours, AND resource capacity
   participantCount?: number; // headcount this booking occupies on its resource; default 1
+  initialStatus?: 'pending' | 'confirmed'; // default 'confirmed' — widget bookings awaiting payment use 'pending'
+  source?: 'admin' | 'widget'; // default 'admin' (spec 38)
 }
 
 interface BookingFilters {
@@ -288,21 +290,22 @@ export async function createBooking(input: CreateBookingInput) {
   );
   const bookingReference = refRows[0].ref;
 
-  // Determine initial status (auto-confirm if configured)
-  const status = 'confirmed'; // For now, auto-confirm
+  // Determine initial status (auto-confirm unless the caller explicitly asks for 'pending' —
+  // used by the widget when a business requires payment before confirmation, spec 38)
+  const status = input.initialStatus || 'confirmed';
 
   // Insert booking
   const { rows } = await adminPool.query(
     `INSERT INTO apt_bookings (business_id, customer_id, walk_in_name, service_id, variant_id, staff_id, resource_id,
-       start_time, end_time, buffer_before, buffer_after, status, booking_reference, booking_type, price, notes, created_by, participant_count)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+       start_time, end_time, buffer_before, buffer_after, status, booking_reference, booking_type, price, notes, created_by, participant_count, source)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
      RETURNING *`,
     [
       input.businessId, input.customerId || null, input.walkInName || null, input.serviceId, input.variantId,
       staffId, resourceId,
       startTime.toISOString(), endTime.toISOString(),
       bufferBefore, bufferAfter, status, bookingReference, bookingType, price,
-      input.notes || null, input.createdBy, participantCount,
+      input.notes || null, input.createdBy, participantCount, input.source || 'admin',
     ],
   );
 

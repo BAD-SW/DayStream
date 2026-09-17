@@ -92,8 +92,21 @@ export function ContextSwitcher() {
   }, [isOpen, flatOptions]);
 
   if (!isInteractive) {
+    // Business/customer persona: no context to switch between, just the active
+    // business's own identity — but it still deserves the logo it uploaded in
+    // Settings > Appearance, not just its name as plain text (previously this
+    // branch never rendered activeContext.logoUrl at all).
     return (
       <span className="context-switcher context-switcher--static">
+        {activeContext.logoUrl && (
+          <img
+            className="context-switcher__logo"
+            src={activeContext.logoUrl}
+            alt=""
+            width={24}
+            height={24}
+          />
+        )}
         {activeContext.displayName}
       </span>
     );

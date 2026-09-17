@@ -1,0 +1,7 @@
+{
+  "buildCommand": "cd packages/client && npx vite build",
+  "outputDirectory": "packages/client/dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

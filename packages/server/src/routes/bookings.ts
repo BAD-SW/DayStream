@@ -76,7 +76,7 @@ bookingsRouter.get('/availability/combinations', requirePermission('bookings:rea
 });
 
 /** Whether every active location for a business is closed on a given date (override, else regular hours). */
-async function isDayClosedForBusiness(businessId: string, dateStr: string): Promise<boolean> {
+export async function isDayClosedForBusiness(businessId: string, dateStr: string): Promise<boolean> {
   const { rows: locs } = await adminPool.query(
     "SELECT id FROM sys_locations WHERE business_id = $1 AND status = 'active'",
     [businessId],

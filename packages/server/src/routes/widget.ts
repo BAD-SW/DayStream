@@ -1,0 +1,172 @@
+import { Router, Request, Response } from 'express';
+import Joi from 'joi';
+import { authenticate, AuthenticatedRequest } from '../auth/middleware';
+import { validate } from '../middleware/validate';
+import { widgetCors, widgetMutationLimiter, requireValidBusinessId } from '../middleware/widget-cors';
+import { success, error } from '../utils/response';
+import * as widgetService from '../services/widget-booking.service';
+import { WidgetError } from '../services/widget-booking.service';
+
+export const widgetRouter = Router();
+
+widgetRouter.use(widgetCors);
+
+function handleWidgetError(res: Response, err: unknown, fallback: string): void {
+  if (err instanceof WidgetError) {
+    error(res, err.message, err.status === 404 ? 'NOT_FOUND' : err.status === 403 ? 'FORBIDDEN' : err.status === 409 ? 'CONFLICT' : err.status === 401 ? 'UNAUTHORIZED' : 'VALIDATION_ERROR', err.status);
+    return;
+  }
+  error(res, fallback, 'INTERNAL_ERROR', 500);
+}
+
+// ── Public: business, products, availability ────────────────────────────────
+
+widgetRouter.get('/business/:business_id', requireValidBusinessId, async (req: Request, res: Response) => {
+  try {
+    const info = await widgetService.getBusinessInfo(req.params.business_id);
+    success(res, info);
+  } catch (err) {
+    handleWidgetError(res, err, 'Failed to load business');
+  }
+});
+
+widgetRouter.get('/business/:business_id/products', requireValidBusinessId, async (req: Request, res: Response) => {
+  try {
+    const products = await widgetService.getProducts(req.params.business_id);
+    success(res, products);
+  } catch (err) {
+    handleWidgetError(res, err, 'Failed to load products');
+  }
+});
+
+widgetRouter.get('/business/:business_id/products/:product_id', requireValidBusinessId, async (req: Request, res: Response) => {
+  try {
+    const product = await widgetService.getProductDetail(req.params.business_id, req.params.product_id);
+    success(res, product);
+  } catch (err) {
+    handleWidgetError(res, err, 'Failed to load product');
+  }
+});
+
+widgetRouter.get('/availability', async (req: Request, res: Response) => {
+  try {
+    const { business_id, service_id, variant_id, month } = req.query as Record<string, string>;
+    if (!business_id || !service_id || !variant_id || !month) {
+      error(res, 'business_id, service_id, variant_id, and month are required', 'VALIDATION_ERROR', 400);
+      return;
+    }
+    const result = await widgetService.getAvailabilityDays(business_id, service_id, variant_id, month);
+    success(res, result);
+  } catch (err) {
+    handleWidgetError(res, err, 'Failed to load availability');
+  }
+});
+
+widgetRouter.get('/availability/slots', async (req: Request, res: Response) => {
+  try {
+    const { business_id, service_id, variant_id, date_from, date_to } = req.query as Record<string, string>;
+    if (!business_id || !service_id || !variant_id || !date_from || !date_to) {
+      error(res, 'business_id, service_id, variant_id, date_from, and date_to are required', 'VALIDATION_ERROR', 400);
+      return;
+    }
+    const slots = await widgetService.getAvailabilitySlots(business_id, service_id, variant_id, date_from, date_to);
+    success(res, slots);
+  } catch (err) {
+    handleWidgetError(res, err, 'Failed to load slots');
+  }
+});
+
+// ── Authenticated: hold, customer, booking, pay ──────────────────────────────
+// A widget-specific mutation rate limit applies to all four below (Requirement 12.3).
+
+widgetRouter.use(['/availability/hold', '/customer', '/booking'], widgetMutationLimiter);
+
+const holdSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  service_id: Joi.string().uuid().required(),
+  variant_id: Joi.string().uuid().required(),
+  start_time: Joi.string().isoDate().required(),
+});
+
+widgetRouter.post('/availability/hold', authenticate, validate(holdSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const hold = await widgetService.holdSlot({
+      businessId: req.body.business_id,
+      serviceId: req.body.service_id,
+      variantId: req.body.variant_id,
+      startTime: req.body.start_time,
+      userId: authReq.user.sub,
+    });
+    success(res, { hold_id: hold.id, expires_at: hold.expires_at }, undefined, 201);
+  } catch (err: any) {
+    if (err.message?.includes('already being held')) { error(res, err.message, 'CONFLICT', 409); return; }
+    handleWidgetError(res, err, 'Failed to hold slot');
+  }
+});
+
+const customerSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  phone: Joi.string().max(50).allow('', null),
+});
+
+widgetRouter.post('/customer', authenticate, validate(customerSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const result = await widgetService.findOrCreateCustomer(req.body.business_id, authReq.user as any, req.body.phone || undefined);
+    success(res, result.customer, undefined, result.isNew ? 201 : 200);
+  } catch (err) {
+    handleWidgetError(res, err, 'Failed to resolve customer');
+  }
+});
+
+const bookingSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  customer_id: Joi.string().uuid().required(),
+  service_id: Joi.string().uuid().required(),
+  variant_id: Joi.string().uuid().required(),
+  start_time: Joi.string().isoDate().required(),
+  staff_id: Joi.string().uuid().allow(null),
+  notes: Joi.string().allow('', null),
+  hold_id: Joi.string().uuid().allow(null),
+});
+
+widgetRouter.post('/booking', authenticate, validate(bookingSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const booking = await widgetService.createWidgetBooking({
+      businessId: req.body.business_id,
+      customerId: req.body.customer_id,
+      serviceId: req.body.service_id,
+      variantId: req.body.variant_id,
+      startTime: req.body.start_time,
+      staffId: req.body.staff_id || undefined,
+      notes: req.body.notes || undefined,
+      holdId: req.body.hold_id || undefined,
+    }, authReq.user as any);
+    success(res, {
+      booking_reference: booking.booking_reference,
+      service_name: booking.service_name,
+      start_time: booking.start_time,
+      staff_name: booking.staff_first_name ? `${booking.staff_first_name} ${booking.staff_last_name}` : null,
+      status: booking.status,
+      id: booking.id,
+    }, undefined, 201);
+  } catch (err) {
+    handleWidgetError(res, err, 'Failed to create booking');
+  }
+});
+
+const paySchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+});
+
+widgetRouter.post('/booking/:booking_id/pay', authenticate, widgetMutationLimiter, validate(paySchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const result = await widgetService.payForBooking(req.params.booking_id, req.body.business_id, authReq.user as any);
+    success(res, result);
+  } catch (err) {
+    handleWidgetError(res, err, 'Failed to process payment');
+  }
+});
