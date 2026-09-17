@@ -20,7 +20,7 @@ export const membershipRecognizedRevenueReport: ReportDefinition = {
   id: 'membership-recognized-revenue',
   title: 'Membership Recognized Revenue',
   columns: [
-    { key: 'customer', header: 'Customer', type: 'text', filterable: true },
+    { key: 'customer', header: 'Customer', type: 'text', filterable: true, link: { to: 'customer', idKey: 'customer_id' } },
     { key: 'plan', header: 'Plan', type: 'text', filterable: true, groupable: true },
     { key: 'recognized_amount', header: 'Recognized Amount', type: 'currency', total: true },
     { key: 'days_recognized', header: 'Days Recognized', type: 'number' },
@@ -30,6 +30,7 @@ export const membershipRecognizedRevenueReport: ReportDefinition = {
     const { rows } = await adminPool.query(
       `SELECT TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, ''))
                 || ' (' || c.reference_number || ')' AS customer,
+              c.id AS customer_id,
               p.name AS plan,
               rr.amount_recognized::int AS recognized_amount,
               rr.days_recognized::int AS days_recognized,

@@ -19,7 +19,7 @@ export const discountsPromotionsReport: ReportDefinition = {
   title: 'Discounts & Promotions',
   columns: [
     { key: 'entry_date', header: 'Date', type: 'date', filterable: true },
-    { key: 'order_number', header: 'Order', type: 'text', filterable: true },
+    { key: 'order_number', header: 'Order', type: 'text', filterable: true, link: { to: 'order', idKey: 'order_id' } },
     { key: 'promotion', header: 'Promotion', type: 'text', filterable: true, groupable: true },
     { key: 'item', header: 'Item', type: 'text', filterable: true },
     { key: 'gross', header: 'Gross', type: 'currency', total: true },
@@ -30,6 +30,7 @@ export const discountsPromotionsReport: ReportDefinition = {
     const { rows } = await adminPool.query(
       `SELECT o.completed_at::date AS entry_date,
               o.order_number,
+              o.id AS order_id,
               COALESCE(p.name, o.promo_code, 'Manual') AS promotion,
               CASE
                 WHEN oi.variant_name IS NOT NULL AND oi.variant_name <> ''

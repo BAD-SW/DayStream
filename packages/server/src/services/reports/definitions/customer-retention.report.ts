@@ -34,7 +34,7 @@ export const customerRetentionReport: ReportDefinition = {
   id: 'customer-retention',
   title: 'Customer Retention',
   columns: [
-    { key: 'customer', header: 'Customer', type: 'text', filterable: true },
+    { key: 'customer', header: 'Customer', type: 'text', filterable: true, link: { to: 'customer', idKey: 'customer_id' } },
     { key: 'lifecycle_stage', header: 'Lifecycle Stage', type: 'text', filterable: true, groupable: true },
     { key: 'customer_since', header: 'Customer Since', type: 'date', filterable: true },
     { key: 'stage_since', header: 'Stage Since', type: 'date', filterable: true },
@@ -74,11 +74,12 @@ export const customerRetentionReport: ReportDefinition = {
       [ctx.businessId],
     );
 
-    // Attach LTV from the shared helper; drop id + stage_rank (ordering only).
+    // Attach LTV from the shared helper; keep id as customer_id for linking,
+    // drop stage_rank (ordering only).
     return rows.map(({ id, stage_rank, ...row }) => {
       const r = byCustomer.get(id);
       const ltv = r ? r.service + r.product + r.membership : 0;
-      return { ...row, ltv };
+      return { ...row, customer_id: id, ltv };
     });
   },
 };

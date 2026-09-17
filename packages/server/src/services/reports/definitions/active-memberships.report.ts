@@ -26,7 +26,7 @@ export const activeMembershipsReport: ReportDefinition = {
   id: 'active-memberships',
   title: 'Active Memberships',
   columns: [
-    { key: 'customer', header: 'Customer', type: 'text', filterable: true },
+    { key: 'customer', header: 'Customer', type: 'text', filterable: true, link: { to: 'customer', idKey: 'customer_id' } },
     { key: 'plan', header: 'Plan', type: 'text', filterable: true, groupable: true },
     { key: 'status', header: 'Status', type: 'text', filterable: true, groupable: true },
     { key: 'billing', header: 'Billing', type: 'text', filterable: true },
@@ -40,6 +40,7 @@ export const activeMembershipsReport: ReportDefinition = {
     const { rows } = await adminPool.query(
       `SELECT TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, ''))
                 || ' (' || c.reference_number || ')' AS customer,
+              c.id AS customer_id,
               p.name AS plan,
               INITCAP(e.status) AS status,
               INITCAP(p.billing_frequency) AS billing,

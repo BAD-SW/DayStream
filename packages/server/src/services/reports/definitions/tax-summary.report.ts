@@ -20,7 +20,7 @@ export const taxSummaryReport: ReportDefinition = {
   title: 'Tax Summary',
   columns: [
     { key: 'entry_date', header: 'Date', type: 'date', filterable: true },
-    { key: 'order_number', header: 'Order', type: 'text', filterable: true },
+    { key: 'order_number', header: 'Order', type: 'text', filterable: true, link: { to: 'order', idKey: 'order_id' } },
     { key: 'item', header: 'Item', type: 'text', filterable: true },
     { key: 'tax_category', header: 'Tax Category', type: 'text', filterable: true, groupable: true },
     { key: 'rate', header: 'Rate', type: 'percent', filterable: true },
@@ -31,6 +31,7 @@ export const taxSummaryReport: ReportDefinition = {
     const { rows } = await adminPool.query(
       `SELECT o.completed_at::date AS entry_date,
               o.order_number,
+              o.id AS order_id,
               oi.item_name AS item,
               COALESCE(tc.name, '—') AS tax_category,
               -- basis points -> percent for display (percent column type expects a percent number)

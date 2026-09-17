@@ -21,7 +21,7 @@ export const newCancelledMembershipsReport: ReportDefinition = {
   title: 'New & Cancelled Memberships',
   columns: [
     { key: 'event', header: 'Event', type: 'text', filterable: true, groupable: true },
-    { key: 'customer', header: 'Customer', type: 'text', filterable: true },
+    { key: 'customer', header: 'Customer', type: 'text', filterable: true, link: { to: 'customer', idKey: 'customer_id' } },
     { key: 'plan', header: 'Plan', type: 'text', filterable: true, groupable: true },
     { key: 'start_date', header: 'Start Date', type: 'date', filterable: true },
     { key: 'cancel_date', header: 'Cancel Date', type: 'date', filterable: true },
@@ -37,6 +37,7 @@ export const newCancelledMembershipsReport: ReportDefinition = {
               END AS event,
               TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, ''))
                 || ' (' || c.reference_number || ')' AS customer,
+              c.id AS customer_id,
               p.name AS plan,
               e.start_date,
               -- Only show a cancel date when the cancellation is what's being reported

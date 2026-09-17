@@ -23,7 +23,7 @@ export const cancellationsNoShowsReport: ReportDefinition = {
     { key: 'reference', header: 'Reference', type: 'text', filterable: true },
     { key: 'service', header: 'Service', type: 'text', filterable: true, groupable: true },
     { key: 'staff', header: 'Staff', type: 'text', filterable: true, groupable: true },
-    { key: 'customer', header: 'Customer', type: 'text', filterable: true },
+    { key: 'customer', header: 'Customer', type: 'text', filterable: true, link: { to: 'customer', idKey: 'customer_id' } },
     { key: 'status', header: 'Status', type: 'text', filterable: true, groupable: true },
     { key: 'lost_value', header: 'Lost Value', type: 'currency', total: true },
     { key: 'fee_charged', header: 'Fee Charged', type: 'currency', total: true },
@@ -42,6 +42,7 @@ export const cancellationsNoShowsReport: ReportDefinition = {
                 NULLIF(TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')), ''),
                 '—'
               ) AS customer,
+              c.id AS customer_id,
               INITCAP(REPLACE(b.status, '_', ' ')) AS status,
               -- Booking price is stored tax-inclusive; back out tax so Lost Value is
               -- pre-tax, consistent with the (non-taxable) no-show fee.

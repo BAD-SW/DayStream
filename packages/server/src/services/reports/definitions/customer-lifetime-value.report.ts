@@ -15,7 +15,7 @@ export const customerLifetimeValueReport: ReportDefinition = {
   id: 'customer-lifetime-value',
   title: 'Customer Lifetime Value',
   columns: [
-    { key: 'customer', header: 'Customer', type: 'text', filterable: true },
+    { key: 'customer', header: 'Customer', type: 'text', filterable: true, link: { to: 'customer', idKey: 'customer_id' } },
     { key: 'service', header: 'Service Revenue', type: 'currency', total: true },
     { key: 'product', header: 'Product Revenue', type: 'currency', total: true },
     { key: 'membership', header: 'Membership Revenue', type: 'currency', total: true },
@@ -42,6 +42,7 @@ export const customerLifetimeValueReport: ReportDefinition = {
       const total = r.service + r.product + r.membership;
       return {
         customer: nameById.get(id) || '—',
+        customer_id: id,
         service: r.service,
         product: r.product,
         membership: r.membership,

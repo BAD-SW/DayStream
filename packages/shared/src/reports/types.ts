@@ -26,6 +26,18 @@ export interface ReportColumn {
   align?: ReportColumnAlign;
   /** Optional fixed column width (CSS value). */
   width?: string;
+  /**
+   * Makes this column's cell a link to a detail page. `to` selects the
+   * destination (customer → /customers/:id, order → /receipt/:id) and `idKey`
+   * names the row field holding the target id. The cell still displays its own
+   * value; only when the row has a non-empty id does it render as a link. Rows
+   * carry the id field alongside the display value (it is not shown as its own
+   * column).
+   */
+  link?: {
+    to: 'customer' | 'order';
+    idKey: string;
+  };
 }
 
 export interface ReportRunMeta {

@@ -26,7 +26,7 @@ export const revenueReport: ReportDefinition = {
     { key: 'entry_date', header: 'Date', type: 'date', filterable: true },
     { key: 'revenue_type', header: 'Revenue Type', type: 'text', filterable: true, groupable: true },
     { key: 'item', header: 'Item', type: 'text', filterable: true },
-    { key: 'customer', header: 'Customer', type: 'text', filterable: true },
+    { key: 'customer', header: 'Customer', type: 'text', filterable: true, link: { to: 'customer', idKey: 'customer_id' } },
     { key: 'amount', header: 'Amount', type: 'currency', total: true },
   ],
   run: async (ctx) => {
@@ -45,6 +45,7 @@ export const revenueReport: ReportDefinition = {
                ELSE TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, ''))
                     || ' (' || c.reference_number || ')'
              END AS customer,
+             c.id AS customer_id,
              (oi.total_price)::int AS amount,
              o.completed_at AS sort_ts
         FROM fin_order_items oi
@@ -63,6 +64,7 @@ export const revenueReport: ReportDefinition = {
              p.name AS item,
              TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, ''))
                || ' (' || c.reference_number || ')' AS customer,
+             c.id AS customer_id,
              (rr.amount_recognized)::int AS amount,
              rr.last_recognized_date::timestamptz AS sort_ts
         FROM fin_revenue_recognized rr

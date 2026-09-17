@@ -34,12 +34,40 @@ function buildTableColumns(cols: ReportColumn[], currency: string) {
     align: columnAlign(col),
     // Keep report headers on a single line; the column widths give them room.
     headerStyle: { whiteSpace: 'nowrap' as const },
-    render: (value: any) => (
-      <span style={{ display: 'block', textAlign: columnAlign(col) }}>
-        {formatReportValue(value, col.type, currency)}
-      </span>
-    ),
+    render: (value: any, row: Record<string, any>) => {
+      const formatted = formatReportValue(value, col.type, currency);
+      const href = col.link ? linkHref(col.link, row?.[col.link.idKey]) : null;
+      return (
+        <span style={{ display: 'block', textAlign: columnAlign(col) }}>
+          {href ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={styles.cellLink}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {formatted}
+            </a>
+          ) : (
+            formatted
+          )}
+        </span>
+      );
+    },
   }));
+}
+
+/** Map a column link descriptor + row id to a detail-page href, or null when
+ *  there's no id (so the cell renders as plain text rather than a dead link). */
+function linkHref(link: { to: 'customer' | 'order'; idKey: string }, id: unknown): string | null {
+  if (id == null || id === '') return null;
+  const encoded = encodeURIComponent(String(id));
+  switch (link.to) {
+    case 'customer': return `/customers/${encoded}`;
+    case 'order': return `/receipt/${encoded}`;
+    default: return null;
+  }
 }
 
 /** Build a footer-cells row (label in first cell, totals in totaled columns). */
@@ -382,6 +410,7 @@ const styles: Record<string, React.CSSProperties> = {
   spacer: { flex: 1 },
   hint: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' },
   runningHint: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', paddingBottom: '9px' },
+  cellLink: { color: 'var(--color-accent)', textDecoration: 'none', fontWeight: 'var(--font-weight-medium)' as any },
   errorText: { color: 'var(--color-danger, #b3261e)', fontSize: 'var(--font-size-sm)' },
   tableCard: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
   resultMeta: { display: 'flex', justifyContent: 'space-between', padding: 'var(--space-sm) var(--space-md)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' },

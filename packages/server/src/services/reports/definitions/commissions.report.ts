@@ -32,10 +32,10 @@ export const commissionsReport: ReportDefinition = {
   id: 'commissions',
   title: 'Commissions',
   columns: [
-    { key: 'order_number', header: 'Order', type: 'text', filterable: true },
+    { key: 'order_number', header: 'Order', type: 'text', filterable: true, link: { to: 'order', idKey: 'order_id' } },
     { key: 'completed_date', header: 'Date', type: 'date', filterable: true },
     { key: 'staff', header: 'Staff', type: 'text', filterable: true, groupable: true },
-    { key: 'customer', header: 'Customer', type: 'text', filterable: true },
+    { key: 'customer', header: 'Customer', type: 'text', filterable: true, link: { to: 'customer', idKey: 'customer_id' } },
     { key: 'item', header: 'Item', type: 'text', filterable: true },
     { key: 'type', header: 'Type', type: 'text', filterable: true, groupable: true },
     { key: 'base', header: 'Base', type: 'currency', total: true },
@@ -102,9 +102,11 @@ export const commissionsReport: ReportDefinition = {
 
     return lines.map((l) => ({
       order_number: l.order_number,
+      order_id: l.order_id,
       completed_date: toDate(l.completed_at),
       staff: staffById.get(l.staff_id) || '—',
       customer: l.customer_id ? (customerById.get(l.customer_id) || '—') : 'Walk-in',
+      customer_id: l.customer_id,
       item: l.item_name,
       type: l.rule_type === 'commission' ? 'Commission' : 'Flat Rate',
       base: l.line_base,

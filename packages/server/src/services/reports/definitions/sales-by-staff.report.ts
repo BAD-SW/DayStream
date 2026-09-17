@@ -18,7 +18,7 @@ export const salesByStaffReport: ReportDefinition = {
   columns: [
     { key: 'entry_date', header: 'Date', type: 'date', filterable: true },
     { key: 'staff', header: 'Staff', type: 'text', filterable: true, groupable: true },
-    { key: 'order_number', header: 'Order', type: 'text', filterable: true },
+    { key: 'order_number', header: 'Order', type: 'text', filterable: true, link: { to: 'order', idKey: 'order_id' } },
     { key: 'item', header: 'Item', type: 'text', filterable: true },
     { key: 'quantity', header: 'Qty', type: 'number', total: true },
     { key: 'gross', header: 'Gross', type: 'currency', total: true },
@@ -33,6 +33,7 @@ export const salesByStaffReport: ReportDefinition = {
                 'Unattributed'
               ) AS staff,
               o.order_number,
+              o.id AS order_id,
               CASE
                 WHEN oi.variant_name IS NOT NULL AND oi.variant_name <> ''
                   THEN oi.item_name || ' — ' || oi.variant_name

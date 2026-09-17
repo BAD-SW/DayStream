@@ -14,7 +14,7 @@ export const newCustomersReport: ReportDefinition = {
   title: 'New Customers',
   columns: [
     { key: 'joined', header: 'Creation Date', type: 'date', filterable: true },
-    { key: 'customer', header: 'Customer', type: 'text', filterable: true },
+    { key: 'customer', header: 'Customer', type: 'text', filterable: true, link: { to: 'customer', idKey: 'customer_id' } },
     { key: 'email', header: 'Email', type: 'text', filterable: true },
     { key: 'phone', header: 'Phone', type: 'text', filterable: true },
     { key: 'lifecycle_stage', header: 'Lifecycle Stage', type: 'text', filterable: true, groupable: true },
@@ -23,6 +23,7 @@ export const newCustomersReport: ReportDefinition = {
   run: async (ctx) => {
     const { rows } = await adminPool.query(
       `SELECT c.created_at::date AS joined,
+              c.id AS customer_id,
               TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, ''))
                 || ' (' || c.reference_number || ')' AS customer,
               c.email,

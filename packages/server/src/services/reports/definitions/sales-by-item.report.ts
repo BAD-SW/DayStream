@@ -24,7 +24,7 @@ export const salesByItemReport: ReportDefinition = {
   title: 'Sales by Item',
   columns: [
     { key: 'entry_date', header: 'Date', type: 'date', filterable: true },
-    { key: 'order_number', header: 'Order', type: 'text', filterable: true },
+    { key: 'order_number', header: 'Order', type: 'text', filterable: true, link: { to: 'order', idKey: 'order_id' } },
     { key: 'item', header: 'Item', type: 'text', filterable: true, groupable: true },
     { key: 'item_type', header: 'Type', type: 'text', filterable: true, groupable: true },
     { key: 'quantity', header: 'Qty', type: 'number', total: true },
@@ -36,6 +36,7 @@ export const salesByItemReport: ReportDefinition = {
     const { rows } = await adminPool.query(
       `SELECT o.completed_at::date AS entry_date,
               o.order_number,
+              o.id AS order_id,
               CASE
                 WHEN oi.variant_name IS NOT NULL AND oi.variant_name <> ''
                   THEN oi.item_name || ' — ' || oi.variant_name

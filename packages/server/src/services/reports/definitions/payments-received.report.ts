@@ -24,8 +24,8 @@ export const paymentsReceivedReport: ReportDefinition = {
     { key: 'received_date', header: 'Date', type: 'date', filterable: true },
     { key: 'source', header: 'Source', type: 'text', filterable: true, groupable: true },
     { key: 'method', header: 'Method', type: 'text', filterable: true, groupable: true },
-    { key: 'customer', header: 'Customer', type: 'text', filterable: true },
-    { key: 'reference', header: 'Reference', type: 'text', filterable: true },
+    { key: 'customer', header: 'Customer', type: 'text', filterable: true, link: { to: 'customer', idKey: 'customer_id' } },
+    { key: 'reference', header: 'Reference', type: 'text', filterable: true, link: { to: 'order', idKey: 'order_id' } },
     { key: 'payment_type', header: 'Type', type: 'text', filterable: true, groupable: true },
     { key: 'amount', header: 'Amount', type: 'currency', total: true },
   ],
@@ -42,7 +42,9 @@ export const paymentsReceivedReport: ReportDefinition = {
           ELSE TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, ''))
                || ' (' || c.reference_number || ')'
         END AS customer,
+        c.id AS customer_id,
         o.order_number AS reference,
+        o.id AS order_id,
         'Payment' AS payment_type,
         o.total_amount::int AS amount,
         o.completed_at AS sort_ts
@@ -62,7 +64,9 @@ export const paymentsReceivedReport: ReportDefinition = {
         INITCAP(REPLACE(t.payment_method, '_', ' ')) AS method,
         TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, ''))
           || ' (' || c.reference_number || ')' AS customer,
+        c.id AS customer_id,
         COALESCE(t.reference_number, '') AS reference,
+        NULL::uuid AS order_id,
         CASE t.type
           WHEN 'charge' THEN 'Payment'
           WHEN 'refund' THEN 'Refund'
