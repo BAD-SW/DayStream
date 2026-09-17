@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc --noEmit",
-    "start": "tsx src/index.ts",
+    "start": "npx tsx src/index.ts",
     "migrate:dev": "tsx src/db/migrate.ts",
     "seed:dev": "tsx src/db/seed.ts",
     "seed:config": "tsx src/db/seed-config-runner.ts",
