@@ -218,26 +218,33 @@ Frontend-only — no new backend endpoint (the product id is already loaded on t
 
 ---
 
-## Phase 7 — Security & Audit Hardening
+## Phase 7 — Security & Audit Hardening ✅ Complete
 
-- [ ] 7.1 Rate limiting verification
-  - Confirm the 60/min/IP limiter is actually attached to all mutating widget routes, including the Phase 5 package/membership ones (not just written) — hit the 61st request and confirm 429
+This phase's own verification pass is what found its two most important findings — not written-but-unverified code, but code that looked complete and simply wasn't wired in. See the commit history for the full story.
+
+- [x] 7.1 Rate limiting verification
+  - Confirmed live: 65 rapid `/customer` calls with a valid token hit `429` at request #58, confirming the shared 60/min/IP budget across all mutating widget routes (one `rateLimit()` instance, not per-route)
   - _Requirements: 12.3_
 
-- [ ] 7.2 `allowed_origins` enforcement
-  - Configure a restrictive allowlist on a test business; confirm requests from a non-listed origin get 403 while the configured one succeeds
+- [x] 7.2 `allowed_origins` enforcement
+  - **Found not actually enforced anywhere** — `assertOriginAllowed()` existed since Phase 1 but was never called from any route. Fixed (`enforceAllowedOrigin` in `widget-cors.ts`, wired onto every route). Also found `requireValidBusinessId` was only ever attached to 3 of ~13 routes, same class of gap — fixed alongside it.
+  - Verified against a real restrictive config on a test business: disallowed origin → 403, allowed origin → 200, missing Origin header with a configured list → 403. Confirmed across all three ways `business_id` reaches a route (path param, query, body) individually, then reverted the test business back to unrestricted.
   - _Requirements: 12.2_
 
-- [ ] 7.3 Audit trail
-  - Confirm `source='widget'` on created bookings/purchases/enrollments, `cus_activities` rows with `activity_type='widget_registration'` on new customers, and widget booking attempts appearing in `sys_api_request_logs` with hashed customer email
+- [x] 7.3 Audit trail
+  - `source='widget'` confirmed on bookings, purchases, and enrollments; `cus_activities` `widget_registration` rows confirmed; `sys_api_request_logs` widget-path entries confirmed (220 rows) — all via direct DB query
+  - `wgt_widget_transactions` was only ever recording successful `/pay` calls despite its own schema anticipating a `'failed'` status — fixed to also log a failed transaction when payment is attempted against an already-confirmed target
+  - `createWidgetBooking` now logs every attempt (success or failure) via the existing winston logger with business_id, a SHA-256 hash of the customer's email (never the raw address), product_id, requested start time, and outcome
   - _Requirements: 15.1–15.4_
 
-- [ ] 7.4 Response field audit
-  - Manually review every widget endpoint's response against Requirement 12.4's field allowlist — confirm nothing beyond what's specified leaks (staff contact info, other customers, tenant config, financial reports)
+- [x] 7.4 Response field audit
+  - Reviewed every widget endpoint's response construction directly — all are explicitly narrowed field lists (no `SELECT *` passthroughs, no full admin-shaped objects returned raw); no staff contact info, other customers' data, tenant secrets, or financial data found leaking anywhere
   - _Requirements: 12.4_
 
-- [ ] 7.5 Final checkpoint
-  - Full regression pass through Phases 1–6's checkpoints once more, on the deployed environment
+- [x] 7.5 Final checkpoint
+  - Full regression pass against the live deployed stack (not just locally): business info, all 3 product types, register, customer, package purchase + pay, membership enrollment + pay, widget script serving — all green against the real Render API and Neon database
+  - Both Vercel deployments (client + fake site) reconfirmed healthy after the Phase 7 code changes
+  - Not independently re-clicked-through in a browser this pass (same sandbox limitation noted throughout) — verified via curl against production
   - Ensure all tests pass, ask the user if questions arise
 
 ---
