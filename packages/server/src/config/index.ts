@@ -18,6 +18,9 @@ const schema = Joi.object({
   DB_PASSWORD: Joi.string().allow('').when('DATABASE_URL', requiredUnlessDatabaseUrl),
   DB_NAME: Joi.string().when('DATABASE_URL', requiredUnlessDatabaseUrl),
   SERVER_PORT: Joi.number().default(4001),
+  // Render (and most PaaS hosts) inject PORT and expect the app to bind to exactly
+  // that — SERVER_PORT stays the local-dev-only override.
+  PORT: Joi.number().optional(),
   NODE_ENV: Joi.string().valid('development', 'test', 'staging', 'production').default('development'),
   // Origin the global CORS policy allows (packages/server/src/app.ts) — the deployed
   // Vercel client URL in production; defaults to the local Vite dev server otherwise.
@@ -41,7 +44,7 @@ export const config = {
     database: value.DB_NAME as string | undefined,
   },
   databaseUrl: value.DATABASE_URL as string | undefined,
-  port: value.SERVER_PORT as number,
+  port: (value.PORT as number | undefined) ?? (value.SERVER_PORT as number),
   nodeEnv: value.NODE_ENV as string,
   clientUrl: value.CLIENT_URL as string,
 };
