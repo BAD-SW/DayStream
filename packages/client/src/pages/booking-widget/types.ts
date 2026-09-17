@@ -1,6 +1,6 @@
 import { WidgetAvailabilityCombo, WidgetBooking, WidgetCustomer, WidgetProductDetail } from '../../api/widget';
 
-export type ServiceFlowStep =
+export type FlowStep =
   | 'product'
   | 'calendar'
   | 'slots'
@@ -9,11 +9,17 @@ export type ServiceFlowStep =
   | 'payment'
   | 'confirmation';
 
-export const SERVICE_STEP_ORDER: ServiceFlowStep[] = [
+/** Requirement 3.2 — the full service booking flow. */
+export const SERVICE_STEP_ORDER: FlowStep[] = [
   'product', 'calendar', 'slots', 'auth', 'customer', 'payment', 'confirmation',
 ];
 
-export const SERVICE_STEP_LABELS: Record<ServiceFlowStep, string> = {
+/** Requirement 18.1 — no Availability Calendar or Time Slot Picker; nothing to reserve. */
+export const PACKAGE_STEP_ORDER: FlowStep[] = [
+  'product', 'auth', 'customer', 'payment', 'confirmation',
+];
+
+export const STEP_LABELS: Record<FlowStep, string> = {
   product: 'Details',
   calendar: 'Date',
   slots: 'Time',
@@ -22,6 +28,18 @@ export const SERVICE_STEP_LABELS: Record<ServiceFlowStep, string> = {
   payment: 'Payment',
   confirmation: 'Confirmed',
 };
+
+/** Normalized result of a package purchase or membership enrollment — the two API
+ * response shapes differ (package_name vs plan_name, billing_frequency only on
+ * memberships), flattened here so the UI doesn't need to branch on it repeatedly. */
+export interface PurchaseResult {
+  kind: 'package' | 'membership';
+  id: string;
+  name: string;
+  price: number;
+  status: 'pending' | 'active';
+  billingFrequency?: string;
+}
 
 /** Booking flow state, accumulated as the visitor moves forward; Back never discards it. */
 export interface FlowState {
@@ -42,6 +60,8 @@ export interface FlowState {
   customer: WidgetCustomer | null;
 
   booking: WidgetBooking | null;
+  /** Set instead of `booking` when product_type is 'package' or 'membership'. */
+  purchase: PurchaseResult | null;
 }
 
 export const initialFlowState = (businessId: string, productId: string): FlowState => ({
@@ -57,4 +77,5 @@ export const initialFlowState = (businessId: string, productId: string): FlowSta
   phone: '',
   customer: null,
   booking: null,
+  purchase: null,
 });

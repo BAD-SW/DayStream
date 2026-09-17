@@ -9,10 +9,8 @@ interface Props {
 }
 
 export function ProductDetailStep({ product, selectedVariantId, onContinue }: Props) {
-  const [variantId, setVariantId] = useState<string>(
-    selectedVariantId || product.variants[0]?.id || '',
-  );
-  const variants = product.variants;
+  const variants = product.variants || []; // always present for a service, per the widget API contract
+  const [variantId, setVariantId] = useState<string>(selectedVariantId || variants[0]?.id || '');
 
   return (
     <div className="dsw-step">

@@ -202,6 +202,17 @@
   font-size: var(--font-size-small, 0.875rem);
 }
 
+.dsw-items-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--color-text-body, #1f2933);
+  font-size: var(--font-size-body, 1rem);
+}
+
+.dsw-items-list li {
+  margin: 0.25rem 0;
+}
+
 .dsw-variant-single {
   display: flex;
   justify-content: space-between;

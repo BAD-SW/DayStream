@@ -38,6 +38,8 @@ interface EnrollInput {
   businessId: string;
   customerId: string;
   startDate: string;
+  initialStatus?: 'pending' | 'active'; // default 'active' — widget enrollments awaiting payment use 'pending'
+  source?: 'admin' | 'widget'; // default 'admin' (spec 38 Phase 5)
 }
 
 // --- Plan CRUD ---
@@ -229,7 +231,11 @@ export async function removePlanItem(itemId: string) {
 // --- Enrollments ---
 
 function calculatePeriodEnd(startDate: string, frequency: string): string {
-  const start = new Date(startDate + 'T00:00:00Z');
+  // startDate arrives as either a bare 'YYYY-MM-DD' or a full ISO datetime — Joi's
+  // isoDate() validator normalizes a bare date into the latter, which used to produce
+  // an invalid double-timestamp string here ('...T00:00:00.000ZT00:00:00Z'). Slicing to
+  // the date portion first handles both shapes.
+  const start = new Date(startDate.slice(0, 10) + 'T00:00:00Z');
   switch (frequency) {
     case 'weekly': start.setUTCDate(start.getUTCDate() + 6); break;
     case 'biweekly': start.setUTCDate(start.getUTCDate() + 13); break;
@@ -259,7 +265,11 @@ function calculatePeriodEnd(startDate: string, frequency: string): string {
 }
 
 function calculateNextBillingDate(startDate: string, frequency: string): string {
-  const start = new Date(startDate + 'T00:00:00Z');
+  // startDate arrives as either a bare 'YYYY-MM-DD' or a full ISO datetime — Joi's
+  // isoDate() validator normalizes a bare date into the latter, which used to produce
+  // an invalid double-timestamp string here ('...T00:00:00.000ZT00:00:00Z'). Slicing to
+  // the date portion first handles both shapes.
+  const start = new Date(startDate.slice(0, 10) + 'T00:00:00Z');
   switch (frequency) {
     case 'weekly': {
       const next = new Date(start);
@@ -309,10 +319,10 @@ export async function enrollCustomer(input: EnrollInput) {
   const nextBillingDate = calculateNextBillingDate(input.startDate, plan.billing_frequency);
 
   const { rows } = await adminPool.query(
-    `INSERT INTO mbr_enrollments (plan_id, business_id, customer_id, status, start_date, current_period_start, current_period_end, next_billing_date)
-     VALUES ($1, $2, $3, 'active', $4, $4, $5, $6)
+    `INSERT INTO mbr_enrollments (plan_id, business_id, customer_id, status, start_date, current_period_start, current_period_end, next_billing_date, source)
+     VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8)
      RETURNING *`,
-    [input.planId, input.businessId, input.customerId, input.startDate, periodEnd, nextBillingDate],
+    [input.planId, input.businessId, input.customerId, input.initialStatus || 'active', input.startDate, periodEnd, nextBillingDate, input.source || 'admin'],
   );
 
   const enrollment = rows[0];

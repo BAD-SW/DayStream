@@ -198,6 +198,8 @@ interface PurchaseInput {
   packageId: string;
   businessId: string;
   customerId: string;
+  initialStatus?: 'pending' | 'active'; // default 'active' — widget purchases awaiting payment use 'pending'
+  source?: 'admin' | 'widget'; // default 'admin' (spec 38 Phase 5)
 }
 
 export async function purchasePackage(input: PurchaseInput) {
@@ -240,9 +242,9 @@ export async function purchasePackage(input: PurchaseInput) {
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO pkg_purchases (package_id, business_id, customer_id, expires_at)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [input.packageId, input.businessId, input.customerId, expiresAt],
+    `INSERT INTO pkg_purchases (package_id, business_id, customer_id, expires_at, status, source)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [input.packageId, input.businessId, input.customerId, expiresAt, input.initialStatus || 'active', input.source || 'admin'],
   );
   return rows[0];
 }

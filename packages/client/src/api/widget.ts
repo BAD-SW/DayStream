@@ -97,14 +97,29 @@ export interface WidgetProduct {
   id: string;
   name: string;
   short_description?: string | null;
-  booking_type: string;
   product_type: 'service' | 'package' | 'membership';
-  variants: WidgetProductVariant[];
+  // service-only
+  booking_type?: string;
+  variants?: WidgetProductVariant[];
+  // package/membership-only — no variants, a single price
+  price?: number;
+  billing_frequency?: string;
+}
+
+export interface WidgetProductItem {
+  item_type?: string;
+  quantity?: number;
+  quantity_per_period?: number;
+  service_name?: string | null;
 }
 
 export interface WidgetProductDetail extends WidgetProduct {
   description?: string | null;
   default_duration?: number;
+  expiration_type?: string;
+  expiration_days?: number | null;
+  trial_days?: number;
+  items?: WidgetProductItem[];
 }
 
 export type DayStatus = 'available' | 'unavailable' | 'closed';
@@ -262,4 +277,43 @@ export function createBooking(dto: CreateWidgetBookingDto): Promise<WidgetBookin
 
 export function payForBooking(bookingId: string, businessId: string): Promise<WidgetPaymentResult> {
   return unwrap(widgetHttp.post(`/v1/widget/booking/${bookingId}/pay`, { business_id: businessId }));
+}
+
+// --- Phase 5: package purchase / membership enrollment ---
+
+export interface WidgetPackagePurchase {
+  id: string;
+  package_name: string;
+  price: number;
+  status: 'pending' | 'active';
+}
+
+export interface WidgetMembershipEnrollment {
+  id: string;
+  plan_name: string;
+  price: number;
+  billing_frequency: string;
+  status: 'pending' | 'active';
+}
+
+export function purchasePackage(businessId: string, customerId: string, packageId: string): Promise<WidgetPackagePurchase> {
+  return unwrap(widgetHttp.post('/v1/widget/package-purchase', {
+    business_id: businessId, customer_id: customerId, package_id: packageId,
+  }));
+}
+
+export function payForPackagePurchase(purchaseId: string, businessId: string): Promise<WidgetPaymentResult> {
+  return unwrap(widgetHttp.post(`/v1/widget/package-purchase/${purchaseId}/pay`, { business_id: businessId }));
+}
+
+export function enrollMembership(
+  businessId: string, customerId: string, planId: string, startDate: string,
+): Promise<WidgetMembershipEnrollment> {
+  return unwrap(widgetHttp.post('/v1/widget/membership-enrollment', {
+    business_id: businessId, customer_id: customerId, plan_id: planId, start_date: startDate,
+  }));
+}
+
+export function payForMembershipEnrollment(enrollmentId: string, businessId: string): Promise<WidgetPaymentResult> {
+  return unwrap(widgetHttp.post(`/v1/widget/membership-enrollment/${enrollmentId}/pay`, { business_id: businessId }));
 }

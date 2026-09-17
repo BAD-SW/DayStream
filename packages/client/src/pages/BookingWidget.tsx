@@ -1,22 +1,29 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  createBooking, findOrCreateCustomer, getBusinessInfo, getProductDetail, holdSlot, payForBooking,
+  createBooking, enrollMembership, findOrCreateCustomer, getBusinessInfo, getProductDetail, holdSlot,
+  payForBooking, payForMembershipEnrollment, payForPackagePurchase, purchasePackage,
   WidgetApiError, WidgetAuthResult, WidgetBusinessInfo,
 } from '../api/widget';
 import { applyBaseTheme, applyResolvedTokens } from '../context/ThemeManager';
 import { ProgressIndicator } from './booking-widget/ProgressIndicator';
 import { ProductDetailStep } from './booking-widget/ProductDetailStep';
+import { PackageProductDetailStep } from './booking-widget/PackageProductDetailStep';
 import { AvailabilityCalendarStep } from './booking-widget/AvailabilityCalendarStep';
 import { TimeSlotPickerStep } from './booking-widget/TimeSlotPickerStep';
 import { LoginRegisterStep } from './booking-widget/LoginRegisterStep';
 import { CustomerDetailsStep } from './booking-widget/CustomerDetailsStep';
 import { PaymentStep } from './booking-widget/PaymentStep';
 import { ConfirmationStep } from './booking-widget/ConfirmationStep';
+import { PurchaseConfirmationStep } from './booking-widget/PurchaseConfirmationStep';
 import { AppointmentSummary } from './booking-widget/AppointmentSummary';
-import { FlowState, initialFlowState, SERVICE_STEP_LABELS, SERVICE_STEP_ORDER, ServiceFlowStep } from './booking-widget/types';
+import { FlowState, FlowStep, initialFlowState, PACKAGE_STEP_ORDER, PurchaseResult, SERVICE_STEP_ORDER, STEP_LABELS } from './booking-widget/types';
 import { sendToParent } from './booking-widget/postMessage';
 import './BookingWidget.css';
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export function BookingWidget() {
   const [params] = useSearchParams();
@@ -27,7 +34,7 @@ export function BookingWidget() {
   const [initError, setInitError] = useState<string | null>(null);
   const [businessInfo, setBusinessInfo] = useState<WidgetBusinessInfo | null>(null);
 
-  const [step, setStep] = useState<ServiceFlowStep>('product');
+  const [step, setStep] = useState<FlowStep>('product');
   const [flow, setFlow] = useState<FlowState>(() => initialFlowState(businessId, productId));
   const [expiredNotice, setExpiredNotice] = useState(false);
 
@@ -37,6 +44,9 @@ export function BookingWidget() {
   const [customerSubmitError, setCustomerSubmitError] = useState<string | null>(null);
   const [payLoading, setPayLoading] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
+
+  const productType = flow.product?.product_type;
+  const stepOrder = productType === 'service' ? SERVICE_STEP_ORDER : PACKAGE_STEP_ORDER;
 
   useEffect(() => {
     if (!businessId || !productId) {
@@ -82,27 +92,44 @@ export function BookingWidget() {
 
   useEffect(() => {
     if (initLoading) return; // wait for the initial 'ready' send so step 1 doesn't race it
-    sendToParent('daystream:step_changed', { step: SERVICE_STEP_ORDER.indexOf(step) + 1, stepName: SERVICE_STEP_LABELS[step] });
+    const index = stepOrder.indexOf(step);
+    sendToParent('daystream:step_changed', { step: index + 1, stepName: STEP_LABELS[step] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, initLoading]);
 
   useEffect(() => {
-    if (step !== 'confirmation' || !flow.booking) return;
-    sendToParent('daystream:booking_confirmed', {
-      bookingReference: flow.booking.booking_reference,
-      serviceName: flow.booking.service_name,
-      startTime: flow.booking.start_time,
-      status: flow.booking.status,
-    });
-  }, [step, flow.booking]);
+    if (step !== 'confirmation') return;
+    if (flow.booking) {
+      sendToParent('daystream:booking_confirmed', {
+        bookingReference: flow.booking.booking_reference,
+        serviceName: flow.booking.service_name,
+        startTime: flow.booking.start_time,
+        status: flow.booking.status,
+      });
+    } else if (flow.purchase) {
+      sendToParent('daystream:booking_confirmed', {
+        bookingReference: flow.purchase.id,
+        serviceName: flow.purchase.name,
+        status: flow.purchase.status,
+      });
+    }
+  }, [step, flow.booking, flow.purchase]);
 
   const amountCents = useMemo(() => {
-    const variant = flow.product?.variants.find((v) => v.id === flow.selectedVariantId);
-    return variant?.price ?? 0;
-  }, [flow.product, flow.selectedVariantId]);
+    if (productType === 'service') {
+      const variant = flow.product?.variants?.find((v) => v.id === flow.selectedVariantId);
+      return variant?.price ?? 0;
+    }
+    return flow.purchase?.price ?? flow.product?.price ?? 0;
+  }, [flow.product, flow.selectedVariantId, flow.purchase, productType]);
 
-  function handleProductContinue(variantId: string) {
+  function handleServiceProductContinue(variantId: string) {
     setFlow((f) => ({ ...f, selectedVariantId: variantId }));
     setStep('calendar');
+  }
+
+  function handleNonServiceProductContinue() {
+    setStep('auth');
   }
 
   function handleDateSelect(date: string) {
@@ -117,7 +144,24 @@ export function BookingWidget() {
   }
 
   async function handleAuthenticated(_auth: WidgetAuthResult) {
-    if (!flow.product || !flow.selectedVariantId || !flow.selectedSlot) return;
+    if (!flow.product) return;
+
+    if (productType !== 'service') {
+      setHoldLoading(true);
+      setHoldError(null);
+      try {
+        const { customer } = await findOrCreateCustomer(businessId);
+        setFlow((f) => ({ ...f, customer }));
+        setStep('customer');
+      } catch (err) {
+        setHoldError(err instanceof WidgetApiError ? err.message : 'Something went wrong.');
+      } finally {
+        setHoldLoading(false);
+      }
+      return;
+    }
+
+    if (!flow.selectedVariantId || !flow.selectedSlot) return;
     setHoldLoading(true);
     setHoldError(null);
     try {
@@ -139,9 +183,32 @@ export function BookingWidget() {
   }
 
   async function handleCustomerContinue(phone: string) {
-    if (!flow.product || !flow.selectedVariantId || !flow.selectedSlot) return;
+    if (!flow.product) return;
     setCustomerSubmitLoading(true);
     setCustomerSubmitError(null);
+
+    if (productType !== 'service') {
+      try {
+        const { customer } = await findOrCreateCustomer(businessId, phone);
+        let purchase: PurchaseResult;
+        if (productType === 'package') {
+          const result = await purchasePackage(businessId, customer.id, flow.product.id);
+          purchase = { kind: 'package', id: result.id, name: result.package_name, price: result.price, status: result.status };
+        } else {
+          const result = await enrollMembership(businessId, customer.id, flow.product.id, todayIso());
+          purchase = { kind: 'membership', id: result.id, name: result.plan_name, price: result.price, status: result.status, billingFrequency: result.billing_frequency };
+        }
+        setFlow((f) => ({ ...f, customer, phone, purchase }));
+        setStep(purchase.status === 'active' ? 'confirmation' : 'payment');
+      } catch (err) {
+        setCustomerSubmitError(err instanceof WidgetApiError ? err.message : 'Something went wrong.');
+      } finally {
+        setCustomerSubmitLoading(false);
+      }
+      return;
+    }
+
+    if (!flow.selectedVariantId || !flow.selectedSlot) { setCustomerSubmitLoading(false); return; }
     try {
       const { customer } = await findOrCreateCustomer(businessId, phone);
       const booking = await createBooking({
@@ -169,12 +236,21 @@ export function BookingWidget() {
   }
 
   async function handlePay() {
-    if (!flow.booking) return;
     setPayLoading(true);
     setPayError(null);
     try {
-      await payForBooking(flow.booking.id, businessId);
-      setFlow((f) => (f.booking ? { ...f, booking: { ...f.booking, status: 'confirmed' } } : f));
+      if (productType === 'service' && flow.booking) {
+        await payForBooking(flow.booking.id, businessId);
+        setFlow((f) => (f.booking ? { ...f, booking: { ...f.booking, status: 'confirmed' } } : f));
+      } else if (flow.purchase?.kind === 'package') {
+        await payForPackagePurchase(flow.purchase.id, businessId);
+        setFlow((f) => (f.purchase ? { ...f, purchase: { ...f.purchase, status: 'active' } } : f));
+      } else if (flow.purchase?.kind === 'membership') {
+        await payForMembershipEnrollment(flow.purchase.id, businessId);
+        setFlow((f) => (f.purchase ? { ...f, purchase: { ...f.purchase, status: 'active' } } : f));
+      } else {
+        return;
+      }
       setStep('confirmation');
     } catch (err) {
       setPayError(err instanceof WidgetApiError ? err.message : 'Payment failed. Please try again.');
@@ -191,15 +267,7 @@ export function BookingWidget() {
     return <div className="dsw-shell"><div className="dsw-error-page">{initError || 'This booking page is unavailable.'}</div></div>;
   }
 
-  if (flow.product.product_type !== 'service') {
-    return (
-      <div className="dsw-shell">
-        <div className="dsw-error-page">
-          Booking packages and memberships through this page isn't available yet — please check back soon.
-        </div>
-      </div>
-    );
-  }
+  const itemName = flow.booking?.service_name || flow.purchase?.name || flow.product.name;
 
   return (
     <div className="dsw-shell">
@@ -208,15 +276,19 @@ export function BookingWidget() {
         <span className="dsw-business-name">{businessInfo?.name}</span>
       </header>
 
-      <ProgressIndicator currentStep={step} />
+      <ProgressIndicator steps={stepOrder} currentStep={step} />
 
       <main className="dsw-main">
-        {step === 'product' && (
+        {step === 'product' && productType === 'service' && (
           <ProductDetailStep
             product={flow.product}
             selectedVariantId={flow.selectedVariantId}
-            onContinue={handleProductContinue}
+            onContinue={handleServiceProductContinue}
           />
+        )}
+
+        {step === 'product' && productType !== 'service' && (
+          <PackageProductDetailStep product={flow.product} onContinue={handleNonServiceProductContinue} />
         )}
 
         {step === 'calendar' && flow.selectedVariantId && (
@@ -238,7 +310,7 @@ export function BookingWidget() {
             date={flow.selectedDate}
             expiredNotice={expiredNotice}
             onSelectSlot={handleSlotSelect}
-            onBack={() => setStep('calendar')}
+            onBack={() => setStep(productType === 'service' ? 'calendar' : 'product')}
           />
         )}
 
@@ -248,16 +320,16 @@ export function BookingWidget() {
               tenantId={businessInfo.tenant_id}
               businessId={businessId}
               onAuthenticated={handleAuthenticated}
-              onBack={() => setStep('slots')}
+              onBack={() => setStep(productType === 'service' ? 'slots' : 'product')}
             />
-            {holdLoading && <p className="dsw-step-text">Securing your time slot…</p>}
+            {holdLoading && <p className="dsw-step-text">{productType === 'service' ? 'Securing your time slot…' : 'One moment…'}</p>}
             {holdError && <p className="dsw-step-error">{holdError}</p>}
           </div>
         )}
 
         {step === 'customer' && flow.customer && (
           <>
-            {flow.selectedSlot && (
+            {productType === 'service' && flow.selectedSlot && (
               <AppointmentSummary
                 productName={flow.product.name}
                 startTime={flow.selectedSlot.start_time}
@@ -276,9 +348,9 @@ export function BookingWidget() {
           </>
         )}
 
-        {step === 'payment' && flow.booking && (
+        {step === 'payment' && (flow.booking || flow.purchase) && (
           <>
-            {flow.selectedSlot && (
+            {productType === 'service' && flow.selectedSlot && (
               <AppointmentSummary
                 productName={flow.product.name}
                 startTime={flow.selectedSlot.start_time}
@@ -287,7 +359,7 @@ export function BookingWidget() {
               />
             )}
             <PaymentStep
-              booking={flow.booking}
+              itemName={itemName}
               amountCents={amountCents}
               onPay={handlePay}
               loading={payLoading}
@@ -298,6 +370,10 @@ export function BookingWidget() {
 
         {step === 'confirmation' && flow.booking && (
           <ConfirmationStep booking={flow.booking} locationName={flow.selectedSlot?.location_name} />
+        )}
+
+        {step === 'confirmation' && !flow.booking && flow.purchase && (
+          <PurchaseConfirmationStep purchase={flow.purchase} />
         )}
       </main>
     </div>

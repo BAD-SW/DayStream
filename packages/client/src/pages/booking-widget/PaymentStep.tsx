@@ -1,9 +1,8 @@
 import { FormEvent, useState } from 'react';
-import { WidgetBooking } from '../../api/widget';
 import { formatMoney } from './format';
 
 interface Props {
-  booking: WidgetBooking;
+  itemName: string;
   amountCents: number;
   onPay: () => void;
   loading: boolean;
@@ -20,7 +19,7 @@ function formatExpiry(value: string): string {
   return digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
 }
 
-export function PaymentStep({ booking, amountCents, onPay, loading, error }: Props) {
+export function PaymentStep({ itemName, amountCents, onPay, loading, error }: Props) {
   const [cardholder, setCardholder] = useState('');
   const [cardNumber, setCardNumber] = useState('');
   const [expiry, setExpiry] = useState('');
@@ -48,7 +47,7 @@ export function PaymentStep({ booking, amountCents, onPay, loading, error }: Pro
       <p className="dsw-step-notice">Test / demo environment — no real card data is transmitted or stored.</p>
 
       <div className="dsw-summary">
-        <span>{booking.service_name}</span>
+        <span>{itemName}</span>
         <span className="dsw-price">{formatMoney(amountCents)}</span>
       </div>
 

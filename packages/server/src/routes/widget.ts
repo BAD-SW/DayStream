@@ -16,6 +16,7 @@ function handleWidgetError(res: Response, err: unknown, fallback: string): void 
     error(res, err.message, err.status === 404 ? 'NOT_FOUND' : err.status === 403 ? 'FORBIDDEN' : err.status === 409 ? 'CONFLICT' : err.status === 401 ? 'UNAUTHORIZED' : 'VALIDATION_ERROR', err.status);
     return;
   }
+  console.error('Widget route error:', err);
   error(res, fallback, 'INTERNAL_ERROR', 500);
 }
 
@@ -165,6 +166,72 @@ widgetRouter.post('/booking/:booking_id/pay', authenticate, widgetMutationLimite
   try {
     const authReq = req as AuthenticatedRequest;
     const result = await widgetService.payForBooking(req.params.booking_id, req.body.business_id, authReq.user as any);
+    success(res, result);
+  } catch (err) {
+    handleWidgetError(res, err, 'Failed to process payment');
+  }
+});
+
+// ── Phase 5 — package purchase / membership enrollment ───────────────────────
+
+const packagePurchaseSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  customer_id: Joi.string().uuid().required(),
+  package_id: Joi.string().uuid().required(),
+});
+
+widgetRouter.use(['/package-purchase', '/membership-enrollment'], widgetMutationLimiter);
+
+widgetRouter.post('/package-purchase', authenticate, validate(packagePurchaseSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const result = await widgetService.purchaseWidgetPackage({
+      businessId: req.body.business_id,
+      customerId: req.body.customer_id,
+      packageId: req.body.package_id,
+    }, authReq.user as any);
+    success(res, result, undefined, 201);
+  } catch (err) {
+    handleWidgetError(res, err, 'Failed to purchase package');
+  }
+});
+
+widgetRouter.post('/package-purchase/:purchase_id/pay', authenticate, validate(paySchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const result = await widgetService.payForPackagePurchase(req.params.purchase_id, req.body.business_id, authReq.user as any);
+    success(res, result);
+  } catch (err) {
+    handleWidgetError(res, err, 'Failed to process payment');
+  }
+});
+
+const membershipEnrollmentSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  customer_id: Joi.string().uuid().required(),
+  plan_id: Joi.string().uuid().required(),
+  start_date: Joi.string().isoDate().required(),
+});
+
+widgetRouter.post('/membership-enrollment', authenticate, validate(membershipEnrollmentSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const result = await widgetService.enrollWidgetMembership({
+      businessId: req.body.business_id,
+      customerId: req.body.customer_id,
+      planId: req.body.plan_id,
+      startDate: req.body.start_date,
+    }, authReq.user as any);
+    success(res, result, undefined, 201);
+  } catch (err) {
+    handleWidgetError(res, err, 'Failed to enroll in membership');
+  }
+});
+
+widgetRouter.post('/membership-enrollment/:enrollment_id/pay', authenticate, validate(paySchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const result = await widgetService.payForMembershipEnrollment(req.params.enrollment_id, req.body.business_id, authReq.user as any);
     success(res, result);
   } catch (err) {
     handleWidgetError(res, err, 'Failed to process payment');
