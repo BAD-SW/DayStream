@@ -122,37 +122,45 @@ Found and fixed a real gap in design.md's own skeleton along the way: `APP_ORIGI
 
 ---
 
-## Phase 4 — Cloud Deployment
+## Phase 4 — Cloud Deployment 🟡 In Progress (deployed and functional; 4.6 not built yet)
 
-- [ ] 4.1 Fix `CLIENT_URL`-driven CORS
-  - Replace the `NODE_ENV`-branched origin in `packages/server/src/app.ts` with a `CLIENT_URL` env var (defaults to `http://localhost:4000` locally)
+Turned out to be the biggest source of real bugs in the whole spec so far — every one found by actually deploying and hitting real errors, not by inspection. Summary in the shared setup doc (published as an artifact this session) has the full story; short version: `@daystream/shared` had never actually been compiled (only ever consumed as raw TS via `tsx`'s dev-time loader), the server's `tsc`-to-`node` production path had never been run for real and hit three rounds of module-resolution environment differences before switching to running it via `tsx` in production too, several early RLS-era migrations hardcoded local-only db/role names, and a reverse-proxy `X-Forwarded-For` chain broke login in production only (Render sits behind its own edge, so requests arrive with multiple comma-separated IPs — one code path fed that raw value into a Postgres `inet` column). All fixed and verified against the real deployed stack, not just locally.
+
+- [x] 4.1 Fix `CLIENT_URL`-driven CORS
+  - Replaced the `NODE_ENV`-branched origin in `packages/server/src/app.ts` with a `CLIENT_URL` env var (defaults to `http://localhost:4000` locally)
   - _Requirements: 17.4_
 
-- [ ] 4.2 Neon database
-  - Create project, run existing migrations against it end-to-end (all 109, not just this spec's)
-  - Add a `migrate:prod` (or equivalent) script that points at `process.env.DATABASE_URL`
+- [x] 4.2 Neon database
+  - Project created, all 112 migrations run against it end-to-end
+  - `pool.ts` now supports `DATABASE_URL` as an alternative to discrete `DB_HOST`/etc., with SSL enabled automatically when used
+  - Full copy of local dev's data restored (not just a thin seed) — verified via direct query (30 users, real Transcend Health business/services/widget config)
   - _Requirements: 17.3_
 
-- [ ] 4.3 Render server deployment
-  - Connect the GitHub repo; confirm the start command runs a persistent process (verify the job scheduler survives, not just the HTTP server)
-  - Set `JWT_SECRET`, `DATABASE_URL`, `CLIENT_URL`, SMTP/storage env vars in Render's dashboard
+- [x] 4.3 Render server deployment
+  - Connected to the GitHub repo; confirmed the job scheduler survives (logs show it starting on every boot, not just the HTTP server)
+  - `DATABASE_URL`, `NODE_ENV`, `CLIENT_URL`, `JWT_SECRET`, `ENCRYPTION_KEY`, `AUDIT_SIGNING_KEY`, SMTP vars set
+  - Also fixed: the app was listening on a fixed local port instead of Render's injected `PORT`
   - _Requirements: 17.2, 17.6, 17.7_
 
-- [ ] 4.4 Vercel client deployment
-  - `VITE_API_URL` pointed at the Render URL; verify the built SPA can reach the deployed API
+- [x] 4.4 Vercel client deployment
+  - `VITE_API_URL` pointed at the Render URL; both API clients (`api/client.ts`, `api/widget.ts`) updated to use it instead of a hardcoded relative `/api` path (which only ever worked behind Vite's local dev proxy)
+  - Verified: the deployed bundle actually calls the Render URL, confirmed by grepping the built JS
   - _Requirements: 17.1, 17.6, 17.7_
 
-- [ ] 4.5 Vercel fake-site deployment
-  - Separate Vercel project rooted at `fake-business-site/`; widget script `src` and `data-business-id` point at the deployed Render URL and the real Transcend Mallorca id
+- [x] 4.5 Vercel fake-site deployment
+  - Separate Vercel project (`daystream-fake-transcend`) rooted at `fake-business-site/`; widget script `src`/`data-app-url` point at the deployed Render/Vercel URLs
+  - GitHub repo made public to use Vercel's free Hobby plan (was private + org-owned, which needs a paid plan) — full commit history scanned first, no secrets found
   - _Requirements: 16.3, 16.4, 17.5_
 
 - [ ] 4.6 Widget business-settings UI
   - New "Booking Widget" section (business settings): enable/disable toggle, `require_payment_before_confirmation` toggle with explanatory copy, allowed-origins list editor, pre-populated `<script>` snippet with the business's own id
+  - Not started — `wgt_widget_configs` for the demo business was toggled directly via SQL during Phase 1 testing, not through any admin UI
   - _Requirements: 14.2–14.6_
 
 - [ ] 4.7 Checkpoint — deployed cross-origin test
-  - Open the deployed fake site on a phone (genuinely different device/network), complete a real booking against the deployed server and Neon database
-  - Confirm a colleague with only repo access (no local setup) can see the same deployed state after a `git push`
+  - Full chain verified end-to-end against real deployed infrastructure: register → login → customer → products, all against the live Render API and Neon database, from the actual deployed client (confirmed via CORS headers matching the real Vercel origin)
+  - The user personally logged in through the deployed app in a real browser and confirmed it works
+  - **Not yet done**: opening the deployed fake site on a phone specifically, and a colleague independently confirming they see the same state via nothing but `git push` — both should be trivial given everything above, but neither has literally happened yet
   - Ensure all tests pass, ask the user if questions arise
 
 ---
