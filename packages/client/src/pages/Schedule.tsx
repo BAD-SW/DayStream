@@ -440,7 +440,7 @@ export function Schedule() {
             ⠿ {staff.find((s) => s.id === selectedStaffId)?.first_name} — drag to schedule
           </div>
         )}
-        {!selectedStaffId && <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>Select a staff member, then drag or click to schedule</span>}
+        {!selectedStaffId && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>Select a staff member, then drag or click to schedule</span>}
       </div>
 
       {/* Grid */}
@@ -566,7 +566,7 @@ export function Schedule() {
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1400px', margin: '0 auto' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)', flexWrap: 'wrap', gap: 'var(--space-sm)' },
-  title: { margin: 0, fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
+  title: { margin: 0, fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)' },
   nav: { display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' },
   weekLabel: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', marginLeft: 'var(--space-sm)' },
   select: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '6px 10px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
@@ -574,22 +574,22 @@ const styles: Record<string, React.CSSProperties> = {
   toggleBtn: { background: 'var(--color-surface)', border: 'none', padding: '6px 14px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
   toggleActive: { background: 'var(--color-primary)', border: 'none', padding: '6px 14px', fontSize: 'var(--font-size-sm)', color: 'var(--color-primary-contrast, #1A1A1A)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontWeight: 600 },
   toolbar: { display: 'flex', gap: 'var(--space-sm)', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' },
-  dragHandle: { padding: '4px 12px', fontSize: '12px', fontWeight: 500, color: 'var(--color-primary)', background: 'var(--color-surface)', border: '1px dashed var(--color-primary)', borderRadius: 'var(--radius-md)', cursor: 'grab', userSelect: 'none' as const },
+  dragHandle: { padding: '4px 12px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-primary)', background: 'var(--color-surface)', border: '1px dashed var(--color-primary)', borderRadius: 'var(--radius-md)', cursor: 'grab', userSelect: 'none' as const },
   gridWrapper: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', overflow: 'auto', maxHeight: 'calc(100vh - 200px)' },
   grid: { display: 'grid', minWidth: '600px' },
   timeHeader: { padding: '8px', borderBottom: '1px solid var(--color-border)', borderRight: '1px solid var(--color-border)', background: 'var(--color-surface)' },
   dayHeader: { padding: '8px', textAlign: 'center' as const, borderBottom: '1px solid var(--color-border)', borderRight: '1px solid var(--color-border)', background: 'var(--color-surface)' },
   todayHeader: { background: 'var(--color-primary)', color: '#fff' },
-  dayName: { fontSize: '11px', textTransform: 'uppercase' as const, fontWeight: 600 },
+  dayName: { fontSize: 'var(--font-size-xs)', textTransform: 'uppercase' as const, fontWeight: 600 },
   dayDate: { fontSize: 'var(--font-size-md)', fontWeight: 700 },
   timeColumn: { borderRight: '1px solid var(--color-border)' },
-  timeLabel: { display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: '6px', fontSize: '10px', color: 'var(--color-text-muted)', borderBottom: '1px solid var(--color-border)', boxSizing: 'border-box' as const },
+  timeLabel: { display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: '6px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', borderBottom: '1px solid var(--color-border)', boxSizing: 'border-box' as const },
   dayColumn: { position: 'relative' as const, borderRight: '1px solid var(--color-border)' },
   slot: { borderBottom: '1px solid var(--color-border)', boxSizing: 'border-box' as const },
-  shiftBlock: { position: 'absolute' as const, borderRadius: '4px', color: '#FFFFFF', padding: '2px 4px', overflow: 'hidden', cursor: 'grab', display: 'flex', flexDirection: 'column' as const, justifyContent: 'center', fontSize: '11px', zIndex: 2, boxSizing: 'border-box' as const },
-  shiftName: { fontWeight: 600, fontSize: '11px', lineHeight: 1.2, color: '#FFFFFF' },
-  shiftTime: { fontSize: '10px', opacity: 0.9, color: '#FFFFFF' },
-  shiftDeleteBtn: { position: 'absolute' as const, top: '1px', right: '3px', background: 'none', border: 'none', color: '#FFFFFF', fontSize: '14px', cursor: 'pointer', padding: '0', lineHeight: 1, opacity: 0.7 },
+  shiftBlock: { position: 'absolute' as const, borderRadius: '4px', color: '#FFFFFF', padding: '2px 4px', overflow: 'hidden', cursor: 'grab', display: 'flex', flexDirection: 'column' as const, justifyContent: 'center', fontSize: 'var(--font-size-xs)', zIndex: 2, boxSizing: 'border-box' as const },
+  shiftName: { fontWeight: 600, fontSize: 'var(--font-size-xs)', lineHeight: 1.2, color: '#FFFFFF' },
+  shiftTime: { fontSize: 'var(--font-size-xs)', opacity: 0.9, color: '#FFFFFF' },
+  shiftDeleteBtn: { position: 'absolute' as const, top: '1px', right: '3px', background: 'none', border: 'none', color: '#FFFFFF', fontSize: 'var(--font-size-base)', cursor: 'pointer', padding: '0', lineHeight: 1, opacity: 0.7 },
   resizeHandleTop: { position: 'absolute' as const, top: 0, left: 0, right: 0, height: '5px', cursor: 'n-resize', zIndex: 3 },
   resizeHandleBottom: { position: 'absolute' as const, bottom: 0, left: 0, right: 0, height: '5px', cursor: 's-resize', zIndex: 3 },
 };

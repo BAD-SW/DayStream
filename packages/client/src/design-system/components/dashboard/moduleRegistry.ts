@@ -42,7 +42,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   { id: 'business', phase: 12, icon: '🏢', titleKey: 'Business Setup', descriptionKey: 'Staff, resources, and locations', path: '/business', personas: ['business'], permission: 'staff:read' },
 
   // Website
-  { id: 'website', phase: 18, icon: '🌐', titleKey: 'Website', descriptionKey: 'Manage your online presence', path: '/website', personas: ['business'], permission: 'settings:*' },
+  { id: 'website', phase: 18, icon: '🌐', titleKey: 'Website', descriptionKey: 'Manage your online presence', path: '/cms', personas: ['business'], permission: 'settings:*' },
 
   // Settings
   { id: 'business-settings', phase: 0, icon: '⚙️', titleKey: 'Settings', descriptionKey: 'Business configuration', path: '/settings', personas: ['business'], permission: 'settings:*' },

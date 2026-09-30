@@ -62,7 +62,7 @@ export function SequenceDetail() {
           <h2 style={{ ...styles.title, fontSize: 'var(--font-size-lg)', marginTop: 'var(--space-xl)' }}>Enrollments</h2>
           <div style={styles.card}>
             {enrollments.slice(0, 20).map((e: any, i: number) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', padding: '4px 0', borderBottom: '1px solid var(--color-border)' }}>
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-size-base)', padding: '4px 0', borderBottom: '1px solid var(--color-border)' }}>
                 <span>{e.customer_name || e.customer_id?.slice(0, 8)}</span>
                 <Badge variant={e.status === 'active' ? 'success' : 'neutral'}>{e.status}</Badge>
               </div>
@@ -78,7 +78,7 @@ const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '800px', margin: '0 auto' },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, marginBottom: 'var(--space-md)', fontFamily: 'var(--font-family)' },
   header: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-lg)' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', margin: 0 },
   card: { backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', padding: 'var(--space-lg)', display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)' },
   field: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   label: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },

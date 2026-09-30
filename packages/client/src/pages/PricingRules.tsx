@@ -268,7 +268,7 @@ function RulesSection({ businessId }: { businessId: string }) {
                   {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((name, idx) => (
                     <button key={idx} type="button"
                       onClick={() => setForm({ ...form, days_of_week: form.days_of_week.includes(idx) ? form.days_of_week.filter(d => d !== idx) : [...form.days_of_week, idx] })}
-                      style={{ padding: '6px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: form.days_of_week.includes(idx) ? 'var(--color-accent, #C9A96E)' : 'var(--color-background)', color: form.days_of_week.includes(idx) ? '#1A1A1A' : 'var(--color-text)', cursor: 'pointer', fontSize: '13px', fontWeight: form.days_of_week.includes(idx) ? 600 : 400, fontFamily: 'var(--font-family)' }}>
+                      style={{ padding: '6px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: form.days_of_week.includes(idx) ? 'var(--color-accent, #C9A96E)' : 'var(--color-background)', color: form.days_of_week.includes(idx) ? '#1A1A1A' : 'var(--color-text)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: form.days_of_week.includes(idx) ? 600 : 400, fontFamily: 'var(--font-family)' }}>
                       {name}
                     </button>
                   ))}
@@ -311,7 +311,7 @@ function RulesSection({ businessId }: { businessId: string }) {
                   {membershipPlans.map((p: any) => (
                     <button key={p.id} type="button"
                       onClick={() => setForm({ ...form, membership_plan_ids: (form as any).membership_plan_ids?.includes(p.id) ? (form as any).membership_plan_ids.filter((id: string) => id !== p.id) : [...((form as any).membership_plan_ids || []), p.id] })}
-                      style={{ padding: '6px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: (form as any).membership_plan_ids?.includes(p.id) ? 'var(--color-accent, #C9A96E)' : 'var(--color-background)', color: (form as any).membership_plan_ids?.includes(p.id) ? '#1A1A1A' : 'var(--color-text)', cursor: 'pointer', fontSize: '13px', fontWeight: (form as any).membership_plan_ids?.includes(p.id) ? 600 : 400, fontFamily: 'var(--font-family)' }}>
+                      style={{ padding: '6px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: (form as any).membership_plan_ids?.includes(p.id) ? 'var(--color-accent, #C9A96E)' : 'var(--color-background)', color: (form as any).membership_plan_ids?.includes(p.id) ? '#1A1A1A' : 'var(--color-text)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: (form as any).membership_plan_ids?.includes(p.id) ? 600 : 400, fontFamily: 'var(--font-family)' }}>
                       {p.name}
                     </button>
                   ))}
@@ -328,7 +328,7 @@ function RulesSection({ businessId }: { businessId: string }) {
                   {corporateAccounts.map((a: any) => (
                     <button key={a.id} type="button"
                       onClick={() => setForm({ ...form, corporate_account_id: form.corporate_account_id === a.id ? '' : a.id })}
-                      style={{ padding: '6px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: form.corporate_account_id === a.id ? 'var(--color-accent, #C9A96E)' : 'var(--color-background)', color: form.corporate_account_id === a.id ? '#1A1A1A' : 'var(--color-text)', cursor: 'pointer', fontSize: '13px', fontWeight: form.corporate_account_id === a.id ? 600 : 400, fontFamily: 'var(--font-family)' }}>
+                      style={{ padding: '6px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: form.corporate_account_id === a.id ? 'var(--color-accent, #C9A96E)' : 'var(--color-background)', color: form.corporate_account_id === a.id ? '#1A1A1A' : 'var(--color-text)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: form.corporate_account_id === a.id ? 600 : 400, fontFamily: 'var(--font-family)' }}>
                       {a.name}
                     </button>
                   ))}
@@ -541,10 +541,10 @@ function BundlesSection({ businessId }: { businessId: string }) {
               </div>
 
               {/* Items list */}
-              {items.length === 0 && <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>No items added yet</p>}
+              {items.length === 0 && <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', margin: 0 }}>No items added yet</p>}
               <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '4px' }}>
                 {items.map((item) => (
-                  <div key={item.variant_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: '13px' }}>
+                  <div key={item.variant_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)' }}>
                     <span>{item.quantity}x {item.label}</span>
                     <button type="button" style={styles.actionBtn} onClick={() => removeItem(item.variant_id)}>Remove</button>
                   </div>
@@ -569,9 +569,9 @@ function BundlesSection({ businessId }: { businessId: string }) {
               <div style={{ flex: 1 }}>
                 <span style={{ fontWeight: 500 }}>{b.name}</span>
                 <Badge variant="neutral">{b.bundle_type === 'fixed_price' ? 'Fixed' : '% Off'}</Badge>
-                {b.bundle_price && <span style={{ marginLeft: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{formatCurrency(b.bundle_price)}</span>}
-                {b.discount_percentage && <span style={{ marginLeft: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>{b.discount_percentage}% off</span>}
-                <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{b.items?.length || 0} item{(b.items?.length || 0) !== 1 ? 's' : ''}</span>
+                {b.bundle_price && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{formatCurrency(b.bundle_price)}</span>}
+                {b.discount_percentage && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{b.discount_percentage}% off</span>}
+                <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{b.items?.length || 0} item{(b.items?.length || 0) !== 1 ? 's' : ''}</span>
               </div>
               <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); handleDelete(b.id); }}>Delete</button>
             </div>
@@ -757,7 +757,7 @@ function CorporateSection({ businessId }: { businessId: string }) {
 
       {/* Account list + Member management side by side */}
       {accounts.length > 0 && !selectedAccount && (
-        <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>Select an account below to manage its members.</p>
+        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>Select an account below to manage its members.</p>
       )}
       <div style={{ display: 'grid', gridTemplateColumns: accounts.length > 0 ? '1fr 1fr' : '1fr', gap: '24px' }}>
         {/* Account list */}
@@ -773,8 +773,8 @@ function CorporateSection({ businessId }: { businessId: string }) {
                   <div style={{ flex: 1 }}>
                     <span style={{ fontWeight: 500 }}>{a.name}</span>
                     <Badge variant={a.status === 'active' ? 'success' : 'neutral'}>{a.status}</Badge>
-                    {a.agreement_end && <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>expires {new Date(a.agreement_end).toLocaleDateString()}</span>}
-                    {a.contact_email && <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{a.contact_email}</span>}
+                    {a.agreement_end && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>expires {new Date(a.agreement_end).toLocaleDateString()}</span>}
+                    {a.contact_email && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{a.contact_email}</span>}
                   </div>
                   <div style={{ display: 'flex', gap: '4px' }}>
                     <button style={styles.actionBtn} onClick={(e) => { e.stopPropagation(); openEdit(a); }}>Edit</button>
@@ -789,7 +789,7 @@ function CorporateSection({ businessId }: { businessId: string }) {
         {/* Member management panel */}
         {selectedAccount && (
           <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
-            <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600, color: 'var(--color-text)' }}>
+            <h4 style={{ margin: '0 0 12px 0', fontSize: 'var(--font-size-base)', fontWeight: 600, color: 'var(--color-text)' }}>
               Members — {selectedAccount.name}
             </h4>
 
@@ -805,7 +805,7 @@ function CorporateSection({ businessId }: { businessId: string }) {
                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', marginTop: '4px', maxHeight: '150px', overflow: 'auto', zIndex: 10, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
                   {memberResults.map((c: any) => (
                     <button key={c.id} type="button"
-                      style={{ display: 'block', width: '100%', padding: '8px 12px', border: 'none', background: 'var(--color-background)', cursor: 'pointer', textAlign: 'left', color: 'var(--color-text)', fontSize: '13px', borderBottom: '1px solid var(--color-border)' }}
+                      style={{ display: 'block', width: '100%', padding: '8px 12px', border: 'none', background: 'var(--color-background)', cursor: 'pointer', textAlign: 'left', color: 'var(--color-text)', fontSize: 'var(--font-size-sm)', borderBottom: '1px solid var(--color-border)' }}
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleAddMember(c)}>
                       <strong>{c.first_name} {c.last_name}</strong> — {c.email}
@@ -818,11 +818,11 @@ function CorporateSection({ businessId }: { businessId: string }) {
 
             {/* Members list */}
             {members.length === 0 ? (
-              <p style={{ color: 'var(--color-text-secondary)', fontSize: '13px', margin: 0 }}>No members yet. Search and add customers above.</p>
+              <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', margin: 0 }}>No members yet. Search and add customers above.</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '4px' }}>
                 {members.map((m: any) => (
-                  <div key={m.customer_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: '13px' }}>
+                  <div key={m.customer_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 'var(--font-size-sm)' }}>
                     <span>{m.first_name} {m.last_name} {m.email && <span style={{ color: 'var(--color-text-secondary)' }}>({m.email})</span>}</span>
                     <button style={styles.actionBtn} onClick={() => handleRemoveMember(m.customer_id)}>Remove</button>
                   </div>
@@ -843,19 +843,19 @@ function CorporateSection({ businessId }: { businessId: string }) {
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1100px', margin: '0 auto' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', margin: 0 },
   tabs: { display: 'flex', gap: '16px', marginBottom: '24px', borderBottom: '1px solid var(--color-border)' },
   tabBtn: { background: 'none', border: 'none', padding: '8px 4px', fontSize: 'var(--font-size-sm)', fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-family)', color: 'var(--color-text-secondary)', borderBottom: '2px solid transparent' },
   tabBtnActive: { borderBottom: '2px solid var(--color-accent, #C9A96E)', color: 'var(--color-accent, #C9A96E)' },
   formPanel: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '20px', marginBottom: '20px', background: 'var(--color-surface)' },
-  formTitle: { margin: '0 0 12px 0', fontSize: '16px', fontWeight: 600, color: 'var(--color-text)' },
+  formTitle: { margin: '0 0 12px 0', fontSize: 'var(--font-size-base)', fontWeight: 600, color: 'var(--color-text)' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   field: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  label: { fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' },
-  input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
-  helper: { fontSize: '11px', color: 'var(--color-text-secondary)' },
-  error: { color: 'var(--color-error)', fontSize: '13px', margin: '0 0 8px 0' },
+  label: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)' },
+  input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
+  helper: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
+  error: { color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: '0 0 8px 0' },
   empty: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', textAlign: 'center' as const, padding: 'var(--space-xl)' },
   card: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', minHeight: 'var(--button-height-sm)' },
 };

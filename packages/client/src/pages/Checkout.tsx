@@ -204,7 +204,7 @@ export function Checkout() {
             </select>
           ) : (
             order.credited_to && staffList.length > 0 && (
-              <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
                 {staffList.find((s: any) => s.user_id === order.credited_to)?.first_name || ''} {staffList.find((s: any) => s.user_id === order.credited_to)?.last_name || ''}
               </span>
             )
@@ -217,16 +217,16 @@ export function Checkout() {
       {isOpen && (
         <div style={{ marginBottom: 'var(--space-md)', padding: '12px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-background)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)', minWidth: '70px' }}>Customer</span>
+            <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', minWidth: '70px' }}>Customer</span>
             {order.customer_id ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>{order.customer_first_name} {order.customer_last_name}</span>
-                <button type="button" onClick={handleRemoveCustomer} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: '16px', lineHeight: 1 }}>×</button>
+                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>{order.customer_first_name} {order.customer_last_name}</span>
+                <button type="button" onClick={handleRemoveCustomer} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)', lineHeight: 1 }}>×</button>
               </div>
             ) : (
               <div style={{ position: 'relative', width: '300px', flexShrink: 0 }}>
                 <input
-                  style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', boxSizing: 'border-box' }}
                   type="text"
                   value={customerSearch}
                   onChange={(e) => setCustomerSearch(e.target.value)}
@@ -238,7 +238,7 @@ export function Checkout() {
                 {showCustomerDropdown && customerResults.length > 0 && (
                   <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--color-surface, #fff)', border: '1px solid var(--color-border)', borderRadius: '4px', marginTop: '2px', zIndex: 100, maxHeight: '200px', overflow: 'auto' }}>
                     {customerResults.map((c: any) => (
-                      <button key={c.id} type="button" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '13px', borderBottom: '1px solid var(--color-border)' }}
+                      <button key={c.id} type="button" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 'var(--font-size-sm)', borderBottom: '1px solid var(--color-border)' }}
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => handleSetCustomer(c.id)}>
                         <strong>{c.first_name} {c.last_name}</strong>{c.email && <span style={{ marginLeft: '8px', color: 'var(--color-text-secondary)' }}>{c.email}</span>}
@@ -246,21 +246,21 @@ export function Checkout() {
                     ))}
                   </div>
                 )}
-                {customerSearching && <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginLeft: '4px' }}>Searching...</span>}
+                {customerSearching && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginLeft: '4px' }}>Searching...</span>}
               </div>
             )}
             {!order.customer_id && !showCreateCustomer && (
-              <span onClick={() => setShowCreateCustomer(true)} style={{ fontSize: '12px', color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap' }}>New Customer</span>
+              <span onClick={() => setShowCreateCustomer(true)} style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap' }}>New Customer</span>
             )}
           </div>
           {showCreateCustomer && !order.customer_id && (
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
-              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px', width: '130px' }} placeholder="First name *" value={newCustomerForm.first_name} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, first_name: e.target.value })} />
-              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px', width: '130px' }} placeholder="Last name *" value={newCustomerForm.last_name} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, last_name: e.target.value })} />
-              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px', width: '180px' }} placeholder="Email" value={newCustomerForm.email} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, email: e.target.value })} />
-              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px', width: '130px' }} placeholder="Phone" value={newCustomerForm.phone} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, phone: e.target.value })} />
+              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', width: '130px' }} placeholder="First name *" value={newCustomerForm.first_name} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, first_name: e.target.value })} />
+              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', width: '130px' }} placeholder="Last name *" value={newCustomerForm.last_name} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, last_name: e.target.value })} />
+              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', width: '180px' }} placeholder="Email" value={newCustomerForm.email} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, email: e.target.value })} />
+              <input style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', width: '130px' }} placeholder="Phone" value={newCustomerForm.phone} onChange={(e) => setNewCustomerForm({ ...newCustomerForm, phone: e.target.value })} />
               <Button size="sm" onClick={handleCreateAndSetCustomer}>Create</Button>
-              <button type="button" onClick={() => setShowCreateCustomer(false)} style={{ fontSize: '12px', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+              <button type="button" onClick={() => setShowCreateCustomer(false)} style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
             </div>
           )}
         </div>
@@ -276,7 +276,7 @@ export function Checkout() {
         {order.items.length === 0 && <p style={styles.empty}>No items in cart</p>}
 
         {order.items.length > 0 && (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
                 <th style={styles.th}>Item</th>
@@ -363,7 +363,7 @@ export function Checkout() {
         {order.discount_amount > 0 && <div style={styles.totalRow}><span>Discount{order.promo_code ? ` (${order.promo_code})` : ''}</span><span>-{formatCurrency(order.discount_amount)}</span></div>}
         {order.discount_amount < 0 && <div style={styles.totalRow}><span>Surcharge{order.promo_code ? ` (${order.promo_code})` : ''}</span><span>+{formatCurrency(Math.abs(order.discount_amount))}</span></div>}
         {order.tax_amount > 0 && <div style={styles.totalRow}><span>Tax</span><span>{formatCurrency(order.tax_amount)}</span></div>}
-        <div style={{ ...styles.totalRow, fontWeight: 700, fontSize: '18px', borderTop: '1px solid var(--color-border)', paddingTop: '8px', marginTop: '8px' }}>
+        <div style={{ ...styles.totalRow, fontWeight: 700, fontSize: 'var(--font-size-lg)', borderTop: '1px solid var(--color-border)', paddingTop: '8px', marginTop: '8px' }}>
           <span>Total</span><span>{formatCurrency(order.total_amount)}</span>
         </div>
       </div>
@@ -548,10 +548,10 @@ function PromoCodeInput({ order, businessId, onUpdated }: { order: Order; busine
     return (
       <div style={{ ...styles.card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px var(--space-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Promo:</span>
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Promo:</span>
           <strong style={{ color: 'var(--color-text)' }}>{order.promo_code}</strong>
-          {isDiscount && <span style={{ fontSize: '12px', color: 'var(--color-success, #2E7D32)' }}>−{formatCurrency(order.discount_amount)}</span>}
-          {isSurcharge && <span style={{ fontSize: '12px', color: 'var(--color-error, #D32F2F)' }}>+{formatCurrency(Math.abs(order.discount_amount))}</span>}
+          {isDiscount && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-success, #2E7D32)' }}>−{formatCurrency(order.discount_amount)}</span>}
+          {isSurcharge && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-error, #D32F2F)' }}>+{formatCurrency(Math.abs(order.discount_amount))}</span>}
         </div>
         <button style={styles.removeBtn} onClick={handleRemove} title="Remove code">✕</button>
       </div>
@@ -568,7 +568,7 @@ function PromoCodeInput({ order, businessId, onUpdated }: { order: Order; busine
         onKeyDown={(e) => { if (e.key === 'Enter') handleApply(); }}
       />
       <Button size="sm" variant="secondary" onClick={handleApply} loading={applying} disabled={!code.trim()}>Apply</Button>
-      {error && <span style={{ fontSize: '12px', color: 'var(--color-error)' }}>{error}</span>}
+      {error && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-error)' }}>{error}</span>}
     </div>
   );
 }
@@ -621,7 +621,7 @@ function InlineEditItem({ item, orderId, staffList, onSaved, onCancel }: {
     <div style={{ ...styles.lineItem, background: 'var(--color-background)', borderRadius: 'var(--radius-md)', padding: '12px' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr auto 45px 120px auto', gap: '6px', alignItems: 'center' }}>
         <span style={styles.itemTypeLabel}>{item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1)}:</span>
-        <strong style={{ color: 'var(--color-text)', fontSize: '13px' }}>{item.item_name}</strong>
+        <strong style={{ color: 'var(--color-text)', fontSize: 'var(--font-size-sm)' }}>{item.item_name}</strong>
         {variants.length > 0 ? (
           <select style={{ ...styles.inlineSelect, minWidth: '110px' }} value={selectedVariantId} onChange={(e) => setSelectedVariantId(e.target.value)}>
             <option value="">Base ({formatCurrency(item.unit_price)})</option>
@@ -630,7 +630,7 @@ function InlineEditItem({ item, orderId, staffList, onSaved, onCancel }: {
             ))}
           </select>
         ) : (
-          <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{item.variant_name ? `(${item.variant_name})` : ''} {formatCurrency(currentPrice)}</span>
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{item.variant_name ? `(${item.variant_name})` : ''} {formatCurrency(currentPrice)}</span>
         )}
         <input type="number" min="1" style={{ ...styles.inlineSelect, width: '40px', textAlign: 'center' as const }} value={quantity} onChange={(e) => setQuantity(parseInt(e.target.value) || 1)} title="Quantity" />
         <select style={styles.inlineSelect} value={creditedTo} onChange={(e) => setCreditedTo(e.target.value)}>
@@ -656,7 +656,7 @@ const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '800px', margin: '0 auto' },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, fontFamily: 'var(--font-family)', marginBottom: 'var(--space-md)', display: 'block' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', margin: 0 },
   orderNum: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
   customer: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
   loading: { textAlign: 'center', color: 'var(--color-text-secondary)', padding: 'var(--space-xl)' },
@@ -667,20 +667,20 @@ const styles: Record<string, React.CSSProperties> = {
   lineItem: { borderBottom: '1px solid var(--color-border)', padding: '12px 0', display: 'flex', flexDirection: 'column' as const, gap: '6px' },
   lineItemMain: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   lineItemInfo: { display: 'flex', alignItems: 'center', flexWrap: 'wrap' as const, gap: '4px' },
-  itemTypeLabel: { fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)', minWidth: '80px' },
-  overrideInline: { fontSize: '12px', color: 'var(--color-text-secondary)', marginLeft: '12px', fontStyle: 'italic' as const },
+  itemTypeLabel: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text-secondary)', minWidth: '80px' },
+  overrideInline: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginLeft: '12px', fontStyle: 'italic' as const },
   lineItemMeta: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  variant: { fontSize: '12px', color: 'var(--color-text-secondary)' },
-  qty: { fontSize: '12px', color: 'var(--color-text-secondary)', marginLeft: '4px' },
-  price: { fontWeight: 600, color: 'var(--color-text)', fontSize: '15px' },
-  th: { textAlign: 'left' as const, fontSize: '11px', fontWeight: 600, textTransform: 'uppercase' as const, color: 'var(--color-text-secondary)', padding: '8px 4px' },
-  thRight: { textAlign: 'right' as const, fontSize: '11px', fontWeight: 600, textTransform: 'uppercase' as const, color: 'var(--color-text-secondary)', padding: '8px 4px' },
+  variant: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
+  qty: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginLeft: '4px' },
+  price: { fontWeight: 600, color: 'var(--color-text)', fontSize: 'var(--font-size-base)' },
+  th: { textAlign: 'left' as const, fontSize: 'var(--font-size-xs)', fontWeight: 600, textTransform: 'uppercase' as const, color: 'var(--color-text-secondary)', padding: '8px 4px' },
+  thRight: { textAlign: 'right' as const, fontSize: 'var(--font-size-xs)', fontWeight: 600, textTransform: 'uppercase' as const, color: 'var(--color-text-secondary)', padding: '8px 4px' },
   td: { padding: '10px 4px', verticalAlign: 'top' as const, color: 'var(--color-text)' },
   tdRight: { padding: '10px 4px', textAlign: 'right' as const, verticalAlign: 'top' as const, color: 'var(--color-text)' },
-  creditSelect: { fontSize: '13px', padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
-  inlineSelect: { fontSize: '12px', padding: '6px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
-  removeBtn: { background: 'none', border: 'none', color: 'var(--color-error)', cursor: 'pointer', fontSize: '16px', padding: '0', lineHeight: 1, verticalAlign: 'middle' as const },
-  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '0', lineHeight: 1, verticalAlign: 'middle' as const },
-  totalRow: { display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '14px', color: 'var(--color-text)' },
+  creditSelect: { fontSize: 'var(--font-size-sm)', padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
+  inlineSelect: { fontSize: 'var(--font-size-sm)', padding: '6px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
+  removeBtn: { background: 'none', border: 'none', color: 'var(--color-error)', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '0', lineHeight: 1, verticalAlign: 'middle' as const, borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
+  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '0', lineHeight: 1, verticalAlign: 'middle' as const, borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
+  totalRow: { display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 'var(--font-size-base)', color: 'var(--color-text)' },
   actions: { display: 'flex', gap: 'var(--space-md)', marginTop: 'var(--space-md)' },
 };

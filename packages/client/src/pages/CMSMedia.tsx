@@ -35,14 +35,14 @@ export function CMSMedia() {
                   />
                 </div>
               ) : (
-                <div style={{ ...styles.preview, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-surface-hover)', color: 'var(--color-text-secondary)', fontSize: '12px' }}>
+                <div style={{ ...styles.preview, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-surface-hover)', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
                   {item.mime_type || 'File'}
                 </div>
               )}
-              <div style={{ fontSize: '12px', color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {item.filename || item.name || 'Untitled'}
               </div>
-              {item.size && <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{(item.size / 1024).toFixed(1)} KB</div>}
+              {item.size && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>{(item.size / 1024).toFixed(1)} KB</div>}
             </div>
           ))}
         </div>
@@ -55,7 +55,7 @@ const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1000px', margin: '0 auto' },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, marginBottom: 'var(--space-md)', fontFamily: 'var(--font-family)' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', margin: 0 },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 'var(--space-md)' },
   card: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
   preview: { width: '100%', height: '120px', borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--color-border)' },

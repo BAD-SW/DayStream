@@ -65,7 +65,7 @@ export function Profile() {
         ) : prefs ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {(Object.keys(prefLabels) as Array<keyof NotificationPreferences>).map((key) => (
-              <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', color: 'var(--color-text)', cursor: 'pointer' }}>
+              <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: 'var(--font-size-base)', color: 'var(--color-text)', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={prefs[key]}
@@ -87,7 +87,7 @@ export function Profile() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  heading: { fontSize: '24px', fontWeight: 300, margin: '0 0 24px 0', color: 'var(--color-text)' },
+  heading: { fontSize: 'var(--font-size-2xl)', fontWeight: 300, margin: '0 0 24px 0', color: 'var(--color-text)' },
   card: {
     backgroundColor: 'var(--color-surface)',
     borderRadius: '8px',
@@ -98,7 +98,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '16px',
   },
   field: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  label: { fontSize: '12px', color: '#8A8A8A', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
-  value: { fontSize: '14px', color: 'var(--color-text)' },
-  hint: { fontSize: '13px', color: '#8A8A8A', marginTop: '16px' },
+  label: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
+  value: { fontSize: 'var(--font-size-base)', color: 'var(--color-text)' },
+  hint: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: '16px' },
 };

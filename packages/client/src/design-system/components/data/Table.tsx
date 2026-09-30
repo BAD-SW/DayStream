@@ -306,7 +306,7 @@ const styles: Record<string, React.CSSProperties> = {
   footerRow: { borderTop: '1px solid var(--color-border)', background: 'var(--color-surface)' },
   footerRowStrong: { borderTop: '2px solid var(--color-border)', background: 'var(--color-surface-hover)' },
   footerCell: { padding: 'var(--space-sm) var(--space-md)', color: 'var(--color-text)', fontWeight: 'var(--font-weight-bold)' as any, fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap' },
-  sortIcon: { color: 'var(--color-text-disabled)', fontSize: '12px' },
+  sortIcon: { color: 'var(--color-text-disabled)', fontSize: 'var(--font-size-sm)' },
   empty: { padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' },
   loading: { display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', padding: 'var(--space-md)' },
   skeleton: { height: '40px', borderRadius: 'var(--radius-md)', background: 'var(--color-surface-hover)' },

@@ -70,7 +70,7 @@ function SystemSettings() {
     finally { setSaving(false); }
   };
 
-  if (loading) return <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px' }}>Loading...</p>;
+  if (loading) return <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)' }}>Loading...</p>;
 
   return (
     <>
@@ -147,8 +147,8 @@ function PayrollFrequencySettings() {
         </div>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' as const }}>
           <div>
-            <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Frequency</label>
-            <select value={payFrequency} onChange={(e) => setPayFrequency(e.target.value)} style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px' }}>
+            <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Frequency</label>
+            <select value={payFrequency} onChange={(e) => setPayFrequency(e.target.value)} style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)' }}>
               <option value="weekly">Weekly</option>
               <option value="biweekly">Bi-weekly (every 2 weeks)</option>
               <option value="semi_monthly">Semi-monthly (1st & 16th)</option>
@@ -156,8 +156,8 @@ function PayrollFrequencySettings() {
             </select>
           </div>
           <div>
-            <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Period Start Reference Date</label>
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px' }} />
+            <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Period Start Reference Date</label>
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)' }} />
           </div>
           <Button onClick={handleSave} loading={saving} size="sm">Save</Button>
         </div>
@@ -394,40 +394,40 @@ function ProcessesSettings() {
                 onClick={() => setExpandedProcess(isExpanded ? null : proc.type)}>
                 <div>
                   <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{proc.label}</span>
-                  <span style={{ marginLeft: '12px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{proc.description}</span>
+                  <span style={{ marginLeft: '12px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{proc.description}</span>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
                   {job && (
-                    <span style={{ fontSize: '11px', color: job.enabled ? 'var(--color-success)' : 'var(--color-text-muted)', marginRight: '4px' }}>
+                    <span style={{ fontSize: 'var(--font-size-xs)', color: job.enabled ? 'var(--color-success)' : 'var(--color-text-muted)', marginRight: '4px' }}>
                       {job.enabled ? `● ${job.frequency} at ${job.schedule_time}` : '○ Disabled'}
                     </span>
                   )}
-                  <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px' }} onClick={() => handleRunNow(proc.type)}>Run</button>
-                  <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px' }} onClick={() => { setExpandedProcess(expandedProcess === proc.type ? null : proc.type); if (!job && expandedProcess !== proc.type) handleScheduleToggle(proc.type); }}>Schedule</button>
-                  <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px' }} onClick={() => handleViewHistory(proc.type)}>History</button>
+                  <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: 'var(--font-size-sm)' }} onClick={() => handleRunNow(proc.type)}>Run</button>
+                  <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: 'var(--font-size-sm)' }} onClick={() => { setExpandedProcess(expandedProcess === proc.type ? null : proc.type); if (!job && expandedProcess !== proc.type) handleScheduleToggle(proc.type); }}>Schedule</button>
+                  <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: 'var(--font-size-sm)' }} onClick={() => handleViewHistory(proc.type)}>History</button>
                 </div>
               </div>
 
               {runPanel === proc.type && (
                 <div style={{ padding: '8px 16px 12px', borderTop: '1px solid var(--color-border)', background: 'var(--color-background)' }}>
                   <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>From
+                    <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>From
                       <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '150px' }} type="date" value={runForm.dateFrom} onChange={(e) => setRunForm({ ...runForm, dateFrom: e.target.value })} />
                     </label>
-                    <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>To
+                    <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>To
                       <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '150px' }} type="date" value={runForm.dateTo} onChange={(e) => setRunForm({ ...runForm, dateTo: e.target.value })} />
                     </label>
                     {(proc.type === 'revenue_recognition' || proc.type === 'billing_process') && (
-                      <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Posting Date
+                      <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Posting Date
                         <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '150px' }} type="date" value={runForm.postingDate} onChange={(e) => setRunForm({ ...runForm, postingDate: e.target.value })} />
                       </label>
                     )}
-                    <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 14px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: 'var(--color-primary)' }} onClick={executeRun} disabled={running}>
+                    <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 14px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-primary)' }} onClick={executeRun} disabled={running}>
                       {running ? 'Running...' : 'Execute'}
                     </button>
                   </div>
                   {runResult && (
-                    <div style={{ marginTop: '8px', fontSize: '12px', padding: '8px', borderRadius: '4px', background: runResult.status === 'failed' ? 'var(--color-error-bg, #fff0f0)' : 'var(--color-success-bg, #f0fff0)', color: runResult.status === 'failed' ? 'var(--color-error)' : 'var(--color-success)' }}>
+                    <div style={{ marginTop: '8px', fontSize: 'var(--font-size-sm)', padding: '8px', borderRadius: '4px', background: runResult.status === 'failed' ? 'var(--color-error-bg, #fff0f0)' : 'var(--color-success-bg, #f0fff0)', color: runResult.status === 'failed' ? 'var(--color-error)' : 'var(--color-success)' }}>
                       {runResult.status === 'failed' ? (
                         <span>Failed: {runResult.error}</span>
                       ) : (
@@ -448,9 +448,9 @@ function ProcessesSettings() {
 
               {selectedHistory?.type === proc.type && selectedHistory && (
                 <div style={{ padding: '8px 16px 12px', borderTop: '1px solid var(--color-border)' }}>
-                  {selectedHistory.entries.length === 0 ? <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: 0 }}>No execution history</p> : (
+                  {selectedHistory.entries.length === 0 ? <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>No execution history</p> : (
                     selectedHistory.entries.slice(0, 10).map((e: any) => (
-                      <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0', borderBottom: '1px solid var(--color-border)' }}>
+                      <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-size-sm)', padding: '4px 0', borderBottom: '1px solid var(--color-border)' }}>
                         <span>{new Date(e.started_at).toLocaleString()}</span>
                         <span style={{ color: e.status === 'success' ? 'var(--color-success)' : 'var(--color-error)' }}>{e.status} {e.duration_ms ? `(${e.duration_ms}ms)` : ''}</span>
                       </div>
@@ -463,23 +463,23 @@ function ProcessesSettings() {
                 <div style={{ padding: '12px 16px', borderTop: '1px solid var(--color-border)' }}>
                   {job ? (
                     <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>
+                      <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
                         Schedule: <strong>{job.frequency}</strong> at <strong>{job.schedule_time}</strong>
                         {job.frequency === 'weekly' && job.day_of_week != null && <> on <strong>{(Array.isArray(job.day_of_week) ? job.day_of_week : [job.day_of_week]).map((d: number) => DAYS_OF_WEEK[d]?.slice(0, 3)).join(', ')}</strong></>}
                         {job.frequency === 'monthly' && job.day_of_month != null && <> on day <strong>{job.day_of_month === -1 ? 'Last day' : job.day_of_month}</strong></>}
                       </span>
-                      <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px', color: job.enabled ? 'var(--color-success)' : 'var(--color-text-secondary)' }} onClick={() => handleScheduleToggle(proc.type)}>
+                      <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', color: job.enabled ? 'var(--color-success)' : 'var(--color-text-secondary)' }} onClick={() => handleScheduleToggle(proc.type)}>
                         {job.enabled ? '● Enabled' : '○ Disabled'}
                       </button>
-                      <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px', color: 'var(--color-error)' }} onClick={() => handleDeleteSchedule(proc.type)}>Remove Schedule</button>
+                      <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', color: 'var(--color-error)' }} onClick={() => handleDeleteSchedule(proc.type)}>Remove Schedule</button>
                       {job.last_run_at && (
-                        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Last: {new Date(job.last_run_at).toLocaleString()} ({job.last_run_status})</span>
+                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>Last: {new Date(job.last_run_at).toLocaleString()} ({job.last_run_status})</span>
                       )}
                     </div>
                   ) : scheduleForm?.type === proc.type ? (
                     <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <div>
-                        <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Frequency</label>
+                        <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Frequency</label>
                         <select style={{ ...styles.input, marginLeft: '4px' }} value={scheduleForm.frequency} onChange={(e) => setScheduleForm({ ...scheduleForm, frequency: e.target.value })}>
                           <option value="every_15min">Every 15 min</option>
                           <option value="hourly">Hourly</option>
@@ -489,16 +489,16 @@ function ProcessesSettings() {
                         </select>
                       </div>
                       <div>
-                        <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Time</label>
+                        <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Time</label>
                         <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '100px' }} type="time" value={scheduleForm.schedule_time} onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_time: e.target.value })} />
                       </div>
                       {scheduleForm.frequency === 'weekly' && (
                         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                          <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginRight: '4px' }}>Days</label>
+                          <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginRight: '4px' }}>Days</label>
                           {DAYS_OF_WEEK.map((d, i) => {
                             const selected = (scheduleForm.day_of_week || []).includes(i);
                             return (
-                              <button key={i} type="button" style={{ padding: '2px 8px', fontSize: '11px', cursor: 'pointer', borderRadius: '4px', border: '1px solid var(--color-border)', background: selected ? 'var(--color-primary)' : 'transparent', color: selected ? '#fff' : 'var(--color-text-secondary)' }}
+                              <button key={i} type="button" style={{ padding: '2px 8px', fontSize: 'var(--font-size-xs)', cursor: 'pointer', borderRadius: '4px', border: '1px solid var(--color-border)', background: selected ? 'var(--color-primary)' : 'transparent', color: selected ? '#fff' : 'var(--color-text-secondary)' }}
                                 onClick={() => {
                                   const days = scheduleForm.day_of_week || [];
                                   const updated = selected ? days.filter((x: number) => x !== i) : [...days, i].sort();
@@ -510,18 +510,18 @@ function ProcessesSettings() {
                       )}
                       {scheduleForm.frequency === 'monthly' && (
                         <div>
-                          <label style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Day of Month</label>
+                          <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Day of Month</label>
                           <select style={{ ...styles.input, marginLeft: '4px' }} value={scheduleForm.day_of_month} onChange={(e) => setScheduleForm({ ...scheduleForm, day_of_month: parseInt(e.target.value) })}>
                             {Array.from({ length: 31 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}
                             <option value={-1}>Last day</option>
                           </select>
                         </div>
                       )}
-                      <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 12px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: 'var(--color-primary)' }} onClick={saveSchedule}>Save</button>
-                      <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: '12px' }} onClick={() => setScheduleForm(null)}>Cancel</button>
+                      <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 12px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-primary)' }} onClick={saveSchedule}>Save</button>
+                      <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: 'var(--font-size-sm)' }} onClick={() => setScheduleForm(null)}>Cancel</button>
                     </div>
                   ) : (
-                    <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 12px', cursor: 'pointer', fontSize: '12px' }} onClick={() => handleScheduleToggle(proc.type)}>
+                    <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 12px', cursor: 'pointer', fontSize: 'var(--font-size-sm)' }} onClick={() => handleScheduleToggle(proc.type)}>
                       Add Schedule
                     </button>
                   )}
@@ -618,9 +618,9 @@ function PaymentMethodsSettings() {
           return (
             <div key={info.method} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: enabled ? 'var(--color-surface)' : 'var(--color-background)' }}>
               <div>
-                <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--color-text)' }}>{info.label}</span>
-                {info.integrationOnly && <span style={{ marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'var(--color-warning-bg, #fff3cd)', color: 'var(--color-warning-text, #856404)' }}>Integration</span>}
-                <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--color-text-secondary)' }}>{info.description}</p>
+                <span style={{ fontWeight: 600, fontSize: 'var(--font-size-base)', color: 'var(--color-text)' }}>{info.label}</span>
+                {info.integrationOnly && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-xs)', padding: '2px 6px', borderRadius: '4px', background: 'var(--color-warning-bg, #fff3cd)', color: 'var(--color-warning-text, #856404)' }}>Integration</span>}
+                <p style={{ margin: '2px 0 0', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{info.description}</p>
               </div>
               <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px', cursor: 'pointer' }}>
                 <input type="checkbox" checked={enabled} onChange={() => toggleMethod(info.method)}
@@ -641,7 +641,7 @@ function PaymentMethodsSettings() {
         })}
       </div>
 
-      {message && <p style={{ fontSize: '13px', color: message.includes('Failed') ? 'var(--color-error)' : 'var(--color-success)', marginBottom: '12px' }}>{message}</p>}
+      {message && <p style={{ fontSize: 'var(--font-size-sm)', color: message.includes('Failed') ? 'var(--color-error)' : 'var(--color-success)', marginBottom: '12px' }}>{message}</p>}
       <div style={styles.actions}>
         <Button onClick={handleSave} loading={saving}>Save Payment Methods</Button>
       </div>
@@ -681,18 +681,18 @@ function AppearanceSettings() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1600px', margin: '0 auto' },
-  tab: { background: 'none', border: 'none', borderBottom: '2px solid transparent', padding: '10px 16px', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  tab: { background: 'none', border: 'none', borderBottom: '2px solid transparent', padding: '10px 16px', fontSize: 'var(--font-size-base)', fontWeight: 500, color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
   tabActive: { color: 'var(--color-primary)', borderBottomColor: 'var(--color-primary)' },
   section: { marginBottom: '32px' },
-  sectionTitle: { fontSize: '18px', fontWeight: 600, color: 'var(--color-text)', margin: '0 0 8px 0' },
-  description: { fontSize: '14px', color: 'var(--color-text-secondary)', marginBottom: '20px' },
+  sectionTitle: { fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)', margin: '0 0 8px 0' },
+  description: { fontSize: 'var(--font-size-base)', color: 'var(--color-text-secondary)', marginBottom: '20px' },
   fieldRow: { display: 'flex', gap: '24px', marginBottom: '16px' },
   field: { display: 'flex', flexDirection: 'column' as const, gap: '4px', marginBottom: '16px', flex: 1 },
-  label: { fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 },
-  input: { backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--color-text)', fontSize: '14px', fontFamily: 'var(--font-family)', maxWidth: '200px' },
-  helper: { fontSize: '11px', color: 'var(--color-text-muted)' },
-  checkLabel: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--color-text)', cursor: 'pointer' },
+  label: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', fontWeight: 500 },
+  input: { backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--color-text)', fontSize: 'var(--font-size-base)', fontFamily: 'var(--font-family)', maxWidth: '200px' },
+  helper: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' },
+  checkLabel: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-base)', color: 'var(--color-text)', cursor: 'pointer' },
   actions: { marginTop: '16px' },
-  message: { fontSize: '13px', color: 'var(--color-success)', marginTop: '8px' },
-  muted: { fontSize: '14px', color: 'var(--color-text-secondary)' },
+  message: { fontSize: 'var(--font-size-sm)', color: 'var(--color-success)', marginTop: '8px' },
+  muted: { fontSize: 'var(--font-size-base)', color: 'var(--color-text-secondary)' },
 };

@@ -93,7 +93,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
   },
   icon: {
-    fontSize: '16px',
+    fontSize: 'var(--font-size-base)',
     width: '20px',
     textAlign: 'center',
   },

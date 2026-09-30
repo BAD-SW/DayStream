@@ -92,7 +92,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', color: 'var(--color-text)',
     cursor: 'pointer', fontFamily: 'var(--font-family)', textAlign: 'left',
   },
-  caret: { color: 'var(--color-text-secondary)', fontSize: '11px', marginLeft: '6px' },
+  caret: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)', marginLeft: '6px' },
   panel: {
     position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 20, minWidth: '260px',
     background: 'var(--color-surface-modal)', border: '1px solid var(--color-border)',

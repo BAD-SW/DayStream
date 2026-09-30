@@ -74,7 +74,7 @@ async function fetchThemeRow(id: string, tenantId: string | null, pool: Queryabl
 // [data-base-theme] as normal, which is what makes Classic's dark+light toggle and Bold
 // Business's fixed light look work correctly. mergeTokens() (the full palette) is still
 // used for the gallery preview swatches and the editor's "what would this look like".
-const DEFAULT_RESOLVED: ResolvedTheme = { base_theme: 'bold-business', tokens: {}, source: 'default' };
+const DEFAULT_RESOLVED: ResolvedTheme = { base_theme: 'bold-business', tokens: {}, source: 'default', theme_id: 'bold-business' };
 
 /**
  * System -> Bold Business built-in default. Also the tail of resolveForTenant/resolveForBusiness.
@@ -97,11 +97,11 @@ export async function resolveSystemDefault(pool: Queryable): Promise<ResolvedThe
     // System rows have tenant_id IS NULL (platform-wide) — pass null (not '', which
     // Postgres rejects as an invalid uuid) so fetchThemeRow's "OR tenant_id IS NULL" matches.
     const theme = await fetchThemeRow(systemThemeId, null, pool);
-    if (theme) return { base_theme: theme.base_theme, tokens: theme.tokens, source: 'system' };
+    if (theme) return { base_theme: theme.base_theme, tokens: theme.tokens, source: 'system', theme_id: theme.id };
   }
   const systemBuiltIn = values['theme.system_active_built_in_theme'];
   if (systemBuiltIn && isBuiltInThemeId(systemBuiltIn)) {
-    return { base_theme: systemBuiltIn, tokens: {}, source: 'system' };
+    return { base_theme: systemBuiltIn, tokens: {}, source: 'system', theme_id: systemBuiltIn };
   }
   return DEFAULT_RESOLVED;
 }
@@ -115,10 +115,10 @@ export async function resolveForTenant(tenantId: string, pool: Queryable): Promi
   const tenant = tenantRows[0];
   if (tenant?.active_custom_theme_id) {
     const theme = await fetchThemeRow(tenant.active_custom_theme_id, tenantId, pool);
-    if (theme) return { base_theme: theme.base_theme, tokens: theme.tokens, source: 'tenant' };
+    if (theme) return { base_theme: theme.base_theme, tokens: theme.tokens, source: 'tenant', theme_id: theme.id };
   }
   if (tenant?.active_built_in_theme) {
-    return { base_theme: tenant.active_built_in_theme, tokens: {}, source: 'tenant' };
+    return { base_theme: tenant.active_built_in_theme, tokens: {}, source: 'tenant', theme_id: tenant.active_built_in_theme };
   }
   return resolveSystemDefault(pool);
 }
@@ -133,10 +133,10 @@ export async function resolveForBusiness(businessId: string, pool: Queryable): P
 
   if (business?.active_custom_theme_id) {
     const theme = await fetchThemeRow(business.active_custom_theme_id, business.tenant_id, pool);
-    if (theme) return { base_theme: theme.base_theme, tokens: theme.tokens, source: 'business' };
+    if (theme) return { base_theme: theme.base_theme, tokens: theme.tokens, source: 'business', theme_id: theme.id };
   }
   if (business?.active_built_in_theme) {
-    return { base_theme: business.active_built_in_theme, tokens: {}, source: 'business' };
+    return { base_theme: business.active_built_in_theme, tokens: {}, source: 'business', theme_id: business.active_built_in_theme };
   }
 
   if (business?.tenant_id) return resolveForTenant(business.tenant_id, pool);
@@ -157,24 +157,23 @@ export async function listForCaller(caller: CallerScope, pool: Queryable): Promi
     [...params, caller.tenantId],
   );
 
-  // "Active" badge reflects what's actually applied at the caller's own scope — business
-  // for a business persona, else the tenant/system scope they're managing.
-  let resolvedBuiltIn: string | null = null;
-  const resolved = caller.businessId
-    ? await resolveForBusiness(caller.businessId, pool)
+  // "Active" badge reflects the theme that actually wins resolution for the caller's own
+  // scope (THE-14). A row's is_active flag is not enough: it can be true at a *different*
+  // scope (e.g. a custom system theme) while a business-level built-in choice overrides it.
+  // Persona decides the scope first: a system/tenant user can also carry a business_id on
+  // their account, which must not turn their gallery into that business's view.
+  const resolved = caller.persona === 'system'
+    ? await resolveSystemDefault(pool)
     : caller.persona === 'tenant'
       ? await resolveForTenant(caller.tenantId, pool)
-      : caller.persona === 'system'
-        ? await resolveSystemDefault(pool)
+      : caller.businessId
+        ? await resolveForBusiness(caller.businessId, pool)
         : null;
-  if (resolved) {
-    const activeRow = rows.find((r: any) => r.is_active);
-    if (!activeRow) resolvedBuiltIn = resolved.base_theme;
-  }
+  const activeId = resolved?.theme_id ?? null;
 
   const builtIns = BUILT_IN_THEME_LIST_ITEMS.map((item) => ({
     ...item,
-    is_active: resolvedBuiltIn === item.base_theme,
+    is_active: activeId === item.id,
   }));
 
   const saved: ThemeListItem[] = rows.map((r: any) => ({
@@ -184,7 +183,7 @@ export async function listForCaller(caller: CallerScope, pool: Queryable): Promi
     scope: r.scope,
     scope_id: r.scope_id,
     is_built_in: false,
-    is_active: r.is_active,
+    is_active: activeId === r.id,
     preview_tokens: mergeTokens(r.base_theme, r.tokens),
   }));
 

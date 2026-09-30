@@ -1,0 +1,62 @@
+/* Check-In (THE-15) — layout only; sizes and colours come from design tokens. */
+
+.ci-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.ci-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.ci-section-title {
+  margin: 0 0 var(--space-md);
+  font-size: var(--card-title-size);
+  font-weight: var(--card-title-weight);
+  color: var(--color-text-title);
+}
+
+.ci-stack .ci-section-title {
+  margin: 0;
+}
+
+.ci-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.ci-toolbar--flush {
+  margin-bottom: 0;
+}
+
+.ci-input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: var(--control-height);
+  padding: 8px var(--control-padding-x);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+}
+
+.ci-kiosk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.ci-kiosk:last-child {
+  border-bottom: none;
+}

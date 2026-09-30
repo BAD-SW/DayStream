@@ -33,3 +33,16 @@ describe('fontStackFor', () => {
     expect(fontStackFor(undefined)).toBeUndefined();
   });
 });
+
+import { resolvePersona, getPermissionsFromRole } from '../src/context/ContextManager';
+
+describe('role normalisation (THE-11)', () => {
+  it('maps JWT display-name roles to the same persona as login snake_case roles', () => {
+    expect(resolvePersona('Customer')).toBe('customer');
+    expect(resolvePersona('Tenant Owner')).toBe('tenant');
+    expect(resolvePersona('tenant_owner')).toBe('tenant');
+    expect(resolvePersona('Super Admin')).toBe('system');
+    expect(resolvePersona('Business Owner')).toBe('business');
+    expect(getPermissionsFromRole('Business Owner')).toEqual(getPermissionsFromRole('business_owner'));
+  });
+});

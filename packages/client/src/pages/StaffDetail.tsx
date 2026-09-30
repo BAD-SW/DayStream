@@ -147,7 +147,7 @@ function ProfileTab({ staff, onUpdate }: { staff: StaffProfile; onUpdate: (s: St
       {error && <Alert variant="error">{error}</Alert>}
       {isDirty && (
         <div style={styles.saveBar}>
-          <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>You have unsaved changes</span>
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>You have unsaved changes</span>
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button variant="outline" size="sm" onClick={handleDiscard}>Discard</Button>
             <Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button>
@@ -207,7 +207,7 @@ function ProfileTab({ staff, onUpdate }: { staff: StaffProfile; onUpdate: (s: St
               onChange={(e) => setForm({ ...form, bio: e.target.value })} placeholder="Public-facing bio shown to customers..." />
           </div>
           <div style={styles.formGroup}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
               <input type="checkbox" checked={form.show_on_directory} onChange={(e) => setForm({ ...form, show_on_directory: e.target.checked })} style={{ width: '16px', height: '16px' }} />
               Show on public directory
             </label>
@@ -276,7 +276,7 @@ function QualificationsTab({ staffId }: { staffId: string }) {
 
       {showForm && (
         <div style={styles.card}>
-          <h4 style={{ ...styles.cardTitle, fontSize: '14px' }}>{editing ? 'Edit Qualification' : 'Add Qualification'}</h4>
+          <h4 style={{ ...styles.cardTitle, fontSize: 'var(--font-size-base)' }}>{editing ? 'Edit Qualification' : 'Add Qualification'}</h4>
           <div style={styles.formGrid}>
             <div style={styles.formGroup}><label style={styles.label}>Name *</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
             <div style={styles.formGroup}><label style={styles.label}>Issuing Body</label><input style={styles.input} value={form.issuing_body} onChange={(e) => setForm({ ...form, issuing_body: e.target.value })} /></div>
@@ -284,7 +284,7 @@ function QualificationsTab({ staffId }: { staffId: string }) {
             <div style={styles.formGroup}><label style={styles.label}>Date Obtained</label><input type="date" style={styles.input} value={form.date_obtained} onChange={(e) => setForm({ ...form, date_obtained: e.target.value })} /></div>
             <div style={styles.formGroup}><label style={styles.label}>Expiry Date</label><input type="date" style={styles.input} value={form.expiry_date} onChange={(e) => setForm({ ...form, expiry_date: e.target.value })} /></div>
             <div style={styles.formGroup}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', paddingTop: '20px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', paddingTop: '20px' }}>
                 <input type="checkbox" checked={form.show_on_directory} onChange={(e) => setForm({ ...form, show_on_directory: e.target.checked })} style={{ width: '16px', height: '16px' }} /> Show publicly
               </label>
             </div>
@@ -303,8 +303,8 @@ function QualificationsTab({ staffId }: { staffId: string }) {
             <div key={q.id} style={styles.listItem}>
               <div style={{ flex: 1 }}>
                 <strong style={{ color: 'var(--color-text)' }}>{q.name}</strong>
-                {q.issuing_body && <span style={{ marginLeft: '8px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>— {q.issuing_body}</span>}
-                {q.certification_number && <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--color-text-muted)' }}>#{q.certification_number}</span>}
+                {q.issuing_body && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>— {q.issuing_body}</span>}
+                {q.certification_number && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>#{q.certification_number}</span>}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {q.expiry_date && <Badge variant={new Date(q.expiry_date) < new Date() ? 'error' : 'info'}>{`Exp: ${new Date(q.expiry_date).toLocaleDateString()}`}</Badge>}
@@ -447,13 +447,13 @@ function AvailabilityTab({ staffId }: { staffId: string }) {
 
         {showPatternForm && (
           <div style={{ ...styles.card, background: 'var(--color-background)', marginBottom: 'var(--space-md)' }}>
-            <h4 style={{ ...styles.cardTitle, fontSize: '14px' }}>{editingPatternId ? 'Edit Availability Pattern' : 'New Availability Pattern'}</h4>
+            <h4 style={{ ...styles.cardTitle, fontSize: 'var(--font-size-base)' }}>{editingPatternId ? 'Edit Availability Pattern' : 'New Availability Pattern'}</h4>
             <div style={styles.formGrid}>
               <div style={styles.formGroup}><label style={styles.label}>Pattern Name *</label><input style={styles.input} value={patternForm.name} onChange={(e) => setPatternForm({ ...patternForm, name: e.target.value })} /></div>
               <div style={styles.formGroup}><label style={styles.label}>Effective From *</label><input type="date" style={styles.input} value={patternForm.effective_from} onChange={(e) => setPatternForm({ ...patternForm, effective_from: e.target.value })} /></div>
               <div style={styles.formGroup}><label style={styles.label}>Effective To</label><input type="date" style={styles.input} value={patternForm.effective_to} onChange={(e) => setPatternForm({ ...patternForm, effective_to: e.target.value })} placeholder="Ongoing" /></div>
               <div style={styles.formGroup}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', paddingTop: '20px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', paddingTop: '20px' }}>
                   <input type="checkbox" checked={patternForm.is_default} onChange={(e) => setPatternForm({ ...patternForm, is_default: e.target.checked })} style={{ width: '16px', height: '16px' }} /> Default pattern
                 </label>
               </div>
@@ -465,25 +465,25 @@ function AvailabilityTab({ staffId }: { staffId: string }) {
                 const daySlots = patternSlots.filter((s) => s.day_of_week === idx);
                 return (
                   <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', minHeight: '36px' }}>
-                    <span style={{ width: '90px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' }}>{day}</span>
+                    <span style={{ width: '90px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)' }}>{day}</span>
                     {daySlots.length === 0 ? (
-                      <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', flex: 1 }}>Off</span>
+                      <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)', flex: 1 }}>Off</span>
                     ) : (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', flex: 1 }}>
                         {daySlots.map((slot) => {
                           const slotIndex = patternSlots.indexOf(slot);
                           return (
                             <div key={slotIndex} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <input type="time" style={{ ...styles.input, width: '110px', padding: '6px 8px', fontSize: '12px' }} value={slot.start_time} onChange={(e) => updateSlot(slotIndex, 'start_time', e.target.value)} />
+                              <input type="time" style={{ ...styles.input, width: '110px', padding: '6px 8px', fontSize: 'var(--font-size-sm)' }} value={slot.start_time} onChange={(e) => updateSlot(slotIndex, 'start_time', e.target.value)} />
                               <span style={{ color: 'var(--color-text-muted)' }}>–</span>
-                              <input type="time" style={{ ...styles.input, width: '110px', padding: '6px 8px', fontSize: '12px' }} value={slot.end_time} onChange={(e) => updateSlot(slotIndex, 'end_time', e.target.value)} />
+                              <input type="time" style={{ ...styles.input, width: '110px', padding: '6px 8px', fontSize: 'var(--font-size-sm)' }} value={slot.end_time} onChange={(e) => updateSlot(slotIndex, 'end_time', e.target.value)} />
                               <button style={styles.iconBtn} onClick={() => removeSlot(slotIndex)} title="Remove">×</button>
                             </div>
                           );
                         })}
                       </div>
                     )}
-                    <button style={{ ...styles.iconBtn, fontSize: '18px', color: 'var(--color-primary)' }} onClick={() => addSlot(idx)} title={`Add hours for ${day}`}>+</button>
+                    <button style={{ ...styles.iconBtn, fontSize: 'var(--font-size-lg)', color: 'var(--color-primary)' }} onClick={() => addSlot(idx)} title={`Add hours for ${day}`}>+</button>
                   </div>
                 );
               })}
@@ -502,13 +502,13 @@ function AvailabilityTab({ staffId }: { staffId: string }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <strong style={{ color: 'var(--color-text)' }}>{p.name}</strong>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>{new Date(p.effective_from).toLocaleDateString()} → {p.effective_to ? new Date(p.effective_to).toLocaleDateString() : 'Ongoing'}</span>
+                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>{new Date(p.effective_from).toLocaleDateString()} → {p.effective_to ? new Date(p.effective_to).toLocaleDateString() : 'Ongoing'}</span>
                 <button style={styles.iconBtn} onClick={() => openEditPattern(p)} title="Edit">✏️</button>
                 <Button variant="ghost" size="sm" onClick={() => handleCopyPattern(p.id)}>Copy</Button>
                 <button style={styles.iconBtn} onClick={() => handleDeletePattern(p.id)} title="Delete">🗑️</button>
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', fontSize: '12px', textAlign: 'center' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', fontSize: 'var(--font-size-sm)', textAlign: 'center' }}>
               {dayAbbrev.map((day, idx) => {
                 const slots = p.slots.filter((s) => s.day_of_week === idx);
                 return (
@@ -570,8 +570,8 @@ function AvailabilityTab({ staffId }: { staffId: string }) {
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <strong style={{ color: 'var(--color-text)' }}>{new Date(o.override_date).toLocaleDateString()}</strong>
                   {o.override_type === 'remove' ? <Badge variant="warning">Day Off</Badge> : o.override_type === 'add' ? <Badge variant="success">Extra</Badge> : <Badge variant="info">Modified</Badge>}
-                  {o.override_type !== 'remove' && o.start_time && <span style={{ fontSize: '13px', color: 'var(--color-success, #2E7D32)' }}>{formatTime(o.start_time)}–{formatTime(o.end_time!)}</span>}
-                  {o.reason && <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>({o.reason})</span>}
+                  {o.override_type !== 'remove' && o.start_time && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-success, #2E7D32)' }}>{formatTime(o.start_time)}–{formatTime(o.end_time!)}</span>}
+                  {o.reason && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>({o.reason})</span>}
                 </div>
                 <button style={styles.iconBtn} onClick={() => handleDeleteOverride(o.id)} title="Delete">🗑️</button>
               </div>
@@ -610,7 +610,7 @@ function CalendarTab({ staffId }: { staffId: string }) {
             {calendar.bookings.map((b: any) => (
               <div key={b.id} style={styles.listItem}>
                 <span style={{ color: 'var(--color-text)' }}>{b.serviceName} — {b.customerName || 'Walk-in'}</span>
-                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>{new Date(b.startTime).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{new Date(b.startTime).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
               </div>
             ))}
           </div>
@@ -624,7 +624,7 @@ function CalendarTab({ staffId }: { staffId: string }) {
             {calendar.leave.map((l: any) => (
               <div key={l.id} style={styles.listItem}>
                 <Badge variant="warning">{l.leaveType}</Badge>
-                <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>{l.startDate} → {l.endDate}</span>
+                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>{l.startDate} → {l.endDate}</span>
               </div>
             ))}
           </div>
@@ -861,7 +861,7 @@ function CompensationTab({ userId }: { userId: string | null }) {
 
       {showForm && (
         <div style={styles.card}>
-          <h4 style={{ ...styles.cardTitle, fontSize: '14px' }}>{editing ? 'Edit Compensation Rule' : 'Add Compensation Rule'}</h4>
+          <h4 style={{ ...styles.cardTitle, fontSize: 'var(--font-size-base)' }}>{editing ? 'Edit Compensation Rule' : 'Add Compensation Rule'}</h4>
           <div style={styles.formGrid}>
             {!editing && (
               <div style={styles.formGroup}>
@@ -901,10 +901,10 @@ function CompensationTab({ userId }: { userId: string | null }) {
                     <label style={styles.label}>Specific {REF_TYPE_LABELS[form.reference_type] || 'Items'} (leave empty for all of this type)</label>
                     <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px', maxHeight: '160px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       {(offerings[form.reference_type] || []).length === 0 && (
-                        <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>No {form.reference_type}s found</span>
+                        <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>No {form.reference_type}s found</span>
                       )}
                       {(offerings[form.reference_type] || []).map((item) => (
-                        <label key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--color-text)', cursor: 'pointer', padding: '4px 8px', borderRadius: '4px', background: form.reference_ids.includes(item.id) ? 'var(--color-surface-hover, rgba(255,255,255,0.05))' : 'transparent' }}>
+                        <label key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', cursor: 'pointer', padding: '4px 8px', borderRadius: '4px', background: form.reference_ids.includes(item.id) ? 'var(--color-surface-hover, rgba(255,255,255,0.05))' : 'transparent' }}>
                           <input type="checkbox" checked={form.reference_ids.includes(item.id)} onChange={() => toggleReferenceId(item.id)} style={{ width: '14px', height: '14px' }} />
                           {item.name}
                         </label>
@@ -956,18 +956,18 @@ function CompensationTab({ userId }: { userId: string | null }) {
             <div key={rule.id} style={{ ...styles.listItem, opacity: rule.status === 'inactive' ? 0.6 : 1 }}>
               <div style={{ flex: 1 }}>
                 <strong style={{ color: 'var(--color-text)' }}>{RULE_TYPE_LABELS[rule.rule_type] || rule.rule_type}</strong>
-                {refTypeLabel && <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--color-text-secondary)', background: 'var(--color-surface)', padding: '2px 6px', borderRadius: '4px' }}>{refTypeLabel}</span>}
-                <span style={{ marginLeft: '12px', fontSize: '15px', fontWeight: 600, color: 'var(--color-primary)' }}>{formatRate(rule)}</span>
+                {refTypeLabel && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', background: 'var(--color-surface)', padding: '2px 6px', borderRadius: '4px' }}>{refTypeLabel}</span>}
+                <span style={{ marginLeft: '12px', fontSize: 'var(--font-size-base)', fontWeight: 600, color: 'var(--color-primary)' }}>{formatRate(rule)}</span>
                 {rule.rule_type === 'commission' && rule.threshold_amount && (
-                  <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>after €{(rule.threshold_amount / 100).toFixed(2)} revenue</span>
+                  <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>after €{(rule.threshold_amount / 100).toFixed(2)} revenue</span>
                 )}
                 {refNames && (
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>Applies to: {refNames}</div>
+                  <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: '2px' }}>Applies to: {refNames}</div>
                 )}
                 {!refNames && refTypeLabel && (
-                  <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>Applies to: All {refTypeLabel}s</div>
+                  <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: '2px' }}>Applies to: All {refTypeLabel}s</div>
                 )}
-                <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+                <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
                   From {new Date(rule.effective_from).toLocaleDateString()}
                   {rule.effective_to && ` to ${new Date(rule.effective_to).toLocaleDateString()}`}
                   {rule.rule_type === 'hourly' && (
@@ -999,7 +999,7 @@ const styles: Record<string, React.CSSProperties> = {
   loading: { padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-text-secondary)' },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, marginBottom: 'var(--space-md)', fontFamily: 'var(--font-family)' },
   headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
-  title: { margin: 0, fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
+  title: { margin: 0, fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)' },
   subtitle: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: '4px' },
   tabBar: { display: 'flex', gap: '0', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-lg)' },
   tab: { background: 'none', border: 'none', borderBottom: '3px solid transparent', padding: '10px 16px', fontSize: 'var(--font-size-sm)', fontWeight: 500 as any, color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', whiteSpace: 'nowrap' as const, marginBottom: '-1px', outline: 'none', WebkitAppearance: 'none' as any },
@@ -1013,8 +1013,8 @@ const styles: Record<string, React.CSSProperties> = {
   saveBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-sm) var(--space-md)', background: 'var(--color-surface)', border: '1px solid var(--color-primary)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-md)' },
   listItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)' },
   emptyText: { color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', margin: 0 },
-  iconBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '4px' },
+  iconBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '4px' },
   statCard: { padding: 'var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  statLabel: { fontSize: '12px', color: 'var(--color-text-secondary)' },
+  statLabel: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
   statValue: { fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)' as any, color: 'var(--color-text)' },
 };

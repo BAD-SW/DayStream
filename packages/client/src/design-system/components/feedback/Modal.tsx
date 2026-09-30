@@ -78,7 +78,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 'var(--space-lg)', borderBottom: '1px solid var(--color-border)',
   },
   title: { fontSize: 'var(--modal-title-size)', fontWeight: 'var(--modal-title-weight)' as any, margin: 0, color: 'var(--color-text)' },
-  close: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', fontSize: '20px', cursor: 'pointer', padding: '4px' },
+  close: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xl)', cursor: 'pointer', padding: '4px' },
   body: { padding: 'var(--space-lg)', overflowY: 'auto', flex: 1 },
   footer: { padding: 'var(--space-lg)', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)' },
 };

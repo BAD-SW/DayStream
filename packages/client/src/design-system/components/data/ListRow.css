@@ -1,0 +1,60 @@
+/* ListRow (THE-15) — sizes and colours come from design tokens. */
+
+.ds-list-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.ds-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 14px var(--space-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--card-radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.ds-list-row--interactive {
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-default), background-color var(--duration-fast) var(--ease-default);
+}
+
+.ds-list-row--interactive:hover {
+  border-color: var(--color-primary-hover);
+  background: var(--row-hover-bg);
+}
+
+.ds-list-row__main {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-xs) 12px;
+}
+
+.ds-list-row__title {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-title);
+}
+
+.ds-list-row__meta {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.ds-list-row__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+.ds-list-empty {
+  margin: 0;
+  padding: var(--space-md) 0;
+  color: var(--color-text-secondary);
+}

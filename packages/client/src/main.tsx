@@ -6,6 +6,7 @@ import { ContextProvider } from './context/ContextManager';
 import { BusinessSettingsProvider } from './context/BusinessSettingsContext';
 import { ThemeProvider } from './design-system/themes/ThemeProvider';
 import { App } from './App';
+import { applyCachedBaseTheme } from './context/ThemeManager';
 import './i18n';
 import './design-system/tokens/index.css';
 import './design-system/themes/dark.css';
@@ -14,6 +15,8 @@ import './design-system/themes/bold-business.css';
 import './design-system/themes/navy.css';
 import './design-system/themes/theme-lock.css';
 import './design-system/themes/transitions.css';
+
+applyCachedBaseTheme();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

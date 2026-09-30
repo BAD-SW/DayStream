@@ -144,11 +144,11 @@ function CompensationSection({ businessId }: { businessId: string }) {
         <div style={{ border: '1px solid var(--color-border, #e5e7eb)', borderRadius: '8px', padding: '16px', marginBottom: '16px', background: '#f9fafb' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Rate</label>
+              <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', marginBottom: '4px' }}>Rate</label>
               <input type="number" step="0.01" min="0" style={styles.input} value={(Number(editForm.rate) / 100).toFixed(2)} onChange={(e) => setEditForm({ ...editForm, rate: String(Math.round(parseFloat(e.target.value || '0') * 100)) })} />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Type</label>
+              <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', marginBottom: '4px' }}>Type</label>
               <input type="text" style={styles.input} value={editForm.rule_type} onChange={(e) => setEditForm({ ...editForm, rule_type: e.target.value })} />
             </div>
           </div>
@@ -159,15 +159,15 @@ function CompensationSection({ businessId }: { businessId: string }) {
         </div>
       )}
       {rules.length === 0 ? (
-        <p style={{ color: '#6b7280', fontSize: '14px' }}>No compensation rules configured</p>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)' }}>No compensation rules configured</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {rules.map((r: any) => (
             <div key={r.id} style={{ border: '1px solid var(--color-border, #e5e7eb)', borderRadius: '8px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <span style={{ fontWeight: 500 }}>{r.name || r.rule_type || r.type}</span>
-                <span style={{ marginLeft: '12px', fontSize: '13px', color: '#6b7280' }}>{formatCurrency(r.rate || r.amount || 0)}</span>
-                {r.user_name && <span style={{ marginLeft: '12px', fontSize: '13px', color: '#6b7280' }}>{r.user_name}</span>}
+                <span style={{ marginLeft: '12px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{formatCurrency(r.rate || r.amount || 0)}</span>
+                {r.user_name && <span style={{ marginLeft: '12px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{r.user_name}</span>}
               </div>
               <div style={{ display: 'flex', gap: '4px' }}>
                 <ActionBtn label="Edit" onClick={() => handleEdit(r)} />
@@ -222,15 +222,15 @@ function DeductionsSection({ businessId }: { businessId: string }) {
         <div style={{ border: '1px solid var(--color-border, #e5e7eb)', borderRadius: '8px', padding: '16px', marginBottom: '16px', background: '#f9fafb' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Name</label>
+              <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', marginBottom: '4px' }}>Name</label>
               <input type="text" style={styles.input} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Amount</label>
+              <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', marginBottom: '4px' }}>Amount</label>
               <input type="number" step="0.01" min="0" style={styles.input} value={(Number(editForm.amount) / 100).toFixed(2)} onChange={(e) => setEditForm({ ...editForm, amount: String(Math.round(parseFloat(e.target.value || '0') * 100)) })} />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Type</label>
+              <label style={{ display: 'block', fontSize: 'var(--font-size-sm)', marginBottom: '4px' }}>Type</label>
               <input type="text" style={styles.input} value={editForm.deduction_type} onChange={(e) => setEditForm({ ...editForm, deduction_type: e.target.value })} />
             </div>
           </div>
@@ -241,15 +241,15 @@ function DeductionsSection({ businessId }: { businessId: string }) {
         </div>
       )}
       {deductions.length === 0 ? (
-        <p style={{ color: '#6b7280', fontSize: '14px' }}>No deductions configured</p>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)' }}>No deductions configured</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {deductions.map((d: any) => (
             <div key={d.id} style={{ border: '1px solid var(--color-border, #e5e7eb)', borderRadius: '8px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <span style={{ fontWeight: 500 }}>{d.name || d.deduction_type || d.type}</span>
-                <span style={{ marginLeft: '12px', fontSize: '13px', color: '#6b7280' }}>{formatCurrency(d.amount || 0)}</span>
-                {d.user_name && <span style={{ marginLeft: '12px', fontSize: '13px', color: '#6b7280' }}>{d.user_name}</span>}
+                <span style={{ marginLeft: '12px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{formatCurrency(d.amount || 0)}</span>
+                {d.user_name && <span style={{ marginLeft: '12px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{d.user_name}</span>}
               </div>
               <div style={{ display: 'flex', gap: '4px' }}>
                 <ActionBtn label="Edit" onClick={() => handleEdit(d)} />
@@ -299,8 +299,8 @@ function ActionBtn({ label, onClick }: { label: string; onClick: () => void }) {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1100px', margin: '0 auto' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
   subtitle: { fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)' as any, color: 'var(--color-text)', marginTop: 'var(--space-xl)', marginBottom: 'var(--space-md)' },
-  actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
-  input: { border: '1px solid var(--color-border, #e5e7eb)', borderRadius: '4px', padding: '6px 10px', fontSize: '14px', width: '100%', fontFamily: 'var(--font-family)' },
+  actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', minHeight: 'var(--button-height-sm)' },
+  input: { border: '1px solid var(--color-border, #e5e7eb)', borderRadius: '4px', padding: '6px 10px', fontSize: 'var(--font-size-base)', width: '100%', fontFamily: 'var(--font-family)' },
 };

@@ -184,7 +184,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid var(--color-border, #333)',
   },
   title: {
-    fontSize: '13px',
+    fontSize: 'var(--font-size-sm)',
     fontWeight: 600,
     color: 'var(--color-text, #fff)',
   },
@@ -193,7 +193,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: 'none',
     color: 'var(--color-text-secondary, #999)',
     cursor: 'pointer',
-    fontSize: '16px',
+    fontSize: 'var(--font-size-base)',
     padding: '2px 6px',
     borderRadius: '3px',
   },
@@ -204,7 +204,7 @@ const styles: Record<string, React.CSSProperties> = {
   searchInput: {
     width: '100%',
     padding: '6px 8px',
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     border: '1px solid var(--color-border, #444)',
     borderRadius: '3px',
     backgroundColor: 'var(--color-surface, #1e1e1e)',
@@ -214,7 +214,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   loadingBar: {
     padding: '4px 12px',
-    fontSize: '11px',
+    fontSize: 'var(--font-size-xs)',
     color: 'var(--color-text-secondary, #999)',
     textAlign: 'center',
   },
@@ -237,19 +237,19 @@ const styles: Record<string, React.CSSProperties> = {
     border: 'none',
     color: 'var(--color-text-secondary, #999)',
     cursor: 'pointer',
-    fontSize: '11px',
+    fontSize: 'var(--font-size-xs)',
     padding: '0 4px',
     width: '20px',
     textAlign: 'center',
   },
   tableName: {
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-primary, #C9A96E)',
     cursor: 'pointer',
     fontWeight: 500,
   },
   columnCount: {
-    fontSize: '11px',
+    fontSize: 'var(--font-size-xs)',
     color: 'var(--color-text-muted, #666)',
   },
   columnList: {
@@ -264,15 +264,15 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '2px',
   },
   columnName: {
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-text, #e0e0e0)',
   },
   columnType: {
-    fontSize: '11px',
+    fontSize: 'var(--font-size-xs)',
     color: 'var(--color-text-muted, #666)',
   },
   nullableBadge: {
-    fontSize: '10px',
+    fontSize: 'var(--font-size-xs)',
     color: 'var(--color-warning, #f59e0b)',
     padding: '1px 4px',
     borderRadius: '2px',
@@ -286,19 +286,18 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '24px',
   },
   errorText: {
-    fontSize: '13px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-error, #dc2626)',
     textAlign: 'center',
   },
   retryButton: {
     padding: '6px 12px',
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-text, #fff)',
     backgroundColor: 'var(--color-primary, #C9A96E)',
     border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-  },
+    borderRadius: 'var(--button-radius)',
+    cursor: 'pointer', minHeight: 'var(--button-height-sm)' },
   emptyState: {
     display: 'flex',
     alignItems: 'center',
@@ -306,7 +305,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '24px',
   },
   emptyText: {
-    fontSize: '13px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-text-secondary, #999)',
   },
 };

@@ -123,7 +123,7 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
       </div>
       {isDirty && (
         <div style={styles.saveBar}>
-          <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>You have unsaved changes</span>
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>You have unsaved changes</span>
           <div style={{ display: 'flex', gap: '8px' }}><Button variant="outline" size="sm" onClick={handleDiscard}>Discard</Button><Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button></div>
         </div>
       )}
@@ -169,7 +169,7 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>&nbsp;</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', paddingTop: '4px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', paddingTop: '4px' }}>
               <input type="checkbox" checked={form.new_customers_only} onChange={(e) => setForm({ ...form, new_customers_only: e.target.checked })} style={{ width: '16px', height: '16px' }} /> New customers only (intro offer)
             </label>
           </div>
@@ -213,7 +213,7 @@ function PackageItemsCard({ packageId }: { packageId: string }) {
           {items.map((item: any) => (
             <div key={item.id} style={styles.itemRow}>
               <div style={{ flex: 1 }}><Badge variant={item.item_type === 'service' ? 'info' : 'neutral'}>{item.item_type === 'service' ? 'Service' : 'Product'}</Badge><strong style={{ marginLeft: '8px' }}>{item.service_name || item.merchandise_name || 'Unknown'}</strong></div>
-              <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{item.redemption_type === 'minutes' ? `${item.quantity} min` : `×${item.quantity}`}</span>
+              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{item.redemption_type === 'minutes' ? `${item.quantity} min` : `×${item.quantity}`}</span>
               <button style={styles.editBtn} onClick={() => setEditingItem(item)} title="Edit">✏️</button>
               <button style={styles.deleteBtn} onClick={() => handleDelete(item.id)} title="Remove">×</button>
             </div>
@@ -284,7 +284,7 @@ function AddEditPackageItemModal({ packageId, item, onClose, onSaved }: { packag
     <div style={styles.overlay}>
       <div style={styles.modal}>
         <div style={styles.modalHeader}><h3 style={styles.modalTitle}>{isEditing ? 'Edit Item' : 'Add Item'}</h3><button style={styles.closeBtn} onClick={onClose}>×</button></div>
-        {error && <p style={{ color: 'var(--color-error)', fontSize: '13px', margin: '0 0 8px' }}>{error}</p>}
+        {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: '0 0 8px' }}>{error}</p>}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={styles.formGroup}><label style={styles.label}>Type</label><select style={styles.input} value={itemType} disabled={isEditing} onChange={(e) => { setItemType(e.target.value as any); setSelectedId(''); }}><option value="service">Service</option><option value="merchandise">Product</option></select></div>
           <div style={styles.formGroup}><label style={styles.label}>{itemType === 'service' ? 'Service' : 'Product'} *</label><select style={styles.input} value={selectedId} disabled={isEditing} onChange={(e) => setSelectedId(e.target.value)} required><option value="">Select...</option>{options.map((o: any) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
@@ -292,7 +292,7 @@ function AddEditPackageItemModal({ packageId, item, onClose, onSaved }: { packag
             <div style={styles.formGroup}><label style={styles.label}>Redemption Mode</label><select style={styles.input} value={redemptionType} onChange={(e) => { setRedemptionType(e.target.value as any); if (e.target.value === 'minutes') setSelectedVariantId(''); }}><option value="sessions">Fixed sessions (specific variant)</option><option value="minutes">Time pool (total minutes, any variant)</option></select></div>
           )}
           {redemptionType === 'sessions' && variants.length > 0 && (<div style={styles.formGroup}><label style={styles.label}>Variant</label><select style={styles.input} value={selectedVariantId} onChange={(e) => setSelectedVariantId(e.target.value)}><option value="">All / any</option>{variants.map((v: any) => <option key={v.id} value={v.id}>{v.name}{v.price != null ? ` — ${formatCurrency(v.price)}` : ''}</option>)}</select></div>)}
-          <div style={styles.formGroup}><label style={styles.label}>{redemptionType === 'minutes' ? 'Total Minutes' : 'Quantity (sessions)'}</label><input style={styles.input} type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />{redemptionType === 'minutes' && <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px' }}>{quantity >= 60 ? `${Math.floor(quantity / 60)}h ${quantity % 60 > 0 ? `${quantity % 60}m` : ''}` : `${quantity}m`}</span>}</div>
+          <div style={styles.formGroup}><label style={styles.label}>{redemptionType === 'minutes' ? 'Total Minutes' : 'Quantity (sessions)'}</label><input style={styles.input} type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />{redemptionType === 'minutes' && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: '2px' }}>{quantity >= 60 ? `${Math.floor(quantity / 60)}h ${quantity % 60 > 0 ? `${quantity % 60}m` : ''}` : `${quantity}m`}</span>}</div>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit" loading={saving}>{isEditing ? 'Save' : 'Add Item'}</Button></div>
         </form>
       </div>
@@ -306,7 +306,7 @@ const styles: Record<string, React.CSSProperties> = {
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, marginBottom: 'var(--space-md)', fontFamily: 'var(--font-family)' },
   headerCard: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-lg)', background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', marginBottom: 'var(--space-md)' },
   headerInfo: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  name: { margin: 0, fontSize: 'var(--font-size-xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
+  name: { margin: 0, fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)' },
   sub: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   headerRight: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: '4px' },
   price: { fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)' },
@@ -317,15 +317,15 @@ const styles: Record<string, React.CSSProperties> = {
   cardTitle: { margin: '0 0 var(--space-md) 0', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  label: { fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' },
-  input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
-  muted: { fontSize: '14px', color: 'var(--color-text-secondary)', margin: 0 },
-  itemRow: { display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: '14px' },
-  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px 4px' },
-  deleteBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 },
+  label: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)' },
+  input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
+  muted: { fontSize: 'var(--font-size-base)', color: 'var(--color-text-secondary)', margin: 0 },
+  itemRow: { display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-base)' },
+  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '2px 4px', borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
+  deleteBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1, borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
   overlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '450px', maxHeight: '85vh', overflow: 'auto', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.3)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
-  modalTitle: { margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--color-text)' },
-  closeBtn: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--color-text-secondary)' },
+  modalTitle: { margin: 0, fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)' },
+  closeBtn: { background: 'none', border: 'none', fontSize: 'var(--font-size-xl)', cursor: 'pointer', color: 'var(--color-text-secondary)' },
 };

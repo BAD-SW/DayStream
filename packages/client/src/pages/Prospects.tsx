@@ -225,7 +225,7 @@ export function Prospects() {
         </div>
         <div style={styles.headerActions}>
           {territory && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)' }}>
               <span style={{ color: 'var(--color-text-secondary)' }}>Location: <strong style={{ color: 'var(--color-text)' }}>{territory.location}</strong></span>
             </div>
           )}
@@ -277,13 +277,13 @@ export function Prospects() {
       {/* Generate Panel - Category Selection */}
       {showGeneratePanel && (
         <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-background)' }}>
-          <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)', margin: '0 0 8px' }}>Select categories to search:</p>
+          <p style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', margin: '0 0 8px' }}>Select categories to search:</p>
           <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: '6px', marginBottom: '12px' }}>
             {allCategoryMappings.map((cat) => {
               const selected = selectedCategoryIds.includes(cat.id);
               return (
                 <button key={cat.id} type="button" onClick={() => toggleCategory(cat.id)}
-                  style={{ padding: '4px 12px', fontSize: '12px', borderRadius: '16px', cursor: 'pointer', border: '1px solid var(--color-border)', background: selected ? 'var(--color-primary)' : 'transparent', color: selected ? '#fff' : 'var(--color-text)' }}>
+                  style={{ padding: '4px 12px', fontSize: 'var(--font-size-sm)', borderRadius: '16px', cursor: 'pointer', border: '1px solid var(--color-border)', background: selected ? 'var(--color-primary)' : 'transparent', color: selected ? '#fff' : 'var(--color-text)' }}>
                   {cat.ui_category_name}
                 </button>
               );
@@ -291,8 +291,8 @@ export function Prospects() {
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <Button size="sm" onClick={handleGenerate} disabled={selectedCategoryIds.length === 0}>Search Selected</Button>
-            <button type="button" onClick={() => setShowGeneratePanel(false)} style={{ fontSize: '12px', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
-            <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginLeft: 'auto' }}>{selectedCategoryIds.length} of {allCategoryMappings.length} selected</span>
+            <button type="button" onClick={() => setShowGeneratePanel(false)} style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginLeft: 'auto' }}>{selectedCategoryIds.length} of {allCategoryMappings.length} selected</span>
           </div>
         </div>
       )}
@@ -454,8 +454,8 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 'var(--space-lg)',
   },
   title: {
-    fontSize: 'var(--font-size-2xl)',
-    fontWeight: 300,
+    fontSize: 'var(--page-title-size)',
+    fontWeight: 'var(--page-title-weight)' as any,
     margin: 0,
     color: 'var(--color-text)',
   },
@@ -551,12 +551,11 @@ const styles: Record<string, React.CSSProperties> = {
   cancelButton: {
     background: 'none',
     border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius-md)',
+    borderRadius: 'var(--button-radius)',
     padding: '8px 16px',
     color: 'var(--color-text-secondary)',
     cursor: 'pointer',
-    fontSize: 'var(--font-size-sm)',
-  },
+    fontSize: 'var(--font-size-sm)', minHeight: 'var(--button-height-sm)' },
   tableWrapper: {
     border: '1px solid var(--color-border)',
     borderRadius: 'var(--radius-md)',
@@ -612,7 +611,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: 'none',
     color: 'var(--color-error)',
     cursor: 'pointer',
-    fontSize: '16px',
+    fontSize: 'var(--font-size-base)',
     fontWeight: 700,
     padding: '4px 8px',
     borderRadius: 'var(--radius-md)',

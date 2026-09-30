@@ -250,7 +250,7 @@ export function CustomerImport() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '800px', margin: '0 auto' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
   subtitle: { fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-md)' },
   steps: { display: 'flex', gap: 'var(--space-md)', marginBottom: 'var(--space-xl)' },
   step: { display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', opacity: 0.5 },

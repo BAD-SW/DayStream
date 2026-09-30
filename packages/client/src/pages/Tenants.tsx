@@ -415,7 +415,7 @@ export function Tenants() {
                     onChange={(e) => setEditForm({ ...editForm, slug: e.target.value })}
                     pattern="^[a-z0-9-]+$"
                   />
-                  <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Lowercase letters, numbers, and hyphens only</span>
+                  <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>Lowercase letters, numbers, and hyphens only</span>
                 </div>
 
                 <div style={styles.formRow}>
@@ -554,7 +554,7 @@ export function Tenants() {
                   <div style={styles.formGroup}>
                     <label style={styles.label} htmlFor="edit-next-billing">Next Billing Date</label>
                     <input id="edit-next-billing" style={{ ...styles.input, opacity: 0.7, cursor: 'not-allowed' }} type="date" value={editForm.next_billing_date} disabled />
-                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Auto-calculated from last billing date and frequency.</span>
+                    <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>Auto-calculated from last billing date and frequency.</span>
                   </div>
                 </div>
 
@@ -914,7 +914,7 @@ export function Tenants() {
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1200px', margin: '0 auto' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', margin: 0 },
   toolbar: { display: 'flex', gap: 'var(--space-md)', alignItems: 'center', marginBottom: 'var(--space-md)' },
   errorBanner: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -956,7 +956,7 @@ const styles: Record<string, React.CSSProperties> = {
   modalTitle: { fontSize: 'var(--font-size-xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
   closeBtn: {
     background: 'none', border: 'none', color: 'var(--color-text-secondary)',
-    fontSize: '24px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1,
+    fontSize: 'var(--font-size-2xl)', cursor: 'pointer', padding: '4px 8px', lineHeight: 1,
   },
 
   // Form

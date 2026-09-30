@@ -30,6 +30,8 @@ export interface ResolvedTheme {
   base_theme: BuiltInThemeId;
   tokens: Record<string, string>; // fully merged token set (typography + colors + branding)
   source: 'business' | 'tenant' | 'system' | 'default';
+  /** Id of the theme that won resolution: a cfg_themes UUID, or a built-in id (THE-14). */
+  theme_id?: string;
 }
 
 export interface CreateThemeDto {

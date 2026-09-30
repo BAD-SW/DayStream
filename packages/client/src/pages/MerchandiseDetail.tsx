@@ -176,7 +176,7 @@ function ProductForm({ item, categories, businessId, onUpdate }: { item: Merchan
       {/* Save bar */}
       {isDirty && (
         <div style={styles.saveBar}>
-          <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>You have unsaved changes</span>
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>You have unsaved changes</span>
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button variant="outline" size="sm" onClick={handleDiscard}>Discard</Button>
             <Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button>
@@ -269,12 +269,12 @@ function ProductImage({ item, businessId, onUpdate }: { item: Merchandise; busin
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
         <h3 style={{ ...styles.cardTitle, margin: 0 }}>Product Image</h3>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: '13px', cursor: 'pointer', color: 'var(--color-text)' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--color-text)' }}>
             {uploading ? 'Uploading...' : item.image_url ? 'Replace' : 'Upload'}
             <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleUpload} style={{ display: 'none' }} disabled={uploading} />
           </label>
           {item.image_url && (
-            <button onClick={handleDelete} style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: '13px', cursor: 'pointer', color: 'var(--color-error)' }}>Remove</button>
+            <button onClick={handleDelete} style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--color-error)' }}>Remove</button>
           )}
         </div>
       </div>
@@ -283,7 +283,7 @@ function ProductImage({ item, businessId, onUpdate }: { item: Merchandise; busin
       ) : (
         <p style={styles.muted}>No image uploaded</p>
       )}
-      <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>Accepted: JPEG, PNG, or WebP. Max 5MB. Recommended: at least 600×600px.</p>
+      <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>Accepted: JPEG, PNG, or WebP. Max 5MB. Recommended: at least 600×600px.</p>
     </div>
   );
 }
@@ -337,7 +337,7 @@ function VariantsCard({ merchandiseId }: { merchandiseId: string }) {
             <div key={v.id} style={styles.variantRow}>
               <div style={{ flex: 1 }}>
                 <strong>{v.name}</strong>
-                {v.sku && <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>SKU: {v.sku}</span>}
+                {v.sku && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>SKU: {v.sku}</span>}
               </div>
               <span style={{ fontWeight: 600 }}>{formatCurrency(v.price)}</span>
               <Badge variant={STATUS_VARIANTS[v.status] || 'neutral'}>{v.status}</Badge>
@@ -397,7 +397,7 @@ function VariantModal({ merchandiseId, variant, onClose, onSaved }: { merchandis
           <h3 style={styles.modalTitle}>{variant ? 'Edit Variant' : 'Add Variant'}</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
         </div>
-        {error && <p style={{ color: 'var(--color-error)', fontSize: '13px', margin: '0 0 8px 0' }}>{error}</p>}
+        {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: '0 0 8px 0' }}>{error}</p>}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Name * (e.g., "Small", "Red", "500ml")</label>
@@ -430,7 +430,7 @@ const styles: Record<string, React.CSSProperties> = {
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, marginBottom: 'var(--space-md)', fontFamily: 'var(--font-family)' },
   profileHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-lg)', background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', marginBottom: 'var(--space-md)' },
   headerInfo: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  name: { margin: 0, fontSize: 'var(--font-size-xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
+  name: { margin: 0, fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)' },
   sku: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   headerRight: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: '4px' },
   price: { fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)' },
@@ -440,15 +440,15 @@ const styles: Record<string, React.CSSProperties> = {
   cardTitle: { margin: '0 0 var(--space-md) 0', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  label: { fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' },
-  input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
-  muted: { fontSize: '14px', color: 'var(--color-text-secondary)', margin: 0 },
-  variantRow: { display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: '14px' },
-  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px 4px' },
-  deleteBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 },
+  label: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)' },
+  input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
+  muted: { fontSize: 'var(--font-size-base)', color: 'var(--color-text-secondary)', margin: 0 },
+  variantRow: { display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-base)' },
+  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '2px 4px', borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
+  deleteBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1, borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
   overlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '450px', maxHeight: '85vh', overflow: 'auto', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
-  modalTitle: { margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--color-text)' },
-  closeBtn: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--color-text-secondary)' },
+  modalTitle: { margin: 0, fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)' },
+  closeBtn: { background: 'none', border: 'none', fontSize: 'var(--font-size-xl)', cursor: 'pointer', color: 'var(--color-text-secondary)' },
 };

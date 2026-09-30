@@ -288,17 +288,17 @@ export function Payments() {
         <div style={styles.overlay}>
           <div style={styles.recordModal}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--color-text)' }}>Record Payment</h3>
-              <button style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--color-text-secondary)' }} onClick={() => setShowRecord(false)}>×</button>
+              <h3 style={{ margin: 0, fontSize: 'var(--font-size-lg)', color: 'var(--color-text)' }}>Record Payment</h3>
+              <button style={{ background: 'none', border: 'none', fontSize: 'var(--font-size-xl)', cursor: 'pointer', color: 'var(--color-text-secondary)' }} onClick={() => setShowRecord(false)}>×</button>
             </div>
             {recordError && <p style={styles.error}>{recordError}</p>}
             <form onSubmit={handleRecord} style={styles.formGrid}>
             <div style={{ ...styles.field, gridColumn: '1 / -1', position: 'relative' as const }}>
               <label style={styles.label}>Customer *</label>
               {selectedCustomer ? (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', fontSize: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', fontSize: 'var(--font-size-base)' }}>
                   <span>{selectedCustomer.first_name} {selectedCustomer.last_name} ({selectedCustomer.email})</span>
-                  <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px' }} onClick={() => { setSelectedCustomer(null); setCustomerSearchInput(''); }}>×</button>
+                  <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)' }} onClick={() => { setSelectedCustomer(null); setCustomerSearchInput(''); }}>×</button>
                 </div>
               ) : (
                 <input style={styles.input} value={customerSearchInput} onChange={(e) => setCustomerSearchInput(e.target.value)} placeholder="Search customer..." autoComplete="off"
@@ -308,7 +308,7 @@ export function Payments() {
               {showCustomerDropdown && customerResults.length > 0 && (
                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', marginTop: '4px', maxHeight: '150px', overflow: 'auto', zIndex: 10, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
                   {customerResults.map((c: any) => (
-                    <button key={c.id} type="button" style={{ display: 'block', width: '100%', padding: '8px 12px', border: 'none', background: 'var(--color-background)', cursor: 'pointer', textAlign: 'left', color: 'var(--color-text)', fontSize: '13px', borderBottom: '1px solid var(--color-border)' }}
+                    <button key={c.id} type="button" style={{ display: 'block', width: '100%', padding: '8px 12px', border: 'none', background: 'var(--color-background)', cursor: 'pointer', textAlign: 'left', color: 'var(--color-text)', fontSize: 'var(--font-size-sm)', borderBottom: '1px solid var(--color-border)' }}
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => { setSelectedCustomer(c); setShowCustomerDropdown(false); setCustomerSearchInput(''); }}>
                       <strong>{c.first_name} {c.last_name}</strong> — {c.email}
@@ -330,7 +330,7 @@ export function Payments() {
               <input style={styles.input} type="number" step="0.01" min="0.01" value={recordForm.amount} onChange={(e) => setRecordForm({ ...recordForm, amount: e.target.value })} required placeholder="0.00"
                 max={recordForm.type === 'refund' && refundSource ? (refundSource.remaining / 100).toFixed(2) : undefined} />
               {recordForm.type === 'refund' && refundSource && (
-                <small style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>Max refundable: {formatCurrency(refundSource.remaining)}</small>
+                <small style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>Max refundable: {formatCurrency(refundSource.remaining)}</small>
               )}
             </div>
             {recordForm.type !== 'credit' && (
@@ -343,7 +343,7 @@ export function Payments() {
                   ))}
                 </select>
                 {recordForm.type === 'refund' && refundSource && (
-                  <small style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>Locked to match original payment method</small>
+                  <small style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>Locked to match original payment method</small>
                 )}
               </div>
             )}
@@ -396,22 +396,22 @@ export function Payments() {
                 <div style={{ ...styles.field, gridColumn: '1 / -1' }}>
                   <label style={styles.label}>Original Transaction *</label>
                   {refundSource ? (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', fontSize: '13px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', fontSize: 'var(--font-size-sm)' }}>
                       <span>{formatCurrency(refundSource.amount)} charged — {formatCurrency(refundSource.remaining)} refundable — {new Date(refundSource.created_at).toLocaleDateString()} ({METHOD_LABELS[refundSource.payment_method]})</span>
-                      <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' }} onClick={() => { setRefundSource(null); setRecordForm({ ...recordForm, amount: '', payment_method: 'card' }); }}>×</button>
+                      <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)' }} onClick={() => { setRefundSource(null); setRecordForm({ ...recordForm, amount: '', payment_method: 'card' }); }}>×</button>
                     </div>
                   ) : (
                     <div>
-                      {!selectedCustomer && <small style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Select a customer first to see their refundable charges.</small>}
+                      {!selectedCustomer && <small style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Select a customer first to see their refundable charges.</small>}
                       {selectedCustomer && (
                         <>
                           {/* Refundable charges filters */}
                           <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                            <input type="date" style={{ ...styles.input, maxWidth: '140px', padding: '4px 8px', fontSize: '12px' }} value={refundableFilters.date_from}
+                            <input type="date" style={{ ...styles.input, maxWidth: '140px', padding: '4px 8px', fontSize: 'var(--font-size-sm)' }} value={refundableFilters.date_from}
                               onChange={(e) => setRefundableFilters({ ...refundableFilters, date_from: e.target.value })} title="From date" />
-                            <input type="date" style={{ ...styles.input, maxWidth: '140px', padding: '4px 8px', fontSize: '12px' }} value={refundableFilters.date_to}
+                            <input type="date" style={{ ...styles.input, maxWidth: '140px', padding: '4px 8px', fontSize: 'var(--font-size-sm)' }} value={refundableFilters.date_to}
                               onChange={(e) => setRefundableFilters({ ...refundableFilters, date_to: e.target.value })} title="To date" />
-                            <select style={{ ...styles.input, maxWidth: '140px', padding: '4px 8px', fontSize: '12px' }} value={refundableFilters.payment_method}
+                            <select style={{ ...styles.input, maxWidth: '140px', padding: '4px 8px', fontSize: 'var(--font-size-sm)' }} value={refundableFilters.payment_method}
                               onChange={(e) => setRefundableFilters({ ...refundableFilters, payment_method: e.target.value })}>
                               <option value="">All Methods</option>
                               {refundableDistinctMethods.map((m) => (
@@ -419,21 +419,21 @@ export function Payments() {
                               ))}
                             </select>
                             {(refundableFilters.date_from || refundableFilters.date_to || refundableFilters.payment_method) && (
-                              <button type="button" style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 8px', fontSize: '11px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}
+                              <button type="button" style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 8px', fontSize: 'var(--font-size-xs)', cursor: 'pointer', color: 'var(--color-text-secondary)' }}
                                 onClick={() => setRefundableFilters({ date_from: '', date_to: '', payment_method: '' })}>Clear</button>
                             )}
                           </div>
 
-                          {refundableCharges.length === 0 && <small style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>No refundable charges found.</small>}
+                          {refundableCharges.length === 0 && <small style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>No refundable charges found.</small>}
                           {refundableCharges.length > 0 && (
                             <>
-                              <small style={{ fontSize: '11px', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>
+                              <small style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>
                                 Showing {refundablePage + 1}–{Math.min(refundablePage + REFUNDABLE_LIMIT, refundableTotal)} of {refundableTotal} refundable charge{refundableTotal !== 1 ? 's' : ''}
                               </small>
                               <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
                                 {refundableCharges.map((t: any) => (
                                   <button key={t.id} type="button" onClick={() => selectRefundSource(t)}
-                                    style={{ display: 'block', width: '100%', padding: '6px 10px', border: 'none', borderBottom: '1px solid var(--color-border)', background: 'var(--color-background)', cursor: 'pointer', textAlign: 'left', fontSize: '12px', color: 'var(--color-text)' }}>
+                                    style={{ display: 'block', width: '100%', padding: '6px 10px', border: 'none', borderBottom: '1px solid var(--color-border)', background: 'var(--color-background)', cursor: 'pointer', textAlign: 'left', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
                                     {formatCurrency(t.amount)} charged — <strong>{formatCurrency(t.remaining)} refundable</strong> — {new Date(t.created_at).toLocaleDateString()} ({METHOD_LABELS[t.payment_method]})
                                   </button>
                                 ))}
@@ -442,10 +442,10 @@ export function Payments() {
                               {refundableTotal > REFUNDABLE_LIMIT && (
                                 <div style={{ display: 'flex', gap: '8px', marginTop: '6px', justifyContent: 'center' }}>
                                   <button type="button" disabled={refundablePage === 0}
-                                    style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '3px 10px', fontSize: '12px', cursor: refundablePage === 0 ? 'default' : 'pointer', opacity: refundablePage === 0 ? 0.4 : 1 }}
+                                    style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '3px 10px', fontSize: 'var(--font-size-sm)', cursor: refundablePage === 0 ? 'default' : 'pointer', opacity: refundablePage === 0 ? 0.4 : 1 }}
                                     onClick={() => fetchRefundable(refundablePage - REFUNDABLE_LIMIT)}>Previous</button>
                                   <button type="button" disabled={refundablePage + REFUNDABLE_LIMIT >= refundableTotal}
-                                    style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '3px 10px', fontSize: '12px', cursor: refundablePage + REFUNDABLE_LIMIT >= refundableTotal ? 'default' : 'pointer', opacity: refundablePage + REFUNDABLE_LIMIT >= refundableTotal ? 0.4 : 1 }}
+                                    style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '3px 10px', fontSize: 'var(--font-size-sm)', cursor: refundablePage + REFUNDABLE_LIMIT >= refundableTotal ? 'default' : 'pointer', opacity: refundablePage + REFUNDABLE_LIMIT >= refundableTotal ? 0.4 : 1 }}
                                     onClick={() => fetchRefundable(refundablePage + REFUNDABLE_LIMIT)}>Next</button>
                                 </div>
                               )}
@@ -514,10 +514,10 @@ export function Payments() {
         <div style={styles.overlay}>
           <div style={styles.modal}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--color-text)' }}>Transaction Detail</h3>
-              <button style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--color-text-secondary)' }} onClick={() => setDetailTransaction(null)}>×</button>
+              <h3 style={{ margin: 0, fontSize: 'var(--font-size-lg)', color: 'var(--color-text)' }}>Transaction Detail</h3>
+              <button style={{ background: 'none', border: 'none', fontSize: 'var(--font-size-xl)', cursor: 'pointer', color: 'var(--color-text-secondary)' }} onClick={() => setDetailTransaction(null)}>×</button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: 'var(--font-size-base)' }}>
               <div><strong>Type:</strong> <Badge variant={TYPE_VARIANTS[detailTransaction.type] || 'neutral'}>{detailTransaction.type}</Badge></div>
               <div><strong>Status:</strong> {detailTransaction.status}</div>
               <div><strong>Amount:</strong> {formatCurrency(detailTransaction.amount, detailTransaction.currency)}</div>
@@ -547,19 +547,19 @@ export function Payments() {
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1200px', margin: '0 auto' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', margin: 0 },
   summaryRow: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-md)', marginBottom: 'var(--space-lg)' },
   summaryCard: { padding: 'var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  summaryLabel: { fontSize: '12px', color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
-  summaryValue: { fontSize: '20px', fontWeight: 600, color: 'var(--color-text)' },
+  summaryLabel: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
+  summaryValue: { fontSize: 'var(--font-size-xl)', fontWeight: 600, color: 'var(--color-text)' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   field: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  label: { fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' },
-  input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
-  error: { color: 'var(--color-error)', fontSize: '13px', margin: '0 0 8px 0' },
+  label: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)' },
+  input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
+  error: { color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: '0 0 8px 0' },
   toolbar: { display: 'flex', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)', flexWrap: 'wrap' as const, alignItems: 'center' },
   select: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
-  clearBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
+  clearBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '8px 12px', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', minHeight: 'var(--button-height-sm)' },
   overlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '500px', maxHeight: '80vh', overflow: 'auto', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' },
   recordModal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '600px', maxHeight: '85vh', overflow: 'auto', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' },

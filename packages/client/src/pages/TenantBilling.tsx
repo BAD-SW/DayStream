@@ -209,37 +209,37 @@ export function TenantBilling() {
       {/* Invoice History - Placeholder */}
       <div style={styles.card}>
         <h3 style={styles.cardTitle}>Invoice History</h3>
-        <p style={{ color: 'var(--color-text-secondary)', fontSize: '14px', margin: 0 }}>No invoices yet. Invoices will appear here once billing is active.</p>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)', margin: 0 }}>No invoices yet. Invoices will appear here once billing is active.</p>
       </div>
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  heading: { fontSize: '24px', fontWeight: 300, margin: '0 0 8px 0', color: 'var(--color-text)' },
-  subtext: { color: 'var(--color-text-secondary)', fontSize: '14px', marginBottom: '24px' },
-  loading: { color: 'var(--color-text-secondary)', fontSize: '14px' },
+  heading: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, margin: '0 0 8px 0', color: 'var(--color-text)' },
+  subtext: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)', marginBottom: '24px' },
+  loading: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)' },
   card: { border: '1px solid var(--color-border)', borderRadius: '8px', padding: '20px', marginBottom: '16px' },
   cardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' },
-  cardTitle: { fontSize: '16px', fontWeight: 600, color: 'var(--color-text)', margin: 0 },
-  message: { padding: '8px 12px', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid var(--color-success)', color: 'var(--color-success)', fontSize: '13px', marginBottom: '12px' },
+  cardTitle: { fontSize: 'var(--font-size-base)', fontWeight: 600, color: 'var(--color-text)', margin: 0 },
+  message: { padding: '8px 12px', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid var(--color-success)', color: 'var(--color-success)', fontSize: 'var(--font-size-sm)', marginBottom: '12px' },
   // Summary grid
   summaryGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '16px' },
   summaryItem: { display: 'flex', flexDirection: 'column' as const, gap: '2px' },
-  summaryLabel: { fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500, textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
-  summaryValue: { fontSize: '16px', fontWeight: 600, color: 'var(--color-text)' },
+  summaryLabel: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', fontWeight: 500, textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
+  summaryValue: { fontSize: 'var(--font-size-base)', fontWeight: 600, color: 'var(--color-text)' },
   // Form
   formBody: { display: 'flex', flexDirection: 'column' as const, gap: '12px' },
   formRow: { display: 'flex', gap: '12px' },
   formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px', flex: 1, minWidth: 0 },
   formActions: { display: 'flex', justifyContent: 'flex-end', gap: '8px', paddingTop: '12px' },
-  label: { fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 },
-  sectionLabel: { fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px' },
-  input: { backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--color-text)', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const },
+  label: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', fontWeight: 500 },
+  sectionLabel: { fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px' },
+  input: { backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--color-text)', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const },
   // Method display
   methodSummary: { display: 'flex', flexDirection: 'column' as const, gap: '16px' },
   methodSection: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  methodLabel: { fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
-  methodDetail: { display: 'flex', flexDirection: 'column' as const, gap: '2px', fontSize: '14px', color: 'var(--color-text)' },
-  methodMuted: { fontSize: '13px', color: 'var(--color-text-muted)' },
+  methodLabel: { fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
+  methodDetail: { display: 'flex', flexDirection: 'column' as const, gap: '2px', fontSize: 'var(--font-size-base)', color: 'var(--color-text)' },
+  methodMuted: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' },
 };

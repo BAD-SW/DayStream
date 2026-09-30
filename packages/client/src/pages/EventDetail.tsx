@@ -2,9 +2,14 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
+import { ListRow, ListRows, ListRowTitle, ListRowMeta, ListEmpty } from '../design-system/components/data/ListRow';
+import { PageHeader } from '../design-system/components/layout/PageHeader';
+import { TabBar } from '../design-system/components/navigation/TabBar';
 import * as eventsApi from '../api/events';
 import type { Event } from '../api/events';
 import { formatCurrency } from '../utils/currency';
+import './Events.css';
+import './EventDetail.css';
 
 type Tab = 'details' | 'tickets' | 'registrations' | 'waitlist' | 'facilitators' | 'communications' | 'reports';
 
@@ -20,8 +25,8 @@ export function EventDetail() {
     eventsApi.getEvent(id).then(setEvent).catch(() => navigate('/events')).finally(() => setLoading(false));
   }, [id, navigate]);
 
-  if (loading) return <div className="p-6">Loading...</div>;
-  if (!event) return <div className="p-6">Event not found</div>;
+  if (loading) return <ListEmpty>Loading...</ListEmpty>;
+  if (!event) return <ListEmpty>Event not found</ListEmpty>;
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'details', label: 'Details' }, { key: 'tickets', label: 'Tickets' },
@@ -34,29 +39,20 @@ export function EventDetail() {
   const handleCancel = async () => { if (confirm('Cancel this event?')) { const e = await eventsApi.cancelEvent(event.id); setEvent(e); } };
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <Button variant="ghost" onClick={() => navigate('/events')}>← Back</Button>
-          <h1 className="text-2xl font-semibold mt-2">{event.title}</h1>
-          <p className="text-sm text-gray-500">{event.event_type_name} · {new Date(event.start_time).toLocaleDateString()}</p>
-        </div>
-        <div className="flex gap-2 items-center">
+    <div>
+      <div className="evd-back">
+        <Button variant="ghost" size="sm" onClick={() => navigate('/events')}>← Back</Button>
+      </div>
+      <PageHeader
+        title={event.title}
+        subtitle={`${event.event_type_name} · ${new Date(event.start_time).toLocaleDateString()}`}
+        actions={<>
           {event.status === 'draft' && <Button onClick={handlePublish}>Publish</Button>}
           {event.status === 'published' && <Button variant="destructive" onClick={handleCancel}>Cancel</Button>}
           <Badge variant={event.status === 'published' ? 'success' : event.status === 'cancelled' ? 'error' : 'neutral'}>{event.status}</Badge>
-        </div>
-      </div>
-      <div className="border-b mb-6">
-        <nav className="flex gap-4">
-          {tabs.map((tab) => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-              className={`pb-2 px-1 text-sm font-medium border-b-2 ${activeTab === tab.key ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'}`}>
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-      </div>
+        </>}
+      />
+      <TabBar aria-label="Event sections" tabs={tabs} active={activeTab} onChange={setActiveTab} />
       {activeTab === 'details' && <DetailsTab event={event} />}
       {activeTab === 'tickets' && <TicketsTab eventId={event.id} />}
       {activeTab === 'registrations' && <RegistrationsTab eventId={event.id} />}
@@ -70,15 +66,18 @@ export function EventDetail() {
 
 function DetailsTab({ event }: { event: Event }) {
   return (
-    <div className="grid grid-cols-2 gap-6">
-      <div className="space-y-3">
-        <div><span className="text-gray-500 text-sm">Start:</span> {new Date(event.start_time).toLocaleString()}</div>
-        <div><span className="text-gray-500 text-sm">End:</span> {new Date(event.end_time).toLocaleString()}</div>
-        <div><span className="text-gray-500 text-sm">Location:</span> {event.location_name || '—'}</div>
-        <div><span className="text-gray-500 text-sm">Capacity:</span> {event.registrations_count} / {event.capacity}</div>
-        {event.tags?.length > 0 && <div><span className="text-gray-500 text-sm">Tags:</span> {event.tags.join(', ')}</div>}
+    <div className="evd-details">
+      <dl className="evd-facts">
+        <div><dt>Start</dt><dd>{new Date(event.start_time).toLocaleString()}</dd></div>
+        <div><dt>End</dt><dd>{new Date(event.end_time).toLocaleString()}</dd></div>
+        <div><dt>Location</dt><dd>{event.location_name || '—'}</dd></div>
+        <div><dt>Capacity</dt><dd>{event.registrations_count} / {event.capacity}</dd></div>
+        {event.tags?.length > 0 && <div><dt>Tags</dt><dd>{event.tags.join(', ')}</dd></div>}
+      </dl>
+      <div className="evd-description">
+        <span className="evd-label">Description</span>
+        <p>{event.description || 'No description'}</p>
       </div>
-      <div><span className="text-gray-500 text-sm">Description:</span><p className="text-sm mt-1">{event.description || 'No description'}</p></div>
     </div>
   );
 }
@@ -106,31 +105,28 @@ function TicketsTab({ eventId }: { eventId: string }) {
 
   return (
     <div>
-      <h3 className="font-medium mb-4">Ticket Tiers</h3>
-      {tiers.length === 0 ? <p className="text-gray-500 text-sm">No tiers configured</p> : (
-        <div className="space-y-2">
-          {tiers.map((t: any) => (
-            <div key={t.id} className="border rounded p-3 flex justify-between items-center">
-              {editing === t.id ? (
-                <div className="flex gap-2 items-center flex-1">
-                  <input className="border rounded px-2 py-1 text-sm" value={editName} onChange={(e) => setEditName(e.target.value)} />
-                  <input className="border rounded px-2 py-1 text-sm w-24" type="number" step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} />
-                  <Button size="sm" onClick={() => handleSave(t.id)}>Save</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
-                </div>
-              ) : (
-                <>
-                  <div><span className="font-medium">{t.name}</span> — {formatCurrency(t.price)}</div>
-                  <div className="flex gap-2 items-center">
-                    <span className="text-sm text-gray-500">{t.sold_count || 0} / {t.quantity_available || '∞'} sold</span>
-                    <Button size="sm" variant="ghost" onClick={() => handleEdit(t)}>Edit</Button>
-                    <Button size="sm" variant="destructive" onClick={() => handleDelete(t.id)}>Delete</Button>
-                  </div>
-                </>
-              )}
-            </div>
+      <h3 className="ev-section-title">Ticket Tiers</h3>
+      {tiers.length === 0 ? <ListEmpty>No tiers configured</ListEmpty> : (
+        <ListRows>
+          {tiers.map((t: any) => editing === t.id ? (
+            <ListRow key={t.id} actions={<>
+              <Button size="sm" onClick={() => handleSave(t.id)}>Save</Button>
+              <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+            </>}>
+              <input className="ev-input" aria-label="Tier name" value={editName} onChange={(e) => setEditName(e.target.value)} />
+              <input className="ev-input evd-price" aria-label="Price" type="number" step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} />
+            </ListRow>
+          ) : (
+            <ListRow key={t.id} actions={<>
+              <ListRowMeta>{t.sold_count || 0} / {t.quantity_available || '∞'} sold</ListRowMeta>
+              <Button size="sm" variant="ghost" onClick={() => handleEdit(t)}>Edit</Button>
+              <Button size="sm" variant="destructive" onClick={() => handleDelete(t.id)}>Delete</Button>
+            </>}>
+              <ListRowTitle>{t.name}</ListRowTitle>
+              <span>— {formatCurrency(t.price)}</span>
+            </ListRow>
           ))}
-        </div>
+        </ListRows>
       )}
     </div>
   );
@@ -172,43 +168,40 @@ function RegistrationsTab({ eventId }: { eventId: string }) {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="font-medium">Registrations ({regs.length})</h3>
+      <div className="evd-section-head">
+        <h3 className="ev-section-title">Registrations ({regs.length})</h3>
         <Button size="sm" variant="ghost" onClick={handleExportAttendees}>Export Attendees</Button>
       </div>
-      {regs.length === 0 ? <p className="text-gray-500 text-sm">No registrations yet</p> : (
-        <div className="space-y-2">
+      {regs.length === 0 ? <ListEmpty>No registrations yet</ListEmpty> : (
+        <ListRows>
           {regs.map((r: any) => (
-            <div key={r.id} className="border rounded p-2">
-              <div className="flex justify-between items-center">
-                <div>
-                  <span className="font-medium">{r.first_name} {r.last_name}</span>
-                  <span className="text-xs text-gray-500 ml-2">{r.reference_number}</span>
-                </div>
-                <div className="flex gap-2 items-center">
-                  {r.checked_in_at && <Badge variant="success">Checked In</Badge>}
-                  <Badge variant={r.status === 'confirmed' ? 'success' : r.status === 'cancelled' ? 'error' : 'neutral'}>{r.status}</Badge>
-                  {r.status === 'confirmed' && !r.checked_in_at && (
-                    <Button size="sm" onClick={() => handleCheckIn(r.id)}>Check In</Button>
-                  )}
-                  {r.status === 'confirmed' && (
-                    <>
-                      <Button size="sm" variant="ghost" onClick={() => setTransferTarget(r.id)}>Transfer</Button>
-                      <Button size="sm" variant="destructive" onClick={() => handleCancel(r.id)}>Cancel</Button>
-                    </>
-                  )}
-                </div>
-              </div>
+            <div key={r.id}>
+              <ListRow actions={<>
+                {r.checked_in_at && <Badge variant="success">Checked In</Badge>}
+                <Badge variant={r.status === 'confirmed' ? 'success' : r.status === 'cancelled' ? 'error' : 'neutral'}>{r.status}</Badge>
+                {r.status === 'confirmed' && !r.checked_in_at && (
+                  <Button size="sm" onClick={() => handleCheckIn(r.id)}>Check In</Button>
+                )}
+                {r.status === 'confirmed' && (
+                  <>
+                    <Button size="sm" variant="ghost" onClick={() => setTransferTarget(r.id)}>Transfer</Button>
+                    <Button size="sm" variant="destructive" onClick={() => handleCancel(r.id)}>Cancel</Button>
+                  </>
+                )}
+              </>}>
+                <ListRowTitle>{r.first_name} {r.last_name}</ListRowTitle>
+                <ListRowMeta>{r.reference_number}</ListRowMeta>
+              </ListRow>
               {transferTarget === r.id && (
-                <div className="flex gap-2 mt-2 items-center">
-                  <input className="border rounded px-2 py-1 text-sm flex-1" placeholder="Recipient email" value={transferEmail} onChange={(e) => setTransferEmail(e.target.value)} />
+                <div className="evd-inline-form">
+                  <input className="ev-input" aria-label="Recipient email" placeholder="Recipient email" value={transferEmail} onChange={(e) => setTransferEmail(e.target.value)} />
                   <Button size="sm" onClick={() => handleTransfer(r.id)}>Confirm Transfer</Button>
                   <Button size="sm" variant="ghost" onClick={() => setTransferTarget(null)}>Cancel</Button>
                 </div>
               )}
             </div>
           ))}
-        </div>
+        </ListRows>
       )}
     </div>
   );
@@ -225,19 +218,18 @@ function WaitlistTab({ eventId }: { eventId: string }) {
 
   return (
     <div>
-      <h3 className="font-medium mb-4">Waitlist ({waitlist.length})</h3>
-      {waitlist.length === 0 ? <p className="text-gray-500 text-sm">No one on waitlist</p> : (
-        <div className="space-y-2">
+      <h3 className="ev-section-title">Waitlist ({waitlist.length})</h3>
+      {waitlist.length === 0 ? <ListEmpty>No one on waitlist</ListEmpty> : (
+        <ListRows>
           {waitlist.map((w: any) => (
-            <div key={w.id} className="border rounded p-2 flex justify-between items-center">
+            <ListRow key={w.id} actions={<>
+              <Badge variant={w.status === 'waiting' ? 'info' : 'warning'}>{w.status}</Badge>
+              {w.status === 'waiting' && <Button size="sm" onClick={() => handleConfirm(w.id)}>Confirm</Button>}
+            </>}>
               <span>#{w.position} — {w.first_name} {w.last_name}</span>
-              <div className="flex gap-2 items-center">
-                <Badge variant={w.status === 'waiting' ? 'info' : 'warning'}>{w.status}</Badge>
-                {w.status === 'waiting' && <Button size="sm" onClick={() => handleConfirm(w.id)}>Confirm</Button>}
-              </div>
-            </div>
+            </ListRow>
           ))}
-        </div>
+        </ListRows>
       )}
     </div>
   );
@@ -265,28 +257,25 @@ function FacilitatorsTab({ eventId }: { eventId: string }) {
 
   return (
     <div>
-      <h3 className="font-medium mb-4">Facilitators</h3>
-      <div className="flex gap-2 mb-4">
-        <input className="border rounded px-2 py-1 text-sm flex-1" placeholder="Staff ID" value={staffId} onChange={(e) => setStaffId(e.target.value)} />
-        <select className="border rounded px-2 py-1 text-sm" value={role} onChange={(e) => setRole(e.target.value)}>
+      <h3 className="ev-section-title">Facilitators</h3>
+      <div className="ev-add-row">
+        <input className="ev-input" aria-label="Staff ID" placeholder="Staff ID" value={staffId} onChange={(e) => setStaffId(e.target.value)} />
+        <select className="ev-select" aria-label="Role" value={role} onChange={(e) => setRole(e.target.value)}>
           <option value="facilitator">Facilitator</option>
           <option value="instructor">Instructor</option>
           <option value="assistant">Assistant</option>
         </select>
         <Button size="sm" onClick={handleAdd}>Add</Button>
       </div>
-      {facilitators.length === 0 ? <p className="text-gray-500 text-sm">No facilitators assigned</p> : (
-        <div className="space-y-2">
+      {facilitators.length === 0 ? <ListEmpty>No facilitators assigned</ListEmpty> : (
+        <ListRows>
           {facilitators.map((f: any) => (
-            <div key={f.id} className="border rounded p-2 flex justify-between items-center">
-              <div>
-                <span className="font-medium">{f.staff_name || f.staff_id}</span>
-                <Badge variant="neutral" className="ml-2">{f.role}</Badge>
-              </div>
-              <Button size="sm" variant="destructive" onClick={() => handleRemove(f.id)}>Remove</Button>
-            </div>
+            <ListRow key={f.id} actions={<Button size="sm" variant="destructive" onClick={() => handleRemove(f.id)}>Remove</Button>}>
+              <ListRowTitle>{f.staff_name || f.staff_id}</ListRowTitle>
+              <Badge variant="neutral">{f.role}</Badge>
+            </ListRow>
           ))}
-        </div>
+        </ListRows>
       )}
     </div>
   );
@@ -297,16 +286,16 @@ function CommsTab({ eventId }: { eventId: string }) {
   useEffect(() => { eventsApi.getCommunications(eventId).then(setHistory); }, [eventId]);
   return (
     <div>
-      <h3 className="font-medium mb-4">Communications</h3>
-      {history.length === 0 ? <p className="text-gray-500 text-sm">No communications sent</p> : (
-        <div className="space-y-2">
+      <h3 className="ev-section-title">Communications</h3>
+      {history.length === 0 ? <ListEmpty>No communications sent</ListEmpty> : (
+        <ListRows>
           {history.map((c: any) => (
-            <div key={c.id} className="border rounded p-2">
-              <div className="flex justify-between"><span className="font-medium">{c.subject}</span><span className="text-xs text-gray-500">{new Date(c.sent_at).toLocaleString()}</span></div>
-              <div className="text-xs text-gray-500">{c.communication_type} · {c.recipient_count} recipients</div>
-            </div>
+            <ListRow key={c.id} actions={<ListRowMeta>{new Date(c.sent_at).toLocaleString()}</ListRowMeta>}>
+              <ListRowTitle>{c.subject}</ListRowTitle>
+              <ListRowMeta>{c.communication_type} · {c.recipient_count} recipients</ListRowMeta>
+            </ListRow>
           ))}
-        </div>
+        </ListRows>
       )}
     </div>
   );
@@ -315,15 +304,23 @@ function CommsTab({ eventId }: { eventId: string }) {
 function ReportsTab({ eventId }: { eventId: string }) {
   const [report, setReport] = useState<any>(null);
   useEffect(() => { eventsApi.getEventReport(eventId).then(setReport).catch(() => {}); }, [eventId]);
-  if (!report) return <div>Loading...</div>;
+  if (!report) return <ListEmpty>Loading...</ListEmpty>;
+  const stats: [string, string | number][] = [
+    ['Confirmed', report.registrations?.confirmed || 0],
+    ['Attendance Rate', `${report.attendanceRate}%`],
+    ['Revenue', formatCurrency(report.revenue || 0)],
+    ['Capacity Used', `${report.capacityUtilization}%`],
+    ['Waitlist', report.waitlistSize],
+    ['Cancellation Rate', `${report.cancellationRate}%`],
+  ];
   return (
-    <div className="grid grid-cols-3 gap-4">
-      <div className="border rounded p-4 text-center"><div className="text-2xl font-bold">{report.registrations?.confirmed || 0}</div><div className="text-sm text-gray-500">Confirmed</div></div>
-      <div className="border rounded p-4 text-center"><div className="text-2xl font-bold">{report.attendanceRate}%</div><div className="text-sm text-gray-500">Attendance Rate</div></div>
-      <div className="border rounded p-4 text-center"><div className="text-2xl font-bold">{formatCurrency(report.revenue || 0)}</div><div className="text-sm text-gray-500">Revenue</div></div>
-      <div className="border rounded p-4 text-center"><div className="text-2xl font-bold">{report.capacityUtilization}%</div><div className="text-sm text-gray-500">Capacity Used</div></div>
-      <div className="border rounded p-4 text-center"><div className="text-2xl font-bold">{report.waitlistSize}</div><div className="text-sm text-gray-500">Waitlist</div></div>
-      <div className="border rounded p-4 text-center"><div className="text-2xl font-bold">{report.cancellationRate}%</div><div className="text-sm text-gray-500">Cancellation Rate</div></div>
+    <div className="evd-stats">
+      {stats.map(([label, value]) => (
+        <div key={label} className="evd-stat">
+          <div className="evd-stat__value">{value}</div>
+          <div className="evd-stat__label">{label}</div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -208,7 +208,7 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
       {/* Unsaved changes bar */}
       {isDirty && (
         <div style={styles.saveBar}>
-          <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>You have unsaved changes</span>
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>You have unsaved changes</span>
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button variant="outline" size="sm" onClick={handleDiscard}>Discard</Button>
             <Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button>
@@ -375,7 +375,7 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
               ))}
             </select>
           ) : (
-            <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>No categories defined. Add them in Settings.</span>
+            <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>No categories defined. Add them in Settings.</span>
           )}
           <Button onClick={handleAddNote} disabled={categories.length === 0}>Add Note</Button>
         </div>
@@ -392,9 +392,9 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
         <input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} style={{ ...styles.select, minWidth: '130px' }} title="From" />
         <input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} style={{ ...styles.select, minWidth: '130px' }} title="To" />
         {(filterCategory || filterDateFrom || filterDateTo) && (
-          <button onClick={() => { setFilterCategory(''); setFilterDateFrom(''); setFilterDateTo(''); }} style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 10px', fontSize: '12px', cursor: 'pointer', color: 'var(--color-text-secondary)' }}>Clear</button>
+          <button onClick={() => { setFilterCategory(''); setFilterDateFrom(''); setFilterDateTo(''); }} style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 10px', fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--color-text-secondary)' }}>Clear</button>
         )}
-        <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginLeft: 'auto' }}>{total} note{total !== 1 ? 's' : ''}</span>
+        <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginLeft: 'auto' }}>{total} note{total !== 1 ? 's' : ''}</span>
       </div>
 
       {/* Notes list */}
@@ -408,7 +408,7 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <span style={styles.noteDate}>{new Date(note.created_at).toLocaleDateString()}</span>
-              <button onClick={() => handleDelete(note.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 }} title="Delete note">×</button>
+              <button onClick={() => handleDelete(note.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 }} title="Delete note">×</button>
             </div>
           </div>
           <p style={styles.noteContent}>{note.content || '(encrypted)'}</p>
@@ -419,10 +419,10 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
       {totalPages > 1 && (
         <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: 'var(--space-md)' }}>
           <button disabled={offset === 0} onClick={() => fetchNotes(offset - LIMIT)}
-            style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: '12px', cursor: offset === 0 ? 'default' : 'pointer', opacity: offset === 0 ? 0.4 : 1 }}>Previous</button>
-          <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}>Page {currentPage} of {totalPages}</span>
+            style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: 'var(--font-size-sm)', cursor: offset === 0 ? 'default' : 'pointer', opacity: offset === 0 ? 0.4 : 1 }}>Previous</button>
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}>Page {currentPage} of {totalPages}</span>
           <button disabled={offset + LIMIT >= total} onClick={() => fetchNotes(offset + LIMIT)}
-            style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: '12px', cursor: offset + LIMIT >= total ? 'default' : 'pointer', opacity: offset + LIMIT >= total ? 0.4 : 1 }}>Next</button>
+            style={{ background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 12px', fontSize: 'var(--font-size-sm)', cursor: offset + LIMIT >= total ? 'default' : 'pointer', opacity: offset + LIMIT >= total ? 0.4 : 1 }}>Next</button>
         </div>
       )}
     </div>
@@ -610,15 +610,15 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
       {enrollments.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {enrollments.map((e: any) => (
-            <div key={e.id} style={{ padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: '13px' }}>
+            <div key={e.id} style={{ padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <strong>{e.plan_name}</strong>
-                <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
                   {e.billing_frequency}
                   {e.pending_plan_id && <span style={{ color: 'var(--color-info, #4A90A4)', marginLeft: '8px' }}>↓ Downgrade pending</span>}
                 </span>
               </div>
-              <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+              <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
                 Since {new Date(e.start_date).toLocaleDateString()}
                 {e.cancelled_at ? (
                   <span style={{ color: 'var(--color-error)' }}> · Cancels {new Date(e.current_period_end).toLocaleDateString()}</span>
@@ -636,11 +636,11 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
               </div>
               {pausingEnrollmentId === e.id && (
                 <div style={{ marginTop: '8px', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)' }}>
-                  <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '0 0 8px' }}>Pause duration</p>
+                  <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 8px' }}>Pause duration</p>
                   <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
                     {[15, 30, 45].map((d) => (
                       <button key={d} type="button" onClick={() => setPauseDays(d)}
-                        style={{ padding: '6px 14px', fontSize: '13px', borderRadius: '20px', cursor: 'pointer', border: pauseDays === d ? '2px solid var(--color-primary)' : '1px solid var(--color-border)', background: pauseDays === d ? 'var(--color-primary)' : 'transparent', color: pauseDays === d ? '#fff' : 'var(--color-text)' }}>
+                        style={{ padding: '6px 14px', fontSize: 'var(--font-size-sm)', borderRadius: '20px', cursor: 'pointer', border: pauseDays === d ? '2px solid var(--color-primary)' : '1px solid var(--color-border)', background: pauseDays === d ? 'var(--color-primary)' : 'transparent', color: pauseDays === d ? '#fff' : 'var(--color-text)' }}>
                         {d} days
                       </button>
                     ))}
@@ -659,22 +659,22 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
       {showEnroll && (
         <div style={{ marginTop: '8px', padding: '12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)' }}>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <select style={{ flex: 1, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '6px 10px', fontSize: '13px', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' }} value={selectedPlanId} onChange={(e) => setSelectedPlanId(e.target.value)}>
+            <select style={{ flex: 1, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '6px 10px', fontSize: 'var(--font-size-sm)', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' }} value={selectedPlanId} onChange={(e) => setSelectedPlanId(e.target.value)}>
               <option value="">Select a plan...</option>
               {plans.map((p: any) => <option key={p.id} value={p.id}>{p.name} — {p.billing_frequency}</option>)}
             </select>
             <Button size="sm" onClick={handleEnroll} loading={enrolling} disabled={!selectedPlanId}>Enroll</Button>
             <Button size="sm" variant="secondary" onClick={() => setShowEnroll(false)}>Cancel</Button>
           </div>
-          {plans.length === 0 && <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>No active membership plans available. Create plans under Offerings → Memberships.</p>}
+          {plans.length === 0 && <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>No active membership plans available. Create plans under Offerings → Memberships.</p>}
         </div>
       )}
 
       {showChangePlan && (
         <div style={{ marginTop: '8px', padding: '12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)' }}>
-          <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '0 0 8px' }}>Change from <strong>{showChangePlan.plan_name}</strong> to:</p>
+          <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 8px' }}>Change from <strong>{showChangePlan.plan_name}</strong> to:</p>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <select style={{ flex: 1, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '6px 10px', fontSize: '13px', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' }} value={selectedPlanId} onChange={(e) => setSelectedPlanId(e.target.value)}>
+            <select style={{ flex: 1, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '6px 10px', fontSize: 'var(--font-size-sm)', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' }} value={selectedPlanId} onChange={(e) => setSelectedPlanId(e.target.value)}>
               <option value="">Select new plan...</option>
               {plans.filter((p: any) => p.id !== showChangePlan.plan_id).map((p: any) => <option key={p.id} value={p.id}>{p.name} — {p.billing_frequency}</option>)}
             </select>
@@ -687,7 +687,7 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
   );
 }
 
-const membershipActionStyle: React.CSSProperties = { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: '11px', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' };
+const membershipActionStyle: React.CSSProperties = { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' };
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '900px', margin: '0 auto' },
@@ -696,7 +696,7 @@ const styles: Record<string, React.CSSProperties> = {
   profileHeader: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-xl)', padding: 'var(--space-lg)', background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)' },
   avatar: { width: '56px', height: '56px', borderRadius: 'var(--radius-full)', background: 'var(--color-primary)', color: 'var(--color-primary-contrast)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-bold)' as any, flexShrink: 0 },
   profileInfo: { display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-xs)', flex: 1 },
-  name: { margin: 0, fontSize: 'var(--font-size-xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
+  name: { margin: 0, fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)' },
   refNum: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   headerActions: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: 'var(--space-xs)' },
   joinedDate: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
@@ -716,7 +716,7 @@ const styles: Record<string, React.CSSProperties> = {
   field: { display: 'flex', flexDirection: 'column' as const },
   fieldLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginBottom: '2px' },
   fieldValue: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
-  fieldInput: { backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--color-text)', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)' },
+  fieldInput: { backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--color-text)', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)' },
   formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
   tagsSection: { marginTop: 'var(--space-lg)' },
   sectionTitle: { fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-semibold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-sm)' },

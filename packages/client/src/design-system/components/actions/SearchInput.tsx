@@ -55,7 +55,7 @@ const containerStyle: React.CSSProperties = {
   height: '40px',
 };
 
-const iconStyle: React.CSSProperties = { fontSize: '14px', color: 'var(--color-text-secondary)' };
+const iconStyle: React.CSSProperties = { fontSize: 'var(--font-size-base)', color: 'var(--color-text-secondary)' };
 
 const inputStyle: React.CSSProperties = {
   flex: 1,
@@ -72,6 +72,6 @@ const clearStyle: React.CSSProperties = {
   border: 'none',
   color: 'var(--color-text-secondary)',
   cursor: 'pointer',
-  fontSize: '14px',
+  fontSize: 'var(--font-size-base)',
   padding: '4px',
 };

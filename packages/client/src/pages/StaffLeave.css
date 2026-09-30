@@ -1,0 +1,37 @@
+/* Leave management (THE-15) — layout only; sizes and colours come from design tokens. */
+
+.lv-toolbar {
+  display: flex;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.lv-select {
+  box-sizing: border-box;
+  min-height: var(--control-height);
+  padding: 8px var(--control-padding-x);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+}
+
+.lv-actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.lv-pager {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.lv-pager__info {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}

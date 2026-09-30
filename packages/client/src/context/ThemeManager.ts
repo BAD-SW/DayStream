@@ -79,11 +79,28 @@ const VALID_BASE_THEMES = ['bold-business', 'navy'];
  */
 export function applyBaseTheme(baseTheme: string | null | undefined): void {
   const root = document.documentElement;
-  if (baseTheme && VALID_BASE_THEMES.includes(baseTheme)) {
-    root.setAttribute('data-base-theme', baseTheme);
+  const valid = !!baseTheme && VALID_BASE_THEMES.includes(baseTheme);
+  if (valid) {
+    root.setAttribute('data-base-theme', baseTheme!);
   } else {
     root.removeAttribute('data-base-theme');
   }
+  // Remembered so the next page load can paint in the right palette before the theme
+  // request returns (see applyCachedBaseTheme) instead of flashing the Classic look.
+  try {
+    if (valid) localStorage.setItem(BASE_THEME_CACHE_KEY, baseTheme!);
+    else localStorage.removeItem(BASE_THEME_CACHE_KEY);
+  } catch { /* storage unavailable — only costs the early paint */ }
+}
+
+const BASE_THEME_CACHE_KEY = 'ds_base_theme';
+
+/** Applies the last known base theme synchronously at startup (call before the first render). */
+export function applyCachedBaseTheme(): void {
+  try {
+    const cached = localStorage.getItem(BASE_THEME_CACHE_KEY);
+    if (cached && VALID_BASE_THEMES.includes(cached)) document.documentElement.setAttribute('data-base-theme', cached);
+  } catch { /* ignore */ }
 }
 
 // Mirrors packages/server/src/services/themeTokens.ts CONFIGURABLE_TOKEN_KEYS — the client

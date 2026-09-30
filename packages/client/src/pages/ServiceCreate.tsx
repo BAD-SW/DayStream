@@ -122,7 +122,7 @@ export function ServiceCreate() {
           <label style={styles.label}>Preparation Notes</label>
           <textarea style={{ ...styles.input, minHeight: '60px' }} value={form.preparation_notes} onChange={(e) => handleChange('preparation_notes', e.target.value)} />
         </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--color-text)' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-base)', color: 'var(--color-text)' }}>
           <input type="checkbox" checked={form.online_booking_enabled} onChange={(e) => handleChange('online_booking_enabled', e.target.checked)} />
           Enable online booking
         </label>
@@ -138,7 +138,7 @@ export function ServiceCreate() {
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '700px', margin: '0 auto' },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, marginBottom: 'var(--space-md)', fontFamily: 'var(--font-family)' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
   form: { display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-md)' },
   row: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' },
   fieldWrapper: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },

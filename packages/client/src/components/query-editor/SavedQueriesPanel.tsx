@@ -271,19 +271,18 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid var(--color-border, #333)',
   },
   title: {
-    fontSize: '13px',
+    fontSize: 'var(--font-size-sm)',
     fontWeight: 600,
     color: 'var(--color-text, #fff)',
   },
   saveButton: {
     padding: '4px 10px',
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-text, #fff)',
     backgroundColor: 'var(--color-primary, #C9A96E)',
     border: 'none',
-    borderRadius: '3px',
-    cursor: 'pointer',
-  },
+    borderRadius: 'var(--button-radius)',
+    cursor: 'pointer', minHeight: 'var(--button-height-sm)' },
   searchWrapper: {
     padding: '8px',
     borderBottom: '1px solid var(--color-border, #333)',
@@ -291,7 +290,7 @@ const styles: Record<string, React.CSSProperties> = {
   searchInput: {
     width: '100%',
     padding: '6px 8px',
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     border: '1px solid var(--color-border, #444)',
     borderRadius: '3px',
     backgroundColor: 'var(--color-surface, #1e1e1e)',
@@ -308,7 +307,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   formInput: {
     padding: '6px 8px',
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     border: '1px solid var(--color-border, #444)',
     borderRadius: '3px',
     backgroundColor: 'var(--color-surface, #1e1e1e)',
@@ -321,7 +320,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   formSubmitButton: {
     padding: '5px 10px',
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-text, #fff)',
     backgroundColor: 'var(--color-primary, #C9A96E)',
     border: 'none',
@@ -330,7 +329,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   formCancelButton: {
     padding: '5px 10px',
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-text-secondary, #999)',
     backgroundColor: 'transparent',
     border: '1px solid var(--color-border, #444)',
@@ -339,7 +338,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   loadingBar: {
     padding: '4px 12px',
-    fontSize: '11px',
+    fontSize: 'var(--font-size-xs)',
     color: 'var(--color-text-secondary, #999)',
     textAlign: 'center',
   },
@@ -360,13 +359,13 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
   },
   entryName: {
-    fontSize: '13px',
+    fontSize: 'var(--font-size-sm)',
     fontWeight: 500,
     color: 'var(--color-text, #e0e0e0)',
     marginBottom: '2px',
   },
   entryDescription: {
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-text-secondary, #999)',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
@@ -374,7 +373,7 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '2px',
   },
   entryDate: {
-    fontSize: '11px',
+    fontSize: 'var(--font-size-xs)',
     color: 'var(--color-text-muted, #666)',
   },
   entryActions: {
@@ -388,7 +387,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: 'none',
     color: 'var(--color-text-secondary, #999)',
     cursor: 'pointer',
-    fontSize: '14px',
+    fontSize: 'var(--font-size-base)',
     padding: '2px 6px',
     borderRadius: '3px',
   },
@@ -399,7 +398,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
   },
   confirmText: {
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-error, #dc2626)',
   },
   confirmActions: {
@@ -408,7 +407,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   confirmYes: {
     padding: '4px 10px',
-    fontSize: '11px',
+    fontSize: 'var(--font-size-xs)',
     color: '#fff',
     backgroundColor: 'var(--color-error, #dc2626)',
     border: 'none',
@@ -417,7 +416,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   confirmNo: {
     padding: '4px 10px',
-    fontSize: '11px',
+    fontSize: 'var(--font-size-xs)',
     color: 'var(--color-text-secondary, #999)',
     backgroundColor: 'transparent',
     border: '1px solid var(--color-border, #444)',
@@ -431,7 +430,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '24px',
   },
   emptyText: {
-    fontSize: '13px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-text-secondary, #999)',
   },
   errorState: {
@@ -442,7 +441,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '24px',
   },
   errorText: {
-    fontSize: '13px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-error, #dc2626)',
     textAlign: 'center',
   },

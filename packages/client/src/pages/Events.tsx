@@ -3,8 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { Badge } from '../design-system/components/data/Badge';
+import { ListRow, ListRows, ListRowTitle, ListRowMeta, ListEmpty } from '../design-system/components/data/ListRow';
+import { PageHeader } from '../design-system/components/layout/PageHeader';
+import { TabBar } from '../design-system/components/navigation/TabBar';
 import * as eventsApi from '../api/events';
 import type { Event } from '../api/events';
+import './Events.css';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   draft: 'neutral', published: 'success', cancelled: 'error', completed: 'info',
@@ -46,28 +50,15 @@ export function Events() {
   ];
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Events</h1>
-        <Button onClick={() => navigate('/events/new')}>Create Event</Button>
-      </div>
-
-      <div className="border-b mb-6">
-        <nav className="flex gap-4">
-          {viewTabs.map((t) => (
-            <button key={t.key} onClick={() => setActiveView(t.key)}
-              className={`pb-2 px-1 text-sm font-medium border-b-2 ${activeView === t.key ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'}`}>
-              {t.label}
-            </button>
-          ))}
-        </nav>
-      </div>
+    <div>
+      <PageHeader title="Events" actions={<Button onClick={() => navigate('/events/new')}>Create Event</Button>} />
+      <TabBar aria-label="Event sections" tabs={viewTabs} active={activeView} onChange={setActiveView} />
 
       {activeView === 'events' && (
         <>
-          <div className="flex gap-4 mb-4">
+          <div className="ev-filters">
             <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search events..." />
-            <select className="border rounded px-3 py-2 text-sm" value={statusFilter}
+            <select className="ev-select" aria-label="Status" value={statusFilter}
               onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
               <option value="">All statuses</option>
               <option value="draft">Draft</option>
@@ -76,17 +67,18 @@ export function Events() {
               <option value="cancelled">Cancelled</option>
             </select>
           </div>
-          {loading ? <div>Loading...</div> : events.length === 0 ? <p className="text-gray-500">No events found</p> : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {loading ? <ListEmpty>Loading...</ListEmpty> : events.length === 0 ? <ListEmpty>No events found</ListEmpty> : (
+            <div className="ev-grid">
               {events.map((ev) => (
-                <div key={ev.id} className="border rounded-lg p-4 cursor-pointer hover:border-blue-300 transition"
-                  onClick={() => navigate(`/events/${ev.id}`)}>
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="font-medium">{ev.title}</h3>
+                <div key={ev.id} className="ev-card" role="button" tabIndex={0}
+                  onClick={() => navigate(`/events/${ev.id}`)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/events/${ev.id}`); }}>
+                  <div className="ev-card__head">
+                    <h3 className="ev-card__title">{ev.title}</h3>
                     <Badge variant={STATUS_VARIANTS[ev.status] || 'neutral'}>{ev.status}</Badge>
                   </div>
-                  <p className="text-sm text-gray-500 mb-2">{ev.event_type_name}</p>
-                  <div className="text-xs text-gray-500 space-y-1">
+                  <p className="ev-card__type">{ev.event_type_name}</p>
+                  <div className="ev-card__facts">
                     <div>{new Date(ev.start_time).toLocaleDateString()} — {new Date(ev.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                     <div>{ev.registrations_count} / {ev.capacity} registered</div>
                     {ev.location_name && <div>{ev.location_name}</div>}
@@ -96,9 +88,9 @@ export function Events() {
             </div>
           )}
           {total > 20 && (
-            <div className="flex justify-center gap-2 mt-4">
+            <div className="ev-pager">
               <Button variant="ghost" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</Button>
-              <span className="px-3 py-2 text-sm">Page {page} of {Math.ceil(total / 20)}</span>
+              <span className="ev-pager__info">Page {page} of {Math.ceil(total / 20)}</span>
               <Button variant="ghost" disabled={page >= Math.ceil(total / 20)} onClick={() => setPage(page + 1)}>Next</Button>
             </div>
           )}
@@ -133,36 +125,56 @@ function RecurringSection() {
     setTemplates(templates.filter((t) => t.id !== id));
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) return <ListEmpty>Loading...</ListEmpty>;
   return (
     <div>
-      <h3 className="font-medium mb-4">Recurring Event Templates</h3>
-      {templates.length === 0 ? <p className="text-gray-500">No recurring templates</p> : (
-        <div className="space-y-2">
+      <h3 className="ev-section-title">Recurring Event Templates</h3>
+      {templates.length === 0 ? <ListEmpty>No recurring templates</ListEmpty> : (
+        <ListRows>
           {templates.map((t: any) => (
-            <div key={t.id} className="border rounded p-3 flex justify-between items-center">
-              <div>
-                <span className="font-medium">{t.title || t.name || t.id}</span>
-                <span className="text-sm text-gray-500 ml-3">{t.recurrence_pattern || t.frequency}</span>
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" onClick={() => handleGenerate(t.id)}>Generate</Button>
-                <Button size="sm" variant="ghost" onClick={() => handleCancelRecurring(t.id)}>Cancel</Button>
-                <Button size="sm" variant="destructive" onClick={() => handleDelete(t.id)}>Delete</Button>
-              </div>
-            </div>
+            <ListRow key={t.id} actions={<>
+              <Button size="sm" onClick={() => handleGenerate(t.id)}>Generate</Button>
+              <Button size="sm" variant="ghost" onClick={() => handleCancelRecurring(t.id)}>Cancel</Button>
+              <Button size="sm" variant="destructive" onClick={() => handleDelete(t.id)}>Delete</Button>
+            </>}>
+              <ListRowTitle>{t.title || t.name || t.id}</ListRowTitle>
+              <ListRowMeta>{t.recurrence_pattern || t.frequency}</ListRowMeta>
+            </ListRow>
           ))}
-        </div>
+        </ListRows>
       )}
     </div>
+  );
+}
+
+/** A name that can be edited in place (used by Series and Types). */
+function EditableNameRow({ name, onSave, onDelete }: { name: string; onSave: (name: string) => Promise<void>; onDelete: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(name);
+
+  if (editing) {
+    return (
+      <ListRow actions={<>
+        <Button size="sm" onClick={async () => { await onSave(value); setEditing(false); }}>Save</Button>
+        <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
+      </>}>
+        <input className="ev-input" aria-label="Name" value={value} onChange={(e) => setValue(e.target.value)} />
+      </ListRow>
+    );
+  }
+  return (
+    <ListRow actions={<>
+      <Button size="sm" variant="ghost" onClick={() => { setValue(name); setEditing(true); }}>Edit</Button>
+      <Button size="sm" variant="destructive" onClick={onDelete}>Delete</Button>
+    </>}>
+      <ListRowTitle>{name}</ListRowTitle>
+    </ListRow>
   );
 }
 
 function SeriesSection() {
   const [series, setSeries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
 
   useEffect(() => { eventsApi.getSeries().then(setSeries).catch(() => {}).finally(() => setLoading(false)); }, []);
 
@@ -171,38 +183,21 @@ function SeriesSection() {
     await eventsApi.deleteSeries(id);
     setSeries(series.filter((s) => s.id !== id));
   };
-  const handleSave = async (id: string) => {
-    const updated = await eventsApi.updateSeries(id, { name: editName });
+  const handleSave = async (id: string, name: string) => {
+    const updated = await eventsApi.updateSeries(id, { name });
     setSeries(series.map((s) => s.id === id ? { ...s, ...updated } : s));
-    setEditing(null);
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) return <ListEmpty>Loading...</ListEmpty>;
   return (
     <div>
-      <h3 className="font-medium mb-4">Event Series</h3>
-      {series.length === 0 ? <p className="text-gray-500">No series defined</p> : (
-        <div className="space-y-2">
+      <h3 className="ev-section-title">Event Series</h3>
+      {series.length === 0 ? <ListEmpty>No series defined</ListEmpty> : (
+        <ListRows>
           {series.map((s: any) => (
-            <div key={s.id} className="border rounded p-3 flex justify-between items-center">
-              {editing === s.id ? (
-                <div className="flex gap-2 items-center flex-1">
-                  <input className="border rounded px-2 py-1 text-sm flex-1" value={editName} onChange={(e) => setEditName(e.target.value)} />
-                  <Button size="sm" onClick={() => handleSave(s.id)}>Save</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
-                </div>
-              ) : (
-                <>
-                  <span className="font-medium">{s.name}</span>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => { setEditing(s.id); setEditName(s.name); }}>Edit</Button>
-                    <Button size="sm" variant="destructive" onClick={() => handleDelete(s.id)}>Delete</Button>
-                  </div>
-                </>
-              )}
-            </div>
+            <EditableNameRow key={s.id} name={s.name} onSave={(name) => handleSave(s.id, name)} onDelete={() => handleDelete(s.id)} />
           ))}
-        </div>
+        </ListRows>
       )}
     </div>
   );
@@ -211,8 +206,6 @@ function SeriesSection() {
 function TypesSection() {
   const [types, setTypes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
   const [newName, setNewName] = useState('');
 
   useEffect(() => { eventsApi.getEventTypes().then(setTypes).catch(() => {}).finally(() => setLoading(false)); }, []);
@@ -227,42 +220,25 @@ function TypesSection() {
     await eventsApi.deleteEventType(id);
     setTypes(types.filter((t) => t.id !== id));
   };
-  const handleSave = async (id: string) => {
-    const updated = await eventsApi.updateEventType(id, { name: editName });
+  const handleSave = async (id: string, name: string) => {
+    const updated = await eventsApi.updateEventType(id, { name });
     setTypes(types.map((t) => t.id === id ? { ...t, ...updated } : t));
-    setEditing(null);
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) return <ListEmpty>Loading...</ListEmpty>;
   return (
     <div>
-      <h3 className="font-medium mb-4">Event Types</h3>
-      <div className="flex gap-2 mb-4">
-        <input className="border rounded px-2 py-1 text-sm flex-1" placeholder="New event type name" value={newName} onChange={(e) => setNewName(e.target.value)} />
+      <h3 className="ev-section-title">Event Types</h3>
+      <div className="ev-add-row">
+        <input className="ev-input" aria-label="New event type name" placeholder="New event type name" value={newName} onChange={(e) => setNewName(e.target.value)} />
         <Button size="sm" onClick={handleCreate}>Add Type</Button>
       </div>
-      {types.length === 0 ? <p className="text-gray-500">No event types</p> : (
-        <div className="space-y-2">
+      {types.length === 0 ? <ListEmpty>No event types</ListEmpty> : (
+        <ListRows>
           {types.map((t: any) => (
-            <div key={t.id} className="border rounded p-3 flex justify-between items-center">
-              {editing === t.id ? (
-                <div className="flex gap-2 items-center flex-1">
-                  <input className="border rounded px-2 py-1 text-sm flex-1" value={editName} onChange={(e) => setEditName(e.target.value)} />
-                  <Button size="sm" onClick={() => handleSave(t.id)}>Save</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
-                </div>
-              ) : (
-                <>
-                  <span className="font-medium">{t.name}</span>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => { setEditing(t.id); setEditName(t.name); }}>Edit</Button>
-                    <Button size="sm" variant="destructive" onClick={() => handleDelete(t.id)}>Delete</Button>
-                  </div>
-                </>
-              )}
-            </div>
+            <EditableNameRow key={t.id} name={t.name} onSave={(name) => handleSave(t.id, name)} onDelete={() => handleDelete(t.id)} />
           ))}
-        </div>
+        </ListRows>
       )}
     </div>
   );

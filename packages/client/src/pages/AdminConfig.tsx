@@ -169,19 +169,19 @@ function ProspectSettingsPanel() {
 
   return (
     <div style={{ marginTop: '24px', padding: '16px', border: '1px solid var(--color-border)', borderRadius: '8px' }}>
-      <h3 style={{ margin: '0 0 8px', fontSize: '14px', fontWeight: 600, color: 'var(--color-text)' }}>Prospect Search Settings</h3>
-      <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '0 0 12px' }}>
+      <h3 style={{ margin: '0 0 8px', fontSize: 'var(--font-size-base)', fontWeight: 600, color: 'var(--color-text)' }}>Prospect Search Settings</h3>
+      <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 12px' }}>
         Search resolution determines how territory hexagons are collapsed for API searches. Lower = fewer, larger search areas (fewer API calls, cheaper). Coverage map always uses resolution 7 for sharp borders.
       </p>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <label style={{ fontSize: '13px', color: 'var(--color-text)' }}>Search Resolution:</label>
-        <select style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px' }} value={resolution} onChange={(e) => setResolution(parseInt(e.target.value))}>
+        <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>Search Resolution:</label>
+        <select style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)' }} value={resolution} onChange={(e) => setResolution(parseInt(e.target.value))}>
           <option value={4}>4 — ~22km edge (country-level, fewest calls)</option>
           <option value={5}>5 — ~8km edge (regional, balanced)</option>
           <option value={6}>6 — ~7km edge (city-level, precise borders)</option>
           <option value={7}>7 — ~2.6km edge (neighborhood, most calls)</option>
         </select>
-        <button onClick={handleSave} disabled={saving} style={{ padding: '6px 16px', background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}>
+        <button onClick={handleSave} disabled={saving} style={{ padding: '6px 16px', background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: 'var(--font-size-sm)' }}>
           {saving ? 'Saving...' : 'Save'}
         </button>
       </div>
@@ -255,7 +255,7 @@ function FeatureFlagsPanel() {
       </div>
       {sortedFlags.map((flag) => (
         <div key={flag.key} style={styles.tableRow}>
-          <span style={{ flex: 3, fontFamily: 'monospace', fontSize: '13px', color: 'var(--color-text)' }}>{flag.key}</span>
+          <span style={{ flex: 3, fontFamily: 'monospace', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>{flag.key}</span>
           <span style={{ flex: 1, textAlign: 'right' as const }}>
             <label style={styles.toggle}>
               <input type="checkbox" checked={flag.enabled} onChange={() => toggleFlag(flag.key, flag.enabled)} style={styles.checkbox} />
@@ -329,27 +329,27 @@ function ApiKeysPanel() {
 
   return (
     <div>
-      <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
+      <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
         Platform-level API keys for third-party integrations. Keys are stored securely and masked after saving.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '600px' }}>
         <div>
-          <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>Google Places API Key</label>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>Google Places API Key</label>
           <input
-            style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: '13px', color: 'var(--color-text)', background: 'var(--color-background)', fontFamily: 'monospace' }}
+            style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', background: 'var(--color-background)', fontFamily: 'monospace' }}
             type="text"
             placeholder={masked.google_places || 'Enter API key...'}
             value={keys.google_places}
             onChange={(e) => setKeys({ ...keys, google_places: e.target.value })}
           />
-          {masked.google_places && <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '2px', display: 'block' }}>Current: {masked.google_places}</span>}
+          {masked.google_places && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: '2px', display: 'block' }}>Current: {masked.google_places}</span>}
         </div>
       </div>
       <div style={{ marginTop: '16px' }}>
         <button
           onClick={handleSave}
           disabled={saving}
-          style={{ padding: '8px 20px', background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}
+          style={{ padding: '8px 20px', background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 600 }}
         >
           {saving ? 'Saving...' : 'Save API Keys'}
         </button>
@@ -1028,11 +1028,11 @@ function QueryHistoryPanel() {
             </div>
             {logs.map((log) => (
               <div key={log.id} style={{ ...styles.tableRow, cursor: 'pointer' }} onClick={() => setSelectedLog(log)}>
-                <span style={{ width: '100px', flexShrink: 0, fontSize: '12px' }}>{new Date(log.created_at).toLocaleTimeString()}</span>
+                <span style={{ width: '100px', flexShrink: 0, fontSize: 'var(--font-size-sm)' }}>{new Date(log.created_at).toLocaleTimeString()}</span>
                 <span style={{ width: '70px', flexShrink: 0 }}>{methodBadge(log.method)}</span>
-                <span style={{ flex: 1, minWidth: 0, fontFamily: 'monospace', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{log.path}</span>
+                <span style={{ flex: 1, minWidth: 0, fontFamily: 'monospace', fontSize: 'var(--font-size-sm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{log.path}</span>
                 <span style={{ width: '55px', flexShrink: 0, textAlign: 'center' as const }}>{statusBadge(log.status_code)}</span>
-                <span style={{ width: '60px', flexShrink: 0, textAlign: 'right' as const, fontSize: '12px' }}>{log.duration_ms != null ? `${log.duration_ms}ms` : '—'}</span>
+                <span style={{ width: '60px', flexShrink: 0, textAlign: 'right' as const, fontSize: 'var(--font-size-sm)' }}>{log.duration_ms != null ? `${log.duration_ms}ms` : '—'}</span>
                 <span style={{ width: '60px', flexShrink: 0, textAlign: 'center' as const }}>
                   <Button variant="ghost" size="sm" onClick={(e: React.MouseEvent) => { e.stopPropagation(); setSelectedLog(log); }}>View</Button>
                 </span>
@@ -1042,7 +1042,7 @@ function QueryHistoryPanel() {
           {totalPages > 1 && (
             <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', alignItems: 'center', marginTop: '12px' }}>
               <Button variant="ghost" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</Button>
-              <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Page {page} of {totalPages}</span>
+              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Page {page} of {totalPages}</span>
               <Button variant="ghost" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Next</Button>
             </div>
           )}
@@ -1066,7 +1066,7 @@ function QueryHistoryPanel() {
               <div style={styles.detailRow}><span style={styles.detailLabel}>User</span><span style={styles.detailValue}>{selectedLog.user_email || '—'}</span></div>
               <div style={styles.detailRow}><span style={styles.detailLabel}>Tenant</span><span style={styles.detailValue}>{selectedLog.tenant_name || '—'}</span></div>
               <div style={styles.detailRow}><span style={styles.detailLabel}>IP Address</span><span style={styles.detailValue}>{selectedLog.ip_address || '—'}</span></div>
-              <div style={styles.detailRow}><span style={styles.detailLabel}>User Agent</span><span style={{ ...styles.detailValue, fontSize: '11px', wordBreak: 'break-all' as const }}>{selectedLog.user_agent || '—'}</span></div>
+              <div style={styles.detailRow}><span style={styles.detailLabel}>User Agent</span><span style={{ ...styles.detailValue, fontSize: 'var(--font-size-xs)', wordBreak: 'break-all' as const }}>{selectedLog.user_agent || '—'}</span></div>
             </div>
           </div>
         </div>
@@ -1080,25 +1080,25 @@ function QueryHistoryPanel() {
 // ============================================================
 
 const styles: Record<string, React.CSSProperties> = {
-  heading: { fontSize: '24px', fontWeight: 300, margin: '0 0 8px 0', color: 'var(--color-text)' },
-  subtext: { color: 'var(--color-text-secondary)', fontSize: '14px', marginBottom: '24px' },
-  loading: { color: 'var(--color-text-secondary)', fontSize: '14px' },
-  empty: { color: 'var(--color-text-secondary)', fontSize: '14px' },
+  heading: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, margin: '0 0 8px 0', color: 'var(--color-text)' },
+  subtext: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)', marginBottom: '24px' },
+  loading: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)' },
+  empty: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)' },
 
   // Tabs
   tabs: { display: 'flex', gap: '0', borderBottom: '1px solid var(--color-border)', marginBottom: '24px', flexWrap: 'wrap' as const },
   tab: {
     background: 'none', border: 'none', borderBottom: '2px solid transparent',
-    padding: '10px 16px', fontSize: '14px', fontWeight: 500,
+    padding: '10px 16px', fontSize: 'var(--font-size-base)', fontWeight: 500,
     color: 'var(--color-text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' as const,
   },
   tabActive: { color: 'var(--color-primary)', borderBottomColor: 'var(--color-primary)' },
 
   // Table (Settings + Feature Flags)
   table: { border: '1px solid var(--color-border)', borderRadius: '8px', overflow: 'hidden' },
-  tableHeader: { display: 'flex', padding: '12px 16px', backgroundColor: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, gap: '12px' },
-  tableRow: { display: 'flex', padding: '12px 16px', borderBottom: '1px solid var(--color-border)', alignItems: 'center', fontSize: '14px', color: 'var(--color-text)', gap: '12px' },
-  colKey: { flex: 2, fontFamily: 'monospace', fontSize: '13px' },
+  tableHeader: { display: 'flex', padding: '12px 16px', backgroundColor: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, gap: '12px' },
+  tableRow: { display: 'flex', padding: '12px 16px', borderBottom: '1px solid var(--color-border)', alignItems: 'center', fontSize: 'var(--font-size-base)', color: 'var(--color-text)', gap: '12px' },
+  colKey: { flex: 2, fontFamily: 'monospace', fontSize: 'var(--font-size-sm)' },
   colValue: { flex: 3 },
   colAction: { flex: 1, textAlign: 'right' as const },
   toggle: { display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', justifyContent: 'flex-end' },
@@ -1106,38 +1106,38 @@ const styles: Record<string, React.CSSProperties> = {
 
   // Panel (shared for Email, Storage, Notifications, Logs)
   panel: { maxWidth: '720px' },
-  panelTitle: { fontSize: '18px', fontWeight: 600, color: 'var(--color-text)', margin: '0 0 4px 0' },
-  panelSubtext: { fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '24px' },
-  successMsg: { padding: '8px 12px', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid var(--color-success)', color: 'var(--color-success)', fontSize: '13px', marginBottom: '16px' },
-  testResult: { padding: '10px 14px', borderRadius: '6px', border: '1px solid', fontSize: '13px', marginBottom: '16px', color: 'var(--color-text)' },
+  panelTitle: { fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)', margin: '0 0 4px 0' },
+  panelSubtext: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: '24px' },
+  successMsg: { padding: '8px 12px', borderRadius: '6px', background: 'var(--color-surface)', border: '1px solid var(--color-success)', color: 'var(--color-success)', fontSize: 'var(--font-size-sm)', marginBottom: '16px' },
+  testResult: { padding: '10px 14px', borderRadius: '6px', border: '1px solid', fontSize: 'var(--font-size-sm)', marginBottom: '16px', color: 'var(--color-text)' },
 
   // Form elements
   formSection: { marginBottom: '20px', paddingBottom: '16px', borderBottom: '1px solid var(--color-border)' },
   formRow: { display: 'flex', gap: '16px', marginBottom: '12px' },
   formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px', flex: 1, minWidth: 0 },
   formActions: { display: 'flex', gap: '12px', paddingTop: '8px' },
-  label: { fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 },
-  sectionLabel: { fontSize: '14px', fontWeight: 600, color: 'var(--color-text)', margin: '0 0 12px 0' },
-  input: { backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--color-text)', fontSize: '14px', fontFamily: 'var(--font-family)', outline: 'none', width: '100%', boxSizing: 'border-box' as const },
-  helper: { fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px' },
-  checkLabel: { display: 'flex', alignItems: 'center', fontSize: '14px', color: 'var(--color-text)', cursor: 'pointer', marginBottom: '8px' },
-  eyeBtn: { position: 'absolute' as const, right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' },
+  label: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', fontWeight: 500 },
+  sectionLabel: { fontSize: 'var(--font-size-base)', fontWeight: 600, color: 'var(--color-text)', margin: '0 0 12px 0' },
+  input: { backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--color-text)', fontSize: 'var(--font-size-base)', fontFamily: 'var(--font-family)', outline: 'none', width: '100%', boxSizing: 'border-box' as const },
+  helper: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: '2px' },
+  checkLabel: { display: 'flex', alignItems: 'center', fontSize: 'var(--font-size-base)', color: 'var(--color-text)', cursor: 'pointer', marginBottom: '8px' },
+  eyeBtn: { position: 'absolute' as const, right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)' },
 
   // Logs
-  logContainer: { border: '1px solid var(--color-border)', borderRadius: '8px', maxHeight: '400px', overflowY: 'auto' as const, fontFamily: 'monospace', fontSize: '12px', backgroundColor: 'var(--color-surface)' },
+  logContainer: { border: '1px solid var(--color-border)', borderRadius: '8px', maxHeight: '400px', overflowY: 'auto' as const, fontFamily: 'monospace', fontSize: 'var(--font-size-sm)', backgroundColor: 'var(--color-surface)' },
   logEntry: { display: 'flex', gap: '12px', padding: '6px 12px', borderBottom: '1px solid var(--color-border)', alignItems: 'baseline' },
-  logLevel: { fontWeight: 700, fontSize: '10px', width: '50px', textTransform: 'uppercase' as const, flexShrink: 0 },
-  logTime: { color: 'var(--color-text-muted)', fontSize: '11px', flexShrink: 0, width: '80px' },
+  logLevel: { fontWeight: 700, fontSize: 'var(--font-size-xs)', width: '50px', textTransform: 'uppercase' as const, flexShrink: 0 },
+  logTime: { color: 'var(--color-text-muted)', fontSize: 'var(--font-size-xs)', flexShrink: 0, width: '80px' },
   logMsg: { color: 'var(--color-text)', wordBreak: 'break-word' as const, flex: 1 },
 
   // Modal / Detail (shared)
   overlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '560px', maxHeight: '80vh', overflowY: 'auto' as const, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
-  modalTitle: { fontSize: '18px', fontWeight: 600, color: 'var(--color-text)', margin: 0 },
-  closeBtn: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', fontSize: '24px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 },
+  modalTitle: { fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)', margin: 0 },
+  closeBtn: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-2xl)', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 },
   detailBody: { display: 'flex', flexDirection: 'column' as const, gap: '8px' },
   detailRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '6px 0', borderBottom: '1px solid var(--color-border)' },
-  detailLabel: { fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500, flexShrink: 0, width: '100px' },
-  detailValue: { fontSize: '13px', color: 'var(--color-text)', fontFamily: 'monospace', textAlign: 'right' as const, flex: 1 },
+  detailLabel: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', fontWeight: 500, flexShrink: 0, width: '100px' },
+  detailValue: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', fontFamily: 'monospace', textAlign: 'right' as const, flex: 1 },
 };

@@ -312,7 +312,7 @@ export function BookingCreate() {
         <div style={styles.field}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
             <label style={styles.label}>Customer {!isWalkIn && '*'}</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
               <input type="checkbox" checked={isWalkIn} onChange={(e) => { setIsWalkIn(e.target.checked); if (e.target.checked) setSelectedCustomer(null); }} style={{ width: '14px', height: '14px' }} />
               Walk-in
             </label>
@@ -390,7 +390,7 @@ export function BookingCreate() {
               remainingCapacity={selectedTime ? allCombos.find((c) => c.start_time === selectedTime)?.capacity_remaining : undefined}
               overrideCapacity={overrideCapacity}
             />
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)', cursor: 'pointer', marginTop: '4px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer', marginTop: '4px' }}>
               <input type="checkbox" checked={overrideCapacity} onChange={(e) => setOverrideCapacity(e.target.checked)} style={{ width: '14px', height: '14px' }} />
               Override capacity limit
             </label>
@@ -435,8 +435,8 @@ export function BookingCreate() {
                       style={{ ...styles.filterOption, ...(selectedLocation === l.id ? styles.filterOptionActive : {}), ...(isClosed ? { opacity: 0.5, cursor: 'not-allowed', textDecoration: 'line-through' } : {}) }}
                       onClick={() => !isClosed && setSelectedLocation(selectedLocation === l.id ? null : l.id)}>
                       {l.name}
-                      {isClosed && <span style={{ fontSize: '10px', display: 'block', color: 'var(--color-error)' }}>{locStatus?.label || 'Closed'}</span>}
-                      {locStatus?.status === 'modified' && <span style={{ fontSize: '10px', display: 'block', color: 'var(--color-text-muted)' }}>{locStatus.hours}</span>}
+                      {isClosed && <span style={{ fontSize: 'var(--font-size-xs)', display: 'block', color: 'var(--color-error)' }}>{locStatus?.label || 'Closed'}</span>}
+                      {locStatus?.status === 'modified' && <span style={{ fontSize: 'var(--font-size-xs)', display: 'block', color: 'var(--color-text-muted)' }}>{locStatus.hours}</span>}
                     </button>
                   );
                 })}
@@ -485,28 +485,28 @@ export function BookingCreate() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '800px', margin: '0 auto' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
   form: { display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-md)' },
   field: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
   label: { fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-medium)' as any, color: 'var(--color-text)' },
-  select: { background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', color: 'var(--color-text)', fontSize: '16px', width: '100%', boxSizing: 'border-box' as const },
-  input: { background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', color: 'var(--color-text)', fontSize: '16px', width: '100%', boxSizing: 'border-box' as const },
-  textarea: { background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', color: 'var(--color-text)', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', resize: 'vertical' as const },
+  select: { background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', color: 'var(--color-text)', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const },
+  input: { background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', color: 'var(--color-text)', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const },
+  textarea: { background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', color: 'var(--color-text)', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', resize: 'vertical' as const },
   hint: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 },
   searchWrapper: { position: 'relative' as const },
-  selectedCustomer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', fontSize: '14px', color: 'var(--color-text)' },
-  clearBtn: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: '18px', padding: '0 4px' },
+  selectedCustomer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', fontSize: 'var(--font-size-base)', color: 'var(--color-text)' },
+  clearBtn: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-lg)', padding: '0 4px', borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
   dropdown: { position: 'absolute' as const, top: '100%', left: 0, right: 0, background: 'var(--color-surface-modal, #FFFFFF)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', marginTop: '4px', maxHeight: '200px', overflow: 'auto', zIndex: 10, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' },
-  dropdownItem: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-start', width: '100%', padding: '10px 12px', border: 'none', background: 'var(--color-background, #1A1A1A)', cursor: 'pointer', textAlign: 'left' as const, color: 'var(--color-text)', fontSize: '14px', borderBottom: '1px solid var(--color-border)' },
-  dropdownEmail: { fontSize: '12px', color: 'var(--color-text-secondary)' },
+  dropdownItem: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-start', width: '100%', padding: '10px 12px', border: 'none', background: 'var(--color-background, #1A1A1A)', cursor: 'pointer', textAlign: 'left' as const, color: 'var(--color-text)', fontSize: 'var(--font-size-base)', borderBottom: '1px solid var(--color-border)' },
+  dropdownEmail: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
   // Multi-filter panel
   filterPanel: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-md)', padding: 'var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)' },
   filterColumn: { display: 'flex', flexDirection: 'column' as const, gap: '6px' },
-  filterLabel: { fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: '4px' },
-  filterOption: { padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'none', cursor: 'pointer', fontSize: '13px', color: 'var(--color-text)', textAlign: 'left' as const, fontFamily: 'var(--font-family)', transition: 'all 0.15s ease' },
+  filterLabel: { fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', marginBottom: '4px' },
+  filterOption: { padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'none', cursor: 'pointer', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', textAlign: 'left' as const, fontFamily: 'var(--font-family)', transition: 'all 0.15s ease' },
   filterOptionActive: { borderColor: 'var(--color-accent, #C9A96E)', background: 'var(--color-accent, #C9A96E)', color: '#1A1A1A', fontWeight: 600 },
   timeGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: '4px', maxHeight: '300px', overflow: 'auto' },
-  timeBtn: { padding: '6px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--color-text)', textAlign: 'center' as const, fontFamily: 'var(--font-family)', transition: 'all 0.15s ease' },
+  timeBtn: { padding: '6px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'none', cursor: 'pointer', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', textAlign: 'center' as const, fontFamily: 'var(--font-family)', transition: 'all 0.15s ease' },
   timeBtnActive: { borderColor: 'var(--color-accent, #C9A96E)', background: 'var(--color-accent, #C9A96E)', color: '#1A1A1A', fontWeight: 600 },
   actions: { display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-md)', marginTop: 'var(--space-md)' },
 };

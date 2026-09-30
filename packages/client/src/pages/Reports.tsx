@@ -67,7 +67,7 @@ export function Reports() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)' },
-  pageTitle: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
+  pageTitle: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', margin: 0 },
   pageSubtitle: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', margin: '4px 0 var(--space-lg)' },
   categories: { display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' },
   category: {
@@ -100,13 +100,13 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'var(--color-surface-hover)',
     borderStyle: 'dashed',
   },
-  tileIcon: { fontSize: '24px' },
+  tileIcon: { fontSize: 'var(--font-size-2xl)' },
   tileTitle: { fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
   tileDescription: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   comingSoonBadge: {
     marginTop: '6px',
     alignSelf: 'flex-start',
-    fontSize: '10px',
+    fontSize: 'var(--font-size-xs)',
     fontWeight: 'var(--font-weight-bold)' as any,
     textTransform: 'uppercase',
     letterSpacing: '0.04em',

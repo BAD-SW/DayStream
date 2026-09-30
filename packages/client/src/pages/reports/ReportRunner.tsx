@@ -401,7 +401,7 @@ export function ReportRunner() {
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)' },
   headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-md)' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 'var(--space-sm) 0 0' },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', margin: 'var(--space-sm) 0 0' },
   description: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', margin: '4px 0 0' },
   controlBar: { display: 'flex', alignItems: 'flex-end', gap: 'var(--space-md)', marginBottom: 'var(--space-md)', flexWrap: 'wrap' },
   dateField: { display: 'flex', flexDirection: 'column', gap: '4px' },

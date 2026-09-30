@@ -36,14 +36,14 @@ export function Dashboard() {
 
 const styles: Record<string, React.CSSProperties> = {
   heading: {
-    fontSize: '24px',
+    fontSize: 'var(--font-size-2xl)',
     fontWeight: 300,
     margin: '0 0 16px 0',
     color: 'var(--color-text)',
   },
   text: {
     color: 'var(--color-text-secondary)',
-    fontSize: '14px',
+    fontSize: 'var(--font-size-base)',
     lineHeight: 1.5,
   },
   statusCard: {
@@ -54,14 +54,14 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid var(--color-border)',
   },
   statusLabel: {
-    fontSize: '12px',
-    color: '#8A8A8A',
+    fontSize: 'var(--font-size-sm)',
+    color: 'var(--color-text-secondary)',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.5px',
     margin: '0 0 8px 0',
   },
   statusValue: {
-    fontSize: '14px',
+    fontSize: 'var(--font-size-base)',
     color: '#66BB6A',
     margin: 0,
   },

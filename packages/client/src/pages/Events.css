@@ -1,0 +1,98 @@
+/* Events (THE-15) — layout only; sizes and colours come from design tokens. */
+
+.ev-filters,
+.ev-add-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.ev-select,
+.ev-input {
+  box-sizing: border-box;
+  min-height: var(--control-height);
+  padding: 8px var(--control-padding-x);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+}
+
+.ev-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ev-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-md);
+}
+
+.ev-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--card-radius);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-default), background-color var(--duration-fast) var(--ease-default);
+}
+
+.ev-card:hover {
+  border-color: var(--color-primary-hover);
+  background: var(--row-hover-bg);
+}
+
+.ev-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.ev-card__title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-title);
+}
+
+.ev-card__type {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.ev-card__facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.ev-pager {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.ev-pager__info {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.ev-section-title {
+  margin: 0 0 var(--space-md);
+  font-size: var(--card-title-size);
+  font-weight: var(--card-title-weight);
+  color: var(--color-text-title);
+}

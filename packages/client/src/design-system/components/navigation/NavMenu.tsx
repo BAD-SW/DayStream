@@ -63,8 +63,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 'var(--font-size-sm)', transition: 'background var(--duration-fast) var(--ease-default)',
   },
   linkActive: { background: 'var(--color-surface-hover)', color: 'var(--color-primary)', fontWeight: 600 },
-  icon: { width: '20px', textAlign: 'center', fontSize: '14px' },
+  icon: { width: '20px', textAlign: 'center', fontSize: 'var(--font-size-base)' },
   label: { flex: 1 },
-  chevron: { fontSize: '12px', color: 'var(--color-text-disabled)' },
+  chevron: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-disabled)' },
   children: { paddingLeft: 'var(--space-lg)', marginTop: 'var(--space-xs)' },
 };

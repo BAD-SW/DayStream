@@ -154,7 +154,7 @@ function PromotionForm({ promo, businessId, onUpdate }: { promo: any; businessId
       {/* Save bar */}
       {isDirty && (
         <div style={styles.saveBar}>
-          <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>You have unsaved changes</span>
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>You have unsaved changes</span>
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button variant="outline" size="sm" onClick={handleDiscard}>Discard</Button>
             <Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button>
@@ -191,7 +191,7 @@ function PromotionForm({ promo, businessId, onUpdate }: { promo: any; businessId
             <div style={{ display: 'flex', gap: '4px' }}>
               {DAY_NAMES.map((name, idx) => (
                 <button key={idx} type="button" onClick={() => toggleDay(idx)}
-                  style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: form.days_of_week.includes(idx) ? 'var(--color-accent, #C9A96E)' : 'var(--color-background)', color: form.days_of_week.includes(idx) ? '#1A1A1A' : 'var(--color-text)', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}>
+                  style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: form.days_of_week.includes(idx) ? 'var(--color-accent, #C9A96E)' : 'var(--color-background)', color: form.days_of_week.includes(idx) ? '#1A1A1A' : 'var(--color-text)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>
                   {name}
                 </button>
               ))}
@@ -200,7 +200,7 @@ function PromotionForm({ promo, businessId, onUpdate }: { promo: any; businessId
           <div style={styles.formGroup}><label style={styles.label}>Priority</label><input style={styles.input} type="number" min="0" value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) })} /></div>
           <div style={styles.formGroup}><label style={styles.label}>Max Redemptions</label><input style={styles.input} type="number" min="1" value={form.max_redemptions} onChange={(e) => setForm({ ...form, max_redemptions: e.target.value })} placeholder="Unlimited" /></div>
           <div style={styles.formGroup}><label style={styles.label}>Max per Customer</label><input style={styles.input} type="number" min="1" value={form.max_per_customer} onChange={(e) => setForm({ ...form, max_per_customer: e.target.value })} placeholder="Unlimited" /></div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', gridColumn: '1 / -1' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', gridColumn: '1 / -1' }}>
             <input type="checkbox" checked={form.stackable} onChange={(e) => setForm({ ...form, stackable: e.target.checked })} style={{ width: '16px', height: '16px' }} />
             Stackable (can combine with other promotions)
           </label>
@@ -215,7 +215,7 @@ function PromotionForm({ promo, businessId, onUpdate }: { promo: any; businessId
       <div style={styles.card}>
         <h3 style={styles.cardTitle}>Usage</h3>
         <div style={{ display: 'flex', gap: 'var(--space-lg)' }}>
-          <div><span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>Redemptions</span><br /><strong>{promo.redemption_count || 0}</strong>{promo.max_redemptions ? ` / ${promo.max_redemptions}` : ''}</div>
+          <div><span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Redemptions</span><br /><strong>{promo.redemption_count || 0}</strong>{promo.max_redemptions ? ` / ${promo.max_redemptions}` : ''}</div>
         </div>
       </div>
     </>
@@ -242,7 +242,7 @@ function AppliesToCard({ promo, businessId, onUpdate }: { promo: any; businessId
       </div>
 
       {totalSelections === 0 ? (
-        <p style={{ fontSize: '14px', color: 'var(--color-text-secondary)', margin: 0 }}>All services, products, and locations (no restrictions)</p>
+        <p style={{ fontSize: 'var(--font-size-base)', color: 'var(--color-text-secondary)', margin: 0 }}>All services, products, and locations (no restrictions)</p>
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           {serviceCount > 0 && <span style={scopeBadgeStyle}>{serviceCount} service{serviceCount > 1 ? 's' : ''}{variantCount > 0 ? ` (${variantCount} variant${variantCount > 1 ? 's' : ''})` : ''}</span>}
@@ -259,7 +259,7 @@ function AppliesToCard({ promo, businessId, onUpdate }: { promo: any; businessId
   );
 }
 
-const scopeBadgeStyle: React.CSSProperties = { fontSize: '12px', padding: '4px 10px', borderRadius: 'var(--radius-full)', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text)' };
+const scopeBadgeStyle: React.CSSProperties = { fontSize: 'var(--font-size-sm)', padding: '4px 10px', borderRadius: 'var(--radius-full)', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text)' };
 
 // --- Applies To Picker Modal ---
 
@@ -350,7 +350,7 @@ function AppliesToPickerModal({ promo, businessId, onClose, onSaved }: { promo: 
           <h3 style={styles.modalTitle}>Configure Scope</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
         </div>
-        <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '0 0 12px' }}>Select items and locations. Leave all empty to apply to everything.</p>
+        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 12px' }}>Select items and locations. Leave all empty to apply to everything.</p>
 
         <div style={pickerStyles.columns}>
           {/* Services */}
@@ -431,13 +431,13 @@ const pickerStyles: Record<string, React.CSSProperties> = {
   modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '95%', maxWidth: '900px', maxHeight: '80vh', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column' },
   columns: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '10px', flex: 1, minHeight: 0 },
   column: { display: 'flex', flexDirection: 'column', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
-  columnHeader: { fontSize: '11px', fontWeight: 600, color: 'var(--color-text)', padding: '8px 10px', borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)', textTransform: 'uppercase', letterSpacing: '0.5px' },
-  searchInput: { border: 'none', borderBottom: '1px solid var(--color-border)', padding: '6px 10px', fontSize: '12px', outline: 'none', fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)', width: '100%', boxSizing: 'border-box' },
+  columnHeader: { fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text)', padding: '8px 10px', borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)', textTransform: 'uppercase', letterSpacing: '0.5px' },
+  searchInput: { border: 'none', borderBottom: '1px solid var(--color-border)', padding: '6px 10px', fontSize: 'var(--font-size-sm)', outline: 'none', fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)', width: '100%', boxSizing: 'border-box' },
   columnList: { flex: 1, overflowY: 'auto', padding: '6px', display: 'flex', flexDirection: 'column', gap: '2px', maxHeight: '300px' },
-  item: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-text)', cursor: 'pointer', padding: '3px 4px', borderRadius: '4px' },
+  item: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', cursor: 'pointer', padding: '3px 4px', borderRadius: '4px' },
   variantList: { marginLeft: '22px', display: 'flex', flexDirection: 'column', gap: '1px', marginTop: '2px', marginBottom: '4px', borderLeft: '2px solid var(--color-border)', paddingLeft: '6px' },
-  variantItem: { display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--color-text-secondary)', cursor: 'pointer', padding: '2px 4px' },
-  empty: { fontSize: '11px', color: 'var(--color-text-secondary)', padding: '8px', fontStyle: 'italic' },
+  variantItem: { display: 'flex', alignItems: 'center', gap: '5px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', padding: '2px 4px' },
+  empty: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', padding: '8px', fontStyle: 'italic' },
 };
 
 const styles: Record<string, React.CSSProperties> = {
@@ -446,7 +446,7 @@ const styles: Record<string, React.CSSProperties> = {
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, marginBottom: 'var(--space-md)', fontFamily: 'var(--font-family)' },
   headerCard: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-lg)', background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', marginBottom: 'var(--space-md)' },
   headerInfo: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  name: { margin: 0, fontSize: 'var(--font-size-xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
+  name: { margin: 0, fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)' },
   code: { fontSize: 'var(--font-size-sm)', color: 'var(--color-accent, #C9A96E)', fontFamily: 'monospace', fontWeight: 600 },
   headerRight: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: '4px' },
   value: { fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)' },
@@ -457,11 +457,11 @@ const styles: Record<string, React.CSSProperties> = {
   cardTitle: { margin: '0 0 var(--space-md) 0', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  label: { fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' },
-  input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
+  label: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)' },
+  input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
   overlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '500px', maxHeight: '85vh', overflow: 'auto', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.3)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
-  modalTitle: { margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--color-text)' },
-  closeBtn: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--color-text-secondary)' },
+  modalTitle: { margin: 0, fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)' },
+  closeBtn: { background: 'none', border: 'none', fontSize: 'var(--font-size-xl)', cursor: 'pointer', color: 'var(--color-text-secondary)' },
 };

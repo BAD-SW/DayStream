@@ -97,5 +97,5 @@ const styles: Record<string, React.CSSProperties> = {
   },
   itemDisabled: { opacity: 0.5, cursor: 'not-allowed' },
   divider: { height: '1px', background: 'var(--color-border)', margin: 'var(--space-xs) 0' },
-  icon: { fontSize: '14px', width: '18px', textAlign: 'center' as const },
+  icon: { fontSize: 'var(--font-size-base)', width: '18px', textAlign: 'center' as const },
 };

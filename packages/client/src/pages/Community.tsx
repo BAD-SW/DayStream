@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
+import { Card } from '../design-system/components/data/Card';
+import { ListRow, ListRows, ListRowTitle, ListEmpty } from '../design-system/components/data/ListRow';
+import { SegmentedControl } from '../design-system/components/forms/SegmentedControl';
+import { PageHeader } from '../design-system/components/layout/PageHeader';
+import { TabBar } from '../design-system/components/navigation/TabBar';
 import * as communityApi from '../api/community';
+import './Community.css';
 
 export function Community() {
   const [activeTab, setActiveTab] = useState<'feed' | 'challenges' | 'leaderboard' | 'content' | 'reviews'>('feed');
@@ -24,33 +30,24 @@ export function Community() {
   ];
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-semibold mb-6">Community</h1>
-      <div className="border-b mb-6">
-        <nav className="flex gap-4">
-          {tabs.map((t) => (
-            <button key={t.key} onClick={() => setActiveTab(t.key)}
-              className={`pb-2 px-1 text-sm font-medium border-b-2 ${activeTab === t.key ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'}`}>
-              {t.label}
-            </button>
-          ))}
-        </nav>
-      </div>
+    <div>
+      <PageHeader title="Community" />
+      <TabBar aria-label="Community sections" tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
       {activeTab === 'feed' && (
-        <div className="space-y-4">
-          {feed.length === 0 ? <p className="text-gray-500">No posts yet</p> : feed.map((p: any) => (
-            <div key={p.id} className="border rounded-lg p-4">
-              <div className="flex justify-between items-start mb-2">
+        <div className="cm-stack">
+          {feed.length === 0 ? <ListEmpty>No posts yet</ListEmpty> : feed.map((p: any) => (
+            <Card key={p.id} variant="outlined">
+              <div className="cm-head">
                 <Badge variant={p.post_type === 'achievement' ? 'success' : 'neutral'}>{p.post_type}</Badge>
-                <span className="text-xs text-gray-400">{new Date(p.created_at).toLocaleDateString()}</span>
+                <span className="cm-muted">{new Date(p.created_at).toLocaleDateString()}</span>
               </div>
-              {p.content && <p className="text-sm">{p.content}</p>}
-              <div className="flex gap-4 mt-2 text-xs text-gray-500">
+              {p.content && <p className="cm-text">{p.content}</p>}
+              <div className="cm-reactions">
                 <span>❤️ {p.reaction_count}</span>
                 <span>💬 {p.comment_count}</span>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -58,16 +55,15 @@ export function Community() {
       {activeTab === 'challenges' && <ChallengesTab challenges={challenges} />}
 
       {activeTab === 'leaderboard' && (
-        <div className="space-y-2">
+        <ListRows>
           {leaderboard.map((entry: any, i: number) => (
-            <div key={entry.customer_id} className="border rounded p-3 flex justify-between items-center">
-              <span className="font-medium">#{i + 1}</span>
+            <ListRow key={entry.customer_id} actions={<span className="cm-points">{entry.total_points} pts</span>}>
+              <ListRowTitle>#{i + 1}</ListRowTitle>
               <span>{entry.customer_id.slice(0, 8)}...</span>
-              <span className="font-bold">{entry.total_points} pts</span>
-            </div>
+            </ListRow>
           ))}
-          {leaderboard.length === 0 && <p className="text-gray-500">No data yet</p>}
-        </div>
+          {leaderboard.length === 0 && <ListEmpty>No data yet</ListEmpty>}
+        </ListRows>
       )}
 
       {activeTab === 'content' && <ContentTab />}
@@ -89,28 +85,28 @@ function ChallengesTab({ challenges }: { challenges: any[] }) {
   };
 
   return (
-    <div className="space-y-3">
-      {challenges.length === 0 ? <p className="text-gray-500">No active challenges</p> : challenges.map((c: any) => (
+    <div className="cm-stack">
+      {challenges.length === 0 ? <ListEmpty>No active challenges</ListEmpty> : challenges.map((c: any) => (
         <div key={c.id}>
-          <div className="border rounded-lg p-4">
-            <h3 className="font-medium">{c.title}</h3>
-            <p className="text-sm text-gray-500">{c.description}</p>
-            <div className="flex justify-between items-center mt-2">
-              <span className="text-xs text-gray-400">{c.start_date} → {c.end_date}</span>
-              <div className="flex gap-2">
+          <Card variant="outlined">
+            <h3 className="cm-title">{c.title}</h3>
+            <p className="cm-muted">{c.description}</p>
+            <div className="cm-foot">
+              <span className="cm-muted">{c.start_date} → {c.end_date}</span>
+              <div className="cm-actions">
                 <Button size="sm" variant="ghost" onClick={() => handleViewLeaderboard(c.id)}>
                   {selectedChallenge === c.id ? 'Hide Leaderboard' : 'Leaderboard'}
                 </Button>
                 <Button size="sm" onClick={() => communityApi.joinChallenge(c.id).then(() => alert('Joined!')).catch(() => alert('Could not join'))}>Join</Button>
               </div>
             </div>
-          </div>
+          </Card>
           {selectedChallenge === c.id && challengeLeaderboard.length > 0 && (
-            <div className="ml-4 mt-1 mb-2 border-l-2 pl-3 space-y-1">
+            <div className="cm-sublist">
               {challengeLeaderboard.map((entry: any, i: number) => (
-                <div key={i} className="text-sm flex justify-between">
+                <div key={i} className="cm-sublist__item">
                   <span>#{i + 1} {entry.customer_name || entry.customer_id?.slice(0, 8)}</span>
-                  <span className="font-medium">{entry.score || entry.progress} pts</span>
+                  <span className="cm-points">{entry.score || entry.progress} pts</span>
                 </div>
               ))}
             </div>
@@ -155,53 +151,57 @@ function ContentTab() {
 
   return (
     <div>
-      <div className="flex gap-2 mb-4">
-        <Button size="sm" variant={view === 'vod' ? 'default' : 'ghost'} onClick={() => setView('vod')}>Videos</Button>
-        <Button size="sm" variant={view === 'courses' ? 'default' : 'ghost'} onClick={() => setView('courses')}>Courses</Button>
+      <div className="cm-toolbar">
+        <SegmentedControl
+          aria-label="Content type"
+          value={view}
+          onChange={setView}
+          options={[{ value: 'vod', label: 'Videos' }, { value: 'courses', label: 'Courses' }]}
+        />
       </div>
 
       {view === 'vod' && (
-        <div className="space-y-2">
-          {vodLibrary.length === 0 ? <p className="text-gray-500">No videos available</p> : vodLibrary.map((v: any) => (
-            <div key={v.id} className="border rounded p-3">
-              <div className="flex justify-between items-center">
+        <div className="cm-stack">
+          {vodLibrary.length === 0 ? <ListEmpty>No videos available</ListEmpty> : vodLibrary.map((v: any) => (
+            <Card key={v.id} variant="outlined">
+              <div className="cm-head">
                 <div>
-                  <span className="font-medium">{v.title}</span>
-                  {v.duration && <span className="text-xs text-gray-500 ml-2">{v.duration}</span>}
+                  <span className="cm-title">{v.title}</span>
+                  {v.duration && <span className="cm-muted cm-inline">{v.duration}</span>}
                 </div>
-                <div className="flex gap-2">
+                <div className="cm-actions">
                   <Button size="sm" variant="ghost" onClick={() => handleVodDetail(v.id)}>Details</Button>
                   <Button size="sm" variant="ghost" onClick={() => handleUpdateProgress(v.id, 100)}>Mark Complete</Button>
                 </div>
               </div>
               {selectedVod?.id === v.id && (
-                <div className="mt-2 p-2 bg-gray-50 rounded text-sm">
+                <div className="cm-detail">
                   <p>{selectedVod.description || 'No description'}</p>
-                  {selectedVod.progress_percent !== undefined && <p className="text-xs text-gray-500 mt-1">Progress: {selectedVod.progress_percent}%</p>}
+                  {selectedVod.progress_percent !== undefined && <p className="cm-muted">Progress: {selectedVod.progress_percent}%</p>}
                 </div>
               )}
-            </div>
+            </Card>
           ))}
         </div>
       )}
 
       {view === 'courses' && (
-        <div className="space-y-2">
-          {courses.length === 0 ? <p className="text-gray-500">No courses available</p> : courses.map((c: any) => (
-            <div key={c.id} className="border rounded p-3">
-              <h4 className="font-medium">{c.title}</h4>
-              <p className="text-sm text-gray-500">{c.description}</p>
+        <div className="cm-stack">
+          {courses.length === 0 ? <ListEmpty>No courses available</ListEmpty> : courses.map((c: any) => (
+            <Card key={c.id} variant="outlined">
+              <h4 className="cm-title">{c.title}</h4>
+              <p className="cm-muted">{c.description}</p>
               {c.lessons && c.lessons.length > 0 && (
-                <div className="mt-2 space-y-1">
+                <div className="cm-sublist">
                   {c.lessons.map((l: any) => (
-                    <div key={l.id} className="flex justify-between items-center text-sm pl-2 border-l">
+                    <div key={l.id} className="cm-sublist__item">
                       <span>{l.title}</span>
                       <Button size="sm" variant="ghost" onClick={() => handleCompleteLesson(c.id, l.id)}>Complete</Button>
                     </div>
                   ))}
                 </div>
               )}
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -240,31 +240,31 @@ function ReviewsTab() {
 
   return (
     <div>
-      <div className="flex gap-2 mb-4">
-        <input className="border rounded px-2 py-1 text-sm flex-1" placeholder="Service ID" value={serviceId} onChange={(e) => setServiceId(e.target.value)} />
+      <div className="cm-toolbar">
+        <input className="cm-input" aria-label="Service ID" placeholder="Service ID" value={serviceId} onChange={(e) => setServiceId(e.target.value)} />
         <Button size="sm" onClick={loadReviews}>Load Reviews</Button>
       </div>
       {loaded && (
-        <div className="space-y-2">
-          {reviews.length === 0 ? <p className="text-gray-500">No reviews for this service</p> : reviews.map((r: any) => (
-            <div key={r.id} className="border rounded p-3">
-              <div className="flex justify-between items-start">
+        <div className="cm-stack">
+          {reviews.length === 0 ? <ListEmpty>No reviews for this service</ListEmpty> : reviews.map((r: any) => (
+            <Card key={r.id} variant="outlined">
+              <div className="cm-head">
                 <div>
-                  <span className="font-medium">{r.customer_name || 'Anonymous'}</span>
-                  <span className="text-yellow-500 ml-2">{'★'.repeat(r.rating || 0)}{'☆'.repeat(5 - (r.rating || 0))}</span>
+                  <span className="cm-title">{r.customer_name || 'Anonymous'}</span>
+                  <span className="cm-stars" aria-label={`${r.rating || 0} out of 5`}>{'★'.repeat(r.rating || 0)}{'☆'.repeat(5 - (r.rating || 0))}</span>
                 </div>
                 <Badge variant={r.moderation_status === 'approved' ? 'success' : r.moderation_status === 'rejected' ? 'error' : 'neutral'}>
                   {r.moderation_status || 'pending'}
                 </Badge>
               </div>
-              {r.content && <p className="text-sm mt-1">{r.content}</p>}
-              {r.response && <p className="text-sm mt-1 text-blue-600 italic">Response: {r.response}</p>}
-              <div className="flex gap-2 mt-2">
+              {r.content && <p className="cm-text">{r.content}</p>}
+              {r.response && <p className="cm-text cm-response">Response: {r.response}</p>}
+              <div className="cm-actions cm-actions--below">
                 <Button size="sm" variant="ghost" onClick={() => handleModerate(r.id, 'approved')}>Approve</Button>
                 <Button size="sm" variant="ghost" onClick={() => handleModerate(r.id, 'rejected')}>Reject</Button>
                 <Button size="sm" variant="ghost" onClick={() => handleRespond(r.id)}>Respond</Button>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}

@@ -336,7 +336,7 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
 
       {isCreate && (
         <>
-          <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
+          <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
             Owner Details
           </div>
           <div style={styles.formRow}>
@@ -360,7 +360,7 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
         </>
       )}
 
-      <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
+      <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
         Business Contact
       </div>
       <div style={styles.formRow}>
@@ -399,7 +399,7 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
           </select>
         </div>
       </div>
-      <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
+      <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
         Appearance {isCreate && '(optional — leave blank to inherit the tenant’s theme)'}
       </div>
       <ThemeEditorFields
@@ -446,7 +446,7 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
         </div>
       </div>
 
-      <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
+      <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
         Payment Source (ACH/SEPA — primary)
       </div>
       <div style={styles.formRow}>
@@ -470,7 +470,7 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
         </div>
       </div>
 
-      <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
+      <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', marginTop: '4px', marginBottom: '12px' }}>
         Card on File (backup)
       </div>
       <div style={styles.formRow}>
@@ -513,23 +513,23 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 const styles: Record<string, React.CSSProperties> = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
-  heading: { fontSize: '24px', fontWeight: 300, margin: 0, color: 'var(--color-text)' },
+  heading: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, margin: 0, color: 'var(--color-text)' },
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '560px', maxHeight: '85vh', overflowY: 'auto' as const, boxShadow: '0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px var(--color-border)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
-  modalTitle: { fontSize: '18px', fontWeight: 600, color: 'var(--color-text)', margin: 0 },
-  closeBtn: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', fontSize: '24px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 },
+  modalTitle: { fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)', margin: 0 },
+  closeBtn: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-2xl)', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 },
   detailBody: { display: 'flex', flexDirection: 'column' as const, gap: '6px' },
   detailRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--color-border)' },
-  detailLabel: { fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 },
-  detailValue: { fontSize: '13px', color: 'var(--color-text)' },
+  detailLabel: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', fontWeight: 500 },
+  detailValue: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
   actions: { display: 'flex', gap: '8px', marginTop: '16px' },
   formBody: { display: 'flex', flexDirection: 'column' as const, gap: '12px' },
   formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px', flex: 1, minWidth: 0 },
   formRow: { display: 'flex', gap: '12px' },
   formActions: { display: 'flex', justifyContent: 'flex-end', gap: '8px', paddingTop: '12px' },
-  label: { fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500 },
-  input: { backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--color-text)', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const },
-  helper: { fontSize: '11px', color: 'var(--color-text-muted)' },
-  formError: { padding: '8px 12px', borderRadius: '6px', background: 'var(--color-error-bg, rgba(220,38,38,0.1))', border: '1px solid var(--color-error)', color: 'var(--color-error)', fontSize: '13px', marginBottom: '12px' },
+  label: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', fontWeight: 500 },
+  input: { backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--color-text)', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const },
+  helper: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' },
+  formError: { padding: '8px 12px', borderRadius: '6px', background: 'var(--color-error-bg, rgba(220,38,38,0.1))', border: '1px solid var(--color-error)', color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', marginBottom: '12px' },
 };

@@ -108,7 +108,7 @@ export function CodeEditor({ value, onChange, onExecute, schema, disabled }: Cod
         EditorView.theme({
           '&': {
             height: '100%',
-            fontSize: '14px',
+            fontSize: 'var(--font-size-base)',
           },
           '.cm-scroller': {
             overflow: 'auto',

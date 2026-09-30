@@ -122,7 +122,7 @@ export function MembershipPlans() {
       {showCreate && (
         <div style={styles.createForm}>
           <h3 style={{ margin: '0 0 16px 0', color: 'var(--color-text)' }}>{editingPlan ? 'Edit Plan' : 'New Plan'}</h3>
-          {createError && <p style={{ color: 'var(--color-error)', fontSize: '14px' }}>{createError}</p>}
+          {createError && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-base)' }}>{createError}</p>}
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column' as const, gap: '12px' }}>
             <div style={styles.formRow}>
               <div style={styles.formField}>
@@ -204,7 +204,7 @@ export function MembershipPlans() {
             {plan.credits_per_cycle && <p style={styles.planDetail}>{plan.credits_per_cycle} credits/cycle</p>}
             {plan.total_sessions && <p style={styles.planDetail}>{plan.total_sessions} sessions</p>}
             <button
-              style={{ marginTop: '8px', background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: '11px', cursor: 'pointer', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family)' }}
+              style={{ marginTop: '8px', background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '4px 8px', fontSize: 'var(--font-size-xs)', cursor: 'pointer', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family)' }}
               onClick={(e) => { e.stopPropagation(); handleArchiveToggle(plan); }}
             >
               {plan.status === 'active' ? 'Archive' : 'Activate'}
@@ -222,14 +222,14 @@ const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1000px', margin: '0 auto' },
   header: { marginBottom: 'var(--space-lg)' },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, fontFamily: 'var(--font-family)', marginBottom: 'var(--space-sm)', display: 'block' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', margin: 0 },
   empty: { color: 'var(--color-text-secondary)', textAlign: 'center', padding: 'var(--space-xl)' },
   createForm: { padding: 'var(--space-lg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-lg)', background: 'var(--color-surface)' },
   formRow: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   formField: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  label: { fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' },
-  input: { padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', color: 'var(--color-text)', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const },
-  typeHelper: { fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', fontStyle: 'italic' as const },
+  label: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)' },
+  input: { padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', color: 'var(--color-text)', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const },
+  typeHelper: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: '4px', fontStyle: 'italic' as const },
   planGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 'var(--space-lg)' },
   planCard: { padding: 'var(--space-lg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)', cursor: 'pointer' },
   planName: { margin: 0, fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)' as any },

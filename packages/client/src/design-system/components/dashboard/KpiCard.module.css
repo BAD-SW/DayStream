@@ -6,13 +6,13 @@
   padding: var(--space-md);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--card-radius);
   flex: 1;
   min-width: 0;
 }
 
 .iconWrapper {
-  font-size: 20px;
+  font-size: var(--font-size-xl);
   color: var(--color-primary);
   flex-shrink: 0;
 }
@@ -28,7 +28,7 @@
 }
 
 .label {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: var(--letter-spacing-wider);
@@ -36,8 +36,8 @@
 }
 
 .value {
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
   color: var(--color-text);
   line-height: 1.2;
 }
@@ -65,7 +65,7 @@
 }
 
 /* Light mode glass-morphism effect */
-[data-theme='light'] .card {
+[data-theme='light']:not([data-base-theme='navy']) .card {
   background: rgba(255,255,255,0.7);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -74,13 +74,13 @@
 }
 
 .clickHint {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--color-primary);
   margin-top: 4px;
 }
 
 .prior {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--color-text-muted);
   margin-top: 2px;
 }

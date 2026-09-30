@@ -73,11 +73,11 @@ export function ReportView() {
             ))
           ) : Array.isArray(data) ? (
             data.length === 0 ? <p style={styles.loading}>No data for this period.</p> : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-base)' }}>
                 <thead>
                   <tr>
                     {Object.keys(data[0]).map((k) => (
-                      <th key={k} style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border)', textTransform: 'capitalize', color: 'var(--color-text-secondary)', fontSize: '12px' }}>
+                      <th key={k} style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border)', textTransform: 'capitalize', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
                         {k.replace(/_/g, ' ')}
                       </th>
                     ))}
@@ -107,7 +107,7 @@ const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1000px', margin: '0 auto' },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, marginBottom: 'var(--space-md)', fontFamily: 'var(--font-family)' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', margin: 0 },
   card: { backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', padding: 'var(--space-lg)', display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)', overflow: 'auto' },
   field: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid var(--color-border)' },
   label: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', textTransform: 'capitalize' as const },

@@ -170,7 +170,7 @@ function PlanForm({ plan, businessId, onUpdate }: { plan: MembershipPlan; busine
       {/* Save bar */}
       {isDirty && (
         <div style={styles.saveBar}>
-          <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>You have unsaved changes</span>
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>You have unsaved changes</span>
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button variant="outline" size="sm" onClick={handleDiscard}>Discard</Button>
             <Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button>
@@ -280,7 +280,7 @@ function PlanItemsCard({ planId }: { planId: string }) {
                 <Badge variant={item.item_type === 'service' ? 'info' : 'neutral'}>{item.item_type === 'service' ? 'Service' : 'Product'}</Badge>
                 <strong style={{ marginLeft: '8px' }}>{item.service_name || item.merchandise_name || 'Unknown'}</strong>
               </div>
-              <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>{item.access_frequency === 'unlimited' ? 'Unlimited' : `×${item.quantity_per_period}/${item.access_frequency === 'daily' ? 'day' : item.access_frequency === 'weekly' ? 'week' : 'month'}`}</span>
+              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{item.access_frequency === 'unlimited' ? 'Unlimited' : `×${item.quantity_per_period}/${item.access_frequency === 'daily' ? 'day' : item.access_frequency === 'weekly' ? 'week' : 'month'}`}</span>
               <button style={styles.editBtn} onClick={() => setEditingItem(item)} title="Edit">✏️</button>
               <button style={styles.deleteBtn} onClick={() => handleDelete(item.id)} title="Remove">×</button>
             </div>
@@ -370,7 +370,7 @@ function AddEditPlanItemModal({ planId, item, onClose, onSaved }: { planId: stri
           <h3 style={styles.modalTitle}>{isEditing ? 'Edit Included Item' : 'Add Included Item'}</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
         </div>
-        {error && <p style={{ color: 'var(--color-error)', fontSize: '13px', margin: '0 0 8px 0' }}>{error}</p>}
+        {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: '0 0 8px 0' }}>{error}</p>}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Item Type</label>
@@ -403,12 +403,12 @@ function AddEditPlanItemModal({ planId, item, onClose, onSaved }: { planId: stri
               <option value="monthly">Monthly</option>
               <option value="unlimited">Unlimited</option>
             </select>
-            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px' }}>How often the allowance resets (use-it-or-lose-it)</span>
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: '2px' }}>How often the allowance resets (use-it-or-lose-it)</span>
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>{accessFrequency === 'unlimited' ? 'Unlimited' : `Quantity per ${accessFrequency === 'daily' ? 'day' : accessFrequency === 'weekly' ? 'week' : 'month'}`}</label>
             {accessFrequency !== 'unlimited' && <input style={styles.input} type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />}
-            {accessFrequency === 'unlimited' && <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', padding: '10px 0' }}>No limit on usage</span>}
+            {accessFrequency === 'unlimited' && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', padding: '10px 0' }}>No limit on usage</span>}
           </div>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
@@ -426,7 +426,7 @@ const styles: Record<string, React.CSSProperties> = {
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, marginBottom: 'var(--space-md)', fontFamily: 'var(--font-family)' },
   headerCard: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-lg)', background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', marginBottom: 'var(--space-md)' },
   headerInfo: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  name: { margin: 0, fontSize: 'var(--font-size-xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
+  name: { margin: 0, fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)' },
   frequency: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   headerRight: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: '4px' },
   price: { fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)' },
@@ -437,15 +437,15 @@ const styles: Record<string, React.CSSProperties> = {
   cardTitle: { margin: '0 0 var(--space-md) 0', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  label: { fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' },
-  input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: '14px', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
-  muted: { fontSize: '14px', color: 'var(--color-text-secondary)', margin: 0 },
-  itemRow: { display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: '14px' },
-  deleteBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 },
-  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px 4px' },
+  label: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)' },
+  input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
+  muted: { fontSize: 'var(--font-size-base)', color: 'var(--color-text-secondary)', margin: 0 },
+  itemRow: { display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-base)' },
+  deleteBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1, borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
+  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '2px 4px', borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
   overlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '450px', maxHeight: '85vh', overflow: 'auto', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.3)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
-  modalTitle: { margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--color-text)' },
-  closeBtn: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: 'var(--color-text-secondary)' },
+  modalTitle: { margin: 0, fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)' },
+  closeBtn: { background: 'none', border: 'none', fontSize: 'var(--font-size-xl)', cursor: 'pointer', color: 'var(--color-text-secondary)' },
 };

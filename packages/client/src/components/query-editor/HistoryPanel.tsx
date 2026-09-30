@@ -149,7 +149,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid var(--color-border, #333)',
   },
   title: {
-    fontSize: '13px',
+    fontSize: 'var(--font-size-sm)',
     fontWeight: 600,
     color: 'var(--color-text, #fff)',
   },
@@ -160,7 +160,7 @@ const styles: Record<string, React.CSSProperties> = {
   searchInput: {
     width: '100%',
     padding: '6px 8px',
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     border: '1px solid var(--color-border, #444)',
     borderRadius: '3px',
     backgroundColor: 'var(--color-surface, #1e1e1e)',
@@ -170,7 +170,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   loadingBar: {
     padding: '4px 12px',
-    fontSize: '11px',
+    fontSize: 'var(--font-size-xs)',
     color: 'var(--color-text-secondary, #999)',
     textAlign: 'center',
   },
@@ -190,16 +190,16 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '4px',
   },
   statusBadge: {
-    fontSize: '11px',
+    fontSize: 'var(--font-size-xs)',
     fontWeight: 600,
     textTransform: 'uppercase',
   },
   executionTime: {
-    fontSize: '11px',
+    fontSize: 'var(--font-size-xs)',
     color: 'var(--color-text-muted, #666)',
   },
   queryText: {
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     fontFamily: 'monospace',
     color: 'var(--color-text, #e0e0e0)',
     lineHeight: 1.4,
@@ -208,7 +208,7 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap',
   },
   timestamp: {
-    fontSize: '11px',
+    fontSize: 'var(--font-size-xs)',
     color: 'var(--color-text-muted, #666)',
     marginTop: '4px',
   },
@@ -219,7 +219,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '24px',
   },
   emptyText: {
-    fontSize: '13px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-text-secondary, #999)',
   },
   errorState: {
@@ -230,17 +230,16 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '24px',
   },
   errorText: {
-    fontSize: '13px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-error, #dc2626)',
     textAlign: 'center',
   },
   retryButton: {
     padding: '6px 12px',
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-text, #fff)',
     backgroundColor: 'var(--color-primary, #C9A96E)',
     border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-  },
+    borderRadius: 'var(--button-radius)',
+    cursor: 'pointer', minHeight: 'var(--button-height-sm)' },
 };

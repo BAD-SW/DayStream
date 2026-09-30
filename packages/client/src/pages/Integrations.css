@@ -1,0 +1,86 @@
+/* Integrations (THE-15) — layout only; sizes and colours come from design tokens. */
+
+.int-category {
+  margin-bottom: var(--space-xl);
+}
+
+.int-section-title {
+  margin: 0 0 12px;
+  font-size: var(--card-title-size);
+  font-weight: var(--card-title-weight);
+  color: var(--color-text-title);
+  text-transform: capitalize;
+}
+
+.int-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-md);
+}
+
+.int-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.int-card-title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-title);
+}
+
+.int-muted {
+  margin: var(--space-sm) 0 12px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.int-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.int-stack .int-muted {
+  margin: 0;
+}
+
+.int-code {
+  display: block;
+  padding: var(--space-sm) 12px;
+  border-radius: var(--control-radius);
+  background: var(--color-background);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  word-break: break-all;
+}
+
+.int-sublist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin: var(--space-xs) 0 var(--space-sm) var(--space-md);
+  padding-left: 12px;
+  border-left: 2px solid var(--color-border);
+}
+
+.int-sublist .int-muted {
+  margin: 0;
+}
+
+.int-sublist__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  font-size: var(--font-size-sm);
+}
+
+.int-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}

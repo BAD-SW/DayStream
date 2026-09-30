@@ -218,7 +218,7 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '700px', margin: '0 auto' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
   subtitle: { fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-md)' },
   loading: { padding: 'var(--space-xl)', textAlign: 'center', color: 'var(--color-text-secondary)' },
   empty: { color: 'var(--color-text-secondary)', textAlign: 'center', padding: 'var(--space-lg)' },

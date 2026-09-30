@@ -159,16 +159,16 @@ function EnrollForm({ businessId, onEnrolled }: { businessId: string; onEnrolled
 
   return (
     <div style={styles.enrollForm}>
-      <h3 style={{ margin: '0 0 12px 0', color: 'var(--color-text)', fontSize: '16px' }}>Enroll Customer in Plan</h3>
-      {error && <p style={{ color: 'var(--color-error)', fontSize: '13px', margin: '0 0 8px' }}>{error}</p>}
+      <h3 style={{ margin: '0 0 12px 0', color: 'var(--color-text)', fontSize: 'var(--font-size-base)' }}>Enroll Customer in Plan</h3>
+      {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: '0 0 8px' }}>{error}</p>}
       <form onSubmit={handleEnroll} style={{ display: 'flex', flexDirection: 'column' as const, gap: '12px' }}>
         {/* Customer search */}
         <div style={{ position: 'relative' as const }}>
-          <label style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>Customer *</label>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>Customer *</label>
           {selectedCustomer ? (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', fontSize: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', fontSize: 'var(--font-size-base)' }}>
               <span>{selectedCustomer.first_name} {selectedCustomer.last_name} ({selectedCustomer.email})</span>
-              <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: 'var(--color-text-secondary)' }} onClick={() => { setSelectedCustomer(null); setCustomerSearch(''); }}>×</button>
+              <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', color: 'var(--color-text-secondary)' }} onClick={() => { setSelectedCustomer(null); setCustomerSearch(''); }}>×</button>
             </div>
           ) : (
             <input style={styles.select} value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} placeholder="Search customer..." autoComplete="off"
@@ -178,7 +178,7 @@ function EnrollForm({ businessId, onEnrolled }: { businessId: string; onEnrolled
           {showDropdown && customerResults.length > 0 && (
             <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', marginTop: '4px', maxHeight: '150px', overflow: 'auto', zIndex: 10, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
               {customerResults.map((c) => (
-                <button key={c.id} type="button" style={{ display: 'block', width: '100%', padding: '8px 12px', border: 'none', background: 'var(--color-background)', cursor: 'pointer', textAlign: 'left', color: 'var(--color-text)', fontSize: '13px', borderBottom: '1px solid var(--color-border)' }}
+                <button key={c.id} type="button" style={{ display: 'block', width: '100%', padding: '8px 12px', border: 'none', background: 'var(--color-background)', cursor: 'pointer', textAlign: 'left', color: 'var(--color-text)', fontSize: 'var(--font-size-sm)', borderBottom: '1px solid var(--color-border)' }}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => { setSelectedCustomer(c); setShowDropdown(false); setCustomerSearch(''); }}>
                   <strong>{c.first_name} {c.last_name}</strong> — {c.email}
@@ -190,7 +190,7 @@ function EnrollForm({ businessId, onEnrolled }: { businessId: string; onEnrolled
 
         {/* Plan select */}
         <div>
-          <label style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>Plan *</label>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>Plan *</label>
           <select style={styles.select} value={selectedPlan} onChange={(e) => setSelectedPlan(e.target.value)} required>
             <option value="">Select a plan...</option>
             {plans.filter((p) => p.status === 'active').map((p) => (
@@ -214,10 +214,10 @@ function ActionBtn({ label, onClick }: { label: string; onClick: () => void }) {
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1200px', margin: '0 auto' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', margin: 0 },
   toolbar: { display: 'flex', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' },
   select: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
-  navBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 16px', color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
-  actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  navBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '8px 16px', color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', minHeight: 'var(--button-height-sm)' },
+  actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', minHeight: 'var(--button-height-sm)' },
   enrollForm: { padding: 'var(--space-lg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-lg)', background: 'var(--color-surface)' },
 };

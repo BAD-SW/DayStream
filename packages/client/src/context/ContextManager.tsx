@@ -16,17 +16,27 @@ interface MinimalUser {
 }
 
 /** Resolves the coarse persona bucket from a raw role string, including legacy display-format role names. */
-export function resolvePersona(role: string): Persona {
-  if (role === 'system_admin' || role === 'system_support' || role === 'Super Admin') return 'system';
+/**
+ * Roles arrive in two spellings: snake_case from the login response ("tenant_owner") and the
+ * usr_roles display name inside the JWT, which is what a page reload restores ("Tenant Owner").
+ * Normalise to snake_case so persona and permissions don't change after a reload.
+ */
+export function normalizeRole(role: string): string {
+  return role.trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+export function resolvePersona(rawRole: string): Persona {
+  const role = normalizeRole(rawRole);
+  if (role === 'system_admin' || role === 'system_support' || role === 'super_admin') return 'system';
   if (role === 'tenant_owner' || role === 'tenant_manager') return 'tenant';
   if (role === 'customer') return 'customer';
   return 'business';
 }
 
 /** Client-side permission approximation by role, mirroring server-assigned role permissions. */
-export function getPermissionsFromRole(role: string): string[] {
-  switch (role) {
-    case 'system_admin': case 'system_support': case 'Super Admin': return ['*:*'];
+export function getPermissionsFromRole(rawRole: string): string[] {
+  switch (normalizeRole(rawRole)) {
+    case 'system_admin': case 'system_support': case 'super_admin': return ['*:*'];
     case 'tenant_owner': return ['*:*'];
     case 'tenant_manager': return ['reports:read', 'settings:*'];
     case 'business_owner': return ['services:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*', 'customers:*'];
@@ -63,6 +73,25 @@ function readStoredContext(): ActiveContext | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether a context read back from sessionStorage may be restored for this user (THE-13).
+ * sessionStorage outlives a sign-in as a different user in the same tab, so a stored context
+ * is only trusted when it is reachable by the current persona:
+ * - business/customer personas can never switch, so only their own business is valid;
+ * - a tenant persona may only restore its own tenant, or (after validation) a business in it;
+ * - a system persona may restore anything, which init() re-validates against the server.
+ */
+export function isRestorableContext(stored: ActiveContext, defaultCtx: ActiveContext, persona: string): boolean {
+  if (persona === 'system') return true;
+  if (persona === 'tenant') {
+    if (stored.tenantId !== defaultCtx.tenantId) return false;
+    return stored.contextLevel === 'tenant' || stored.contextLevel === 'business';
+  }
+  return stored.contextLevel === 'business'
+    && stored.businessId === defaultCtx.businessId
+    && stored.tenantId === defaultCtx.tenantId;
 }
 
 function persistContext(ctx: ActiveContext): void {
@@ -223,7 +252,9 @@ export function ContextProvider({ children }: { children: ReactNode }) {
 
     async function init() {
       const defaultCtx = personaDefaultContext(user);
-      const stored = readStoredContext();
+      const rawStored = readStoredContext();
+      const stored = rawStored && isRestorableContext(rawStored, defaultCtx, persona) ? rawStored : null;
+      if (rawStored && !stored) clearStoredContext();
 
       // Resolve scope identifiers synchronously first so requests are never queued
       // waiting on network round-trips that aren't required to determine tenant/business ids.

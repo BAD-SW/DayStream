@@ -196,11 +196,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   emptyText: {
     color: 'var(--color-text-secondary, #999)',
-    fontSize: '14px',
+    fontSize: 'var(--font-size-base)',
   },
   loadingText: {
     color: 'var(--color-text-secondary, #999)',
-    fontSize: '14px',
+    fontSize: 'var(--font-size-base)',
   },
   errorPanel: {
     display: 'flex',
@@ -214,16 +214,16 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--color-error, #dc2626)',
   },
   errorIcon: {
-    fontSize: '16px',
+    fontSize: 'var(--font-size-base)',
   },
   errorText: {
-    fontSize: '13px',
+    fontSize: 'var(--font-size-sm)',
     fontFamily: 'monospace',
     wordBreak: 'break-word',
   },
   truncationNotice: {
     padding: '6px 12px',
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-warning, #f59e0b)',
     backgroundColor: 'var(--color-warning-bg, rgba(245, 158, 11, 0.1))',
     borderBottom: '1px solid var(--color-border, #333)',
@@ -235,7 +235,7 @@ const styles: Record<string, React.CSSProperties> = {
   table: {
     width: '100%',
     borderCollapse: 'collapse',
-    fontSize: '13px',
+    fontSize: 'var(--font-size-sm)',
     fontFamily: 'monospace',
   },
   headerCell: {
@@ -244,7 +244,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '8px 12px',
     textAlign: 'left',
     fontWeight: 600,
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-text, #fff)',
     backgroundColor: 'var(--color-surface-elevated, #2a2a2a)',
     borderBottom: '1px solid var(--color-border, #333)',
@@ -254,7 +254,7 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 1,
   },
   sortIndicator: {
-    fontSize: '10px',
+    fontSize: 'var(--font-size-xs)',
     opacity: 0.8,
   },
   evenRow: {
@@ -286,7 +286,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '6px 12px',
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-text-secondary, #999)',
     borderTop: '1px solid var(--color-border, #333)',
     backgroundColor: 'var(--color-surface-elevated, #2a2a2a)',

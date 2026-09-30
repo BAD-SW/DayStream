@@ -32,13 +32,14 @@ export function TableActionButton({ label, variant = 'default', onClick, disable
       style={{
         background: variantStyle.background,
         border: `1px solid ${variantStyle.borderColor}`,
-        borderRadius: 'var(--radius-sm, 4px)',
-        padding: '2px 8px',
-        fontSize: 'var(--font-size-xs, 12px)',
+        borderRadius: 'var(--button-radius)',
+        padding: '4px 12px',
+        minHeight: '30px',
+        fontSize: 'var(--font-size-xs)',
+        fontWeight: 'var(--button-font-weight)' as any,
         color: variantStyle.color,
         cursor: disabled ? 'not-allowed' : 'pointer',
         fontFamily: 'var(--font-family)',
-        fontWeight: 500,
         opacity: disabled ? 0.5 : 1,
         whiteSpace: 'nowrap',
       }}

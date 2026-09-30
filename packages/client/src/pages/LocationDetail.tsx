@@ -241,7 +241,7 @@ function LocationHoursSection({ locationId }: { locationId: string }) {
                 <input type="time" style={styles.timeInput} value={day.close_time} onChange={(e) => updateDay(day.day_of_week, 'close_time', e.target.value)} />
               </div>
             ) : (
-              <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>Closed</span>
+              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>Closed</span>
             )}
           </div>
         ))}
@@ -354,7 +354,7 @@ function LocationHourOverridesSection({ locationId }: { locationId: string }) {
               <input style={styles.timeInput} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="Optional" />
             </div>
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--color-text)', cursor: 'pointer' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', cursor: 'pointer' }}>
             <input type="checkbox" checked={form.is_closed} onChange={(e) => setForm({ ...form, is_closed: e.target.checked })} style={{ width: '14px', height: '14px' }} />
             Closed all day
           </label>
@@ -372,23 +372,23 @@ function LocationHourOverridesSection({ locationId }: { locationId: string }) {
         </div>
       )}
 
-      {loading ? <p style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>Loading...</p> :
-       overrides.length === 0 ? <p style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>No holiday overrides for {year}.</p> : (
+      {loading ? <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>Loading...</p> :
+       overrides.length === 0 ? <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>No holiday overrides for {year}.</p> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {overrides.map((o) => (
             <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
-              <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', minWidth: '50px' }}>
+              <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', minWidth: '50px' }}>
                 {new Date(o.override_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
               </span>
-              {o.label && <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', flex: 1 }}>{o.label}</span>}
+              {o.label && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', flex: 1 }}>{o.label}</span>}
               {!o.label && <span style={{ flex: 1 }} />}
               {o.is_closed ? (
-                <span style={{ fontSize: '12px', padding: '2px 8px', borderRadius: '4px', background: 'var(--color-error-bg, rgba(211,47,47,0.1))', color: 'var(--color-error)' }}>Closed</span>
+                <span style={{ fontSize: 'var(--font-size-sm)', padding: '2px 8px', borderRadius: '4px', background: 'var(--color-error-bg, rgba(211,47,47,0.1))', color: 'var(--color-error)' }}>Closed</span>
               ) : (
-                <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>{formatTime(o.open_time)}–{formatTime(o.close_time)}</span>
+                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>{formatTime(o.open_time)}–{formatTime(o.close_time)}</span>
               )}
-              <button onClick={() => openEdit(o)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px' }}>✏️</button>
-              <button onClick={() => handleDelete(o.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '2px' }}>🗑️</button>
+              <button onClick={() => openEdit(o)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '2px' }}>✏️</button>
+              <button onClick={() => handleDelete(o.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '2px' }}>🗑️</button>
             </div>
           ))}
         </div>
@@ -458,13 +458,13 @@ function LocationStaffSection({ locationId, businessId }: { locationId: string; 
         </div>
       )}
 
-      {loading ? <p style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>Loading...</p> :
-       assignedStaff.length === 0 ? <p style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>No staff assigned to this location.</p> : (
+      {loading ? <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>Loading...</p> :
+       assignedStaff.length === 0 ? <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>No staff assigned to this location.</p> : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           {assignedStaff.map((s) => (
-            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', fontSize: '13px', color: 'var(--color-text)' }}>
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
               <span>{s.first_name} {s.last_name}</span>
-              <button onClick={() => handleRemove(s.staff_id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '0 2px', color: 'var(--color-text-muted)' }} title="Remove">×</button>
+              <button onClick={() => handleRemove(s.staff_id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '0 2px', color: 'var(--color-text-muted)' }} title="Remove">×</button>
             </div>
           ))}
         </div>
@@ -500,7 +500,7 @@ const styles: Record<string, React.CSSProperties> = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-lg)' },
   headerLeft: { display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-xs)' },
   headerActions: { display: 'flex', gap: 'var(--space-sm)' },
-  title: { margin: 0, fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
+  title: { margin: 0, fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)' },
   badges: { display: 'flex', gap: 'var(--space-xs)' },
   detailGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 'var(--space-md)' },
   editSection: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-lg)', background: 'var(--color-surface)' },
@@ -514,7 +514,7 @@ const styles: Record<string, React.CSSProperties> = {
   hoursGrid: { display: 'flex', flexDirection: 'column' as const, gap: '8px' },
   hoursRow: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', minHeight: '36px' },
   dayLabel: { width: '100px', fontSize: 'var(--font-size-sm)', fontWeight: 500 as any, color: 'var(--color-text)' },
-  closedToggle: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--color-text-secondary)', cursor: 'pointer', width: '60px' },
+  closedToggle: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer', width: '60px' },
   timeInput: { background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '6px 10px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', width: '120px' },
   formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
 };

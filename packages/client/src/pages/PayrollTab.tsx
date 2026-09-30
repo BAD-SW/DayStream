@@ -164,7 +164,7 @@ export function PayrollTab() {
           ) : (
             <div>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '16px' }}>
-                <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Period:</label>
+                <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Period:</label>
                 <select value={selectedPeriodId} onChange={(e) => setSelectedPeriodId(e.target.value)} style={styles.select}>
                   {unprocessedPeriods.map(p => (
                     <option key={p.id} value={p.id}>
@@ -198,7 +198,7 @@ export function PayrollTab() {
           ) : (
             <div>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '16px' }}>
-                <label style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Period:</label>
+                <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Period:</label>
                 <select value={selectedHistoryId} onChange={(e) => setSelectedHistoryId(e.target.value)} style={styles.select}>
                   <option value="">Select a period...</option>
                   {historyPeriods.map(p => (
@@ -238,8 +238,8 @@ export function PayrollTab() {
                   ) : (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)' }}>{profile.first_name} {profile.last_name}</span>
-                        <span style={{ marginLeft: '12px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                        <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)' }}>{profile.first_name} {profile.last_name}</span>
+                        <span style={{ marginLeft: '12px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
                           {profile.country_code || '—'} · {profile.filing_status || 'Not set'} · {profile.allowances ?? 0} allowances
                           {profile.exempt && ' · Exempt'}
                         </span>
@@ -286,7 +286,7 @@ function EntriesTable({ entries, expandedId, onToggle }: { entries: any[]; expan
               </tr>
               {expandedId === entry.id && entry.breakdown && (
                 <tr key={`${entry.id}-bd`}>
-                  <td colSpan={6} style={{ padding: '8px 16px', background: 'var(--color-background)', fontSize: '12px' }}>
+                  <td colSpan={6} style={{ padding: '8px 16px', background: 'var(--color-background)', fontSize: 'var(--font-size-sm)' }}>
                     <div style={{ display: 'flex', gap: '24px' }}>
                       <div>
                         <strong>Compensation</strong>
@@ -319,15 +319,15 @@ function EntriesTable({ entries, expandedId, onToggle }: { entries: any[]; expan
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  muted: { fontSize: '13px', color: 'var(--color-text-secondary)' },
-  select: { padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '13px', color: 'var(--color-text)', background: 'var(--color-background)' },
-  viewBtn: { padding: '6px 14px', fontSize: '13px', border: '1px solid var(--color-border)', borderRadius: '4px', background: 'transparent', color: 'var(--color-text)', cursor: 'pointer' },
-  viewBtnActive: { background: 'var(--color-primary)', color: '#fff', borderColor: 'var(--color-primary)' },
-  table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '13px' },
-  th: { textAlign: 'left' as const, padding: '8px 12px', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '2px solid var(--color-border)' },
+  muted: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
+  select: { padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', background: 'var(--color-background)' },
+  viewBtn: { padding: '6px 14px', fontSize: 'var(--font-size-sm)', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', background: 'transparent', color: 'var(--color-text)', cursor: 'pointer', minHeight: 'var(--button-height-sm)' },
+  viewBtnActive: { background: 'var(--color-primary)', color: '#fff', borderColor: 'var(--color-primary)', borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
+  table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: 'var(--font-size-sm)' },
+  th: { textAlign: 'left' as const, padding: '8px 12px', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '2px solid var(--color-border)' },
   td: { padding: '8px 12px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)' },
   taxCard: { padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '6px' },
-  label: { fontSize: '11px', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '2px' },
-  input: { padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: '12px' },
-  linkBtn: { background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: '12px' },
+  label: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '2px' },
+  input: { padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)' },
+  linkBtn: { background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)' },
 };

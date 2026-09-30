@@ -2,7 +2,11 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
+import { PageHeader } from '../design-system/components/layout/PageHeader';
+import { TabBar } from '../design-system/components/navigation/TabBar';
+import { ListRow, ListRows, ListRowTitle, ListRowMeta, ListEmpty } from '../design-system/components/data/ListRow';
 import * as marketingApi from '../api/marketing';
+import './Marketing.css';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   draft: 'neutral', scheduled: 'info', sending: 'warning', sent: 'success', cancelled: 'error',
@@ -58,96 +62,86 @@ export function Marketing() {
     } catch { alert('Could not load enrollments'); }
   };
 
+  const tabs = [{ key: 'campaigns' as const, label: 'Campaigns' }, { key: 'sequences' as const, label: 'Sequences' }];
+
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Marketing</h1>
-        <div className="flex gap-2">
+    <div className="mk-page">
+      <PageHeader
+        title="Marketing"
+        actions={<>
           <Button onClick={() => navigate('/marketing/campaigns/new')}>New Campaign</Button>
           <Button variant="ghost" onClick={() => navigate('/marketing/sequences/new')}>New Sequence</Button>
-        </div>
-      </div>
-
-      <div className="border-b mb-6">
-        <nav className="flex gap-4">
-          {(['campaigns', 'sequences'] as const).map((tab) => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
-              className={`pb-2 px-1 text-sm font-medium border-b-2 capitalize ${activeTab === tab ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'}`}>
-              {tab}
-            </button>
-          ))}
-        </nav>
-      </div>
+        </>}
+      />
+      <TabBar aria-label="Marketing sections" tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
       {activeTab === 'campaigns' && (
-        <div className="space-y-2">
-          {campaigns.length === 0 ? <p className="text-gray-500">No campaigns yet</p> : campaigns.map((c: any) => (
+        <ListRows>
+          {campaigns.length === 0 ? <ListEmpty>No campaigns yet</ListEmpty> : campaigns.map((c: any) => (
             <div key={c.id}>
-              <div className="border rounded p-3 flex justify-between items-center cursor-pointer hover:border-blue-300"
-                onClick={() => navigate(`/marketing/campaigns/${c.id}`)}>
-                <div>
-                  <span className="font-medium">{c.name}</span>
-                  <span className="text-sm text-gray-500 ml-3">{c.channel}</span>
-                </div>
-                <div className="flex gap-2 items-center">
+              <ListRow
+                onClick={() => navigate(`/marketing/campaigns/${c.id}`)}
+                actions={<>
                   {c.status === 'draft' && (
                     <>
-                      <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); handleSchedule(c.id); }}>Schedule</Button>
-                      <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); handleTestSend(c.id); }}>Test</Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleSchedule(c.id)}>Schedule</Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleTestSend(c.id)}>Test</Button>
                     </>
                   )}
-                  <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); handleViewRecipients(c.id); }}>
+                  <Button size="sm" variant="ghost" onClick={() => handleViewRecipients(c.id)}>
                     {selectedCampaign === c.id ? 'Hide Recipients' : 'Recipients'}
                   </Button>
                   <Badge variant={STATUS_VARIANTS[c.status] || 'neutral'}>{c.status}</Badge>
-                </div>
-              </div>
+                </>}
+              >
+                <ListRowTitle>{c.name}</ListRowTitle>
+                <ListRowMeta>{c.channel}</ListRowMeta>
+              </ListRow>
               {selectedCampaign === c.id && recipients.length > 0 && (
-                <div className="ml-4 mt-1 mb-2 border-l-2 pl-3">
-                  <p className="text-xs text-gray-500 mb-1">{recipients.length} recipients</p>
+                <div className="mk-sublist">
+                  <p className="mk-sublist__count">{recipients.length} recipients</p>
                   {recipients.slice(0, 10).map((r: any, i: number) => (
-                    <div key={i} className="text-sm">{r.email || r.name || r.customer_id}</div>
+                    <div key={i} className="mk-sublist__item">{r.email || r.name || r.customer_id}</div>
                   ))}
-                  {recipients.length > 10 && <p className="text-xs text-gray-400">...and {recipients.length - 10} more</p>}
+                  {recipients.length > 10 && <p className="mk-sublist__count">...and {recipients.length - 10} more</p>}
                 </div>
               )}
             </div>
           ))}
-        </div>
+        </ListRows>
       )}
 
       {activeTab === 'sequences' && (
-        <div className="space-y-2">
-          {sequences.length === 0 ? <p className="text-gray-500">No sequences yet</p> : sequences.map((s: any) => (
+        <ListRows>
+          {sequences.length === 0 ? <ListEmpty>No sequences yet</ListEmpty> : sequences.map((s: any) => (
             <div key={s.id}>
-              <div className="border rounded p-3 flex justify-between items-center cursor-pointer hover:border-blue-300"
-                onClick={() => navigate(`/marketing/sequences/${s.id}`)}>
-                <div>
-                  <span className="font-medium">{s.name}</span>
-                  {s.is_template && <span className="text-xs bg-purple-100 text-purple-700 ml-2 px-1 rounded">Template</span>}
-                </div>
-                <div className="flex gap-2 items-center">
-                  <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); handleViewEnrollments(s.id); }}>
+              <ListRow
+                onClick={() => navigate(`/marketing/sequences/${s.id}`)}
+                actions={<>
+                  <Button size="sm" variant="ghost" onClick={() => handleViewEnrollments(s.id)}>
                     {selectedSequence === s.id ? 'Hide Enrollments' : 'Enrollments'}
                   </Button>
                   <Badge variant={STATUS_VARIANTS[s.status] || 'neutral'}>{s.status}</Badge>
-                </div>
-              </div>
+                </>}
+              >
+                <ListRowTitle>{s.name}</ListRowTitle>
+                {s.is_template && <span className="mk-tag">Template</span>}
+              </ListRow>
               {selectedSequence === s.id && enrollments.length > 0 && (
-                <div className="ml-4 mt-1 mb-2 border-l-2 pl-3">
-                  <p className="text-xs text-gray-500 mb-1">{enrollments.length} enrollments</p>
+                <div className="mk-sublist">
+                  <p className="mk-sublist__count">{enrollments.length} enrollments</p>
                   {enrollments.slice(0, 10).map((e: any, i: number) => (
-                    <div key={i} className="text-sm flex justify-between">
+                    <div key={i} className="mk-sublist__item mk-sublist__item--split">
                       <span>{e.customer_name || e.email || e.customer_id}</span>
                       <Badge variant={e.status === 'active' ? 'success' : 'neutral'}>{e.status}</Badge>
                     </div>
                   ))}
-                  {enrollments.length > 10 && <p className="text-xs text-gray-400">...and {enrollments.length - 10} more</p>}
+                  {enrollments.length > 10 && <p className="mk-sublist__count">...and {enrollments.length - 10} more</p>}
                 </div>
               )}
             </div>
           ))}
-        </div>
+        </ListRows>
       )}
     </div>
   );

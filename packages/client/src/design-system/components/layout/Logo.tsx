@@ -60,7 +60,7 @@ const styles: Record<string, CSSProperties> = {
   wordmark: {
     fontFamily: "'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     fontWeight: 700,
-    fontSize: '19px',
+    fontSize: 'var(--font-size-xl)',
     letterSpacing: '-0.01em',
     color: 'var(--color-text)',
   },

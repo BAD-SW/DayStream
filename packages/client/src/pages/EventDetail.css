@@ -1,0 +1,85 @@
+/* Event detail (THE-15) — shares form/section styles with Events.css. */
+
+.evd-back {
+  margin-bottom: var(--space-sm);
+}
+
+.evd-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-lg);
+}
+
+.evd-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+}
+
+.evd-facts div {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.evd-facts dt,
+.evd-label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-secondary);
+}
+
+.evd-facts dd {
+  margin: 0;
+}
+
+.evd-description p {
+  margin: var(--space-xs) 0 0;
+}
+
+.evd-price {
+  flex: 0 0 8rem;
+}
+
+.evd-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.evd-inline-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: var(--space-sm) 0 var(--space-sm) var(--space-md);
+}
+
+.evd-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.evd-stat {
+  padding: var(--space-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--card-radius);
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.evd-stat__value {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-title);
+}
+
+.evd-stat__label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 768px) {
+  .evd-details, .evd-stats { grid-template-columns: minmax(0, 1fr); }
+}

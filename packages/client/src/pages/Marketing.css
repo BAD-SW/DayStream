@@ -1,0 +1,35 @@
+/* Marketing (THE-15) — layout only; sizes and colours come from design tokens. */
+
+.mk-tag {
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--stage-winback-bg);
+  color: var(--stage-winback-fg);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+}
+
+.mk-sublist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin: var(--space-xs) 0 var(--space-sm) var(--space-md);
+  padding-left: 12px;
+  border-left: 2px solid var(--color-border);
+}
+
+.mk-sublist__count {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.mk-sublist__item {
+  font-size: var(--font-size-sm);
+}
+
+.mk-sublist__item--split {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}

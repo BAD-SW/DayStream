@@ -27,8 +27,8 @@ export function TenantSettings() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-xl)' },
-  title: { fontSize: 'var(--font-size-page-title)', fontWeight: 700, color: 'var(--color-text-title)', margin: '0 0 var(--space-lg) 0' },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text-title)', margin: '0 0 var(--space-lg) 0' },
   tabBar: { display: 'flex', gap: '4px', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-xl)' },
-  tab: { padding: '10px 16px', background: 'none', border: 'none', borderBottom: '2px solid transparent', color: 'var(--color-text-secondary)', fontSize: '14px', fontWeight: 600, cursor: 'pointer' },
+  tab: { padding: '10px 16px', background: 'none', border: 'none', borderBottom: '2px solid transparent', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)', fontWeight: 600, cursor: 'pointer' },
   tabActive: { color: 'var(--color-primary)', borderBottomColor: 'var(--color-primary)' },
 };

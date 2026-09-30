@@ -72,15 +72,15 @@ export function FeatureFlags() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  heading: { fontSize: '24px', fontWeight: 300, margin: '0 0 8px 0', color: 'var(--color-text)' },
-  subtext: { color: 'var(--color-text-secondary)', fontSize: '14px', marginBottom: '24px' },
-  empty: { color: 'var(--color-text-secondary)', fontSize: '14px' },
+  heading: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, margin: '0 0 8px 0', color: 'var(--color-text)' },
+  subtext: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)', marginBottom: '24px' },
+  empty: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)' },
   list: { border: '1px solid var(--color-border)', borderRadius: '8px', overflow: 'hidden' },
   flagRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', borderBottom: '1px solid var(--color-border)' },
   flagInfo: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
-  flagKey: { fontSize: '14px', fontWeight: 500, color: 'var(--color-text)', fontFamily: 'monospace' },
-  flagDesc: { fontSize: '12px', color: 'var(--color-text-secondary)' },
+  flagKey: { fontSize: 'var(--font-size-base)', fontWeight: 500, color: 'var(--color-text)', fontFamily: 'monospace' },
+  flagDesc: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
   toggle: { display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' },
   checkbox: { width: '18px', height: '18px', cursor: 'pointer' },
-  toggleLabel: { fontSize: '13px', fontWeight: 500 },
+  toggleLabel: { fontSize: 'var(--font-size-sm)', fontWeight: 500 },
 };

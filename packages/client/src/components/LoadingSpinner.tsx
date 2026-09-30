@@ -25,8 +25,8 @@ const styles: Record<string, React.CSSProperties> = {
     animation: 'spin 0.8s linear infinite',
   },
   text: {
-    color: '#B0B0B0',
-    fontSize: '14px',
+    color: 'var(--color-text-secondary)',
+    fontSize: 'var(--font-size-base)',
     margin: 0,
   },
 };

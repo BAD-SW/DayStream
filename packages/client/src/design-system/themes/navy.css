@@ -194,3 +194,19 @@
   outline: 2px solid var(--color-border-focus);
   outline-offset: 2px;
 }
+
+/* Native form controls inside pages (THE-10). Most pages still style their inputs inline;
+ * inline styles set padding/font but rarely height, so this gives them the mockup's control
+ * height without touching each page. Zero-specificity :where() keeps it easy to override. */
+[data-base-theme='navy'] .app-content :where(
+  input:not([type='checkbox']):not([type='radio']):not([type='color']):not([type='range']):not([type='file']):not([type='hidden']),
+  select
+) {
+  box-sizing: border-box;
+  min-height: var(--control-height);
+}
+
+[data-base-theme='navy'] .app-content :where(textarea) {
+  box-sizing: border-box;
+  font-size: var(--control-font-size);
+}

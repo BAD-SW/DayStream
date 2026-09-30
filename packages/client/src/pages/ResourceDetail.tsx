@@ -115,7 +115,7 @@ function DetailsTab({ resource, businessId, onUpdate }: { resource: Resource; bu
       {error && <Alert variant="error">{error}</Alert>}
       {isDirty && (
         <div style={styles.saveBar}>
-          <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>You have unsaved changes</span>
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>You have unsaved changes</span>
           <div style={{ display: 'flex', gap: '8px' }}>
             <Button variant="outline" size="sm" onClick={handleDiscard}>Discard</Button>
             <Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button>
@@ -149,7 +149,7 @@ function DetailsTab({ resource, businessId, onUpdate }: { resource: Resource; bu
             <span style={styles.helper}>Time between bookings for cleanup/prep</span>
           </div>
           <div style={styles.formGroup}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', paddingTop: '20px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', paddingTop: '20px' }}>
               <input type="checkbox" checked={form.is_24_7} onChange={(e) => setForm({ ...form, is_24_7: e.target.checked })} style={{ width: '16px', height: '16px' }} />
               Available 24/7 (no schedule restrictions)
             </label>
@@ -260,7 +260,7 @@ function ScheduleTab({ resourceId }: { resourceId: string }) {
 
       {showForm && (
         <div style={styles.card}>
-          <h4 style={{ ...styles.cardTitle, fontSize: '14px' }}>{editing ? 'Edit Schedule' : 'Add Schedule'}</h4>
+          <h4 style={{ ...styles.cardTitle, fontSize: 'var(--font-size-base)' }}>{editing ? 'Edit Schedule' : 'Add Schedule'}</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' }}>
             <div style={styles.formGroup}><label style={styles.label}>Name</label><input style={styles.input} value={formName} onChange={(e) => setFormName(e.target.value)} /></div>
             <div style={styles.formGroup}><label style={styles.label}>Effective From</label><input type="date" style={styles.input} value={formFrom} onChange={(e) => setFormFrom(e.target.value)} /></div>
@@ -269,7 +269,7 @@ function ScheduleTab({ resourceId }: { resourceId: string }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: 'var(--space-md)' }}>
             {formSlots.map((slot) => (
               <div key={slot.day_of_week} style={{ display: 'grid', gridTemplateColumns: '120px 40px 1fr 1fr', gap: '8px', alignItems: 'center' }}>
-                <span style={{ fontSize: '13px', color: 'var(--color-text)', fontWeight: 500 }}>{dayNames[slot.day_of_week]}</span>
+                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', fontWeight: 500 }}>{dayNames[slot.day_of_week]}</span>
                 <input type="checkbox" checked={slot.enabled} onChange={(e) => updateSlot(slot.day_of_week, 'enabled', e.target.checked)} style={{ width: '16px', height: '16px' }} />
                 {slot.enabled ? (
                   <>
@@ -277,7 +277,7 @@ function ScheduleTab({ resourceId }: { resourceId: string }) {
                     <input type="time" style={styles.input} value={slot.end_time} onChange={(e) => updateSlot(slot.day_of_week, 'end_time', e.target.value)} />
                   </>
                 ) : (
-                  <span style={{ gridColumn: 'span 2', fontSize: '12px', color: 'var(--color-text-secondary)' }}>Closed</span>
+                  <span style={{ gridColumn: 'span 2', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Closed</span>
                 )}
               </div>
             ))}
@@ -301,7 +301,7 @@ function ScheduleTab({ resourceId }: { resourceId: string }) {
                 <div>
                   <strong style={{ color: 'var(--color-text)' }}>{s.name}</strong>
                   {(s.effective_from || s.effective_to) && (
-                    <span style={{ marginLeft: '8px', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                    <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
                       {s.effective_from ? new Date(s.effective_from).toLocaleDateString() : 'Start'} → {s.effective_to ? new Date(s.effective_to).toLocaleDateString() : 'Ongoing'}
                     </span>
                   )}
@@ -315,7 +315,7 @@ function ScheduleTab({ resourceId }: { resourceId: string }) {
                 {dayNames.map((dayName, i) => {
                   const slot = (s.slots || []).find((sl: any) => sl.day_of_week === i);
                   return (
-                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '8px', fontSize: '13px' }}>
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '8px', fontSize: 'var(--font-size-sm)' }}>
                       <span style={{ color: 'var(--color-text-secondary)', fontWeight: 500 }}>{dayName}</span>
                       <span style={{ color: slot ? 'var(--color-text)' : 'var(--color-text-secondary)' }}>
                         {slot ? `${slot.start_time.slice(0, 5)} – ${slot.end_time.slice(0, 5)}` : 'Closed'}
@@ -423,8 +423,8 @@ function MaintenanceTab({ resourceId }: { resourceId: string }) {
               <div key={r.id} style={styles.listItem}>
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Badge variant="neutral">{r.maintenance_type === 'weekly' ? dayLabels[r.day_of_week] : 'Daily'}</Badge>
-                  <span style={{ fontSize: '13px', color: 'var(--color-text)' }}>{formatTime(r.start_time)}–{formatTime(r.end_time)}</span>
-                  {r.description && <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>— {r.description}</span>}
+                  <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>{formatTime(r.start_time)}–{formatTime(r.end_time)}</span>
+                  {r.description && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>— {r.description}</span>}
                 </div>
                 <button style={styles.iconBtn} onClick={() => handleDelete(r.id)} title="Remove">🗑️</button>
               </div>
@@ -451,7 +451,7 @@ const styles: Record<string, React.CSSProperties> = {
   loading: { padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-text-secondary)' },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, marginBottom: 'var(--space-md)', fontFamily: 'var(--font-family)' },
   headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
-  title: { margin: 0, fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },
+  title: { margin: 0, fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)' },
   subtitle: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: '4px' },
   tabBar: { display: 'flex', gap: '0', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-lg)' },
   card: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-lg)', marginBottom: 'var(--space-md)' },
@@ -460,9 +460,9 @@ const styles: Record<string, React.CSSProperties> = {
   formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
   label: { fontSize: 'var(--font-size-xs)', fontWeight: 'var(--font-weight-medium)' as any, color: 'var(--color-text-secondary)' },
   input: { background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', width: '100%', boxSizing: 'border-box' as const },
-  helper: { fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px' },
+  helper: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: '2px' },
   saveBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-sm) var(--space-md)', background: 'var(--color-surface)', border: '1px solid var(--color-primary)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-md)' },
   listItem: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)' },
   emptyText: { color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', margin: 0 },
-  iconBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', padding: '4px' },
+  iconBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '4px' },
 };

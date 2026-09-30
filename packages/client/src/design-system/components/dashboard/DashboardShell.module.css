@@ -4,6 +4,7 @@
   gap: var(--space-2xl);
   padding: var(--space-lg);
   width: 100%;
+  box-sizing: border-box;
 }
 
 /* auto-fit (not auto-fill): collapses empty trailing tracks and lets the actual

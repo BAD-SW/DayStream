@@ -1,0 +1,81 @@
+/* Week grid shared by StaffCalendar and ResourceCalendar (THE-15) — tokens only. */
+
+.wg-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wg-range {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.wg-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--card-radius);
+  background: var(--color-surface);
+}
+
+.wg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.wg-table th,
+.wg-table td {
+  padding: var(--space-sm);
+  border-right: 1px solid var(--color-divider);
+  border-bottom: 1px solid var(--color-divider);
+  text-align: center;
+}
+
+.wg-table tr > :last-child {
+  border-right: none;
+}
+
+.wg-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.wg-table th {
+  background: var(--color-background);
+  font-size: var(--font-size-table-header);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-secondary);
+}
+
+.wg-table .wg-first {
+  width: 12rem;
+  text-align: left;
+}
+
+.wg-name {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-title);
+}
+
+.wg-date {
+  display: block;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-normal);
+  color: var(--color-text-secondary);
+}
+
+.wg-cell {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.wg-cell--available { background: var(--color-success-bg); color: var(--badge-success-fg); }
+.wg-cell--booked    { background: var(--color-info-bg);    color: var(--badge-info-fg); }
+.wg-cell--leave     { background: var(--color-warning-bg); color: var(--badge-warning-fg); }
+.wg-cell--off       { background: var(--color-background); color: var(--color-text-secondary); }
+
+.wg-empty {
+  padding: var(--space-md);
+  color: var(--color-text-secondary);
+}

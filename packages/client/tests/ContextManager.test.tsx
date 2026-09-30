@@ -116,4 +116,18 @@ describe('ContextProvider', () => {
     expect(localStorage.getItem('access_token')).toBe(tokenBefore);
     expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
   });
+
+  // THE-13: a context left in sessionStorage by a previous user in the same tab must not leak.
+  it("business persona ignores a stored context for another tenant's business and lands on its own", async () => {
+    sessionStorage.setItem('ds_active_context', JSON.stringify({
+      contextLevel: 'business', tenantId: 'other-tenant', businessId: 'other-biz', displayName: 'Someone Else',
+    }));
+    mockUser = { id: 'u1', role: 'business_owner', tenant_id: 't1', business_id: 'b1' };
+    apiGet.mockResolvedValue({ data: { data: { tenant: { name: 'T1' }, business: { name: 'B1' } } } });
+    render(<ContextProvider><TestConsumer /></ContextProvider>);
+    expect(screen.getByTestId('business-id').textContent).toBe('b1');
+    await waitFor(() => expect(screen.getByTestId('business-id').textContent).toBe('b1'));
+    const persisted = JSON.parse(sessionStorage.getItem('ds_active_context') || '{}');
+    expect(persisted.businessId).toBe('b1');
+  });
 });

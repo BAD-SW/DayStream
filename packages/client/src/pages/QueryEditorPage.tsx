@@ -478,7 +478,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   executeButton: {
     padding: '6px 14px',
-    fontSize: '13px',
+    fontSize: 'var(--font-size-sm)',
     fontWeight: 600,
     color: '#fff',
     backgroundColor: 'var(--color-primary, #C9A96E)',
@@ -488,14 +488,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   cancelButton: {
     padding: '6px 14px',
-    fontSize: '13px',
+    fontSize: 'var(--font-size-sm)',
     fontWeight: 500,
     color: 'var(--color-error, #dc2626)',
     backgroundColor: 'transparent',
     border: '1px solid var(--color-error, #dc2626)',
-    borderRadius: '4px',
-    cursor: 'pointer',
-  },
+    borderRadius: 'var(--button-radius)',
+    cursor: 'pointer', minHeight: 'var(--button-height-sm)' },
   disabledButton: {
     opacity: 0.5,
     cursor: 'not-allowed',
@@ -543,7 +542,7 @@ const styles: Record<string, React.CSSProperties> = {
   sidebarTabButton: {
     flex: 1,
     padding: '8px 12px',
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     fontWeight: 500,
     color: 'var(--color-text-secondary, #999)',
     backgroundColor: 'transparent',

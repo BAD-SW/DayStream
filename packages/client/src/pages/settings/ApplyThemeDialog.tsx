@@ -124,11 +124,11 @@ export function ApplyThemeDialog({ theme, persona, onClose, onApplied }: ApplyTh
 const styles: Record<string, React.CSSProperties> = {
   overlay: { position: 'fixed', inset: 0, background: 'var(--color-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-xl)', width: '380px', maxWidth: '90vw', border: '1px solid var(--color-border)' },
-  title: { fontSize: '16px', fontWeight: 700, color: 'var(--color-text)', margin: '0 0 var(--space-lg) 0' },
+  title: { fontSize: 'var(--font-size-base)', fontWeight: 700, color: 'var(--color-text)', margin: '0 0 var(--space-lg) 0' },
   scopeRow: { display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: 'var(--space-md)' },
-  scopeBtn: { textAlign: 'left', padding: '9px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', color: 'var(--color-text)', cursor: 'pointer', fontSize: '13.5px' },
+  scopeBtn: { textAlign: 'left', padding: '9px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', color: 'var(--color-text)', cursor: 'pointer', fontSize: 'var(--font-size-sm)' },
   scopeBtnActive: { borderColor: 'var(--color-primary)', background: 'var(--color-primary)', color: 'var(--color-primary-contrast)', fontWeight: 600 },
-  select: { width: '100%', padding: '9px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', color: 'var(--color-text)', fontSize: '13.5px', marginBottom: '8px' },
-  errorText: { fontSize: '13px', color: 'var(--color-error)', margin: '4px 0 0' },
+  select: { width: '100%', padding: '9px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', color: 'var(--color-text)', fontSize: 'var(--font-size-sm)', marginBottom: '8px' },
+  errorText: { fontSize: 'var(--font-size-sm)', color: 'var(--color-error)', margin: '4px 0 0' },
   actions: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: 'var(--space-lg)' },
 };

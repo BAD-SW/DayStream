@@ -105,7 +105,7 @@
 }
 
 .dsw-step-title {
-  font-size: var(--font-size-title, 1.5rem);
+  font-size: var(--font-size-2xl, 1.5rem);
   font-weight: var(--font-weight-bold, 700);
   color: var(--color-text-title, #111827);
   margin: 0;
@@ -138,10 +138,11 @@
 
 .dsw-btn {
   border: none;
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--button-radius, 8px);
+  min-height: var(--button-height-md, auto);
   padding: 0.75rem 1.25rem;
   font-size: var(--font-size-body, 1rem);
-  font-weight: var(--font-weight-medium, 500);
+  font-weight: var(--button-font-weight, 500);
   cursor: pointer;
   transition: opacity 150ms ease;
 }
@@ -389,7 +390,9 @@
 
 .dsw-input {
   border: 1px solid var(--color-border, #e5e7eb);
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--control-radius, 8px);
+  min-height: var(--control-height, auto);
+  box-sizing: border-box;
   padding: 0.6rem 0.75rem;
   font-size: var(--font-size-body, 1rem);
   background: var(--color-surface, #ffffff);

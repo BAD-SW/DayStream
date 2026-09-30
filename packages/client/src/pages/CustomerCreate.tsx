@@ -186,7 +186,7 @@ function Field({ label, value, onChange, type = 'text', required = false }: {
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '760px', margin: '0 auto' },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, marginBottom: 'var(--space-md)', fontFamily: 'var(--font-family)' },
-  title: { fontSize: 'var(--font-size-page-title)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
   form: { display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-xl)' },
   section: { display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-lg)' },
   sectionTitle: {
@@ -195,8 +195,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   row: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' },
   fieldWrapper: { display: 'flex', flexDirection: 'column' as const, gap: '7px' },
-  label: { fontSize: '13.5px', fontWeight: 'var(--font-weight-semibold)' as any, color: 'var(--color-text-secondary)' },
-  input: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: '15px' },
+  label: { fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-semibold)' as any, color: 'var(--color-text-secondary)' },
+  input: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-base)' },
   inputError: { borderColor: 'var(--color-error)', background: 'var(--color-error-bg)' },
   phoneRow: { display: 'flex', gap: '8px' },
   errMsg: { fontSize: 'var(--font-size-xs)', color: 'var(--color-error)' },

@@ -1135,22 +1135,22 @@ const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1200px', margin: '0 auto' },
   header: { marginBottom: 'var(--space-md)' },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, fontFamily: 'var(--font-family)', marginBottom: 'var(--space-sm)', display: 'block' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', margin: 0 },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', margin: 0 },
   controls: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' as const, gap: 'var(--space-sm)' },
   viewToggle: { display: 'flex', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
-  viewBtn: { background: 'none', border: 'none', borderRight: '1px solid var(--color-border)', padding: '8px 16px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
-  viewBtnActive: { background: 'var(--color-accent, #C9A96E)', color: '#1A1A1A', fontWeight: 600 },
+  viewBtn: { background: 'none', border: 'none', borderRight: '1px solid var(--color-border)', padding: '8px 16px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
+  viewBtnActive: { background: 'var(--color-accent, #C9A96E)', color: '#1A1A1A', fontWeight: 600, borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
   dateNav: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' },
   dateLabel: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', minWidth: '180px', textAlign: 'center' as const },
-  navBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '6px 12px', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
-  todayBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '6px 12px', cursor: 'pointer', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-xs)' },
+  navBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '6px 12px', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)', minHeight: 'var(--button-height-sm)' },
+  todayBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '6px 12px', cursor: 'pointer', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-xs)', minHeight: 'var(--button-height-sm)' },
   empty: { color: 'var(--color-text-secondary)', textAlign: 'center', padding: 'var(--space-xl)', fontSize: 'var(--font-size-sm)' },
 
   legendSwatch: { display: 'inline-block', width: '10px', height: '10px', borderRadius: '3px', flexShrink: 0 },
 
   // Capacity badge
-  capacityBadge: { position: 'absolute' as const, top: '2px', right: '2px', fontSize: '9px', fontWeight: 700, color: '#fff', borderRadius: '3px', padding: '1px 4px', lineHeight: 1.4, zIndex: 2 },
-  participantBadge: { display: 'block', fontSize: '10px', opacity: 0.85, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
+  capacityBadge: { position: 'absolute' as const, top: '2px', right: '2px', fontSize: 'var(--font-size-xs)', fontWeight: 700, color: '#fff', borderRadius: '3px', padding: '1px 4px', lineHeight: 1.4, zIndex: 2 },
+  participantBadge: { display: 'block', fontSize: 'var(--font-size-xs)', opacity: 0.85, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
 
   // Capacity timeline strip — a narrow lane per resource showing real concurrent utilization
   // over time, independent of any individual booking block.
@@ -1158,7 +1158,7 @@ const styles: Record<string, React.CSSProperties> = {
   capacitySegment: { position: 'absolute' as const, left: '1px', right: '1px', display: 'flex', flexDirection: 'row' as const, borderRadius: '2px', overflow: 'hidden', border: '1px solid var(--color-border)', boxSizing: 'border-box' as const },
   capacitySegmentFill: { height: '100%' },
   capacitySegmentAvailable: { height: '100%', background: 'var(--color-surface)' },
-  capacitySegmentLabel: { position: 'absolute' as const, inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', fontWeight: 700, color: '#fff', textShadow: '0 0 2px rgba(0,0,0,0.9), 0 0 1px rgba(0,0,0,0.9)', pointerEvents: 'none' as const, whiteSpace: 'nowrap' as const, overflow: 'hidden' },
+  capacitySegmentLabel: { position: 'absolute' as const, inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--font-size-xs)', fontWeight: 700, color: '#fff', textShadow: '0 0 2px rgba(0,0,0,0.9), 0 0 1px rgba(0,0,0,0.9)', pointerEvents: 'none' as const, whiteSpace: 'nowrap' as const, overflow: 'hidden' },
 
   // Quick filter bar — JIRA-quick-filter-style pill buttons, shared by day/week/month views.
   quickFilterBar: { display: 'flex', flexWrap: 'wrap' as const, gap: '8px', marginBottom: 'var(--space-md)' },
@@ -1170,14 +1170,14 @@ const styles: Record<string, React.CSSProperties> = {
   dayGridContainer: { display: 'grid', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
   dayTimeAxis: { borderRight: '1px solid var(--color-border)' },
   dayColHeaderSpacer: { height: '36px', borderBottom: '1px solid var(--color-border)' },
-  dayTimeAxisLabel: { height: '60px', display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: '8px', paddingTop: '2px', fontSize: '11px', color: 'var(--color-text-secondary)', boxSizing: 'border-box' as const, borderTop: '1px solid var(--color-border)' },
+  dayTimeAxisLabel: { height: '60px', display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: '8px', paddingTop: '2px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', boxSizing: 'border-box' as const, borderTop: '1px solid var(--color-border)' },
   dayServiceCol: { borderRight: '1px solid var(--color-border)', position: 'relative' as const },
-  dayColHeader: { height: '36px', boxSizing: 'border-box' as const, display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px', fontSize: '12px', fontWeight: 600, color: 'var(--color-text)', borderBottom: '1px solid var(--color-border)', borderTop: '3px solid transparent', overflow: 'hidden', whiteSpace: 'nowrap' as const, textOverflow: 'ellipsis' },
+  dayColHeader: { height: '36px', boxSizing: 'border-box' as const, display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', borderBottom: '1px solid var(--color-border)', borderTop: '3px solid transparent', overflow: 'hidden', whiteSpace: 'nowrap' as const, textOverflow: 'ellipsis' },
   dayColBody: { position: 'relative' as const },
   daySubcolumnDivider: { borderLeft: '1px dashed var(--color-border)' },
   // Week view summary mode — one bar per merged booked-hour-range, no per-booking detail.
   weekSummaryBar: { position: 'absolute' as const, left: '10%', width: '80%', borderRadius: '2px', cursor: 'pointer', boxSizing: 'border-box' as const },
-  daySubcolumnLabel: { position: 'absolute' as const, top: '2px', left: '2px', right: '2px', fontSize: '9px', fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'center' as const, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis', pointerEvents: 'none' as const, opacity: 0.8 },
+  daySubcolumnLabel: { position: 'absolute' as const, top: '2px', left: '2px', right: '2px', fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'center' as const, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis', pointerEvents: 'none' as const, opacity: 0.8 },
   availableCapacityBlock: { position: 'absolute' as const, background: 'var(--color-surface)', border: '1px dashed var(--color-border)', borderRadius: '3px', boxSizing: 'border-box' as const, opacity: 0.6 },
 
   // Resource block overlay — a business-owner-carved-out sub-range within an otherwise-open day.
@@ -1188,12 +1188,12 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid var(--color-error)', zIndex: 0, pointerEvents: 'none' as const,
     background: 'repeating-linear-gradient(45deg, color-mix(in srgb, var(--color-error) 22%, transparent) 0, color-mix(in srgb, var(--color-error) 22%, transparent) 5px, transparent 5px, transparent 10px)',
   },
-  resourceBlockLabel: { position: 'absolute' as const, top: '2px', left: '2px', right: '2px', fontSize: '9px', fontWeight: 700, color: 'var(--color-error)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis', background: 'var(--color-background)', borderRadius: '2px', padding: '0 2px' },
+  resourceBlockLabel: { position: 'absolute' as const, top: '2px', left: '2px', right: '2px', fontSize: 'var(--font-size-xs)', fontWeight: 700, color: 'var(--color-error)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis', background: 'var(--color-background)', borderRadius: '2px', padding: '0 2px' },
 
   // Time grid (shared by day/week)
   timeGrid: { position: 'relative' as const, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
   gridRow: { display: 'grid', gridTemplateColumns: '60px 1fr', height: '60px', borderBottom: '1px solid var(--color-border)' },
-  timeLabel: { display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: '8px', paddingTop: '2px', fontSize: '11px', color: 'var(--color-text-secondary)' },
+  timeLabel: { display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: '8px', paddingTop: '2px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   hourCell: { borderLeft: '1px solid var(--color-border)' },
   bookingOverlay: { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0, display: 'grid', gridTemplateColumns: '60px 1fr', pointerEvents: 'none' as const },
   timeLabelSpacer: {},
@@ -1207,21 +1207,21 @@ const styles: Record<string, React.CSSProperties> = {
   // Top/right/bottom stay a thin neutral separator between adjacent blocks; left is overridden
   // per-booking with a payment-status colour (item 3c-b) so it reads as a distinct signal from
   // the block's own service-colour fill.
-  bookingBlock: { position: 'absolute' as const, borderRadius: '4px', padding: '2px 4px', overflow: 'hidden', fontSize: '11px', color: '#fff', zIndex: 1, borderTop: '2px solid var(--color-background, #FFF)', borderRight: '2px solid var(--color-background, #FFF)', borderBottom: '2px solid var(--color-background, #FFF)', borderLeft: '4px solid var(--color-background, #FFF)', boxSizing: 'border-box' as const },
-  blockTime: { fontWeight: 600, fontSize: '10px', display: 'block' },
+  bookingBlock: { position: 'absolute' as const, borderRadius: '4px', padding: '2px 4px', overflow: 'hidden', fontSize: 'var(--font-size-xs)', color: '#fff', zIndex: 1, borderTop: '2px solid var(--color-background, #FFF)', borderRight: '2px solid var(--color-background, #FFF)', borderBottom: '2px solid var(--color-background, #FFF)', borderLeft: '4px solid var(--color-background, #FFF)', boxSizing: 'border-box' as const },
+  blockTime: { fontWeight: 600, fontSize: 'var(--font-size-xs)', display: 'block' },
   blockTitle: { display: 'block', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
-  blockSub: { display: 'block', fontSize: '10px', opacity: 0.8, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
+  blockSub: { display: 'block', fontSize: 'var(--font-size-xs)', opacity: 0.8, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
 
   // Week view
   weekContainer: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
   weekHeaderTimeCell: { borderRight: '1px solid var(--color-border)', borderBottom: '1px solid var(--color-border)' },
-  weekDayHeader: { padding: '8px 4px', textAlign: 'center' as const, fontSize: '12px', borderRight: '1px solid var(--color-border)', borderBottom: '1px solid var(--color-border)' },
+  weekDayHeader: { padding: '8px 4px', textAlign: 'center' as const, fontSize: 'var(--font-size-sm)', borderRight: '1px solid var(--color-border)', borderBottom: '1px solid var(--color-border)' },
   todayHeader: { background: 'var(--color-accent, #C9A96E)', color: '#1A1A1A' },
   weekDayName: { display: 'block', fontWeight: 500 },
-  weekDayNum: { display: 'block', fontSize: '16px', fontWeight: 600 },
+  weekDayNum: { display: 'block', fontSize: 'var(--font-size-base)', fontWeight: 600 },
   weekBodyScroll: { position: 'relative' as const, overflow: 'auto', maxHeight: '700px' },
   weekRow: { display: 'grid', gridTemplateColumns: '60px repeat(7, 1fr)', height: '60px', borderBottom: '1px solid var(--color-border)' },
-  weekTimeLabel: { display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: '8px', paddingTop: '2px', fontSize: '11px', color: 'var(--color-text-secondary)', borderRight: '1px solid var(--color-border)' },
+  weekTimeLabel: { display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: '8px', paddingTop: '2px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderRight: '1px solid var(--color-border)' },
   weekCell: { borderRight: '1px solid var(--color-border)' },
   weekOverlay: { position: 'absolute' as const, top: 0, left: 0, right: 0, height: `${(DEFAULT_HOUR_RANGE.end - DEFAULT_HOUR_RANGE.start) * 60}px`, display: 'grid', gridTemplateColumns: '60px repeat(7, 1fr)', pointerEvents: 'none' as const },
   weekOverlaySpacer: {},
@@ -1229,10 +1229,10 @@ const styles: Record<string, React.CSSProperties> = {
 
   // Month view
   monthHeader: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--color-border)', marginBottom: '4px' },
-  monthHeaderCell: { textAlign: 'center' as const, padding: '8px', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)' },
+  monthHeaderCell: { textAlign: 'center' as const, padding: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)' },
   monthGrid: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' },
   monthCell: { minHeight: '80px', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '4px 6px', display: 'flex', flexDirection: 'column' as const, gap: '2px' },
   monthCellToday: { background: 'rgba(201, 169, 110, 0.1)', borderColor: 'var(--color-accent, #C9A96E)' },
-  monthCellDay: { fontSize: '13px', fontWeight: 500, color: 'var(--color-text)' },
-  monthCellCount: { fontSize: '11px', color: '#fff', fontWeight: 600, background: 'var(--color-accent, #C9A96E)', borderRadius: '4px', padding: '2px 6px', alignSelf: 'flex-start' },
+  monthCellDay: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)' },
+  monthCellCount: { fontSize: 'var(--font-size-xs)', color: '#fff', fontWeight: 600, background: 'var(--color-accent, #C9A96E)', borderRadius: '4px', padding: '2px 6px', alignSelf: 'flex-start' },
 };

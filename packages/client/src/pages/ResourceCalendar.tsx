@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Button } from '../design-system/components/actions/Button';
+import { ListEmpty } from '../design-system/components/data/ListRow';
+import { PageHeader } from '../design-system/components/layout/PageHeader';
+import './WeekGrid.css';
 import * as resourcesApi from '../api/resources';
 
 export function ResourceCalendar() {
@@ -33,25 +36,25 @@ export function ResourceCalendar() {
   const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Resource Calendar</h1>
-        <div className="flex items-center gap-3">
+    <div>
+      <PageHeader
+        title="Resource Calendar"
+        actions={<div className="wg-nav">
           <Button variant="ghost" onClick={prevWeek}>← Prev</Button>
-          <span className="text-sm font-medium">{startDate} — {endDate}</span>
+          <span className="wg-range">{startDate} — {endDate}</span>
           <Button variant="ghost" onClick={nextWeek}>Next →</Button>
-        </div>
-      </div>
+        </div>}
+      />
 
-      {loading ? <div>Loading...</div> : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
+      {loading ? <ListEmpty>Loading...</ListEmpty> : (
+        <div className="wg-scroll">
+          <table className="wg-table">
             <thead>
               <tr>
-                <th className="border p-2 bg-gray-50 text-left w-48">Resource</th>
+                <th className="wg-first">Resource</th>
                 {days.map((d, i) => (
-                  <th key={d} className="border p-2 bg-gray-50 text-center">
-                    {dayLabels[i]}<br /><span className="text-xs text-gray-500">{d.slice(5)}</span>
+                  <th key={d}>
+                    {dayLabels[i]}<span className="wg-date">{d.slice(5)}</span>
                   </th>
                 ))}
               </tr>
@@ -59,26 +62,23 @@ export function ResourceCalendar() {
             <tbody>
               {timeline.map((item: any) => (
                 <tr key={item.resource.id}>
-                  <td className="border p-2">
-                    <div className="font-medium">{item.resource.name}</div>
-                    <div className="text-xs text-gray-500">{item.resource.typeName}</div>
+                  <td className="wg-first">
+                    <div className="wg-name">{item.resource.name}</div>
+                    <div className="wg-date">{item.resource.typeName}</div>
                   </td>
                   {days.map((day) => {
                     const dayBookings = item.bookings.filter((b: any) => b.startTime.split('T')[0] === day);
+                    const booked = dayBookings.length > 0;
                     return (
-                      <td key={day} className={`border p-1 text-center ${dayBookings.length > 0 ? 'bg-blue-50' : 'bg-green-50'}`}>
-                        {dayBookings.length > 0 ? (
-                          <span className="text-xs text-blue-600">{dayBookings.length} booking{dayBookings.length > 1 ? 's' : ''}</span>
-                        ) : (
-                          <span className="text-xs text-green-600">Available</span>
-                        )}
+                      <td key={day} className={`wg-cell wg-cell--${booked ? 'booked' : 'available'}`}>
+                        {booked ? `${dayBookings.length} booking${dayBookings.length > 1 ? 's' : ''}` : 'Available'}
                       </td>
                     );
                   })}
                 </tr>
               ))}
               {timeline.length === 0 && (
-                <tr><td colSpan={8} className="border p-4 text-center text-gray-500">No resources</td></tr>
+                <tr><td colSpan={8} className="wg-empty">No resources</td></tr>
               )}
             </tbody>
           </table>

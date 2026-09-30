@@ -209,8 +209,8 @@ export function ThemeEditorFields({ values, onChange, inherited, inheritedLabel 
             This is how headings and body text will look with the selected font and size.
           </div>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <div style={{ background: resolved.primaryColor, color: '#fff', padding: '10px 18px', borderRadius: 'var(--radius-md)', fontSize: '14px', fontWeight: 600 }}>Primary Action</div>
-            <span style={{ background: `${resolved.secondaryColor}22`, color: resolved.secondaryColor, padding: '5px 13px', borderRadius: 'var(--radius-full)', fontSize: '12.5px', fontWeight: 700 }}>Sample Pill</span>
+            <div style={{ background: resolved.primaryColor, color: '#fff', padding: '10px 18px', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-base)', fontWeight: 600 }}>Primary Action</div>
+            <span style={{ background: `${resolved.secondaryColor}22`, color: resolved.secondaryColor, padding: '5px 13px', borderRadius: 'var(--radius-full)', fontSize: 'var(--font-size-sm)', fontWeight: 700 }}>Sample Pill</span>
           </div>
         </div>
       </div>
@@ -223,18 +223,18 @@ const styles: Record<string, React.CSSProperties> = {
   card: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-lg)', marginBottom: 'var(--space-lg)' },
   cardTitle: { fontSize: 'var(--font-size-section-header, 1.0625rem)', fontWeight: 700 as any, color: 'var(--color-text)', margin: '0 0 var(--space-md) 0' },
   labelRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
-  label: { fontSize: '13.5px', fontWeight: 600 as any, color: 'var(--color-text-secondary)' },
-  inheritLink: { background: 'none', border: 'none', color: 'var(--color-primary)', fontSize: '12px', fontWeight: 600 as any, cursor: 'pointer', padding: 0 },
-  select: { width: '100%', marginTop: '7px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: '15px' },
+  label: { fontSize: 'var(--font-size-sm)', fontWeight: 600 as any, color: 'var(--color-text-secondary)' },
+  inheritLink: { background: 'none', border: 'none', color: 'var(--color-primary)', fontSize: 'var(--font-size-sm)', fontWeight: 600 as any, cursor: 'pointer', padding: 0 },
+  select: { width: '100%', marginTop: '7px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-base)' },
   segmented: { display: 'flex', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden', width: 'fit-content', marginTop: '7px' },
-  segmentBtn: { border: 'none', borderRight: '1px solid var(--color-border)', background: 'var(--color-surface)', padding: '9px 16px', fontSize: '14px', fontWeight: 600, color: 'var(--color-text-secondary)', cursor: 'pointer' },
+  segmentBtn: { border: 'none', borderRight: '1px solid var(--color-border)', background: 'var(--color-surface)', padding: '9px 16px', fontSize: 'var(--font-size-base)', fontWeight: 600, color: 'var(--color-text-secondary)', cursor: 'pointer' },
   segmentBtnActive: { background: 'var(--color-primary)', color: 'var(--color-primary-contrast)' },
   colorRow: { display: 'flex', alignItems: 'center', gap: '12px', marginTop: '7px' },
   colorSwatch: { width: '38px', height: '38px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', padding: 0, cursor: 'pointer' },
-  colorHex: { fontSize: '14px', padding: '9px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', width: '110px', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
-  contrastNote: { fontSize: '12.5px', marginTop: '8px' },
+  colorHex: { fontSize: 'var(--font-size-base)', padding: '9px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', width: '110px', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
+  contrastNote: { fontSize: 'var(--font-size-sm)', marginTop: '8px' },
   previewPanel: { position: 'sticky', top: '24px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' },
-  previewLabel: { fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em', color: 'var(--color-text-secondary)', padding: '14px 18px 0' },
-  previewNote: { fontSize: '12px', color: 'var(--color-text-secondary)', padding: '0 18px 14px', margin: 0 },
+  previewLabel: { fontSize: 'var(--font-size-sm)', fontWeight: 700, letterSpacing: '0.05em', color: 'var(--color-text-secondary)', padding: '14px 18px 0' },
+  previewNote: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', padding: '0 18px 14px', margin: 0 },
   previewFrame: { borderTop: '1px solid var(--color-border)', padding: 'var(--space-lg)' },
 };

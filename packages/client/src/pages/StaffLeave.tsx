@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { Table } from '../design-system/components/data/Table';
+import { PageHeader } from '../design-system/components/layout/PageHeader';
+import './StaffLeave.css';
 import * as staffApi from '../api/staff';
 import type { LeaveRequest } from '../api/staff';
 
@@ -64,7 +66,7 @@ export function StaffLeave() {
     {
       key: 'actions', header: '',
       render: (_: any, row: LeaveRequest) => row.status === 'pending' ? (
-        <div className="flex gap-2">
+        <div className="lv-actions">
           <Button size="sm" onClick={() => handleApprove(row.id)}>Approve</Button>
           <Button size="sm" variant="destructive" onClick={() => handleReject(row.id)}>Reject</Button>
         </div>
@@ -73,12 +75,13 @@ export function StaffLeave() {
   ];
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-semibold mb-6">Leave Management</h1>
+    <div>
+      <PageHeader title="Leave Management" />
 
-      <div className="flex gap-4 mb-4">
+      <div className="lv-toolbar">
         <select
-          className="border rounded px-3 py-2 text-sm"
+          className="lv-select"
+          aria-label="Status"
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
         >
@@ -98,9 +101,9 @@ export function StaffLeave() {
       />
 
       {total > 20 && (
-        <div className="flex justify-center gap-2 mt-4">
+        <div className="lv-pager">
           <Button variant="ghost" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</Button>
-          <span className="px-3 py-2 text-sm">Page {page} of {Math.ceil(total / 20)}</span>
+          <span className="lv-pager__info">Page {page} of {Math.ceil(total / 20)}</span>
           <Button variant="ghost" disabled={page >= Math.ceil(total / 20)} onClick={() => setPage(page + 1)}>Next</Button>
         </div>
       )}

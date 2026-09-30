@@ -64,10 +64,10 @@ const styles: Record<string, React.CSSProperties> = {
   body: { display: 'flex', flex: 1 },
   sidebar: { width: '240px', borderRight: '1px solid var(--color-border)', flexShrink: 0, position: 'relative', transition: 'width 0.2s ease' },
   sidebarCollapsed: { width: '56px' },
-  collapseBtn: { position: 'absolute', top: '12px', right: '-12px', width: '24px', height: '24px', borderRadius: '50%', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 },
+  collapseBtn: { position: 'absolute', top: '12px', right: '-12px', width: '24px', height: '24px', borderRadius: '50%', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 },
   collapsedPlaceholder: { height: '100%' },
   mobileSidebar: { position: 'fixed', top: 0, left: 0, width: '280px', height: '100vh', background: 'var(--color-surface)', zIndex: 300, overflowY: 'auto', padding: 'var(--space-lg)' },
   overlay: { position: 'fixed', inset: 0, background: 'var(--color-overlay)', zIndex: 299 },
   main: { flex: 1, overflowX: 'hidden' },
-  fab: { position: 'fixed', bottom: 'var(--space-lg)', left: 'var(--space-lg)', width: '48px', height: '48px', borderRadius: 'var(--radius-full)', background: 'var(--color-primary)', color: 'var(--color-primary-contrast)', border: 'none', fontSize: '20px', cursor: 'pointer', zIndex: 250, boxShadow: 'var(--shadow-lg)' },
+  fab: { position: 'fixed', bottom: 'var(--space-lg)', left: 'var(--space-lg)', width: '48px', height: '48px', borderRadius: 'var(--radius-full)', background: 'var(--color-primary)', color: 'var(--color-primary-contrast)', border: 'none', fontSize: 'var(--font-size-xl)', cursor: 'pointer', zIndex: 250, boxShadow: 'var(--shadow-lg)' },
 };

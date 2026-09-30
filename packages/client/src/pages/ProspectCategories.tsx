@@ -144,7 +144,7 @@ export function ProspectCategories() {
                   <div style={styles.cardHeader}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <strong style={{ ...styles.cardName, opacity: cat.active ? 1 : 0.5 }}>{cat.ui_category_name}</strong>
-                      {!cat.active && <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>inactive</span>}
+                      {!cat.active && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>inactive</span>}
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button style={{ ...styles.actionBtn, color: cat.active ? 'var(--color-success)' : 'var(--color-text-secondary)' }} onClick={() => handleToggleActive(cat.id, !cat.active)}>
@@ -161,7 +161,7 @@ export function ProspectCategories() {
                       ))}
                     </div>
                     {cat.api_exclusion_types.length > 0 && (
-                      <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+                      <div style={{ marginTop: '6px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
                         Excludes: {cat.api_exclusion_types.join(', ')}
                       </div>
                     )}
@@ -179,20 +179,20 @@ export function ProspectCategories() {
 const styles: Record<string, React.CSSProperties> = {
   page: { maxWidth: '900px', margin: '0 auto', padding: 'var(--space-lg)' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-lg)' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 300, margin: '0 0 4px', color: 'var(--color-text)' },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, margin: '0 0 4px', color: 'var(--color-text)' },
   description: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 },
   muted: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' },
   form: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-lg)', background: 'var(--color-background)' },
   formField: { marginBottom: 'var(--space-sm)' },
-  label: { display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '4px' },
+  label: { display: 'block', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '4px' },
   input: { width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', background: 'var(--color-background)', boxSizing: 'border-box' as const },
   textarea: { width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', background: 'var(--color-background)', fontFamily: 'inherit', resize: 'vertical' as const, boxSizing: 'border-box' as const },
   list: { display: 'flex', flexDirection: 'column' as const, gap: '8px' },
   card: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '12px 16px' },
   cardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' },
-  cardName: { fontSize: '14px', color: 'var(--color-text)' },
+  cardName: { fontSize: 'var(--font-size-base)', color: 'var(--color-text)' },
   cardBody: {},
   chipRow: { display: 'flex', flexWrap: 'wrap' as const, gap: '4px' },
-  chip: { padding: '2px 8px', borderRadius: '12px', fontSize: '11px', background: 'var(--color-border)', color: 'var(--color-text)' },
-  actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--color-primary)', padding: '2px 4px' },
+  chip: { padding: '2px 8px', borderRadius: '12px', fontSize: 'var(--font-size-xs)', background: 'var(--color-border)', color: 'var(--color-text)' },
+  actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-sm)', color: 'var(--color-primary)', padding: '2px 4px', borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
 };

@@ -1,7 +1,7 @@
 .group {
   border: var(--border-width-thin) solid var(--color-border);
   border-left: 4px solid var(--group-accent-dark);
-  border-radius: var(--radius-lg);
+  border-radius: var(--card-radius);
   background: var(--color-surface);
   padding: var(--space-md) var(--space-md) var(--space-md) calc(var(--space-md) - 4px);
 }
@@ -36,8 +36,8 @@
 
 .label {
   margin: 0;
-  font-size: 13px;
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
   letter-spacing: 0.03em;
   color: var(--color-text);
 }

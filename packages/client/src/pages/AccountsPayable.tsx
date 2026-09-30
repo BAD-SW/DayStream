@@ -386,7 +386,7 @@ export function AccountsPayable() {
             <option value="revenue">Revenue</option>
             <option value="expense">Expense</option>
           </select></label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
             <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived
           </label>
         </div>
@@ -504,10 +504,10 @@ export function AccountsPayable() {
             {Array.from(byDate.entries()).map(([dateStr, dateEntries]) => (
               <div key={dateStr} style={{ marginBottom: '4px' }}>
                 <div
-                  style={{ padding: '10px 8px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--color-text)', background: expandedDate === dateStr ? 'var(--color-background)' : undefined, borderBottom: '1px solid var(--color-border)' }}
+                  style={{ padding: '10px 8px', cursor: 'pointer', fontWeight: 600, fontSize: 'var(--font-size-base)', color: 'var(--color-text)', background: expandedDate === dateStr ? 'var(--color-background)' : undefined, borderBottom: '1px solid var(--color-border)' }}
                   onClick={() => setExpandedDate(expandedDate === dateStr ? null : dateStr)}
                 >
-                  {dateStr} <span style={{ fontWeight: 400, fontSize: '12px', color: 'var(--color-text-secondary)', marginLeft: '8px' }}>({dateEntries.length} {dateEntries.length === 1 ? 'order' : 'orders'})</span>
+                  {dateStr} <span style={{ fontWeight: 400, fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginLeft: '8px' }}>({dateEntries.length} {dateEntries.length === 1 ? 'order' : 'orders'})</span>
                 </div>
                 {expandedDate === dateStr && (
                   <div style={{ paddingLeft: '20px' }}>
@@ -517,19 +517,19 @@ export function AccountsPayable() {
                           style={{ padding: '8px 4px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                           onClick={() => setExpandedEntry(expandedEntry === entry.id ? null : entry.id)}
                         >
-                          <span style={{ fontSize: '13px' }}>
+                          <span style={{ fontSize: 'var(--font-size-sm)' }}>
                             <strong>{entry.description}</strong>
                             {entry.is_void && <Badge variant="error">voided</Badge>}
                           </span>
                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <span style={{ fontSize: '13px', fontWeight: 500 }}>{formatCurrency(entry.lines?.reduce((s: number, l: any) => s + l.debit, 0) || 0)}</span>
+                            <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>{formatCurrency(entry.lines?.reduce((s: number, l: any) => s + l.debit, 0) || 0)}</span>
                             {!entry.is_void && <TableActionButton label="Void" variant="delete" onClick={() => onVoid(entry.id)} />}
                           </div>
                         </div>
                         {expandedEntry === entry.id && entry.lines && (
                           <div style={{ paddingLeft: '20px', paddingBottom: '8px' }}>
                             {(journalAccountFilter === 'all' ? entry.lines : entry.lines.filter((l: any) => l.account_id === journalAccountFilter)).map((line: any) => (
-                              <div key={line.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                              <div key={line.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
                                 <span>{line.debit > 0 ? 'Debit' : 'Credit'}: {line.account_code} — {line.account_name}</span>
                                 <span>{formatCurrency(line.debit || line.credit)}</span>
                               </div>
@@ -553,10 +553,10 @@ export function AccountsPayable() {
               return (
                 <div key={dateStr} style={{ marginBottom: '4px' }}>
                   <div
-                    style={{ padding: '10px 8px', cursor: 'pointer', fontWeight: 600, fontSize: '14px', color: 'var(--color-text)', background: expandedDate === dateStr ? 'var(--color-background)' : undefined, borderBottom: '1px solid var(--color-border)' }}
+                    style={{ padding: '10px 8px', cursor: 'pointer', fontWeight: 600, fontSize: 'var(--font-size-base)', color: 'var(--color-text)', background: expandedDate === dateStr ? 'var(--color-background)' : undefined, borderBottom: '1px solid var(--color-border)' }}
                     onClick={() => setExpandedDate(expandedDate === dateStr ? null : dateStr)}
                   >
-                    {dateStr} <span style={{ fontWeight: 400, fontSize: '12px', color: 'var(--color-text-secondary)', marginLeft: '8px' }}>({summary.length} accounts)</span>
+                    {dateStr} <span style={{ fontWeight: 400, fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginLeft: '8px' }}>({summary.length} accounts)</span>
                   </div>
                   {expandedDate === dateStr && (
                     <div style={{ paddingLeft: '20px' }}>
@@ -566,8 +566,8 @@ export function AccountsPayable() {
                             style={{ padding: '8px 4px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                             onClick={() => setExpandedEntry(expandedEntry === acct.code + dateStr ? null : acct.code + dateStr)}
                           >
-                            <span style={{ fontSize: '13px' }}><strong>{acct.code} — {acct.name}</strong></span>
-                            <span style={{ fontSize: '13px' }}>
+                            <span style={{ fontSize: 'var(--font-size-sm)' }}><strong>{acct.code} — {acct.name}</strong></span>
+                            <span style={{ fontSize: 'var(--font-size-sm)' }}>
                               {acct.totalDebit > 0 && <span style={{ marginRight: '16px' }}>Debit {formatCurrency(acct.totalDebit)}</span>}
                               {acct.totalCredit > 0 && <span>Credit {formatCurrency(acct.totalCredit)}</span>}
                             </span>
@@ -575,7 +575,7 @@ export function AccountsPayable() {
                           {expandedEntry === acct.code + dateStr && (
                             <div style={{ paddingLeft: '20px', paddingBottom: '8px' }}>
                               {acct.orders.map((ord, idx) => (
-                                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
                                   <span>{ord.description}</span>
                                   <span>{ord.debit > 0 ? formatCurrency(ord.debit) : formatCurrency(ord.credit)}</span>
                                 </div>
@@ -753,11 +753,11 @@ export function AccountsPayable() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1200px', margin: '0 auto' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
-  actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 10px', fontSize: 'var(--font-size-xs)', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
+  title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
+  actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '4px 10px', fontSize: 'var(--font-size-xs)', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)', minHeight: 'var(--button-height-sm)' },
   dangerBtn: { background: 'none', border: '1px solid var(--color-error, #dc3545)', borderRadius: 'var(--radius-md)', padding: '4px 10px', fontSize: 'var(--font-size-xs)', cursor: 'pointer', color: 'var(--color-error, #dc3545)', fontFamily: 'var(--font-family)' },
-  primaryBtn: { background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 16px', fontSize: 'var(--font-size-sm)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontWeight: 'var(--font-weight-medium)' as any },
-  secondaryBtn: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 16px', fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
+  primaryBtn: { background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 'var(--button-radius)', padding: '8px 16px', fontSize: 'var(--font-size-sm)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontWeight: 'var(--font-weight-medium)' as any, minHeight: 'var(--button-height-sm)' },
+  secondaryBtn: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '8px 16px', fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)', minHeight: 'var(--button-height-sm)' },
   toolbar: { display: 'flex', gap: 'var(--space-md)', alignItems: 'flex-end', marginBottom: 'var(--space-lg)', flexWrap: 'wrap' as const },
   inlineGroup: { display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-end' },
   fieldLabel: { display: 'flex', flexDirection: 'column' as const, gap: '4px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-medium)' as any },

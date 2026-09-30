@@ -87,20 +87,19 @@ const styles: Record<string, React.CSSProperties> = {
   },
   button: {
     padding: '6px 12px',
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     fontWeight: 500,
     color: 'var(--color-text, #fff)',
     backgroundColor: 'var(--color-surface-elevated, #2a2a2a)',
     border: '1px solid var(--color-border, #444)',
-    borderRadius: '4px',
-    cursor: 'pointer',
-  },
+    borderRadius: 'var(--button-radius)',
+    cursor: 'pointer', minHeight: 'var(--button-height-sm)' },
   disabledButton: {
     opacity: 0.5,
     cursor: 'not-allowed',
   },
   errorMessage: {
-    fontSize: '12px',
+    fontSize: 'var(--font-size-sm)',
     color: 'var(--color-error, #dc2626)',
   },
 };
