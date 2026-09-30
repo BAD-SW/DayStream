@@ -4,9 +4,9 @@
   justify-content: center;
   gap: var(--space-sm);
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--button-radius);
   font-family: var(--font-family);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--button-font-weight);
   cursor: pointer;
   transition: background var(--duration-fast) var(--ease-default),
               border-color var(--duration-fast) var(--ease-default),
@@ -26,9 +26,9 @@
 }
 
 /* Sizes */
-.size-sm { height: 32px; padding: 0 var(--space-sm); font-size: var(--font-size-xs); }
-.size-md { height: 40px; padding: 0 var(--space-md); font-size: var(--font-size-sm); }
-.size-lg { height: 48px; padding: 0 var(--space-xl); font-size: var(--font-size-base); }
+.size-sm { height: var(--button-height-sm); padding: 0 var(--button-padding-sm); font-size: var(--font-size-xs); }
+.size-md { height: var(--button-height-md); padding: 0 var(--button-padding-md); font-size: var(--font-size-sm); }
+.size-lg { height: var(--button-height-lg); padding: 0 var(--button-padding-lg); font-size: var(--font-size-base); }
 
 /* Variants */
 .variant-primary {
@@ -70,7 +70,7 @@
 
 .variant-destructive {
   background: var(--color-error);
-  color: #FFFFFF;
+  color: var(--color-text-inverse);
 }
 .variant-destructive:hover:not(:disabled) {
   background: var(--color-error-dark);

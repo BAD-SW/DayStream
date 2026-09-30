@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '../../design-system/components/actions/Button';
 import { apiClient } from '../../api/client';
 import { applyTheme } from '../../api/themes';
+import { useContextManager } from '../../context/ContextManager';
 import { ThemeListItem, ThemeScope } from '@daystream/shared';
 
 interface ApplyThemeDialogProps {
@@ -17,7 +18,9 @@ export function ApplyThemeDialog({ theme, persona, onClose, onApplied }: ApplyTh
   const scopeOptions: ThemeScope[] = persona === 'business' ? ['business'] : persona === 'tenant' ? ['tenant', 'business'] : ['system', 'tenant', 'business'];
   const [scope, setScope] = useState<ThemeScope>(scopeOptions[0]);
   const [ownTenantId, setOwnTenantId] = useState<string | null>(null);
-  const [ownBusinessId] = useState<string | null>(() => localStorage.getItem('business_id'));
+  // The active context, not localStorage: the stored business_id can be stale and point at
+  // a different business than the one on screen (THE-6).
+  const ownBusinessId = useContextManager().activeContext.businessId;
   const [tenants, setTenants] = useState<Option[]>([]);
   const [businesses, setBusinesses] = useState<Option[]>([]);
   const [selectedTenantId, setSelectedTenantId] = useState<string>('');

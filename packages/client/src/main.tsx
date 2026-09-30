@@ -11,6 +11,7 @@ import './design-system/tokens/index.css';
 import './design-system/themes/dark.css';
 import './design-system/themes/light.css';
 import './design-system/themes/bold-business.css';
+import './design-system/themes/navy.css';
 import './design-system/themes/theme-lock.css';
 import './design-system/themes/transitions.css';
 

@@ -148,9 +148,58 @@ export const BUILT_IN_TOKENS: Record<BuiltInThemeId, Record<ConfigurableTokenKey
     '--color-warning':            '#FFAB00',
     '--color-error':              '#FF5630',
   },
+  // Navy (THE-6) — must stay in sync with packages/client/src/design-system/themes/navy.css.
+  navy: {
+    '--font-family':              'Plus Jakarta Sans',
+    '--font-size-title':          '34px',
+    '--font-size-subtitle':       '20px',
+    '--font-size-body':           '16px',
+    '--font-size-small':          '14px',
+    '--font-weight-normal':       '400',
+    '--font-weight-medium':       '600',
+    '--font-weight-bold':         '800',
+    '--color-text-title':         '#141B2D',
+    '--color-text-body':          '#141B2D',
+    '--color-text-secondary':     '#4F596D',
+    '--color-text-muted':         '#5F687B',
+    '--color-primary':            '#0F1F5C',
+    '--color-primary-hover':      '#1B3597',
+    '--color-primary-contrast':   '#FFFFFF',
+    '--color-secondary':          '#0066CC',
+    '--color-secondary-hover':    '#0052A3',
+    '--color-secondary-contrast': '#FFFFFF',
+    '--color-background':         '#F4F6FA',
+    '--color-surface':            '#FFFFFF',
+    '--color-border':             '#CFD4DF',
+    '--color-divider':            '#E1E5EE',
+    '--color-sidebar-bg':         '#0F1F5C',
+    '--color-header-bg':          '#FFFFFF',
+    '--color-nav-active-bg':      '#FFFFFF',
+    '--color-nav-active-text':    '#0F1F5C',
+    '--color-accent':             '#0066CC',
+    '--color-success':            '#17794A',
+    '--color-warning':            '#A35200',
+    '--color-error':              '#C4291C',
+  },
 };
 
 export const BUILT_IN_THEME_LIST_ITEMS: ThemeListItem[] = [
+  {
+    id: 'navy',
+    name: 'Navy',
+    base_theme: 'navy',
+    scope: 'system',
+    scope_id: null,
+    is_built_in: true,
+    is_active: false,
+    preview_tokens: {
+      '--color-primary': '#0F1F5C',
+      '--color-sidebar-bg': '#0F1F5C',
+      '--color-background': '#F4F6FA',
+      '--color-surface': '#FFFFFF',
+      '--color-text-body': '#141B2D',
+    },
+  },
   {
     id: 'bold-business',
     name: 'Bold Business',
@@ -186,7 +235,7 @@ export const BUILT_IN_THEME_LIST_ITEMS: ThemeListItem[] = [
 ];
 
 export function isBuiltInThemeId(id: string): id is BuiltInThemeId {
-  return id === 'bold-business' || id === 'classic';
+  return id === 'bold-business' || id === 'classic' || id === 'navy';
 }
 
 export function getBaseTokens(baseTheme: BuiltInThemeId): Record<string, string> {

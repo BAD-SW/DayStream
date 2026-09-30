@@ -54,6 +54,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             business_id: localStorage.getItem('business_id') || undefined,
           });
           loadFeatureFlags();
+          // The token carries no name/email; fill them in so the top bar can show who is signed in.
+          apiClient.get('/v1/profile').then((res) => {
+            const p = res.data.data;
+            if (p) setUser((u) => (u ? { ...u, email: p.email ?? u.email, first_name: p.first_name ?? u.first_name, last_name: p.last_name ?? u.last_name } : u));
+          }).catch(() => { /* non-critical */ });
         } else {
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');

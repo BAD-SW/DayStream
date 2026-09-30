@@ -62,15 +62,15 @@ export function ThemeModeToggle() {
       style={{
         background: 'none',
         border: '1px solid var(--color-border)',
-        borderRadius: 'var(--radius-md, 6px)',
+        borderRadius: 'var(--topbar-control-radius, var(--radius-md, 6px))',
         padding: '4px',
         cursor: 'pointer',
         lineHeight: 0,
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: '32px',
-        height: '32px',
+        width: 'var(--topbar-control-size, 32px)',
+        height: 'var(--topbar-control-size, 32px)',
         color: 'var(--color-text)',
         transition: 'background-color 150ms ease',
       }}

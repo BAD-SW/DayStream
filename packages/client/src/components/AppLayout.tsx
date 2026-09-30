@@ -1,5 +1,6 @@
 import { ReactNode, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
+import { icons } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useContextManager, getPermissionsFromRole } from '../context/ContextManager';
 import { useBusinessSettings } from '../context/BusinessSettingsContext';
@@ -8,15 +9,61 @@ import { ContextSwitcher } from './ContextSwitcher';
 import { ThemeModeToggle } from '../design-system/themes/ThemeModeToggle';
 import { getVisibleModules } from '../design-system/components/dashboard/moduleRegistry';
 import { Logo } from '../design-system/components/layout/Logo';
+import { Icon } from '../design-system/components/icons/Icon';
 import { Profile } from '../pages/Profile';
+import './AppLayout.css';
 
 interface AppLayoutProps {
   children: ReactNode;
 }
 
+type IconName = keyof typeof icons;
+
+interface NavItem {
+  id: string;
+  label: string;
+  path: string;
+  icon: IconName;
+  off?: boolean;
+}
+
+/** Sidebar icon per module id (THE-7) — replaces the emoji in moduleRegistry for the nav. */
+const NAV_ICONS: Record<string, IconName> = {
+  dashboard: 'LayoutDashboard',
+  customers: 'Users',
+  appointments: 'CalendarDays',
+  schedule: 'CalendarClock',
+  accounting: 'Wallet',
+  reports: 'ChartLine',
+  marketing: 'Megaphone',
+  offerings: 'Tag',
+  business: 'Briefcase',
+  website: 'Globe',
+  'business-settings': 'Settings',
+  events: 'PartyPopper',
+  community: 'HeartHandshake',
+};
+
+/** Sidebar groups (THE-7). Modules not listed here fall into a final unlabelled group. */
+const NAV_GROUPS: { label: string; ids: string[] }[] = [
+  { label: 'Daily work', ids: ['dashboard', 'customers', 'appointments', 'schedule', 'events'] },
+  { label: 'Business', ids: ['offerings', 'accounting', 'reports', 'marketing', 'community'] },
+  { label: 'Admin', ids: ['business', 'website', 'business-settings'] },
+];
+
+function isActivePath(pathname: string, path: string): boolean {
+  return pathname === path || pathname.startsWith(`${path}/`);
+}
+
+function initials(first?: string | null, last?: string | null, email?: string): string {
+  const fromName = `${first?.[0] ?? ''}${last?.[0] ?? ''}`.trim();
+  return (fromName || email?.[0] || '?').toUpperCase();
+}
+
 export function AppLayout({ children }: AppLayoutProps) {
   const { user, logout, featureFlags } = useAuth();
   const { persona, activeContext } = useContextManager();
+  const { pathname } = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showProfile, setShowProfile] = useState(false);
 
@@ -29,80 +76,99 @@ export function AppLayout({ children }: AppLayoutProps) {
   // Get scheduling mode from shared context
   const { settings: businessSettings } = useBusinessSettings();
 
-  // Annotate Schedule module title with enabled/disabled status
-  const modules = baseModules.map((mod) => {
-    if (mod.id === 'schedule') {
-      const status = businessSettings.schedulingMode === 'schedule' ? 'Enabled' : 'Disabled';
-      return { ...mod, titleKey: `Schedule (${status})`, descriptionKey: `Staff scheduling — ${status}` };
-    }
-    return mod;
-  });
+  const items: NavItem[] = [
+    { id: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: NAV_ICONS.dashboard },
+    ...baseModules.map((mod) => ({
+      id: mod.id,
+      label: mod.titleKey,
+      path: mod.path,
+      icon: NAV_ICONS[mod.id] ?? 'Circle',
+      off: mod.id === 'schedule' && businessSettings.schedulingMode !== 'schedule',
+    })),
+  ];
+
+  const grouped = NAV_GROUPS
+    .map((g) => ({ label: g.label, items: g.ids.map((id) => items.find((i) => i.id === id)).filter((i): i is NavItem => !!i) }))
+    .filter((g) => g.items.length > 0);
+  const groupedIds = new Set(NAV_GROUPS.flatMap((g) => g.ids));
+  const ungrouped = items.filter((i) => !groupedIds.has(i.id));
+  if (ungrouped.length > 0) grouped.push({ label: '', items: ungrouped });
+
+  const fullName = user?.first_name ? `${user.first_name} ${user.last_name}` : user?.email;
 
   return (
-    <div style={styles.container}>
-      <header style={styles.header}>
-        <div style={styles.headerLeft}>
-          <button onClick={() => setSidebarOpen(!sidebarOpen)} style={styles.menuBtn} aria-label="Toggle sidebar">
-            ☰
+    <div className={`app-shell${sidebarOpen ? '' : ' app-shell--collapsed'}`}>
+      <nav className="app-sidebar" aria-label="Main">
+        <Link to="/dashboard" className="app-sidebar__brand" aria-label="DayStream home">
+          <Logo size={30} showWordmark={sidebarOpen} />
+        </Link>
+
+        {grouped.map((group) => (
+          <div className="app-sidebar__group" key={group.label || 'more'}>
+            {group.label && sidebarOpen && <h2 className="app-sidebar__group-label">{group.label}</h2>}
+            {group.items.map((item) => {
+              const active = isActivePath(pathname, item.path);
+              return (
+                <Link
+                  key={item.id}
+                  to={item.path}
+                  className={`app-sidebar__link${active ? ' is-active' : ''}${item.off ? ' is-off' : ''}`}
+                  aria-current={active ? 'page' : undefined}
+                  title={sidebarOpen ? undefined : `${item.label}${item.off ? ' (off)' : ''}`}
+                >
+                  <Icon name={item.icon} size="md" />
+                  {sidebarOpen && <span className="app-sidebar__label">{item.label}</span>}
+                  {sidebarOpen && item.off && <span className="app-sidebar__tag">Off</span>}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+
+      <div className="app-main">
+        <header className="app-topbar">
+          <button
+            type="button"
+            className="app-topbar__icon-btn"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            aria-expanded={sidebarOpen}
+          >
+            <Icon name={sidebarOpen ? 'PanelLeftClose' : 'PanelLeftOpen'} size="md" />
           </button>
-          {/* Brand wordmark always comes first (standard placement), followed by the
-              active tenant/business context. Previously the ContextSwitcher was rendered
-              *before* a plain-text "DayStream" wordmark with no visual separation, so
-              whenever the active context's display name was itself "DayStream" (e.g. the
-              platform-placeholder seed business, or a system-persona user who hasn't
-              switched context — see PLATFORM_DISPLAY_NAME in ContextManager.tsx) the
-              header read as "DayStream" twice. The Logo mark (day-cell + flow + accent
-              dot) plus a divider now makes the two pieces visually distinct regardless. */}
-          <Link to="/dashboard" style={styles.logoLink}>
-            <Logo size={26} />
-          </Link>
-          <span style={styles.headerDivider} aria-hidden="true">/</span>
           <ContextSwitcher />
-        </div>
-        <div style={styles.headerRight}>
-          <LanguageSwitcher />
-          {user && <ThemeModeToggle />}
-          {user && (
-            <span style={styles.userName}>
-              {user.first_name ? `${user.first_name} ${user.last_name}` : user.email}
-            </span>
-          )}
-          {user && <button onClick={() => setShowProfile(true)} style={styles.gearIcon} title="Profile Settings">⚙️</button>}
-          <button onClick={logout} style={styles.logoutBtn}>Sign Out</button>
-        </div>
-      </header>
 
-      <div style={styles.body}>
-        <nav style={{ ...styles.sidebar, ...(sidebarOpen ? {} : styles.sidebarCollapsed) }}>
-          {sidebarOpen ? (
-            <>
-              <Link to="/dashboard" style={styles.navLink}>Dashboard</Link>
-              {modules.map((mod) => (
-                <Link key={mod.id} to={mod.path} style={styles.navLink}>{mod.titleKey}</Link>
-              ))}
-            </>
-          ) : (
-            <>
-              <Link to="/dashboard" style={styles.navIcon} title="Dashboard">🏠</Link>
-              {modules.map((mod) => (
-                <Link key={mod.id} to={mod.path} style={styles.navIcon} title={mod.titleKey}>{mod.icon}</Link>
-              ))}
-            </>
-          )}
-        </nav>
+          <div className="app-topbar__right">
+            <LanguageSwitcher />
+            {user && <ThemeModeToggle />}
+            {user && (
+              <button type="button" className="app-topbar__user" onClick={() => setShowProfile(true)} title="Profile settings">
+                <span className="app-topbar__avatar" aria-hidden="true">{initials(user.first_name, user.last_name, user.email)}</span>
+                <span className="app-topbar__name">{fullName}</span>
+              </button>
+            )}
+            <button type="button" className="app-topbar__signout" onClick={logout}>
+              <Icon name="LogOut" size="sm" />
+              Sign out
+            </button>
+          </div>
+        </header>
 
-        <main style={styles.content}>
+        <main className="app-content">
           {children}
         </main>
       </div>
 
       {/* Profile Modal */}
       {showProfile && (
-        <div style={styles.overlay}>
-          <div style={styles.modal}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>Profile</h3>
-              <button style={styles.closeBtn} onClick={() => setShowProfile(false)}>×</button>
+        <div className="app-profile-overlay">
+          <div className="app-profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+            <div className="app-profile-modal__header">
+              <h3 id="profile-title" className="app-profile-modal__title">Profile</h3>
+              <button type="button" className="app-profile-modal__close" onClick={() => setShowProfile(false)} aria-label="Close">
+                <Icon name="X" size="md" />
+              </button>
             </div>
             <Profile />
           </div>
@@ -111,154 +177,3 @@ export function AppLayout({ children }: AppLayoutProps) {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    minHeight: '100vh',
-    backgroundColor: 'var(--color-background)',
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-    color: 'var(--color-text)',
-    display: 'flex',
-    flexDirection: 'column' as const,
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '12px 24px',
-    borderBottom: '1px solid var(--color-border)',
-    backgroundColor: 'var(--color-header-bg)',
-    height: '56px',
-    boxSizing: 'border-box' as const,
-    position: 'sticky' as const,
-    top: 0,
-    zIndex: 100,
-  },
-  headerLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-  },
-  menuBtn: {
-    background: 'none',
-    border: 'none',
-    color: 'var(--color-text-secondary)',
-    fontSize: '20px',
-    cursor: 'pointer',
-    padding: '4px 8px',
-    borderRadius: '4px',
-  },
-  logoLink: {
-    display: 'flex',
-    alignItems: 'center',
-    textDecoration: 'none',
-    flexShrink: 0,
-  },
-  headerDivider: {
-    fontSize: '14px',
-    color: 'var(--color-border)',
-    userSelect: 'none' as const,
-  },
-  userName: {
-    fontSize: '13px',
-    color: 'var(--color-text-secondary)',
-  },
-  logoutBtn: {
-    background: 'none',
-    border: '1px solid var(--color-border)',
-    borderRadius: '6px',
-    color: 'var(--color-text-secondary)',
-    padding: '6px 12px',
-    fontSize: '13px',
-    cursor: 'pointer',
-  },
-  gearIcon: {
-    textDecoration: 'none',
-    fontSize: '16px',
-    cursor: 'pointer',
-    background: 'none',
-    border: 'none',
-  },
-  overlay: {
-    position: 'fixed' as const,
-    top: 0, left: 0, right: 0, bottom: 0,
-    background: 'rgba(0,0,0,0.6)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-  modal: {
-    background: 'var(--color-surface-modal, #FFFFFF)',
-    borderRadius: '12px',
-    padding: '24px',
-    width: '100%',
-    maxWidth: '500px',
-    maxHeight: '80vh',
-    overflow: 'auto' as const,
-    border: '1px solid var(--color-border)',
-    boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
-  },
-  modalHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '16px',
-  },
-  modalTitle: {
-    margin: 0,
-    fontSize: '18px',
-    fontWeight: 600,
-    color: 'var(--color-text)',
-  },
-  closeBtn: {
-    background: 'none',
-    border: 'none',
-    fontSize: '20px',
-    cursor: 'pointer',
-    color: 'var(--color-text-secondary)',
-  },
-  body: {
-    display: 'flex',
-    flex: 1,
-  },
-  sidebar: {
-    width: '200px',
-    backgroundColor: 'var(--color-sidebar-bg)',
-    borderRight: '1px solid var(--color-sidebar-border)',
-    padding: '24px 16px',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '4px',
-    transition: 'width 0.2s ease',
-  },
-  sidebarCollapsed: {
-    width: '56px',
-    padding: '24px 8px',
-    alignItems: 'center' as const,
-  },
-  navLink: {
-    color: 'var(--color-text-secondary)',
-    textDecoration: 'none',
-    fontSize: '14px',
-    padding: '8px 12px',
-    borderRadius: '6px',
-  },
-  navIcon: {
-    color: 'var(--color-text-secondary)',
-    textDecoration: 'none',
-    fontSize: '18px',
-    padding: '8px',
-    borderRadius: '6px',
-    textAlign: 'center' as const,
-  },
-  content: {
-    flex: 1,
-    padding: '32px',
-  },
-};

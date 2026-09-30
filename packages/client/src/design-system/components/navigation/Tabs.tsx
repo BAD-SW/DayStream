@@ -62,13 +62,13 @@ export function Tabs({ items, defaultTab, orientation = 'horizontal', onTabChang
                 background: 'none', border: 'none', outline: 'none',
                 borderBottom: isVertical ? 'none' : (isActive ? '3px solid var(--color-primary)' : '3px solid transparent'),
                 borderLeft: isVertical ? (isActive ? '3px solid var(--color-primary)' : '3px solid transparent') : 'none',
-                padding: isVertical ? 'var(--space-sm) var(--space-md)' : 'var(--space-sm) var(--space-md)',
+                padding: isVertical ? 'var(--space-sm) var(--space-md)' : 'var(--tab-padding)',
                 paddingLeft: isVertical ? 'var(--space-md)' : undefined,
-                fontSize: 'var(--font-size-sm)',
+                fontSize: 'var(--tab-font-size)',
                 color: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
                 cursor: 'pointer',
                 fontFamily: 'var(--font-family)',
-                fontWeight: isActive ? 600 : 500,
+                fontWeight: (isActive ? 'var(--tab-active-font-weight)' : 'var(--tab-font-weight)') as any,
                 textAlign: 'left' as const,
                 marginBottom: isVertical ? undefined : '-1px',
               }}
@@ -96,7 +96,7 @@ export function Tabs({ items, defaultTab, orientation = 'horizontal', onTabChang
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  tabList: { display: 'flex', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-md)', justifyContent: 'space-evenly', width: '80%' },
+  tabList: { display: 'flex', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-md)', justifyContent: 'var(--tabs-justify)' as any, width: 'var(--tabs-list-width)', gap: 'var(--tabs-gap)' },
   tabListVertical: { display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)', borderRight: '1px solid var(--color-border)', paddingRight: 'var(--space-md)', minWidth: '150px' },
   containerVertical: { display: 'flex', gap: 'var(--space-md)' },
   tab: {

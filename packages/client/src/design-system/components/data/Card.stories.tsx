@@ -13,3 +13,4 @@ export const Default = { args: { children: 'Default card content', variant: 'def
 export const Elevated = { args: { children: 'Elevated card with shadow', variant: 'elevated' } };
 export const Outlined = { args: { children: 'Outlined card with border', variant: 'outlined' } };
 export const Interactive = { args: { children: 'Click me!', variant: 'interactive', onClick: () => alert('Clicked') } };
+export const WithTitle = { args: { title: 'Quick setup', children: 'Card with a bold heading', padding: 'lg' } };

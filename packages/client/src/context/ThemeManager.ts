@@ -69,7 +69,7 @@ export function resetToDefault(): void {
   applyTheme(null);
 }
 
-const VALID_BASE_THEMES = ['bold-business'];
+const VALID_BASE_THEMES = ['bold-business', 'navy'];
 
 /**
  * Selects a base palette (Theme Setup) via a dedicated `data-base-theme` attribute —

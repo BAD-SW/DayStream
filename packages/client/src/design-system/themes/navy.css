@@ -1,0 +1,196 @@
+/* Navy — deep navy sidebar, white cards, larger type (Linear THE-6, proposal "B · Navy sidebar").
+ *
+ * Selected through the same [data-base-theme] attribute as Bold Business, and like it a
+ * fixed light-surface look. Unlike Bold Business it is meant to replace every other theme
+ * later (THE-12), so it redefines EVERY colour token from tokens/colors.css and
+ * themes/light.css plus the type scale — nothing may fall through to the Classic palette.
+ *
+ * Keep in sync with BUILT_IN_TOKENS.navy in packages/server/src/services/themeTokens.ts.
+ * WCAG AA verified: #141B2D on #F4F6FA = 15.9:1, #FFFFFF on #0F1F5C = 15.3:1,
+ * #AEBBE8 on #0F1F5C = 8.1:1, #4F596D on #F4F6FA = 6.5:1, #FFFFFF on #0066CC = 5.6:1.
+ */
+
+[data-base-theme='navy'] {
+  color-scheme: light;
+
+  /* Primary */
+  --color-primary: #0F1F5C;
+  --color-primary-hover: #1B3597;
+  --color-primary-active: #0A1646;
+  --color-primary-contrast: #FFFFFF;
+
+  /* Background & surface */
+  --color-background: #F4F6FA;
+  --color-background-gradient: none;
+  --color-surface: #FFFFFF;
+  --color-surface-hover: #EEF2FA;
+  --color-surface-active: #E3E9F6;
+  --color-surface-elevated: #FFFFFF;
+  --color-surface-modal: #FFFFFF;
+  --row-hover-bg: #EEF2FA;
+
+  /* Text */
+  --color-text: #141B2D;
+  --color-text-secondary: #4F596D;
+  --color-text-disabled: #8A92A3;
+  --color-text-inverse: #FFFFFF;
+  --color-text-title: #141B2D;
+  --color-text-body: #141B2D;
+  --color-text-muted: #5F687B;
+
+  /* Border */
+  --color-border: #CFD4DF;
+  --color-border-hover: #AEB6C6;
+  --color-border-focus: #0066CC;
+  --color-divider: #E1E5EE;
+
+  /* Accent / secondary */
+  --color-accent: #0066CC;
+  --color-accent-hover: #0052A3;
+  --color-accent-contrast: #FFFFFF;
+  --color-secondary: #0066CC;
+  --color-secondary-hover: #0052A3;
+  --color-secondary-contrast: #FFFFFF;
+
+  /* Semantic */
+  --color-success: #17794A;
+  --color-success-light: #3FA873;
+  --color-success-dark: #0F5634;
+  --color-success-bg: #E4F4EB;
+  --color-warning: #A35200;
+  --color-warning-light: #E3A03A;
+  --color-warning-dark: #7A3D00;
+  --color-warning-bg: #FDF1E1;
+  --color-error: #C4291C;
+  --color-error-light: #E4584C;
+  --color-error-dark: #951D13;
+  --color-error-bg: #FDE9E7;
+  --color-info: #0066CC;
+  --color-info-light: #3D8CE0;
+  --color-info-dark: #004C99;
+  --color-info-bg: #E6F0FB;
+  --color-capacity-override: #6D3FD4;
+  --color-capacity-override-bg: #F0EAFC;
+
+  /* Lifecycle stage pills — each pair >= 4.5:1 */
+  --stage-lead-bg: #EDF0F5;
+  --stage-lead-fg: #3E4759;
+  --stage-trial-bg: #E6F0FB;
+  --stage-trial-fg: #0B4F99;
+  --stage-active-bg: #E4F4EB;
+  --stage-active-fg: #125E3A;
+  --stage-at-risk-bg: #FDF1E1;
+  --stage-at-risk-fg: #8A4500;
+  --stage-churned-bg: #FDE9E7;
+  --stage-churned-fg: #A02217;
+  --stage-winback-bg: #EFEAFB;
+  --stage-winback-fg: #50329E;
+
+  /* Sidebar, header, navigation */
+  --color-sidebar-bg: #0F1F5C;
+  --color-sidebar-border: #0F1F5C;
+  --color-sidebar-text: #FFFFFF;
+  --color-sidebar-text-muted: #AEBBE8;
+  --color-sidebar-hover-bg: rgba(255, 255, 255, 0.09);
+  --color-sidebar-brand: #FFFFFF;
+  --color-sidebar-brand-text: #FFFFFF;
+  --color-header-bg: #FFFFFF;
+  --color-nav-active-bg: #FFFFFF;
+  --color-nav-active-text: #0F1F5C;
+
+  --color-overlay: rgba(15, 31, 92, 0.45);
+
+  /* Calendar service palette — same hue families, deepened to read on white */
+  --cal-service-color-1: #2F7A91;
+  --cal-service-color-2: #A9822F;
+  --cal-service-color-3: #5A8248;
+  --cal-service-color-4: #9A5A4C;
+  --cal-service-color-5: #5E4E9E;
+  --cal-service-color-6: #9E3A70;
+  --cal-service-color-7: #2E8A62;
+  --cal-service-color-8: #857433;
+
+  /* Shadows — navy-tinted, soft */
+  --shadow-sm: 0 1px 2px rgba(15, 31, 92, 0.06);
+  --shadow-md: 0 4px 14px rgba(15, 31, 92, 0.08);
+  --shadow-lg: 0 12px 32px rgba(15, 31, 92, 0.12);
+
+  /* Typography — larger scale than Classic (whose sm = 14px was the default body size) */
+  --font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-size-xs: 0.8125rem;   /* 13px */
+  --font-size-sm: 0.9375rem;   /* 15px */
+  --font-size-base: 1rem;      /* 16px */
+  --font-size-lg: 1.125rem;    /* 18px */
+  --font-size-xl: 1.25rem;     /* 20px */
+  --font-size-2xl: 1.625rem;   /* 26px */
+  --font-size-3xl: 2.125rem;   /* 34px */
+  --font-size-4xl: 3rem;       /* 48px */
+  --font-size-page-title: 2.125rem;     /* 34px */
+  --font-size-section-header: 1.25rem;  /* 20px */
+  --font-size-table-header: 0.875rem;   /* 14px */
+  --font-size-title: var(--font-size-page-title);
+  --font-size-subtitle: var(--font-size-xl);
+  --font-size-body: 1rem;               /* 16px */
+  --font-size-small: 0.875rem;          /* 14px */
+  --font-weight-medium: 600;
+  --font-weight-semibold: 700;
+  --font-weight-bold: 800;
+}
+
+/* Component tokens (THE-8) — defaults live in tokens/components.css */
+[data-base-theme='navy'] {
+  --control-height: 48px;
+  --control-radius: 10px;
+  --control-padding-x: 14px;
+  --control-font-size: var(--font-size-base);
+  --control-bg: var(--color-surface);
+  --label-font-size: 0.90625rem;          /* 14.5px */
+  --label-font-weight: 700;
+  --field-gap: var(--space-sm);
+
+  --button-radius: var(--radius-full);
+  --button-height-sm: 38px;
+  --button-height-md: 48px;
+  --button-height-lg: 54px;
+  --button-padding-sm: 16px;
+  --button-padding-md: 24px;
+  --button-padding-lg: 32px;
+  --button-font-weight: 700;
+
+  --card-radius: var(--radius-xl);         /* 16px */
+  --card-border-color: var(--color-divider);
+  --card-title-size: 1.25rem;              /* 20px */
+  --card-title-weight: 800;
+
+  --tabs-list-width: 100%;
+  --tabs-justify: flex-start;
+  --tab-font-size: var(--font-size-base);
+  --tab-font-weight: 600;
+  --tab-active-font-weight: 700;
+  --tab-padding: 12px 16px 14px;
+  --tabs-gap: var(--space-xs);
+
+  --page-title-size: 2.125rem;             /* 34px */
+  --page-title-weight: 800;
+  --page-subtitle-size: var(--font-size-base);
+
+  --table-font-size: var(--font-size-base);
+  --table-row-height: 52px;
+  --table-cell-padding-y: 14px;
+
+  --badge-font-size: 0.8125rem;            /* 13px */
+  --badge-padding: 5px 14px;
+  --badge-success-fg: var(--color-success-dark);
+  --badge-warning-fg: #8A4500;
+  --badge-error-fg: var(--color-error-dark);
+  --badge-info-fg: var(--color-info-dark);
+
+  --modal-radius: 20px;
+  --modal-title-size: 1.375rem;            /* 22px */
+  --modal-title-weight: 800;
+}
+
+[data-base-theme='navy'] :focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}

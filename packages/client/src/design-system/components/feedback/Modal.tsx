@@ -38,7 +38,7 @@ export function Modal({ open, onClose, title, size = 'md', children, footer }: M
   // Detect mobile for full-screen rendering
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
   const dialogMaxWidth = isMobile ? '100vw' : sizeMap[size];
-  const dialogBorderRadius = isMobile ? '0' : 'var(--radius-lg)';
+  const dialogBorderRadius = isMobile ? '0' : 'var(--modal-radius)';
   const dialogHeight = isMobile ? '100vh' : 'auto';
 
   return (
@@ -77,7 +77,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     padding: 'var(--space-lg)', borderBottom: '1px solid var(--color-border)',
   },
-  title: { fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-semibold)' as any, margin: 0, color: 'var(--color-text)' },
+  title: { fontSize: 'var(--modal-title-size)', fontWeight: 'var(--modal-title-weight)' as any, margin: 0, color: 'var(--color-text)' },
   close: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', fontSize: '20px', cursor: 'pointer', padding: '4px' },
   body: { padding: 'var(--space-lg)', overflowY: 'auto', flex: 1 },
   footer: { padding: 'var(--space-lg)', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)' },

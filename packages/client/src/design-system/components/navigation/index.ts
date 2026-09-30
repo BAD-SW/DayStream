@@ -3,3 +3,4 @@ export { Pagination } from './Pagination';
 export { Breadcrumbs } from './Breadcrumbs';
 export { Steps } from './Steps';
 export { NavMenu } from './NavMenu';
+export { TabBar } from './TabBar';

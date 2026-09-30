@@ -1,0 +1,97 @@
+/* Theme gallery (THE-9) — layout only; sizes and colours come from design tokens. */
+
+.tg-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.tg-title {
+  margin: 0 0 var(--space-xs);
+  font-size: var(--card-title-size);
+  font-weight: var(--card-title-weight);
+  color: var(--color-text-title);
+}
+
+.tg-subtext,
+.tg-muted {
+  margin: 0;
+  max-width: 60ch;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.tg-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-error);
+}
+
+.tg-toast {
+  margin-bottom: var(--space-md);
+  padding: 12px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--color-surface);
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+}
+
+.tg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-lg);
+}
+
+.tg-card {
+  overflow: hidden;
+  border: 1px solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.tg-swatches {
+  display: flex;
+  height: 56px;
+}
+
+.tg-swatches span {
+  flex: 1;
+}
+
+.tg-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-md) var(--space-lg) var(--space-lg);
+}
+
+.tg-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.tg-card-name {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-title);
+}
+
+.tg-card-meta {
+  margin-bottom: var(--space-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.tg-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}

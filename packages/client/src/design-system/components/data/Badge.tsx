@@ -7,10 +7,10 @@ interface BadgeProps {
 }
 
 const variantColors: Record<string, { bg: string; color: string }> = {
-  success: { bg: 'var(--color-success-bg)', color: 'var(--color-success-light)' },
-  warning: { bg: 'var(--color-warning-bg)', color: 'var(--color-warning)' },
-  error: { bg: 'var(--color-error-bg)', color: 'var(--color-error-light)' },
-  info: { bg: 'var(--color-info-bg)', color: 'var(--color-info-light)' },
+  success: { bg: 'var(--color-success-bg)', color: 'var(--badge-success-fg)' },
+  warning: { bg: 'var(--color-warning-bg)', color: 'var(--badge-warning-fg)' },
+  error: { bg: 'var(--color-error-bg)', color: 'var(--badge-error-fg)' },
+  info: { bg: 'var(--color-info-bg)', color: 'var(--badge-info-fg)' },
   neutral: { bg: 'var(--color-surface)', color: 'var(--color-text-secondary)' },
 };
 
@@ -22,9 +22,9 @@ export function Badge({ children, variant = 'neutral', bg, fg }: BadgeProps) {
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '5px 13px',
+        padding: 'var(--badge-padding)',
         borderRadius: 'var(--radius-full)',
-        fontSize: '12.5px',
+        fontSize: 'var(--badge-font-size)',
         fontWeight: 'var(--font-weight-bold)' as any,
         background: bg ?? colors.bg,
         color: fg ?? colors.color,

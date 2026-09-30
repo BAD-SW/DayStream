@@ -1,0 +1,67 @@
+/* Component tokens (THE-8) — size, shape and weight decisions for shared components.
+ *
+ * The defaults below reproduce exactly what each component rendered before THE-8, so
+ * Classic and Bold Business are unchanged. The Navy base theme (themes/navy.css)
+ * overrides them to match proposal "B · Navy sidebar": taller controls, pill buttons,
+ * bigger labels and headings, rounder cards.
+ */
+
+:root {
+  /* Form controls (Input, Select, Textarea, SegmentedControl) */
+  --control-height: auto;
+  --control-radius: var(--radius-md);
+  --control-padding-x: 12px;
+  --control-font-size: var(--font-size-base);
+  --control-bg: var(--color-background);
+  --label-font-size: var(--font-size-sm);
+  --label-font-weight: var(--font-weight-medium);
+  --field-gap: var(--space-xs);
+
+  /* Buttons */
+  --button-radius: var(--radius-md);
+  --button-height-sm: 32px;
+  --button-height-md: 40px;
+  --button-height-lg: 48px;
+  --button-padding-sm: var(--space-sm);
+  --button-padding-md: var(--space-md);
+  --button-padding-lg: var(--space-xl);
+  --button-font-weight: var(--font-weight-semibold);
+
+  /* Cards */
+  --card-radius: var(--radius-lg);
+  --card-border-color: transparent;
+  --card-title-size: var(--font-size-lg);
+  --card-title-weight: var(--font-weight-semibold);
+
+  /* Tabs */
+  --tabs-list-width: 80%;
+  --tabs-justify: space-evenly;
+  --tab-font-size: var(--font-size-sm);
+  --tab-font-weight: 500;
+  --tab-active-font-weight: 600;
+  --tab-padding: var(--space-sm) var(--space-md);
+  --tabs-gap: 0;
+
+  /* Page header */
+  --page-title-size: var(--font-size-page-title);
+  --page-title-weight: var(--font-weight-bold);
+  --page-subtitle-size: var(--font-size-sm);
+
+  /* Table */
+  --table-font-size: 15px;
+  --table-row-height: 40px;
+  --table-cell-padding-y: var(--space-md);
+
+  /* Badge */
+  --badge-font-size: 12.5px;
+  --badge-padding: 5px 13px;
+  --badge-success-fg: var(--color-success-light);
+  --badge-warning-fg: var(--color-warning);
+  --badge-error-fg: var(--color-error-light);
+  --badge-info-fg: var(--color-info-light);
+
+  /* Modal / Drawer */
+  --modal-radius: var(--radius-lg);
+  --modal-title-size: var(--font-size-lg);
+  --modal-title-weight: var(--font-weight-semibold);
+}

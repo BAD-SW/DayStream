@@ -1,11 +1,11 @@
-import { FONT_STACKS } from '../../themes/ThemeProvider';
+import { CURATED_FONTS, fontStackFor } from '../../themes/ThemeProvider';
 import { meetsWcagAA } from '../../utils/contrast';
 
-const CURATED_FONTS = ['System Default', 'Inter', 'Merriweather', 'Source Sans 3'];
 const FONT_SIZES = [14, 15, 16, 17] as const;
 const BASE_THEMES = [
   { value: 'classic', label: 'Classic' },
   { value: 'bold-business', label: 'Bold Business' },
+  { value: 'navy', label: 'Navy' },
 ] as const;
 
 export interface ThemeValues {
@@ -67,7 +67,7 @@ export function ThemeEditorFields({ values, onChange, inherited, inheritedLabel 
     baseFontSize: values.baseFontSize ?? inherited?.baseFontSize ?? DEFAULTS.baseFontSize,
     faviconUrl: values.faviconUrl ?? inherited?.faviconUrl ?? DEFAULTS.faviconUrl,
   };
-  const fontStack = resolved.fontFamily !== 'System Default' ? FONT_STACKS[resolved.fontFamily] : 'var(--font-family)';
+  const fontStack = resolved.fontFamily !== 'System Default' ? fontStackFor(resolved.fontFamily) : 'var(--font-family)';
   const primaryContrast = meetsWcagAA('#FFFFFF', resolved.primaryColor);
   const secondaryContrast = meetsWcagAA('#FFFFFF', resolved.secondaryColor);
 
@@ -198,7 +198,7 @@ export function ThemeEditorFields({ values, onChange, inherited, inheritedLabel 
         </div>
       </div>
 
-      <div style={styles.previewPanel} data-base-theme={resolved.baseTheme === 'bold-business' ? 'bold-business' : undefined}>
+      <div style={styles.previewPanel} data-base-theme={resolved.baseTheme === 'bold-business' || resolved.baseTheme === 'navy' ? resolved.baseTheme : undefined}>
         <div style={styles.previewLabel}>LIVE PREVIEW</div>
         <p style={styles.previewNote}>Updates as you edit — not saved until you click Save.</p>
         <div style={styles.previewFrame}>

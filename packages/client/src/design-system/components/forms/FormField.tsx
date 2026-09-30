@@ -24,8 +24,8 @@ export function FormField({ label, name, error, helperText, required, children }
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  field: { display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)' },
-  label: { fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-medium)' as any, color: 'var(--color-text)' },
+  field: { display: 'flex', flexDirection: 'column', gap: 'var(--field-gap)' },
+  label: { fontSize: 'var(--label-font-size)', fontWeight: 'var(--label-font-weight)' as any, color: 'var(--color-text)' },
   required: { color: 'var(--color-error)' },
   error: { fontSize: 'var(--font-size-xs)', color: 'var(--color-error)', margin: 0 },
   helper: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', margin: 0 },

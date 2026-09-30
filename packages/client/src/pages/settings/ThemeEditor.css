@@ -1,0 +1,214 @@
+/* Theme editor (THE-9) — layout only; sizes and colours come from design tokens. */
+
+.te {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.te-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  min-width: 0;
+}
+
+.te-basics {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto;
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+.te-basics--edit {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.te-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--field-gap);
+  min-width: 0;
+}
+
+.te-label {
+  font-size: var(--label-font-size);
+  font-weight: var(--label-font-weight);
+  color: var(--color-text);
+}
+
+.te-quick {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-lg);
+  align-items: start;
+  max-width: 1100px;
+}
+
+.te-advanced {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+.te-grid-2,
+.te-grid-3 {
+  display: grid;
+  gap: var(--space-md);
+}
+.te-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.te-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.te-hint {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-secondary);
+}
+
+/* Colour field: swatch + hex + preset dots */
+.te-color-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.te-color-swatch {
+  flex-shrink: 0;
+  width: var(--button-height-md);
+  height: var(--button-height-md);
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  cursor: pointer;
+}
+
+.te-color-hex {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: var(--control-height);
+  padding: 8px var(--control-padding-x);
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  color: var(--color-text);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+}
+
+.te-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.te-preset {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.te-preset[aria-pressed='true'] {
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+/* Live preview — rendered inside [data-base-theme] so it shows that base theme's look */
+.te-preview-note {
+  margin: calc(var(--space-sm) * -1) 0 var(--space-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.te-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  border-radius: var(--card-radius);
+  background: var(--color-background);
+  color: var(--color-text-body);
+  font-family: var(--font-family);
+}
+
+.te-preview__sidebar {
+  padding: 12px 16px;
+  border-radius: var(--control-radius);
+  background: var(--color-sidebar-bg);
+  color: var(--color-sidebar-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.te-preview__topbar {
+  padding: 10px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--color-header-bg);
+  font-size: var(--font-size-sm);
+}
+
+.te-preview__title {
+  margin-top: var(--space-sm);
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  color: var(--color-text-title);
+}
+
+.te-preview__body {
+  font-size: var(--font-size-body);
+}
+
+.te-preview__muted {
+  font-size: var(--font-size-small);
+  color: var(--color-text-muted);
+}
+
+.te-preview__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin: var(--space-xs) 0;
+}
+
+.te-preview__btn {
+  display: inline-flex;
+  align-items: center;
+  height: var(--button-height-md);
+  padding: 0 var(--button-padding-md);
+  border-radius: var(--button-radius);
+  font-size: var(--font-size-sm);
+  font-weight: var(--button-font-weight);
+}
+
+.te-preview__btn--primary {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
+.te-preview__btn--secondary {
+  background: var(--color-secondary);
+  color: var(--color-secondary-contrast);
+}
+
+.te-preview__card {
+  padding: 12px 16px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--control-radius);
+  background: var(--color-surface);
+  font-size: var(--font-size-sm);
+}
+
+@media (max-width: 900px) {
+  .te-basics,
+  .te-quick {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

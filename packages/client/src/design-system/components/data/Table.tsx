@@ -278,7 +278,7 @@ function renderPagination(page: number, totalPages: number, onPageChange: (p: nu
 
 const styles: Record<string, React.CSSProperties> = {
   wrapper: { overflowX: 'auto' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: '15px' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: 'var(--table-font-size)' },
   th: {
     textAlign: 'left',
     padding: 'var(--space-sm) var(--space-md)',
@@ -296,13 +296,13 @@ const styles: Record<string, React.CSSProperties> = {
   tr: {
     borderBottom: '1px solid var(--color-border)',
     transition: 'background var(--duration-fast) var(--ease-default)',
-    height: '40px',
+    height: 'var(--table-row-height)',
   },
   filterRow: {
     borderBottom: '1px solid var(--color-border)',
   },
   trSelected: { background: 'var(--color-surface-hover)' },
-  td: { padding: 'var(--space-md) var(--space-md)', color: 'var(--color-text)', wordBreak: 'break-word' },
+  td: { padding: 'var(--table-cell-padding-y) var(--space-md)', color: 'var(--color-text)', wordBreak: 'break-word' },
   footerRow: { borderTop: '1px solid var(--color-border)', background: 'var(--color-surface)' },
   footerRowStrong: { borderTop: '2px solid var(--color-border)', background: 'var(--color-surface-hover)' },
   footerCell: { padding: 'var(--space-sm) var(--space-md)', color: 'var(--color-text)', fontWeight: 'var(--font-weight-bold)' as any, fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap' },

@@ -513,7 +513,7 @@ adminRouter.delete('/config/:key', tenantContext, requirePermission('settings:*'
 // COALESCE — so this needs no separate propagation logic.
 
 const THEME_KEYS = ['brand.primary_color', 'brand.secondary_color', 'brand.logo_url', 'brand.font_family', 'brand.base_font_size', 'brand.base_theme', 'brand.favicon_url', 'brand.title_color'];
-const VALID_BASE_THEMES = ['classic', 'bold-business'];
+const VALID_BASE_THEMES = ['classic', 'bold-business', 'navy'];
 
 adminRouter.get('/system-theme', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {

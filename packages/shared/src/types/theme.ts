@@ -1,5 +1,5 @@
 export type ThemeScope = 'system' | 'tenant' | 'business';
-export type BuiltInThemeId = 'bold-business' | 'classic';
+export type BuiltInThemeId = 'bold-business' | 'classic' | 'navy';
 
 export interface CfgTheme {
   id: string;
@@ -16,7 +16,7 @@ export interface CfgTheme {
 }
 
 export interface ThemeListItem {
-  id: string; // UUID for saved themes; 'bold-business' | 'classic' for built-ins
+  id: string; // UUID for saved themes; 'bold-business' | 'classic' | 'navy' for built-ins
   name: string;
   base_theme: BuiltInThemeId;
   scope: ThemeScope;

@@ -9,13 +9,34 @@ export const FONT_STACKS: Record<string, string> = {
   'Inter': "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
   'Merriweather': "'Merriweather', Georgia, 'Times New Roman', serif",
   'Source Sans 3': "'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+  'Plus Jakarta Sans': "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
 };
+
+/** Curated font labels offered by the theme editors, in display order. */
+export const CURATED_FONTS = ['System Default', 'Plus Jakarta Sans', 'Inter', 'Merriweather', 'Source Sans 3'];
+
+const SYSTEM_FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+
+/**
+ * Theme tokens store the font as a curated *label* ("Inter", "System Default"), not a CSS
+ * stack. Setting the raw label on --font-family breaks "System Default" (no such font, so
+ * the browser falls back to its serif default) and drops the fallback stack for the rest.
+ */
+export function fontStackFor(label: string | undefined): string | undefined {
+  if (!label) return undefined;
+  if (label === 'System Default') return SYSTEM_FONT_STACK;
+  return FONT_STACKS[label] ?? label;
+}
 
 const GOOGLE_FONT_HREFS: Record<string, string> = {
   'Inter': 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
   'Merriweather': 'https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&display=swap',
   'Source Sans 3': 'https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&display=swap',
+  'Plus Jakarta Sans': 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap',
 };
+
+/** Font each base theme's CSS expects when no custom font overrides it. */
+const BASE_THEME_FONTS: Record<string, string> = { navy: 'Plus Jakarta Sans' };
 
 /** Loads a curated Google Font on demand — only the one selected, never all of them upfront. */
 export function loadGoogleFont(fontFamily: string | undefined): void {
@@ -132,10 +153,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           : await resolveThemeForSystem();
       if (requestGenerationRef.current !== generation) return;
       setResolvedTheme(resolved);
-      applyBaseTheme(resolved.base_theme === 'bold-business' ? 'bold-business' : null);
-      applyResolvedTokens(resolved.tokens);
+      applyBaseTheme(resolved.base_theme === 'classic' ? null : resolved.base_theme);
       const fontFamilyLabel = resolved.tokens['--font-family'];
-      if (fontFamilyLabel && fontFamilyLabel !== 'System Default') loadGoogleFont(fontFamilyLabel);
+      applyResolvedTokens(fontFamilyLabel ? { ...resolved.tokens, '--font-family': fontStackFor(fontFamilyLabel)! } : resolved.tokens);
+      loadGoogleFont(fontFamilyLabel ?? BASE_THEME_FONTS[resolved.base_theme]);
     } catch {
       if (requestGenerationRef.current !== generation) return;
       setResolvedTheme(null);

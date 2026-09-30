@@ -194,7 +194,7 @@ export async function listForCaller(caller: CallerScope, pool: Queryable): Promi
 export async function create(dto: CreateThemeDto, caller: CallerScope, pool: Queryable): Promise<CfgTheme> {
   if (!dto.name?.trim()) throw new ThemeServiceError('Theme name is required', 'VALIDATION');
   if (dto.name.length > 100) throw new ThemeServiceError('Theme name must be 100 characters or fewer', 'VALIDATION');
-  if (!isBuiltInThemeId(dto.base_theme)) throw new ThemeServiceError("base_theme must be 'bold-business' or 'classic'", 'VALIDATION');
+  if (!isBuiltInThemeId(dto.base_theme)) throw new ThemeServiceError("base_theme must be 'bold-business', 'classic' or 'navy'", 'VALIDATION');
 
   const rawTokens = dto.tokens || {};
   const unknownKeys = validateTokenKeys(rawTokens);

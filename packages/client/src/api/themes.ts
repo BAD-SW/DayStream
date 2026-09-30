@@ -1,6 +1,6 @@
 import { apiClient } from './client';
 import type {
-  ThemeListItem, CfgTheme, ResolvedTheme,
+  BuiltInThemeId, ThemeListItem, CfgTheme, ResolvedTheme,
   CreateThemeDto, UpdateThemeDto, ApplyThemeDto, ApplyThemeResponse,
 } from '@daystream/shared';
 
@@ -46,7 +46,7 @@ export async function resolveThemeForSystem(): Promise<ResolvedTheme> {
 }
 
 export interface BaseTokensResponse {
-  tokens: Record<'bold-business' | 'classic', Record<string, string>>;
+  tokens: Record<BuiltInThemeId, Record<string, string>>;
   labels: Record<string, string>;
 }
 

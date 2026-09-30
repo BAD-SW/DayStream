@@ -3,6 +3,8 @@ import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
 import { useBusinessSettings } from '../context/BusinessSettingsContext';
 import { ThemeGallery } from './settings/ThemeGallery';
+import { PageHeader } from '../design-system/components/layout/PageHeader';
+import { TabBar } from '../design-system/components/navigation/TabBar';
 
 type SettingsTab = 'system' | 'lifecycle' | 'processes' | 'notifications' | 'payment-methods' | 'integrations' | 'appearance';
 
@@ -21,25 +23,8 @@ export function BusinessSettings() {
 
   return (
     <div style={styles.page}>
-      <h1 style={styles.title}>Settings</h1>
-      <div style={styles.tabBar}>
-        {tabs.map((tab) => {
-          const isActive = activeTab === tab.key;
-          return (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-              style={{
-                background: 'none', border: 'none', outline: 'none',
-                borderBottom: isActive ? '3px solid var(--color-primary)' : '3px solid transparent',
-                padding: '10px 20px', fontSize: '14px',
-                fontWeight: isActive ? 600 : 500,
-                color: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                cursor: 'pointer', fontFamily: 'var(--font-family)', marginBottom: '-1px',
-              }}>
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      <PageHeader title="Settings" />
+      <TabBar aria-label="Settings sections" tabs={tabs} active={activeTab} onChange={setActiveTab} />
       {activeTab === 'system' && <SystemSettings />}
       {activeTab === 'lifecycle' && <LifecycleSettings />}
       {activeTab === 'processes' && <ProcessesSettings />}
@@ -696,8 +681,6 @@ function AppearanceSettings() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1600px', margin: '0 auto' },
-  title: { fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-lg)' },
-  tabBar: { display: 'flex', gap: '0', borderBottom: '1px solid var(--color-border)', marginBottom: '24px' },
   tab: { background: 'none', border: 'none', borderBottom: '2px solid transparent', padding: '10px 16px', fontSize: '14px', fontWeight: 500, color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
   tabActive: { color: 'var(--color-primary)', borderBottomColor: 'var(--color-primary)' },
   section: { marginBottom: '32px' },

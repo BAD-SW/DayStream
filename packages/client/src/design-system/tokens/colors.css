@@ -102,6 +102,15 @@
   /* Sidebar */
   --color-sidebar-bg: #1A1A1A;
   --color-sidebar-border: rgba(255, 255, 255, 0.08);
+  /* Sidebar text (THE-6) — defaults to the secondary text colour, which is what the
+     sidebar links always used, so Classic and Bold Business are unchanged. Navy sets
+     its own white-on-navy values in themes/navy.css. */
+  --color-sidebar-text: var(--color-text-secondary);
+  --color-sidebar-text-muted: var(--color-text-secondary);
+  --color-sidebar-hover-bg: var(--color-surface-hover);
+  /* Logo colours when the logo sits in the sidebar (THE-7) */
+  --color-sidebar-brand: var(--color-primary);
+  --color-sidebar-brand-text: var(--color-text);
 
   /* Header */
   --color-header-bg: #1A1A1A;

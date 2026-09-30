@@ -73,7 +73,7 @@ themesRouter.get('/', authenticate, tenantContext, async (req: Request, res: Res
 
 const createThemeSchema = Joi.object({
   name: Joi.string().min(1).max(100).required(),
-  base_theme: Joi.string().valid('bold-business', 'classic').required(),
+  base_theme: Joi.string().valid('bold-business', 'classic', 'navy').required(),
   scope: Joi.string().valid('system', 'tenant', 'business').required(),
   scope_id: Joi.string().uuid().allow(null),
   tokens: Joi.object().pattern(Joi.string(), Joi.string()),

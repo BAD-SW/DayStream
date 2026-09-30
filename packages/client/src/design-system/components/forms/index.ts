@@ -8,3 +8,4 @@ export { Switch } from './Switch';
 export { DatePicker } from './DatePicker';
 export { TimePicker } from './TimePicker';
 export { FileUpload } from './FileUpload';
+export { SegmentedControl } from './SegmentedControl';

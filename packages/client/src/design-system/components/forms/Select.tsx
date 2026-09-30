@@ -44,11 +44,12 @@ export function Select({ label, name, options, value, onChange, error, helperTex
 }
 
 const selectStyle: React.CSSProperties = {
-  background: 'var(--color-background)',
+  background: 'var(--control-bg)',
   border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-md)',
-  padding: '10px 12px',
-  fontSize: 'var(--font-size-base)',
+  borderRadius: 'var(--control-radius)',
+  padding: '10px var(--control-padding-x)',
+  fontSize: 'var(--control-font-size)',
+  minHeight: 'var(--control-height)',
   color: 'var(--color-text)',
   fontFamily: 'var(--font-family)',
   outline: 'none',
