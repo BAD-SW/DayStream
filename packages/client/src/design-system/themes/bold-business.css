@@ -26,6 +26,14 @@
 
   --color-sidebar-bg: #0052CC;
   --color-sidebar-border: rgba(255, 255, 255, 0.15);
+  /* Light text for the blue sidebar. Without these, sidebar text falls through to
+     --color-text-secondary (dark slate) from tokens/colors.css and is unreadable on
+     the blue background. White on #0052CC = 8.59:1 (WCAG AA, per header above). */
+  --color-sidebar-text: #FFFFFF;
+  --color-sidebar-text-muted: #B3C7EC;
+  --color-sidebar-hover-bg: rgba(255, 255, 255, 0.12);
+  --color-sidebar-brand: #FFFFFF;
+  --color-sidebar-brand-text: #FFFFFF;
 
   --color-header-bg: #FFFFFF;
 
