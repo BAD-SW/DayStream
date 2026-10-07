@@ -3,6 +3,7 @@ import { logAudit } from './audit.service';
 import { getEffectiveRules } from './compensation.service';
 import { getUserSummary, generateFromBookings } from './time-tracking.service';
 import { commissionTotalsByStaff } from './commission.service';
+import { clockedHoursForUser, scheduledHoursForUser } from './clock.service';
 import { logger } from '../middleware/logger';
 
 interface PayPeriodInput {
@@ -82,6 +83,13 @@ export async function runPayroll(periodId: string, businessId: string, tenantId:
     end: period.period_end,
   });
 
+  // Business timezone, for bucketing clocked hours into local days.
+  const { rows: tzRows } = await adminPool.query(
+    'SELECT COALESCE(timezone, \'UTC\') AS tz FROM sys_businesses WHERE id = $1',
+    [businessId],
+  );
+  const businessTz: string = tzRows[0]?.tz || 'UTC';
+
   for (const staff of staffWithRules) {
     const userId = staff.user_id;
 
@@ -110,12 +118,23 @@ export async function runPayroll(periodId: string, businessId: string, tenantId:
     for (const rule of rules) {
       let amount = 0;
       switch (rule.rule_type) {
-        case 'hourly':
-          const regularHours = Math.min(summary.total_hours, rule.overtime_after_hours);
-          const overtimeHours = Math.max(0, summary.total_hours - rule.overtime_after_hours);
+        case 'hourly': {
+          // Hours come from the rule's chosen basis: 'clocked' (clk_events, net of
+          // breaks) or 'scheduled' (stf_schedule_entries shift durations). Legacy
+          // rules with no basis set fall back to the old booking-derived summary
+          // hours so existing payroll behaviour is unchanged until a basis is picked.
+          const hours =
+            rule.hours_basis === 'clocked'
+              ? await clockedHoursForUser(businessId, userId, period.period_start, period.period_end, businessTz)
+              : rule.hours_basis === 'scheduled'
+                ? await scheduledHoursForUser(businessId, userId, period.period_start, period.period_end)
+                : summary.total_hours;
+          const regularHours = Math.min(hours, rule.overtime_after_hours);
+          const overtimeHours = Math.max(0, hours - rule.overtime_after_hours);
           amount = Math.round(regularHours * rule.rate + overtimeHours * rule.rate * parseFloat(rule.overtime_multiplier));
-          breakdown.push({ type: 'hourly', hours: summary.total_hours, regular: regularHours, overtime: overtimeHours, amount });
+          breakdown.push({ type: 'hourly', basis: rule.hours_basis || 'bookings', hours, regular: regularHours, overtime: overtimeHours, amount });
           break;
+        }
         case 'salary':
           amount = rule.rate; // Fixed per period
           breakdown.push({ type: 'salary', amount });

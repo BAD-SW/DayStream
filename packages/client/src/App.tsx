@@ -3,6 +3,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminLayout } from './components/AdminLayout';
 import { Login } from './pages/Login';
+import { ForgotPassword } from './pages/ForgotPassword';
+import { ResetPassword } from './pages/ResetPassword';
 import { Profile } from './pages/Profile';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { Tenants } from './pages/Tenants';
@@ -36,6 +38,9 @@ import { Orders } from './pages/Orders';
 import { Receipt } from './pages/Receipt';
 import { BookingFlow } from './pages/BookingFlow';
 import { Schedule } from './pages/Schedule';
+import { Clock } from './pages/Clock';
+import { ClockAdmin } from './pages/ClockAdmin';
+import { MyHours } from './pages/MyHours';
 import { BookingCreate } from './pages/BookingCreate';
 import { BookingEdit } from './pages/BookingEdit';
 import { Memberships } from './pages/Memberships';
@@ -89,6 +94,8 @@ export function App() {
       <Routes>
         {/* Public routes */}
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* Embeddable booking widget (spec 38) — standalone, no admin chrome, no auth gate */}
         <Route path="/booking-widget" element={<BookingWidget />} />
@@ -133,6 +140,11 @@ export function App() {
 
         {/* Schedule */}
         <Route path="/schedule" element={<ProtectedRoute><Schedule /></ProtectedRoute>} />
+
+        {/* Time Clock (shared screen — PIN-authenticated) */}
+        <Route path="/clock" element={<ProtectedRoute><Clock /></ProtectedRoute>} />
+        <Route path="/clock/admin" element={<ProtectedRoute><ClockAdmin /></ProtectedRoute>} />
+        <Route path="/clock/mine" element={<ProtectedRoute><MyHours /></ProtectedRoute>} />
 
         {/* Memberships */}
         <Route path="/memberships" element={<ProtectedRoute><Memberships /></ProtectedRoute>} />

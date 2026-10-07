@@ -660,6 +660,7 @@ interface CompensationRule {
   overtime_multiplier: number;
   overtime_after_hours: number;
   holiday_multiplier: number;
+  hours_basis: string | null;
   effective_from: string;
   effective_to: string | null;
   status: string;
@@ -685,6 +686,7 @@ function CompensationTab({ userId }: { userId: string | null }) {
     overtime_multiplier: '1.5',
     overtime_after_hours: '40',
     holiday_multiplier: '2.0',
+    hours_basis: 'scheduled' as string, // hourly rules only: 'scheduled' | 'clocked'
     effective_from: new Date().toISOString().split('T')[0],
     effective_to: '',
   };
@@ -736,6 +738,7 @@ function CompensationTab({ userId }: { userId: string | null }) {
       overtime_multiplier: String(rule.overtime_multiplier),
       overtime_after_hours: String(rule.overtime_after_hours),
       holiday_multiplier: String(rule.holiday_multiplier),
+      hours_basis: (rule as any).hours_basis || 'scheduled',
       effective_from: rule.effective_from ? rule.effective_from.split('T')[0] : '',
       effective_to: rule.effective_to ? rule.effective_to.split('T')[0] : '',
     });
@@ -760,6 +763,7 @@ function CompensationTab({ userId }: { userId: string | null }) {
           overtime_multiplier: parseFloat(form.overtime_multiplier),
           overtime_after_hours: parseInt(form.overtime_after_hours),
           holiday_multiplier: parseFloat(form.holiday_multiplier),
+          hours_basis: form.rule_type === 'hourly' ? form.hours_basis : null,
           effective_from: form.effective_from,
           effective_to: form.effective_to || null,
         });
@@ -775,6 +779,7 @@ function CompensationTab({ userId }: { userId: string | null }) {
           overtime_multiplier: parseFloat(form.overtime_multiplier),
           overtime_after_hours: parseInt(form.overtime_after_hours),
           holiday_multiplier: parseFloat(form.holiday_multiplier),
+          hours_basis: form.rule_type === 'hourly' ? form.hours_basis : null,
           effective_from: form.effective_from,
           effective_to: form.effective_to || null,
         });
@@ -916,6 +921,13 @@ function CompensationTab({ userId }: { userId: string | null }) {
             )}
             {form.rule_type === 'hourly' && (
               <>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Hours Based On *</label>
+                  <select style={styles.input} value={form.hours_basis} onChange={(e) => setForm({ ...form, hours_basis: e.target.value })}>
+                    <option value="scheduled">Scheduled hours</option>
+                    <option value="clocked">Clocked hours</option>
+                  </select>
+                </div>
                 <div style={styles.formGroup}>
                   <label style={styles.label}>Overtime After (hours/week)</label>
                   <input type="number" min="1" style={styles.input} value={form.overtime_after_hours} onChange={(e) => setForm({ ...form, overtime_after_hours: e.target.value })} />

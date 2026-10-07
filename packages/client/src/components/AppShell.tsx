@@ -34,8 +34,18 @@ interface AppShellProps {
   children: ReactNode;
 }
 
-function isActivePath(pathname: string, path: string): boolean {
-  return pathname === path || pathname.startsWith(`${path}/`);
+/**
+ * Whether a nav item is active. A path matches when the URL equals it or is a
+ * child of it (so detail pages keep their section highlighted). But when two
+ * nav paths both match — e.g. '/clock' and '/clock/admin' on '/clock/admin' —
+ * only the MOST SPECIFIC (longest) one wins, so a parent item doesn't light up
+ * alongside its sibling. `allPaths` is every nav path currently rendered.
+ */
+function isActivePath(pathname: string, path: string, allPaths: string[]): boolean {
+  const matches = (p: string) => pathname === p || pathname.startsWith(`${p}/`);
+  if (!matches(path)) return false;
+  // If a longer sibling path also matches, defer to it.
+  return !allPaths.some((other) => other !== path && other.length > path.length && matches(other));
 }
 
 function initials(first?: string | null, last?: string | null, email?: string): string {
@@ -55,6 +65,9 @@ export function AppShell({ groups, brandTag, children }: AppShellProps) {
 
   const fullName = user?.first_name ? `${user.first_name} ${user.last_name}` : user?.email;
 
+  // All rendered nav paths, so active-state can prefer the most specific match.
+  const allPaths = groups.flatMap((g) => g.items.map((i) => i.path));
+
   return (
     <div className={`app-shell${sidebarOpen ? '' : ' app-shell--collapsed'}`}>
       <nav className="app-sidebar" aria-label="Main">
@@ -67,7 +80,7 @@ export function AppShell({ groups, brandTag, children }: AppShellProps) {
           <div className="app-sidebar__group" key={group.label || 'more'}>
             {group.label && sidebarOpen && <h2 className="app-sidebar__group-label">{group.label}</h2>}
             {group.items.map((item) => {
-              const active = isActivePath(pathname, item.path);
+              const active = isActivePath(pathname, item.path, allPaths);
               return (
                 <Link
                   key={item.id}

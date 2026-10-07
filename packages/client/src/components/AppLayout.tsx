@@ -15,6 +15,9 @@ const NAV_ICONS: Record<string, NavIconName> = {
   customers: 'Users',
   appointments: 'CalendarDays',
   schedule: 'CalendarClock',
+  clock: 'Timer',
+  timesheets: 'ClipboardList',
+  'my-hours': 'Clock',
   accounting: 'Wallet',
   reports: 'ChartLine',
   marketing: 'Megaphone',
@@ -47,7 +50,7 @@ const NAV_GROUPS: Record<'business' | 'tenant' | 'system', GroupDef[]> = {
   business: [
     { label: 'Daily work', ids: ['dashboard', 'customers', 'appointments', 'schedule', 'events'] },
     { label: 'Business', ids: ['offerings', 'accounting', 'reports', 'marketing', 'community'] },
-    { label: 'Admin', ids: ['business', 'website', 'business-settings'] },
+    { label: 'Admin', ids: ['business', 'website', 'business-settings', 'clock', 'timesheets', 'my-hours'] },
   ],
   tenant: [
     { label: 'Overview', ids: ['dashboard'] },

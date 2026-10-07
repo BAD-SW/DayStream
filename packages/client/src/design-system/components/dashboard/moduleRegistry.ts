@@ -26,6 +26,22 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   // Schedule
   { id: 'schedule', phase: 7, icon: '🗓️', titleKey: 'Schedule', descriptionKey: 'Staff scheduling and shift management', path: '/schedule', personas: ['business'], permission: 'staff:read' },
 
+  // Time Clock — shared screen; visible to EVERY business user (no permission gate)
+  // since it's a walk-up terminal and each punch is authorized by the employee's
+  // own PIN rather than by the logged-in session. No single seeded permission is
+  // held by owner, manager, AND staff alike, so leaving it ungated is what makes
+  // it reachable by all of them.
+  { id: 'clock', phase: 12, icon: '⏱️', titleKey: 'Time Clock', descriptionKey: 'Clock in, out, and breaks', path: '/clock', personas: ['business'] },
+
+  // Timesheets — manager/owner view of clock records, corrections, and PINs.
+  { id: 'timesheets', phase: 12, icon: '🕗', titleKey: 'Timesheets', descriptionKey: 'Review and correct staff clock records', path: '/clock/admin', personas: ['business'], permission: 'staff:read' },
+
+  // My Hours — read-only self-service; any business user sees their OWN clock
+  // records. Ungated for the same reason as Time Clock: no single seeded
+  // permission is held by owner, manager, AND staff alike, and the data is
+  // self-scoped server-side so there's nothing to over-expose.
+  { id: 'my-hours', phase: 12, icon: '⏲️', titleKey: 'My Hours', descriptionKey: 'View your own clock entries', path: '/clock/mine', personas: ['business'] },
+
   // Accounting
   { id: 'accounting', phase: 11, icon: '📊', titleKey: 'Accounting', descriptionKey: 'Accounts payable and receivables', path: '/accounting', personas: ['business'], permission: 'reports:*' },
 

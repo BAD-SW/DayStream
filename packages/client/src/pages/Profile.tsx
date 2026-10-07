@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import * as staffApi from '../api/staff';
+import * as clockApi from '../api/clock';
 import type { NotificationPreferences } from '../api/staff';
+import type { MyPinStatus } from '../api/clock';
 
 export function Profile() {
   const { user } = useAuth();
@@ -9,9 +11,30 @@ export function Profile() {
   const [loadingPrefs, setLoadingPrefs] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Clock PIN self-service
+  const [pinStatus, setPinStatus] = useState<MyPinStatus | null>(null);
+  const [pinValue, setPinValue] = useState('');
+  const [pinSaving, setPinSaving] = useState(false);
+  const [pinMsg, setPinMsg] = useState<string | null>(null);
+
   useEffect(() => {
     staffApi.getNotificationPreferences().then(setPrefs).catch(() => {}).finally(() => setLoadingPrefs(false));
+    clockApi.getMyPinStatus().then(setPinStatus).catch(() => setPinStatus(null));
   }, []);
+
+  const handleSavePin = async () => {
+    if (!/^\d{4}$/.test(pinValue)) { setPinMsg('PIN must be exactly 4 digits.'); return; }
+    setPinSaving(true);
+    setPinMsg(null);
+    try {
+      await clockApi.setMyPin(pinValue);
+      setPinValue('');
+      setPinMsg('Clock PIN saved.');
+      setPinStatus((s) => (s ? { ...s, hasPin: true } : s));
+    } catch {
+      setPinMsg('Could not save PIN.');
+    } finally { setPinSaving(false); }
+  };
 
   const handleToggle = async (key: keyof NotificationPreferences) => {
     if (!prefs) return;
@@ -57,6 +80,36 @@ export function Profile() {
           <span style={styles.value}>{user?.role}</span>
         </div>
       </div>
+
+      {pinStatus?.hasProfile && (
+        <>
+          <h2 style={{ ...styles.heading, marginTop: '32px' }}>Time Clock PIN</h2>
+          <div style={styles.card}>
+            <p style={styles.hint}>
+              Use your staff number{pinStatus.staffRef ? ` (${pinStatus.staffRef})` : ''} and this 4-digit PIN at the Time Clock.
+              {pinStatus.hasPin ? ' A PIN is set — enter a new one to change it.' : ' No PIN is set yet.'}
+            </p>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                type="password"
+                inputMode="numeric"
+                value={pinValue}
+                onChange={(e) => setPinValue(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="4 digits"
+                style={{ width: '120px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md, 8px)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' }}
+              />
+              <button
+                onClick={handleSavePin}
+                disabled={pinSaving || pinValue.length !== 4}
+                style={{ padding: '8px 16px', border: 'none', borderRadius: 'var(--button-radius, 8px)', background: 'var(--color-primary)', color: 'var(--color-primary-contrast, #fff)', cursor: pinValue.length === 4 ? 'pointer' : 'default', opacity: pinValue.length === 4 ? 1 : 0.6, fontFamily: 'var(--font-family)' }}
+              >
+                {pinStatus.hasPin ? 'Change PIN' : 'Set PIN'}
+              </button>
+              {pinMsg && <span style={styles.hint}>{pinMsg}</span>}
+            </div>
+          </div>
+        </>
+      )}
 
       <h2 style={{ ...styles.heading, marginTop: '32px' }}>Notification Preferences</h2>
       <div style={styles.card}>

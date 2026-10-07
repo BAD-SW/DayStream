@@ -28,6 +28,7 @@ const createCompRuleSchema = Joi.object({
   overtime_multiplier: Joi.number().min(1).max(5).default(1.5),
   overtime_after_hours: Joi.number().integer().min(1).default(40),
   holiday_multiplier: Joi.number().min(1).max(5).default(2.0),
+  hours_basis: Joi.string().valid('scheduled', 'clocked').allow(null),
   effective_from: Joi.string().isoDate().required(),
   effective_to: Joi.string().isoDate().allow(null),
 });
@@ -40,6 +41,7 @@ const updateCompRuleSchema = Joi.object({
   overtime_multiplier: Joi.number().min(1).max(5),
   overtime_after_hours: Joi.number().integer().min(1),
   holiday_multiplier: Joi.number().min(1).max(5),
+  hours_basis: Joi.string().valid('scheduled', 'clocked').allow(null),
   effective_from: Joi.string().isoDate(),
   effective_to: Joi.string().isoDate().allow(null),
   status: Joi.string().valid('active', 'inactive'),
@@ -63,7 +65,8 @@ payrollRouter.post('/compensation-rules', requirePermission('staff:*'), validate
       rate: req.body.rate, thresholdAmount: req.body.threshold_amount,
       referenceType: req.body.reference_type, referenceIds: req.body.reference_ids,
       overtimeMultiplier: req.body.overtime_multiplier, overtimeAfterHours: req.body.overtime_after_hours,
-      holidayMultiplier: req.body.holiday_multiplier, effectiveFrom: req.body.effective_from, effectiveTo: req.body.effective_to,
+      holidayMultiplier: req.body.holiday_multiplier, hoursBasis: req.body.hours_basis,
+      effectiveFrom: req.body.effective_from, effectiveTo: req.body.effective_to,
     });
     success(res, rule, undefined, 201);
   } catch (err: any) {

@@ -11,6 +11,7 @@ interface CreateCompensationRuleInput {
   overtimeMultiplier?: number;
   overtimeAfterHours?: number;
   holidayMultiplier?: number;
+  hoursBasis?: string | null;       // 'scheduled' | 'clocked' | null — hourly rules only
   effectiveFrom: string;
   effectiveTo?: string;
 }
@@ -100,8 +101,8 @@ export async function createRule(input: CreateCompensationRuleInput) {
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO fin_compensation_rules (business_id, user_id, rule_type, rate, threshold_amount, reference_type, reference_ids, overtime_multiplier, overtime_after_hours, holiday_multiplier, effective_from, effective_to)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    `INSERT INTO fin_compensation_rules (business_id, user_id, rule_type, rate, threshold_amount, reference_type, reference_ids, overtime_multiplier, overtime_after_hours, holiday_multiplier, hours_basis, effective_from, effective_to)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING *`,
     [
       input.businessId, input.userId, input.ruleType, input.rate,
@@ -110,6 +111,8 @@ export async function createRule(input: CreateCompensationRuleInput) {
       input.referenceIds && input.referenceIds.length > 0 ? input.referenceIds : null,
       input.overtimeMultiplier ?? 1.5,
       input.overtimeAfterHours ?? 40, input.holidayMultiplier ?? 2.0,
+      // Only meaningful for hourly rules; store null otherwise.
+      input.ruleType === 'hourly' ? (input.hoursBasis || null) : null,
       input.effectiveFrom, input.effectiveTo || null,
     ],
   );
@@ -149,6 +152,7 @@ export async function updateRule(id: string, businessId: string, updates: Record
     reference_type: 'reference_type', reference_ids: 'reference_ids',
     overtime_multiplier: 'overtime_multiplier',
     overtime_after_hours: 'overtime_after_hours', holiday_multiplier: 'holiday_multiplier',
+    hours_basis: 'hours_basis',
     effective_from: 'effective_from', effective_to: 'effective_to', status: 'status',
   };
 
