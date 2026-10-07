@@ -204,25 +204,39 @@ authRouter.post('/forgot-password', validate(forgotPasswordSchema), async (req: 
   try {
     const { tenant_id, email } = req.body;
 
-    // Check if user exists (but always return success to prevent enumeration)
-    const user = await authService.findUserByEmail(email, tenant_id);
+    // Resolve the user resiliently (tenant-scoped, then cross-tenant by email) so
+    // the reset works even though the login screen passes a hardcoded seed tenant.
+    // Always return success regardless to prevent account enumeration.
+    const user = await authService.findActiveUserByEmailAnyTenant(email, tenant_id);
     if (user) {
-      // Generate a time-limited reset token (15 minutes)
-      const resetToken = authService.generateRefreshToken(); // reuse crypto random for reset token
-      // TODO: Store reset token in DB with expiry. For now, send via email.
-      await sendPasswordResetEmail(email, resetToken);
+      // Create a single-use, 15-minute reset token (only its hash is stored) and
+      // email the raw token in the reset link.
+      const resetToken = await authService.createPasswordResetToken(user.id);
+      await sendPasswordResetEmail(user.email, resetToken);
     }
 
     // Always return success
     res.status(200).json({ data: { message: 'If the email exists, a password reset link has been sent.' } });
   } catch (err: any) {
-    // Still return success even on failure to prevent enumeration
+    // Log the real failure (so a genuine error isn't invisible) but still return
+    // the generic success to the client to prevent enumeration.
+    console.error('Forgot-password error:', err.message);
     res.status(200).json({ data: { message: 'If the email exists, a password reset link has been sent.' } });
   }
 });
 
 // POST /api/v1/auth/reset-password
 authRouter.post('/reset-password', validate(resetPasswordSchema), async (req: Request, res: Response) => {
-  // TODO: Implement token validation and password reset when email service is available
-  res.status(200).json({ data: { message: 'Password has been reset.' } });
+  try {
+    const { token, password } = req.body;
+    const ok = await authService.resetPasswordWithToken(token, password);
+    if (!ok) {
+      res.status(400).json({ error: 'This reset link is invalid or has expired. Please request a new one.', code: 'INVALID_RESET_TOKEN' });
+      return;
+    }
+    res.status(200).json({ data: { message: 'Password has been reset. You can now sign in.' } });
+  } catch (err: any) {
+    console.error('Reset password error:', err.message);
+    res.status(500).json({ error: 'Failed to reset password', code: 'INTERNAL_ERROR' });
+  }
 });

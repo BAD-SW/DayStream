@@ -1,5 +1,5 @@
 import { useState, FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export function Login() {
@@ -81,6 +81,8 @@ export function Login() {
           <button type="submit" disabled={loading} style={styles.button}>
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
+
+          <Link to="/forgot-password" style={styles.forgotLink}>Forgot your password?</Link>
         </form>
       </div>
     </div>
@@ -159,6 +161,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 'var(--font-size-base)',
     margin: 0,
     textAlign: 'center' as const,
+  },
+  forgotLink: {
+    color: 'var(--color-text-secondary)',
+    fontSize: 'var(--font-size-sm)',
+    textAlign: 'center' as const,
+    textDecoration: 'none',
   },
   passwordWrapper: {
     position: 'relative' as const,

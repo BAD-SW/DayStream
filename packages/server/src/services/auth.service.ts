@@ -68,6 +68,24 @@ export async function findUserByEmail(email: string, tenantId?: string) {
   return rows[0] || null;
 }
 
+/**
+ * Resolve an active user by email, tenant-scoped first and then falling back to
+ * a cross-tenant email lookup — mirroring the resilient resolution loginUser
+ * uses. The login screen currently passes a hardcoded seed tenant, so a user
+ * whose real tenant differs would otherwise not be found. Used by the
+ * forgot-password flow so a reset email is sent regardless of which tenant the
+ * caller's screen assumed.
+ */
+export async function findActiveUserByEmailAnyTenant(email: string, tenantId?: string) {
+  const scoped = await findUserByEmail(email, tenantId);
+  if (scoped) return scoped;
+  const { rows } = await adminPool.query(
+    "SELECT * FROM usr_users WHERE email = $1 AND status = 'active' LIMIT 1",
+    [email],
+  );
+  return rows[0] || null;
+}
+
 export async function findUserById(userId: string) {
   // This needs to work without tenant context for refresh token flow
   // Use adminPool since we're looking up by PK
@@ -170,6 +188,62 @@ export async function revokeAllUserTokens(userId: string): Promise<void> {
     'UPDATE usr_refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL',
     [userId],
   );
+}
+
+// --- Password reset tokens ---
+
+const RESET_TOKEN_EXPIRY_MINUTES = 15;
+
+/**
+ * Create a password reset token for a user. Returns the RAW token (to email in
+ * the link); only its SHA-256 hash is persisted. Any outstanding unused tokens
+ * for the user are invalidated first so only the most recent link works.
+ */
+export async function createPasswordResetToken(userId: string): Promise<string> {
+  await adminPool.query(
+    `UPDATE usr_password_reset_tokens SET used_at = NOW()
+      WHERE user_id = $1 AND used_at IS NULL`,
+    [userId],
+  );
+  const rawToken = generateRefreshToken();
+  const expiresAt = new Date(Date.now() + RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000);
+  await adminPool.query(
+    `INSERT INTO usr_password_reset_tokens (user_id, token_hash, expires_at)
+     VALUES ($1, $2, $3)`,
+    [userId, hashToken(rawToken), expiresAt.toISOString()],
+  );
+  return rawToken;
+}
+
+/**
+ * Consume a reset token and set the user's new password. Validates the token is
+ * unexpired and unused, updates the password (bcrypt), marks the token used,
+ * records password history, and revokes existing sessions. Returns false if the
+ * token is invalid/expired/used.
+ */
+export async function resetPasswordWithToken(rawToken: string, newPassword: string): Promise<boolean> {
+  const tokenHash = hashToken(rawToken);
+  const { rows } = await adminPool.query(
+    `SELECT id, user_id FROM usr_password_reset_tokens
+      WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()`,
+    [tokenHash],
+  );
+  const tokenRow = rows[0];
+  if (!tokenRow) return false;
+
+  const passwordHash = await hashPassword(newPassword);
+  await adminPool.query(
+    'UPDATE usr_users SET password_hash = $1, updated_at = NOW() WHERE id = $2',
+    [passwordHash, tokenRow.user_id],
+  );
+  await adminPool.query(
+    'UPDATE usr_password_reset_tokens SET used_at = NOW() WHERE id = $1',
+    [tokenRow.id],
+  );
+  await addToPasswordHistory(tokenRow.user_id, passwordHash);
+  // Reset invalidates all existing sessions.
+  await revokeAllUserTokens(tokenRow.user_id);
+  return true;
 }
 
 // --- Password history ---
