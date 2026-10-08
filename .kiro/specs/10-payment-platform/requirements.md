@@ -64,6 +64,7 @@ Keeping every billing relationship in one specification is intentional: anyone r
 - **Business_Billing_Charge**: The monthly charge record a tenant raises against a business (Section B) and settles automatically against the Business_Payment_Account. Same itemization as a Platform_Billing_Charge. Not a receivable/invoice.
 - **Billing_Cycle**: A calendar month. Billing is in arrears — a cycle is billed after it closes.
 - **Billing_Day**: The day of month on which the automatic charge for the just-closed cycle runs. If the month is shorter than the configured day, the last day of the month is used.
+- **Billing_Run_Time**: The configurable time of day at which an entity's daily billing run executes, interpreted in that entity's own timezone. Defined independently at three levels: DayStream/platform (Section A), each tenant (Section B), and each business (Section C recurring customer billing). Distinct from Billing_Day, which selects WHICH day a given payer is charged; Billing_Run_Time sets WHEN each day the run fires.
 - **Per_Cycle_Cap**: An optional maximum on the Percentage_Component (or on the combined charge) for a single Billing_Cycle (e.g. 1% of collections, capped at $500/month).
 - **Intro_Period**: An initial span of N months during which an alternate rule applies (e.g. $0 for the first 3 months), after which the standard plan takes effect.
 - **Failed_Charge**: A charge whose automatic settlement was declined (e.g. expired card, insufficient funds). It appears on the failed-charge report and is retried on each subsequent daily billing run until it settles or the account is Suspended. Charges from different Billing_Cycles are tracked and retried independently (never merged into one amount).
@@ -214,7 +215,17 @@ This section covers what DayStream charges a tenant for use of the platform. Pla
 16. THE system SHALL ensure that suspending a tenant has NO effect on that tenant's businesses, which continue operating normally if in good standing
 17. THE system SHALL treat any downstream re-routing of a defaulting tenant's businesses (to DayStream or a new tenant) as out of scope here — handled by separate business-transfer functionality
 
-### Requirement A4: Tenant Credits and Adjustments
+### Requirement A6: Platform Billing Run Schedule
+
+**User Story:** As a DayStream administrator, I want to set the time of day the platform billing run executes, so that charges run automatically each day at a time that suits DayStream's operations.
+
+#### Acceptance Criteria
+
+1. THE system SHALL allow a DayStream administrator to configure a Billing_Run_Time (time of day) for the platform billing run
+2. THE system SHALL interpret the Billing_Run_Time in DayStream's own (platform) timezone
+3. THE system SHALL execute the platform billing run automatically every day at the configured Billing_Run_Time
+4. THE system SHALL process at that run all tenants due that day (new charges) plus any tenant with an outstanding Failed_Charge (retries), per Requirement A3
+5. THE system SHALL use a single platform-level schedule for Section A (one schedule owned by DayStream)
 
 **User Story:** As a system administrator, I want to issue a credit to a tenant for a prior-period service issue (e.g. downtime), so that we can make it right without rewriting historical revenue figures.
 
@@ -305,7 +316,17 @@ This section covers what a tenant charges each of its businesses for use of the 
 15. THE system SHALL allow a tenant administrator to manually set a business to Suspended, which halts further charge retries for that business
 16. THE system SHALL ensure that suspending a business for tenant-billing purposes does NOT halt that business's own ability to collect from its customers (Section C) — the two relationships are independent
 
-### Requirement B4: Business Credits and Adjustments
+### Requirement B6: Tenant Billing Run Schedule
+
+**User Story:** As a tenant administrator, I want to set the time of day my tenant's billing run executes, so that charges to my businesses run automatically each day at a time that suits my operation.
+
+#### Acceptance Criteria
+
+1. THE system SHALL allow a tenant administrator to configure a Billing_Run_Time (time of day) for that tenant's billing run
+2. THE system SHALL interpret the Billing_Run_Time in that tenant's own timezone
+3. THE system SHALL execute each tenant's billing run automatically every day at that tenant's configured Billing_Run_Time
+4. THE system SHALL process at that run all of the tenant's businesses due that day (new charges) plus any with an outstanding Failed_Charge (retries), per Requirement B3
+5. THE system SHALL maintain an independent schedule per tenant (e.g. 52 tenants means 52 independently-configured schedules), each managed by that tenant's own administrator
 
 **User Story:** As a tenant administrator, I want to issue a credit to a business for a prior-period service issue, so that we can make it right without rewriting historical revenue figures.
 
@@ -434,6 +455,19 @@ This section covers charging customers for the services, memberships, and produc
 6. THE system SHALL pause further charges during the dunning period (no double-charges)
 7. THE system SHALL log all dunning events in the audit trail
 8. THE system SHALL support manual payment retry by staff (e.g., after customer updates card)
+
+### Requirement C6a: Business Billing Run Schedule
+
+**User Story:** As a business owner, I want to set the time of day my recurring customer billing runs, so that subscription renewals and dunning retries happen automatically each day at a time that suits my customers and staff.
+
+#### Acceptance Criteria
+
+1. THE system SHALL allow a business (owner/manager) to configure a Billing_Run_Time (time of day) for that business's recurring customer billing
+2. THE system SHALL interpret the Billing_Run_Time in that business's own timezone
+3. THE system SHALL execute each business's recurring billing run automatically every day at that business's configured Billing_Run_Time
+4. THE system SHALL process at that run the business's customer Subscription renewals due that day (Requirement C2) and any due dunning retries (Requirement C6)
+5. THE system SHALL maintain an independent schedule per business, each managed by that business's own owner/manager
+6. THE system SHALL keep the business-level customer-billing schedule independent of the tenant-level (Section B) and platform-level (Section A) schedules
 
 ### Requirement C7: Gift Cards
 
