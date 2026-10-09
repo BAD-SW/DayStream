@@ -6,6 +6,7 @@ import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { apiClient } from '../api/client';
 import { TIMEZONES } from '../utils/timezones';
 import { CurrencyInput } from '../components/CurrencyInput';
+import { PaymentMethods } from '../components/PaymentMethods';
 import { formatCurrency } from '../utils/currency';interface Tenant {
   id: string;
   name: string;
@@ -607,25 +608,12 @@ export function Tenants() {
                     <input style={styles.input} value={editForm.payment_routing_number || editForm.payment_iban} onChange={(e) => setEditForm({ ...editForm, payment_routing_number: e.target.value })} placeholder="Routing or IBAN" />
                   </div>
                 </div>
-                <div style={styles.formRow}>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>Card on File (last 4)</label>
-                    <input style={styles.input} value={editForm.payment_card_last4} onChange={(e) => setEditForm({ ...editForm, payment_card_last4: e.target.value })} maxLength={4} placeholder="4242" />
-                  </div>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>Card Brand</label>
-                    <select style={styles.input} value={editForm.payment_card_brand} onChange={(e) => setEditForm({ ...editForm, payment_card_brand: e.target.value })}>
-                      <option value="">None</option>
-                      <option value="visa">Visa</option>
-                      <option value="mastercard">Mastercard</option>
-                      <option value="amex">Amex</option>
-                      <option value="discover">Discover</option>
-                    </select>
-                  </div>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>Expiry</label>
-                    <input style={styles.input} value={editForm.payment_card_exp} onChange={(e) => setEditForm({ ...editForm, payment_card_exp: e.target.value })} placeholder="MM/YYYY" maxLength={7} />
-                  </div>
+                <div style={{ marginTop: '12px' }}>
+                  <PaymentMethods
+                    owner={{ owner_level: 'tenant', tenant_id: selectedTenant.id }}
+                    allowedTypes={['card', 'bank_draw']}
+                    title="Payment Methods on File (charged for platform billing)"
+                  />
                 </div>
 
                 <div style={styles.formActions}>

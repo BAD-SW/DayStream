@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { ThemeGallery } from './settings/ThemeGallery';
+import { PaymentProcessorsPanel } from './settings/PaymentProcessorsPanel';
 import { apiClient } from '../api/client';
 
-type Tab = 'settings' | 'feature-flags' | 'api-keys' | 'email' | 'storage' | 'notifications' | 'logs' | 'query-history' | 'platform-billing' | 'default-theme';
+type Tab = 'settings' | 'feature-flags' | 'api-keys' | 'email' | 'storage' | 'notifications' | 'logs' | 'query-history' | 'payment-processors' | 'platform-billing' | 'default-theme';
 
 export function AdminConfig() {
   const [activeTab, setActiveTab] = useState<Tab>('settings');
@@ -18,6 +19,7 @@ export function AdminConfig() {
     { key: 'notifications', label: 'Notifications' },
     { key: 'logs', label: 'Server Logs' },
     { key: 'query-history', label: 'Query Log' },
+    { key: 'payment-processors', label: 'Payment Processors' },
     { key: 'platform-billing', label: 'Platform Billing' },
     { key: 'default-theme', label: 'Themes' },
   ];
@@ -50,6 +52,7 @@ export function AdminConfig() {
       {activeTab === 'notifications' && <NotificationsPanel />}
       {activeTab === 'logs' && <LogsPanel />}
       {activeTab === 'query-history' && <QueryHistoryPanel />}
+      {activeTab === 'payment-processors' && <PaymentProcessorsPanel />}
       {activeTab === 'platform-billing' && <PlatformBillingPanel />}
       {activeTab === 'default-theme' && <DefaultThemePanel />}
     </div>
