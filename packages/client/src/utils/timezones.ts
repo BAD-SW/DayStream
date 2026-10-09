@@ -8,6 +8,7 @@ export const TIMEZONES: { value: string; label: string }[] = [
   { value: 'America/Denver', label: 'America/Denver (MST/MDT)' },
   { value: 'America/Los_Angeles', label: 'America/Los_Angeles (PST/PDT)' },
   { value: 'America/Anchorage', label: 'America/Anchorage (AKST/AKDT)' },
+  { value: 'Pacific/Honolulu', label: 'Pacific/Honolulu (HST)' },
   { value: 'America/Phoenix', label: 'America/Phoenix (MST)' },
   { value: 'America/Toronto', label: 'America/Toronto (EST/EDT)' },
   { value: 'America/Vancouver', label: 'America/Vancouver (PST/PDT)' },

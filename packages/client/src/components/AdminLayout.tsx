@@ -37,7 +37,8 @@ const TENANT_GROUPS: ShellNavGroup[] = [
   { label: 'Administration', items: [
     { id: 'tenant-users', label: 'Users', path: '/admin/tenant-users', icon: 'Users' },
     { id: 'billing', label: 'Billing', path: '/admin/billing', icon: 'Receipt' },
-    { id: 'reports', label: 'Reports', path: '/admin/reports', icon: 'ChartLine' },
+    { id: 'tenant-reports', label: 'Reports', path: '/admin/tenant-reports', icon: 'ChartLine' },
+    { id: 'tenant-processes', label: 'Processes', path: '/admin/tenant-processes', icon: 'Workflow' },
     { id: 'tenant-settings', label: 'Settings', path: '/admin/tenant-settings', icon: 'Settings' },
   ] },
 ];

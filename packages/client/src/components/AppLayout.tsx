@@ -33,6 +33,7 @@ const NAV_ICONS: Record<string, NavIconName> = {
   'tenant-users': 'Users',
   'tenant-billing': 'Receipt',
   'tenant-reports': 'ChartLine',
+  'tenant-processes': 'Workflow',
   'tenant-settings': 'Settings',
   'system-tenants': 'Building2',
   'system-coverage': 'Map',
@@ -57,7 +58,7 @@ const NAV_GROUPS: Record<'business' | 'tenant' | 'system', GroupDef[]> = {
   tenant: [
     { label: 'Overview', ids: ['dashboard'] },
     { label: 'Portfolio', ids: ['tenant-businesses', 'tenant-prospects'] },
-    { label: 'Administration', ids: ['tenant-users', 'tenant-billing', 'tenant-reports', 'tenant-settings'] },
+    { label: 'Administration', ids: ['tenant-users', 'tenant-billing', 'tenant-reports', 'tenant-processes', 'tenant-settings'] },
   ],
   system: [
     { label: 'Overview', ids: ['dashboard'] },

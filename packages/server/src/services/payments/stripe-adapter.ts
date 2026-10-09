@@ -63,9 +63,10 @@ export class StripeAdapter implements PaymentAdapter {
    * single customer accumulates the owner's payment methods. `name`/`metadata` are
    * optional labels for the Stripe dashboard — Stripe needs no PII to create one.
    */
-  async createCustomer(opts: { name?: string; metadata?: Record<string, string> } = {}): Promise<string> {
+  async createCustomer(opts: { name?: string; email?: string; metadata?: Record<string, string> } = {}): Promise<string> {
     const customer = await this.stripe.customers.create({
       name: opts.name,
+      email: opts.email,
       metadata: opts.metadata,
     });
     return customer.id;

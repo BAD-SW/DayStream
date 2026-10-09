@@ -6,8 +6,12 @@ import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { apiClient } from '../api/client';
 import { TIMEZONES } from '../utils/timezones';
 import { CurrencyInput } from '../components/CurrencyInput';
-import { formatCurrency } from '../utils/currency';
 import { ThemeEditorFields, ThemeField } from '../design-system/components/forms/ThemeEditorFields';
+import { Tabs } from '../design-system/components/navigation/Tabs';
+import { useAuth } from '../context/AuthContext';
+import { BusinessBillingTab } from '../components/BusinessBillingTab';
+import { BusinessChargeHistory } from '../components/BusinessChargeHistory';
+import { BusinessAuditTrail } from '../components/BusinessAuditTrail';
 
 const THEME_TO_FORM_FIELD: Record<ThemeField, 'base_theme' | 'primary_color' | 'secondary_color' | 'title_color' | 'font_family' | 'base_font_size' | 'favicon_url'> = {
   baseTheme: 'base_theme',
@@ -97,11 +101,12 @@ const EMPTY_FORM: BusinessForm = {
 };
 
 export function TenantBusinesses() {
+  const { user } = useAuth();
+  const tenantId = user?.tenant_id || '';
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedBiz, setSelectedBiz] = useState<Business | null>(null);
-  const [editing, setEditing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState<BusinessForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -154,7 +159,7 @@ export function TenantBusinesses() {
       payment_card_brand: (biz as any).payment_card_brand || '',
       payment_card_exp: (biz as any).payment_card_exp || '',
     });
-    setFormError(null); setEditing(true);
+    setFormError(null);
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -185,7 +190,7 @@ export function TenantBusinesses() {
         signup_date: form.signup_date || null,
         next_billing_date: form.next_billing_date || null,
       });
-      setSelectedBiz(res.data.data); setEditing(false); fetchBusinesses();
+      setSelectedBiz(res.data.data); fetchBusinesses();
     } catch (err: any) { setFormError(err.response?.data?.message || 'Failed to update'); }
     finally { setSaving(false); }
   }
@@ -223,45 +228,76 @@ export function TenantBusinesses() {
         <SearchInput value={search} onChange={setSearch} placeholder="Search businesses..." />
       </div>
 
-      <Table columns={columns} data={filtered} loading={loading} emptyMessage="No businesses found." clientSort onRowClick={(row) => setSelectedBiz(row)} mobileCardMode />
+      <Table columns={columns} data={filtered} loading={loading} emptyMessage="No businesses found." clientSort onRowClick={(row) => { setSelectedBiz(row); openEdit(row); }} mobileCardMode />
 
-      {/* Detail / Edit Panel */}
+      {/* Detail Panel — tabbed (mirrors the Tenant window redesign) */}
       {selectedBiz && (
         <div style={styles.overlay}>
-          <div style={styles.modal}>
+          <div style={styles.detailPanel}>
             <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>{editing ? 'Edit Business' : selectedBiz.name}</h3>
-              <button style={styles.closeBtn} onClick={() => { setSelectedBiz(null); setEditing(false); }}>&times;</button>
+              <h3 style={styles.modalTitle}>{selectedBiz.name}</h3>
+              <button style={styles.closeBtn} onClick={() => { setSelectedBiz(null); }}>&times;</button>
             </div>
             {formError && <div style={styles.formError}>{formError}</div>}
-            {editing ? (
-              <BusinessFormFields form={form} setForm={setForm} saving={saving} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setFormError(null); }} />
-            ) : (
-              <>
-                <div style={styles.detailBody}>
-                  <DetailRow label="URL Alias" value={selectedBiz.slug} />
-                  <DetailRow label="Status" value={selectedBiz.status.charAt(0).toUpperCase() + selectedBiz.status.slice(1)} />
-                  <DetailRow label="Email" value={selectedBiz.email || '—'} />
-                  <DetailRow label="Phone" value={selectedBiz.phone || '—'} />
-                  <DetailRow label="Address" value={selectedBiz.address || '—'} />
-                  <DetailRow label="Language" value={selectedBiz.default_language} />
-                  <DetailRow label="Currency" value={selectedBiz.currency} />
-                  <DetailRow label="Timezone" value={selectedBiz.timezone} />
-                  <DetailRow label="Brand Color" value={selectedBiz.primary_color || 'Inherited from tenant'} />
-                  <DetailRow label="Billing Frequency" value={selectedBiz.billing_frequency?.charAt(0).toUpperCase() + selectedBiz.billing_frequency?.slice(1) || '—'} />
-                  <DetailRow label="Billing Amount" value={selectedBiz.billing_amount ? formatCurrency(selectedBiz.billing_amount, selectedBiz.currency) : '—'} />
-                  <DetailRow label="Billing Method" value={selectedBiz.billing_method === 'tbd' ? 'TBD' : selectedBiz.billing_method} />
-                  <DetailRow label="Signup Date" value={selectedBiz.signup_date ? new Date(selectedBiz.signup_date).toLocaleDateString() : '—'} />
-                  <DetailRow label="Next Billing Date" value={selectedBiz.next_billing_date ? new Date(selectedBiz.next_billing_date).toLocaleDateString() : '—'} />
-                  <DetailRow label="Created" value={new Date(selectedBiz.created_at).toLocaleString()} />
-                </div>
-                <div style={styles.actions}>
-                  <Button variant="primary" size="sm" onClick={() => openEdit(selectedBiz)}>Edit</Button>
-                  {selectedBiz.status === 'active' && <Button variant="destructive" size="sm" onClick={() => handleArchive(selectedBiz)}>Archive</Button>}
-                  {selectedBiz.status !== 'active' && <Button variant="primary" size="sm" onClick={() => handleActivate(selectedBiz)}>Activate</Button>}
-                </div>
-              </>
-            )}
+
+            <Tabs
+              defaultTab="overview"
+              items={[
+                {
+                  id: 'overview',
+                  label: 'Overview',
+                  content: (
+                    <>
+                      <div style={styles.detailBody}>
+                        <DetailRow label="URL Alias" value={selectedBiz.slug} />
+                        <DetailRow label="Status" value={selectedBiz.status.charAt(0).toUpperCase() + selectedBiz.status.slice(1)} />
+                        <DetailRow label="Email" value={selectedBiz.email || '—'} />
+                        <DetailRow label="Phone" value={selectedBiz.phone || '—'} />
+                        <DetailRow label="Address" value={selectedBiz.address || '—'} />
+                        <DetailRow label="Language" value={selectedBiz.default_language} />
+                        <DetailRow label="Currency" value={selectedBiz.currency} />
+                        <DetailRow label="Timezone" value={selectedBiz.timezone} />
+                        <DetailRow label="Brand Color" value={selectedBiz.primary_color || 'Inherited from tenant'} />
+                        <DetailRow label="Signup Date" value={selectedBiz.signup_date ? new Date(selectedBiz.signup_date).toLocaleDateString() : '—'} />
+                        <DetailRow label="Created" value={new Date(selectedBiz.created_at).toLocaleString()} />
+                      </div>
+                      <div style={styles.actions}>
+                        {selectedBiz.status === 'active' && <Button variant="destructive" size="sm" onClick={() => handleArchive(selectedBiz)}>Archive</Button>}
+                        {selectedBiz.status !== 'active' && <Button variant="primary" size="sm" onClick={() => handleActivate(selectedBiz)}>Activate</Button>}
+                      </div>
+                    </>
+                  ),
+                },
+                {
+                  id: 'settings',
+                  label: 'Settings',
+                  content: (
+                    <BusinessFormFields form={form} setForm={setForm} saving={saving} onSave={handleSaveEdit} onCancel={() => { setSelectedBiz(null); setFormError(null); }} />
+                  ),
+                },
+                {
+                  id: 'billing',
+                  label: 'Billing',
+                  content: (
+                    <BusinessBillingTab businessId={selectedBiz.id} tenantId={tenantId} currency={selectedBiz.currency} />
+                  ),
+                },
+                {
+                  id: 'charge-history',
+                  label: 'Charge History',
+                  content: (
+                    <BusinessChargeHistory businessId={selectedBiz.id} />
+                  ),
+                },
+                {
+                  id: 'audit-trail',
+                  label: 'Audit Trail',
+                  content: (
+                    <BusinessAuditTrail businessId={selectedBiz.id} />
+                  ),
+                },
+              ]}
+            />
           </div>
         </div>
       )}
@@ -516,6 +552,7 @@ const styles: Record<string, React.CSSProperties> = {
   heading: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, margin: 0, color: 'var(--color-text)' },
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '560px', maxHeight: '85vh', overflowY: 'auto' as const, boxShadow: '0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px var(--color-border)' },
+  detailPanel: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-xl)', width: '95vw', maxWidth: '1100px', maxHeight: '90vh', overflowY: 'auto' as const, boxShadow: '0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px var(--color-border)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
   modalTitle: { fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)', margin: 0 },
   closeBtn: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-2xl)', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 },

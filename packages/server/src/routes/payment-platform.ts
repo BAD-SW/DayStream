@@ -13,6 +13,7 @@ import { getConfiguredAdapter } from '../services/payments';
 import * as processorConfig from '../services/processor-config.service';
 import type { ConfigOwner } from '../services/processor-config.service';
 import * as platformBilling from '../services/platform-billing.service';
+import * as tenantBilling from '../services/tenant-billing.service';
 import { queryResourceAudit } from '../services/audit.service';
 import type { MethodType, PaymentProviderName } from '../services/payments';
 
@@ -144,9 +145,15 @@ paymentPlatformRouter.get('/providers', async (_req: Request, res: Response) => 
 function configOwnerFromReq(req: Request): ConfigOwner | null {
   const ownerLevel = (req.body?.owner_level || req.query.owner_level) as ConfigOwner['ownerLevel'];
   if (!ownerLevel || !['platform', 'tenant', 'business'].includes(ownerLevel)) return null;
+  // A tenant-level connection MUST be pinned to a tenant id. The tenant self-service
+  // UI sends only owner_level, so fall back to the authenticated tenant from the JWT
+  // (never trust a client-supplied tenant_id over the caller's own context). A
+  // system admin acting on a specific tenant may still pass an explicit tenant_id.
+  const authTenantId = (req as AuthenticatedRequest).tenantId ?? null;
+  const tenantId = (req.body?.tenant_id || req.query.tenant_id || (ownerLevel === 'tenant' ? authTenantId : null)) ?? null;
   return {
     ownerLevel,
-    tenantId: (req.body?.tenant_id || req.query.tenant_id) ?? null,
+    tenantId,
     businessId: (req.body?.business_id || req.query.business_id) ?? null,
   };
 }
@@ -360,6 +367,225 @@ paymentPlatformRouter.get('/platform-billing-charges', requirePermission('*:*'),
 });
 
 // ============================================================
+// Section B — Tenant Billing (Tenant → Business). Tenant-admin only.
+// Mirror of Section A one level down. The acting tenant comes from the JWT
+// (tenantContext); businesses are verified to belong to that tenant.
+// ============================================================
+
+/**
+ * Verify a business belongs to the acting tenant, returning its tenant_id and
+ * currency. Throws 404 (via the caller) if not found/owned — a tenant admin can
+ * only bill its own businesses.
+ */
+async function requireOwnedBusiness(businessId: string, tenantId: string): Promise<{ tenantId: string; currency: string } | null> {
+  const { rows } = await adminPool.query(
+    `SELECT currency FROM sys_businesses WHERE id = $1::uuid AND tenant_id = $2::uuid`,
+    [businessId, tenantId],
+  );
+  if (rows.length === 0) return null;
+  return { tenantId, currency: rows[0].currency || 'USD' };
+}
+
+// A business's current billing plan (null if none configured).
+paymentPlatformRouter.get('/tenant-billing/:businessId/plan', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
+    if (!owned) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    success(res, await tenantBilling.getBusinessPlan(req.params.businessId));
+  } catch (err: any) { error(res, 'Failed to read business plan', 'INTERNAL_ERROR', 500); }
+});
+
+const businessPlanSchema = Joi.object({
+  flatAmountCents: Joi.number().integer().min(0).required(),
+  percentageRate: Joi.number().min(0).max(100).required(),
+  capAmountCents: Joi.number().integer().min(0).allow(null),
+  capAppliesTo: Joi.string().valid('percentage', 'combined').default('combined'),
+  introPeriodMonths: Joi.number().integer().min(0).default(0),
+  introFlatAmountCents: Joi.number().integer().min(0).default(0),
+  introPercentageRate: Joi.number().min(0).max(100).default(0),
+  billingDay: Joi.number().integer().min(1).max(31).required(),
+  planStartDate: Joi.string().isoDate().optional(),
+});
+
+// Save a new plan version for a business.
+paymentPlatformRouter.put('/tenant-billing/:businessId/plan', tenantContext, requirePermission('settings:*'), validate(businessPlanSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
+    if (!owned) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    const plan = await tenantBilling.saveBusinessPlan(req.params.businessId, authReq.tenantId!, req.body, authReq.user.sub);
+    success(res, plan);
+  } catch (err: any) { error(res, 'Failed to save business plan', 'INTERNAL_ERROR', 500); }
+});
+
+// A business's plan version history (all versions, newest first).
+paymentPlatformRouter.get('/tenant-billing/:businessId/plan-history', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
+    if (!owned) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    success(res, await tenantBilling.listBusinessPlanVersions(req.params.businessId));
+  } catch (err: any) { error(res, 'Failed to read plan history', 'INTERNAL_ERROR', 500); }
+});
+
+// A business's audit trail — all changes made to this business (paged).
+paymentPlatformRouter.get('/tenant-billing/:businessId/audit', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
+    if (!owned) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    const page = parseInt(req.query.page as string, 10) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string, 10) || 25, 100);
+    success(res, await queryResourceAudit('business', req.params.businessId, { page, limit }));
+  } catch (err: any) { error(res, 'Failed to read business audit', 'INTERNAL_ERROR', 500); }
+});
+
+// A business's charge history + current credit balance.
+paymentPlatformRouter.get('/tenant-billing/:businessId/charges', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
+    if (!owned) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    const [charges, creditBalance] = await Promise.all([
+      tenantBilling.listBusinessCharges(req.params.businessId),
+      tenantBilling.getBusinessCreditBalance(req.params.businessId),
+    ]);
+    success(res, { charges, creditBalance });
+  } catch (err: any) { error(res, 'Failed to read business charges', 'INTERNAL_ERROR', 500); }
+});
+
+// A business's credits.
+paymentPlatformRouter.get('/tenant-billing/:businessId/credits', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
+    if (!owned) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    success(res, await tenantBilling.listBusinessCredits(req.params.businessId));
+  } catch (err: any) { error(res, 'Failed to read business credits', 'INTERNAL_ERROR', 500); }
+});
+
+const businessCreditSchema = Joi.object({
+  amountCents: Joi.number().integer().positive().required(),
+  reason: Joi.string().trim().min(1).required(),
+});
+
+// Issue a credit to a business.
+paymentPlatformRouter.post('/tenant-billing/:businessId/credits', tenantContext, requirePermission('settings:*'), validate(businessCreditSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
+    if (!owned) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    const credit = await tenantBilling.issueBusinessCredit(req.params.businessId, authReq.tenantId!, req.body.amountCents, req.body.reason, authReq.user.sub);
+    success(res, credit, undefined, 201);
+  } catch (err: any) { error(res, 'Failed to issue credit', 'INTERNAL_ERROR', 500); }
+});
+
+const businessChargeNowSchema = Joi.object({
+  year: Joi.number().integer().min(2020).max(2100).required(),
+  month: Joi.number().integer().min(1).max(12).required(),
+  currency: Joi.string().length(3).optional(),
+});
+
+// Manually bill a business for a specific cycle (idempotent per business+cycle).
+paymentPlatformRouter.post('/tenant-billing/:businessId/charge-now', tenantContext, requirePermission('settings:*'), validate(businessChargeNowSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
+    if (!owned) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    const { year, month, currency } = req.body;
+    const result = await tenantBilling.chargeBusinessNow(req.params.businessId, authReq.tenantId!, { year, month }, currency || owned.currency);
+    success(res, result);
+  } catch (e: any) {
+    if (e.code === 'NO_PLAN') { error(res, e.message, 'NO_PLAN', 409); return; }
+    error(res, 'Failed to charge business', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// This tenant's billing run schedule (B6).
+paymentPlatformRouter.get('/tenant-billing-schedule', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    success(res, await tenantBilling.getTenantSchedule(authReq.tenantId!));
+  } catch (err: any) { error(res, 'Failed to read schedule', 'INTERNAL_ERROR', 500); }
+});
+
+const tenantScheduleSchema = Joi.object({
+  scheduleTime: Joi.string().pattern(/^\d{2}:\d{2}$/).required(),
+  scheduleTimezone: Joi.string().min(1).required(),
+  enabled: Joi.boolean().default(true),
+});
+
+paymentPlatformRouter.put('/tenant-billing-schedule', tenantContext, requirePermission('settings:*'), validate(tenantScheduleSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { scheduleTime, scheduleTimezone, enabled } = req.body;
+    success(res, await tenantBilling.saveTenantSchedule(authReq.tenantId!, scheduleTime, scheduleTimezone, enabled));
+  } catch (err: any) { error(res, 'Failed to save schedule', 'INTERNAL_ERROR', 500); }
+});
+
+// Run this tenant's billing now (manual trigger).
+paymentPlatformRouter.post('/tenant-billing-run-now', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    success(res, await tenantBilling.runTenantBillingNow(authReq.tenantId!));
+  } catch (err: any) { error(res, 'Failed to run tenant billing', 'INTERNAL_ERROR', 500); }
+});
+
+// This tenant's billing job runs within a date range (default last 7 days).
+paymentPlatformRouter.get('/tenant-billing-runs', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const from = req.query.from as string | undefined;
+    const to = req.query.to as string | undefined;
+    const limit = Math.min(parseInt(req.query.limit as string, 10) || 200, 500);
+    success(res, await tenantBilling.listTenantBillingRuns(authReq.tenantId!, { from, to, limit }));
+  } catch (err: any) { error(res, 'Failed to read billing runs', 'INTERNAL_ERROR', 500); }
+});
+
+// The charges attempted during a specific run (drill-down).
+paymentPlatformRouter.get('/tenant-billing-runs/:runId/charges', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    success(res, await tenantBilling.getRunCharges(req.params.runId));
+  } catch (err: any) { error(res, 'Failed to read run charges', 'INTERNAL_ERROR', 500); }
+});
+
+// Tenant-wide charges across all this tenant's businesses; ?status=failed for the failed-charge report.
+paymentPlatformRouter.get('/tenant-billing-charges', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const status = req.query.status as string | undefined;
+    const limit = Math.min(parseInt(req.query.limit as string, 10) || 100, 500);
+    success(res, await tenantBilling.listAllBusinessCharges(authReq.tenantId!, { status, limit }));
+  } catch (err: any) { error(res, 'Failed to read charges', 'INTERNAL_ERROR', 500); }
+});
+
+// The tenant's own receiving/billing bank account (where its businesses' payments
+// are deposited). The tenant-level mirror of the Platform Receiving Account.
+paymentPlatformRouter.get('/tenant-billing-account', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    success(res, await tenantBilling.getTenantBillingAccount(authReq.tenantId!));
+  } catch (err: any) { error(res, 'Failed to read billing account', 'INTERNAL_ERROR', 500); }
+});
+
+const tenantBillingAccountSchema = Joi.object({
+  bank_name: Joi.string().allow('').max(255),
+  account_holder: Joi.string().allow('').max(255),
+  account_number: Joi.string().allow('').max(255),
+  routing_number: Joi.string().allow('').max(255),
+  iban: Joi.string().allow('').max(255),
+  swift: Joi.string().allow('').max(255),
+}).min(1);
+
+paymentPlatformRouter.put('/tenant-billing-account', tenantContext, requirePermission('settings:*'), validate(tenantBillingAccountSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    success(res, await tenantBilling.saveTenantBillingAccount(authReq.tenantId!, req.body, authReq.user.sub));
+  } catch (err: any) { error(res, 'Failed to save billing account', 'INTERNAL_ERROR', 500); }
+});
+
+// ============================================================
 // Payment methods (shared tokenized capture)
 // ============================================================
 
@@ -387,9 +613,12 @@ paymentPlatformRouter.get('/methods', async (req: Request, res: Response) => {
 
 const captureSessionSchema = Joi.object({
   owner_level: Joi.string().valid('platform', 'tenant', 'business', 'customer').required(),
-  tenant_id: Joi.string().uuid().allow(null),
-  business_id: Joi.string().uuid().allow(null),
-  customer_id: Joi.string().uuid().allow(null),
+  // Empty string is tolerated and treated as "not supplied" — the server resolves
+  // tenant_id from the JWT in ownerFromRequest. The client sometimes sends '' for an
+  // id it doesn't carry rather than omitting the field.
+  tenant_id: Joi.string().uuid().allow('', null),
+  business_id: Joi.string().uuid().allow('', null),
+  customer_id: Joi.string().uuid().allow('', null),
   method_type: Joi.string().valid(...METHOD_TYPES).required(),
 });
 
@@ -408,9 +637,9 @@ paymentPlatformRouter.post('/methods/capture-session', validate(captureSessionSc
 
 const storeMethodSchema = Joi.object({
   owner_level: Joi.string().valid('platform', 'tenant', 'business', 'customer').required(),
-  tenant_id: Joi.string().uuid().allow(null),
-  business_id: Joi.string().uuid().allow(null),
-  customer_id: Joi.string().uuid().allow(null),
+  tenant_id: Joi.string().uuid().allow('', null),
+  business_id: Joi.string().uuid().allow('', null),
+  customer_id: Joi.string().uuid().allow('', null),
   method_type: Joi.string().valid(...METHOD_TYPES).required(),
   capture_payload: Joi.object().unknown(true).default({}),
 });

@@ -413,3 +413,213 @@ export async function getPlatformWideCharges(status?: string, limit = 100): Prom
   const res = await apiClient.get('/v1/pay/platform-billing-charges', { params: { status, limit } });
   return res.data.data;
 }
+
+// ============================================================
+// Section B — Tenant Billing (Tenant → Business). Mirror of Section A one level
+// down, keyed on businessId. Tenant-admin scoped.
+// ============================================================
+
+export interface BusinessBillingPlan {
+  id: string;
+  business_id: string;
+  tenant_id: string;
+  version: number;
+  flat_amount_cents: number;
+  percentage_rate: string;
+  cap_amount_cents: number | null;
+  cap_applies_to: 'percentage' | 'combined';
+  intro_period_months: number;
+  intro_flat_amount_cents: number;
+  intro_percentage_rate: string;
+  billing_day: number;
+  plan_start_date: string;
+  effective_from: string;
+  created_at: string;
+}
+
+export interface BusinessBillingPlanInput {
+  flatAmountCents: number;
+  percentageRate: number;
+  capAmountCents?: number | null;
+  capAppliesTo?: 'percentage' | 'combined';
+  introPeriodMonths?: number;
+  introFlatAmountCents?: number;
+  introPercentageRate?: number;
+  billingDay: number;
+  planStartDate?: string;
+}
+
+export interface BusinessBillingCharge {
+  id: string;
+  cycle_year: number;
+  cycle_month: number;
+  reference_number: string;
+  flat_component_cents: number;
+  net_collections_cents: number;
+  percentage_rate: string;
+  percentage_component_cents: number;
+  cap_applied_cents: number | null;
+  credit_applied_cents: number;
+  amount_charged_cents: number;
+  currency: string;
+  status: 'zero' | 'pending' | 'settled' | 'failed' | 'retrying';
+  provider_reference: string | null;
+  failure_reason: string | null;
+  attempts: number;
+  last_attempt_at: string | null;
+  settled_at: string | null;
+  created_at: string;
+}
+
+export interface BusinessCredit {
+  id: string;
+  amount_cents: number;
+  remaining_cents: number;
+  reason: string;
+  status: 'active' | 'exhausted';
+  created_at: string;
+}
+
+export async function getBusinessPlan(businessId: string): Promise<BusinessBillingPlan | null> {
+  const res = await apiClient.get(`/v1/pay/tenant-billing/${businessId}/plan`);
+  return res.data.data;
+}
+
+export async function saveBusinessPlan(businessId: string, input: BusinessBillingPlanInput): Promise<BusinessBillingPlan> {
+  const res = await apiClient.put(`/v1/pay/tenant-billing/${businessId}/plan`, input);
+  return res.data.data;
+}
+
+export interface BusinessPlanVersion extends BusinessBillingPlan {
+  ended_at: string | null;
+}
+
+export async function getBusinessPlanHistory(businessId: string): Promise<BusinessPlanVersion[]> {
+  const res = await apiClient.get(`/v1/pay/tenant-billing/${businessId}/plan-history`);
+  return res.data.data;
+}
+
+export async function getBusinessAudit(
+  businessId: string, page = 1, limit = 25,
+): Promise<{ entries: TenantAuditEntry[]; total: number; page: number; limit: number }> {
+  const res = await apiClient.get(`/v1/pay/tenant-billing/${businessId}/audit`, { params: { page, limit } });
+  return res.data.data;
+}
+
+export async function getBusinessCharges(businessId: string): Promise<{ charges: BusinessBillingCharge[]; creditBalance: number }> {
+  const res = await apiClient.get(`/v1/pay/tenant-billing/${businessId}/charges`);
+  return res.data.data;
+}
+
+export async function getBusinessCredits(businessId: string): Promise<BusinessCredit[]> {
+  const res = await apiClient.get(`/v1/pay/tenant-billing/${businessId}/credits`);
+  return res.data.data;
+}
+
+export async function issueBusinessCredit(businessId: string, amountCents: number, reason: string): Promise<BusinessCredit> {
+  const res = await apiClient.post(`/v1/pay/tenant-billing/${businessId}/credits`, { amountCents, reason });
+  return res.data.data;
+}
+
+export async function chargeBusinessNow(
+  businessId: string, year: number, month: number, currency?: string,
+): Promise<{ chargeId: string; referenceNumber: number; status: string; amountChargedCents: number; failureReason?: string }> {
+  const res = await apiClient.post(`/v1/pay/tenant-billing/${businessId}/charge-now`, { year, month, currency });
+  return res.data.data;
+}
+
+// --- Section B: tenant billing run schedule (B6) ---
+
+export async function getTenantSchedule(): Promise<PlatformSchedule | null> {
+  const res = await apiClient.get('/v1/pay/tenant-billing-schedule');
+  return res.data.data;
+}
+
+export async function saveTenantSchedule(
+  scheduleTime: string, scheduleTimezone: string, enabled: boolean,
+): Promise<PlatformSchedule> {
+  const res = await apiClient.put('/v1/pay/tenant-billing-schedule', { scheduleTime, scheduleTimezone, enabled });
+  return res.data.data;
+}
+
+export async function runTenantBillingNow(): Promise<{
+  newCharges: number; retries: number; settled: number; pending: number; failed: number; skippedSuspended: number;
+}> {
+  const res = await apiClient.post('/v1/pay/tenant-billing-run-now', {});
+  return res.data.data;
+}
+
+// --- Section B: observability (job runs + tenant-wide business charges) ---
+
+export interface BusinessWideCharge {
+  id: string;
+  business_id: string;
+  business_name: string;
+  cycle_year: number;
+  cycle_month: number;
+  reference_number: string;
+  amount_charged_cents: number;
+  currency: string;
+  status: string;
+  provider_reference: string | null;
+  failure_reason: string | null;
+  attempts: number;
+  last_attempt_at: string | null;
+  settled_at: string | null;
+  created_at: string;
+}
+
+export interface BusinessRunChargeAttempt {
+  id: string;
+  charge_id: string;
+  business_id: string;
+  business_name: string;
+  cycle_year: number;
+  cycle_month: number;
+  outcome: string;
+  amount_cents: number;
+  currency: string;
+  provider_reference: string | null;
+  failure_reason: string | null;
+  trigger: string;
+  reference_number: string | null;
+  created_at: string;
+}
+
+export async function getTenantBillingRuns(
+  from?: string, to?: string, limit = 200,
+): Promise<PlatformBillingRun[]> {
+  const res = await apiClient.get('/v1/pay/tenant-billing-runs', { params: { from, to, limit } });
+  return res.data.data;
+}
+
+export async function getTenantRunCharges(runId: string): Promise<BusinessRunChargeAttempt[]> {
+  const res = await apiClient.get(`/v1/pay/tenant-billing-runs/${runId}/charges`);
+  return res.data.data;
+}
+
+export async function getBusinessWideCharges(status?: string, limit = 100): Promise<BusinessWideCharge[]> {
+  const res = await apiClient.get('/v1/pay/tenant-billing-charges', { params: { status, limit } });
+  return res.data.data;
+}
+
+// --- Section B: tenant's own receiving/billing bank account ---
+
+export interface TenantBillingAccount {
+  bank_name: string;
+  account_holder: string;
+  account_number: string;
+  routing_number: string;
+  iban: string;
+  swift: string;
+}
+
+export async function getTenantBillingAccount(): Promise<TenantBillingAccount | null> {
+  const res = await apiClient.get('/v1/pay/tenant-billing-account');
+  return res.data.data;
+}
+
+export async function saveTenantBillingAccount(input: TenantBillingAccount): Promise<TenantBillingAccount> {
+  const res = await apiClient.put('/v1/pay/tenant-billing-account', input);
+  return res.data.data;
+}

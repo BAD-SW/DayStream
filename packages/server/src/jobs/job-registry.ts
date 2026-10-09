@@ -136,6 +136,17 @@ export const jobRegistry: Record<string, JobHandler> = {
     logger.info(`Platform billing run: ${JSON.stringify(summary)}`);
     return summary;
   },
+
+  // Tenant billing (Section B) — a tenant charges its businesses. Tenant-scoped:
+  // one schedule per tenant, processes that tenant's businesses due today + any
+  // with outstanding failed charges.
+  'tenant_billing': async (ctx) => {
+    if (!ctx.tenantId) throw new Error('tenant_billing job requires a tenant scope');
+    const { runTenantBilling } = await import('../services/tenant-billing.service');
+    const summary = await runTenantBilling(ctx.tenantId, new Date(), ctx.executionId ?? null);
+    logger.info(`Tenant billing run (tenant ${ctx.tenantId}): ${JSON.stringify(summary)}`);
+    return summary;
+  },
 };
 
 /**

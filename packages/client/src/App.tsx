@@ -12,6 +12,9 @@ import { AdminConfig } from './pages/AdminConfig';
 import { SystemReports } from './pages/SystemReports';
 import { SystemReportRunner } from './pages/reports/SystemReportRunner';
 import { SystemProcesses } from './pages/SystemProcesses';
+import { TenantReportsHub } from './pages/TenantReportsHub';
+import { TenantReportRunner } from './pages/reports/TenantReportRunner';
+import { TenantProcesses } from './pages/TenantProcesses';
 import { AdminUsers } from './pages/AdminUsers';
 import { AuditLog } from './pages/AuditLog';
 import { QueryEditorPage } from './pages/QueryEditorPage';
@@ -283,6 +286,30 @@ export function App() {
           element={
             <ProtectedRoute requiredRole="Manager" layout="none">
               <AdminLayout><SystemProcesses /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/tenant-reports"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><TenantReportsHub /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/tenant-reports/run/:reportId"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><TenantReportRunner /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/tenant-processes"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><TenantProcesses /></AdminLayout>
             </ProtectedRoute>
           }
         />

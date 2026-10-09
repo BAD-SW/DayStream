@@ -205,28 +205,37 @@ Two caveats carried forward:
 
 ---
 
-## Phase 3 — Section B: Tenant Billing (Tenant → Business) 📋 Planned
+## Phase 3 — Section B: Tenant Billing (Tenant → Business) � In Progress
 
-Mirror of Section A using the same tables/engine via the `tenant` level discriminator.
+Mirror of Section A one level down (`platform → tenant` becomes `tenant → business`). Built as a dedicated `tenant-billing.service.ts` keyed on `business_id`, reusing the scope-aware infrastructure from Section A (`pay_billing_charge_attempts` scope_level='tenant', `pay_customer_refs` owner_level='business', scheduler scope_level='tenant', and the "charging party owns the vault" model routing a business charge through its tenant's processor connection).
 
-- [ ] 3.1 Business billing plans/charges/credits (reuse Phase 2 tables, `plan_level='tenant'`)
+- [x] ✅ 3.1 Business billing plans/charges/credits (migration `121`)
+  - Direct mirror of migration 118 keyed on `business_id` (+ `tenant_id` for isolation): `pay_business_billing_plans` (versioned, current = `ended_at IS NULL`), `pay_business_billing_charges` (idempotent `UNIQUE(business_id, cycle_year, cycle_month)` + its own `pay_business_billing_charge_ref_seq`), `pay_business_credits` (FIFO carry-forward), `pay_business_net_collections` (per-business cycle summary, stubbed until Section C).
   - _Requirements: B1, B4, B5_
 
 - [ ] 3.2 Per-business net-collections (the single business's customer collections, from Phase 4 feed)
+  - _Table `pay_business_net_collections` exists and the percentage path reads it; populated by Section C. Flat plans bill non-zero now; percentage is zero until C lands._
   - _Requirements: B2_
 
-- [ ] 3.3 `tenant_billing` job handler (new type; tenant-scoped; per-tenant schedule)
+- [x] ✅ 3.3 `tenant_billing` job handler (tenant-scoped; per-tenant schedule)
+  - `runTenantBilling(tenantId, runDate, executionId)` in `tenant-billing.service.ts`: bills the just-closed cycle for every active, non-suspended business in the tenant whose `billing_day` falls today, then retries that tenant's open failed/retrying charges (per-cycle rows, never merged). Registered as the `tenant_billing` handler in `job-registry.ts` — a **tenant-scoped** job (`sys_scheduled_jobs` scope_level='tenant', one row per tenant), passing `ctx.tenantId`.
   - _Requirements: B3, B6_
 
-- [ ] 3.4 Tenant billing API
-  - Plan get/set, charges, credits, suspend, failed-charge report, schedule get/set (tenant-admin scoped)
+- [x] ✅ 3.4 Tenant billing API (`routes/payment-platform.ts`, tenant-admin scoped)
+  - `/v1/pay/tenant-billing/:businessId/{plan, plan-history, audit, charges, credits, charge-now}` + `/v1/pay/tenant-billing-{schedule, run-now, runs, runs/:runId/charges, charges, account}`. All `tenantContext` + `requirePermission('settings:*')`; every business-scoped route verifies the business belongs to the acting tenant (`requireOwnedBusiness`). Audit via `queryResourceAudit('business', businessId)`.
+  - **Tenant receiving/billing account** (migration `122`, `pay_tenant_billing_accounts`): a per-tenant bank-details record (the tenant-level mirror of DayStream's Platform Receiving Account), with tenant-self `GET`/`PUT /v1/pay/tenant-billing-account`.
   - _Requirements: B1, B3, B4, B5, B6_
 
-- [ ] 3.5 Tenant billing tenant-admin UI (`/billing/businesses`)
-  - Per-business plan editor (mirror of platform billing UI, reusing the shared payment-method component for the Business_Payment_Account), charge history, credits, failed-charge report, suspend, run-time setting
+- [x] ✅ 3.5 Tenant billing tenant-admin UI + Business window redesign
+  - **Business window redesigned**: the flat `TenantBusinesses` detail modal is now a wide tabbed window (mirror of the Tenant window), tabs: **Overview** (summary + Archive/Activate), **Settings** (the edit form), **Billing**, **Charge History**, **Audit Trail**.
+  - **Billing tab** (`BusinessBillingTab`): the Section B plan editor (flat / % / cap / intro / billing day), the Business Payment Account via the shared `PaymentMethods` component (owner_level='business'), itemized charge history, credits, and manual **Charge now**. **Charge History** (`BusinessChargeHistory`) and **Audit Trail** (`BusinessAuditTrail`) mirror the Tenant* components one level down. Client API wrappers added to `api/payments.ts`.
+  - **Tenant Configuration** (`TenantSettings`): added **Payment Processors** (reusable `ProcessorConfigForm` owner_level='tenant' — the provider the tenant uses to charge its businesses) and **Business Billing** (the tenant's receiving-account bank details) tabs, mirroring the system Configuration area.
+  - **Tenant nav restructure (mirror of the system layer)**: a tenant **Reports** hub (`TenantReportsHub`, config-driven catalog `tenantReportCatalog`, `/admin/tenant-reports`, Billing Activity as the first report via `TenantReportRunner`) and a tenant **Processes** page (`TenantProcesses`, `/admin/tenant-processes`, hosting the business billing run schedule + "Run now"). Reusable `TenantBillingScheduleCard` + `TenantBillingActivity` components mirror the Platform* ones. Nav wired in `AdminLayout.TENANT_GROUPS` + `AppLayout`/`moduleRegistry` (so they show on `/dashboard` too).
   - _Requirements: B1, B3, B4, B5, B6; design §12_
+  - _tsc: server 0 errors; client at the pre-existing 31 baseline (new files clean). Migrations 121 + 122 applied._
 
 - [ ] 3.6 Checkpoint — verify tenant billing mirrors platform billing (backend + UI together) against a real tenant's businesses
+  - _Pending live validation by the user: configure a per-business plan, "Charge now" against the tenant's Stripe connection, the scheduled run + "Run now", master-detail billing activity, and the business audit trail. (The business's card is charged through the tenant's processor connection.)_
 
 ---
 

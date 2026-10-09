@@ -26,6 +26,36 @@ async function resolveOwnerCurrency(owner: MethodOwner): Promise<string> {
 }
 
 /**
+ * Resolve a human-readable display name (+ email when available) for the Stripe
+ * Customer, from the authoritative record. This is what shows in the Stripe
+ * dashboard, so it uses the real tenant/business/customer name rather than an
+ * internal id. The short id suffix keeps names unambiguous when two records share
+ * a name; the full id also lives in the Customer metadata for exact lookup.
+ */
+async function resolveOwnerDisplay(owner: MethodOwner): Promise<{ name: string; email?: string }> {
+  const shortId = (id?: string | null) => (id ? id.slice(0, 8) : '');
+  if (owner.ownerLevel === 'tenant' && owner.tenantId) {
+    const { rows } = await adminPool.query(`SELECT name FROM sys_tenants WHERE id = $1`, [owner.tenantId]);
+    if (rows[0]?.name) return { name: `${rows[0].name} (tenant ${shortId(owner.tenantId)})` };
+  } else if ((owner.ownerLevel === 'business') && owner.businessId) {
+    const { rows } = await adminPool.query(`SELECT name, email FROM sys_businesses WHERE id = $1`, [owner.businessId]);
+    if (rows[0]?.name) return { name: `${rows[0].name} (business ${shortId(owner.businessId)})`, email: rows[0].email || undefined };
+  } else if (owner.ownerLevel === 'customer' && owner.customerId) {
+    const { rows } = await adminPool.query(
+      `SELECT first_name, last_name, email FROM cus_customers WHERE id = $1`, [owner.customerId],
+    );
+    const r = rows[0];
+    if (r) {
+      const full = [r.first_name, r.last_name].filter(Boolean).join(' ').trim();
+      return { name: full || `Customer ${shortId(owner.customerId)}`, email: r.email || undefined };
+    }
+  }
+  // Platform or an unresolved record — fall back to a stable DayStream label.
+  const idPart = owner.tenantId ?? owner.businessId ?? owner.customerId ?? 'platform';
+  return { name: `DayStream ${owner.ownerLevel}:${idPart}` };
+}
+
+/**
  * Payment Methods service (spec phase 10, task 1.3 / Requirement 0.5).
  *
  * The SINGLE shared mechanism for capturing and storing a tokenized payment
@@ -157,10 +187,21 @@ export async function getOrCreateCustomerRef(owner: MethodOwner, account: Connec
   );
   if (existing.rows[0]) return existing.rows[0].provider_customer_id;
 
+  // Give the Stripe Customer a human-readable name (and email when available) so
+  // charges are easy to find in the Stripe dashboard. The internal id is kept in
+  // metadata (and still appended to the name) for exact lookup when needed.
   const label = `${owner.ownerLevel}:${owner.tenantId ?? owner.businessId ?? owner.customerId ?? 'platform'}`;
+  const display = await resolveOwnerDisplay(owner);
   const customerId = await adapter.createCustomer({
-    name: `DayStream ${label}`,
-    metadata: { owner_level: owner.ownerLevel, daystream_ref: label },
+    name: display.name,
+    email: display.email,
+    metadata: {
+      owner_level: owner.ownerLevel,
+      daystream_ref: label,
+      ...(owner.tenantId ? { tenant_id: owner.tenantId } : {}),
+      ...(owner.businessId ? { business_id: owner.businessId } : {}),
+      ...(owner.customerId ? { customer_id: owner.customerId } : {}),
+    },
   });
 
   // Persist (ON CONFLICT guards a race: reuse whoever won).

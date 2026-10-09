@@ -4,27 +4,29 @@ import { CurrencyInput } from './CurrencyInput';
 import { PaymentMethods } from './PaymentMethods';
 import { formatCurrency } from '../utils/currency';
 import * as payApi from '../api/payments';
-import type { TenantCredit } from '../api/payments';
+import type { BusinessCredit } from '../api/payments';
 
 /**
- * TenantBillingTab — Section A (DayStream → Tenant) billing for a single tenant,
- * rendered inside the tenant window's Billing tab. DayStream-admin only.
+ * BusinessBillingTab — Section B (Tenant → Business) billing for a single business,
+ * rendered inside the business window's Billing tab. Tenant-admin only. The direct
+ * mirror of TenantBillingTab one level down.
  *
  * Holds: the negotiated plan (flat / % of net collections / cap / intro / billing
- * day), the Tenant Payment Account (reuses the shared PaymentMethods component),
- * the itemized charge history, credits with carry-forward, and a manual
- * "Charge now" action for a chosen cycle.
+ * day), the Business Payment Account (reuses the shared PaymentMethods component,
+ * owner_level='business'), the itemized charge history, credits with carry-forward,
+ * and a manual "Charge now" action for a chosen cycle.
  */
 
 interface Props {
+  businessId: string;
   tenantId: string;
   currency: string;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-export function TenantBillingTab({ tenantId, currency }: Props) {
-  const [credits, setCredits] = useState<TenantCredit[]>([]);
+export function BusinessBillingTab({ businessId, tenantId, currency }: Props) {
+  const [credits, setCredits] = useState<BusinessCredit[]>([]);
   const [creditBalance, setCreditBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -58,9 +60,9 @@ export function TenantBillingTab({ tenantId, currency }: Props) {
     setLoading(true);
     try {
       const [p, c, cr] = await Promise.all([
-        payApi.getTenantPlan(tenantId),
-        payApi.getTenantCharges(tenantId),
-        payApi.getTenantCredits(tenantId),
+        payApi.getBusinessPlan(businessId),
+        payApi.getBusinessCharges(businessId),
+        payApi.getBusinessCredits(businessId),
       ]);
       setCreditBalance(c.creditBalance);
       setCredits(cr);
@@ -79,14 +81,14 @@ export function TenantBillingTab({ tenantId, currency }: Props) {
     } catch {
       setMsg({ ok: false, text: 'Failed to load billing information.' });
     } finally { setLoading(false); }
-  }, [tenantId]);
+  }, [businessId]);
 
   useEffect(() => { load(); }, [load]);
 
   async function handleSavePlan() {
     setSavingPlan(true); setMsg(null);
     try {
-      await payApi.saveTenantPlan(tenantId, {
+      await payApi.saveBusinessPlan(businessId, {
         flatAmountCents: flat,
         percentageRate: parseFloat(pct) || 0,
         capAmountCents: capEnabled ? capAmount : null,
@@ -111,7 +113,7 @@ export function TenantBillingTab({ tenantId, currency }: Props) {
     }
     setIssuingCredit(true); setMsg(null);
     try {
-      await payApi.issueTenantCredit(tenantId, creditAmount, creditReason.trim());
+      await payApi.issueBusinessCredit(businessId, creditAmount, creditReason.trim());
       setCreditAmount(0); setCreditReason('');
       setMsg({ ok: true, text: 'Credit issued.' });
       await load();
@@ -123,7 +125,7 @@ export function TenantBillingTab({ tenantId, currency }: Props) {
   async function handleChargeNow() {
     setCharging(true); setMsg(null);
     try {
-      const r = await payApi.chargeTenantNow(tenantId, chargeYear, chargeMonth, currency);
+      const r = await payApi.chargeBusinessNow(businessId, chargeYear, chargeMonth, currency);
       const label = r.status === 'settled' ? 'settled'
         : r.status === 'pending' ? 'pending (bank settlement in progress)'
         : r.status === 'zero' ? 'recorded as zero'
@@ -148,7 +150,7 @@ export function TenantBillingTab({ tenantId, currency }: Props) {
         {/* ---- Plan editor ---- */}
         <section style={styles.card}>
           <h4 style={styles.cardTitle}>Billing Plan</h4>
-          <p style={styles.help}>What DayStream charges this tenant each cycle. Flat and/or a percentage of net collections.</p>
+          <p style={styles.help}>What this tenant charges the business each cycle. Flat and/or a percentage of net collections.</p>
 
           <div style={styles.row2}>
             <Field label="Flat amount / cycle">
@@ -209,9 +211,9 @@ export function TenantBillingTab({ tenantId, currency }: Props) {
         {/* ---- Payment account ---- */}
         <section style={styles.card}>
           <PaymentMethods
-            owner={{ owner_level: 'tenant', tenant_id: tenantId }}
+            owner={{ owner_level: 'business', business_id: businessId, ...(tenantId ? { tenant_id: tenantId } : {}) }}
             allowedTypes={['card', 'bank_draw']}
-            title="Payment Methods on File (charged for platform billing)"
+            title="Payment Methods on File (charged for tenant billing)"
           />
         </section>
       </div>
@@ -301,13 +303,6 @@ const styles: Record<string, React.CSSProperties> = {
   help: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', margin: '0 0 var(--space-sm)' },
   muted: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
   msg: { fontSize: 'var(--font-size-sm)', margin: 0 },
-  list: { listStyle: 'none', margin: 'var(--space-sm) 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: '4px' },
   scrollList: { listStyle: 'none', margin: 'var(--space-xs) 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '160px', overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' },
   listItem: { display: 'flex', justifyContent: 'space-between', gap: 'var(--space-sm)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', padding: '6px 10px', borderBottom: '1px solid var(--color-border)' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' },
-  th: { textAlign: 'left', padding: '6px 8px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)', textTransform: 'uppercase', letterSpacing: '0.5px' },
-  thRight: { textAlign: 'right', padding: '6px 8px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)', textTransform: 'uppercase', letterSpacing: '0.5px' },
-  td: { padding: '6px 8px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)' },
-  tdRight: { padding: '6px 8px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)', textAlign: 'right' },
-  linkBtn: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-xs)', fontFamily: 'var(--font-family)', textDecoration: 'underline', padding: 0 },
 };

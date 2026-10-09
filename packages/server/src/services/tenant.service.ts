@@ -38,22 +38,10 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
     );
     const tenant = tenantRows[0];
 
-    // Create default business with same name as tenant
-    const businessSlug = generateSlug(input.name);
-    const { rows: businessRows } = await client.query(
-      `INSERT INTO sys_businesses (tenant_id, name, slug, status, default_language, currency, timezone)
-       VALUES ($1, $2, $3, 'active', $4, $5, $6)
-       RETURNING *`,
-      [tenant.id, input.name, businessSlug, input.default_language || 'en', input.currency || 'EUR', input.timezone || 'UTC'],
-    );
-    const business = businessRows[0];
-
-    // Auto-create default location for the business
-    await client.query(
-      `INSERT INTO sys_locations (business_id, name, slug, status, is_primary, timezone)
-       VALUES ($1, $2, $3, 'active', true, $4)`,
-      [business.id, input.name, businessSlug, input.timezone || 'UTC'],
-    );
+    // NOTE: a tenant is created with NO businesses. The tenant owner cultivates and
+    // signs up businesses themselves (via the Businesses page) after provisioning.
+    // Per the persona model (migration 006), a tenant owner has business_id = NULL.
+    // No default business, location, or owner staff profile is created here.
 
     // Create tenant-specific roles (copy system roles for this tenant)
     const roleIds: Record<string, string> = {};
@@ -74,13 +62,14 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
       roleIds[role.name] = rows[0].id;
     }
 
-    // Create owner user
+    // Create owner user — a tenant owner has NO business (business_id NULL); they
+    // manage the tenant and all businesses they later sign up (persona model, 006).
     const passwordHash = await hashPassword(input.owner_password);
     const { rows: userRows } = await client.query(
       `INSERT INTO usr_users (tenant_id, business_id, email, first_name, last_name, password_hash, role, persona, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'tenant_owner', 'tenant', 'active')
+       VALUES ($1, NULL, $2, $3, $4, $5, 'tenant_owner', 'tenant', 'active')
        RETURNING id, email, first_name, last_name, role, persona, business_id`,
-      [tenant.id, business.id, input.owner_email, input.owner_first_name, input.owner_last_name, passwordHash],
+      [tenant.id, input.owner_email, input.owner_first_name, input.owner_last_name, passwordHash],
     );
     const owner = userRows[0];
 
@@ -88,18 +77,6 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
     await client.query(
       'INSERT INTO usr_user_roles (user_id, role_id, tenant_id) VALUES ($1, $2, $3)',
       [owner.id, roleIds['Tenant Owner'], tenant.id],
-    );
-
-    // Create staff profile for the business owner
-    const { rows: staffRefRows } = await client.query(
-      `SELECT COUNT(*)::int AS cnt FROM stf_profiles WHERE tenant_id = $1`,
-      [tenant.id],
-    );
-    const staffRef = `STF-${String((staffRefRows[0].cnt || 0) + 1).padStart(3, '0')}`;
-    await client.query(
-      `INSERT INTO stf_profiles (tenant_id, user_id, staff_ref, first_name, last_name, email, employment_type, status, show_on_directory, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, 'full_time', 'active', true, $2)`,
-      [tenant.id, owner.id, staffRef, input.owner_first_name, input.owner_last_name, input.owner_email],
     );
 
     // Apply default configuration values for new tenant
