@@ -6,8 +6,14 @@ import { logger } from '../middleware/logger';
  * Job execution context passed to each handler.
  */
 export interface JobContext {
-  businessId: string;
-  tenantId: string;
+  /** The scope this job runs at: platform (DayStream-wide), tenant, or business. */
+  scopeLevel: 'platform' | 'tenant' | 'business';
+  /** Null for platform-scoped jobs. */
+  businessId: string | null;
+  /** Null for platform-scoped jobs. */
+  tenantId: string | null;
+  /** The sys_job_executions row id for this run (for per-attempt audit linkage). */
+  executionId?: string | null;
   config: Record<string, any>;
 }
 
@@ -95,9 +101,10 @@ export const jobRegistry: Record<string, JobHandler> = {
 
   // Billing processor — recurring charges and membership lifecycle
   'billing_process': async (ctx) => {
+    const businessId = ctx.businessId!;   // business-scoped job: businessId is always present
     const { autoResumeExpiredPauses } = await import('../services/membership.service');
-    const resumed = await autoResumeExpiredPauses(ctx.businessId);
-    logger.info(`Recurring charges triggered for business ${ctx.businessId}: ${resumed} paused membership(s) auto-resumed`);
+    const resumed = await autoResumeExpiredPauses(businessId);
+    logger.info(`Recurring charges triggered for business ${businessId}: ${resumed} paused membership(s) auto-resumed`);
     return { status: 'checked', auto_resumed: resumed };
   },
 
@@ -116,8 +123,18 @@ export const jobRegistry: Record<string, JobHandler> = {
 
   // Revenue recognition — moves deferred revenue to membership revenue daily
   'revenue_recognition': async (ctx) => {
-    const result = await recognizeRevenueForYesterday(ctx.businessId);
+    const result = await recognizeRevenueForYesterday(ctx.businessId!);
     return result;
+  },
+
+  // Platform billing (Section A) — DayStream charges tenants. Platform-scoped:
+  // one schedule for the whole platform, processes all tenants due today + any
+  // with outstanding failed charges.
+  'platform_billing': async (ctx) => {
+    const { runPlatformBilling } = await import('../services/platform-billing.service');
+    const summary = await runPlatformBilling(new Date(), ctx.executionId ?? null);
+    logger.info(`Platform billing run: ${JSON.stringify(summary)}`);
+    return summary;
   },
 };
 

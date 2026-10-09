@@ -9,9 +9,11 @@ import { adminPool } from '../db/pool';
 import * as methods from '../services/payment-methods.service';
 import type { MethodOwner, OwnerLevel } from '../services/payment-methods.service';
 import { getMethodCatalog, resolveAvailableMethods } from '../services/payment-catalog.service';
-import { getAdapter } from '../services/payments';
+import { getConfiguredAdapter } from '../services/payments';
 import * as processorConfig from '../services/processor-config.service';
 import type { ConfigOwner } from '../services/processor-config.service';
+import * as platformBilling from '../services/platform-billing.service';
+import { queryResourceAudit } from '../services/audit.service';
 import type { MethodType, PaymentProviderName } from '../services/payments';
 
 /**
@@ -28,27 +30,48 @@ export const paymentPlatformRouter = Router();
 const METHOD_TYPES = ['card', 'bank_draw', 'google_pay', 'apple_pay'];
 
 // Webhook ingestion is public (verified by provider signature) — register BEFORE auth.
-const webhookSchema = Joi.object({}).unknown(true);
 paymentPlatformRouter.post('/webhooks/:provider', async (req: Request, res: Response) => {
   try {
     const provider = req.params.provider as PaymentProviderName;
     const signature = (req.headers['x-webhook-signature'] as string) || (req.headers['stripe-signature'] as string) || '';
-    let adapter;
-    try { adapter = getAdapter(provider); }
-    catch { error(res, 'Unknown provider', 'VALIDATION_ERROR', 400); return; }
 
-    // NOTE(stripe): the global express.json() parser consumes the raw body, so we
-    // re-serialize here for the mock's HMAC check. The real Stripe adapter requires
-    // the untouched raw body — mount express.raw() on this path when wiring Stripe.
-    const rawBody = JSON.stringify(req.body ?? {});
+    // The app mounts express.raw() on this path, so req.body is the untouched
+    // Buffer Stripe's signature verification needs. (Falls back to a re-serialized
+    // string for the mock, whose HMAC check doesn't require byte-exact input.)
+    const rawBody: string | Buffer = Buffer.isBuffer(req.body) ? req.body : JSON.stringify(req.body ?? {});
+
+    // Build the adapter from the PLATFORM connection's secrets so the real Stripe
+    // webhook secret is available (constructEvent needs it); falls back to mock.
+    const platformSecrets = await processorConfig.getDecryptedSecrets({ ownerLevel: 'platform' }).catch(() => ({}));
+    const adapter = getConfiguredAdapter(provider, platformSecrets);
+
     let event;
     try { event = adapter.parseWebhook(rawBody, signature); }
     catch { error(res, 'Invalid webhook signature', 'INVALID_SIGNATURE', 400); return; }
 
-    // Phase 1 just acknowledges + normalizes; downstream handlers consume events in later phases.
+    // Reconcile platform billing charges by provider reference (Section A async
+    // settlement): a charge that was 'pending' flips to settled/failed when Stripe
+    // reports the final outcome days later. Safe no-op if the ref isn't ours.
+    if (event.providerReference && (event.type === 'charge.succeeded' || event.type === 'charge.failed')) {
+      await reconcilePlatformCharge(event.providerReference, event.type);
+    }
+
     success(res, { received: true, type: event.type, reference: event.providerReference ?? null });
   } catch (err: any) { error(res, 'Webhook processing failed', 'INTERNAL_ERROR', 500); }
 });
+
+/** Flip a pending platform billing charge to settled/failed when Stripe reports it. */
+async function reconcilePlatformCharge(providerReference: string, type: 'charge.succeeded' | 'charge.failed'): Promise<void> {
+  const status = type === 'charge.succeeded' ? 'settled' : 'failed';
+  await adminPool.query(
+    `UPDATE pay_platform_billing_charges
+     SET status = $1::varchar,
+         settled_at = CASE WHEN $1::varchar = 'settled' THEN NOW() ELSE settled_at END,
+         updated_at = NOW()
+     WHERE provider_reference = $2 AND status IN ('pending', 'retrying', 'failed')`,
+    [status, providerReference],
+  );
+}
 
 // Everything below requires authentication + tenant context.
 paymentPlatformRouter.use(authenticate);
@@ -182,6 +205,158 @@ paymentPlatformRouter.put('/processors/config', requirePermission('settings:*'),
     if (e.code === 'UNKNOWN_PROVIDER') { error(res, e.message, 'VALIDATION_ERROR', 400); return; }
     error(res, 'Failed to save processor config', 'INTERNAL_ERROR', 500);
   }
+});
+
+// ============================================================
+// Section A — Platform Billing (DayStream → Tenant). System-admin only.
+// ============================================================
+
+// A tenant's current billing plan (null if none configured).
+paymentPlatformRouter.get('/platform-billing/:tenantId/plan', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const plan = await platformBilling.getTenantPlan(req.params.tenantId);
+    success(res, plan);
+  } catch (err: any) { error(res, 'Failed to read tenant plan', 'INTERNAL_ERROR', 500); }
+});
+
+const planSchema = Joi.object({
+  flatAmountCents: Joi.number().integer().min(0).required(),
+  percentageRate: Joi.number().min(0).max(100).required(),
+  capAmountCents: Joi.number().integer().min(0).allow(null),
+  capAppliesTo: Joi.string().valid('percentage', 'combined').default('combined'),
+  introPeriodMonths: Joi.number().integer().min(0).default(0),
+  introFlatAmountCents: Joi.number().integer().min(0).default(0),
+  introPercentageRate: Joi.number().min(0).max(100).default(0),
+  billingDay: Joi.number().integer().min(1).max(31).required(),
+  planStartDate: Joi.string().isoDate().optional(),
+});
+
+// Save a new plan version for a tenant.
+paymentPlatformRouter.put('/platform-billing/:tenantId/plan', requirePermission('*:*'), validate(planSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const plan = await platformBilling.saveTenantPlan(req.params.tenantId, req.body, authReq.user.sub);
+    success(res, plan);
+  } catch (err: any) { error(res, 'Failed to save tenant plan', 'INTERNAL_ERROR', 500); }
+});
+
+// A tenant's plan version history (all versions, newest first).
+paymentPlatformRouter.get('/platform-billing/:tenantId/plan-history', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    success(res, await platformBilling.listTenantPlanVersions(req.params.tenantId));
+  } catch (err: any) { error(res, 'Failed to read plan history', 'INTERNAL_ERROR', 500); }
+});
+
+// A tenant's audit trail — all changes made to this tenant (paged, with who/when).
+paymentPlatformRouter.get('/platform-billing/:tenantId/audit', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string, 10) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string, 10) || 25, 100);
+    success(res, await queryResourceAudit('tenant', req.params.tenantId, { page, limit }));
+  } catch (err: any) { error(res, 'Failed to read tenant audit', 'INTERNAL_ERROR', 500); }
+});
+
+// A tenant's charge history + current credit balance.
+paymentPlatformRouter.get('/platform-billing/:tenantId/charges', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const [charges, creditBalance] = await Promise.all([
+      platformBilling.listTenantCharges(req.params.tenantId),
+      platformBilling.getTenantCreditBalance(req.params.tenantId),
+    ]);
+    success(res, { charges, creditBalance });
+  } catch (err: any) { error(res, 'Failed to read tenant charges', 'INTERNAL_ERROR', 500); }
+});
+
+// A tenant's credits.
+paymentPlatformRouter.get('/platform-billing/:tenantId/credits', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    success(res, await platformBilling.listTenantCredits(req.params.tenantId));
+  } catch (err: any) { error(res, 'Failed to read tenant credits', 'INTERNAL_ERROR', 500); }
+});
+
+const creditSchema = Joi.object({
+  amountCents: Joi.number().integer().positive().required(),
+  reason: Joi.string().trim().min(1).required(),
+});
+
+// Issue a credit to a tenant.
+paymentPlatformRouter.post('/platform-billing/:tenantId/credits', requirePermission('*:*'), validate(creditSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const credit = await platformBilling.issueTenantCredit(req.params.tenantId, req.body.amountCents, req.body.reason, authReq.user.sub);
+    success(res, credit, undefined, 201);
+  } catch (err: any) { error(res, 'Failed to issue credit', 'INTERNAL_ERROR', 500); }
+});
+
+const chargeNowSchema = Joi.object({
+  year: Joi.number().integer().min(2020).max(2100).required(),
+  month: Joi.number().integer().min(1).max(12).required(),
+  currency: Joi.string().length(3).optional(),
+});
+
+// Manually bill a tenant for a specific cycle (idempotent per tenant+cycle).
+paymentPlatformRouter.post('/platform-billing/:tenantId/charge-now', requirePermission('*:*'), validate(chargeNowSchema), async (req: Request, res: Response) => {
+  try {
+    const { year, month, currency } = req.body;
+    const result = await platformBilling.billTenantForCycle(req.params.tenantId, { year, month }, currency || 'USD');
+    success(res, result);
+  } catch (e: any) {
+    if (e.code === 'NO_PLAN') { error(res, e.message, 'NO_PLAN', 409); return; }
+    error(res, 'Failed to charge tenant', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// The single platform-wide billing run schedule (A6).
+paymentPlatformRouter.get('/platform-billing-schedule', requirePermission('*:*'), async (_req: Request, res: Response) => {
+  try {
+    success(res, await platformBilling.getPlatformSchedule());
+  } catch (err: any) { error(res, 'Failed to read schedule', 'INTERNAL_ERROR', 500); }
+});
+
+const scheduleSchema = Joi.object({
+  scheduleTime: Joi.string().pattern(/^\d{2}:\d{2}$/).required(),
+  scheduleTimezone: Joi.string().min(1).required(),
+  enabled: Joi.boolean().default(true),
+});
+
+paymentPlatformRouter.put('/platform-billing-schedule', requirePermission('*:*'), validate(scheduleSchema), async (req: Request, res: Response) => {
+  try {
+    const { scheduleTime, scheduleTimezone, enabled } = req.body;
+    success(res, await platformBilling.savePlatformSchedule(scheduleTime, scheduleTimezone, enabled));
+  } catch (err: any) { error(res, 'Failed to save schedule', 'INTERNAL_ERROR', 500); }
+});
+
+// Run the platform billing now (manual trigger).
+paymentPlatformRouter.post('/platform-billing-run-now', requirePermission('*:*'), async (_req: Request, res: Response) => {
+  try {
+    success(res, await platformBilling.runPlatformBillingNow());
+  } catch (err: any) { error(res, 'Failed to run platform billing', 'INTERNAL_ERROR', 500); }
+});
+
+// Platform billing job runs within a date range (default last 7 days).
+paymentPlatformRouter.get('/platform-billing-runs', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const from = req.query.from as string | undefined;
+    const to = req.query.to as string | undefined;
+    const limit = Math.min(parseInt(req.query.limit as string, 10) || 200, 500);
+    success(res, await platformBilling.listPlatformBillingRuns({ from, to, limit }));
+  } catch (err: any) { error(res, 'Failed to read billing runs', 'INTERNAL_ERROR', 500); }
+});
+
+// The charges attempted during a specific run (drill-down).
+paymentPlatformRouter.get('/platform-billing-runs/:runId/charges', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    success(res, await platformBilling.getRunCharges(req.params.runId));
+  } catch (err: any) { error(res, 'Failed to read run charges', 'INTERNAL_ERROR', 500); }
+});
+
+// Platform-wide charges across all tenants; ?status=failed for the failed-charge report.
+paymentPlatformRouter.get('/platform-billing-charges', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const status = req.query.status as string | undefined;
+    const limit = Math.min(parseInt(req.query.limit as string, 10) || 100, 500);
+    success(res, await platformBilling.listAllPlatformCharges({ status, limit }));
+  } catch (err: any) { error(res, 'Failed to read charges', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================

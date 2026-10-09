@@ -41,12 +41,34 @@ export class StripeAdapter implements PaymentAdapter {
    */
   async createSetupIntent(
     paymentMethodTypes: string[] = ['card'],
+    customerId?: string,
   ): Promise<{ clientSecret: string; setupIntentId: string }> {
+    // Attaching to a customer at capture time is what lets the resulting payment
+    // method be charged OFF-SESSION later (recurring billing). Without it Stripe
+    // vaults the method but refuses to reuse it.
     // payment_method_types is a valid Stripe API param but isn't in this SDK
     // version's typed create params; cast narrowly (same approach as apiVersion).
-    const params = { usage: 'off_session', payment_method_types: paymentMethodTypes } as Stripe.SetupIntentCreateParams;
+    const params = {
+      usage: 'off_session',
+      payment_method_types: paymentMethodTypes,
+      ...(customerId ? { customer: customerId } : {}),
+    } as Stripe.SetupIntentCreateParams;
     const intent = await this.stripe.setupIntents.create(params);
     return { clientSecret: intent.client_secret || '', setupIntentId: intent.id };
+  }
+
+  /**
+   * Get or create a Stripe Customer for an owner. The caller persists the returned
+   * id (pay_customer_refs) and passes it back on subsequent captures/charges so a
+   * single customer accumulates the owner's payment methods. `name`/`metadata` are
+   * optional labels for the Stripe dashboard — Stripe needs no PII to create one.
+   */
+  async createCustomer(opts: { name?: string; metadata?: Record<string, string> } = {}): Promise<string> {
+    const customer = await this.stripe.customers.create({
+      name: opts.name,
+      metadata: opts.metadata,
+    });
+    return customer.id;
   }
 
   /**
@@ -71,6 +93,7 @@ export class StripeAdapter implements PaymentAdapter {
         amount: input.amount,
         currency: input.currency.toLowerCase(),
         payment_method: input.methodToken,
+        ...(input.customerRef ? { customer: input.customerRef } : {}),
         confirm: true,
         off_session: true,
         description: input.description,

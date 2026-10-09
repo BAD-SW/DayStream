@@ -67,7 +67,7 @@ async function pollAndExecute(): Promise<void> {
          LIMIT $3
          FOR UPDATE SKIP LOCKED
        )
-       RETURNING id, business_id, tenant_id, job_type, config, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month`,
+       RETURNING id, scope_level, business_id, tenant_id, job_type, config, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month`,
       [instanceId, MAX_CONSECUTIVE_FAILURES, BATCH_SIZE],
     );
 
@@ -110,8 +110,10 @@ async function executeJob(job: any): Promise<void> {
 
     // Execute the handler
     const result = await handler({
+      scopeLevel: job.scope_level || 'business',
       businessId: job.business_id,
       tenantId: job.tenant_id,
+      executionId,
       config: job.config || {},
     });
 

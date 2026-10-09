@@ -29,6 +29,7 @@ export interface ChargeInput {
   amount: number;                          // integer cents
   currency: string;                        // ISO 4217, e.g. 'EUR'
   methodToken: string;                     // vaulted token to charge
+  customerRef?: string;                    // provider customer the token is attached to (required for off-session reuse)
   idempotencyKey: string;                  // caller-supplied; stable per logical charge
   description?: string;
   metadata?: Record<string, string>;

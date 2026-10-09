@@ -6,8 +6,12 @@ import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { apiClient } from '../api/client';
 import { TIMEZONES } from '../utils/timezones';
 import { CurrencyInput } from '../components/CurrencyInput';
-import { PaymentMethods } from '../components/PaymentMethods';
-import { formatCurrency } from '../utils/currency';interface Tenant {
+import { Tabs } from '../design-system/components/navigation/Tabs';
+import { TenantBillingTab } from '../components/TenantBillingTab';
+import { TenantChargeHistory } from '../components/TenantChargeHistory';
+import { TenantAuditTrail } from '../components/TenantAuditTrail';
+
+interface Tenant {
   id: string;
   name: string;
   slug: string;
@@ -114,8 +118,7 @@ export function Tenants() {
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Edit mode state
-  const [editing, setEditing] = useState(false);
+  // Edit mode state (the Settings tab is always editable; the form stays populated)
   const [editForm, setEditForm] = useState<EditTenantForm>({ name: '', default_language: '', currency: '', timezone: '', territory_postal_code: '', territory_radius_km: '25' } as EditTenantForm);
   const [editError, setEditError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -239,7 +242,6 @@ export function Tenants() {
       payment_card_exp: (tenant as any).payment_card_exp || '',
     });
     setEditError(null);
-    setEditing(true);
   }
 
   // Save edit
@@ -264,7 +266,6 @@ export function Tenants() {
       if (editForm.next_billing_date !== (selectedTenant.next_billing_date || '')) body.next_billing_date = editForm.next_billing_date || null;
 
       if (Object.keys(body).length === 0 && !editForm.territory_postal_code) {
-        setEditing(false);
         return;
       }
 
@@ -282,7 +283,6 @@ export function Tenants() {
         });
       }
 
-      setEditing(false);
       // Refresh tenant list and selected tenant detail
       const tenantsRes = await apiClient.get('/v1/admin/tenants');
       const updatedTenants = tenantsRes.data.data;
@@ -299,18 +299,19 @@ export function Tenants() {
   // Close detail panel
   function closeDetail() {
     setSelectedTenant(null);
-    setEditing(false);
     setEditError(null);
   }
 
-  // Open detail panel with full data (including owner)
+  // Open detail panel with full data (including owner). The Settings tab is always
+  // editable, so populate the edit form from the fetched detail immediately.
   async function openTenantDetail(tenant: Tenant) {
     setSelectedTenant(tenant);
-    setEditing(false);
     setEditError(null);
+    startEditing(tenant);
     try {
       const res = await apiClient.get(`/v1/admin/tenants/${tenant.id}`);
       setSelectedTenant(res.data.data);
+      startEditing(res.data.data);
     } catch {
       // Still show basic data if detail fetch fails
     }
@@ -377,7 +378,7 @@ export function Tenants() {
         <div style={styles.overlay}>
           <div style={styles.detailPanel}>
             <div style={styles.detailHeader}>
-              <h2 style={styles.detailTitle}>{editing ? 'Edit Tenant' : selectedTenant.name}</h2>
+              <h2 style={styles.detailTitle}>{selectedTenant.name}</h2>
               <button
                 style={styles.closeBtn}
                 onClick={closeDetail}
@@ -389,8 +390,26 @@ export function Tenants() {
 
             {editError && <div style={styles.formError}>{editError}</div>}
 
-            {editing ? (
-              /* Edit Mode */
+            <Tabs
+              defaultTab="settings"
+              items={[
+                {
+                  id: 'overview',
+                  label: 'Overview',
+                  content: (
+                    <TenantOverview
+                      tenant={selectedTenant}
+                      actionLoading={actionLoading}
+                      onSuspend={() => handleSuspend(selectedTenant)}
+                      onActivate={() => handleActivate(selectedTenant)}
+                    />
+                  ),
+                },
+                {
+                  id: 'settings',
+                  label: 'Settings',
+                  content: (
+              /* Settings (editable tenant config) */
               <div style={styles.form}>
                 <div style={styles.formDivider}>Tenant Details</div>
 
@@ -608,138 +627,38 @@ export function Tenants() {
                     <input style={styles.input} value={editForm.payment_routing_number || editForm.payment_iban} onChange={(e) => setEditForm({ ...editForm, payment_routing_number: e.target.value })} placeholder="Routing or IBAN" />
                   </div>
                 </div>
-                <div style={{ marginTop: '12px' }}>
-                  <PaymentMethods
-                    owner={{ owner_level: 'tenant', tenant_id: selectedTenant.id }}
-                    allowedTypes={['card', 'bank_draw']}
-                    title="Payment Methods on File (charged for platform billing)"
-                  />
-                </div>
-
                 <div style={styles.formActions}>
-                  <Button variant="outline" type="button" onClick={() => { setEditing(false); setEditError(null); }}>
-                    Cancel
-                  </Button>
                   <Button onClick={handleSaveEdit} loading={saving}>
                     Save Changes
                   </Button>
                 </div>
               </div>
-            ) : (
-              /* View Mode */
-              <>
-                <div style={styles.detailBody}>
-                  <div style={styles.detailRow}>
-                    <span style={styles.detailLabel}>URL Alias</span>
-                    <span style={styles.detailValue}>{selectedTenant.slug}</span>
-                  </div>
-                  <div style={styles.detailRow}>
-                    <span style={styles.detailLabel}>Status</span>
-                    <Badge variant={STATUS_VARIANTS[selectedTenant.status] || 'neutral'}>
-                      {formatStatus(selectedTenant.status)}
-                    </Badge>
-                  </div>
-                  <div style={styles.detailRow}>
-                    <span style={styles.detailLabel}>Currency</span>
-                    <span style={styles.detailValue}>{selectedTenant.currency}</span>
-                  </div>
-                  <div style={styles.detailRow}>
-                    <span style={styles.detailLabel}>Timezone</span>
-                    <span style={styles.detailValue}>{selectedTenant.timezone}</span>
-                  </div>
-                  <div style={styles.detailRow}>
-                    <span style={styles.detailLabel}>Language</span>
-                    <span style={styles.detailValue}>{selectedTenant.default_language}</span>
-                  </div>
-                  {(selectedTenant as any).territory_address && (
-                    <>
-                      <div style={{ ...styles.formDivider, marginTop: '12px' }}>Territory</div>
-                      <div style={styles.detailRow}>
-                        <span style={styles.detailLabel}>Location</span>
-                        <span style={styles.detailValue}>{(selectedTenant as any).territory_address}</span>
-                      </div>
-                    </>
-                  )}
-                  {selectedTenant.owner && (
-                    <>
-                      <div style={{ ...styles.formDivider, marginTop: '12px' }}>Owner</div>
-                      <div style={styles.detailRow}>
-                        <span style={styles.detailLabel}>Name</span>
-                        <span style={styles.detailValue}>
-                          {selectedTenant.owner.first_name} {selectedTenant.owner.last_name}
-                        </span>
-                      </div>
-                      <div style={styles.detailRow}>
-                        <span style={styles.detailLabel}>Email</span>
-                        <span style={styles.detailValue}>{selectedTenant.owner.email}</span>
-                      </div>
-                    </>
-                  )}
-                  <div style={{ ...styles.formDivider, marginTop: '12px' }}>Billing</div>
-                  <div style={styles.detailRow}>
-                    <span style={styles.detailLabel}>Frequency</span>
-                    <span style={styles.detailValue}>{(selectedTenant.billing_frequency || 'monthly').charAt(0).toUpperCase() + (selectedTenant.billing_frequency || 'monthly').slice(1)}</span>
-                  </div>
-                  <div style={styles.detailRow}>
-                    <span style={styles.detailLabel}>Amount</span>
-                    <span style={styles.detailValue}>{selectedTenant.billing_amount ? formatCurrency(selectedTenant.billing_amount, selectedTenant.currency) : '—'}</span>
-                  </div>
-                  <div style={styles.detailRow}>
-                    <span style={styles.detailLabel}>Method</span>
-                    <span style={styles.detailValue}>{selectedTenant.billing_method === 'tbd' ? 'TBD' : (selectedTenant.billing_method || '—')}</span>
-                  </div>
-                  <div style={styles.detailRow}>
-                    <span style={styles.detailLabel}>Signup Date</span>
-                    <span style={styles.detailValue}>{selectedTenant.signup_date ? new Date(selectedTenant.signup_date).toLocaleDateString() : '—'}</span>
-                  </div>
-                  <div style={styles.detailRow}>
-                    <span style={styles.detailLabel}>Next Billing Date</span>
-                    <span style={styles.detailValue}>{selectedTenant.next_billing_date ? new Date(selectedTenant.next_billing_date).toLocaleDateString() : '—'}</span>
-                  </div>
-                  <div style={styles.detailRow}>
-                    <span style={styles.detailLabel}>Created</span>
-                    <span style={styles.detailValue}>
-                      {new Date(selectedTenant.created_at).toLocaleString()}
-                    </span>
-                  </div>
-                  <div style={styles.detailRow}>
-                    <span style={styles.detailLabel}>Updated</span>
-                    <span style={styles.detailValue}>
-                      {new Date(selectedTenant.updated_at).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-                <div style={styles.detailActions}>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => startEditing(selectedTenant)}
-                  >
-                    Edit
-                  </Button>
-                  {selectedTenant.status === 'active' && (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      loading={actionLoading}
-                      onClick={() => handleSuspend(selectedTenant)}
-                    >
-                      Suspend
-                    </Button>
-                  )}
-                  {selectedTenant.status === 'suspended' && (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      loading={actionLoading}
-                      onClick={() => handleActivate(selectedTenant)}
-                    >
-                      Activate
-                    </Button>
-                  )}
-                </div>
-              </>
-            )}
+                  ),
+                },
+                {
+                  id: 'billing',
+                  label: 'Billing',
+                  content: (
+                    <TenantBillingTab tenantId={selectedTenant.id} currency={selectedTenant.currency} />
+                  ),
+                },
+                {
+                  id: 'charge-history',
+                  label: 'Charge History',
+                  content: (
+                    <TenantChargeHistory tenantId={selectedTenant.id} />
+                  ),
+                },
+                {
+                  id: 'audit-trail',
+                  label: 'Audit Trail',
+                  content: (
+                    <TenantAuditTrail tenantId={selectedTenant.id} />
+                  ),
+                },
+              ]}
+            />
+
           </div>
         </div>
       )}
@@ -899,6 +818,54 @@ export function Tenants() {
   );
 }
 
+/** Read-only at-a-glance summary for the tenant window's Overview tab. */
+function TenantOverview({
+  tenant, actionLoading, onSuspend, onActivate,
+}: {
+  tenant: Tenant;
+  actionLoading: boolean;
+  onSuspend: () => void;
+  onActivate: () => void;
+}) {
+  const row = (label: string, value: React.ReactNode) => (
+    <div style={styles.detailRow}>
+      <span style={styles.detailLabel}>{label}</span>
+      <span style={styles.detailValue}>{value}</span>
+    </div>
+  );
+  return (
+    <div style={styles.detailBody}>
+      {row('URL Alias', tenant.slug)}
+      <div style={styles.detailRow}>
+        <span style={styles.detailLabel}>Status</span>
+        <Badge variant={STATUS_VARIANTS[tenant.status] || 'neutral'}>{formatStatus(tenant.status)}</Badge>
+      </div>
+      {row('Currency', tenant.currency)}
+      {row('Timezone', tenant.timezone)}
+      {row('Language', tenant.default_language)}
+      {tenant.owner && (
+        <>
+          <div style={{ ...styles.formDivider, marginTop: '12px' }}>Owner</div>
+          {row('Name', `${tenant.owner.first_name} ${tenant.owner.last_name}`)}
+          {row('Email', tenant.owner.email)}
+        </>
+      )}
+      <div style={{ ...styles.formDivider, marginTop: '12px' }}>Record</div>
+      {row('Created', new Date(tenant.created_at).toLocaleString())}
+      {row('Updated', new Date(tenant.updated_at).toLocaleString())}
+
+      <div style={styles.detailActions}>
+        {tenant.status === 'active' && (
+          <Button variant="destructive" size="sm" loading={actionLoading} onClick={onSuspend}>Suspend</Button>
+        )}
+        {tenant.status === 'suspended' && (
+          <Button variant="primary" size="sm" loading={actionLoading} onClick={onActivate}>Activate</Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '1200px', margin: '0 auto' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },
@@ -921,8 +888,8 @@ const styles: Record<string, React.CSSProperties> = {
   // Detail Panel
   detailPanel: {
     background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: 'var(--radius-lg)',
-    padding: 'var(--space-xl)', width: '100%', maxWidth: '480px',
-    maxHeight: '80vh', overflowY: 'auto' as const,
+    padding: 'var(--space-xl)', width: '95vw', maxWidth: '1100px',
+    maxHeight: '90vh', overflowY: 'auto' as const,
     boxShadow: '0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px var(--color-border)',
   },
   detailHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' },

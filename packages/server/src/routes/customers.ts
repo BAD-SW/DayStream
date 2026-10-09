@@ -255,7 +255,7 @@ customersRouter.post('/scheduled-jobs/run', requirePermission('settings:*'), asy
       const { recognizeRevenue } = await import('../services/revenue-recognition.service');
       result = await recognizeRevenue(businessId, date_from, date_to || date_from, posting_date || undefined);
     } else {
-      result = await handler({ businessId, tenantId: authReq.tenantId || '', config: {} });
+      result = await handler({ scopeLevel: 'business', businessId, tenantId: authReq.tenantId || '', config: {} });
     }
 
     const durationMs = Date.now() - startTime;
@@ -268,7 +268,7 @@ customersRouter.post('/scheduled-jobs/:id/run', requirePermission('settings:*'),
   try {
     // Load the job to get type and business context
     const { rows: jobRows } = await adminPool.query(
-      'SELECT id, business_id, tenant_id, job_type, config FROM sys_scheduled_jobs WHERE id = $1',
+      'SELECT id, scope_level, business_id, tenant_id, job_type, config FROM sys_scheduled_jobs WHERE id = $1',
       [req.params.id],
     );
     if (jobRows.length === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
@@ -297,7 +297,7 @@ customersRouter.post('/scheduled-jobs/:id/run', requirePermission('settings:*'),
         const { jobRegistry } = await import('../jobs/job-registry');
         const handler = jobRegistry[job.job_type];
         if (!handler) { throw new Error(`Unknown job type: ${job.job_type}`); }
-        result = await handler({ businessId: job.business_id, tenantId: job.tenant_id, config: job.config || {} });
+        result = await handler({ scopeLevel: job.scope_level || 'business', businessId: job.business_id, tenantId: job.tenant_id, config: job.config || {} });
       }
 
       const durationMs = Date.now() - startTime;

@@ -208,6 +208,24 @@ adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantS
       `SELECT id, email, first_name, last_name FROM usr_users WHERE tenant_id = $1 AND role = 'tenant_owner' ORDER BY created_at ASC LIMIT 1`,
       [req.params.id],
     );
+
+    // Audit: record which tenant fields changed (from → to).
+    const authReq = req as AuthenticatedRequest;
+    const changes: { field: string; from: any; to: any }[] = [];
+    for (const [key, val] of Object.entries(tenantFields)) {
+      const before = (tenant as any)[key];
+      if (String(before ?? '') !== String(val ?? '')) changes.push({ field: key, from: before ?? null, to: val });
+    }
+    if (owner_email && owner_email !== (tenant as any).owner_email) changes.push({ field: 'owner_email', from: (tenant as any).owner_email ?? null, to: owner_email });
+    if (owner_first_name) changes.push({ field: 'owner_first_name', from: null, to: owner_first_name });
+    if (owner_last_name) changes.push({ field: 'owner_last_name', from: null, to: owner_last_name });
+    if (changes.length > 0) {
+      await logAudit({
+        tenantId: req.params.id, userId: authReq.user.sub, action: 'tenant.updated',
+        resourceType: 'tenant', resourceId: req.params.id, details: { changes },
+      });
+    }
+
     success(res, { ...updated, owner: ownerRows[0] || null });
   } catch (err: any) {
     error(res, 'Failed to update tenant', 'INTERNAL_ERROR', 500);

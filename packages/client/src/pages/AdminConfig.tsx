@@ -4,8 +4,11 @@ import { Badge } from '../design-system/components/data/Badge';
 import { ThemeGallery } from './settings/ThemeGallery';
 import { PaymentProcessorsPanel } from './settings/PaymentProcessorsPanel';
 import { apiClient } from '../api/client';
+import { TIMEZONES } from '../utils/timezones';
+import * as payApi from '../api/payments';
+import { formatCurrency } from '../utils/currency';
 
-type Tab = 'settings' | 'feature-flags' | 'api-keys' | 'email' | 'storage' | 'notifications' | 'logs' | 'query-history' | 'payment-processors' | 'platform-billing' | 'default-theme';
+type Tab = 'settings' | 'feature-flags' | 'api-keys' | 'email' | 'storage' | 'notifications' | 'logs' | 'query-history' | 'payment-processors' | 'platform-billing' | 'billing-activity' | 'default-theme';
 
 export function AdminConfig() {
   const [activeTab, setActiveTab] = useState<Tab>('settings');
@@ -21,6 +24,7 @@ export function AdminConfig() {
     { key: 'query-history', label: 'Query Log' },
     { key: 'payment-processors', label: 'Payment Processors' },
     { key: 'platform-billing', label: 'Platform Billing' },
+    { key: 'billing-activity', label: 'Billing Activity' },
     { key: 'default-theme', label: 'Themes' },
   ];
 
@@ -54,6 +58,7 @@ export function AdminConfig() {
       {activeTab === 'query-history' && <QueryHistoryPanel />}
       {activeTab === 'payment-processors' && <PaymentProcessorsPanel />}
       {activeTab === 'platform-billing' && <PlatformBillingPanel />}
+      {activeTab === 'billing-activity' && <PlatformBillingHistory />}
       {activeTab === 'default-theme' && <DefaultThemePanel />}
     </div>
   );
@@ -917,9 +922,299 @@ function PlatformBillingPanel() {
       <div style={styles.formActions}>
         <Button onClick={handleSave} loading={saving}>Save Configuration</Button>
       </div>
+
+      <PlatformBillingSchedule />
     </div>
   );
 }
+
+// ============================================================
+// Platform Billing Run Schedule (A6) — the single platform-wide daily run that
+// charges all due tenants. One schedule for the whole platform.
+// ============================================================
+
+function PlatformBillingSchedule() {
+  const [time, setTime] = useState('02:00');
+  const [tz, setTz] = useState('UTC');
+  const [enabled, setEnabled] = useState(true);
+  const [schedule, setSchedule] = useState<payApi.PlatformSchedule | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    payApi.getPlatformSchedule()
+      .then((s) => {
+        if (s) { setSchedule(s); setTime(s.scheduleTime); setTz(s.scheduleTimezone); setEnabled(s.enabled); }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true); setMessage(null);
+    try {
+      const s = await payApi.savePlatformSchedule(time, tz, enabled);
+      setSchedule(s);
+      setMessage('Billing run schedule saved.');
+    } catch (err: any) { setMessage(err.response?.data?.error || 'Failed to save schedule'); }
+    finally { setSaving(false); }
+  };
+
+  const handleRunNow = async () => {
+    setRunning(true); setMessage(null);
+    try {
+      const r = await payApi.runPlatformBillingNow();
+      setMessage(`Run complete: ${r.newCharges} new, ${r.retries} retried, ${r.settled} settled, ${r.failed} failed, ${r.skippedSuspended} skipped.`);
+      const s = await payApi.getPlatformSchedule();
+      if (s) setSchedule(s);
+    } catch (err: any) { setMessage(err.response?.data?.error || 'Failed to run billing'); }
+    finally { setRunning(false); }
+  };
+
+  if (loading) return null;
+
+  return (
+    <div style={{ marginTop: 'var(--space-xl)', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-lg)' }}>
+      <h3 style={styles.panelTitle}>Billing Run Schedule</h3>
+      <p style={styles.panelSubtext}>The daily run that charges every tenant due that day. One schedule for the whole platform.</p>
+      {message && <div style={styles.successMsg}>{message}</div>}
+      <div style={styles.formSection}>
+        <div style={styles.formRow}>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Run time</label>
+            <input style={styles.input} type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Timezone</label>
+            <select style={styles.input} value={tz} onChange={(e) => setTz(e.target.value)}>
+              {TIMEZONES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={styles.formGroup}>
+          <label style={{ ...styles.label, display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+            Enabled
+          </label>
+        </div>
+        {schedule && (
+          <p style={styles.panelSubtext}>
+            Next run: {schedule.nextRunAt ? new Date(schedule.nextRunAt).toLocaleString() : '—'}
+            {schedule.lastRunAt && ` · Last run: ${new Date(schedule.lastRunAt).toLocaleString()} (${schedule.lastRunStatus})`}
+          </p>
+        )}
+      </div>
+      <div style={styles.formActions}>
+        <Button onClick={handleSave} loading={saving}>Save Schedule</Button>
+        <Button variant="outline" onClick={handleRunNow} loading={running}>Run now</Button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Platform Billing History (A5.3) — recent job runs + platform-wide charges with
+// a failed-charge report filter.
+// ============================================================
+
+const CHARGE_STATUS_COLOR: Record<string, string> = {
+  settled: 'var(--color-success, #17794A)',
+  zero: 'var(--color-text-secondary)',
+  pending: 'var(--color-warning, #B7791F)',
+  retrying: 'var(--color-warning, #B7791F)',
+  failed: 'var(--color-error, #C4291C)',
+};
+
+function todayISO(offsetDays = 0): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return d.toISOString().slice(0, 10);
+}
+
+function PlatformBillingHistory() {
+  const [from, setFrom] = useState(todayISO(-7));
+  const [to, setTo] = useState(todayISO(0));
+  const [runs, setRuns] = useState<payApi.PlatformBillingRun[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Drill-down: the run whose charge attempts are expanded.
+  const [openRunId, setOpenRunId] = useState<string | null>(null);
+  const [runCharges, setRunCharges] = useState<payApi.RunChargeAttempt[]>([]);
+  const [loadingCharges, setLoadingCharges] = useState(false);
+
+  // Failed-charge report (separate from the run drill-down).
+  const [showFailed, setShowFailed] = useState(false);
+  const [failed, setFailed] = useState<payApi.PlatformWideCharge[]>([]);
+
+  const loadRuns = useCallback(async () => {
+    setLoading(true);
+    setOpenRunId(null);
+    try {
+      // Include the whole 'to' day by extending to end-of-day.
+      setRuns(await payApi.getPlatformBillingRuns(`${from}T00:00:00.000Z`, `${to}T23:59:59.999Z`));
+    } catch { setRuns([]); }
+    finally { setLoading(false); }
+  }, [from, to]);
+
+  useEffect(() => { loadRuns(); }, [loadRuns]);
+
+  async function toggleRun(runId: string) {
+    if (openRunId === runId) { setOpenRunId(null); return; }
+    setOpenRunId(runId);
+    setLoadingCharges(true);
+    try {
+      setRunCharges(await payApi.getRunCharges(runId));
+    } catch { setRunCharges([]); }
+    finally { setLoadingCharges(false); }
+  }
+
+  async function toggleFailedReport() {
+    const next = !showFailed;
+    setShowFailed(next);
+    if (next) {
+      try { setFailed(await payApi.getPlatformWideCharges('failed', 200)); } catch { setFailed([]); }
+    }
+  }
+
+  return (
+    <div>
+      <h3 style={styles.panelTitle}>Billing Activity</h3>
+      <p style={styles.panelSubtext}>Runs in the selected range (default last 7 days). Click a run to see the charges it attempted.</p>
+
+      <div style={{ display: 'flex', gap: 'var(--space-md)', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>From</label>
+          <input style={styles.input} type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        </div>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>To</label>
+          <input style={styles.input} type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        </div>
+        <Button variant="outline" size="sm" onClick={loadRuns} loading={loading}>Apply</Button>
+      </div>
+
+      {runs.length === 0 ? (
+        <p style={{ ...styles.panelSubtext, marginTop: 'var(--space-md)' }}>No runs in this range.</p>
+      ) : (
+        <div style={histStyles.masterDetail}>
+          {/* Master: runs list (left) */}
+          <div style={histStyles.masterPane}>
+            <table style={histStyles.table}>
+              <thead>
+                <tr>
+                  <th style={histStyles.th}>Started</th>
+                  <th style={histStyles.th}>Status</th>
+                  <th style={histStyles.thRight}>New</th>
+                  <th style={histStyles.thRight}>Set.</th>
+                  <th style={histStyles.thRight}>Fail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((r) => (
+                  <tr
+                    key={r.id}
+                    onClick={() => toggleRun(r.id)}
+                    style={{ cursor: 'pointer', background: openRunId === r.id ? 'var(--color-surface-sunken, rgba(0,0,0,0.04))' : undefined }}
+                  >
+                    <td style={histStyles.td}>{r.startedAt ? new Date(r.startedAt).toLocaleString() : '—'}</td>
+                    <td style={{ ...histStyles.td, color: r.status === 'success' ? 'var(--color-success, #17794A)' : r.status === 'failed' ? 'var(--color-error, #C4291C)' : 'var(--color-text)' }}>{r.status}</td>
+                    <td style={histStyles.tdRight}>{r.summary?.newCharges ?? '—'}</td>
+                    <td style={histStyles.tdRight}>{r.summary?.settled ?? '—'}</td>
+                    <td style={histStyles.tdRight}>{r.summary?.failed ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Detail: selected run's charge attempts (right, scrollable) */}
+          <div style={histStyles.detailPane}>
+            {!openRunId ? (
+              <p style={styles.panelSubtext}>Select a run to see the charges it attempted.</p>
+            ) : loadingCharges ? (
+              <p style={styles.panelSubtext}>Loading charges…</p>
+            ) : runCharges.length === 0 ? (
+              <p style={styles.panelSubtext}>This run attempted no charges.</p>
+            ) : (
+              <table style={histStyles.table}>
+                <thead>
+                  <tr>
+                    <th style={histStyles.th}>Ref</th>
+                    <th style={histStyles.th}>Tenant</th>
+                    <th style={histStyles.th}>Cycle</th>
+                    <th style={histStyles.thRight}>Amount</th>
+                    <th style={histStyles.th}>Outcome</th>
+                    <th style={histStyles.th}>Detail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {runCharges.map((a) => (
+                    <tr key={a.id}>
+                      <td style={histStyles.td}>{a.reference_number ?? '—'}</td>
+                      <td style={histStyles.td}>{a.tenant_name}</td>
+                      <td style={histStyles.td}>{a.cycle_year}-{String(a.cycle_month).padStart(2, '0')}</td>
+                      <td style={histStyles.tdRight}>{formatCurrency(a.amount_cents, a.currency)}</td>
+                      <td style={{ ...histStyles.td, color: CHARGE_STATUS_COLOR[a.outcome] }}>{a.outcome}</td>
+                      <td style={histStyles.td}>{a.failure_reason || a.provider_reference || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--space-lg)' }}>
+        <h4 style={styles.label}>Failed-charge report</h4>
+        <Button variant="outline" size="sm" onClick={toggleFailedReport}>{showFailed ? 'Hide' : 'Show'}</Button>
+      </div>
+      {showFailed && (
+        failed.length === 0 ? (
+          <p style={styles.panelSubtext}>No outstanding failed charges.</p>
+        ) : (
+          <table style={histStyles.table}>
+            <thead>
+              <tr>
+                <th style={histStyles.th}>Ref</th>
+                <th style={histStyles.th}>Tenant</th>
+                <th style={histStyles.th}>Cycle</th>
+                <th style={histStyles.thRight}>Amount</th>
+                <th style={histStyles.thRight}>Attempts</th>
+                <th style={histStyles.th}>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {failed.map((c) => (
+                <tr key={c.id}>
+                  <td style={histStyles.td}>{c.reference_number}</td>
+                  <td style={histStyles.td}>{c.tenant_name}</td>
+                  <td style={histStyles.td}>{c.cycle_year}-{String(c.cycle_month).padStart(2, '0')}</td>
+                  <td style={histStyles.tdRight}>{formatCurrency(c.amount_charged_cents, c.currency)}</td>
+                  <td style={histStyles.tdRight}>{c.attempts}</td>
+                  <td style={histStyles.td}>{c.failure_reason || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
+      )}
+    </div>
+  );
+}
+
+const histStyles: Record<string, React.CSSProperties> = {
+  masterDetail: { display: 'flex', gap: 'var(--space-lg)', marginTop: 'var(--space-md)', alignItems: 'flex-start' },
+  masterPane: { flex: '0 0 420px', maxHeight: '420px', overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' },
+  detailPane: { flex: 1, minWidth: 0, maxHeight: '420px', overflowY: 'auto', overflowX: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-sm) var(--space-md)' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)', marginTop: 'var(--space-xs)' },
+  th: { textAlign: 'left', padding: '6px 8px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)', textTransform: 'uppercase', letterSpacing: '0.5px' },
+  thRight: { textAlign: 'right', padding: '6px 8px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)', textTransform: 'uppercase', letterSpacing: '0.5px' },
+  td: { padding: '6px 8px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)' },
+  tdRight: { padding: '6px 8px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)', textAlign: 'right' },
+};
 
 // ============================================================
 // Themes Panel — Theme Setup module (spec 37): pick, customise, and apply named

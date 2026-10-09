@@ -152,3 +152,43 @@ export async function queryAuditLog(
     limit,
   };
 }
+
+/**
+ * Query the audit log for entries ABOUT a specific resource (e.g. all changes to
+ * a given tenant), regardless of which tenant scope the acting user belonged to.
+ * Used by the tenant Audit Trail, where a platform admin acts ON a tenant.
+ * Returns paged, newest-first, with the acting user's name resolved.
+ */
+export async function queryResourceAudit(
+  resourceType: string,
+  resourceId: string,
+  filters: { page?: number; limit?: number } = {},
+) {
+  const page = filters.page || 1;
+  const limit = Math.min(filters.limit || 25, 100);
+  const offset = (page - 1) * limit;
+
+  const [dataResult, countResult] = await Promise.all([
+    adminPool.query(
+      `SELECT a.id, a.action, a.resource_type, a.resource_id, a.details, a.created_at,
+              u.email AS user_email, u.first_name AS user_first_name, u.last_name AS user_last_name
+       FROM usr_audit_log a
+       LEFT JOIN usr_users u ON a.user_id::uuid = u.id
+       WHERE a.resource_type = $1 AND a.resource_id = $2
+       ORDER BY a.created_at DESC
+       LIMIT $3 OFFSET $4`,
+      [resourceType, resourceId, limit, offset],
+    ),
+    adminPool.query(
+      `SELECT COUNT(*) AS total FROM usr_audit_log WHERE resource_type = $1 AND resource_id = $2`,
+      [resourceType, resourceId],
+    ),
+  ]);
+
+  return {
+    entries: dataResult.rows,
+    total: parseInt(countResult.rows[0].total, 10),
+    page,
+    limit,
+  };
+}

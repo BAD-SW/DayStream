@@ -163,13 +163,20 @@ export async function updateTenantStatus(id: string, status: 'active' | 'suspend
 
   await adminPool.query('UPDATE sys_tenants SET status = $1, updated_at = NOW() WHERE id = $2', [status, id]);
 
+  // Single audit entry for the status change, in the shared changes[] shape the
+  // Audit Trail formats. (Routes must NOT also log this — avoid duplicates.)
+  const actionByStatus: Record<string, string> = {
+    active: 'tenant.activated',
+    suspended: 'tenant.suspended',
+    archived: 'tenant.archived',
+  };
   await logAudit({
     tenantId: id,
     userId,
-    action: `tenant.${status}`,
+    action: actionByStatus[status] ?? `tenant.${status}`,
     resourceType: 'tenant',
     resourceId: id,
-    details: { previousStatus: tenant.status, newStatus: status },
+    details: { changes: [{ field: 'status', from: tenant.status, to: status }] },
   });
 
   return { ...tenant, status };

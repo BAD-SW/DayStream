@@ -18,6 +18,10 @@ Do not introduce a second scheduler, subscription table, or payment ledger.
 
 ---
 
+## Tasks
+
+The implementation tasks are organized into the build phases below, each a numbered checklist with status markers.
+
 ## Phase 1 — Foundation: Provider Abstraction & Tokenized Methods ✅ Complete
 
 The shared infrastructure every billing layer depends on. Provider-agnostic; Stripe is the first concrete adapter.
@@ -135,43 +139,68 @@ Two caveats carried forward:
 
 ---
 
-## Phase 2 — Section A: Platform Billing (DayStream → Tenant) 📋 Planned
+## Phase 2 — Section A: Platform Billing (DayStream → Tenant) 🟡 In Progress
 
 > Each phase delivers backend AND its UI together, ending with a checkpoint a user can validate in the app.
 
-- [ ] 2.1 Migration — billing plans, charges, credits
-  - `pay_billing_plans` (plan_level, flat/percentage/cap/intro/billing_day, payment_method_id, versioning via `pay_billing_plan_history`)
-  - `pay_billing_charges` (per-cycle record, settlement_status, breakdown, unique per cycle for idempotency)
-  - `pay_billing_credits` (amount, amount_remaining, reason)
+- [x] ✅ 2.0 Scheduler scope levels + Stripe Customer attachment (foundation corrections)
+  - **Scheduler scope levels** (migration `117`): added `scope_level` (`platform`/`tenant`/`business`) to `sys_scheduled_jobs`, made `business_id`/`tenant_id` nullable with a scope-integrity check, replaced the single `(business_id, job_type)` unique with per-scope partial unique indexes, and made `sys_job_executions.business_id` nullable. `JobContext` now carries `scopeLevel`; the runner passes it. One mechanism now serves platform (A), tenant (B), and business (C) schedules.
+  - **Stripe Customer attachment** (migration `119`, `pay_customer_refs`): off-session recurring charges require the vaulted method be attached to a provider Customer — Phase 1 captured with bare SetupIntents (no customer), so stored tokens could be vaulted but not charged. Now `beginCaptureSession` gets-or-creates a Stripe Customer per owner (on the charging party's account) and attaches the SetupIntent to it; `charge` passes the customer. Applies to card/SEPA/ACH/wallet.
+  - _Found by validation: the first real `charge()` failed "attach to a Customer first" — only surfaced because Phase 1 validated vaulting, not charging. Existing vaulted test methods were re-added after the fix._
+  - _Requirements: 0.1, 0.5, A3, A6_
+
+- [x] ✅ 2.1 Migration — tenant billing plans, charges, credits, net-collections (migration `118`)
+  - `pay_tenant_billing_plans` — **versioned** (current = `ended_at IS NULL`): `flat_amount_cents`, `percentage_rate` NUMERIC(7,4), optional `cap_amount_cents` + `cap_applies_to` (`percentage`/`combined`), intro period (`intro_period_months` + intro flat/rate), `billing_day`, `plan_start_date`, audit (`created_by`). History retained so past charges stay explainable (A1.15).
+  - `pay_platform_billing_charges` — per-cycle ledger, **idempotent** via `UNIQUE(tenant_id, cycle_year, cycle_month)`; itemizes flat / net-collections basis + rate / percentage / cap / credit / amount charged / carry-forward; `status` (`zero`/`pending`/`settled`/`failed`/`retrying`); sequential `reference_number`; `provider_reference` for webhook reconciliation.
+  - `pay_tenant_credits` — `amount_cents`, `remaining_cents`, required `reason`, drawn down FIFO, carries forward, never pays out.
+  - `pay_tenant_net_collections` — per-business summary per cycle (A2); **stubbed until Section B** populates it (absent rows = zero).
+  - _Suspension reuses `sys_tenants.status = 'suspended'` (no new column)._
   - _Requirements: A1, A2, A4, A5_
 
-- [ ] 2.2 Shared billing engine
-  - `computeBillingCharge(plan, netCollections, outstandingCredit)` — flat + percentage, cap by scope, intro-period rule, apply credit, floor at zero, carry forward
-  - Parameterized by level so Sections A and B share one engine
+- [x] ✅ 2.2 Billing compute + settle engine (`platform-billing.service.ts`)
+  - `computeChargeForCycle` — current plan version → intro rule → flat + percentage(net collections) → cap (`percentage`/`combined`) → apply active credits FIFO → floor at zero. Pure; no writes.
+  - `billTenantForCycle` — idempotent per (tenant, cycle); in a transaction creates the itemized charge row and draws down real credits; zero-amount records a charge but attempts no transaction (A3.8); else settles.
+  - `settleCharge` — resolves the tenant's default stored method + the owner's Stripe Customer, charges via the adapter against DayStream's platform connection; maps `succeeded`→`settled`, `pending`→`pending` (async bank), `failed`→`failed`.
+  - **Async settlement webhook now wired** (closes the Stripe-vs-local reconciliation gap): a raw-body parser is mounted on `/api/v1/pay/webhooks` *before* the global `express.json()` so Stripe signature verification gets byte-exact bytes; the handler builds the Stripe adapter from the platform connection's secrets (for the webhook signing secret) and, on `charge.succeeded`/`charge.failed`, flips the matching `pay_platform_billing_charges` row (by `provider_reference`) from `pending` to `settled`/`failed`.
+  - _Validated live: a flat $49 plan settled against the user's Stripe test account (real PaymentIntent). Two bugs fixed in the process: volatile charge metadata broke Stripe idempotency on retry (now stable per cycle), and a `text`/`varchar` cast on the settle update._
+  - _Section A and B are intended to share this engine later via a level discriminator; built tenant-first for now._
   - _Requirements: A1, A2, A3_
 
-- [ ] 2.3 Platform net-collections aggregation
-  - Aggregate per-business net collected (from Section C feed, Phase 4) to the tenant level; actuals not contracted; never negative; no retroactive restatement
-  - Per-business breakdown retained on the charge record
+- [ ] 2.3 Platform net-collections aggregation (deferred to Section B)
+  - Aggregate per-business net collected to the tenant level; actuals not contracted; never negative; no retroactive restatement; per-business breakdown retained on the charge record
+  - _The percentage path is wired and reads `pay_tenant_net_collections`, but that table is fed by Section B — so until B lands, net collections are zero and only flat plans bill a non-zero amount. Open design item: Section A can't accurately bill the percentage until the tenant's cycle is "closed" by Section B (cross-level ordering) — to resolve when building B._
   - _Requirements: A2_
 
-- [ ] 2.4 `platform_billing` job handler + scope extension
-  - Extend `sys_scheduled_jobs`: nullable `business_id`, add `scope_level`; update uniqueness
-  - New `platform_billing` handler in `job-registry.ts`; register in `getAvailableJobTypes()`
-  - Daily run: select due tenants + failed-charge retries; upsert cycle charge; settle via adapter against `Tenant_Payment_Account`
+- [x] ✅ 2.4 `platform_billing` daily run (job handler)
+  - `runPlatformBilling(runDate)` in `platform-billing.service.ts`: bills the just-closed cycle (arrears) for every active, non-suspended tenant whose `billing_day` falls today (month-end clamp), then retries every open `failed`/`retrying` charge for non-suspended tenants — each cycle's charge retried on its own row, never merged (A3.14). Suspended tenants skipped entirely (A3.15). Idempotent per (tenant, cycle), so a repeat run the same day is safe. Returns a run summary (new/retries/settled/pending/failed/skipped).
+  - Registered as the `platform_billing` handler in `job-registry.ts` — a **platform-scoped** job (one schedule for the whole platform, created/managed from the Section A admin UI, not the per-business job picker).
+  - _The schedule row (platform scope, Billing_Run_Time in the platform timezone, A6) is created from the admin UI in 2.6; the handler and scope infrastructure (2.0) are in place._
   - _Requirements: A3, A6_
 
-- [ ] 2.5 Platform billing API
-  - Plan get/set, charges list, issue credit, suspend, failed-charge report, schedule get/set
+- [x] ✅ 2.5 Platform billing API (`routes/payment-platform.ts`, system-admin only)
+  - `GET`/`PUT /pay/platform-billing/:tenantId/plan` (save writes a new plan version), `GET /pay/platform-billing/:tenantId/charges` (history + carry-forward credit balance), `GET`/`POST /pay/platform-billing/:tenantId/credits`, `POST /pay/platform-billing/:tenantId/charge-now` (manual bill of a cycle; idempotent).
+  - Suspend/resume reuse the existing `PUT /admin/tenants/:id/suspend` + `/activate` (the billing run already skips suspended tenants), so no duplicate endpoints.
   - _Requirements: A1, A3, A4, A5, A6_
 
-- [ ] 2.6 Platform billing admin UI
-  - DayStream-admin screens (the existing AdminConfig "Platform Billing" tab): per-tenant plan editor (flat/%/cap/intro/billing-day + Tenant_Payment_Account capture via the Phase 1 shared component), charge history, credits, carry-forward balance, failed-charge report, suspend control, and the run-time setting
-  - Client API wrappers; design-system components; CSS variables only
+- [x] ✅ 2.6 Platform billing admin UI + tenant window redesign
+  - **Tenant window redesigned**: the cramped single-column modal is now a wide modal (95vw, max 1100px) with a **tabbed layout** (keeps the easy close-back-to-list of a modal while giving far more room). Tabs: **Overview** (read summary + Suspend/Activate), **Settings** (the full editable config — identity, locale, territory, owner, and the existing Receiving Account / Payment Source bank sections), **Billing**.
+  - **Billing tab** (`TenantBillingTab`): the Section A plan editor (flat / % / cap + applies-to / intro / billing day), the Tenant Payment Account via the shared `PaymentMethods` component (card + bank draw), itemized charge history, credits (issue + list + carry-forward balance), and a manual **Charge now** action for a chosen cycle.
+  - Client API wrappers in `api/payments.ts`; design-system `Tabs`/`Button`/`CurrencyInput`; CSS variables only.
+  - _Note: the legacy simple billing fields (frequency/amount) remain on the Settings tab for now and coexist with the real Section A plan on the Billing tab; reconcile/remove the legacy fields in a later cleanup._
+  - **Plan start date** field added to the plan editor (the intro period counts from it; defaults to today).
+  - **Plan versioning**: saving a plan writes a new version (history retained per A1.15); the Billing tab shows the current version number and points to the Audit Trail for change history (`GET /pay/platform-billing/:tenantId/plan-history` also exists for the raw versions).
+  - **Charge History** moved to its own tenant-window tab as a **paged table** (design-system `Pagination`), and the **Credits** list now shows only credits with a remaining balance in a capped scroll box — both so the modal can't grow unbounded.
+  - **Audit Trail** tab (tenant-window): every change to the tenant — billing plan (per-field from→to), credits issued, suspend/activate, and tenant settings edits — with timestamp and who made it (by login). Server-paged, reusing the existing `usr_audit_log` + `audit.service` (HMAC-chained). Write paths instrumented via `logAudit` keyed `resourceType='tenant'`, read via a new `queryResourceAudit('tenant', tenantId)` + `GET /pay/platform-billing/:tenantId/audit`. This is the durable record of tenant changes (supersedes the inline plan-history table). The redundant "Version N" text was removed from the Billing tab in favor of the Audit Trail. Status-change auditing was consolidated to a single clean entry in `updateTenantStatus` (removing a duplicate raw-JSON entry the routes were also writing); the "from" value renders without strikethrough.
+  - _Known audit gaps (not yet instrumented): payment-method add/remove (goes through the shared `/pay/methods` routes), and owner first/last "from" values are approximate (not loaded in the update handler)._
+  - _Deferred (known items): scheduled/effective-dated plan changes (admin updates the plan manually before the next cycle for now), and `computeChargeForCycle` selecting the plan version in effect **for the billed cycle** rather than the current version — matters more once Section B/net-collections drive precise per-cycle terms._
+  - **Platform run schedule** wired on the AdminConfig "Platform Billing" tab: a single platform-scoped `platform_billing` schedule (run time + timezone + enabled), upserted into `sys_scheduled_jobs` (one row, verified non-duplicating), with a "Run now" manual trigger. API: `GET`/`PUT /pay/platform-billing-schedule`, `POST /pay/platform-billing-run-now`.
   - _Requirements: A1, A3, A4, A5, A6; design §12_
+  - _Fixed during review: intro-period check was comparing a pg Date via string concat (Invalid Date → intro silently ignored); now normalized so the intro flat/rate applies within the window. Credits confirmed working (the test credit was simply already exhausted)._
+  - **Observability (A5.3) — master-detail, built to scale to 365+ runs/yr**: a **per-attempt audit table** (`pay_billing_charge_attempts`, migration 120) records one row every time a charge is attempted (scheduled or manual), linked to the run's `sys_job_executions` id — so a charge touched by multiple runs (created failed, retried later) has a full attempt history. On the Platform Billing tab: a **date-ranged runs list** (default last 7 days) where **clicking a run drills into exactly the charges that run attempted** (tenant, cycle, amount, outcome, reason), plus a separate **Failed-charge report** (A3.12). API: `GET /pay/platform-billing-runs?from=&to=`, `GET /pay/platform-billing-runs/:runId/charges`, `GET /pay/platform-billing-charges?status=failed`.
+  - _The attempts table is **scope-aware** (`scope_level` platform/tenant) and the runs list is generic by `job_type`, so **Section B (tenant → business) reuses this exact runs-and-attempts reporting** one level down._
 
-- [ ] 2.7 Checkpoint — verify platform billing (backend + UI together)
-  - Through the app: configure a plan (flat, %, capped, intro), run the job for a cycle, confirm correct charge, credit carry-forward, zero-amount handling, failed-charge retry, and manual suspension not affecting the tenant's businesses
+- [x] ✅ 2.7 Checkpoint — verify platform billing (backend + UI together)
+  - Validated through the app: plan configuration (flat/%/cap/intro + plan start date), "Charge now" settling live against the user's Stripe test account (real PaymentIntents, confirmed in the Stripe dashboard), intro-period and credit math, the scheduled daily run + "Run now", master-detail billing-activity reporting, and the tenant audit trail. Section A is validated for flat-plan billing; the percentage/net-collections path remains fed by Section B (task 2.3).
 
 ---
 
@@ -297,3 +326,37 @@ Businesses collect directly into their own connected accounts.
   - _Requirements: all_
 
 - [ ] 7.5 Final checkpoint — full end-to-end across all three layers against real Transcend Health data in Stripe test mode
+
+---
+
+## Task Dependency Graph
+
+Phases build in dependency order (each wave depends on the ones before it); each
+must be validated before the next relies on it.
+
+```json
+{
+  "waves": [
+    { "wave": 1, "tasks": ["Phase 1"], "depends_on": [] },
+    { "wave": 2, "tasks": ["Phase 2", "Phase 3", "Phase 4"], "depends_on": ["Phase 1"] },
+    { "wave": 3, "tasks": ["Phase 5", "Phase 6"], "depends_on": ["Phase 4"] },
+    { "wave": 4, "tasks": ["Phase 7"], "depends_on": ["Phase 2", "Phase 3", "Phase 4", "Phase 5", "Phase 6"] }
+  ]
+}
+```
+
+Cross-layer note: the percentage-of-net-collections component in Sections A and B
+depends on the net-collections figure produced one level down (B from C, A from B).
+So the percentage path for a cycle is only accurate once the lower level has closed
+that cycle — tracked as task 2.3 (and its Section B equivalent) and the Phase 5 feed.
+
+## Notes
+
+- **Deferred within Section A** (not blockers): 2.3 net-collections aggregation (waits on Section B); `computeChargeForCycle` currently uses the *current* plan version rather than the version in effect for the billed cycle (fine at current volume with manual between-cycle plan updates); scheduled/effective-dated plan changes; the legacy tenant billing frequency/amount fields on the Settings tab (coexist with the real plan — reconcile later).
+- **Known audit gaps**: payment-method add/remove is not yet audited (shared `/pay/methods` routes); owner first/last "from" values in the tenant-settings audit are approximate.
+- **Clean-up backlog**: Billing Activity lives on its own AdminConfig tab (acceptable for now; may fold back later).
+- **Validation to date**: card / SEPA / ACH capture and Section A flat-plan charging were validated live against the user's Stripe test account; wallets (Google/Apple Pay) are built but validate during Section C; Apple Pay needs a deployed HTTPS domain.
+
+---
+
+**Last Updated**: July 6, 2026

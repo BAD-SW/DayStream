@@ -129,6 +129,64 @@ async function adapterForOwner(owner: MethodOwner, account: ConnectedAccount) {
   return getConfiguredAdapter(account.provider, secrets);
 }
 
+/** WHERE clause + params to find an owner's customer ref (pay_customer_refs). */
+function customerRefFilter(owner: MethodOwner, provider: string): { clause: string; params: any[] } {
+  return {
+    clause: `owner_level = $1 AND provider = $2
+      AND COALESCE(tenant_id,'00000000-0000-0000-0000-000000000000'::uuid) = COALESCE($3::uuid,'00000000-0000-0000-0000-000000000000'::uuid)
+      AND COALESCE(business_id,'00000000-0000-0000-0000-000000000000'::uuid) = COALESCE($4::uuid,'00000000-0000-0000-0000-000000000000'::uuid)
+      AND COALESCE(customer_id,'00000000-0000-0000-0000-000000000000'::uuid) = COALESCE($5::uuid,'00000000-0000-0000-0000-000000000000'::uuid)`,
+    params: [owner.ownerLevel, provider, owner.tenantId ?? null, owner.businessId ?? null, owner.customerId ?? null],
+  };
+}
+
+/**
+ * Get or create the provider Customer the owner's methods attach to, so vaulted
+ * methods can be charged OFF-SESSION. The customer lives on the CHARGING party's
+ * Stripe account (a tenant's methods under DayStream's account, etc.); its id is
+ * persisted per owner in pay_customer_refs and reused on every capture/charge.
+ * Returns undefined for the mock adapter (no real customer needed).
+ */
+export async function getOrCreateCustomerRef(owner: MethodOwner, account: ConnectedAccount): Promise<string | undefined> {
+  const adapter = await adapterForOwner(owner, account);
+  if (!(adapter instanceof StripeAdapter)) return undefined;
+
+  const { clause, params } = customerRefFilter(owner, account.provider);
+  const existing = await adminPool.query(
+    `SELECT provider_customer_id FROM pay_customer_refs WHERE ${clause} LIMIT 1`, params,
+  );
+  if (existing.rows[0]) return existing.rows[0].provider_customer_id;
+
+  const label = `${owner.ownerLevel}:${owner.tenantId ?? owner.businessId ?? owner.customerId ?? 'platform'}`;
+  const customerId = await adapter.createCustomer({
+    name: `DayStream ${label}`,
+    metadata: { owner_level: owner.ownerLevel, daystream_ref: label },
+  });
+
+  // Persist (ON CONFLICT guards a race: reuse whoever won).
+  const ins = await adminPool.query(
+    `INSERT INTO pay_customer_refs (owner_level, tenant_id, business_id, customer_id, provider, provider_customer_id)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (owner_level, provider,
+       COALESCE(tenant_id,'00000000-0000-0000-0000-000000000000'::uuid),
+       COALESCE(business_id,'00000000-0000-0000-0000-000000000000'::uuid),
+       COALESCE(customer_id,'00000000-0000-0000-0000-000000000000'::uuid))
+     DO UPDATE SET updated_at = NOW()
+     RETURNING provider_customer_id`,
+    [owner.ownerLevel, owner.tenantId ?? null, owner.businessId ?? null, owner.customerId ?? null, account.provider, customerId],
+  );
+  return ins.rows[0].provider_customer_id;
+}
+
+/** Read-only: the owner's stored provider customer id, if any. */
+export async function getCustomerRef(owner: MethodOwner, provider: string): Promise<string | undefined> {
+  const { clause, params } = customerRefFilter(owner, provider);
+  const { rows } = await adminPool.query(
+    `SELECT provider_customer_id FROM pay_customer_refs WHERE ${clause} LIMIT 1`, params,
+  );
+  return rows[0]?.provider_customer_id;
+}
+
 /**
  * Begin a capture session. For Stripe this creates a SetupIntent and returns the
  * client_secret + publishable key the browser needs to render Stripe Elements and
@@ -177,7 +235,10 @@ export async function beginCaptureSession(
     // mode) needs the owner's billing currency to render.
     const isWallet = methodType === 'google_pay' || methodType === 'apple_pay';
     const pmTypes = scheme ? [scheme.stripeType] : ['card'];
-    const { clientSecret, setupIntentId } = await adapter.createSetupIntent(pmTypes);
+    // Attach the capture to the owner's Stripe Customer so the vaulted method can
+    // be charged off-session later (recurring billing).
+    const customerId = await getOrCreateCustomerRef(owner, account);
+    const { clientSecret, setupIntentId } = await adapter.createSetupIntent(pmTypes, customerId);
     const config = await getConfigForOwner(cfgOwner);
     const currency = isWallet ? await resolveOwnerCurrency(owner) : undefined;
     return {

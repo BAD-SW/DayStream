@@ -74,6 +74,11 @@ app.use(cors({
 // Cookie parser
 app.use(cookieParser());
 
+// Payment webhooks need the UNTOUCHED raw body for provider signature verification
+// (Stripe's constructEvent requires byte-exact bytes). Mount a raw parser on the
+// webhook path BEFORE the global JSON parser so express.json() doesn't consume it.
+app.use('/api/v1/pay/webhooks', express.raw({ type: '*/*', limit: '1mb' }));
+
 // Body parsing
 app.use(express.json({ limit: '1mb' }));
 
