@@ -8,6 +8,8 @@ import { TIMEZONES } from '../utils/timezones';
 import { CurrencyInput } from '../components/CurrencyInput';
 import { Tabs } from '../design-system/components/navigation/Tabs';
 import { TenantBillingTab } from '../components/TenantBillingTab';
+import { TerritoryPicker } from '../components/TerritoryPicker';
+import { TenantProspectsPanel } from '../components/TenantProspectsPanel';
 import { TenantChargeHistory } from '../components/TenantChargeHistory';
 import { TenantAuditTrail } from '../components/TenantAuditTrail';
 
@@ -275,13 +277,8 @@ export function Tenants() {
         setSelectedTenant(updated);
       }
 
-      // Save territory if location provided
-      if (editForm.territory_postal_code) {
-        await apiClient.put(`/v1/prospects/territories/${selectedTenant.id}`, {
-          location: editForm.territory_postal_code,
-          territory_radius_km: parseInt(editForm.territory_radius_km) || 50,
-        });
-      }
+      // Territory is managed by the TerritoryPicker (its own preview/confirm/save
+      // flow), not auto-saved from this form — so nothing to do here for territory.
 
       // Refresh tenant list and selected tenant detail
       const tenantsRes = await apiClient.get('/v1/admin/tenants');
@@ -479,12 +476,14 @@ export function Tenants() {
 
                 <div style={styles.formDivider}>Territory</div>
 
-                <div style={styles.formRow}>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label}>Location</label>
-                    <input style={styles.input} type="text" placeholder="e.g., Chicago, IL or South Florida" value={editForm.territory_postal_code} onChange={(e) => setEditForm({ ...editForm, territory_postal_code: e.target.value })} />
-                  </div>
-                </div>
+                <TerritoryPicker
+                  tenantId={selectedTenant.id}
+                  onSaved={(r) => setEditForm({ ...editForm, territory_postal_code: r.territory_address })}
+                />
+
+                <div style={styles.formDivider}>Prospects</div>
+
+                <TenantProspectsPanel tenantId={selectedTenant.id} />
 
                 <div style={styles.formDivider}>Owner Details</div>
 

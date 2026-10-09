@@ -16,32 +16,89 @@ async function getSearchResolution(): Promise<number> {
   } catch { return SEARCH_PARENT_RESOLUTION; }
 }
 
+const MAX_TERRITORY_HEXES = 10000;
+
+/** A viewport bounding box (Google geocode bounds) as a fillable ring. */
+export interface TerritoryViewport {
+  ne: { lat: number; lng: number };
+  sw: { lat: number; lng: number };
+}
+
+/** Build a rectangular [lat,lng] ring from a viewport bounding box. */
+function viewportToRing(vp: TerritoryViewport): number[][] {
+  const { ne, sw } = vp;
+  return [
+    [ne.lat, ne.lng],
+    [ne.lat, sw.lng],
+    [sw.lat, sw.lng],
+    [sw.lat, ne.lng],
+    [ne.lat, ne.lng],
+  ];
+}
+
 /**
- * Generate H3 hexagon indexes for a territory.
- * If a boundary polygon is available (from Nominatim), fills the polygon shape.
- * Otherwise falls back to point + radius disk.
+ * Generate H3 hexagon indexes for a territory, in priority order:
+ *   1. A boundary (one ring per polygon — e.g. every island of a state): fill ALL
+ *      rings and union them, so non-contiguous areas are fully covered.
+ *   2. No boundary but a geocoder viewport (informal names like "South Florida"):
+ *      fill the viewport bounding box — far closer to the real extent than a dot.
+ *   3. Last resort: a point + radius disk around the center.
+ * The storage/search path is unchanged — this only affects which hexes are produced.
  */
-export async function generateTerritoryHexagons(lat: number, lng: number, radiusKm: number, boundaryPolygon?: number[][]): Promise<string[]> {
+export async function generateTerritoryHexagons(
+  lat: number,
+  lng: number,
+  radiusKm: number,
+  boundaryRings?: number[][][] | number[][] | null,
+  viewport?: TerritoryViewport | null,
+): Promise<string[]> {
   const resolution = DISPLAY_RESOLUTION;
 
-  if (boundaryPolygon && boundaryPolygon.length >= 3) {
-    // Use polygon fill — fills the exact boundary shape
-    try {
-      const hexagons = h3.polygonToCells(boundaryPolygon, resolution);
-      if (hexagons.length > 0) {
-        logger.info(`[H3Territory] Generated ${hexagons.length} hexagons from boundary polygon (resolution=${resolution})`);
-        if (hexagons.length > 10000) {
-          logger.warn(`[H3Territory] Territory has ${hexagons.length} hexagons — capping at 10000`);
-          return hexagons.slice(0, 10000);
+  // Normalize boundary input: accept a single ring (back-compat) or a list of rings.
+  let rings: number[][][] | null = null;
+  if (boundaryRings && boundaryRings.length > 0) {
+    rings = Array.isArray((boundaryRings as any)[0]?.[0]) ? (boundaryRings as number[][][]) : [boundaryRings as number[][]];
+  }
+
+  const fillRings = (ringList: number[][][], source: string): string[] => {
+    const set = new Set<string>();
+    for (const ring of ringList) {
+      if (ring.length < 3) continue;
+      try {
+        for (const hex of h3.polygonToCells(ring, resolution)) {
+          set.add(hex);
+          if (set.size >= MAX_TERRITORY_HEXES) break;
         }
-        return hexagons;
+      } catch (err: any) {
+        logger.error(`[H3Territory] polygonToCells failed for a ${source} ring: ${err.message}`);
       }
-    } catch (err: any) {
-      logger.error(`[H3Territory] polygonToCells failed: ${err.message}, falling back to gridDisk`);
+      if (set.size >= MAX_TERRITORY_HEXES) break;
+    }
+    return Array.from(set);
+  };
+
+  // 1. Boundary rings (all pieces).
+  if (rings) {
+    const hexagons = fillRings(rings, 'boundary');
+    if (hexagons.length > 0) {
+      logger.info(`[H3Territory] Generated ${hexagons.length} hexagons from ${rings.length} boundary ring(s) (resolution=${resolution})`);
+      if (hexagons.length >= MAX_TERRITORY_HEXES) {
+        logger.warn(`[H3Territory] Territory hit the ${MAX_TERRITORY_HEXES}-hexagon cap`);
+      }
+      return hexagons;
     }
   }
 
-  // Fallback: point + radius disk
+  // 2. No boundary: fill the geocoder viewport bounding box if we have one.
+  if (viewport) {
+    const hexagons = fillRings([viewportToRing(viewport)], 'viewport');
+    if (hexagons.length > 0) {
+      logger.info(`[H3Territory] Generated ${hexagons.length} hexagons from geocoder viewport (resolution=${resolution})`);
+      return hexagons;
+    }
+  }
+
+  // 3. Last resort: point + radius disk.
   const centerHex = h3.latLngToCell(lat, lng, resolution);
   const edgeLengthKm = 2.6; // resolution 7
   const ringSize = Math.ceil(radiusKm / (edgeLengthKm * 1.5));
@@ -50,32 +107,187 @@ export async function generateTerritoryHexagons(lat: number, lng: number, radius
   return hexagons;
 }
 
+// Resolution envelope for territory tiling. Must stay within [MIN..MAX]:
+//   - <= 8 so the population filter's cellToChildren(hex, 8) is valid
+//   - >= SEARCH_PARENT_RESOLUTION (4) so the search's cellToParent(hex, 4) is valid
+// We tile at the FINEST resolution whose cell count fits the budget, stepping coarser
+// only when a territory would otherwise be too large — so coverage is always COMPLETE
+// (never truncated) while staying as sharp as the budget allows.
+const TILING_MAX_RESOLUTION = 7;  // sharpest (~2.6km edge)
+const TILING_MIN_RESOLUTION = 5;  // coarsest we'll drop to (~8km edge) — still > search parent (4)
+const TILING_BUDGET = 10000;      // max cells stored per territory
+
+/** Fill all boundary rings at a given resolution, unioned. */
+function fillRingsAtResolution(rings: number[][][], resolution: number, budget: number): string[] {
+  const set = new Set<string>();
+  for (const ring of rings) {
+    if (ring.length < 3) continue;
+    try {
+      for (const hex of h3.polygonToCells(ring, resolution)) {
+        set.add(hex);
+        if (set.size > budget) return Array.from(set); // over budget — bail early
+      }
+    } catch (err: any) {
+      logger.error(`[H3Territory] polygonToCells failed at res ${resolution}: ${err.message}`);
+    }
+  }
+  return Array.from(set);
+}
+
+export interface TerritoryTiling {
+  hexagons: string[];
+  resolution: number;
+  complete: boolean;      // true if the whole boundary was tiled within budget
+  hasBoundary: boolean;   // false => fell back to viewport/disk (approximate rectangle)
+}
+
 /**
- * Extract a flat coordinate array from GeoJSON for use with h3.polygonToCells.
- * GeoJSON uses [lng, lat] — H3 expects [lat, lng].
+ * Tile a territory COMPLETELY from its boundary rings, auto-coarsening the H3
+ * resolution (7 → 6 → 5) until the whole area fits the cell budget, so a large
+ * region (e.g. Andalusia) is never silently truncated. Falls back to the geocoder
+ * viewport (a rectangle) only when there is no true boundary, flagged via hasBoundary.
  */
-export function geojsonToH3Polygon(geojson: any): number[][] | null {
+export function tileTerritoryComplete(
+  boundaryRings: number[][][] | null,
+  viewport?: TerritoryViewport | null,
+  centerLat?: number,
+  centerLng?: number,
+  radiusKm = 50,
+): TerritoryTiling {
+  if (boundaryRings && boundaryRings.length > 0) {
+    for (let resolution = TILING_MAX_RESOLUTION; resolution >= TILING_MIN_RESOLUTION; resolution--) {
+      const hexagons = fillRingsAtResolution(boundaryRings, resolution, TILING_BUDGET);
+      if (hexagons.length <= TILING_BUDGET) {
+        logger.info(`[H3Territory] Tiled ${boundaryRings.length} ring(s) completely at res ${resolution}: ${hexagons.length} hexagons`);
+        return { hexagons, resolution, complete: true, hasBoundary: true };
+      }
+      logger.info(`[H3Territory] res ${resolution} over budget (${hexagons.length} > ${TILING_BUDGET}); coarsening`);
+    }
+    // Even the coarsest resolution exceeds budget — tile at MIN and accept the cap.
+    const hexagons = fillRingsAtResolution(boundaryRings, TILING_MIN_RESOLUTION, TILING_BUDGET).slice(0, TILING_BUDGET);
+    logger.warn(`[H3Territory] Territory exceeds budget even at res ${TILING_MIN_RESOLUTION}; capped at ${hexagons.length}`);
+    return { hexagons, resolution: TILING_MIN_RESOLUTION, complete: false, hasBoundary: true };
+  }
+
+  // No boundary: viewport rectangle (approximate) or point+radius disk.
+  if (viewport) {
+    for (let resolution = TILING_MAX_RESOLUTION; resolution >= TILING_MIN_RESOLUTION; resolution--) {
+      const hexagons = fillRingsAtResolution([viewportToRing(viewport)], resolution, TILING_BUDGET);
+      if (hexagons.length <= TILING_BUDGET) {
+        return { hexagons, resolution, complete: true, hasBoundary: false };
+      }
+    }
+  }
+  if (centerLat != null && centerLng != null) {
+    const centerHex = h3.latLngToCell(centerLat, centerLng, TILING_MAX_RESOLUTION);
+    const ringSize = Math.ceil(radiusKm / (2.6 * 1.5));
+    return { hexagons: h3.gridDisk(centerHex, ringSize), resolution: TILING_MAX_RESOLUTION, complete: true, hasBoundary: false };
+  }
+  return { hexagons: [], resolution: TILING_MAX_RESOLUTION, complete: false, hasBoundary: false };
+}
+
+/** One area in a composed territory: boundary rings, or a viewport/center fallback. */
+export interface TerritoryComponentInput {
+  rings: number[][][] | null;
+  viewport?: TerritoryViewport | null;
+  centerLat?: number;
+  centerLng?: number;
+}
+
+export interface ComposedTiling extends TerritoryTiling {
+  componentCount: number;
+}
+
+/**
+ * Tile a COMPOSED territory from several component areas (e.g. a set of counties),
+ * unioning all their hexes. The whole set is auto-coarsened TOGETHER (res 7 → 6 → 5)
+ * so the combined territory stays within budget and complete — not each component in
+ * isolation. Components with no boundary fall back to their viewport/disk; hasBoundary
+ * is true only if EVERY component had a real boundary.
+ */
+export function tileManyComplete(components: TerritoryComponentInput[]): ComposedTiling {
+  if (components.length === 0) {
+    return { hexagons: [], resolution: TILING_MAX_RESOLUTION, complete: false, hasBoundary: false, componentCount: 0 };
+  }
+
+  const allHaveBoundary = components.every((c) => c.rings && c.rings.length > 0);
+
+  // Build the ring set per component, substituting a viewport rectangle when a
+  // component has no boundary, so the union still covers that area.
+  const ringSets: number[][][][] = components.map((c) => {
+    if (c.rings && c.rings.length > 0) return c.rings;
+    if (c.viewport) return [viewportToRing(c.viewport)];
+    return [];
+  });
+
+  for (let resolution = TILING_MAX_RESOLUTION; resolution >= TILING_MIN_RESOLUTION; resolution--) {
+    const set = new Set<string>();
+    let over = false;
+    for (const rings of ringSets) {
+      for (const hex of fillRingsAtResolution(rings, resolution, TILING_BUDGET)) {
+        set.add(hex);
+        if (set.size > TILING_BUDGET) { over = true; break; }
+      }
+      if (over) break;
+    }
+    if (!over) {
+      logger.info(`[H3Territory] Composed ${components.length} area(s) completely at res ${resolution}: ${set.size} hexagons`);
+      return { hexagons: Array.from(set), resolution, complete: true, hasBoundary: allHaveBoundary, componentCount: components.length };
+    }
+    logger.info(`[H3Territory] composed res ${resolution} over budget; coarsening`);
+  }
+
+  // Still over budget at the coarsest resolution — tile at MIN and cap.
+  const set = new Set<string>();
+  for (const rings of ringSets) {
+    for (const hex of fillRingsAtResolution(rings, TILING_MIN_RESOLUTION, TILING_BUDGET)) {
+      set.add(hex);
+      if (set.size >= TILING_BUDGET) break;
+    }
+    if (set.size >= TILING_BUDGET) break;
+  }
+  logger.warn(`[H3Territory] Composed territory exceeds budget even at res ${TILING_MIN_RESOLUTION}; capped at ${set.size}`);
+  return { hexagons: Array.from(set), resolution: TILING_MIN_RESOLUTION, complete: false, hasBoundary: allHaveBoundary, componentCount: components.length };
+}
+
+/**
+ * Extract ALL outer rings from a GeoJSON geometry for h3.polygonToCells.
+ * A Polygon yields one ring; a MultiPolygon yields one ring PER polygon (e.g. one
+ * per island for a state like Hawaii) — every piece is kept, not just the largest,
+ * so non-contiguous territories are fully covered. GeoJSON uses [lng, lat]; H3
+ * expects [lat, lng]. Returns null when no usable ring exists.
+ */
+export function geojsonToH3Rings(geojson: any): number[][][] | null {
   if (!geojson) return null;
 
-  let coords: number[][];
-
+  const outerRings: number[][][] = [];
   if (geojson.type === 'Polygon') {
-    // Take the outer ring (first array)
-    coords = geojson.coordinates[0];
+    // coordinates[0] is the outer ring (any holes in [1..] are ignored).
+    outerRings.push(geojson.coordinates[0]);
   } else if (geojson.type === 'MultiPolygon') {
-    // Take the largest polygon (most coordinates)
-    let largest = geojson.coordinates[0][0];
-    for (const poly of geojson.coordinates) {
-      if (poly[0].length > largest.length) largest = poly[0];
-    }
-    coords = largest;
+    for (const poly of geojson.coordinates) outerRings.push(poly[0]);
   } else {
     return null;
   }
 
-  // GeoJSON is [lng, lat], H3 expects [lat, lng]
-  const h3Coords = coords.map(([lng, lat]: number[]) => [lat, lng]);
-  return h3Coords.length >= 3 ? h3Coords : null;
+  // Convert each ring [lng,lat] → [lat,lng]; drop degenerate rings (<3 points).
+  const rings = outerRings
+    .map((ring) => ring.map(([lng, lat]: number[]) => [lat, lng]))
+    .filter((ring) => ring.length >= 3);
+
+  return rings.length > 0 ? rings : null;
+}
+
+/**
+ * Back-compat single-ring helper. Returns the largest outer ring (most vertices).
+ * Prefer geojsonToH3Rings, which keeps every piece of a MultiPolygon.
+ */
+export function geojsonToH3Polygon(geojson: any): number[][] | null {
+  const rings = geojsonToH3Rings(geojson);
+  if (!rings) return null;
+  let largest = rings[0];
+  for (const r of rings) if (r.length > largest.length) largest = r;
+  return largest;
 }
 
 /**
