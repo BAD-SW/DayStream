@@ -37,8 +37,10 @@ const NAV_ICONS: Record<string, NavIconName> = {
   'system-tenants': 'Building2',
   'system-coverage': 'Map',
   'system-prospect-categories': 'Tags',
+  'system-reports': 'ChartLine',
   'system-users': 'Users',
   'system-config': 'SlidersHorizontal',
+  'system-processes': 'Workflow',
   'system-audit': 'ScrollText',
   'system-query-editor': 'Database',
 };
@@ -59,8 +61,8 @@ const NAV_GROUPS: Record<'business' | 'tenant' | 'system', GroupDef[]> = {
   ],
   system: [
     { label: 'Overview', ids: ['dashboard'] },
-    { label: 'Platform', ids: ['system-tenants', 'system-coverage', 'system-prospect-categories'] },
-    { label: 'Administration', ids: ['system-users', 'system-config', 'system-audit', 'system-query-editor'] },
+    { label: 'Platform', ids: ['system-tenants', 'system-coverage', 'system-prospect-categories', 'system-reports'] },
+    { label: 'Administration', ids: ['system-users', 'system-config', 'system-processes', 'system-audit', 'system-query-editor'] },
   ],
 };
 

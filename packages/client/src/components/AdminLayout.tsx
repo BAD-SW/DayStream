@@ -15,10 +15,12 @@ const SYSTEM_GROUPS: ShellNavGroup[] = [
     { id: 'tenants', label: 'Tenants', path: '/admin/tenants', icon: 'Building2' },
     { id: 'coverage-map', label: 'Coverage Map', path: '/admin/coverage-map', icon: 'Map' },
     { id: 'prospect-categories', label: 'Prospect Categories', path: '/admin/prospect-categories', icon: 'Tags' },
+    { id: 'system-reports', label: 'Reports', path: '/admin/system-reports', icon: 'ChartLine' },
   ] },
   { label: 'Administration', items: [
     { id: 'users', label: 'Users', path: '/admin/users', icon: 'Users' },
     { id: 'config', label: 'Configuration', path: '/admin/config', icon: 'SlidersHorizontal' },
+    { id: 'processes', label: 'Processes', path: '/admin/processes', icon: 'Workflow' },
     { id: 'audit-log', label: 'Audit Log', path: '/admin/audit-log', icon: 'ScrollText' },
     { id: 'query-editor', label: 'Query Editor', path: '/query-editor', icon: 'Database' },
   ] },

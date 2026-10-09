@@ -79,8 +79,10 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   { id: 'system-tenants', phase: 0, icon: '🏢', titleKey: 'Tenants', descriptionKey: 'Manage tenants', path: '/admin/tenants', personas: ['system'] },
   { id: 'system-coverage', phase: 0, icon: '🗺️', titleKey: 'Coverage Map', descriptionKey: 'Territory coverage', path: '/admin/coverage-map', personas: ['system'] },
   { id: 'system-prospect-categories', phase: 0, icon: '🏷️', titleKey: 'Prospect Categories', descriptionKey: 'Google Places types', path: '/admin/prospect-categories', personas: ['system'] },
+  { id: 'system-reports', phase: 0, icon: '📈', titleKey: 'Reports', descriptionKey: 'Platform-wide reporting', path: '/admin/system-reports', personas: ['system'] },
   { id: 'system-users', phase: 0, icon: '👤', titleKey: 'Users', descriptionKey: 'Manage system and tenant users', path: '/admin/users', personas: ['system'] },
   { id: 'system-config', phase: 0, icon: '⚙️', titleKey: 'Configuration', descriptionKey: 'Platform settings', path: '/admin/config', personas: ['system'] },
+  { id: 'system-processes', phase: 0, icon: '⚡', titleKey: 'Processes', descriptionKey: 'Scheduled jobs and background processes', path: '/admin/processes', personas: ['system'] },
   { id: 'system-audit', phase: 0, icon: '🔍', titleKey: 'Audit Log', descriptionKey: 'System activity', path: '/admin/audit-log', personas: ['system'] },
   { id: 'system-query-editor', phase: 24, icon: '🗄️', titleKey: 'Query Editor', descriptionKey: 'Execute database queries', path: '/query-editor', personas: ['system'] },
 ];

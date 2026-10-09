@@ -9,6 +9,9 @@ import { Profile } from './pages/Profile';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { Tenants } from './pages/Tenants';
 import { AdminConfig } from './pages/AdminConfig';
+import { SystemReports } from './pages/SystemReports';
+import { SystemReportRunner } from './pages/reports/SystemReportRunner';
+import { SystemProcesses } from './pages/SystemProcesses';
 import { AdminUsers } from './pages/AdminUsers';
 import { AuditLog } from './pages/AuditLog';
 import { QueryEditorPage } from './pages/QueryEditorPage';
@@ -256,6 +259,30 @@ export function App() {
           element={
             <ProtectedRoute requiredRole="Manager" layout="none">
               <AdminLayout><AdminConfig /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/system-reports"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><SystemReports /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/system-reports/run/:reportId"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><SystemReportRunner /></AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/processes"
+          element={
+            <ProtectedRoute requiredRole="Manager" layout="none">
+              <AdminLayout><SystemProcesses /></AdminLayout>
             </ProtectedRoute>
           }
         />
