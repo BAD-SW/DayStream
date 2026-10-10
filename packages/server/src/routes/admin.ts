@@ -127,11 +127,8 @@ const updateTenantSchema = Joi.object({
   owner_email: Joi.string().email({ tlds: false }),
   owner_first_name: Joi.string().min(1).max(100),
   owner_last_name: Joi.string().min(1).max(100),
-  billing_frequency: Joi.string().valid('monthly', 'quarterly', 'semi-annual', 'annual'),
-  billing_amount: Joi.number().integer().min(0),
-  billing_method: Joi.string().max(50),
-  signup_date: Joi.string().isoDate(),
-  next_billing_date: Joi.string().isoDate().allow(null, ''),
+  contract_start_date: Joi.string().isoDate().allow(null, ''),
+  contract_expire_date: Joi.string().isoDate().allow(null, ''),
 }).min(1);
 
 adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantSchema), async (req: Request, res: Response) => {
@@ -157,20 +154,10 @@ adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantS
       }
     }
 
-    // Update tenant record
+    // Update tenant record. Tenant billing terms now live in the Billing Plan system
+    // (pay_tenant_billing_plans), so there's no recurring-billing auto-calc here.
     const tenantEntries = Object.entries(tenantFields);
     if (tenantEntries.length > 0) {
-      // Auto-calculate next_billing_date if frequency or signup_date changed but next_billing_date wasn't explicitly set
-      if (!tenantFields.next_billing_date && (tenantFields.billing_frequency || tenantFields.signup_date)) {
-        const lastBilling = tenant.last_billing_date;
-        const signupDt = tenantFields.signup_date || tenant.signup_date;
-        const freq = tenantFields.billing_frequency || tenant.billing_frequency || 'monthly';
-        const nextBilling = calculateNextBillingDate(lastBilling, signupDt, freq);
-        if (nextBilling && !tenantEntries.find(([k]) => k === 'next_billing_date')) {
-          tenantEntries.push(['next_billing_date', nextBilling]);
-        }
-      }
-
       const fields: string[] = [];
       const values: any[] = [];
       let idx = 1;
@@ -727,7 +714,7 @@ adminRouter.get('/my-billing', tenantContext, requirePermission('settings:*'), a
   try {
     const authReq = req as AuthenticatedRequest;
     const { rows } = await adminPool.query(
-      `SELECT billing_frequency, billing_amount, billing_method, currency, signup_date, next_billing_date, last_billing_date,
+      `SELECT currency, last_billing_date, contract_start_date, contract_expire_date,
               payment_bank_name, payment_account_holder, payment_account_number, payment_routing_number, payment_iban,
               payment_card_last4, payment_card_brand, payment_card_exp
        FROM sys_tenants WHERE id = $1`,
@@ -1082,14 +1069,9 @@ adminRouter.get('/reports/system-kpis', requirePermission('*:*'), async (req: Re
     const { rows: bizRows } = await adminPool.query(
       "SELECT COUNT(*) as count FROM sys_businesses WHERE status = 'active'",
     );
-    // Expected MTD: tenants whose next_billing_date is this month
-    const { rows: expectedMtdRows } = await adminPool.query(
-      `SELECT COALESCE(SUM(billing_amount), 0) as total
-       FROM sys_tenants WHERE status = 'active' AND billing_amount > 0
-       AND next_billing_date >= date_trunc('month', NOW())
-       AND next_billing_date < date_trunc('month', NOW()) + INTERVAL '1 month'`,
-    );
-    // Platform revenue YTD and MTD - placeholder until billing ledger exists
+    // Platform revenue is now tracked in the Billing Plan ledger
+    // (pay_platform_billing_charges), not on sys_tenants. These remain placeholders
+    // until that ledger is surfaced here.
     success(res, {
       total_tenants: parseInt(tenantRows[0].count),
       total_businesses: parseInt(bizRows[0].count),
@@ -1097,7 +1079,7 @@ adminRouter.get('/reports/system-kpis', requirePermission('*:*'), async (req: Re
       platform_revenue_ytd_prior: 0,
       platform_revenue_mtd: 0,
       platform_revenue_mtd_prior: 0,
-      expected_remaining_mtd: parseInt(expectedMtdRows[0].total),
+      expected_remaining_mtd: 0,
     });
   } catch (err: any) {
     error(res, 'Failed to get system KPIs', 'INTERNAL_ERROR', 500);
@@ -1115,14 +1097,9 @@ adminRouter.get('/reports/system-revenue/detail', requirePermission('*:*'), asyn
       );
       success(res, rows);
     } else if (type === 'expected_mtd') {
-      const { rows } = await adminPool.query(
-        `SELECT name, billing_amount, next_billing_date
-         FROM sys_tenants WHERE status = 'active' AND billing_amount > 0
-         AND next_billing_date >= date_trunc('month', NOW())
-         AND next_billing_date < date_trunc('month', NOW()) + INTERVAL '1 month'
-         ORDER BY next_billing_date`,
-      );
-      success(res, rows);
+      // Expected revenue now derives from the Billing Plan ledger
+      // (pay_platform_billing_charges), not from removed sys_tenants columns.
+      success(res, []);
     } else {
       success(res, []);
     }

@@ -113,7 +113,7 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
 
 export async function getTenants() {
   const { rows } = await adminPool.query(
-    'SELECT id, name, slug, status, default_language, currency, timezone, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date, created_at, updated_at FROM sys_tenants ORDER BY created_at DESC',
+    'SELECT id, name, slug, status, default_language, currency, timezone, contract_start_date, contract_expire_date, created_at, updated_at FROM sys_tenants ORDER BY created_at DESC',
   );
   return rows;
 }

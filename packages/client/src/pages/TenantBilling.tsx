@@ -1,16 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
-import { formatCurrency } from '../utils/currency';
 
 interface BillingInfo {
-  billing_frequency: string;
-  billing_amount: number;
-  billing_method: string;
   currency: string;
-  signup_date: string | null;
-  next_billing_date: string | null;
   last_billing_date: string | null;
+  contract_start_date: string | null;
+  contract_expire_date: string | null;
   payment_bank_name: string | null;
   payment_account_holder: string | null;
   payment_account_number: string | null;
@@ -78,10 +74,6 @@ export function TenantBilling() {
   if (loading) return <p style={styles.loading}>Loading...</p>;
   if (!billing) return <p style={styles.loading}>Unable to load billing information.</p>;
 
-  const formatAmount = (cents: number, currency: string) => {
-    return formatCurrency(cents, currency);
-  };
-
   return (
     <div>
       <h2 style={styles.heading}>Billing</h2>
@@ -92,24 +84,20 @@ export function TenantBilling() {
         <h3 style={styles.cardTitle}>Plan Summary</h3>
         <div style={styles.summaryGrid}>
           <div style={styles.summaryItem}>
-            <span style={styles.summaryLabel}>Frequency</span>
-            <span style={styles.summaryValue}>{(billing.billing_frequency || 'monthly').charAt(0).toUpperCase() + (billing.billing_frequency || 'monthly').slice(1)}</span>
+            <span style={styles.summaryLabel}>Billing</span>
+            <span style={styles.summaryValue}>Monthly</span>
           </div>
           <div style={styles.summaryItem}>
-            <span style={styles.summaryLabel}>Amount</span>
-            <span style={styles.summaryValue}>{billing.billing_amount ? formatAmount(billing.billing_amount, billing.currency) : '—'}</span>
+            <span style={styles.summaryLabel}>Contract Start</span>
+            <span style={styles.summaryValue}>{billing.contract_start_date ? new Date(billing.contract_start_date).toLocaleDateString() : '—'}</span>
           </div>
           <div style={styles.summaryItem}>
-            <span style={styles.summaryLabel}>Next Payment</span>
-            <span style={styles.summaryValue}>{billing.next_billing_date ? new Date(billing.next_billing_date).toLocaleDateString() : '—'}</span>
+            <span style={styles.summaryLabel}>Contract Expires</span>
+            <span style={styles.summaryValue}>{billing.contract_expire_date ? new Date(billing.contract_expire_date).toLocaleDateString() : '—'}</span>
           </div>
           <div style={styles.summaryItem}>
             <span style={styles.summaryLabel}>Last Payment</span>
             <span style={styles.summaryValue}>{billing.last_billing_date ? new Date(billing.last_billing_date).toLocaleDateString() : 'Never'}</span>
-          </div>
-          <div style={styles.summaryItem}>
-            <span style={styles.summaryLabel}>Member Since</span>
-            <span style={styles.summaryValue}>{billing.signup_date ? new Date(billing.signup_date).toLocaleDateString() : '—'}</span>
           </div>
           <div style={styles.summaryItem}>
             <span style={styles.summaryLabel}>Status</span>

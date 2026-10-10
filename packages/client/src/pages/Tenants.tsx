@@ -5,7 +5,6 @@ import { Button } from '../design-system/components/actions/Button';
 import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { apiClient } from '../api/client';
 import { TIMEZONES } from '../utils/timezones';
-import { CurrencyInput } from '../components/CurrencyInput';
 import { Tabs } from '../design-system/components/navigation/Tabs';
 import { TenantBillingTab } from '../components/TenantBillingTab';
 import { TerritoryPicker } from '../components/TerritoryPicker';
@@ -21,11 +20,8 @@ interface Tenant {
   default_language: string;
   currency: string;
   timezone: string;
-  billing_frequency: string;
-  billing_amount: number;
-  billing_method: string;
-  signup_date: string | null;
-  next_billing_date: string | null;
+  contract_start_date: string | null;
+  contract_expire_date: string | null;
   created_at: string;
   updated_at: string;
   owner?: {
@@ -57,11 +53,9 @@ interface EditTenantForm {
   owner_email: string;
   owner_first_name: string;
   owner_last_name: string;
-  billing_frequency: string;
-  billing_amount: number; // stored as cents
-  billing_method: string;
-  signup_date: string;
-  next_billing_date: string;
+  // Contract (for reporting)
+  contract_start_date: string;
+  contract_expire_date: string;
   // Territory
   territory_postal_code: string;
   territory_radius_km: string;
@@ -222,11 +216,8 @@ export function Tenants() {
       owner_email: tenant.owner?.email || '',
       owner_first_name: tenant.owner?.first_name || '',
       owner_last_name: tenant.owner?.last_name || '',
-      billing_frequency: tenant.billing_frequency || 'monthly',
-      billing_amount: tenant.billing_amount || 0,
-      billing_method: tenant.billing_method || 'tbd',
-      signup_date: tenant.signup_date ? tenant.signup_date.split('T')[0] : '',
-      next_billing_date: tenant.next_billing_date ? tenant.next_billing_date.split('T')[0] : '',
+      contract_start_date: tenant.contract_start_date ? tenant.contract_start_date.split('T')[0] : '',
+      contract_expire_date: tenant.contract_expire_date ? tenant.contract_expire_date.split('T')[0] : '',
       receiving_bank_name: (tenant as any).receiving_bank_name || '',
       receiving_account_holder: (tenant as any).receiving_account_holder || '',
       receiving_account_number: (tenant as any).receiving_account_number || '',
@@ -261,11 +252,8 @@ export function Tenants() {
       if (editForm.owner_email !== (selectedTenant.owner?.email || '')) body.owner_email = editForm.owner_email;
       if (editForm.owner_first_name !== (selectedTenant.owner?.first_name || '')) body.owner_first_name = editForm.owner_first_name;
       if (editForm.owner_last_name !== (selectedTenant.owner?.last_name || '')) body.owner_last_name = editForm.owner_last_name;
-      if (editForm.billing_frequency !== (selectedTenant.billing_frequency || 'monthly')) body.billing_frequency = editForm.billing_frequency;
-      if (editForm.billing_amount !== (selectedTenant.billing_amount || 0)) body.billing_amount = editForm.billing_amount;
-      if (editForm.billing_method !== (selectedTenant.billing_method || 'tbd')) body.billing_method = editForm.billing_method;
-      if (editForm.signup_date !== (selectedTenant.signup_date || '')) body.signup_date = editForm.signup_date || null;
-      if (editForm.next_billing_date !== (selectedTenant.next_billing_date || '')) body.next_billing_date = editForm.next_billing_date || null;
+      if (editForm.contract_start_date !== (selectedTenant.contract_start_date ? selectedTenant.contract_start_date.split('T')[0] : '')) body.contract_start_date = editForm.contract_start_date || null;
+      if (editForm.contract_expire_date !== (selectedTenant.contract_expire_date ? selectedTenant.contract_expire_date.split('T')[0] : '')) body.contract_expire_date = editForm.contract_expire_date || null;
 
       if (Object.keys(body).length === 0 && !editForm.territory_postal_code) {
         return;
@@ -521,59 +509,16 @@ export function Tenants() {
                   />
                 </div>
 
-                <div style={styles.formDivider}>Billing</div>
+                <div style={styles.formDivider}>Contract</div>
 
                 <div style={styles.formRow}>
                   <div style={styles.formGroup}>
-                    <label style={styles.label} htmlFor="edit-billing-freq">Frequency</label>
-                    <select id="edit-billing-freq" style={styles.input} value={editForm.billing_frequency} onChange={(e) => {
-                      const newFreq = e.target.value;
-                      const ref = editForm.signup_date;
-                      if (ref) {
-                        const refDate = new Date(ref);
-                        const now = new Date();
-                        let next = new Date(refDate);
-                        const add = (d: Date) => { const r = new Date(d); switch(newFreq) { case 'monthly': r.setMonth(r.getMonth()+1); break; case 'quarterly': r.setMonth(r.getMonth()+3); break; case 'semi-annual': r.setMonth(r.getMonth()+6); break; case 'annual': r.setFullYear(r.getFullYear()+1); break; default: r.setMonth(r.getMonth()+1); } return r; };
-                        while (next <= now) { next = add(next); }
-                        setEditForm({ ...editForm, billing_frequency: newFreq, next_billing_date: next.toISOString().split('T')[0] });
-                      } else {
-                        setEditForm({ ...editForm, billing_frequency: newFreq });
-                      }
-                    }}>
-                      <option value="monthly">Monthly</option>
-                      <option value="quarterly">Quarterly</option>
-                      <option value="semi-annual">Semi-Annual</option>
-                      <option value="annual">Annual</option>
-                    </select>
+                    <label style={styles.label} htmlFor="edit-contract-start">Contract Start Date</label>
+                    <input id="edit-contract-start" style={styles.input} type="date" value={editForm.contract_start_date} onChange={(e) => setEditForm({ ...editForm, contract_start_date: e.target.value })} />
                   </div>
                   <div style={styles.formGroup}>
-                    <label style={styles.label} htmlFor="edit-billing-amt">Amount</label>
-                    <CurrencyInput style={styles.input} value={editForm.billing_amount} onChange={(cents) => setEditForm({ ...editForm, billing_amount: cents })} />
-                  </div>
-                </div>
-
-                <div style={styles.formRow}>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label} htmlFor="edit-signup-date">Signup Date</label>
-                    <input id="edit-signup-date" style={styles.input} type="date" value={editForm.signup_date} onChange={(e) => {
-                      const newSignup = e.target.value;
-                      if (newSignup) {
-                        const freq = editForm.billing_frequency || 'monthly';
-                        const refDate = new Date(newSignup);
-                        const now = new Date();
-                        let next = new Date(refDate);
-                        const add = (d: Date) => { const r = new Date(d); switch(freq) { case 'monthly': r.setMonth(r.getMonth()+1); break; case 'quarterly': r.setMonth(r.getMonth()+3); break; case 'semi-annual': r.setMonth(r.getMonth()+6); break; case 'annual': r.setFullYear(r.getFullYear()+1); break; default: r.setMonth(r.getMonth()+1); } return r; };
-                        while (next <= now) { next = add(next); }
-                        setEditForm({ ...editForm, signup_date: newSignup, next_billing_date: next.toISOString().split('T')[0] });
-                      } else {
-                        setEditForm({ ...editForm, signup_date: newSignup });
-                      }
-                    }} />
-                  </div>
-                  <div style={styles.formGroup}>
-                    <label style={styles.label} htmlFor="edit-next-billing">Next Billing Date</label>
-                    <input id="edit-next-billing" style={{ ...styles.input, opacity: 0.7, cursor: 'not-allowed' }} type="date" value={editForm.next_billing_date} disabled />
-                    <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>Auto-calculated from last billing date and frequency.</span>
+                    <label style={styles.label} htmlFor="edit-contract-expire">Contract Expire Date</label>
+                    <input id="edit-contract-expire" style={styles.input} type="date" value={editForm.contract_expire_date} onChange={(e) => setEditForm({ ...editForm, contract_expire_date: e.target.value })} />
                   </div>
                 </div>
 
