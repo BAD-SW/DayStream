@@ -99,13 +99,45 @@ export const jobRegistry: Record<string, JobHandler> = {
     return { processed: atRiskCandidates.length + churnedCandidates.length, transitioned };
   },
 
-  // Billing processor — recurring charges and membership lifecycle
+  // Billing processor (Section C) — membership renewal charges + lifecycle.
+  // Business-scoped: one schedule per business. Auto-resumes paused memberships
+  // whose pause window elapsed, then charges enrollments due today against their
+  // stored method (advancing the period / rolling usage on success, opening a
+  // dunning attempt on failure).
   'billing_process': async (ctx) => {
     const businessId = ctx.businessId!;   // business-scoped job: businessId is always present
     const { autoResumeExpiredPauses } = await import('../services/membership.service');
+    const { runMembershipRenewals } = await import('../services/membership-renewal.service');
+    const { processDunning } = await import('../services/dunning.service');
+
+    // Resume first so a just-resumed enrollment with a due date is picked up.
     const resumed = await autoResumeExpiredPauses(businessId);
-    logger.info(`Recurring charges triggered for business ${businessId}: ${resumed} paused membership(s) auto-resumed`);
-    return { status: 'checked', auto_resumed: resumed };
+    // Renewals (skips enrollments already in a dunning cycle), then process the
+    // dunning retries that are due today.
+    const renewals = await runMembershipRenewals(businessId, new Date(), ctx.executionId ?? null);
+    const dunning = await processDunning(businessId, new Date(), ctx.executionId ?? null);
+
+    logger.info(`Recurring charges (business ${businessId}): ${resumed} auto-resumed, renewals ${JSON.stringify(renewals)}, dunning ${JSON.stringify(dunning)}`);
+    return { status: 'processed', auto_resumed: resumed, renewals, dunning };
+  },
+
+  // Payment reconciliation (Section C) — re-checks PENDING processed charges
+  // (bank draws that settle asynchronously) against the provider and finalizes
+  // them to completed/failed. This is the reliable settlement path: because each
+  // business charges on its own Stripe account, the platform webhook can't verify
+  // or route a business charge's event, so we poll frequently.
+  //
+  // Normally runs PLATFORM-scoped (one job every ~15 min sweeping every business
+  // with pending charges) so nothing needs per-business provisioning. If invoked
+  // with a businessId (manual/scoped trigger), it reconciles just that business.
+  'payment_reconciliation': async (ctx) => {
+    const recon = await import('../services/payment-reconciliation.service');
+    if (ctx.businessId) {
+      const summary = await recon.reconcileBusinessPayments(ctx.businessId);
+      return { status: 'reconciled', scope: 'business', ...summary };
+    }
+    const summary = await recon.reconcileAllPendingPayments();
+    return { status: 'reconciled', scope: 'platform', ...summary };
   },
 
   // Marketing campaign dispatch (checks for scheduled campaigns ready to send)
@@ -155,7 +187,8 @@ export const jobRegistry: Record<string, JobHandler> = {
 export function getAvailableJobTypes(): Array<{ type: string; label: string; description: string; defaultFrequency: string }> {
   return [
     { type: 'revenue_recognition', label: 'Revenue Recognition', description: 'Recognize deferred membership revenue daily', defaultFrequency: 'daily' },
-    { type: 'billing_process', label: 'Recurring Charges', description: 'Process scheduled payments for active memberships', defaultFrequency: 'daily' },
+    { type: 'billing_process', label: 'Recurring Charges', description: 'Charge membership renewals due today and auto-resume expired pauses', defaultFrequency: 'daily' },
+    { type: 'payment_reconciliation', label: 'Payment Reconciliation', description: 'Finalize pending bank-draw payments once they settle at the provider', defaultFrequency: 'every_15min' },
     { type: 'campaign_dispatch', label: 'Campaigns', description: 'Send scheduled marketing campaigns', defaultFrequency: 'every_15min' },
     { type: 'lifecycle_evaluation', label: 'Customer Lifecycle', description: 'Automatically transition inactive customers through lifecycle stages', defaultFrequency: 'daily' },
     { type: 'report_aggregation', label: 'Reporting', description: 'Aggregate daily metrics for reporting dashboards', defaultFrequency: 'daily' },

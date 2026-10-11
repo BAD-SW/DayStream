@@ -243,52 +243,63 @@ Mirror of Section A one level down (`platform → tenant` becomes `tenant → bu
 
 Businesses collect directly into their own connected accounts.
 
-- [ ] 4.1 Migration — Section C additions
+- [x] ✅ 4.1 Migration — Section C additions
   - Extend `pay_transactions` (provider_reference, is_processed, payment_method_id, enrollment_id, invoice_id)
   - Add `mbr_enrollments.payment_method_id`
   - `pay_dunning_attempts`, `pay_invoices` + `pay_invoice_line_items`, `pay_gift_cards`, `pay_vouchers`
+  - _Done: migration `127_section_c_customer_payments.sql`. New tables carry tenant_id+business_id, app-level isolation (115+ style, no RLS); money as INTEGER cents. Added `pay_invoice_number_seq` (per-business gapless invoice counter). pay_transactions/mbr_enrollments extensions follow those tables' business-scoped (no tenant_id) shape. Applied + schema verified._
   - _Requirements: C1, C2, C5, C6, C7, C8_
 
-- [ ] 4.2 One-time payments
+- [x] ✅ 4.2 One-time payments
   - Processed (adapter.charge against business account), manual-record, and gift-card redemption paths
   - Confirm booking on success / release on failure; write `pay_transactions`; issue receipt
+  - _Done: `services/customer-payment.service.ts` — `takeOneTimePayment()` branches on `METHOD_CATALOG` class: processed → business connection charge via `getConfiguredAdapter`/`adapter.charge` (idempotent, off-session stored method); manual-record → ledger only; gift_card → `SELECT … FOR UPDATE` balance validate+decrement in one txn. Writes `pay_transactions` with the 127 columns (`is_processed`, `provider_reference`, `payment_method_id`). Self-generated `PAY-…` reference. On non-failed: `confirmBooking`; on failed: `cancelBooking`. Receipt via `queueNotification('payment.receipt')` (non-blocking). Migration `128` widened the ledger `payment_method` CHECK to the full catalog. Wiring to a route is task 4.9._
   - _Requirements: C1_
 
-- [ ] 4.3 Subscription charging (flesh out existing `billing_process` stub)
+- [x] ✅ 4.3 Subscription charging (flesh out existing `billing_process` stub)
   - Charge `mbr_enrollments` due today against the enrollment's stored method; advance `next_billing_date`; roll `mbr_usage`; update Membership (Phase 08)
   - Keep existing auto-resume behavior
+  - _Done: `services/membership-renewal.service.ts` — `runMembershipRenewals(businessId, today, executionId)` selects active enrollments with `next_billing_date <= today`, charges `plan.price` against the enrollment's stored method via the shared `chargeStoredMethod` primitive (extracted from the one-time service), writes `pay_transactions` (`enrollment_id` set, `is_processed`). On success/async-pending it advances `current_period_start/end` + `next_billing_date` (reusing `calculatePeriodEnd`/`calculateNextBillingDate`), rolls `mbr_usage` for the new period (`ON CONFLICT DO NOTHING`), and applies a scheduled `pending_plan_id` downgrade — all in one txn. Zero-price plans advance without a charge. On failure: records the failed row + opens the first `pay_dunning_attempts` row (full retry schedule = 4.4) and leaves the period intact. Idempotent via period advancement + a stable `enroll:{id}:{period}` key. `billing_process` job now runs auto-resume then renewals. Operates on `mbr_enrollments` (current model), not legacy `mem_memberships`._
   - _Requirements: C2, C6a_
 
-- [ ] 4.4 Dunning
+- [x] ✅ 4.4 Dunning
   - On failed renewal, open `pay_dunning_attempts`, set past_due, retry per configurable schedule, escalate notices, expire on exhaustion
+  - _Done: `services/dunning.service.ts` — `processDunning(businessId, today)` runs in `billing_process` after renewals: retries each due pending attempt via the shared `chargeStoredMethod`; on recovery it settles the attempt + renews the enrollment (`advanceEnrollmentPeriod`, which reactivates status) + audits `dunning.recovered`; on failure it schedules the next retry per the configurable schedule (business config `dunning.retry_days`, default `[1,3,7]` in `dunning-schedule.ts`) with escalating `payment.dunning` notices (friendly → warning → final), and expires the enrollment (`status='expired'`) when the schedule is exhausted. Renewals skip enrollments with an open attempt (no double-charge, C6.6). All events audit-logged (C6.7). Manual staff retry via `retryDunningNow(enrollmentId, businessId, userId)` (C6.8; route wiring is 4.9). Idempotency keys are per (enrollment, period, attempt). The first attempt opened in 4.3 now also follows the configured schedule._
   - _Requirements: C6_
 
-- [ ] 4.5 Customer payment methods (built on Phase 1 vault)
+- [x] ✅ 4.5 Customer payment methods (built on Phase 1 vault)
   - Add/remove/list/default on the customer; replace the "Payment Methods on File" placeholder with the real tokenized store
+  - _Done: the Phase 1 vault + shared `/v1/pay/methods` routes (list/capture-session/store/default/remove) already support `owner_level='customer'` end-to-end. Replaced the placeholder card in `CustomerDetail.tsx` (Overview tab) with the reusable `<PaymentMethods owner={{owner_level:'customer', customer_id, business_id}}>` — real list + add (card / direct debit via the existing SEPA/ACH capture) + set-default + remove. Tenant scope resolves server-side from the JWT. Note: the `/pay/methods` routes are context-scoped (no explicit `requirePermission`) — flagged for the Phase 7 hardening pass._
   - _Requirements: C3_
 
-- [ ] 4.6 Refunds (full/partial, permissioned, reason, credit note, manual-method handling)
+- [x] ✅ 4.6 Refunds (full/partial, permissioned, reason, credit note, manual-method handling)
+  - _Done: `services/refund.service.ts` — `refundTransaction()` loads the original completed charge (business-scoped), validates the amount against the remaining refundable (original − prior refunds), requires a reason. Processed charges (`is_processed` + `provider_reference`) are returned to the original method via `adapter.refund` against the business connection (idempotency key per charge+amount); manual-record / gift-card charges are refunded out-of-band (recorded only). Writes a `refund` `pay_transactions` row linked to the parent (`refund_of_id`, mirrors method + booking/enrollment linkage so net-collections net out). Emits a `payment.credit_note` notification (C4.8) and audit-logs `payment.refunded` with the initiating user (C4.9). Route `POST /v1/pay/refunds` gated with `requirePermission('bookings:*')` (Manager + Owner carry it, Staff does not → C4.5). Full refund when amount omitted. Note: booking/membership status auto-update (C4.7) is intentionally NOT coupled to the refund (a refund ≠ a cancellation decision; status changes stay in the booking lifecycle) — matches the design's refund section._
   - _Requirements: C4_
 
-- [ ] 4.7 Invoicing (optional per business)
+- [x] ✅ 4.7 Invoicing (optional per business)
   - Issue payable invoice with due date, sequential per-business numbering, settle online via Processed method, PDF
+  - _Done: `services/invoice.service.ts` — opt-in per business via `invoicing.enabled` config (`isInvoicingEnabled`). `issueInvoice` allocates the next **gapless** per-business number from `pay_invoice_number_seq` (locked `FOR UPDATE` inside the insert txn so a rollback never burns a number), writes `pay_invoices` + `pay_invoice_line_items`, computes subtotal/tax/total, sets due date + status `issued`. `settleInvoice` pays the outstanding balance online via a Processed method (shared `chargeStoredMethod`), records a `pay_transactions` row with `invoice_id`, and marks the invoice `paid`. `renderInvoicePdf` produces a pdfkit PDF (business header incl. new `tax_id` from migration 129, bill-to, line-item table, tax/totals). `listInvoices`/`getInvoice`/`voidInvoice`/`emailInvoice` round it out; issue/pay/void audited. Routes under `/v1/pay/invoices` (list/issue/get/settle/void/email/pdf) — issue/settle/void gated Manager+Owner (`bookings:*`), read/pdf (`bookings:read`). Full per-business invoice branding is Phase 6 (C12)._
   - _Requirements: C5_
 
-- [ ] 4.8 Gift cards & vouchers (business-scoped; partial redemption; Pricing Engine integration)
+- [x] ✅ 4.8 Gift cards & vouchers (business-scoped; partial redemption; Pricing Engine integration)
+  - _Done: `services/gift-card.service.ts` — `createGiftCard` (unique `GC-XXXX-XXXX` code with collision retry, balance = initial amount, recipient + expiry, audited, recipient email C7.3), `listGiftCards`, `getGiftCard` (balance + redemption **history** derived from `pay_transactions`, C7.6), `getGiftCardByCode` (checkout balance lookup, business-scoped so never cross-business C7.8), `voidGiftCard`, `emailGiftCard`. Partial redemption already lives in `customer-payment.runGiftCard` (built in 4.2). `services/voucher.service.ts` — `createVoucher` (free/fixed/percentage, `applies_to` service/category scope, single-/multi-use, max redemptions, expiry; audited C8.8), `validateVoucher` returns `{valid, discountCents, …}` computed against a supplied amount (free = full, fixed = min(value,amount), percentage = basis points) in a Price_Breakdown-compatible shape for the checkout to fold in (C8.7) without rewriting the pricing engine, `redeemVoucher` (locked count increment, exhausts single-use/max, audited), `voidVoucher`. Routes under `/v1/pay/gift-cards` and `/v1/pay/vouchers` (list/create/get/void/email/lookup/validate) — create/void = Manager+Owner (`bookings:*`), read/lookup/validate = `bookings:read`. Live voucher application into checkout's Price_Breakdown is wired in 4.10; gift-card/voucher email branding is Phase 6 (C12)._
   - _Requirements: C7, C8_
 
-- [ ] 4.9 Section C API
+- [x] ✅ 4.9 Section C API
   - Charges, refunds, transactions list, subscriptions, accepted-methods get/set, invoices, gift cards/vouchers, business run-time setting
+  - _Done: all Section C endpoints live under `/v1/pay`. New in 4.9: `POST /charges` (one-time payment via `takeOneTimePayment`; `bookings:update` so Staff can take payment), `GET /transactions` (filterable ledger list), `POST /subscriptions` + `PUT /subscriptions/:id/cancel` (membership enroll/cancel; links `payment_method_id`), `GET`/`PUT /accepted-methods`, and the per-business `GET`/`PUT /billing-schedule` + `POST /billing-run-now` (C6a — a `scope_level='business'` `billing_process` schedule row, mirroring the tenant/platform schedule; `getBusinessBillingSchedule`/`saveBusinessBillingSchedule`/`runBusinessBillingNow` added to `membership-renewal.service`). Already present from 4.6–4.8: `/refunds`, `/invoices*`, `/gift-cards*`, `/vouchers*`, `/methods*`, `/available-methods`, `/catalog`. Error codes mapped to HTTP. Payment **reporting** (`/pay/reports/*`) is Phase 5 and document **branding** (`/pay/branding`) is Phase 6 — out of scope for Section C core._
   - _Requirements: C1–C8, C6a_
 
-- [ ] 4.10 Section C UI
+- [x] ✅ 4.10 Section C UI
   - Checkout / take-payment screen (method selection via the availability resolver; processed + manual-record + gift-card paths)
   - Customer billing area (stored methods via the shared component — replaces the "Payment Methods on File" placeholder, subscriptions, transaction history, invoices to pay)
   - Business payment settings (accepted methods, invoicing on/off, run-time setting)
+  - _Done: added the Section C client API layer to `api/payments.ts` (charges/transactions/subscriptions/accepted-methods/invoices/gift-cards/vouchers/billing-schedule/invoicing-enabled). Built reusable `TakePaymentModal` (method picker from the availability resolver → processed stored-method / manual-record / gift-card, with CurrencyInput + friendly error mapping) and wired the CustomerDetail "Record Payment" button to it. Checkout: replaced the hardcoded-cash completion with a method selector (processed/gift-card charge via `takeCharge` then `completeOrder` with the reference; manual records directly). BusinessSettings "Payment Methods" tab: accepted methods re-pointed to `/v1/pay/accepted-methods`, plus an Invoicing on/off toggle and a Recurring Billing Run time/timezone/enabled + Run Now control. CustomerDetail gained a "Billing" tab (transaction history + outstanding invoices with Pay + PDF). Deferred (not blockers): standalone gift-card purchase + voucher-management admin screens, subscription-management UI on the customer record (enroll/cancel exists via the membership card + API), and an in-app PDF viewer (PDF opens via blob). Branding is Phase 6._
   - _Requirements: C1–C8, C6a; design §12_
 
 - [ ] 4.11 Checkpoint — verify customer payments (backend + UI together)
   - Through the app: take a one-time payment (processed + manual), run a subscription renewal with real charge, trigger and recover a dunning cycle, process a refund, issue and settle an invoice, redeem a gift card
+  - _Validation additions (surfaced during checkpoint testing, 2026-07): (1) Refund UI — Refund action + modal on the CustomerDetail Billing tab (full/partial, reason, calls the 4.6 refund API). (2) Issue-Invoice UI — "Issue Invoice" modal (due date + line items) on the Billing tab (calls the 4.7 issue API; shown when invoicing is enabled). (3) **Section C → General Ledger posting** (`services/payment-journal.service.ts`): settled one-time charges, membership renewals, and invoice settlements post a balanced `fin_journal_entries` (Debit Cash 1100 / Credit Service Revenue 4100; enrollment-linked credits Deferred Revenue 2400 so the recognition job stays balanced); refunds post the reversal. Idempotent, non-blocking, no-ops if the business COA isn't seeded. Pending bank-debit charges are journaled only once completed; gift-card redemption is intentionally NOT journaled as cash→revenue (liability was funded at purchase). **NOTE: GL/journal posting for Section C is NOT in this spec's requirements/design — it is a cross-domain integration added during validation and should be formalized by KIRO (accounting integration) with the pending items: tax-split on credit, bank-debit settlement posting via webhook, and gift-card purchase/redemption liability accounting.**_
 
 ---
 

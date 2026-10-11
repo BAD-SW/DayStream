@@ -101,10 +101,12 @@ export async function getTransactions(filters: TransactionFilters) {
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
       `SELECT t.*, c.first_name AS customer_first_name, c.last_name AS customer_last_name, c.email AS customer_email,
-              u.first_name AS processed_by_first_name, u.last_name AS processed_by_last_name
+              u.first_name AS processed_by_first_name, u.last_name AS processed_by_last_name,
+              ${PURPOSE_SELECT}
        FROM pay_transactions t
        JOIN cus_customers c ON c.id = t.customer_id
        LEFT JOIN usr_users u ON u.id = t.processed_by
+       ${PURPOSE_JOINS}
        WHERE ${where}
        ORDER BY t.created_at DESC
        LIMIT ${limit} OFFSET ${offset}`,
@@ -114,24 +116,127 @@ export async function getTransactions(filters: TransactionFilters) {
   ]);
 
   return {
-    transactions: dataResult.rows,
+    transactions: dataResult.rows.map(withPurpose),
     total: countResult.rows[0].total,
     page,
     limit,
   };
 }
 
+/**
+ * "What is this payment FOR?" resolution.
+ *
+ * A pay_transactions row links to at most one meaningful thing. These JOINs pull
+ * the readable bits (invoice number, booked service + time, membership plan name,
+ * the original charge of a refund), and `withPurpose` below turns them into a
+ * human label + a structured link the UI can navigate:
+ *   - invoice     -> open the invoice PDF
+ *   - booking     -> /bookings/:id/edit
+ *   - membership  -> /memberships/:planId   (resolved from the enrollment/legacy plan)
+ *   - others (deposit on account, gift-card redemption, refund, plain payment)
+ *     carry a label but no destination.
+ *
+ * All JOINs are LEFT and keyed on the row's own linkage columns, so they add at
+ * most one matching row each and never change the result set.
+ */
+const PURPOSE_JOINS = `
+  LEFT JOIN pay_invoices pi ON pi.id = t.invoice_id
+  LEFT JOIN apt_bookings ab ON ab.id = t.booking_id
+  LEFT JOIN svc_services ss ON ss.id = ab.service_id
+  LEFT JOIN mbr_enrollments me ON me.id = t.enrollment_id
+  LEFT JOIN mbr_plans mp ON mp.id = me.plan_id
+  LEFT JOIN mem_memberships mm ON mm.id = t.membership_id
+  LEFT JOIN mem_plans mmp ON mmp.id = mm.plan_id
+  LEFT JOIN pay_transactions orig ON orig.id = t.refund_of_id
+  LEFT JOIN fin_orders fo
+    ON fo.business_id = t.business_id
+   AND fo.payment_reference = t.reference_number
+   AND fo.status = 'completed'
+`;
+
+const PURPOSE_SELECT = `
+  pi.invoice_number       AS purpose_invoice_number,
+  ab.start_time           AS purpose_booking_start,
+  ss.name                 AS purpose_service_name,
+  mp.name                 AS purpose_plan_name,
+  me.plan_id              AS purpose_enrollment_plan_id,
+  mmp.name                AS purpose_legacy_plan_name,
+  mm.plan_id              AS purpose_legacy_plan_id,
+  orig.reference_number   AS purpose_refund_of_reference,
+  fo.id                   AS purpose_order_id,
+  fo.order_number         AS purpose_order_number
+`;
+
+export type PurposeLinkType = 'invoice' | 'order' | 'booking' | 'membership';
+
+export interface PurposeLink {
+  type: PurposeLinkType;
+  id: string;           // invoice id, booking id, or membership PLAN id
+}
+
+/** Derive the human label + navigable link for a transaction row from the JOINed fields. */
+function withPurpose(row: any): any {
+  const label = resolvePurposeLabel(row);
+  const link = resolvePurposeLink(row);
+  // Strip the raw purpose_* scratch columns from the response; keep the result clean.
+  const clean: any = {};
+  for (const k of Object.keys(row)) {
+    if (!k.startsWith('purpose_')) clean[k] = row[k];
+  }
+  clean.purpose_label = label;
+  clean.purpose_link = link;
+  return clean;
+}
+
+function resolvePurposeLabel(row: any): string {
+  // Refund first: a refund row is "about" the charge it reverses, regardless of
+  // any linkage it inherited.
+  if (row.type === 'refund') {
+    return row.purpose_refund_of_reference
+      ? `Refund of ${row.purpose_refund_of_reference}`
+      : 'Refund';
+  }
+  if (row.purpose_invoice_number != null) return `Invoice #${row.purpose_invoice_number}`;
+  if (row.purpose_order_number) return `Order ${row.purpose_order_number}`;
+  if (row.payment_method === 'account_credit') return 'Account credit applied';
+  if (row.purpose_service_name) {
+    const when = row.purpose_booking_start
+      ? ` · ${new Date(row.purpose_booking_start).toLocaleDateString()}`
+      : '';
+    return `Booking: ${row.purpose_service_name}${when}`;
+  }
+  if (row.purpose_plan_name) return `${row.purpose_plan_name} membership`;
+  if (row.purpose_legacy_plan_name) return `${row.purpose_legacy_plan_name} membership`;
+  if (row.gift_card_code) return `Gift card ${row.gift_card_code}`;
+  // No linkage: money taken/held without being tied to a specific sale yet.
+  return row.type === 'credit' ? 'Account credit' : 'Payment on account';
+}
+
+function resolvePurposeLink(row: any): PurposeLink | null {
+  if (row.type === 'refund') return null;         // original charge isn't a navigable page
+  if (row.purpose_invoice_number != null && row.invoice_id) return { type: 'invoice', id: row.invoice_id };
+  if (row.purpose_order_id) return { type: 'order', id: row.purpose_order_id };
+  if (row.purpose_service_name && row.booking_id) return { type: 'booking', id: row.booking_id };
+  // Membership links go to the PLAN page (the only membership detail route), using
+  // the plan id resolved from the enrollment (or legacy membership).
+  if (row.purpose_enrollment_plan_id) return { type: 'membership', id: row.purpose_enrollment_plan_id };
+  if (row.purpose_legacy_plan_id) return { type: 'membership', id: row.purpose_legacy_plan_id };
+  return null;
+}
+
 export async function getTransactionById(id: string, businessId: string) {
   const { rows } = await adminPool.query(
     `SELECT t.*, c.first_name AS customer_first_name, c.last_name AS customer_last_name, c.email AS customer_email,
-            u.first_name AS processed_by_first_name, u.last_name AS processed_by_last_name
+            u.first_name AS processed_by_first_name, u.last_name AS processed_by_last_name,
+            ${PURPOSE_SELECT}
      FROM pay_transactions t
      JOIN cus_customers c ON c.id = t.customer_id
      LEFT JOIN usr_users u ON u.id = t.processed_by
+     ${PURPOSE_JOINS}
      WHERE t.id = $1 AND t.business_id = $2`,
     [id, businessId],
   );
-  return rows[0] || null;
+  return rows[0] ? withPurpose(rows[0]) : null;
 }
 
 export async function getTransactionSummary(businessId: string) {
@@ -234,23 +339,40 @@ export async function getRefundableCharges(filters: RefundableFilters) {
 
 // --- Accepted Payment Methods ---
 
-const ALL_METHODS = ['cash', 'card', 'bank_transfer', 'check', 'gift_card', 'google_pay', 'apple_pay', 'other'];
+const ALL_METHODS = ['cash', 'card', 'bank_draw', 'bank_transfer', 'check', 'gift_card', 'google_pay', 'apple_pay', 'other'];
 
-export async function getAcceptedMethods(businessId: string) {
+/** Methods enabled by default when a business has no explicit setting for them. */
+function defaultEnabled(method: string): boolean {
+  // Wallets and the bank-draw pull require an integration/mandate flow, so they
+  // default OFF; everything else defaults ON so a new business can take payment.
+  return method !== 'google_pay' && method !== 'apple_pay' && method !== 'bank_draw';
+}
+
+/**
+ * The effective accepted-methods map for a business: the full catalog, with each
+ * method's enabled flag taken from the stored row when present, otherwise its
+ * default. This matters because a business can have a PARTIAL set of rows (e.g.
+ * only a disabled bank_draw from a backfill) — the missing standard methods must
+ * still resolve to their sensible default rather than disappearing. Both the
+ * Settings UI (getAcceptedMethods) and the charge-availability resolver read
+ * through this so they never diverge.
+ */
+export async function getEffectiveAcceptedMethods(businessId: string): Promise<Record<string, boolean>> {
   const { rows } = await adminPool.query(
-    'SELECT method, enabled FROM pay_accepted_methods WHERE business_id = $1 ORDER BY method',
+    'SELECT method, enabled FROM pay_accepted_methods WHERE business_id = $1',
     [businessId],
   );
-
-  // If no rows exist yet (business created before migration), return defaults
-  if (rows.length === 0) {
-    return ALL_METHODS.map((m) => ({
-      method: m,
-      enabled: m !== 'google_pay' && m !== 'apple_pay',
-    }));
+  const stored = new Map<string, boolean>(rows.map((r) => [r.method, r.enabled]));
+  const effective: Record<string, boolean> = {};
+  for (const m of ALL_METHODS) {
+    effective[m] = stored.has(m) ? stored.get(m)! : defaultEnabled(m);
   }
+  return effective;
+}
 
-  return rows;
+export async function getAcceptedMethods(businessId: string) {
+  const effective = await getEffectiveAcceptedMethods(businessId);
+  return ALL_METHODS.map((method) => ({ method, enabled: effective[method] }));
 }
 
 export async function updateAcceptedMethods(businessId: string, methods: { method: string; enabled: boolean }[]) {

@@ -3,9 +3,22 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import * as checkoutApi from '../api/checkout';
+import * as payApi from '../api/payments';
+import type { PaymentMethod, MethodType } from '../api/payments';
+import { AddPaymentMethodInline, AddMethodButton } from '../components/AddPaymentMethodInline';
 import * as customersApi from '../api/customers';
 import type { Order, OrderItem } from '../api/checkout';
 import { formatCurrency } from '../utils/currency';
+
+const PAY_METHOD_LABEL: Record<string, string> = {
+  cash: 'Cash', card: 'Card', bank_draw: 'Direct debit', bank_transfer: 'Bank transfer',
+  check: 'Check', gift_card: 'Gift card', google_pay: 'Google Pay', apple_pay: 'Apple Pay', other: 'Other',
+};
+
+const paySelectStyle: React.CSSProperties = {
+  padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
+  background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-base)',
+};
 
 export function Checkout() {
   const navigate = useNavigate();
@@ -23,6 +36,15 @@ export function Checkout() {
   const [showAddItem, setShowAddItem] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
+
+  // Payment method selection (replaces the old hardcoded cash completion).
+  const [acceptedMethods, setAcceptedMethods] = useState<string[]>([]);
+  const [storedMethods, setStoredMethods] = useState<PaymentMethod[]>([]);
+  const [payMethod, setPayMethod] = useState<string>('cash');
+  const [payStoredMethodId, setPayStoredMethodId] = useState<string>('');
+  const [payAddingMethod, setPayAddingMethod] = useState(false);
+  const [payGiftCode, setPayGiftCode] = useState('');
+  const [payCheckNumber, setPayCheckNumber] = useState('');
 
   // Customer search/create
   const [customerSearch, setCustomerSearch] = useState('');
@@ -144,6 +166,28 @@ export function Checkout() {
     } catch { /* silent */ }
   };
 
+  // Load the business's accepted methods (availability resolver) and, when the
+  // order has a customer, that customer's stored methods for processed payments.
+  useEffect(() => {
+    if (!businessId) return;
+    payApi.getAvailableMethods(businessId, false)
+      .then((avail) => setAcceptedMethods(avail.map((a) => a.method)))
+      .catch(() => setAcceptedMethods(['cash']));
+  }, [businessId]);
+
+  useEffect(() => {
+    if (!businessId || !order?.customer_id) { setStoredMethods([]); return; }
+    payApi.listPaymentMethods({ owner_level: 'customer', business_id: businessId, customer_id: order.customer_id })
+      .then((m) => {
+        setStoredMethods(m);
+        const def = m.find((x) => x.is_default) ?? m[0];
+        if (def) setPayStoredMethodId(def.id);
+      })
+      .catch(() => setStoredMethods([]));
+  }, [businessId, order?.customer_id]);
+
+  const isProcessedMethod = (m: string) => m === 'card' || m === 'bank_draw' || m === 'google_pay' || m === 'apple_pay';
+
   const handleComplete = async () => {
     if (!order) return;
     // Require customer when order contains a membership or package
@@ -152,12 +196,73 @@ export function Checkout() {
       alert('A customer is required when the order contains a membership or package.');
       return;
     }
+
+    const processed = isProcessedMethod(payMethod);
+    const isGift = payMethod === 'gift_card';
+
+    // Processed and gift-card payments move money/stored value and need a customer.
+    if ((processed || isGift) && !order.customer_id) {
+      alert('Select a customer to pay by card, direct debit, or gift card.');
+      return;
+    }
+    // Resolve the effective stored method for the selected class (bank_draw vs card).
+    const matchingStored = storedMethods.filter((m) =>
+      payMethod === 'bank_draw' ? m.method_type === 'bank_draw' : m.method_type !== 'bank_draw',
+    );
+    const effectiveStoredId = matchingStored.some((m) => m.id === payStoredMethodId)
+      ? payStoredMethodId : (matchingStored[0]?.id ?? '');
+
+    if (processed && !effectiveStoredId) {
+      alert('Select or add a payment method to charge.');
+      return;
+    }
+    if (isGift && !payGiftCode.trim()) {
+      alert('Enter a gift card code.');
+      return;
+    }
+
     setCompleting(true);
     try {
-      const completed = await checkoutApi.completeOrder(order.id, businessId, { payment_method: 'cash' });
+      let paymentReference: string | undefined;
+
+      // For processed / gift-card, take the charge through the payment platform
+      // first; only mark the order complete once the money/stored value is in.
+      if (processed || isGift) {
+        const charge = await payApi.takeCharge({
+          business_id: businessId,
+          customer_id: order.customer_id!,
+          method: payMethod as payApi.SectionCMethod,
+          amount: order.total_amount,
+          payment_method_id: processed ? effectiveStoredId : null,
+          gift_card_code: isGift ? payGiftCode.trim() : null,
+          description: `Order ${order.order_number}`,
+        });
+        if (charge.status === 'failed') {
+          alert(charge.failureReason || 'The payment was declined.');
+          setCompleting(false);
+          return;
+        }
+        paymentReference = charge.referenceNumber;
+      }
+
+      // For a check, the check number is the payment reference.
+      if (payMethod === 'check' && payCheckNumber.trim()) {
+        paymentReference = payCheckNumber.trim();
+      }
+
+      const completed = await checkoutApi.completeOrder(order.id, businessId, {
+        payment_method: payMethod,
+        payment_reference: paymentReference,
+      });
       navigate(`/receipt/${completed.id}`);
     } catch (err: any) {
-      alert(err?.response?.data?.error || 'Failed to complete payment');
+      const code = err?.response?.data?.code;
+      const msg = code === 'NO_CONNECTION'
+        ? 'This business has no active payment processor connected.'
+        : code === 'GIFT_CARD_INSUFFICIENT'
+          ? 'The gift card balance is less than the order total.'
+          : err?.response?.data?.error || 'Failed to complete payment';
+      alert(msg);
     } finally {
       setCompleting(false);
     }
@@ -370,9 +475,87 @@ export function Checkout() {
 
       {/* Payment Actions */}
       {isOpen && (
-        <div style={styles.actions}>
-          <Button onClick={handleComplete} loading={completing}>Complete Payment (Cash)</Button>
-          <Button variant="secondary" onClick={handleVoid}>Void Order</Button>
+        <div style={styles.card}>
+          <h3 style={{ color: 'var(--color-text)', margin: '0 0 12px', fontSize: 'var(--font-size-md)' }}>Payment</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '420px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Method</label>
+              <select
+                style={paySelectStyle}
+                value={payMethod}
+                onChange={(e) => { setPayMethod(e.target.value); setPayAddingMethod(false); setPayStoredMethodId(''); }}
+              >
+                {(acceptedMethods.length > 0 ? acceptedMethods : ['cash']).map((m) => (
+                  <option key={m} value={m}>{PAY_METHOD_LABEL[m] || m}</option>
+                ))}
+              </select>
+            </div>
+
+            {isProcessedMethod(payMethod) && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Payment card / method</label>
+                {!order.customer_id ? (
+                  <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning)' }}>Add a customer to pay by card or direct debit.</span>
+                ) : (
+                  <>
+                    {(() => {
+                      const matching = storedMethods.filter((m) =>
+                        payMethod === 'bank_draw' ? m.method_type === 'bank_draw' : m.method_type !== 'bank_draw',
+                      );
+                      const effectiveId = matching.some((m) => m.id === payStoredMethodId) ? payStoredMethodId : (matching[0]?.id ?? '');
+                      return matching.length > 0 && !payAddingMethod ? (
+                        <select style={paySelectStyle} value={effectiveId} onChange={(e) => setPayStoredMethodId(e.target.value)}>
+                          {matching.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.display_brand || m.method_type}{m.display_last4 ? ` ···· ${m.display_last4}` : ''}{m.is_default ? ' (default)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      ) : null;
+                    })()}
+                    {payAddingMethod ? (
+                      <AddPaymentMethodInline
+                        owner={{ owner_level: 'customer', business_id: businessId, customer_id: order.customer_id }}
+                        allowedTypes={[payMethod as MethodType]}
+                        onAdded={(m) => {
+                          setStoredMethods((prev) => [m, ...prev.filter((x) => x.id !== m.id)]);
+                          setPayStoredMethodId(m.id);
+                          setPayAddingMethod(false);
+                        }}
+                        onCancel={() => setPayAddingMethod(false)}
+                      />
+                    ) : (
+                      <AddMethodButton
+                        label={storedMethods.length > 0 ? 'Add a new card / method' : 'Add a card / method to charge'}
+                        onClick={() => setPayAddingMethod(true)}
+                      />
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {payMethod === 'gift_card' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Gift card code</label>
+                <input style={paySelectStyle} value={payGiftCode} placeholder="GC-XXXX-XXXX" onChange={(e) => setPayGiftCode(e.target.value)} />
+              </div>
+            )}
+
+            {payMethod === 'check' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Check number (optional)</label>
+                <input style={paySelectStyle} value={payCheckNumber} onChange={(e) => setPayCheckNumber(e.target.value)} />
+              </div>
+            )}
+          </div>
+
+          <div style={{ ...styles.actions, marginTop: '16px' }}>
+            <Button onClick={handleComplete} loading={completing}>
+              Complete Payment ({PAY_METHOD_LABEL[payMethod] || payMethod})
+            </Button>
+            <Button variant="secondary" onClick={handleVoid}>Void Order</Button>
+          </div>
         </div>
       )}
 

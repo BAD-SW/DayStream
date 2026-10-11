@@ -2,9 +2,13 @@ import { useState, useEffect } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
 import { useBusinessSettings } from '../context/BusinessSettingsContext';
+import { useContextManager } from '../context/ContextManager';
 import { ThemeGallery } from './settings/ThemeGallery';
+import { ProcessorConfigForm } from '../components/ProcessorConfigForm';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
 import { TabBar } from '../design-system/components/navigation/TabBar';
+import * as payApi from '../api/payments';
+import { TIMEZONES } from '../utils/timezones';
 
 type SettingsTab = 'system' | 'lifecycle' | 'processes' | 'notifications' | 'payment-methods' | 'integrations' | 'appearance';
 
@@ -558,7 +562,8 @@ function NotificationSettings() {
 const METHOD_INFO: { method: string; label: string; description: string; integrationOnly?: boolean }[] = [
   { method: 'cash', label: 'Cash', description: 'Accept cash payments in person' },
   { method: 'card', label: 'Card', description: 'Accept credit/debit card payments' },
-  { method: 'bank_transfer', label: 'Bank Transfer', description: 'Accept payments via bank routing and account number' },
+  { method: 'bank_draw', label: 'Direct Debit', description: 'Pull payments via SEPA/ACH direct debit mandate (requires a connected processor)', integrationOnly: true },
+  { method: 'bank_transfer', label: 'Bank Transfer', description: 'Record payments received via bank transfer' },
   { method: 'check', label: 'Check', description: 'Accept check payments' },
   { method: 'gift_card', label: 'Gift Card', description: 'Accept gift card codes as payment' },
   { method: 'google_pay', label: 'Google Pay', description: 'Accept Google Pay (requires integration)', integrationOnly: true },
@@ -575,8 +580,8 @@ function PaymentMethodsSettings() {
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
-    apiClient.get(`/v1/payments/methods?business_id=${businessId}`)
-      .then((res) => setMethods(res.data.data || []))
+    payApi.getAcceptedMethods(businessId)
+      .then((rows) => setMethods(rows || []))
       .catch(() => {
         // Default all manual methods to enabled if API fails
         setMethods(METHOD_INFO.map((m) => ({ method: m.method, enabled: !m.integrationOnly })));
@@ -593,7 +598,7 @@ function PaymentMethodsSettings() {
     setSaving(true);
     setMessage(null);
     try {
-      await apiClient.put('/v1/payments/methods', { business_id: businessId, methods });
+      await payApi.setAcceptedMethods(businessId, methods);
       setMessage('Payment methods saved.');
     } catch {
       setMessage('Failed to save payment methods.');
@@ -645,9 +650,133 @@ function PaymentMethodsSettings() {
       <div style={styles.actions}>
         <Button onClick={handleSave} loading={saving}>Save Payment Methods</Button>
       </div>
+
+      <div style={{ borderTop: '1px solid var(--color-border)', margin: '32px 0 0', paddingTop: '24px' }}>
+        <InvoicingSetting businessId={businessId} />
+      </div>
+
+      <div style={{ borderTop: '1px solid var(--color-border)', margin: '32px 0 0', paddingTop: '24px' }}>
+        <BillingRunTimeSetting businessId={businessId} />
+      </div>
     </div>
   );
 }
+
+// --- Invoicing on/off (C5.1) ---
+function InvoicingSetting({ businessId }: { businessId: string }) {
+  const [enabled, setEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!businessId) { setLoading(false); return; }
+    payApi.getInvoicingEnabled(businessId).then(setEnabled).catch(() => {}).finally(() => setLoading(false));
+  }, [businessId]);
+
+  const toggle = async (next: boolean) => {
+    setEnabled(next); setSaving(true);
+    try { await payApi.setInvoicingEnabled(businessId, next); }
+    catch { setEnabled(!next); alert('Failed to update invoicing setting'); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return null;
+  return (
+    <>
+      <h2 style={styles.sectionTitle}>Invoicing</h2>
+      <p style={styles.description}>
+        When enabled, you can issue payable invoices to customers (e.g. corporate clients) that they can settle online.
+        When off, you simply take payment at the time of service.
+      </p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface)', maxWidth: '480px' }}>
+        <span style={{ fontWeight: 600, fontSize: 'var(--font-size-base)', color: 'var(--color-text)' }}>Enable invoicing</span>
+        <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px', cursor: saving ? 'wait' : 'pointer' }}>
+          <input type="checkbox" checked={enabled} disabled={saving} onChange={(e) => toggle(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+          <span style={{ position: 'absolute', inset: 0, backgroundColor: enabled ? 'var(--color-primary)' : 'var(--color-border)', borderRadius: '12px', transition: 'background-color 0.2s' }} />
+          <span style={{ position: 'absolute', top: '2px', left: enabled ? '22px' : '2px', width: '20px', height: '20px', backgroundColor: '#fff', borderRadius: '50%', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+        </label>
+      </div>
+    </>
+  );
+}
+
+// --- Recurring-billing run time (C6a) ---
+function BillingRunTimeSetting({ businessId }: { businessId: string }) {
+  const [schedule, setSchedule] = useState<payApi.BusinessBillingSchedule | null>(null);
+  const [time, setTime] = useState('02:00');
+  const [tz, setTz] = useState('UTC');
+  const [enabled, setEnabled] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!businessId) { setLoading(false); return; }
+    payApi.getBusinessBillingSchedule(businessId)
+      .then((s) => {
+        setSchedule(s);
+        if (s) { setTime(s.scheduleTime); setTz(s.scheduleTimezone); setEnabled(s.enabled); }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [businessId]);
+
+  const save = async () => {
+    setSaving(true); setMessage(null);
+    try {
+      const s = await payApi.saveBusinessBillingSchedule(businessId, time, tz, enabled);
+      setSchedule(s);
+      setMessage('Billing run time saved.');
+    } catch { setMessage('Failed to save billing run time.'); }
+    finally { setSaving(false); }
+  };
+
+  const runNow = async () => {
+    setRunning(true); setMessage(null);
+    try { await payApi.runBusinessBillingNow(businessId); setMessage('Billing run started.'); }
+    catch { setMessage('Failed to run billing.'); }
+    finally { setRunning(false); }
+  };
+
+  if (loading) return null;
+  return (
+    <>
+      <h2 style={styles.sectionTitle}>Recurring Billing Run</h2>
+      <p style={styles.description}>
+        Membership renewals and payment retries run automatically each day at this time, in your chosen timezone.
+      </p>
+      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Run time</label>
+          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={settingInputStyle} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '220px' }}>
+          <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Timezone</label>
+          <select value={tz} onChange={(e) => setTz(e.target.value)} style={settingInputStyle}>
+            {TIMEZONES.map((z) => <option key={z.value} value={z.value}>{z.label}</option>)}
+          </select>
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enabled
+        </label>
+      </div>
+      {schedule?.nextRunAt && (
+        <p style={styles.muted}>Next run: {new Date(schedule.nextRunAt).toLocaleString()}{schedule.lastRunStatus ? ` · Last: ${schedule.lastRunStatus}` : ''}</p>
+      )}
+      {message && <p style={{ fontSize: 'var(--font-size-sm)', color: message.includes('Failed') ? 'var(--color-error)' : 'var(--color-success)', marginBottom: '12px' }}>{message}</p>}
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <Button onClick={save} loading={saving}>Save Run Time</Button>
+        <Button variant="secondary" onClick={runNow} loading={running}>Run Now</Button>
+      </div>
+    </>
+  );
+}
+
+const settingInputStyle: React.CSSProperties = {
+  padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: '8px',
+  background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-base)',
+};
 
 
 // ============================================================
@@ -655,13 +784,33 @@ function PaymentMethodsSettings() {
 // ============================================================
 
 function IntegrationsSettings() {
+  const { activeContext } = useContextManager();
+  const businessId = activeContext.businessId;
+
   return (
     <div style={styles.section}>
       <h2 style={styles.sectionTitle}>Integrations</h2>
       <p style={styles.description}>
         Connect external services to your business. Payment processors, calendars, accounting systems, and more will be configured here.
       </p>
-      <p style={styles.muted}>No integrations configured yet. Integration options will be available as they are developed.</p>
+
+      <div style={{ marginTop: 'var(--spacing-lg)' }}>
+        <h3 style={styles.sectionTitle}>Payment Processor</h3>
+        <p style={styles.description}>
+          Configure the payment provider your business uses to charge your customers. Credentials
+          are stored securely and never shown again after saving. This is the account customer
+          payments settle into.
+        </p>
+        {businessId ? (
+          <ProcessorConfigForm owner={{ owner_level: 'business', business_id: businessId }} />
+        ) : (
+          <p style={styles.muted}>Select a business to configure its payment processor.</p>
+        )}
+      </div>
+
+      <p style={{ ...styles.muted, marginTop: 'var(--spacing-lg)' }}>
+        Additional integrations (calendars, accounting, and more) will be available as they are developed.
+      </p>
     </div>
   );
 }

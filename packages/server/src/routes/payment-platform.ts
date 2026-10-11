@@ -14,6 +14,15 @@ import * as processorConfig from '../services/processor-config.service';
 import type { ConfigOwner } from '../services/processor-config.service';
 import * as platformBilling from '../services/platform-billing.service';
 import * as tenantBilling from '../services/tenant-billing.service';
+import { refundTransaction } from '../services/refund.service';
+import * as invoices from '../services/invoice.service';
+import * as giftCards from '../services/gift-card.service';
+import * as vouchers from '../services/voucher.service';
+import { takeOneTimePayment } from '../services/customer-payment.service';
+import * as accountCredit from '../services/account-credit.service';
+import * as paymentLedger from '../services/payment.service';
+import * as membership from '../services/membership.service';
+import * as membershipRenewal from '../services/membership-renewal.service';
 import { queryResourceAudit } from '../services/audit.service';
 import type { MethodType, PaymentProviderName } from '../services/payments';
 
@@ -55,11 +64,30 @@ paymentPlatformRouter.post('/webhooks/:provider', async (req: Request, res: Resp
     // reports the final outcome days later. Safe no-op if the ref isn't ours.
     if (event.providerReference && (event.type === 'charge.succeeded' || event.type === 'charge.failed')) {
       await reconcilePlatformCharge(event.providerReference, event.type);
+      // Best-effort Section C finalization. NOTE: because each business charges on
+      // its OWN provider account, this endpoint usually can't even verify a
+      // business charge's signature (it's signed with the business's webhook
+      // secret, not the platform's), so for Section C the reconciliation POLLER
+      // (payment_reconciliation job) is the reliable path. This hook only fires
+      // for the rare case the event does verify here; it's a safe no-op when the
+      // reference isn't a Section C charge.
+      await reconcileSectionCCharge(event.providerReference, event.type).catch(() => { /* poller is the backstop */ });
     }
 
     success(res, { received: true, type: event.type, reference: event.providerReference ?? null });
   } catch (err: any) { error(res, 'Webhook processing failed', 'INTERNAL_ERROR', 500); }
 });
+
+/** Best-effort finalize of a pending Section C customer charge from a webhook. */
+async function reconcileSectionCCharge(providerReference: string, type: 'charge.succeeded' | 'charge.failed'): Promise<void> {
+  const { rows } = await adminPool.query(
+    `SELECT id FROM pay_transactions WHERE provider_reference = $1 AND status = 'pending' AND is_processed = true LIMIT 1`,
+    [providerReference],
+  );
+  if (rows.length === 0) return;   // not a pending Section C charge
+  const { finalizePendingTransaction } = await import('../services/payment-finalization.service');
+  await finalizePendingTransaction(rows[0].id, type === 'charge.succeeded' ? 'succeeded' : 'failed');
+}
 
 /** Flip a pending platform billing charge to settled/failed when Stripe reports it. */
 async function reconcilePlatformCharge(providerReference: string, type: 'charge.succeeded' | 'charge.failed'): Promise<void> {
@@ -671,4 +699,562 @@ paymentPlatformRouter.delete('/methods/:id', async (req: Request, res: Response)
     if (!ok) { error(res, 'Payment method not found', 'NOT_FOUND', 404); return; }
     success(res, { removed: true });
   } catch (err: any) { error(res, 'Failed to remove payment method', 'INTERNAL_ERROR', 500); }
+});
+
+// ============================================================
+// Section C — Refunds (task 4.6 / Requirement C4). Manager/Owner only
+// (both carry 'bookings:*'; Staff does not), reason required.
+// ============================================================
+
+const refundSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  transaction_id: Joi.string().uuid().required(),   // the original charge
+  amount: Joi.number().integer().min(1).allow(null), // omit/null => full remaining refund
+  reason: Joi.string().min(1).max(500).required(),
+});
+
+paymentPlatformRouter.post('/refunds', requirePermission('bookings:*'), validate(refundSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const result = await refundTransaction({
+      businessId: req.body.business_id,
+      tenantId: authReq.tenantId,                     // scope from JWT, never the client
+      transactionId: req.body.transaction_id,
+      amountCents: req.body.amount ?? null,
+      reason: req.body.reason,
+      processedBy: authReq.user.sub,
+    });
+    success(res, result, undefined, 201);
+  } catch (e: any) {
+    const map: Record<string, number> = {
+      REASON_REQUIRED: 400, INVALID_AMOUNT: 400, EXCEEDS_REFUNDABLE: 400,
+      CHARGE_NOT_FOUND: 404, CHARGE_NOT_COMPLETED: 409, ALREADY_REFUNDED: 409, NO_CONNECTION: 409,
+    };
+    if (e?.code && map[e.code]) { error(res, e.message, e.code, map[e.code]); return; }
+    error(res, 'Failed to process refund', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// ============================================================
+// Section C — Invoicing (task 4.7 / Requirement C5). Issue/settle/void require
+// Manager/Owner ('bookings:*'); read/pdf require 'bookings:read'.
+// ============================================================
+
+const INVOICE_ERR_HTTP: Record<string, number> = {
+  INVOICING_DISABLED: 409, NO_LINE_ITEMS: 400, DUE_DATE_REQUIRED: 400, INVALID_TOTAL: 400,
+  INVOICE_NOT_FOUND: 404, ALREADY_PAID: 409, INVOICE_VOID: 409, NO_BALANCE: 409, NO_CONNECTION: 409,
+};
+function sendInvoiceError(res: Response, e: any, fallback: string): void {
+  if (e?.code && INVOICE_ERR_HTTP[e.code]) { error(res, e.message, e.code, INVOICE_ERR_HTTP[e.code]); return; }
+  error(res, fallback, 'INTERNAL_ERROR', 500);
+}
+
+// Whether this business has invoicing enabled.
+paymentPlatformRouter.get('/invoicing-enabled', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, { enabled: await invoices.isInvoicingEnabled(businessId) });
+  } catch (e: any) { error(res, 'Failed to read invoicing setting', 'INTERNAL_ERROR', 500); }
+});
+
+const invoicingEnabledSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  enabled: Joi.boolean().required(),
+});
+
+paymentPlatformRouter.put('/invoicing-enabled', requirePermission('bookings:*'), validate(invoicingEnabledSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const enabled = await invoices.setInvoicingEnabled(req.body.business_id, req.body.enabled, authReq.user.sub);
+    success(res, { enabled });
+  } catch (e: any) { error(res, 'Failed to update invoicing setting', 'INTERNAL_ERROR', 500); }
+});
+
+// List a business's invoices.
+paymentPlatformRouter.get('/invoices', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const list = await invoices.listInvoices(businessId, {
+      customerId: req.query.customer_id as string | undefined,
+      status: req.query.status as string | undefined,
+    });
+    success(res, list);
+  } catch (e: any) { sendInvoiceError(res, e, 'Failed to list invoices'); }
+});
+
+const issueInvoiceSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  customer_id: Joi.string().uuid().required(),
+  due_date: Joi.string().isoDate().required(),
+  notes: Joi.string().max(1000).allow('', null),
+  line_items: Joi.array().items(Joi.object({
+    description: Joi.string().min(1).max(200).required(),
+    quantity: Joi.number().positive().default(1),
+    unit_price_cents: Joi.number().integer().min(0).required(),
+    tax_cents: Joi.number().integer().min(0).allow(null),
+  })).min(1).required(),
+});
+
+paymentPlatformRouter.post('/invoices', requirePermission('bookings:*'), validate(issueInvoiceSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const invoice = await invoices.issueInvoice({
+      businessId: req.body.business_id,
+      tenantId: authReq.tenantId,
+      customerId: req.body.customer_id,
+      dueDate: req.body.due_date,
+      notes: req.body.notes ?? null,
+      createdBy: authReq.user.sub,
+      lineItems: (req.body.line_items as any[]).map((li) => ({
+        description: li.description, quantity: li.quantity,
+        unitPriceCents: li.unit_price_cents, taxCents: li.tax_cents ?? 0,
+      })),
+    });
+    success(res, invoice, undefined, 201);
+  } catch (e: any) { sendInvoiceError(res, e, 'Failed to issue invoice'); }
+});
+
+paymentPlatformRouter.get('/invoices/:id', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const invoice = await invoices.getInvoice(req.params.id, businessId);
+    if (!invoice) { error(res, 'Invoice not found', 'NOT_FOUND', 404); return; }
+    success(res, invoice);
+  } catch (e: any) { sendInvoiceError(res, e, 'Failed to read invoice'); }
+});
+
+const settleInvoiceSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  payment_method_id: Joi.string().uuid().required(),
+});
+
+paymentPlatformRouter.post('/invoices/:id/settle', requirePermission('bookings:*'), validate(settleInvoiceSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const result = await invoices.settleInvoice(
+      req.params.id, req.body.business_id, authReq.tenantId, req.body.payment_method_id, authReq.user.sub,
+    );
+    success(res, result);
+  } catch (e: any) { sendInvoiceError(res, e, 'Failed to settle invoice'); }
+});
+
+const voidInvoiceSchema = Joi.object({ business_id: Joi.string().uuid().required() });
+
+paymentPlatformRouter.post('/invoices/:id/void', requirePermission('bookings:*'), validate(voidInvoiceSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const ok = await invoices.voidInvoice(req.params.id, req.body.business_id, authReq.tenantId, authReq.user.sub);
+    if (!ok) { error(res, 'Invoice not found or cannot be voided', 'NOT_FOUND', 404); return; }
+    success(res, { voided: true });
+  } catch (e: any) { sendInvoiceError(res, e, 'Failed to void invoice'); }
+});
+
+paymentPlatformRouter.post('/invoices/:id/email', requirePermission('bookings:*'), validate(voidInvoiceSchema), async (req: Request, res: Response) => {
+  try {
+    const ok = await invoices.emailInvoice(req.params.id, req.body.business_id);
+    if (!ok) { error(res, 'Invoice not found', 'NOT_FOUND', 404); return; }
+    success(res, { queued: true });
+  } catch (e: any) { sendInvoiceError(res, e, 'Failed to email invoice'); }
+});
+
+paymentPlatformRouter.get('/invoices/:id/pdf', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const pdf = await invoices.renderInvoicePdf(req.params.id, businessId);
+    if (!pdf) { error(res, 'Invoice not found', 'NOT_FOUND', 404); return; }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="invoice-${req.params.id}.pdf"`);
+    res.send(pdf);
+  } catch (e: any) { error(res, 'Failed to render invoice PDF', 'INTERNAL_ERROR', 500); }
+});
+
+// ============================================================
+// Section C — Gift cards (task 4.8 / Requirement C7). Issue/void require
+// Manager/Owner ('bookings:*'); read/lookup require 'bookings:read'. Redemption
+// happens through the take-payment flow (gift_card method), not here.
+// ============================================================
+
+function sendCodedError(res: Response, e: any, httpMap: Record<string, number>, fallback: string): void {
+  if (e?.code && httpMap[e.code]) { error(res, e.message, e.code, httpMap[e.code]); return; }
+  error(res, fallback, 'INTERNAL_ERROR', 500);
+}
+const GIFT_CARD_ERR: Record<string, number> = { INVALID_AMOUNT: 400, CODE_ALLOCATION_FAILED: 500 };
+
+paymentPlatformRouter.get('/gift-cards', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, await giftCards.listGiftCards(businessId, { status: req.query.status as string | undefined }));
+  } catch (e: any) { sendCodedError(res, e, GIFT_CARD_ERR, 'Failed to list gift cards'); }
+});
+
+const createGiftCardSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  amount: Joi.number().integer().min(1).required(),
+  recipient_email: Joi.string().email({ tlds: false }).allow('', null),
+  recipient_name: Joi.string().max(200).allow('', null),
+  purchaser_customer_id: Joi.string().uuid().allow(null),
+  expires_at: Joi.string().isoDate().allow(null),
+});
+
+paymentPlatformRouter.post('/gift-cards', requirePermission('bookings:*'), validate(createGiftCardSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const card = await giftCards.createGiftCard({
+      businessId: req.body.business_id, tenantId: authReq.tenantId, amountCents: req.body.amount,
+      recipientEmail: req.body.recipient_email ?? null, recipientName: req.body.recipient_name ?? null,
+      purchaserCustomerId: req.body.purchaser_customer_id ?? null, expiresAt: req.body.expires_at ?? null,
+      createdBy: authReq.user.sub,
+    });
+    success(res, card, undefined, 201);
+  } catch (e: any) { sendCodedError(res, e, GIFT_CARD_ERR, 'Failed to create gift card'); }
+});
+
+// Balance/eligibility lookup by code (checkout). Placed before :id so 'lookup' isn't an id.
+paymentPlatformRouter.get('/gift-cards/lookup', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    const code = req.query.code as string;
+    if (!businessId || !code) { error(res, 'business_id and code required', 'VALIDATION_ERROR', 400); return; }
+    const card = await giftCards.getGiftCardByCode(code, businessId);
+    if (!card) { error(res, 'Gift card not found', 'NOT_FOUND', 404); return; }
+    success(res, card);
+  } catch (e: any) { error(res, 'Failed to look up gift card', 'INTERNAL_ERROR', 500); }
+});
+
+paymentPlatformRouter.get('/gift-cards/:id', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const card = await giftCards.getGiftCard(req.params.id, businessId);
+    if (!card) { error(res, 'Gift card not found', 'NOT_FOUND', 404); return; }
+    success(res, card);
+  } catch (e: any) { error(res, 'Failed to read gift card', 'INTERNAL_ERROR', 500); }
+});
+
+const giftCardBizSchema = Joi.object({ business_id: Joi.string().uuid().required() });
+
+paymentPlatformRouter.post('/gift-cards/:id/void', requirePermission('bookings:*'), validate(giftCardBizSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const ok = await giftCards.voidGiftCard(req.params.id, req.body.business_id, authReq.tenantId, authReq.user.sub);
+    if (!ok) { error(res, 'Gift card not found or not voidable', 'NOT_FOUND', 404); return; }
+    success(res, { voided: true });
+  } catch (e: any) { error(res, 'Failed to void gift card', 'INTERNAL_ERROR', 500); }
+});
+
+paymentPlatformRouter.post('/gift-cards/:id/email', requirePermission('bookings:*'), validate(giftCardBizSchema), async (req: Request, res: Response) => {
+  try {
+    const ok = await giftCards.emailGiftCard(req.params.id, req.body.business_id);
+    if (!ok) { error(res, 'Gift card not found or has no recipient email', 'NOT_FOUND', 404); return; }
+    success(res, { queued: true });
+  } catch (e: any) { error(res, 'Failed to email gift card', 'INTERNAL_ERROR', 500); }
+});
+
+// ============================================================
+// Section C — Vouchers (task 4.8 / Requirement C8). Create/void = Manager/Owner;
+// read/validate = 'bookings:read'. Redemption is driven by the checkout flow.
+// ============================================================
+
+const VOUCHER_ERR: Record<string, number> = { INVALID_TYPE: 400, INVALID_VALUE: 400, CODE_ALLOCATION_FAILED: 500 };
+
+paymentPlatformRouter.get('/vouchers', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, await vouchers.listVouchers(businessId, { status: req.query.status as string | undefined }));
+  } catch (e: any) { error(res, 'Failed to list vouchers', 'INTERNAL_ERROR', 500); }
+});
+
+const createVoucherSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  discount_type: Joi.string().valid('free', 'fixed', 'percentage').required(),
+  discount_value: Joi.number().integer().min(1).allow(null),
+  applies_to: Joi.object({
+    serviceIds: Joi.array().items(Joi.string().uuid()),
+    categoryIds: Joi.array().items(Joi.string().uuid()),
+  }).allow(null),
+  single_use: Joi.boolean().default(true),
+  max_redemptions: Joi.number().integer().min(1).allow(null),
+  expires_at: Joi.string().isoDate().allow(null),
+});
+
+paymentPlatformRouter.post('/vouchers', requirePermission('bookings:*'), validate(createVoucherSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const voucher = await vouchers.createVoucher({
+      businessId: req.body.business_id, tenantId: authReq.tenantId,
+      discountType: req.body.discount_type, discountValue: req.body.discount_value ?? null,
+      appliesTo: req.body.applies_to ?? null, singleUse: req.body.single_use,
+      maxRedemptions: req.body.max_redemptions ?? null, expiresAt: req.body.expires_at ?? null,
+      createdBy: authReq.user.sub,
+    });
+    success(res, voucher, undefined, 201);
+  } catch (e: any) { sendCodedError(res, e, VOUCHER_ERR, 'Failed to create voucher'); }
+});
+
+const validateVoucherSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  code: Joi.string().max(32).required(),
+  service_id: Joi.string().uuid().allow(null),
+  category_id: Joi.string().uuid().allow(null),
+  amount: Joi.number().integer().min(0).required(),
+});
+
+// Validate + compute discount (does NOT consume the voucher) — used by checkout (4.10).
+paymentPlatformRouter.post('/vouchers/validate', requirePermission('bookings:read'), validate(validateVoucherSchema), async (req: Request, res: Response) => {
+  try {
+    const result = await vouchers.validateVoucher({
+      code: req.body.code, businessId: req.body.business_id,
+      serviceId: req.body.service_id ?? null, categoryId: req.body.category_id ?? null,
+      amountCents: req.body.amount,
+    });
+    success(res, result);
+  } catch (e: any) { error(res, 'Failed to validate voucher', 'INTERNAL_ERROR', 500); }
+});
+
+paymentPlatformRouter.get('/vouchers/:id', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const voucher = await vouchers.getVoucher(req.params.id, businessId);
+    if (!voucher) { error(res, 'Voucher not found', 'NOT_FOUND', 404); return; }
+    success(res, voucher);
+  } catch (e: any) { error(res, 'Failed to read voucher', 'INTERNAL_ERROR', 500); }
+});
+
+paymentPlatformRouter.post('/vouchers/:id/void', requirePermission('bookings:*'), validate(giftCardBizSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const ok = await vouchers.voidVoucher(req.params.id, req.body.business_id, authReq.tenantId, authReq.user.sub);
+    if (!ok) { error(res, 'Voucher not found or not voidable', 'NOT_FOUND', 404); return; }
+    success(res, { voided: true });
+  } catch (e: any) { error(res, 'Failed to void voucher', 'INTERNAL_ERROR', 500); }
+});
+
+// ============================================================
+// Section C — Charges, transactions, subscriptions, accepted methods, and the
+// per-business billing run schedule (task 4.9 / Requirements C1, C2, C6a).
+// ============================================================
+
+const CHARGE_ERR: Record<string, number> = {
+  INVALID_AMOUNT: 400, INVALID_METHOD: 400, METHOD_REQUIRED: 400, CODE_REQUIRED: 400,
+  NO_CONNECTION: 409, METHOD_UNAVAILABLE: 409,
+  GIFT_CARD_NOT_FOUND: 404, GIFT_CARD_INACTIVE: 409, GIFT_CARD_EXPIRED: 409,
+  GIFT_CARD_CURRENCY: 409, GIFT_CARD_INSUFFICIENT: 409,
+};
+
+const takePaymentSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  customer_id: Joi.string().uuid().required(),
+  method: Joi.string().valid('cash', 'card', 'bank_draw', 'bank_transfer', 'check', 'gift_card', 'google_pay', 'apple_pay', 'other').required(),
+  amount: Joi.number().integer().min(1).required(),
+  payment_method_id: Joi.string().uuid().allow(null),
+  gift_card_code: Joi.string().max(32).allow('', null),
+  booking_id: Joi.string().uuid().allow(null),
+  membership_id: Joi.string().uuid().allow(null),
+  description: Joi.string().max(500).allow('', null),
+  check_number: Joi.string().max(20).allow('', null),
+});
+
+// Take a one-time customer payment (processed / manual-record / gift-card). Staff
+// may take payments ('bookings:update'); Manager/Owner also qualify.
+paymentPlatformRouter.post('/charges', requirePermission('bookings:update'), validate(takePaymentSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const result = await takeOneTimePayment({
+      businessId: req.body.business_id,
+      tenantId: authReq.tenantId,
+      customerId: req.body.customer_id,
+      method: req.body.method,
+      amountCents: req.body.amount,
+      paymentMethodId: req.body.payment_method_id ?? null,
+      giftCardCode: req.body.gift_card_code ?? null,
+      bookingId: req.body.booking_id ?? null,
+      membershipId: req.body.membership_id ?? null,
+      description: req.body.description ?? null,
+      checkNumber: req.body.check_number ?? null,
+      processedBy: authReq.user.sub,
+    });
+    success(res, result, undefined, 201);
+  } catch (e: any) {
+    if (e?.code && CHARGE_ERR[e.code]) { error(res, e.message, e.code, CHARGE_ERR[e.code]); return; }
+    error(res, 'Failed to take payment', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// ============================================================
+// Customer account credit (unapplied payments). A payment taken on account
+// credits the 2500 Customer Deposits liability and becomes drawable credit;
+// these endpoints read the balance and apply it to an outstanding invoice.
+// ============================================================
+
+const APPLY_CREDIT_ERR: Record<string, number> = {
+  INVOICE_NOT_FOUND: 404, ALREADY_PAID: 409, INVOICE_VOID: 409, NO_BALANCE: 409,
+  NO_CREDIT: 409, CURRENCY_MISMATCH: 409, NOTHING_TO_APPLY: 409,
+};
+
+// A customer's available account credit + the individual credit rows.
+paymentPlatformRouter.get('/account-credit', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    const customerId = req.query.customer_id as string;
+    if (!businessId || !customerId) { error(res, 'business_id and customer_id required', 'VALIDATION_ERROR', 400); return; }
+    const [balance, credits] = await Promise.all([
+      accountCredit.getCustomerCreditBalance(businessId, customerId),
+      accountCredit.listCustomerCredits(businessId, customerId),
+    ]);
+    success(res, { balance, credits });
+  } catch (e: any) { error(res, 'Failed to read account credit', 'INTERNAL_ERROR', 500); }
+});
+
+const applyCreditSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  invoice_id: Joi.string().uuid().required(),
+  amount: Joi.number().integer().positive().allow(null),
+});
+
+// Apply available account credit to an outstanding invoice (liability -> revenue).
+paymentPlatformRouter.post('/account-credit/apply', requirePermission('bookings:*'), validate(applyCreditSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const result = await accountCredit.applyCreditToInvoice({
+      businessId: req.body.business_id,
+      tenantId: authReq.tenantId,
+      invoiceId: req.body.invoice_id,
+      amountCents: req.body.amount ?? null,
+      userId: authReq.user.sub,
+    });
+    success(res, result);
+  } catch (e: any) {
+    if (e?.code && APPLY_CREDIT_ERR[e.code]) { error(res, e.message, e.code, APPLY_CREDIT_ERR[e.code]); return; }
+    error(res, 'Failed to apply account credit', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// List customer transactions (filterable). Mirrors the legacy /v1/payments list
+// under the Section C surface so the customer-payments UI reads from one place.
+paymentPlatformRouter.get('/transactions', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const result = await paymentLedger.getTransactions({
+      businessId,
+      type: req.query.type as string | undefined,
+      status: req.query.status as string | undefined,
+      customerId: req.query.customer_id as string | undefined,
+      customerSearch: req.query.search as string | undefined,
+      dateFrom: req.query.date_from as string | undefined,
+      dateTo: req.query.date_to as string | undefined,
+      paymentMethod: req.query.payment_method as string | undefined,
+      page: req.query.page ? parseInt(req.query.page as string, 10) : undefined,
+      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
+    });
+    success(res, result.transactions, { total: result.total, page: result.page, limit: result.limit });
+  } catch (e: any) { error(res, 'Failed to list transactions', 'INTERNAL_ERROR', 500); }
+});
+
+// --- Subscriptions (membership enrollments) ---
+
+const createSubscriptionSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  customer_id: Joi.string().uuid().required(),
+  plan_id: Joi.string().uuid().required(),
+  start_date: Joi.string().isoDate().required(),
+  payment_method_id: Joi.string().uuid().allow(null),
+});
+
+paymentPlatformRouter.post('/subscriptions', requirePermission('bookings:*'), validate(createSubscriptionSchema), async (req: Request, res: Response) => {
+  try {
+    const enrollment = await membership.enrollCustomer({
+      planId: req.body.plan_id,
+      businessId: req.body.business_id,
+      customerId: req.body.customer_id,
+      startDate: req.body.start_date,
+    });
+    // Link the stored method the renewal charge will draw from, if provided.
+    if (req.body.payment_method_id) {
+      await adminPool.query(
+        `UPDATE mbr_enrollments SET payment_method_id = $1, updated_at = NOW() WHERE id = $2 AND business_id = $3`,
+        [req.body.payment_method_id, enrollment.id, req.body.business_id],
+      );
+      enrollment.payment_method_id = req.body.payment_method_id;
+    }
+    success(res, enrollment, undefined, 201);
+  } catch (e: any) {
+    if (e?.message?.includes('already has an active membership')) { error(res, e.message, 'ALREADY_ENROLLED', 409); return; }
+    if (e?.message?.includes('Plan not found')) { error(res, e.message, 'NOT_FOUND', 404); return; }
+    error(res, 'Failed to create subscription', 'INTERNAL_ERROR', 500);
+  }
+});
+
+const cancelSubscriptionSchema = Joi.object({ business_id: Joi.string().uuid().required() });
+
+paymentPlatformRouter.put('/subscriptions/:id/cancel', requirePermission('bookings:*'), validate(cancelSubscriptionSchema), async (req: Request, res: Response) => {
+  try {
+    const ok = await membership.cancelEnrollment(req.params.id, req.body.business_id);
+    if (!ok) { error(res, 'Subscription not found or not active', 'NOT_FOUND', 404); return; }
+    success(res, { cancelled: true });
+  } catch (e: any) { error(res, 'Failed to cancel subscription', 'INTERNAL_ERROR', 500); }
+});
+
+// --- Accepted methods (per business) ---
+
+paymentPlatformRouter.get('/accepted-methods', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, await paymentLedger.getAcceptedMethods(businessId));
+  } catch (e: any) { error(res, 'Failed to get accepted methods', 'INTERNAL_ERROR', 500); }
+});
+
+const acceptedMethodsSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  methods: Joi.array().items(Joi.object({
+    method: Joi.string().valid('cash', 'card', 'bank_draw', 'bank_transfer', 'check', 'gift_card', 'google_pay', 'apple_pay', 'other').required(),
+    enabled: Joi.boolean().required(),
+  })).min(1).required(),
+});
+
+paymentPlatformRouter.put('/accepted-methods', requirePermission('bookings:*'), validate(acceptedMethodsSchema), async (req: Request, res: Response) => {
+  try {
+    success(res, await paymentLedger.updateAcceptedMethods(req.body.business_id, req.body.methods));
+  } catch (e: any) { error(res, 'Failed to update accepted methods', 'INTERNAL_ERROR', 500); }
+});
+
+// --- Business recurring-billing run schedule (C6a) ---
+
+paymentPlatformRouter.get('/billing-schedule', requirePermission('bookings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, await membershipRenewal.getBusinessBillingSchedule(businessId));
+  } catch (e: any) { error(res, 'Failed to read billing schedule', 'INTERNAL_ERROR', 500); }
+});
+
+const businessScheduleSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  scheduleTime: Joi.string().pattern(/^\d{2}:\d{2}$/).required(),
+  scheduleTimezone: Joi.string().min(1).required(),
+  enabled: Joi.boolean().default(true),
+});
+
+paymentPlatformRouter.put('/billing-schedule', requirePermission('bookings:*'), validate(businessScheduleSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const view = await membershipRenewal.saveBusinessBillingSchedule(
+      req.body.business_id, authReq.tenantId, req.body.scheduleTime, req.body.scheduleTimezone, req.body.enabled,
+    );
+    success(res, view);
+  } catch (e: any) { error(res, 'Failed to save billing schedule', 'INTERNAL_ERROR', 500); }
+});
+
+paymentPlatformRouter.post('/billing-run-now', requirePermission('bookings:*'), validate(giftCardBizSchema), async (req: Request, res: Response) => {
+  try {
+    success(res, await membershipRenewal.runBusinessBillingNow(req.body.business_id));
+  } catch (e: any) { error(res, 'Failed to run billing', 'INTERNAL_ERROR', 500); }
 });

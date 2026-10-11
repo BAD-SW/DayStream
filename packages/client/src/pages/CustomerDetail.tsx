@@ -6,6 +6,13 @@ import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
 import * as customersApi from '../api/customers';
 import type { Customer } from '../api/customers';
+import { PaymentMethods } from '../components/PaymentMethods';
+import { TakePaymentModal } from '../components/TakePaymentModal';
+import { Modal } from '../design-system/components/feedback/Modal';
+import { CurrencyInput } from '../components/CurrencyInput';
+import * as payApi from '../api/payments';
+import type { PayTransaction, Invoice, PaymentMethod } from '../api/payments';
+import { formatCurrency } from '../utils/currency';
 
 const LIFECYCLE_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   lead: 'neutral', trial: 'info', active: 'success', at_risk: 'warning', churned: 'error', winback: 'info',
@@ -81,6 +88,7 @@ export function CustomerDetail() {
         items={[
           { id: 'overview', label: 'Overview', content: <OverviewTab customer={customer} tags={tags} onUpdate={setCustomer} /> },
           { id: 'notes', label: 'Notes', content: <NotesTab notes={notes} customerId={customer.id} businessId={businessId} onRefresh={(n) => setNotes(n)} /> },
+          { id: 'billing', label: 'Billing', content: <BillingTab customerId={customer.id} businessId={businessId} /> },
           { id: 'preferences', label: 'Preferences', content: <PreferencesTab preferences={preferences} onChange={handlePreferenceChange} /> },
           { id: 'timeline', label: 'Timeline', content: <TimelineTab activities={activities} customerId={customer.id} businessId={businessId} /> },
         ]}
@@ -106,6 +114,7 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
   });
   const [statusChanging, setStatusChanging] = useState(false);
   const [anonymizing, setAnonymizing] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -192,10 +201,16 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
 
   return (
     <div style={styles.tabContent}>
+      <TakePaymentModal
+        open={showPayment}
+        onClose={() => setShowPayment(false)}
+        businessId={businessId}
+        customerId={customer.id}
+      />
       {/* Quick Actions Bar */}
       <div style={styles.quickActionsBar}>
         <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
-          <Button size="sm" variant="secondary" onClick={() => { /* TODO: open payment modal pre-filled with customer */ }}>Record Payment</Button>
+          <Button size="sm" variant="secondary" onClick={() => setShowPayment(true)}>Record Payment</Button>
           <Button size="sm" variant="secondary" onClick={() => { /* TODO: open order flow pre-filled with customer */ }}>Place Order</Button>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -276,13 +291,15 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
         {/* Membership Card */}
         <MembershipCard customerId={customer.id} businessId={businessId} />
 
-        {/* Payment Methods on File Card */}
+        {/* Payment Methods on File — the customer's stored, tokenized methods
+            (used for one-time charges and membership renewals). The reusable
+            component handles list / add (card, direct debit) / default / remove;
+            tenant scope is resolved server-side from the JWT. */}
         <div style={styles.card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-            <h3 style={{ ...styles.cardTitle, margin: 0 }}>Payment Methods on File</h3>
-            <Button size="sm" variant="secondary" onClick={() => { /* TODO: open add payment method flow */ }}>Add Method</Button>
-          </div>
-          <p style={styles.cardMuted}>No payment methods on file</p>
+          <PaymentMethods
+            owner={{ owner_level: 'customer', customer_id: customer.id, business_id: businessId }}
+            title="Payment Methods on File"
+          />
         </div>
 
         {/* Tags Card */}
@@ -474,6 +491,448 @@ function TimelineTab({ activities, customerId, businessId }: { activities: any[]
     </div>
   );
 }
+
+/** YYYY-MM-DD for the first day of the current month (local time). */
+function firstOfCurrentMonth(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+/** YYYY-MM-DD for today (local time). */
+function today(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// --- Billing tab: transaction history + outstanding invoices (Section C, task 4.10) ---
+function BillingTab({ customerId, businessId }: { customerId: string; businessId: string }) {
+  const navigate = useNavigate();
+  const [transactions, setTransactions] = useState<PayTransaction[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [invoicingEnabled, setInvoicingEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [refundTxn, setRefundTxn] = useState<PayTransaction | null>(null);
+  const [showIssueInvoice, setShowIssueInvoice] = useState(false);
+  const [creditBalance, setCreditBalance] = useState<payApi.AccountCreditBalance | null>(null);
+  const [applyingCreditTo, setApplyingCreditTo] = useState<string | null>(null);
+  // Transaction history is date-ranged (defaults to the current month) so the
+  // list stays manageable as history grows.
+  const [dateFrom, setDateFrom] = useState<string>(firstOfCurrentMonth());
+  const [dateTo, setDateTo] = useState<string>(today());
+
+  // Transactions reload whenever the date range changes; the other panels
+  // (invoices, methods, credit) are range-independent and load once.
+  const loadTransactions = useCallback(async () => {
+    const txns = await payApi.listTransactions({
+      business_id: businessId, customer_id: customerId,
+      date_from: dateFrom || undefined, date_to: dateTo || undefined, limit: 200,
+    });
+    setTransactions(txns.transactions);
+  }, [businessId, customerId, dateFrom, dateTo]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [invs, pms, invEnabled, credit] = await Promise.all([
+        payApi.listInvoices(businessId, { customerId }),
+        payApi.listPaymentMethods({ owner_level: 'customer', business_id: businessId, customer_id: customerId }),
+        payApi.getInvoicingEnabled(businessId).catch(() => false),
+        payApi.getAccountCredit(businessId, customerId).catch(() => null),
+      ]);
+      setInvoices(invs);
+      setMethods(pms);
+      setInvoicingEnabled(invEnabled);
+      setCreditBalance(credit?.balance ?? null);
+      await loadTransactions();
+    } catch { /* leave empty on error */ }
+    finally { setLoading(false); }
+  }, [businessId, customerId, loadTransactions]);
+
+  // Loads everything on mount, on customer/business change, AND whenever the
+  // date range changes (loadTransactions is a dep). A date change thus refreshes
+  // the whole tab — cheap enough, and keeps post-mutation refreshes correct.
+  useEffect(() => { load(); }, [load]);
+
+  // Refundable amount remaining on a charge = amount − prior refunds against it.
+  const refundedByCharge = new Map<string, number>();
+  for (const t of transactions) {
+    if (t.type === 'refund' && t.refund_of_id && (t.status === 'completed' || t.status === 'pending')) {
+      refundedByCharge.set(t.refund_of_id, (refundedByCharge.get(t.refund_of_id) ?? 0) + t.amount);
+    }
+  }
+  const remainingRefundable = (t: PayTransaction) => t.amount - (refundedByCharge.get(t.id) ?? 0);
+  const isRefundable = (t: PayTransaction) => t.type === 'charge' && t.status === 'completed' && remainingRefundable(t) > 0;
+
+  const outstanding = invoices.filter((i) => i.status === 'issued' || i.status === 'overdue');
+
+  const statusVariant = (s: string): 'success' | 'warning' | 'error' | 'info' | 'neutral' => {
+    if (s === 'completed' || s === 'paid') return 'success';
+    if (s === 'pending' || s === 'issued') return 'info';
+    if (s === 'failed' || s === 'overdue') return 'error';
+    if (s === 'void' || s === 'cancelled') return 'neutral';
+    return 'neutral';
+  };
+
+  const payInvoice = async (invoiceId: string) => {
+    const method = methods.find((m) => m.is_default) ?? methods[0];
+    if (!method) { setMessage('Add a stored payment method before settling an invoice.'); return; }
+    setPayingId(invoiceId); setMessage(null);
+    try {
+      const res = await payApi.settleInvoice(invoiceId, businessId, method.id);
+      setMessage(res.status === 'failed' ? (res.failureReason || 'Payment declined.') : `Invoice paid (ref ${res.referenceNumber}).`);
+      await load();
+    } catch (err: any) {
+      setMessage(err?.response?.data?.error || 'Failed to settle invoice.');
+    } finally { setPayingId(null); }
+  };
+
+  const openPdf = async (invoiceId: string) => {
+    try {
+      const blob = await payApi.fetchInvoicePdf(invoiceId, businessId);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch { setMessage('Failed to open invoice PDF.'); }
+  };
+
+  // Open whatever a transaction is "for": invoice -> its PDF, booking -> edit page,
+  // membership -> the plan page. No-op if there's no destination.
+  const openPurpose = (link: payApi.PurposeLink) => {
+    if (link.type === 'invoice') { openPdf(link.id); return; }
+    if (link.type === 'order') { navigate(`/receipt/${link.id}`); return; }
+    if (link.type === 'booking') { navigate(`/bookings/${link.id}/edit`); return; }
+    if (link.type === 'membership') { navigate(`/memberships/${link.id}`); return; }
+  };
+
+  const applyCredit = async (invoiceId: string) => {
+    setApplyingCreditTo(invoiceId); setMessage(null);
+    try {
+      const res = await payApi.applyAccountCredit(businessId, invoiceId);
+      setMessage(
+        `Applied ${formatCurrency(res.appliedCents, creditBalance?.currency || 'USD')} of account credit`
+        + ` (ref ${res.referenceNumber}). Invoice ${res.invoiceStatus}.`,
+      );
+      await load();
+    } catch (err: any) {
+      setMessage(err?.response?.data?.error || 'Failed to apply account credit.');
+    } finally { setApplyingCreditTo(null); }
+  };
+
+  const availableCredit = creditBalance?.availableCents ?? 0;
+
+  if (loading) return <div style={styles.tabContent}><p style={styles.empty}>Loading billing…</p></div>;
+
+  return (
+    <div style={styles.tabContent}>
+      {message && <p style={{ fontSize: 'var(--font-size-sm)', color: message.toLowerCase().includes('fail') || message.toLowerCase().includes('declin') ? 'var(--color-error)' : 'var(--color-success)', marginBottom: 'var(--space-md)' }}>{message}</p>}
+
+      {/* Account credit (unapplied payments). Only shown when the customer holds
+          a positive balance — a payment taken "on account" sits here as a
+          liability until it's applied to an invoice. */}
+      {availableCredit > 0 && (
+        <div style={{ ...styles.card, borderLeft: '3px solid var(--color-accent)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <h3 style={{ ...styles.cardTitle, margin: 0 }}>Account Credit</h3>
+              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                Unapplied balance available to apply to an invoice
+              </span>
+            </div>
+            <span style={{ fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--color-accent)' }}>
+              {formatCurrency(availableCredit, creditBalance?.currency || 'USD')}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Outstanding invoices */}
+      <div style={styles.card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Outstanding Invoices</h3>
+          {invoicingEnabled && (
+            <Button size="sm" variant="secondary" onClick={() => setShowIssueInvoice(true)}>Issue Invoice</Button>
+          )}
+        </div>
+        {outstanding.length === 0 ? (
+          <p style={styles.cardMuted}>No outstanding invoices.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {outstanding.map((inv) => (
+              <div key={inv.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>Invoice #{inv.invoice_number}</span>
+                  <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                    Due {new Date(inv.due_date).toLocaleDateString()} · {formatCurrency(inv.total_cents, inv.currency)}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Badge variant={statusVariant(inv.status)}>{inv.status}</Badge>
+                  <button style={membershipActionStyle} onClick={() => openPdf(inv.id)}>PDF</button>
+                  {availableCredit > 0 && (
+                    <Button size="sm" variant="secondary" loading={applyingCreditTo === inv.id} onClick={() => applyCredit(inv.id)}>
+                      Apply Credit
+                    </Button>
+                  )}
+                  <Button size="sm" loading={payingId === inv.id} onClick={() => payInvoice(inv.id)}>Pay</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Transaction history */}
+      <div style={styles.card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
+          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Transaction History</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)' }}>
+            <label style={{ color: 'var(--color-text-secondary)' }}>From</label>
+            <input
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={(e) => setDateFrom(e.target.value)}
+              style={{ ...refundInputStyle, padding: '6px 8px' }}
+              aria-label="Transactions from date"
+            />
+            <label style={{ color: 'var(--color-text-secondary)' }}>To</label>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={(e) => setDateTo(e.target.value)}
+              style={{ ...refundInputStyle, padding: '6px 8px' }}
+              aria-label="Transactions to date"
+            />
+          </div>
+        </div>
+        {transactions.length === 0 ? (
+          <p style={styles.cardMuted}>No transactions in this date range.</p>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>
+                <th style={{ padding: '6px 8px' }}>Date</th>
+                <th style={{ padding: '6px 8px' }}>For</th>
+                <th style={{ padding: '6px 8px' }}>Method</th>
+                <th style={{ padding: '6px 8px' }}>Type</th>
+                <th style={{ padding: '6px 8px', textAlign: 'right' }}>Amount</th>
+                <th style={{ padding: '6px 8px' }}>Status</th>
+                <th style={{ padding: '6px 8px', textAlign: 'right' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {transactions.map((t) => (
+                <tr key={t.id} style={{ borderTop: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+                  <td style={{ padding: '8px' }}>{new Date(t.created_at).toLocaleDateString()}</td>
+                  <td style={{ padding: '8px' }}>
+                    {t.purpose_link ? (
+                      <button
+                        type="button"
+                        onClick={() => openPurpose(t.purpose_link!)}
+                        style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-accent)', cursor: 'pointer', textAlign: 'left', font: 'inherit', textDecoration: 'underline' }}
+                        title={t.purpose_link.type === 'invoice' ? 'Open invoice PDF' : t.purpose_link.type === 'order' ? 'Open receipt' : 'Open details'}
+                      >
+                        {t.purpose_label}
+                      </button>
+                    ) : (
+                      <span>{t.purpose_label}</span>
+                    )}
+                    {t.reference_number && (
+                      <span
+                        style={{ display: 'block', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family-mono, monospace)' }}
+                        title="Payment reference (for reconciliation with the processor)"
+                      >
+                        {t.reference_number}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: '8px' }}>{t.payment_method}</td>
+                  <td style={{ padding: '8px' }}>{t.type}</td>
+                  <td style={{ padding: '8px', textAlign: 'right' }}>{formatCurrency(t.amount, t.currency)}</td>
+                  <td style={{ padding: '8px' }}><Badge variant={statusVariant(t.status)}>{t.status}</Badge></td>
+                  <td style={{ padding: '8px', textAlign: 'right' }}>
+                    {isRefundable(t) && (
+                      <button style={membershipActionStyle} onClick={() => setRefundTxn(t)}>Refund</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {refundTxn && (
+        <RefundModal
+          transaction={refundTxn}
+          businessId={businessId}
+          remainingCents={remainingRefundable(refundTxn)}
+          onClose={() => setRefundTxn(null)}
+          onRefunded={() => { setRefundTxn(null); load(); }}
+        />
+      )}
+
+      {showIssueInvoice && (
+        <IssueInvoiceModal
+          businessId={businessId}
+          customerId={customerId}
+          onClose={() => setShowIssueInvoice(false)}
+          onIssued={() => { setShowIssueInvoice(false); load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// --- Refund modal: full/partial refund of a completed charge (reason required) ---
+function RefundModal({ transaction, businessId, remainingCents, onClose, onRefunded }: {
+  transaction: PayTransaction; businessId: string; remainingCents: number; onClose: () => void; onRefunded: () => void;
+}) {
+  const [amount, setAmount] = useState(remainingCents);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!reason.trim()) { setError('A reason is required.'); return; }
+    if (amount <= 0 || amount > remainingCents) { setError(`Amount must be between 0.01 and ${(remainingCents / 100).toFixed(2)}.`); return; }
+    setBusy(true); setError(null);
+    try {
+      // Send amount only for a partial refund; omit for a full refund of the remainder.
+      await payApi.refundTransaction(businessId, transaction.id, reason.trim(), amount === remainingCents ? null : amount);
+      onRefunded();
+    } catch (err: any) {
+      const code = err?.response?.data?.code;
+      setError(code === 'FORBIDDEN'
+        ? 'You do not have permission to issue refunds (Manager or Owner required).'
+        : err?.response?.data?.error || 'Failed to process the refund.');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Issue Refund"
+      footer={<>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button variant="destructive" loading={busy} onClick={submit}>Refund</Button>
+      </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
+          Refunding charge {transaction.reference_number || transaction.id.slice(0, 8)} ·
+          {' '}refundable {formatCurrency(remainingCents, transaction.currency)}
+          {transaction.is_processed ? ' (returns to the original method)' : ' (recorded only — manual method)'}
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Amount</label>
+          <CurrencyInput value={amount} onChange={setAmount} style={refundInputStyle} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Reason <span style={{ color: 'var(--color-error)' }}>*</span></label>
+          <input style={refundInputStyle} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. cancelled booking" />
+        </div>
+        {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: 0 }}>{error}</p>}
+      </div>
+    </Modal>
+  );
+}
+
+interface InvoiceLineRow { description: string; quantity: number; unitPriceCents: number; taxCents: number; itemType: payApi.InvoiceItemType; }
+
+const INVOICE_ITEM_TYPES: { value: payApi.InvoiceItemType; label: string }[] = [
+  { value: 'service', label: 'Service' },
+  { value: 'product', label: 'Product' },
+  { value: 'membership', label: 'Membership' },
+  { value: 'package', label: 'Package' },
+  { value: 'no_show_fee', label: 'No-show fee' },
+];
+
+// --- Issue-invoice modal: compose line items + due date -> issueInvoice ---
+function IssueInvoiceModal({ businessId, customerId, onClose, onIssued }: {
+  businessId: string; customerId: string; onClose: () => void; onIssued: () => void;
+}) {
+  const [dueDate, setDueDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const [lines, setLines] = useState<InvoiceLineRow[]>([{ description: '', quantity: 1, unitPriceCents: 0, taxCents: 0, itemType: 'service' }]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const total = lines.reduce((n, l) => n + Math.round(l.unitPriceCents * (l.quantity || 1)) + (l.taxCents || 0), 0);
+
+  const updateLine = (i: number, patch: Partial<InvoiceLineRow>) =>
+    setLines(lines.map((l, idx) => idx === i ? { ...l, ...patch } : l));
+  const addLine = () => setLines([...lines, { description: '', quantity: 1, unitPriceCents: 0, taxCents: 0, itemType: 'service' }]);
+  const removeLine = (i: number) => setLines(lines.length > 1 ? lines.filter((_, idx) => idx !== i) : lines);
+
+  const submit = async () => {
+    if (!dueDate) { setError('A due date is required.'); return; }
+    const valid = lines.filter((l) => l.description.trim() && l.unitPriceCents > 0);
+    if (valid.length === 0) { setError('Add at least one line item with a description and price.'); return; }
+    setBusy(true); setError(null);
+    try {
+      await payApi.issueInvoice({
+        business_id: businessId, customer_id: customerId, due_date: dueDate, notes: notes || null,
+        line_items: valid.map((l) => ({ description: l.description.trim(), quantity: l.quantity || 1, unit_price_cents: l.unitPriceCents, tax_cents: l.taxCents || null, item_type: l.itemType })),
+      });
+      onIssued();
+    } catch (err: any) {
+      setError(err?.response?.data?.error || 'Failed to issue the invoice.');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Issue Invoice" size="lg"
+      footer={<>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" loading={busy} onClick={submit}>Issue invoice ({formatCurrency(total, 'USD')})</Button>
+      </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxWidth: '220px' }}>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Due date <span style={{ color: 'var(--color-error)' }}>*</span></label>
+          <input type="date" style={refundInputStyle} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Line items</label>
+          {lines.map((l, i) => (
+            <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input style={{ ...refundInputStyle, flex: 1 }} placeholder="Description" value={l.description} onChange={(e) => updateLine(i, { description: e.target.value })} />
+              <select
+                style={{ ...refundInputStyle, width: '120px' }}
+                value={l.itemType}
+                onChange={(e) => updateLine(i, { itemType: e.target.value as payApi.InvoiceItemType })}
+                aria-label="Line item type"
+              >
+                {INVOICE_ITEM_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+              <input style={{ ...refundInputStyle, width: '56px' }} type="number" min={1} value={l.quantity} onChange={(e) => updateLine(i, { quantity: parseInt(e.target.value, 10) || 1 })} />
+              <CurrencyInput value={l.unitPriceCents} onChange={(c) => updateLine(i, { unitPriceCents: c })} style={{ ...refundInputStyle, width: '110px' }} />
+              <CurrencyInput value={l.taxCents} onChange={(c) => updateLine(i, { taxCents: c })} style={{ ...refundInputStyle, width: '90px' }} />
+              <button style={membershipActionStyle} onClick={() => removeLine(i)} aria-label="Remove line">×</button>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: '8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+            <span style={{ flex: 1 }}>Description</span><span style={{ width: '120px' }}>Type</span><span style={{ width: '56px' }}>Qty</span><span style={{ width: '110px' }}>Unit price</span><span style={{ width: '90px' }}>Tax</span><span style={{ width: '24px' }} />
+          </div>
+          <button type="button" style={{ ...membershipActionStyle, alignSelf: 'flex-start' }} onClick={addLine}>+ Add line</button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Notes (optional)</label>
+          <input style={refundInputStyle} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </div>
+        {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: 0 }}>{error}</p>}
+      </div>
+    </Modal>
+  );
+}
+
+const refundInputStyle: React.CSSProperties = {
+  padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
+  background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)',
+};
 
 function PreferencesTab({ preferences, onChange }: { preferences: any; onChange: (key: string, val: boolean) => void }) {
   if (!preferences) return <p style={styles.empty}>Loading preferences...</p>;
