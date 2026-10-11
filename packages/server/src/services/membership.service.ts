@@ -230,7 +230,7 @@ export async function removePlanItem(itemId: string) {
 
 // --- Enrollments ---
 
-function calculatePeriodEnd(startDate: string, frequency: string): string {
+export function calculatePeriodEnd(startDate: string, frequency: string): string {
   // startDate arrives as either a bare 'YYYY-MM-DD' or a full ISO datetime — Joi's
   // isoDate() validator normalizes a bare date into the latter, which used to produce
   // an invalid double-timestamp string here ('...T00:00:00.000ZT00:00:00Z'). Slicing to
@@ -264,7 +264,7 @@ function calculatePeriodEnd(startDate: string, frequency: string): string {
   return start.toISOString().split('T')[0];
 }
 
-function calculateNextBillingDate(startDate: string, frequency: string): string {
+export function calculateNextBillingDate(startDate: string, frequency: string): string {
   // startDate arrives as either a bare 'YYYY-MM-DD' or a full ISO datetime — Joi's
   // isoDate() validator normalizes a bare date into the latter, which used to produce
   // an invalid double-timestamp string here ('...T00:00:00.000ZT00:00:00Z'). Slicing to

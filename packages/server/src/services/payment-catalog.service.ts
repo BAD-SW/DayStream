@@ -78,11 +78,12 @@ function providerSupports(method: CatalogMethod, provider: string | null, _regio
 export async function resolveAvailableMethods(
   businessId: string, ctx: AvailabilityContext,
 ): Promise<AvailabilityResult[]> {
-  const { rows: enabledRows } = await adminPool.query(
-    `SELECT method FROM pay_accepted_methods WHERE business_id = $1 AND enabled = true`,
-    [businessId],
-  );
-  const enabled = new Set<string>(enabledRows.map((r) => r.method));
+  // Use the effective accepted-methods map (stored rows overlaid on sensible
+  // defaults) so a business with a partial/empty set still offers its default
+  // methods — and so this resolver never diverges from the Settings UI.
+  const { getEffectiveAcceptedMethods } = await import('./payment.service');
+  const effective = await getEffectiveAcceptedMethods(businessId);
+  const enabled = new Set<string>(Object.entries(effective).filter(([, on]) => on).map(([m]) => m));
 
   // Active provider for this business (for processed-method support checks).
   const { rows: connRows } = await adminPool.query(

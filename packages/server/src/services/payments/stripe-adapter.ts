@@ -2,8 +2,9 @@ import Stripe from 'stripe';
 import {
   PaymentAdapter, ChargeInput, RefundInput, CaptureInput, TokenResult,
   AdapterResult, AdapterTxn, DateRange, ConnectedAccount, ChargeOutcome,
-  NormalizedEvent, NormalizedEventType, PaymentProviderName, ConnectionTestResult,
+  NormalizedEvent, NormalizedEventType, PaymentProviderName, ConnectionTestResult, MethodType,
 } from './adapter';
+import { schemeForCurrency } from './bank-debit-schemes';
 
 /**
  * StripeAdapter — the real Stripe implementation of PaymentAdapter.
@@ -89,12 +90,21 @@ export class StripeAdapter implements PaymentAdapter {
   }
 
   async charge(input: ChargeInput): Promise<AdapterResult> {
+    // The PaymentIntent must explicitly allow the stored method's type, otherwise
+    // Stripe falls back to the account's default enabled types (card/bancontact/…)
+    // and rejects a sepa_debit/us_bank_account method ("not allowed for this
+    // PaymentIntent"). Resolve the Stripe payment_method_type from our vault type:
+    // bank_draw maps to the debit scheme for the charge currency (SEPA for EUR,
+    // ACH for USD, Bacs for GBP); wallets are card-backed.
+    const paymentMethodTypes = this.stripePaymentMethodTypes(input.methodType, input.currency);
+
     const pi = await this.stripe.paymentIntents.create(
       {
         amount: input.amount,
         currency: input.currency.toLowerCase(),
         payment_method: input.methodToken,
         ...(input.customerRef ? { customer: input.customerRef } : {}),
+        ...(paymentMethodTypes ? { payment_method_types: paymentMethodTypes } : {}),
         confirm: true,
         off_session: true,
         description: input.description,
@@ -109,6 +119,23 @@ export class StripeAdapter implements PaymentAdapter {
       currency: pi.currency.toUpperCase(),
       failureReason: pi.last_payment_error?.message,
     };
+  }
+
+  /**
+   * Map our vault method type to the Stripe `payment_method_types` to allow on a
+   * charge. Returns undefined for card/wallets (card-backed; the account default
+   * already allows card). Bank-draw resolves to the debit scheme for the currency.
+   */
+  private stripePaymentMethodTypes(methodType: MethodType | undefined, currency: string): string[] | undefined {
+    if (methodType === 'bank_draw') {
+      const scheme = schemeForCurrency(currency);
+      return [scheme.stripeType];           // 'sepa_debit' | 'us_bank_account' | 'bacs_debit'
+    }
+    // card / google_pay / apple_pay are all card-backed off-session.
+    if (methodType === 'card' || methodType === 'google_pay' || methodType === 'apple_pay') {
+      return ['card'];
+    }
+    return undefined;
   }
 
   async refund(input: RefundInput): Promise<AdapterResult> {

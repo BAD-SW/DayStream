@@ -25,8 +25,11 @@ interface AddItemInput {
   notes?: string;
 }
 
+type OrderPaymentMethod =
+  | 'cash' | 'card' | 'bank_draw' | 'bank_transfer' | 'transfer' | 'check' | 'gift_card' | 'google_pay' | 'apple_pay' | 'other';
+
 interface CompleteOrderInput {
-  paymentMethod: 'cash' | 'card' | 'transfer' | 'other';
+  paymentMethod: OrderPaymentMethod;
   paymentReference?: string;
   checkedOutBy: string;
 }

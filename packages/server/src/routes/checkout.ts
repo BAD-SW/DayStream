@@ -171,7 +171,9 @@ checkoutRouter.delete('/orders/:id/items/:itemId', requirePermission('bookings:*
 // ============================================================
 
 const completeSchema = Joi.object({
-  payment_method: Joi.string().valid('cash', 'card', 'transfer', 'other').default('cash'),
+  payment_method: Joi.string().valid(
+    'cash', 'card', 'bank_draw', 'bank_transfer', 'transfer', 'check', 'gift_card', 'google_pay', 'apple_pay', 'other',
+  ).default('cash'),
   payment_reference: Joi.string().max(100).allow('', null),
 });
 

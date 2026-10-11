@@ -452,11 +452,11 @@ export async function removePaymentMethod(methodId: string, owner: MethodOwner):
 }
 
 /** Internal: fetch the provider token for charging (never exposed via API). */
-export async function getProviderToken(methodId: string): Promise<{ token: string; provider: string } | null> {
+export async function getProviderToken(methodId: string): Promise<{ token: string; provider: string; methodType: string } | null> {
   const { rows } = await adminPool.query(
-    `SELECT provider_token, provider FROM pay_payment_methods WHERE id = $1 AND status = 'active'`,
+    `SELECT provider_token, provider, method_type FROM pay_payment_methods WHERE id = $1 AND status = 'active'`,
     [methodId],
   );
   if (rows.length === 0) return null;
-  return { token: rows[0].provider_token, provider: rows[0].provider };
+  return { token: rows[0].provider_token, provider: rows[0].provider, methodType: rows[0].method_type };
 }

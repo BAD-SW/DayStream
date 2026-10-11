@@ -478,6 +478,7 @@ export async function settleCharge(chargeRow: any, runContext: RunContext = MANU
       amount: chargeRow.amount_charged_cents,
       currency: chargeRow.currency,
       methodToken: tokenInfo.token,
+      methodType: tokenInfo.methodType as any,
       customerRef,
       idempotencyKey: `platbill:${tenantId}:${chargeRow.cycle_year}-${chargeRow.cycle_month}`,
       description: `DayStream platform billing ${chargeRow.cycle_year}-${String(chargeRow.cycle_month).padStart(2, '0')}`,
