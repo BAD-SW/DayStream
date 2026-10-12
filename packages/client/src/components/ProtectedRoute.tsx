@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useContextManager, resolvePersona, getPermissionsFromRole } from '../context/ContextManager';
+import { useContextManager, resolvePersona, getPermissionsFromRole, normalizeRole } from '../context/ContextManager';
 import { mayOpenBusinessPath } from '../design-system/components/dashboard/moduleRegistry';
 import { LoadingSpinner } from './LoadingSpinner';
 import { AppLayout } from './AppLayout';
@@ -65,8 +65,13 @@ export function ProtectedRoute({ children, requiredRole, layout = 'app' }: Prote
   if (requiredRole) {
     const userRole = user?.role || '';
     // Allow both database column values (snake_case) and roles table names (display format)
-    const elevatedRoles = ['Super Admin', 'system_admin', 'system_support', 'Business Owner', 'business_owner', 'tenant_owner'];
-    const hasAccess = userRole === requiredRole || elevatedRoles.includes(userRole);
+    // A role arrives either as the roles table's name ('Tenant Owner') or as the column value
+    // ('tenant_owner'), depending on whether the user just signed in or reloaded the page. The
+    // list below held a mix of both spellings, so a tenant owner was sent back to the dashboard
+    // from every organisation screen after a reload. System and tenant personas pass; so does a
+    // business owner.
+    const hasAccess = userRole === requiredRole || persona === 'system' || persona === 'tenant'
+      || normalizeRole(userRole) === 'business_owner';
     if (!hasAccess) {
       return <Navigate to="/dashboard" replace />;
     }

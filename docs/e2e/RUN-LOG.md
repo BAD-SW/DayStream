@@ -31,7 +31,7 @@ What was not cleaned up, if anything.
 
 ## Runs
 
-## Run 20261012-6 — full run (in progress)
+## Run 20261012-6 — full run (suites 00, 02 to 16)
 - Commit at start: `2a62bc8` · Migrations at end so far: 143 · Processor mode: Stripe test (platform, seed tenant, seed business); mock for the E2E tenant
 - Method: each script is driven through the API by a repeatable script (kept in the session scratchpad: `r00`, `r02`, `r02b`, `r03`, `r05`, `r06`, `r07`, `r08`, `r09`, `r10`, `r11`, `r12`, `r13`, `r14`, `r15`, and `sweep` for the cross-organisation check), with the browser used for screens, menus and typed addresses. Data is created in a dedicated tenant `E2E 20261012-6 SysTenant` and its business `E2E 20261012-6 Biz` (time zone Europe/Madrid)
 - A script is marked `Verified` when every check passed after fixes. Scripts whose remaining part is purely visual are noted below
@@ -55,7 +55,9 @@ What was not cleaned up, if anything.
 | 13 Marketing | 7 pass after fixes; MKT-05 Blocked (no sequence builder); MKT-09 to MKT-20 Blocked (spec 48 not built) | Screens |
 | 14 Website & widget | 12 pass after fixes | WEB-05 (media upload) and the widget's own screen and messages are browser checks |
 | 15 Events, community, integrations | 11 pass after fixes; INT-03 Blocked (API keys cannot be used yet) | Screens; the feature flags for Events and Community are off by default |
-| 01, 16, 17 | pending | |
+| 16 UI cross-cutting | UIX-08, 09, 10 pass: 60 business screens as owner, 14 as system admin, 12 as tenant owner, opened in the browser with no failed request and no console error; addresses above the login's level bounce to the dashboard | Dark / light contrast, keyboard, responsive, long content: not run |
+| 01 Journeys | not run as sequences; their steps are covered by suites 05 to 15 | all 16 |
+| 17 Inbox | Blocked (spec 47 not built) | |
 
 ### Defects found and fixed in this run
 | Id | Severity | Summary |
@@ -116,6 +118,8 @@ What was not cleaned up, if anything.
 | D-76 | High | Redeeming a negative number of points added points. A review could be left by someone who never had the service |
 | D-77 | High | Webhooks never fired: nothing sent "booking created" or "booking cancelled" to subscribers. The signing secret was returned in every listing; deliveries of any organisation's webhook could be read by id; a webhook could point into the server's own network |
 | D-78 | Medium | Events: an event could be published with no ticket; a full event turned people away instead of using its waitlist, and nothing could confirm a paid registration or a waitlist offer into a registration; cancelling an event left its registrations active; a recurrence ignored "end after N" and could not be cancelled (query error); the public calendar returned the whole record. A provider could not get their own calendar feed |
+| D-79 | High | After a page reload a tenant owner was sent back to the dashboard from every organisation screen (the route guard compared two spellings of the role) |
+| D-80 | High | The Memberships screen crashed, taking the whole application with it, as soon as the business had one membership (it read fields the list does not return) |
 | — | — | 635 API handlers answered "server error" without recording the cause; they now log it |
 
 ### Observations (not changed)

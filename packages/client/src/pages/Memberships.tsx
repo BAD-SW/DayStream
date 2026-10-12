@@ -62,11 +62,12 @@ export function Memberships() {
   };
 
   const columns = [
-    { key: 'customer', header: 'Customer', render: (_: any, row: Membership) => `${row.first_name} ${row.last_name}` },
+    { key: 'customer', header: 'Customer', render: (_: any, row: any) => [row.customer_first_name ?? row.first_name, row.customer_last_name ?? row.last_name].filter(Boolean).join(' ') || row.customer_email || '—' },
     { key: 'plan_name', header: 'Plan' },
-    { key: 'plan_type', header: 'Type', render: (v: string) => v.replace('_', ' ') },
+    // The list carries the plan's billing frequency (there is no plan_type: reading it crashed the screen).
+    { key: 'billing_frequency', header: 'Billing', render: (v: string) => (v ? v.replace(/_/g, ' ') : '—') },
     { key: 'status', header: 'Status', render: (v: string) => <Badge variant={STATUS_VARIANTS[v] || 'neutral'}>{v}</Badge> },
-    { key: 'credit_balance', header: 'Credits' },
+    { key: 'credit_balance', header: 'Credits', render: (v: any) => (v === undefined || v === null ? '—' : v) },
     { key: 'next_billing_date', header: 'Next Billing', render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' },
     {
       key: 'actions', header: '',

@@ -2,7 +2,7 @@
 
 **Owner:** Claude (maintained in every working session) · **Created:** 2026-10-12
 **Synced through commit:** `417c0e6` (feat(payments): accounting hardening, bank-draw reconciliation, and billing UX)
-**Script count:** 298 across 18 suites · **Verified by execution:** 95 · **Failing:** 0 · **Blocked:** 31 (specs 47–48, KI-13) · **Draft (not yet run):** 172 — full run 20261012-6 in progress, see [RUN-LOG.md](./RUN-LOG.md)
+**Script count:** 298 across 18 suites · **Verified by execution:** 227 · **Failing:** 0 · **Blocked:** 32 (specs 47–48 not built, sequence builder, API keys) · **Draft (not yet run, or only partly):** 39: run 20261012-6 covered suites 00 and 02 to 16; the journeys (suite 01) were not run as sequences, and the remaining drafts are mostly on-screen checks
 
 This is the living end-to-end (E2E) regression book for DayStream. It exists for two goals:
 

@@ -43,17 +43,17 @@ Staff pages are excluded from visual-consistency checks until they are migrated 
 **Expect:** the sort indicator matches the order; paging keeps the filter and sort; an empty result shows an explanatory empty state, not a blank area; a loading indicator shows while data loads.
 
 ### UIX-08 · Errors are handled, not swallowed
-`P0` `regression` · Spec 04 R6 · Status: Draft
+`P0` `regression` · Spec 04 R6 · Status: Verified
 1. Open a detail URL with a non-existent id (customer, service, booking). 2. Stop the API server and use a list screen and a save action; restart it. 3. Let the access token expire (or delete it) and click a navigation link.
 **Expect:** not-found shows a clear message with a way back; with the API down the user sees an error state and unsaved form content is not lost; an expired session leads to login and returns to the page afterwards. No white screen, no raw stack trace, no endless spinner.
 
 ### UIX-09 · Navigation integrity
-`P1` `regression` · Spec 04 R7 · As: owner, tenant, system · Status: Draft
+`P1` `regression` · Spec 04 R7 · As: owner, tenant, system · Status: Verified
 1. Click every sidebar item and every dashboard tile for the persona. Use browser back and forward across five pages. Type an unknown URL.
 **Expect:** every item leads to a working page (no dead link); the active item is highlighted for the current page, including nested routes such as `/customers/{id}`; back / forward restore the right page; an unknown URL lands on the dashboard.
 
 ### UIX-10 · No console errors or failed requests on a full tour
-`P1` `regression` · Status: Draft
+`P1` `regression` · Status: Verified
 1. With the console and network panel recording, repeat SMK-02 to SMK-07.
 **Expect:** no uncaught exceptions, no React key / state warnings that indicate broken behaviour, no 4xx / 5xx requests other than those a negative test intends. List every offender with its page.
 
