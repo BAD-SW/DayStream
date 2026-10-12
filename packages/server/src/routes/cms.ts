@@ -1,3 +1,5 @@
+import { publicFormLimiter } from '../middleware/rate-limit';
+import { adminPool } from '../db/pool';
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
@@ -63,12 +65,23 @@ cmsRouter.get('/public/sitemap', async (req: Request, res: Response) => {
     res.setHeader('Content-Type', 'application/xml'); res.send(xml);
   } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
-cmsRouter.post('/forms/submit', async (req: Request, res: Response) => {
+cmsRouter.post('/forms/submit', publicFormLimiter, async (req: Request, res: Response) => {
   try {
-    const tenantId = req.body.tenant_id;
-    if (!tenantId) { error(res, 'tenant_id required', 'VALIDATION_ERROR', 400); return; }
-    const sub = await formsService.submitForm(tenantId, { formName: req.body.form_name, data: req.body.data, ipAddress: req.ip });
-    success(res, sub, undefined, 201);
+    // The form names its site (or, as before, its organisation).
+    const uuid = /^[0-9a-f-]{36}$/i;
+    const { rows: owner } = await adminPool.query(
+      `SELECT t.id FROM sys_tenants t WHERE t.id = $1
+       UNION SELECT s.tenant_id FROM web_sites s WHERE s.id = $2 LIMIT 1`,
+      [uuid.test(req.body.tenant_id || '') ? req.body.tenant_id : null, uuid.test(req.body.site_id || '') ? req.body.site_id : null],
+    );
+    if (owner.length === 0) { error(res, 'This form is not available', 'NOT_FOUND', 404); return; }
+    const data = req.body.data && typeof req.body.data === 'object' && !Array.isArray(req.body.data) ? req.body.data : {};
+    const filled = Object.values(data).filter((v) => typeof v === 'string' && v.trim() !== '');
+    if (filled.length === 0) { error(res, 'Please fill in the form', 'VALIDATION_ERROR', 400); return; }
+    if (JSON.stringify(data).length > 20000) { error(res, 'The message is too long', 'VALIDATION_ERROR', 400); return; }
+    if (typeof data.email === 'string' && data.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())) { error(res, 'That email address does not look right', 'VALIDATION_ERROR', 400); return; }
+    await formsService.submitForm(owner[0].id, { formName: String(req.body.form_name || 'contact').slice(0, 100), data, ipAddress: req.ip });
+    success(res, { received: true }, undefined, 201);
   } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
@@ -100,7 +113,7 @@ cmsRouter.get('/pages', requirePermission('cms:read'), async (req: Request, res:
   try { const authReq = req as AuthenticatedRequest; const site = await siteService.getSite(authReq.tenantId); success(res, await pagesService.getPages(site.id)); } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 cmsRouter.post('/pages', requirePermission('cms:*'), async (req: Request, res: Response) => {
-  try { const authReq = req as AuthenticatedRequest; const site = await siteService.getSite(authReq.tenantId); const p = await pagesService.createPage(site.id, req.body); success(res, p, undefined, 201); } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const authReq = req as AuthenticatedRequest; const site = await siteService.getSite(authReq.tenantId); const p = await pagesService.createPage(site.id, req.body); success(res, p, undefined, 201); } catch (err: any) { if (err?.code === '23505') { error(res, 'Another page already uses this address', 'DUPLICATE_SLUG', 409); return; } console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 cmsRouter.get('/pages/:id', requirePermission('cms:read'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const site = await siteService.getSite(authReq.tenantId); const p = await pagesService.getPageById(req.params.id, site.id); if (!p) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, p); } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }

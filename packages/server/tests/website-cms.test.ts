@@ -147,7 +147,7 @@ describe('Website & CMS', () => {
         data: { name: 'Jane', email: 'jane@test.com', message: 'Hello!' },
       });
       expect(statusCode).toBe(201);
-      expect(body.data.form_name).toBe('contact');
+      expect(body.data.received).toBe(true);
     });
 
     it('lists submissions (admin)', async () => {

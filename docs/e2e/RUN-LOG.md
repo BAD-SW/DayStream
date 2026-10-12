@@ -32,8 +32,8 @@ What was not cleaned up, if anything.
 ## Runs
 
 ## Run 20261012-6 — full run (in progress)
-- Commit at start: `2a62bc8` · Migrations at end so far: 142 · Processor mode: Stripe test (platform, seed tenant, seed business); mock for the E2E tenant
-- Method: each script is driven through the API by a repeatable script (kept in the session scratchpad: `r00`, `r02`, `r02b`, `r03`, `r05`, `r06`, `r07`, `r08`, `r09`, `r10`, `r11`, `r12`, `r13`, and `sweep` for the cross-organisation check), with the browser used for screens, menus and typed addresses. Data is created in a dedicated tenant `E2E 20261012-6 SysTenant` and its business `E2E 20261012-6 Biz` (time zone Europe/Madrid)
+- Commit at start: `2a62bc8` · Migrations at end so far: 143 · Processor mode: Stripe test (platform, seed tenant, seed business); mock for the E2E tenant
+- Method: each script is driven through the API by a repeatable script (kept in the session scratchpad: `r00`, `r02`, `r02b`, `r03`, `r05`, `r06`, `r07`, `r08`, `r09`, `r10`, `r11`, `r12`, `r13`, `r14`, and `sweep` for the cross-organisation check), with the browser used for screens, menus and typed addresses. Data is created in a dedicated tenant `E2E 20261012-6 SysTenant` and its business `E2E 20261012-6 Biz` (time zone Europe/Madrid)
 - A script is marked `Verified` when every check passed after fixes. Scripts whose remaining part is purely visual are noted below
 
 ### Progress
@@ -53,7 +53,8 @@ What was not cleaned up, if anything.
 | 11 Accounting & payroll | 14 of 14 pass after fixes | Screens only covered by the smoke tour |
 | 12 Reports | 8 of 8 pass after fixes (all 19 catalogue reports run) | Dashboard cards, sorting and filtering on screen are browser checks |
 | 13 Marketing | 7 pass after fixes; MKT-05 Blocked (no sequence builder); MKT-09 to MKT-20 Blocked (spec 48 not built) | Screens |
-| 01, 14 to 17 | pending | |
+| 14 Website & widget | 12 pass after fixes | WEB-05 (media upload) and the widget's own screen and messages are browser checks |
+| 01, 15 to 17 | pending | |
 
 ### Defects found and fixed in this run
 | Id | Severity | Summary |
@@ -107,6 +108,9 @@ What was not cleaned up, if anything.
 | D-69 | High | A campaign that was "sent" was only queued: nothing delivered it, it stayed "sending" for good and its figures stayed at 0. Sending now hands each message to the provider, records it per recipient and on the person's timeline, and closes the campaign |
 | D-70 | High | The public unsubscribe address accepted any person's id with any organisation's id: anyone holding an id could switch off someone's messages |
 | D-71 | Medium | A lead form accepted an invalid email (creating a person with it) and answered "server error" to an empty form; its public page returned the record's internals; its conversion rate could exceed 100 %. An empty sequence could be switched on; a scheduled campaign could not be given a new time, and a time in the past was accepted |
+| D-72 | High | A website page had no published version: every saved edit was public at once (migration 143 keeps the published copy) |
+| D-73 | Medium | The public site data returned the whole site record with the organisation's id and hosting details; the contact form accepted empty and malformed submissions, answered with the stored record, crashed for an unknown organisation and had no limit on how often it could be sent; a second page with the same address answered "server error" |
+| D-74 | Medium | A slot held in the booking widget stayed on offer in the internal booking form (holds without a chosen provider were ignored) |
 | — | — | 635 API handlers answered "server error" without recording the cause; they now log it |
 
 ### Observations (not changed)
@@ -133,6 +137,8 @@ What was not cleaned up, if anything.
 - AP aging includes a bill from the moment it is entered, before approval.
 - The stored daily metrics behind the configurable dashboard widgets, and scheduled reports, exist per organisation only. A business-level user may use them when the organisation has a single business; otherwise they get an empty set.
 - The summary "revenue" report (older generation) means the price of completed bookings, not money taken; the catalogue's Revenue and Payments Received reports are the money figures.
+- The website is one per organisation, not per business: every business owner of the organisation edits the same site.
+- With "payment before confirmation" switched off, a package or membership taken through the widget becomes active without any payment.
 - Sequences: there is no builder (screen or endpoint) to give a sequence its steps, and no pre-built ones, so a sequence cannot be switched on. The engine behind it is covered by unit tests only.
 - A scheduled campaign is stored with its time, but nothing was seen sending it when the time comes; "send now" works.
 - The unsubscribe address identifies the person by id, not by a signed link.

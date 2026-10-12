@@ -95,7 +95,8 @@ export async function updatePage(id: string, siteId: string, updates: Record<str
  */
 export async function publishPage(id: string, siteId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE web_pages SET status = 'published', published_at = NOW(), updated_at = NOW()
+    `UPDATE web_pages SET status = 'published', published_at = NOW(), updated_at = NOW(),
+            published_title = title, published_blocks = content_blocks, published_seo = seo_config
      WHERE id = $1 AND site_id = $2 RETURNING *`,
     [id, siteId],
   );

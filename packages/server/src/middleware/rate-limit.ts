@@ -23,3 +23,15 @@ export const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+/**
+ * Public forms (website contact form): a visitor sends a handful, a script sends hundreds.
+ * 8 submissions per minute per IP.
+ */
+export const publicFormLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 8,
+  message: { error: 'Too many submissions. Please try again in a minute.', code: 'RATE_LIMITED' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

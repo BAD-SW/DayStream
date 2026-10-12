@@ -29,10 +29,12 @@ export async function getPublicSite(identifier: string) {
     if (nav.nav_type === 'footer') navigation.footer = nav;
   }
 
+  // Visitors get what the site shows, not the record: no organisation id, no hosting details.
+  const publicNav = (nav: any) => (nav ? { items: nav.items, settings: nav.settings } : null);
   return {
-    site,
+    site: { id: site.id, slug: site.slug, custom_domain: site.domain_status === 'active' ? site.custom_domain : null, settings: site.settings || {} },
     theme: site.settings?.theme || {},
-    navigation,
+    navigation: { header: publicNav(navigation.header), footer: publicNav(navigation.footer) },
   };
 }
 
@@ -41,9 +43,12 @@ export async function getPublicSite(identifier: string) {
  */
 export async function getPublicPage(siteId: string, pageSlug: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM web_pages
-     WHERE site_id = $1 AND slug = $2 AND is_enabled = true AND status = 'published'`,
-    [siteId, pageSlug],
+    `SELECT p.slug, COALESCE(p.published_title, p.title) AS title, p.page_type,
+            COALESCE(p.published_blocks, p.content_blocks) AS content_blocks,
+            COALESCE(p.published_seo, p.seo_config) AS seo_config, p.published_at
+       FROM web_pages p JOIN web_sites s ON s.id = p.site_id
+      WHERE p.site_id = $1 AND p.slug = $2 AND p.is_enabled = true AND p.status = 'published' AND s.is_published = true`,
+    [/^[0-9a-f-]{36}$/i.test(siteId) ? siteId : null, pageSlug],
   );
   return rows[0] || null;
 }

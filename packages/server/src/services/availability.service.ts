@@ -176,14 +176,14 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
 
   // 7. Load slot holds
   const { rows: activeHolds } = await adminPool.query(
-    `SELECT staff_id, start_time, end_time
+    `SELECT staff_id, service_id, start_time, end_time
      FROM apt_slot_holds
      WHERE business_id = $1
        AND expires_at > NOW()
        AND start_time < $3::timestamptz
        AND end_time > $2::timestamptz
-       AND ($4::uuid[] IS NULL OR staff_id = ANY($4))`,
-    [businessId, new Date(dateFrom).toISOString(), new Date(dateTo + 'T23:59:59Z').toISOString(), staffIds.length > 0 ? staffIds : null],
+       AND ($4::uuid[] IS NULL OR staff_id = ANY($4) OR (staff_id IS NULL AND service_id = $5))`,
+    [businessId, new Date(dateFrom).toISOString(), new Date(dateTo + 'T23:59:59Z').toISOString(), staffIds.length > 0 ? staffIds : null, service.id],
   );
 
   // 7b. Load resource bookings for conflict checking
@@ -349,6 +349,15 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
           : windowEligibleStaff;
 
         if (availableStaffForSlot.length === 0 && needsStaff) continue;
+
+        // A hold taken without choosing a provider (the booking widget does this) reserves one
+        // of the providers who could take the slot: when as many are held as are free, the slot
+        // is gone. (Such holds were ignored, so a held slot stayed on offer.)
+        if (needsStaff && !isSession) {
+          const unassignedHolds = activeHolds.filter((h: any) => !h.staff_id && h.service_id === service.id
+            && new Date(h.start_time) < slotEnd && new Date(h.end_time) > slotStart).length;
+          if (unassignedHolds >= availableStaffForSlot.length) continue;
+        }
 
         // Check resource availability for this slot (if resources are required by this window).
         // resourceIds are alternatives (any one of them satisfies the window), so the slot's
