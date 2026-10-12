@@ -13,7 +13,10 @@ import * as marketplaceService from '../services/integration-marketplace.service
 export const integrationsRouter = Router();
 
 // Public iCal feed (no auth, token-based)
-integrationsRouter.get('/ical/:token', async (req: Request, res: Response) => {
+integrationsRouter.get('/ical/:token', async (req: Request, res: Response, next) => {
+  // '/ical/staff' and '/ical/customer' are authenticated routes declared further down;
+  // without this they were swallowed here as if they were feed tokens (always 404).
+  if (req.params.token === 'staff' || req.params.token === 'customer') { next(); return; }
   try {
     const content = await icalService.generateIcalContent(req.params.token);
     if (!content) { error(res, 'Feed not found', 'NOT_FOUND', 404); return; }

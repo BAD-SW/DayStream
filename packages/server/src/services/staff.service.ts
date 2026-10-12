@@ -38,15 +38,13 @@ interface StaffFilters {
  */
 async function generateStaffRef(tenantId: string): Promise<string> {
   const { rows } = await adminPool.query(
-    `SELECT staff_ref FROM stf_profiles WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    // Highest number in use, not the most recently created profile: the latest row is not
+    // always the highest reference, and taking it produced a duplicate (and a failed create).
+    `SELECT COALESCE(MAX(substring(staff_ref from '^STF-([0-9]+)$')::int), 0) AS max_num
+       FROM stf_profiles WHERE tenant_id = $1`,
     [tenantId],
   );
-
-  let nextNum = 1;
-  if (rows.length > 0) {
-    const match = rows[0].staff_ref.match(/STF-(\d+)/);
-    if (match) nextNum = parseInt(match[1], 10) + 1;
-  }
+  const nextNum = rows[0].max_num + 1;
 
   return `STF-${String(nextNum).padStart(3, '0')}`;
 }

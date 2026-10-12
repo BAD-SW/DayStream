@@ -176,6 +176,8 @@ membershipsRouter.post('/', requirePermission('services:*'), validate(createMemb
   } catch (err: any) {
     if (err.message.includes('not found')) {
       error(res, err.message, 'NOT_FOUND', 404);
+    } else if (err.message.includes('already has an active membership')) {
+      error(res, err.message, 'ALREADY_ENROLLED', 409);
     } else { error(res, 'Failed to enroll customer', 'INTERNAL_ERROR', 500); }
   }
 });

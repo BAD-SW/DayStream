@@ -34,9 +34,10 @@ export async function archiveAccount(id: string, businessId: string): Promise<{ 
   if (txnCheck.length > 0) return { success: false, error: 'Cannot archive account with transactions' };
 
   const { rows: acct } = await adminPool.query(
-    'SELECT id FROM fin_chart_of_accounts WHERE id = $1 AND business_id = $2', [id, businessId],
+    'SELECT id, is_system FROM fin_chart_of_accounts WHERE id = $1 AND business_id = $2', [id, businessId],
   );
   if (acct.length === 0) return { success: false, error: 'Account not found' };
+  if (acct[0].is_system) return { success: false, error: 'Cannot archive a system account' };
 
   await adminPool.query(
     "UPDATE fin_chart_of_accounts SET status = 'archived' WHERE id = $1 AND business_id = $2", [id, businessId],

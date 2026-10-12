@@ -238,7 +238,7 @@ describe('Booking Engine — Integration Tests', () => {
 
     it('check-in and complete the booking', async () => {
       const checkin = await lifecycleService.checkInBooking(bookingId, BUSINESS_ID, '00000000-0000-0000-0000-000000000010', TENANT_ID);
-      expect(checkin.booking?.status).toBe('in_progress');
+      expect(checkin.booking?.status).toBe('checked_in');
 
       const complete = await lifecycleService.completeBooking(bookingId, BUSINESS_ID, '00000000-0000-0000-0000-000000000010', TENANT_ID);
       expect(complete.booking?.status).toBe('completed');

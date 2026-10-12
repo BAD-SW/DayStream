@@ -5,7 +5,7 @@ vi.mock('../src/db/pool', () => ({
   adminPool: { query: vi.fn() },
 }));
 
-import { pool } from '../src/db/pool';
+import { adminPool as pool } from '../src/db/pool'; // the services query through adminPool
 import { SavedQueryService, SavedQueryServiceError } from '../src/services/query-editor/saved-query.service';
 
 const mockQuery = pool.query as ReturnType<typeof vi.fn>;

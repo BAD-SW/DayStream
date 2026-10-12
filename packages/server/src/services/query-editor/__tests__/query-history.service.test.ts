@@ -9,7 +9,7 @@ vi.mock('../../../middleware/logger', () => ({
   logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
 }));
 
-import { pool } from '../../../db/pool';
+import { adminPool as pool } from '../../../db/pool'; // the services query through adminPool
 import { QueryHistoryService } from '../query-history.service';
 
 const mockQuery = pool.query as ReturnType<typeof vi.fn>;

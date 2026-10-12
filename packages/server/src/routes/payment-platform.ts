@@ -136,8 +136,45 @@ const connectSchema = Joi.object({
   provider_account_ref: Joi.string().allow('', null),
 });
 
+/**
+ * A processor connection may only be read or changed at the caller's own level or below:
+ *   - system users: any level, any tenant/business;
+ *   - tenant users: their own tenant, and businesses belonging to it;
+ *   - business users: their own business only.
+ * `settings:*` alone is not enough — every business owner holds it.
+ * Returns false after sending a 403 when the caller is out of scope.
+ */
+async function authorizeProcessorOwner(
+  req: Request, res: Response,
+  owner: { ownerLevel: string; tenantId?: string | null; businessId?: string | null },
+): Promise<boolean> {
+  const authReq = req as AuthenticatedRequest;
+  const deny = () => { error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return false; };
+  const { rows } = await adminPool.query(
+    'SELECT role, tenant_id, business_id FROM usr_users WHERE id = $1', [authReq.user.sub],
+  );
+  const caller = rows[0];
+  if (!caller) return deny();
+  const role = String(caller.role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (role === 'system_admin' || role === 'system_support' || role === 'super_admin') return true;
+  if (owner.ownerLevel === 'platform') return deny();
+
+  const isTenantUser = role === 'tenant_owner' || role === 'tenant_manager';
+  if (owner.ownerLevel === 'tenant') {
+    return isTenantUser && owner.tenantId === caller.tenant_id ? true : deny();
+  }
+  if (!owner.businessId) return deny();
+  if (isTenantUser) {
+    const biz = await adminPool.query('SELECT 1 FROM sys_businesses WHERE id = $1 AND tenant_id = $2', [owner.businessId, caller.tenant_id]);
+    return biz.rowCount ? true : deny();
+  }
+  return owner.businessId === caller.business_id ? true : deny();
+}
+
 paymentPlatformRouter.get('/processors', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
+    // The full list spans every tenant and business: platform operators only.
+    if (!(await authorizeProcessorOwner(req, res, { ownerLevel: 'platform' }))) return;
     const { rows } = await adminPool.query(
       `SELECT id, owner_level, tenant_id, business_id, provider, provider_account_ref, status, created_at
        FROM pay_processor_connections ORDER BY owner_level, created_at`,
@@ -149,6 +186,8 @@ paymentPlatformRouter.get('/processors', requirePermission('settings:*'), async 
 paymentPlatformRouter.post('/processors/connect', requirePermission('settings:*'), validate(connectSchema), async (req: Request, res: Response) => {
   try {
     const { owner_level, tenant_id, business_id, provider, provider_account_ref } = req.body;
+    const connectOwner = configOwnerFromReq(req)!;
+    if (!(await authorizeProcessorOwner(req, res, connectOwner))) return;
     const { rows } = await adminPool.query(
       `INSERT INTO pay_processor_connections (tenant_id, business_id, owner_level, provider, provider_account_ref)
        VALUES ($1,$2,$3,$4,$5)
@@ -191,6 +230,7 @@ paymentPlatformRouter.get('/processors/config', requirePermission('settings:*'),
   try {
     const owner = configOwnerFromReq(req);
     if (!owner) { error(res, 'owner_level required (platform|tenant|business)', 'VALIDATION_ERROR', 400); return; }
+    if (!(await authorizeProcessorOwner(req, res, owner))) return;
     const view = await processorConfig.getProcessorConfig(owner);
     success(res, view); // null when nothing configured yet
   } catch (err: any) { error(res, 'Failed to read processor config', 'INTERNAL_ERROR', 500); }
@@ -208,6 +248,7 @@ const saveConfigSchema = Joi.object({
 paymentPlatformRouter.post('/processors/test', requirePermission('settings:*'), validate(saveConfigSchema), async (req: Request, res: Response) => {
   try {
     const owner = configOwnerFromReq(req)!;
+    if (!(await authorizeProcessorOwner(req, res, owner))) return;
     const result = await processorConfig.testProcessorConnection(owner, req.body.provider, req.body.config || {});
     success(res, result);
   } catch (err: any) {
@@ -221,6 +262,7 @@ paymentPlatformRouter.post('/processors/test', requirePermission('settings:*'), 
 paymentPlatformRouter.post('/processors/test-probe', requirePermission('settings:*'), validate(saveConfigSchema), async (req: Request, res: Response) => {
   try {
     const owner = configOwnerFromReq(req)!;
+    if (!(await authorizeProcessorOwner(req, res, owner))) return;
     const result = await processorConfig.prepareConnectionProbe(owner, req.body.provider, req.body.config || {});
     success(res, result);
   } catch (err: any) {
@@ -233,6 +275,7 @@ paymentPlatformRouter.put('/processors/config', requirePermission('settings:*'),
   try {
     const authReq = req as AuthenticatedRequest;
     const owner = configOwnerFromReq(req)!;
+    if (!(await authorizeProcessorOwner(req, res, owner))) return;
     const view = await processorConfig.saveProcessorConfig(owner, req.body.provider, req.body.config || {}, authReq.user.sub);
     success(res, view);
   } catch (e: any) {

@@ -13,6 +13,36 @@ export const bookingsRouter = Router();
 bookingsRouter.use(authenticate);
 bookingsRouter.use(tenantContext);
 
+function isCustomerRole(req: Request): boolean {
+  return ((req as AuthenticatedRequest).user.role || '').trim().toLowerCase() === 'customer';
+}
+
+/**
+ * Customer-role users hold bookings:read but may only see their own bookings.
+ * Returns undefined for any other role (no restriction), the caller's customer id
+ * in the business when they have a customer record there, or null when they have none.
+ * A customer login is matched to its customer record by email.
+ */
+async function ownCustomerScope(req: Request, businessId: string): Promise<string | null | undefined> {
+  if (!isCustomerRole(req)) return undefined;
+  const authReq = req as AuthenticatedRequest;
+  const { rows } = await adminPool.query(
+    `SELECT c.id FROM cus_customers c
+       JOIN usr_users u ON LOWER(u.email) = LOWER(c.email)
+      WHERE u.id = $1 AND c.business_id = $2
+      ORDER BY c.created_at ASC LIMIT 1`,
+    [authReq.user.sub, businessId],
+  );
+  return rows[0]?.id ?? null;
+}
+
+/** Whole-business read views (calendar, recurring series) reject customer-role callers. */
+function rejectCustomerRole(req: Request, res: Response): boolean {
+  if (!isCustomerRole(req)) return false;
+  error(res, 'Insufficient permissions', 'FORBIDDEN', 403);
+  return true;
+}
+
 // ============================================================
 // Availability
 // ============================================================
@@ -177,6 +207,7 @@ bookingsRouter.get('/calendar', requirePermission('bookings:read'), async (req: 
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (rejectCustomerRole(req, res)) return;
     const view = (req.query.view as string) || 'day';
     if (!['day', 'week', 'month'].includes(view)) { error(res, 'view must be day, week, or month', 'VALIDATION_ERROR', 400); return; }
     const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
@@ -189,6 +220,46 @@ bookingsRouter.get('/calendar', requirePermission('bookings:read'), async (req: 
     success(res, result);
   } catch (err: any) {
     error(res, 'Failed to load calendar', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/bookings/filters — (registered before /:id)
+// What the bookings list needs to render for ANY business user: the business time zone
+// (times are shown in business-local time) and the staff / service names for its filters.
+// The full staff, services and business endpoints need staff:read / services:read /
+// settings:*, which front-line staff do not hold; this exposes names only.
+import * as staffServiceForward from '../services/staff.service';
+import * as locationHoursServiceForward from '../services/location-hours.service';
+
+bookingsRouter.get('/filters', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (rejectCustomerRole(req, res)) return;
+    const authReq = req as AuthenticatedRequest;
+    const biz = await adminPool.query(
+      'SELECT timezone, currency FROM sys_businesses WHERE id = $1 AND tenant_id = $2', [businessId, authReq.tenantId],
+    );
+    if (!biz.rows[0]) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    const [staff, services, primaryLocation] = await Promise.all([
+      staffServiceForward.getStaffList(authReq.tenantId, { status: 'active', businessId, page: 1, limit: 200 }),
+      adminPool.query(`SELECT id, name, status FROM svc_services WHERE business_id = $1 AND status <> 'archived' ORDER BY name`, [businessId]),
+      adminPool.query(`SELECT id FROM sys_locations WHERE business_id = $1 ORDER BY is_primary DESC, display_order, name LIMIT 1`, [businessId]),
+    ]);
+    // Opening hours of the primary location size the calendar's time axis. Served here because
+    // the locations endpoints need settings:read, which staff roles do not have.
+    const locationHours = primaryLocation.rows[0]
+      ? await locationHoursServiceForward.getLocationHours(primaryLocation.rows[0].id)
+      : [];
+    success(res, {
+      timezone: biz.rows[0].timezone || 'UTC',
+      currency: biz.rows[0].currency || null,
+      staff: (staff.staff as any[]).map((s) => ({ user_id: s.user_id, first_name: s.first_name, last_name: s.last_name })),
+      services: services.rows,
+      location_hours: locationHours,
+    });
+  } catch (err: any) {
+    error(res, 'Failed to load booking filters', 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -216,6 +287,7 @@ bookingsRouter.get('/recurring/:seriesId', requirePermission('bookings:read'), a
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
 
+    if (rejectCustomerRole(req, res)) return;
     const series = await recurringServiceForward.getSeriesById(req.params.seriesId, businessId);
     if (!series) { error(res, 'Series not found', 'NOT_FOUND', 404); return; }
     success(res, series);
@@ -284,17 +356,25 @@ bookingsRouter.get('/', requirePermission('bookings:read'), async (req: Request,
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
 
+    const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+    const ownCustomerId = await ownCustomerScope(req, businessId);
+    if (ownCustomerId === null) {
+      success(res, [], { page, limit, total: 0, totalPages: 0 });
+      return;
+    }
+
     const result = await bookingService.getBookings({
       businessId,
       dateFrom: req.query.date_from as string,
       dateTo: req.query.date_to as string,
       status: req.query.status as string,
-      customerId: req.query.customer_id as string,
-      customerSearch: req.query.customer_search as string,
+      customerId: ownCustomerId ?? (req.query.customer_id as string),
+      customerSearch: ownCustomerId ? undefined : (req.query.customer_search as string),
       staffId: req.query.staff_id as string,
       serviceId: req.query.service_id as string,
-      page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
-      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
+      page,
+      limit,
     });
 
     success(res, result.bookings, {
@@ -316,6 +396,8 @@ bookingsRouter.get('/:id', requirePermission('bookings:read'), async (req: Reque
 
     const booking = await bookingService.getBookingById(req.params.id, businessId);
     if (!booking) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    const ownCustomerId = await ownCustomerScope(req, businessId);
+    if (ownCustomerId !== undefined && (ownCustomerId === null || booking.customer_id !== ownCustomerId)) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
 
     success(res, booking);
   } catch (err: any) {
@@ -555,8 +637,10 @@ bookingsRouter.get('/:id/ical', requirePermission('bookings:read'), async (req: 
 
     const booking = await bookingService.getBookingById(req.params.id, businessId);
     if (!booking) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    const ownCustomerId = await ownCustomerScope(req, businessId);
+    if (ownCustomerId !== undefined && (ownCustomerId === null || booking.customer_id !== ownCustomerId)) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
 
-    const ical = notificationsServiceForward.generateICal({
+    const ical =notificationsServiceForward.generateICal({
       booking_reference: booking.booking_reference,
       service_name: booking.service_name,
       start_time: booking.start_time,

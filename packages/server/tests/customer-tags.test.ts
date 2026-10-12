@@ -3,6 +3,7 @@ import { app } from '../src/app';
 import http from 'http';
 import * as authService from '../src/services/auth.service';
 import { adminPool } from '../src/db/pool';
+import { resetBusinessData } from './helpers/test-business';
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001';
 let BUSINESS_ID: string;
@@ -52,6 +53,7 @@ describe('Customer Tags API', () => {
       [TENANT_ID],
     );
     BUSINESS_ID = bizRows[0].id;
+    await resetBusinessData(BUSINESS_ID);
 
     const { rows: custRows } = await adminPool.query(
       `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)

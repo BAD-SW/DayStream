@@ -22,8 +22,18 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 }
 
 describe('Community & Engagement', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     ownerToken = authService.generateAccessToken('00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner', ['community:*']);
+
+    // Reactions and reviews belong to a customer record: give the test login one (matched by email).
+    const { rows: biz } = await adminPool.query(
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status) VALUES ($1, 'Community Test Biz', 'community-test-biz', 'active')
+       ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Community Test Biz' RETURNING id`, [TENANT_ID]);
+    const { rows: login } = await adminPool.query('SELECT email FROM usr_users WHERE id = $1', ['00000000-0000-0000-0000-000000000010']);
+    await adminPool.query(
+      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+       VALUES ($1, $2, 'CUST-COMM-1', $3, 'Community', 'Tester', '00000000-0000-0000-0000-000000000010')
+       ON CONFLICT (business_id, email) DO NOTHING`, [TENANT_ID, biz[0].id, login[0].email]);
   });
 
   describe('Feed', () => {

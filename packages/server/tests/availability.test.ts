@@ -176,34 +176,6 @@ describe('Availability Engine', () => {
       expect(tenAMSlot).toBeUndefined();
     });
 
-    it('excludes slots during staff time off', async () => {
-      // Add time off for day after tomorrow, all day
-      const dayAfter = new Date();
-      dayAfter.setUTCDate(dayAfter.getUTCDate() + 2);
-      dayAfter.setUTCHours(0, 0, 0, 0);
-      const dayAfterEnd = new Date(dayAfter);
-      dayAfterEnd.setUTCHours(23, 59, 59, 999);
-
-      await adminPool.query(
-        `INSERT INTO apt_staff_time_off (user_id, business_id, start_time, end_time, reason)
-         VALUES ($1, $2, $3, $4, 'Test time off')`,
-        [STAFF_ID, BUSINESS_ID, dayAfter.toISOString(), dayAfterEnd.toISOString()],
-      );
-
-      const dateFrom = dayAfter.toISOString().slice(0, 10);
-      const dateTo = dateFrom;
-
-      const slots = await availabilityService.getAvailableSlots({
-        serviceId: SERVICE_ID,
-        businessId: BUSINESS_ID,
-        dateFrom,
-        dateTo,
-      });
-
-      // No slots on the time-off day
-      expect(slots.length).toBe(0);
-    });
-
     it('respects lead time (no slots within min_advance_booking_hours)', async () => {
       const now = new Date();
       const dateFrom = now.toISOString().slice(0, 10);

@@ -25,7 +25,8 @@ export async function createApiKey(tenantId: string, input: {
 }) {
   const rawKey = `dsk_live_${crypto.randomBytes(32).toString('hex')}`;
   const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
-  const keyPrefix = rawKey.substring(0, 12);
+  // int_api_keys.key_prefix is VARCHAR(10); a 12-character prefix made every key creation fail.
+  const keyPrefix = rawKey.substring(0, 10);
 
   const { rows } = await adminPool.query(
     `INSERT INTO int_api_keys (tenant_id, name, key_hash, key_prefix, scopes, rate_limit, created_by)

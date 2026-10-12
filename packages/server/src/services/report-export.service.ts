@@ -86,12 +86,12 @@ export async function getExportData(
 
     case 'memberships': {
       const { rows } = await adminPool.query(
-        `SELECT m.id, m.customer_id, m.plan_id, m.status, m.started_at, m.cancelled_at
-         FROM mem_memberships m
-         WHERE m.tenant_id = $1
-           AND m.started_at <= $2::date
+        `SELECT m.id, m.customer_id, m.plan_id, m.status, m.start_date AS started_at, m.cancelled_at
+         FROM mbr_enrollments m
+         WHERE m.business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1)
+           AND m.start_date <= $2::date
            AND (m.cancelled_at IS NULL OR m.cancelled_at >= $3::date)
-         ORDER BY m.started_at`,
+         ORDER BY m.start_date`,
         [tenantId, endDate, startDate],
       );
       return {

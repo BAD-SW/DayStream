@@ -1,8 +1,10 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useContextManager } from '../context/ContextManager';
+import { useContextManager, resolvePersona } from '../context/ContextManager';
 import { LoadingSpinner } from './LoadingSpinner';
 import { AppLayout } from './AppLayout';
+
+const CUSTOMER_PATHS = [/^\/dashboard$/, /^\/profile$/, /^\/bookings$/, /^\/events(\/(?!new$)[^/]+)?$/, /^\/community$/];
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -34,6 +36,12 @@ export function ProtectedRoute({ children, requiredRole, layout = 'app' }: Prote
     // Store redirect URL
     sessionStorage.setItem('redirectAfterLogin', location.pathname);
     return <Navigate to="/login" replace />;
+  }
+
+  // Customers only have self-service screens; every other route is a staff screen whose
+  // API calls they are not permitted to make.
+  if (resolvePersona(user?.role || '') === 'customer' && !CUSTOMER_PATHS.some((p) => p.test(location.pathname))) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (requiredRole) {

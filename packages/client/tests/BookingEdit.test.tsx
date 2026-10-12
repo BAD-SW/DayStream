@@ -31,7 +31,7 @@ const CUSTOMER_BOOKING = {
   service_id: MULTI_SERVICE.id, variant_id: VARIANT.id,
   customer_id: 'cust-1', customer_first_name: 'Jane', customer_last_name: 'Doe', customer_email: 'jane@example.com',
   walk_in_name: null, staff_id: 'staff-1', resource_id: 'res-1', participant_count: 2,
-  start_time: '2026-08-17T14:00:00.000Z', end_time: '2026-08-17T15:00:00.000Z',
+  start_time: '2099-08-17T14:00:00.000Z', end_time: '2099-08-17T15:00:00.000Z',
   status: 'confirmed', booking_type: 'individual', price: 5000, notes: 'Handle with care',
   created_at: '2026-08-01T00:00:00.000Z',
 };
@@ -59,6 +59,7 @@ describe('BookingEdit (parity with BookingCreate)', () => {
     );
     vi.mocked(resourcesApi.getResource).mockResolvedValue(RESOURCE as any);
     vi.mocked(bookingsApi.getAvailabilityDays).mockResolvedValue({ timezone: 'UTC', days: {} });
+    vi.mocked(bookingsApi.getBookingFilters).mockResolvedValue({ timezone: 'UTC', currency: 'EUR', staff: [], services: [] });
     vi.mocked(bookingsApi.updateBooking).mockResolvedValue({ id: 'booking-1' } as any);
     vi.mocked(apiClient.get).mockImplementation(apiClientGetMock as any);
   });
@@ -118,7 +119,7 @@ describe('BookingEdit (parity with BookingCreate)', () => {
   it('sends the new participant count and real customer_id when saving, without corrupting it to null', async () => {
     // The day-picker only enables a cell whose status is 'available' — the booking's own day must
     // be marked available or the click to re-enter the slot picker is a no-op.
-    vi.mocked(bookingsApi.getAvailabilityDays).mockResolvedValue({ timezone: 'UTC', days: { '2026-08-17': 'available' } });
+    vi.mocked(bookingsApi.getAvailabilityDays).mockResolvedValue({ timezone: 'UTC', days: { '2099-08-17': 'available' } });
     // The combo-fetch effect runs once during hydration (participant_count isn't in its deps,
     // matching BookingCreate's own behaviour) — so the slot data must be in place before render,
     // not swapped in after the fact.

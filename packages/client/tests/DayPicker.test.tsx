@@ -61,8 +61,9 @@ describe('DayPicker', () => {
     const onDaySelect = vi.fn();
     render(
       <DayPicker
-        dayStatuses={{ '2026-09-15': 'available', '2026-09-16': 'unavailable', '2026-09-17': 'closed' }}
-        viewedMonth="2026-09"
+        // A month that is always in the future: past days are never selectable.
+        dayStatuses={{ '2099-09-15': 'available', '2099-09-16': 'unavailable', '2099-09-17': 'closed' }}
+        viewedMonth="2099-09"
         onMonthChange={vi.fn()}
         onDaySelect={onDaySelect}
       />,
@@ -71,7 +72,7 @@ describe('DayPicker', () => {
     screen.getByText('16').closest('button')!.click();
     screen.getByText('17').closest('button')!.click();
     expect(onDaySelect).toHaveBeenCalledOnce();
-    expect(onDaySelect).toHaveBeenCalledWith('2026-09-15');
+    expect(onDaySelect).toHaveBeenCalledWith('2099-09-15');
   });
 
   it('disables the previous-month nav button when viewedMonth is the current month', () => {

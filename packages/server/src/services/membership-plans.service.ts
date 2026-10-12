@@ -86,7 +86,7 @@ export async function getPlanById(id: string, businessId: string) {
     `SELECT psa.*, s.name AS service_name, sc.name AS category_name
      FROM mem_plan_service_access psa
      LEFT JOIN svc_services s ON s.id = psa.service_id
-     LEFT JOIN service_categories sc ON sc.id = psa.category_id
+     LEFT JOIN svc_categories sc ON sc.id = psa.category_id
      WHERE psa.plan_id = $1`,
     [id],
   );
@@ -178,7 +178,7 @@ export async function getServiceAccess(planId: string) {
     `SELECT psa.*, s.name AS service_name, sc.name AS category_name
      FROM mem_plan_service_access psa
      LEFT JOIN svc_services s ON s.id = psa.service_id
-     LEFT JOIN service_categories sc ON sc.id = psa.category_id
+     LEFT JOIN svc_categories sc ON sc.id = psa.category_id
      WHERE psa.plan_id = $1`,
     [planId],
   );

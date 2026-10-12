@@ -67,7 +67,7 @@ export async function generateIcalContent(feedToken: string) {
        FROM apt_bookings b
        LEFT JOIN svc_services s ON s.id = b.service_id
        LEFT JOIN cus_customers c ON c.id = b.customer_id
-       WHERE b.staff_id = $1 AND b.tenant_id = $2
+       WHERE b.staff_id = $1 AND b.business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $2)
          AND b.start_time >= NOW() - INTERVAL '30 days'
        ORDER BY b.start_time`,
       [feed.user_id, feed.tenant_id],
@@ -78,7 +78,7 @@ export async function generateIcalContent(feedToken: string) {
       `SELECT b.*, s.name AS service_name
        FROM apt_bookings b
        LEFT JOIN svc_services s ON s.id = b.service_id
-       WHERE b.customer_id = $1 AND b.tenant_id = $2
+       WHERE b.customer_id = $1 AND b.business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $2)
          AND b.start_time >= NOW() - INTERVAL '30 days'
        ORDER BY b.start_time`,
       [feed.customer_id, feed.tenant_id],

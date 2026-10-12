@@ -78,8 +78,8 @@ export function CheckIn() {
             <SearchInput value={search} onChange={setSearch} placeholder="Search by customer name..." />
           </div>
           <ListRows>
-            {filtered.map((b: any) => (
-              <ListRow key={b.id} actions={<>
+            {filtered.map((b: any, i: number) => (
+              <ListRow key={`${b.id}-${i}`} actions={<>
                 <Badge variant={STATUS_VARIANTS[b.category] || 'neutral'}>{b.category.replace('_', ' ')}</Badge>
                 {(b.category === 'upcoming' || b.category === 'awaiting') && (
                   <Button size="sm" onClick={() => handleCheckIn(b.id)}>Check In</Button>

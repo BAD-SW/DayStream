@@ -43,6 +43,7 @@ describe('BookingCreate (feature 32 integration — task 7.1.1)', () => {
     );
     vi.mocked(resourcesApi.getResource).mockResolvedValue(RESOURCE as any);
     vi.mocked(bookingsApi.getAvailabilityDays).mockResolvedValue({ timezone: 'UTC', days: {} });
+    vi.mocked(bookingsApi.getBookingFilters).mockResolvedValue({ timezone: 'UTC', currency: 'EUR', staff: [], services: [] });
     vi.mocked(bookingsApi.createBooking).mockResolvedValue({ id: 'booking-1' } as any);
     vi.mocked(apiClient.get).mockImplementation(apiClientGetMock as any);
   });

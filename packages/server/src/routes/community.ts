@@ -3,6 +3,7 @@ import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { tenantContext } from '../auth/tenant-context';
 import { requirePermission } from '../auth/permissions';
 import { success, error } from '../utils/response';
+import { adminPool } from '../db/pool';
 import * as feedService from '../services/community-feed.service';
 import * as challengeService from '../services/community-challenges.service';
 import * as pointsService from '../services/community-points.service';
@@ -16,6 +17,23 @@ export const communityRouter = Router();
 communityRouter.use(authenticate);
 communityRouter.use(tenantContext);
 
+/**
+ * Reactions and reviews are stored against a customer record (cus_customers), but the
+ * caller is a login (usr_users) — the two ids are different, so passing the login id
+ * broke the foreign key and every reaction / review failed. A login is matched to its
+ * customer record by email within the tenant.
+ */
+async function customerIdFor(a: AuthenticatedRequest): Promise<string | null> {
+  const { rows } = await adminPool.query(
+    `SELECT c.id FROM cus_customers c
+       JOIN usr_users u ON LOWER(u.email) = LOWER(c.email)
+      WHERE u.id = $1 AND c.tenant_id = $2
+      ORDER BY c.created_at ASC LIMIT 1`,
+    [a.user.sub, a.tenantId],
+  );
+  return rows[0]?.id ?? null;
+}
+
 // --- Feed ---
 communityRouter.get('/feed', async (req: Request, res: Response) => {
   try { const a = req as AuthenticatedRequest; const page = parseInt(req.query.page as string) || 1; success(res, await feedService.getFeed(a.tenantId, page)); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
@@ -24,7 +42,7 @@ communityRouter.post('/posts', async (req: Request, res: Response) => {
   try { const a = req as AuthenticatedRequest; const p = await feedService.createPost(a.tenantId, { authorId: a.user.sub, authorType: 'customer', postType: req.body.post_type || 'text', content: req.body.content, imagePath: req.body.image_path }); success(res, p, undefined, 201); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.post('/posts/:id/react', async (req: Request, res: Response) => {
-  try { const a = req as AuthenticatedRequest; success(res, await feedService.reactToPost(req.params.id, a.user.sub, req.body.reaction_type || 'like')); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { error(res, 'No customer profile for this login', 'NO_CUSTOMER_PROFILE', 403); return; } success(res, await feedService.reactToPost(req.params.id, customerId, req.body.reaction_type || 'like')); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.post('/posts/:id/comments', async (req: Request, res: Response) => {
   try { const a = req as AuthenticatedRequest; const c = await feedService.addComment(req.params.id, { authorId: a.user.sub, authorType: 'customer', content: req.body.content }); success(res, c, undefined, 201); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
@@ -41,21 +59,21 @@ communityRouter.post('/challenges', requirePermission('community:*'), async (req
   try { const a = req as AuthenticatedRequest; const c = await challengeService.createChallenge(a.tenantId, req.body); success(res, c, undefined, 201); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.post('/challenges/:id/join', async (req: Request, res: Response) => {
-  try { const a = req as AuthenticatedRequest; const p = await challengeService.joinChallenge(req.params.id, a.user.sub, req.body.goal_target || 10); success(res, p, undefined, 201); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { error(res, 'No customer profile for this login', 'NO_CUSTOMER_PROFILE', 403); return; } const p = await challengeService.joinChallenge(req.params.id, customerId, req.body.goal_target || 10); success(res, p, undefined, 201); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.get('/challenges/:id/leaderboard', async (req: Request, res: Response) => {
   try { success(res, await challengeService.getChallengeLeaderboard(req.params.id)); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.get('/challenges/my', async (req: Request, res: Response) => {
-  try { const a = req as AuthenticatedRequest; success(res, await challengeService.getMyActiveChallenges(a.tenantId, a.user.sub)); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { success(res, []); return; } success(res, await challengeService.getMyActiveChallenges(a.tenantId, customerId)); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 // --- Points ---
 communityRouter.get('/points', async (req: Request, res: Response) => {
-  try { const a = req as AuthenticatedRequest; const balance = await pointsService.getBalance(a.tenantId, a.user.sub); const history = await pointsService.getHistory(a.tenantId, a.user.sub); success(res, { balance, history }); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { success(res, { balance: 0, history: [] }); return; } const balance = await pointsService.getBalance(a.tenantId, customerId); const history = await pointsService.getHistory(a.tenantId, customerId); success(res, { balance, history }); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.post('/rewards/redeem', async (req: Request, res: Response) => {
-  try { const a = req as AuthenticatedRequest; const r = await pointsService.redeemPoints(a.tenantId, a.user.sub, req.body.points, req.body.description); success(res, r); } catch (e: any) { error(res, e.message || 'Failed', 'VALIDATION_ERROR', 400); }
+  try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { error(res, 'No customer profile for this login', 'NO_CUSTOMER_PROFILE', 403); return; } const r = await pointsService.redeemPoints(a.tenantId, customerId, req.body.points, req.body.description); success(res, r); } catch (e: any) { error(res, e.message || 'Failed', 'VALIDATION_ERROR', 400); }
 });
 
 // --- Badges ---
@@ -63,12 +81,12 @@ communityRouter.get('/badges', async (req: Request, res: Response) => {
   try { const a = req as AuthenticatedRequest; success(res, await badgesService.getBadges(a.tenantId)); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.get('/badges/my', async (req: Request, res: Response) => {
-  try { const a = req as AuthenticatedRequest; success(res, await badgesService.getEarnedBadges(a.user.sub)); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { success(res, []); return; } success(res, await badgesService.getEarnedBadges(customerId)); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 // --- Streaks ---
 communityRouter.get('/streaks', async (req: Request, res: Response) => {
-  try { const a = req as AuthenticatedRequest; success(res, await streaksService.getStreak(a.tenantId, a.user.sub)); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { success(res, null); return; } success(res, await streaksService.getStreak(a.tenantId, customerId)); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 // --- Leaderboard ---
@@ -84,7 +102,7 @@ communityRouter.get('/vod/:id', async (req: Request, res: Response) => {
   try { const v = await vodService.getContent(req.params.id); if (!v) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, v); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.put('/vod/:id/progress', async (req: Request, res: Response) => {
-  try { const a = req as AuthenticatedRequest; const p = await vodService.updateProgress(a.user.sub, req.params.id, req.body.watched_seconds, req.body.completed); success(res, p); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { error(res, 'No customer profile for this login', 'NO_CUSTOMER_PROFILE', 403); return; } const p = await vodService.updateProgress(customerId, req.params.id, req.body.watched_seconds, req.body.completed); success(res, p); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.post('/vod', requirePermission('community:*'), async (req: Request, res: Response) => {
   try { const a = req as AuthenticatedRequest; const v = await vodService.createContent(a.tenantId, req.body); success(res, v, undefined, 201); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
@@ -98,7 +116,7 @@ communityRouter.get('/courses/:id', async (req: Request, res: Response) => {
   try { const c = await coursesService.getCourseDetail(req.params.id); if (!c) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, c); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.post('/courses/:id/enroll', async (req: Request, res: Response) => {
-  try { const a = req as AuthenticatedRequest; const e2 = await coursesService.enrollInCourse(req.params.id, a.user.sub); success(res, e2, undefined, 201); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { error(res, 'No customer profile for this login', 'NO_CUSTOMER_PROFILE', 403); return; } const e2 = await coursesService.enrollInCourse(req.params.id, customerId); success(res, e2, undefined, 201); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.put('/courses/:id/lessons/:lid/complete', async (req: Request, res: Response) => {
   try { const r = await coursesService.completeLesson(req.body.enrollment_id, req.params.lid); success(res, r); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
@@ -106,7 +124,7 @@ communityRouter.put('/courses/:id/lessons/:lid/complete', async (req: Request, r
 
 // --- Reviews ---
 communityRouter.post('/reviews', async (req: Request, res: Response) => {
-  try { const a = req as AuthenticatedRequest; const r = await reviewsService.submitReview(a.tenantId, { customerId: a.user.sub, ...req.body }); success(res, r, undefined, 201); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { error(res, 'No customer profile for this login', 'NO_CUSTOMER_PROFILE', 403); return; } const r = await reviewsService.submitReview(a.tenantId, { ...req.body, customerId }); success(res, r, undefined, 201); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.get('/reviews/service/:sid', async (req: Request, res: Response) => {
   try { success(res, await reviewsService.getServiceReviews(req.params.sid, req.query.status as string)); } catch (e: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }

@@ -86,12 +86,12 @@ export function BookingEdit() {
     Promise.all([
       bookingsApi.getBooking(id, businessId),
       servicesApi.getServices(businessId, { status: 'active' }),
-      apiClient.get('/v1/admin/businesses'),
-    ]).then(([bk, svcRes, bizRes]) => {
+      // Readable by every business role (the businesses endpoint is owner-only).
+      bookingsApi.getBookingFilters(businessId).catch(() => null),
+    ]).then(([bk, svcRes, filters]) => {
       setBooking(bk);
       setServices(svcRes.data);
-      const biz = bizRes.data.data?.find((b: any) => b.id === businessId);
-      if (biz?.timezone) setBusinessTimezone(biz.timezone);
+      if (filters?.timezone) setBusinessTimezone(filters.timezone);
 
       const bkDate = bk.start_time.slice(0, 10);
       setSelectedService(bk.service_id);

@@ -105,7 +105,7 @@ export async function findAvailableResource(
   serviceId: string, variantId: string | null, startTime: string, endTime: string, locationId?: string
 ): Promise<{ resources: Array<{ id: string; name: string }>; error?: string }> {
   // Get service resource requirements
-  let reqQuery = `SELECT * FROM service_resource_requirements WHERE service_id = $1`;
+  let reqQuery = `SELECT * FROM svc_resource_requirements WHERE service_id = $1`;
   const reqParams: any[] = [serviceId];
   if (variantId) {
     reqQuery += ` AND (variant_id = $2 OR variant_id IS NULL)`;

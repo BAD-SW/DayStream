@@ -49,7 +49,7 @@ export function CustomerDetail() {
       setActivities(acts);
       setPreferences(prefs);
       setTags(t);
-    }).finally(() => setLoading(false));
+    }).catch(() => setCustomer(null)).finally(() => setLoading(false));
   }, [id, businessId]);
 
   if (loading) return <div style={styles.loading}>Loading...</div>;

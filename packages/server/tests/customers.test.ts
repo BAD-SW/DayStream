@@ -3,6 +3,7 @@ import { app } from '../src/app';
 import http from 'http';
 import * as authService from '../src/services/auth.service';
 import { adminPool } from '../src/db/pool';
+import { resetBusinessData } from './helpers/test-business';
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001';
 let BUSINESS_ID: string;
@@ -52,6 +53,7 @@ describe('Customer CRUD API', () => {
       [TENANT_ID],
     );
     BUSINESS_ID = rows[0].id;
+    await resetBusinessData(BUSINESS_ID);
 
     businessOwnerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000010',

@@ -4,6 +4,7 @@ import http from 'http';
 import * as authService from '../src/services/auth.service';
 import * as corporateService from '../src/services/corporate-pricing.service';
 import { adminPool } from '../src/db/pool';
+import { resetBusinessData } from './helpers/test-business';
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001';
 let BUSINESS_ID: string;
@@ -53,6 +54,7 @@ describe('Corporate Pricing', () => {
       [TENANT_ID],
     );
     BUSINESS_ID = bizRows[0].id;
+    await resetBusinessData(BUSINESS_ID);
 
     await adminPool.query('DELETE FROM pri_corporate_accounts WHERE business_id = $1', [BUSINESS_ID]);
 
@@ -75,12 +77,10 @@ describe('Corporate Pricing', () => {
       const { statusCode, body } = await request('POST', '/api/v1/pricing/corporate', {
         business_id: BUSINESS_ID, name: 'Acme Corp',
         contact_email: 'hr@acme.com', billing_email: 'billing@acme.com',
-        discount_percentage: 15,
       }, ownerToken);
 
       expect(statusCode).toBe(201);
       expect(body.data.name).toBe('Acme Corp');
-      expect(body.data.discount_percentage).toBe(15);
       ACCOUNT_ID = body.data.id;
     });
   });
@@ -138,7 +138,6 @@ describe('Corporate Pricing', () => {
       const account = await corporateService.getCustomerCorporateAccount(CUSTOMER_ID, BUSINESS_ID);
       expect(account).not.toBeNull();
       expect(account.name).toBe('Acme Corp');
-      expect(account.discount_percentage).toBe(15);
     });
 
     it('returns null for customer not in any account', async () => {

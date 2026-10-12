@@ -49,7 +49,11 @@ describe('Staff Management', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean up any existing test data
-    await adminPool.query('DELETE FROM stf_profiles WHERE tenant_id = $1', [TENANT_ID]);
+    // Only this test business's staff — never the rest of the tenant's.
+    await adminPool.query(
+      'DELETE FROM stf_profiles WHERE tenant_id = $1 AND user_id IN (SELECT id FROM usr_users WHERE business_id = $2)',
+      [TENANT_ID, BUSINESS_ID],
+    );
 
     ownerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',
@@ -64,6 +68,8 @@ describe('Staff Management', () => {
         first_name: 'Jane',
         last_name: 'Therapist',
         email: 'jane@example.com',
+        password: 'TestPass123!',
+        business_id: BUSINESS_ID,
         mobile_phone: '+34612345678',
         employment_type: 'full_time',
         hire_date: '2025-01-15',
@@ -75,7 +81,7 @@ describe('Staff Management', () => {
       expect(statusCode).toBe(201);
       expect(body.data.first_name).toBe('Jane');
       expect(body.data.last_name).toBe('Therapist');
-      expect(body.data.staff_ref).toMatch(/^STF-\d{3}$/);
+      expect(body.data.staff_ref).toMatch(/^STF-\d{3,}$/);
       expect(body.data.status).toBe('active');
       STAFF_ID = body.data.id;
     });
@@ -411,7 +417,8 @@ describe('Staff Management', () => {
     });
 
     it('does not include inactive staff in directory', async () => {
-      // Create an inactive staff
+      // Create an inactive staff (remove the one left by a previous run first)
+      await adminPool.query(`DELETE FROM stf_profiles WHERE tenant_id = $1 AND staff_ref = 'STF-999'`, [TENANT_ID]);
       await adminPool.query(
         `INSERT INTO stf_profiles (tenant_id, staff_ref, first_name, last_name, status, show_on_directory)
          VALUES ($1, 'STF-999', 'Hidden', 'Person', 'inactive', true)`,

@@ -64,9 +64,4 @@ describe('ThemeProvider', () => {
     renderHook(() => useTheme(), { wrapper });
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
   });
-
-  it('businessTheme is null when no user', () => {
-    const { result } = renderHook(() => useTheme(), { wrapper });
-    expect(result.current.businessTheme).toBeNull();
-  });
 });

@@ -90,7 +90,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const bizRes = await apiClient.get('/v1/admin/businesses');
         const biz = bizRes.data.data?.find((b: any) => b.id === userData.business_id);
         if (biz?.currency) localStorage.setItem('business_currency', biz.currency);
-      } catch { /* non-critical */ }
+      } catch {
+        // The businesses endpoint is owner-only; managers and staff read it here instead.
+        try {
+          const res = await apiClient.get('/v1/bookings/filters', { params: { business_id: userData.business_id } });
+          if (res.data.data?.currency) localStorage.setItem('business_currency', res.data.data.currency);
+        } catch { /* non-critical */ }
+      }
     }
     setUser(userData);
     await loadFeatureFlags();
@@ -98,8 +104,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function logout() {
     const refreshToken = localStorage.getItem('refresh_token');
-    if (refreshToken) {
-      apiClient.post('/v1/auth/logout', { refresh_token: refreshToken }).catch(() => {});
+    const accessToken = localStorage.getItem('access_token');
+    if (refreshToken && accessToken) {
+      // Sent with fetch, not apiClient: its request interceptor reads the access token
+      // asynchronously, i.e. after the removeItem calls below, so the call would go out
+      // unauthenticated and the refresh token would never be revoked. keepalive lets the
+      // request finish even though the page navigates to /login straight away.
+      fetch(`${apiClient.defaults.baseURL}/v1/auth/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+        keepalive: true,
+      }).catch(() => {});
     }
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');

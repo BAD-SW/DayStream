@@ -2,16 +2,22 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { app } from '../src/app';
 import http from 'http';
 import * as authService from '../src/services/auth.service';
-import * as membershipService from '../src/services/membership.service';
 import { adminPool } from '../src/db/pool';
 
+/**
+ * Membership engine — plans (mbr_plans) and enrollments (mbr_enrollments).
+ * Replaces the tests of the earlier credit / punch-card / family engine, whose
+ * routes (credits, members, upgrade, downgrade, reports) no longer exist.
+ * Uses its own business so it never touches other data.
+ */
+
 const TENANT_ID = '00000000-0000-0000-0000-000000000001';
+const USER_ID = '00000000-0000-0000-0000-000000000010';
 let BUSINESS_ID: string;
 let CUSTOMER_ID: string;
 let PLAN_ID: string;
-let CREDIT_PLAN_ID: string;
-let INTRO_PLAN_ID: string;
-let MEMBERSHIP_ID: string;
+let SECOND_PLAN_ID: string;
+let ENROLLMENT_ID: string;
 let ownerToken: string;
 
 function request(method: string, path: string, body?: any, token?: string): Promise<{ statusCode: number; body: any }> {
@@ -20,10 +26,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
       const address = server.address() as any;
       const data = body ? JSON.stringify(body) : undefined;
       const options: http.RequestOptions = {
-        hostname: 'localhost',
-        port: address.port,
-        path,
-        method,
+        hostname: 'localhost', port: address.port, path, method,
         headers: {
           'Content-Type': 'application/json',
           ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
@@ -31,12 +34,12 @@ function request(method: string, path: string, body?: any, token?: string): Prom
         },
       };
       const req = http.request(options, (res) => {
-        let responseData = '';
-        res.on('data', (chunk) => (responseData += chunk));
+        let d = '';
+        res.on('data', (c) => (d += c));
         res.on('end', () => {
           server.close();
-          try { resolve({ statusCode: res.statusCode!, body: JSON.parse(responseData) }); }
-          catch { resolve({ statusCode: res.statusCode!, body: responseData }); }
+          try { resolve({ statusCode: res.statusCode!, body: JSON.parse(d) }); }
+          catch { resolve({ statusCode: res.statusCode!, body: d }); }
         });
       });
       req.on('error', (err) => { server.close(); reject(err); });
@@ -46,279 +49,194 @@ function request(method: string, path: string, body?: any, token?: string): Prom
   });
 }
 
-describe('Membership Engine — Plans, Purchase & Lifecycle', () => {
+const biz = () => `business_id=${BUSINESS_ID}`;
+
+describe('Membership Engine — Plans & Enrollments', () => {
   beforeAll(async () => {
     const { rows: bizRows } = await adminPool.query(
-      `INSERT INTO sys_businesses (tenant_id, name, slug, status)
-       VALUES ($1, 'Membership Test Biz', 'membership-test-biz', 'active')
-       ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Membership Test Biz'
-       RETURNING id`,
-      [TENANT_ID],
+      `INSERT INTO sys_businesses (tenant_id, name, slug, status) VALUES ($1, 'Membership Test Biz', 'membership-test-biz', 'active')
+       ON CONFLICT (tenant_id, slug) DO UPDATE SET name = 'Membership Test Biz' RETURNING id`, [TENANT_ID],
     );
     BUSINESS_ID = bizRows[0].id;
 
-    // Clean
-    await adminPool.query('DELETE FROM mem_memberships WHERE business_id = $1', [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM mem_plans WHERE business_id = $1', [BUSINESS_ID]);
+    // Start clean, within this test business only
+    await adminPool.query('DELETE FROM mbr_enrollments WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM mbr_plans WHERE business_id = $1', [BUSINESS_ID]);
 
-    const { rows: custRows } = await adminPool.query(
-      `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
-       VALUES ($1, $2, 'CUST-MBR01', 'mbr-cust@example.com', 'Member', 'Cust', '00000000-0000-0000-0000-000000000010')
-       ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Member' RETURNING id`,
-      [TENANT_ID, BUSINESS_ID],
-    );
-    CUSTOMER_ID = custRows[0].id;
+    const email = 'membership-test@example.com';
+    const existing = await adminPool.query('SELECT id FROM cus_customers WHERE business_id = $1 AND email = $2', [BUSINESS_ID, email]);
+    if (existing.rows[0]) {
+      CUSTOMER_ID = existing.rows[0].id;
+    } else {
+      const { rows } = await adminPool.query(
+        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+         VALUES ($1, $2, 'MBR-TEST-1', $3, 'Member', 'Test', $4) RETURNING id`,
+        [TENANT_ID, BUSINESS_ID, email, USER_ID],
+      );
+      CUSTOMER_ID = rows[0].id;
+    }
 
-    ownerToken = authService.generateAccessToken(
-      '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',
-      ['services:*', 'customers:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*'],
-    );
+    ownerToken = authService.generateAccessToken(USER_ID, TENANT_ID, 'business_owner', ['services:*', 'customers:*']);
   });
 
-  // ==================== Task 2: Plans ====================
-
-  describe('Plan CRUD', () => {
-    it('creates an unlimited monthly plan', async () => {
+  describe('Plans', () => {
+    it('creates a monthly plan', async () => {
       const { statusCode, body } = await request('POST', '/api/v1/memberships/plans', {
-        business_id: BUSINESS_ID, name: 'Unlimited Monthly', plan_type: 'unlimited',
-        billing_cycle: 'monthly', price: 12900,
+        business_id: BUSINESS_ID, name: 'Gold Monthly', description: 'Unlimited access',
+        billing_frequency: 'monthly', price: 9900, trial_days: 0,
       }, ownerToken);
-
       expect(statusCode).toBe(201);
-      expect(body.data.plan_type).toBe('unlimited');
-      expect(body.data.billing_cycle).toBe('monthly');
-      expect(body.data.price).toBe(12900);
+      expect(body.data.name).toBe('Gold Monthly');
+      expect(Number(body.data.price)).toBe(9900);
       PLAN_ID = body.data.id;
     });
 
-    it('creates a credit-based plan', async () => {
+    it('creates a second plan to change to', async () => {
       const { statusCode, body } = await request('POST', '/api/v1/memberships/plans', {
-        business_id: BUSINESS_ID, name: '20 Credits Monthly', plan_type: 'credit',
-        billing_cycle: 'monthly', price: 9900, credits_per_cycle: 20,
-        credit_validity_days: 45, rollover_policy: 'limited', max_rollover_credits: 5,
+        business_id: BUSINESS_ID, name: 'Silver Monthly', billing_frequency: 'monthly', price: 5900,
       }, ownerToken);
-
       expect(statusCode).toBe(201);
-      expect(body.data.credits_per_cycle).toBe(20);
-      expect(body.data.rollover_policy).toBe('limited');
-      CREDIT_PLAN_ID = body.data.id;
+      SECOND_PLAN_ID = body.data.id;
     });
 
-    it('creates an intro package', async () => {
-      const { statusCode, body } = await request('POST', '/api/v1/memberships/plans', {
-        business_id: BUSINESS_ID, name: '3 Session Intro', plan_type: 'intro_package',
-        billing_cycle: 'one_time', price: 9900, total_sessions: 3,
-        expiration_days: 30, is_intro_only: true,
-      }, ownerToken);
-
-      expect(statusCode).toBe(201);
-      expect(body.data.is_intro_only).toBe(true);
-      expect(body.data.total_sessions).toBe(3);
-      INTRO_PLAN_ID = body.data.id;
+    it('requires authentication', async () => {
+      const { statusCode } = await request('GET', `/api/v1/memberships/plans?${biz()}`);
+      expect(statusCode).toBe(401);
     });
 
-    it('rejects invalid type + billing combo', async () => {
-      const { statusCode, body } = await request('POST', '/api/v1/memberships/plans', {
-        business_id: BUSINESS_ID, name: 'Bad Plan', plan_type: 'punch_card',
-        billing_cycle: 'monthly', price: 5000,
-      }, ownerToken);
-
+    it('requires business_id when listing', async () => {
+      const { statusCode } = await request('GET', '/api/v1/memberships/plans', undefined, ownerToken);
       expect(statusCode).toBe(400);
-      expect(body.error).toContain('one_time');
     });
 
-    it('lists plans', async () => {
-      const { statusCode, body } = await request(
-        'GET', `/api/v1/memberships/plans?business_id=${BUSINESS_ID}`,
-        undefined, ownerToken,
-      );
-
+    it('lists the plans of the business', async () => {
+      const { statusCode, body } = await request('GET', `/api/v1/memberships/plans?${biz()}`, undefined, ownerToken);
       expect(statusCode).toBe(200);
-      expect(body.data.length).toBeGreaterThanOrEqual(3);
+      const names = body.data.map((p: any) => p.name);
+      expect(names).toContain('Gold Monthly');
+      expect(names).toContain('Silver Monthly');
     });
 
-    it('gets plan detail with benefits and access', async () => {
-      const { statusCode, body } = await request(
-        'GET', `/api/v1/memberships/plans/${PLAN_ID}?business_id=${BUSINESS_ID}`,
-        undefined, ownerToken,
-      );
-
+    it('gets a plan with its active enrollment count', async () => {
+      const { statusCode, body } = await request('GET', `/api/v1/memberships/plans/${PLAN_ID}?${biz()}`, undefined, ownerToken);
       expect(statusCode).toBe(200);
-      expect(body.data).toHaveProperty('service_access');
-      expect(body.data).toHaveProperty('benefits');
-      expect(body.data).toHaveProperty('upgrade_paths');
+      expect(body.data.id).toBe(PLAN_ID);
+      expect(body.data.active_enrollments).toBe(0);
     });
 
-    it('updates a plan', async () => {
-      const { statusCode, body } = await request(
-        'PUT', `/api/v1/memberships/plans/${PLAN_ID}?business_id=${BUSINESS_ID}`,
-        { price: 13900 }, ownerToken,
-      );
-
-      expect(statusCode).toBe(200);
-      expect(body.data.price).toBe(13900);
+    it('returns 404 for a plan of another business', async () => {
+      const { statusCode } = await request('GET', `/api/v1/memberships/plans/${PLAN_ID}?business_id=00000000-0000-0000-0000-000000000002`, undefined, ownerToken);
+      expect(statusCode).toBe(404);
     });
 
-    it('archives a plan', async () => {
-      // Create a plan to archive
-      const { body: created } = await request('POST', '/api/v1/memberships/plans', {
-        business_id: BUSINESS_ID, name: 'To Archive', plan_type: 'unlimited',
-        billing_cycle: 'monthly', price: 5000,
-      }, ownerToken);
-
-      const { statusCode } = await request(
-        'PUT', `/api/v1/memberships/plans/${created.data.id}/archive?business_id=${BUSINESS_ID}`,
-        undefined, ownerToken,
-      );
+    it('updates the price', async () => {
+      const { statusCode } = await request('PUT', `/api/v1/memberships/plans/${PLAN_ID}?${biz()}`, { price: 10900 }, ownerToken);
       expect(statusCode).toBe(200);
+      const { body } = await request('GET', `/api/v1/memberships/plans/${PLAN_ID}?${biz()}`, undefined, ownerToken);
+      expect(Number(body.data.price)).toBe(10900);
+    });
+
+    it('archives and reactivates a plan', async () => {
+      const archived = await request('PUT', `/api/v1/memberships/plans/${SECOND_PLAN_ID}/archive?${biz()}`, {}, ownerToken);
+      expect(archived.statusCode).toBe(200);
+      const activated = await request('PUT', `/api/v1/memberships/plans/${SECOND_PLAN_ID}/activate?${biz()}`, {}, ownerToken);
+      expect(activated.statusCode).toBe(200);
+      const { body } = await request('GET', `/api/v1/memberships/plans/${SECOND_PLAN_ID}?${biz()}`, undefined, ownerToken);
+      expect(body.data.status).toBe('active');
     });
   });
 
-  describe('Plan Service Access & Benefits', () => {
-    it('adds service access to a plan', async () => {
-      // Get a service id
-      const { rows: svcRows } = await adminPool.query(
-        "SELECT id FROM svc_services WHERE business_id = $1 LIMIT 1", [BUSINESS_ID],
-      );
-      if (svcRows.length === 0) {
-        // Create minimal service infra
-        const { rows: catRows } = await adminPool.query(
-          `INSERT INTO svc_categories (business_id, name) VALUES ($1, 'MBR Cat')
-           ON CONFLICT (business_id, name, parent_id) DO UPDATE SET name = 'MBR Cat' RETURNING id`, [BUSINESS_ID],
-        );
-        const { rows: newSvc } = await adminPool.query(
-          `INSERT INTO svc_services (business_id, category_id, name, slug, status, created_by)
-           VALUES ($1, $2, 'MBR Service', 'mbr-service', 'active', '00000000-0000-0000-0000-000000000010') RETURNING id`,
-          [BUSINESS_ID, catRows[0].id],
-        );
-        svcRows.push(newSvc[0]);
-      }
-
-      const access = await plansService.addServiceAccess(PLAN_ID, {
-        service_id: svcRows[0].id, credit_cost: 1, access_type: 'included',
-      });
-      expect(access.plan_id).toBe(PLAN_ID);
-      expect(access.access_type).toBe('included');
-    });
-
-    it('adds a benefit to a plan', async () => {
-      const benefit = await plansService.addBenefit(PLAN_ID, {
-        benefit_type: 'discount', value: 10, description: '10% off all services',
-      });
-      expect(benefit.benefit_type).toBe('discount');
-      expect(benefit.value).toBe(10);
-    });
-
-    it('lists benefits for a plan', async () => {
-      const benefits = await plansService.getBenefits(PLAN_ID);
-      expect(benefits.length).toBeGreaterThanOrEqual(1);
-    });
-  });
-
-  // ==================== Task 3: Purchase & Activation ====================
-
-  describe('Membership Purchase', () => {
-    it('activates a membership with initial credits', async () => {
+  describe('Enrollments', () => {
+    it('enrolls a customer in a plan', async () => {
+      await request('PUT', `/api/v1/memberships/plans/${PLAN_ID}/activate?${biz()}`, {}, ownerToken);
       const { statusCode, body } = await request('POST', '/api/v1/memberships', {
-        business_id: BUSINESS_ID, customer_id: CUSTOMER_ID, plan_id: CREDIT_PLAN_ID,
+        business_id: BUSINESS_ID, customer_id: CUSTOMER_ID, plan_id: PLAN_ID,
       }, ownerToken);
-
       expect(statusCode).toBe(201);
       expect(body.data.status).toBe('active');
-      expect(body.data.credit_balance).toBe(20);
-      expect(body.data.next_billing_date).toBeDefined();
-      MEMBERSHIP_ID = body.data.id;
+      expect(body.data.plan_id).toBe(PLAN_ID);
+      ENROLLMENT_ID = body.data.id;
     });
 
-    it('rejects duplicate active membership of same plan', async () => {
+    it('refuses a second active membership for the same customer', async () => {
       const { statusCode, body } = await request('POST', '/api/v1/memberships', {
-        business_id: BUSINESS_ID, customer_id: CUSTOMER_ID, plan_id: CREDIT_PLAN_ID,
+        business_id: BUSINESS_ID, customer_id: CUSTOMER_ID, plan_id: SECOND_PLAN_ID,
       }, ownerToken);
-
       expect(statusCode).toBe(409);
-      expect(body.error).toContain('already has an active');
+      expect(body.code).toBe('ALREADY_ENROLLED');
     });
 
-    it('validates intro package eligibility', async () => {
-      // First purchase should work
+    it('returns 404 when the plan does not exist', async () => {
       const { statusCode } = await request('POST', '/api/v1/memberships', {
-        business_id: BUSINESS_ID, customer_id: CUSTOMER_ID, plan_id: INTRO_PLAN_ID,
+        business_id: BUSINESS_ID, customer_id: CUSTOMER_ID, plan_id: '00000000-0000-0000-0000-00000000dead',
       }, ownerToken);
-      expect(statusCode).toBe(201);
-
-      // Second purchase rejected
-      const { statusCode: s2, body: b2 } = await request('POST', '/api/v1/memberships', {
-        business_id: BUSINESS_ID, customer_id: CUSTOMER_ID, plan_id: INTRO_PLAN_ID,
-      }, ownerToken);
-      expect(s2).toBe(409);
-      expect(b2.error).toContain('Intro package already purchased');
+      expect(statusCode).toBe(404);
     });
-  });
 
-  // ==================== Task 4: Lifecycle ====================
-
-  describe('Membership Lifecycle', () => {
-    it('lists memberships', async () => {
-      const { statusCode, body } = await request(
-        'GET', `/api/v1/memberships?business_id=${BUSINESS_ID}`,
-        undefined, ownerToken,
-      );
-
+    it('lists enrollments, filterable by customer', async () => {
+      const { statusCode, body } = await request('GET', `/api/v1/memberships?${biz()}&customer_id=${CUSTOMER_ID}`, undefined, ownerToken);
       expect(statusCode).toBe(200);
-      expect(body.data.length).toBeGreaterThanOrEqual(2);
-      expect(body.data[0]).toHaveProperty('plan_name');
-      expect(body.data[0]).toHaveProperty('first_name');
+      expect(body.data.some((e: any) => e.id === ENROLLMENT_ID)).toBe(true);
     });
 
-    it('gets membership detail with history', async () => {
-      const { statusCode, body } = await request(
-        'GET', `/api/v1/memberships/${MEMBERSHIP_ID}?business_id=${BUSINESS_ID}`,
-        undefined, ownerToken,
-      );
-
-      expect(statusCode).toBe(200);
-      expect(body.data.id).toBe(MEMBERSHIP_ID);
-      expect(body.data).toHaveProperty('status_history');
-      expect(body.data.status_history.length).toBeGreaterThanOrEqual(1);
+    it('counts the enrollment on the plan', async () => {
+      const { body } = await request('GET', `/api/v1/memberships/plans/${PLAN_ID}?${biz()}`, undefined, ownerToken);
+      expect(body.data.active_enrollments).toBe(1);
     });
 
-    it('cancels a membership', async () => {
-      const { statusCode, body } = await request(
-        'PUT', `/api/v1/memberships/${MEMBERSHIP_ID}/cancel?business_id=${BUSINESS_ID}`,
-        { reason: 'Moving away' }, ownerToken,
-      );
+    it('pauses and resumes', async () => {
+      const paused = await request('PUT', `/api/v1/memberships/${ENROLLMENT_ID}/pause?${biz()}`, {}, ownerToken);
+      expect(paused.statusCode).toBe(200);
+      const whilePaused = await request('GET', `/api/v1/memberships/${ENROLLMENT_ID}?${biz()}`, undefined, ownerToken);
+      expect(whilePaused.body.data.status).toBe('paused');
 
-      expect(statusCode).toBe(200);
-      expect(body.data.cancelled).toBe(true);
+      const again = await request('PUT', `/api/v1/memberships/${ENROLLMENT_ID}/pause?${biz()}`, {}, ownerToken);
+      expect(again.statusCode).toBe(404); // only an active enrollment can be paused
 
-      // Verify status
-      const { rows } = await adminPool.query('SELECT status FROM mem_memberships WHERE id = $1', [MEMBERSHIP_ID]);
-      expect(rows[0].status).toBe('cancelled');
+      const resumed = await request('PUT', `/api/v1/memberships/${ENROLLMENT_ID}/resume?${biz()}`, {}, ownerToken);
+      expect(resumed.statusCode).toBe(200);
+      const after = await request('GET', `/api/v1/memberships/${ENROLLMENT_ID}?${biz()}`, undefined, ownerToken);
+      expect(after.body.data.status).toBe('active');
     });
 
-    it('rejects cancelling an already-cancelled membership', async () => {
-      const { statusCode, body } = await request(
-        'PUT', `/api/v1/memberships/${MEMBERSHIP_ID}/cancel?business_id=${BUSINESS_ID}`,
-        {}, ownerToken,
-      );
-
+    it('rejects a change to the plan already held', async () => {
+      const { statusCode } = await request('PUT', `/api/v1/memberships/${ENROLLMENT_ID}/change-plan?${biz()}`, { plan_id: PLAN_ID }, ownerToken);
       expect(statusCode).toBe(400);
-      expect(body.error).toContain('Cannot cancel');
     });
 
-    it('auto-expires memberships past end date', async () => {
-      // Create a membership with a past end date
-      await adminPool.query(
-        `INSERT INTO mem_memberships (business_id, customer_id, plan_id, status, start_date, end_date, credit_balance, created_by)
-         VALUES ($1, $2, $3, 'active', '2025-01-01', '2025-02-01', 0, '00000000-0000-0000-0000-000000000010')`,
-        [BUSINESS_ID, CUSTOMER_ID, INTRO_PLAN_ID],
-      );
+    it('defers a downgrade to the next billing cycle', async () => {
+      const { statusCode, body } = await request('PUT', `/api/v1/memberships/${ENROLLMENT_ID}/change-plan?${biz()}`, { plan_id: SECOND_PLAN_ID }, ownerToken);
+      expect(statusCode).toBe(200);
+      expect(body.data.type).toBe('downgrade');
+      const { rows } = await adminPool.query('SELECT plan_id, pending_plan_id FROM mbr_enrollments WHERE id = $1', [ENROLLMENT_ID]);
+      expect(rows[0].plan_id).toBe(PLAN_ID);              // current period unchanged
+      expect(rows[0].pending_plan_id).toBe(SECOND_PLAN_ID);
+    });
 
-      const expired = await membershipService.evaluateExpirations();
-      expect(expired).toBeGreaterThanOrEqual(1);
+    it('applies an upgrade immediately with a prorated charge', async () => {
+      const created = await request('POST', '/api/v1/memberships/plans', {
+        business_id: BUSINESS_ID, name: 'Platinum Monthly', billing_frequency: 'monthly', price: 19900,
+      }, ownerToken);
+      await request('PUT', `/api/v1/memberships/plans/${created.body.data.id}/activate?${biz()}`, {}, ownerToken);
+      const { statusCode, body } = await request('PUT', `/api/v1/memberships/${ENROLLMENT_ID}/change-plan?${biz()}`, { plan_id: created.body.data.id }, ownerToken);
+      expect(statusCode).toBe(200);
+      expect(body.data.type).toBe('upgrade');
+      expect(body.data.proratedCharge).toBeGreaterThanOrEqual(0);
+      const { rows } = await adminPool.query('SELECT plan_id, pending_plan_id FROM mbr_enrollments WHERE id = $1', [ENROLLMENT_ID]);
+      expect(rows[0].plan_id).toBe(created.body.data.id);
+      expect(rows[0].pending_plan_id).toBeNull();
+    });
+
+    it('cancels the active enrollment', async () => {
+      const { body: list } = await request('GET', `/api/v1/memberships?${biz()}&customer_id=${CUSTOMER_ID}&status=active`, undefined, ownerToken);
+      const active = list.data[0];
+      const { statusCode } = await request('PUT', `/api/v1/memberships/${active.id}/cancel?${biz()}`, {}, ownerToken);
+      expect(statusCode).toBe(200);
+    });
+
+    it('returns 404 for an unknown enrollment', async () => {
+      const { statusCode } = await request('GET', `/api/v1/memberships/00000000-0000-0000-0000-00000000dead?${biz()}`, undefined, ownerToken);
+      expect(statusCode).toBe(404);
     });
   });
 });
-
-// Import for direct service access test
-import * as plansService from '../src/services/membership-plans.service';

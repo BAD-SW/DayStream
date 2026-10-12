@@ -141,16 +141,16 @@ describe('Booking Lifecycle', () => {
   });
 
   describe('Valid transitions', () => {
-    it('confirmed → in_progress (check-in)', async () => {
+    it('confirmed → checked_in (check-in)', async () => {
       const { statusCode, body } = await request(
         'PUT', `/api/v1/bookings/${BOOKING_ID}/check-in?business_id=${BUSINESS_ID}`,
         undefined, ownerToken,
       );
       expect(statusCode).toBe(200);
-      expect(body.data.status).toBe('in_progress');
+      expect(body.data.status).toBe('checked_in');
     });
 
-    it('in_progress → completed', async () => {
+    it('checked_in → completed', async () => {
       const { statusCode, body } = await request(
         'PUT', `/api/v1/bookings/${BOOKING_ID}/complete?business_id=${BUSINESS_ID}`,
         undefined, ownerToken,
@@ -182,7 +182,7 @@ describe('Booking Lifecycle', () => {
       expect(body.error).toContain('Cannot transition');
     });
 
-    it('cancelled → in_progress is rejected', async () => {
+    it('cancelled → checked_in is rejected', async () => {
       const { statusCode, body } = await request(
         'PUT', `/api/v1/bookings/${BOOKING_ID_2}/check-in?business_id=${BUSINESS_ID}`,
         undefined, ownerToken,

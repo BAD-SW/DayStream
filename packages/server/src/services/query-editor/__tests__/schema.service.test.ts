@@ -35,8 +35,6 @@ describe('SchemaService', () => {
   describe('getTables', () => {
     it('should return tables with their columns from the public schema', async () => {
       mockClient.query
-        // SET LOCAL tenant context
-        .mockResolvedValueOnce({ rows: [] })
         // information_schema.tables query
         .mockResolvedValueOnce({
           rows: [
@@ -76,22 +74,8 @@ describe('SchemaService', () => {
       ]);
     });
 
-    it('should set tenant context before querying', async () => {
-      mockClient.query
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [] });
-
-      await service.getTables('tenant-abc');
-
-      expect(mockClient.query).toHaveBeenCalledWith(
-        'SET LOCAL app.current_tenant_id = $1',
-        ['tenant-abc'],
-      );
-    });
-
     it('should exclude default internal tables', async () => {
       mockClient.query
-        .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({
           rows: [
             { table_name: 'customers' },
@@ -126,7 +110,6 @@ describe('SchemaService', () => {
 
     it('should exclude tables starting with pg_ prefix', async () => {
       mockClient.query
-        .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({
           rows: [
             { table_name: 'customers' },
@@ -148,11 +131,10 @@ describe('SchemaService', () => {
 
     it('should return empty array when no visible tables exist', async () => {
       mockClient.query
-        .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({
           rows: [
             { table_name: 'migrations' },
-            { table_name: 'audit_log' },
+            { table_name: 'usr_audit_log' },
           ],
         });
 
@@ -163,7 +145,6 @@ describe('SchemaService', () => {
 
     it('should return empty array when no tables exist at all', async () => {
       mockClient.query
-        .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [] });
 
       const result = await service.getTables('tenant-123');
@@ -177,7 +158,6 @@ describe('SchemaService', () => {
       });
 
       mockClient.query
-        .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({
           rows: [
             { table_name: 'customers' },
@@ -211,7 +191,6 @@ describe('SchemaService', () => {
 
     it('should correctly map is_nullable YES/NO to boolean', async () => {
       mockClient.query
-        .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({
           rows: [{ table_name: 'users' }],
         })

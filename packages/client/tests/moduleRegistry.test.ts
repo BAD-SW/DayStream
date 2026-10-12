@@ -6,7 +6,7 @@ describe('Module Registry', () => {
     it('filters by persona — business user sees business modules', () => {
       const modules = getVisibleModules('business', ['*:*'], {});
       expect(modules.some(m => m.id === 'customers')).toBe(true);
-      expect(modules.some(m => m.id === 'services')).toBe(true);
+      expect(modules.some(m => m.id === 'offerings')).toBe(true);
       expect(modules.some(m => m.id === 'system-tenants')).toBe(false);
       expect(modules.some(m => m.id === 'tenant-businesses')).toBe(false);
     });
@@ -25,35 +25,44 @@ describe('Module Registry', () => {
     });
 
     it('filters by persona — customer sees customer modules', () => {
-      const modules = getVisibleModules('customer', ['bookings:read'], { 'feature.memberships': true });
-      expect(modules.some(m => m.id === 'bookings')).toBe(true);
-      expect(modules.some(m => m.id === 'memberships')).toBe(true);
-      expect(modules.some(m => m.id === 'staff')).toBe(false);
+      const modules = getVisibleModules('customer', ['bookings:read'], { 'feature.events': true });
+      expect(modules.some(m => m.id === 'appointments')).toBe(true);
+      expect(modules.some(m => m.id === 'events')).toBe(true);
+      expect(modules.some(m => m.id === 'customers')).toBe(false);
     });
 
     it('hides modules when user lacks permission', () => {
       const modules = getVisibleModules('business', ['bookings:read'], {});
-      expect(modules.some(m => m.id === 'bookings')).toBe(true);
+      expect(modules.some(m => m.id === 'appointments')).toBe(true);
       expect(modules.some(m => m.id === 'customers')).toBe(false); // requires customers:read
-      expect(modules.some(m => m.id === 'staff')).toBe(false); // requires staff:read
+      expect(modules.some(m => m.id === 'business')).toBe(false); // requires staff:read
+    });
+
+    it('gates Marketing and Website on the permissions their APIs check', () => {
+      const settingsOnly = getVisibleModules('business', ['settings:*'], {});
+      expect(settingsOnly.some(m => m.id === 'marketing')).toBe(false);
+      expect(settingsOnly.some(m => m.id === 'website')).toBe(false);
+      const owner = getVisibleModules('business', ['marketing:*', 'cms:*'], {});
+      expect(owner.some(m => m.id === 'marketing')).toBe(true);
+      expect(owner.some(m => m.id === 'website')).toBe(true);
     });
 
     it('hides modules when feature flag is disabled', () => {
-      const modules = getVisibleModules('business', ['*:*'], { 'feature.memberships': false });
-      expect(modules.some(m => m.id === 'memberships')).toBe(false);
+      const modules = getVisibleModules('business', ['*:*'], { 'feature.events': false });
+      expect(modules.some(m => m.id === 'events')).toBe(false);
     });
 
     it('shows modules when feature flag is enabled', () => {
-      const modules = getVisibleModules('business', ['*:*'], { 'feature.memberships': true });
-      expect(modules.some(m => m.id === 'memberships')).toBe(true);
+      const modules = getVisibleModules('business', ['*:*'], { 'feature.events': true });
+      expect(modules.some(m => m.id === 'events')).toBe(true);
     });
 
     it('wildcard permission grants access to all permission-gated modules', () => {
-      const modules = getVisibleModules('business', ['*:*'], { 'feature.memberships': true, 'feature.events': true, 'feature.community': true });
+      const modules = getVisibleModules('business', ['*:*'], { 'feature.events': true, 'feature.community': true });
       // With wildcard, all business modules with permissions should show
       expect(modules.some(m => m.id === 'customers')).toBe(true);
-      expect(modules.some(m => m.id === 'services')).toBe(true);
-      expect(modules.some(m => m.id === 'staff')).toBe(true);
+      expect(modules.some(m => m.id === 'offerings')).toBe(true);
+      expect(modules.some(m => m.id === 'business')).toBe(true);
       expect(modules.some(m => m.id === 'reports')).toBe(true);
     });
   });
@@ -91,6 +100,13 @@ describe('Module Registry', () => {
       // 'customers' requires customers:read, which this permission set does not grant
       expect(modules.some(m => m.id === 'customers')).toBe(false);
       expect(modules.some(m => m.id === 'appointments')).toBe(true);
+    });
+
+    it('a customer in their business context sees customer modules only, never staff ones', () => {
+      const modules = getVisibleModules('customer', ['bookings:read', 'bookings:create'], {}, 'business');
+      expect(modules.map(m => m.id)).toEqual(['appointments']);
+      expect(modules.some(m => m.id === 'clock')).toBe(false);
+      expect(modules.some(m => m.id === 'my-hours')).toBe(false);
     });
   });
 });

@@ -209,7 +209,8 @@ describe('Financial Reports, Bank Reconciliation & Tax Documents', () => {
       );
 
       expect(statusCode).toBe(200);
-      expect(body.data.generated).toBeGreaterThanOrEqual(1);
+      // On a repeat run the documents already exist and are counted as skipped.
+      expect(body.data.generated + body.data.skipped).toBeGreaterThanOrEqual(1);
     });
 
     it('lists generated documents', async () => {

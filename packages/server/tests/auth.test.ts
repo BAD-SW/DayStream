@@ -46,6 +46,7 @@ describe('Auth API', () => {
     it('registers a new user', async () => {
       const { statusCode, body } = await request('POST', '/api/v1/auth/register', {
         tenant_id: TENANT_ID,
+        business_id: '00000000-0000-0000-0000-000000000002', // registration is per business now
         email: TEST_EMAIL,
         password: TEST_PASSWORD,
         first_name: 'Test',
@@ -60,6 +61,7 @@ describe('Auth API', () => {
     it('rejects duplicate email', async () => {
       const { statusCode, body } = await request('POST', '/api/v1/auth/register', {
         tenant_id: TENANT_ID,
+        business_id: '00000000-0000-0000-0000-000000000002', // registration is per business now
         email: TEST_EMAIL,
         password: TEST_PASSWORD,
         first_name: 'Test',
@@ -72,6 +74,7 @@ describe('Auth API', () => {
     it('rejects weak password', async () => {
       const { statusCode, body } = await request('POST', '/api/v1/auth/register', {
         tenant_id: TENANT_ID,
+        business_id: '00000000-0000-0000-0000-000000000002', // registration is per business now
         email: 'weak@transcend.test',
         password: 'short',
         first_name: 'Test',

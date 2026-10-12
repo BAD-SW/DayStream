@@ -70,20 +70,20 @@ export async function aggregateBookings(tenantId: string, date: string) {
  */
 export async function aggregateMemberships(tenantId: string, date: string) {
   const { rows: activeRows } = await adminPool.query(
-    `SELECT COUNT(*)::int AS cnt FROM mem_memberships
-     WHERE tenant_id = $1 AND status = 'active' AND started_at <= $2::date`,
+    `SELECT COUNT(*)::int AS cnt FROM mbr_enrollments
+     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1) AND status = 'active' AND start_date <= $2::date`,
     [tenantId, date],
   );
 
   const { rows: newRows } = await adminPool.query(
-    `SELECT COUNT(*)::int AS cnt FROM mem_memberships
-     WHERE tenant_id = $1 AND started_at::date = $2::date`,
+    `SELECT COUNT(*)::int AS cnt FROM mbr_enrollments
+     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1) AND start_date = $2::date`,
     [tenantId, date],
   );
 
   const { rows: cancelledRows } = await adminPool.query(
-    `SELECT COUNT(*)::int AS cnt FROM mem_memberships
-     WHERE tenant_id = $1 AND cancelled_at::date = $2::date`,
+    `SELECT COUNT(*)::int AS cnt FROM mbr_enrollments
+     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1) AND cancelled_at::date = $2::date`,
     [tenantId, date],
   );
 
@@ -118,7 +118,7 @@ export async function aggregateCustomers(tenantId: string, date: string) {
 export async function aggregateCheckins(tenantId: string, date: string) {
   const { rows } = await adminPool.query(
     `SELECT check_in_method, COUNT(*)::int AS cnt
-     FROM check_in_records
+     FROM apt_check_in_records
      WHERE tenant_id = $1 AND check_in_time::date = $2::date AND status = 'completed'
      GROUP BY check_in_method`,
     [tenantId, date],

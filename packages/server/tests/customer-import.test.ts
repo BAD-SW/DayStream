@@ -4,6 +4,7 @@ import http from 'http';
 import * as authService from '../src/services/auth.service';
 import * as importService from '../src/services/customer-import.service';
 import { adminPool } from '../src/db/pool';
+import { resetBusinessData } from './helpers/test-business';
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001';
 let BUSINESS_ID: string;
@@ -51,6 +52,7 @@ describe('Customer Import/Export', () => {
       [TENANT_ID],
     );
     BUSINESS_ID = bizRows[0].id;
+    await resetBusinessData(BUSINESS_ID);
 
     ownerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',
@@ -75,24 +77,24 @@ describe('Customer Import/Export', () => {
   });
 
   describe('Validation', () => {
-    it('validates required fields', () => {
+    it('validates required fields', async () => {
       const csv = 'email,first_name,last_name\n,John,Doe';
-      const result = importService.validateImport(csv, { email: 'email', first_name: 'first_name', last_name: 'last_name' });
+      const result = await importService.validateImport(csv, { email: 'email', first_name: 'first_name', last_name: 'last_name' });
       expect(result.valid).toBe(false);
       expect(result.errors.length).toBeGreaterThan(0);
       expect(result.errors[0].field).toBe('email');
     });
 
-    it('validates email format', () => {
+    it('validates email format', async () => {
       const csv = 'email,first_name,last_name\nnot-an-email,John,Doe';
-      const result = importService.validateImport(csv, { email: 'email', first_name: 'first_name', last_name: 'last_name' });
+      const result = await importService.validateImport(csv, { email: 'email', first_name: 'first_name', last_name: 'last_name' });
       expect(result.valid).toBe(false);
       expect(result.errors.some((e) => e.field === 'email' && e.message.includes('Invalid email'))).toBe(true);
     });
 
-    it('passes valid rows', () => {
+    it('passes valid rows', async () => {
       const csv = 'email,first_name,last_name\njohn@example.com,John,Doe';
-      const result = importService.validateImport(csv, { email: 'email', first_name: 'first_name', last_name: 'last_name' });
+      const result = await importService.validateImport(csv, { email: 'email', first_name: 'first_name', last_name: 'last_name' });
       expect(result.valid).toBe(true);
       expect(result.errors.length).toBe(0);
     });

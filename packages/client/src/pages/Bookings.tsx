@@ -6,6 +6,7 @@ import { ConfirmDialog } from '../design-system/components/feedback/ConfirmDialo
 import { formatCurrency } from '../utils/currency';
 import * as bookingsApi from '../api/bookings';
 import type { Booking } from '../api/bookings';
+import { useContextManager } from '../context/ContextManager';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   pending: 'neutral', confirmed: 'info', checked_in: 'success', in_progress: 'warning', completed: 'success', cancelled: 'error', no_show: 'error',
@@ -13,11 +14,13 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
 
 export function Bookings() {
   const navigate = useNavigate();
+  // Customers get a read-only list of their own bookings: no staff tools, filters or actions.
+  const isCustomer = useContextManager().persona === 'customer';
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
-  const [dateTo, setDateTo] = useState(new Date(Date.now() + 6 * 86400000).toISOString().split('T')[0]);
+  const [dateFrom, setDateFrom] = useState(isCustomer ? '' : new Date().toISOString().split('T')[0]);
+  const [dateTo, setDateTo] = useState(isCustomer ? '' : new Date(Date.now() + 6 * 86400000).toISOString().split('T')[0]);
   const [staffFilter, setStaffFilter] = useState('');
   const [serviceFilter, setServiceFilter] = useState('');
   const [customerFilter, setCustomerFilter] = useState('');
@@ -30,25 +33,17 @@ export function Bookings() {
 
   const businessId = localStorage.getItem('business_id') || '';
 
-  // Fetch business timezone and staff list for filter
+  // Business time zone (times are shown in business-local time) plus the staff / service
+  // names for the filters. One call that every business role may make — the full staff,
+  // services and business endpoints are refused for front-line staff.
   useEffect(() => {
-    if (!businessId) return;
-    import('../api/client').then(({ apiClient }) => {
-      apiClient.get('/v1/admin/businesses').then((res) => {
-        const biz = res.data.data?.find((b: any) => b.id === businessId);
-        if (biz?.timezone) setBusinessTimezone(biz.timezone);
-      }).catch(() => {});
-    });
-    import('../api/staff').then((staffApi) => {
-      staffApi.getStaffList({ business_id: businessId, status: 'active' }).then((res) => setStaffList(res.data)).catch(() => {});
-    });
-    import('../api/services').then((svcApi) => {
-      svcApi.getServices(businessId).then((res: any) => {
-        const list = (res as any).data || res;
-        setServiceList(Array.isArray(list) ? list : []);
-      }).catch(() => {});
-    });
-  }, [businessId]);
+    if (!businessId || isCustomer) return;
+    bookingsApi.getBookingFilters(businessId).then((f) => {
+      if (f.timezone) setBusinessTimezone(f.timezone);
+      setStaffList(f.staff || []);
+      setServiceList(f.services || []);
+    }).catch(() => {});
+  }, [businessId, isCustomer]);
 
   const fetchBookings = useCallback(async () => {
     if (!businessId) { setLoading(false); return; }
@@ -83,7 +78,7 @@ export function Bookings() {
     } catch { /* silent */ }
   };
 
-  const columns = [
+  const allColumns = [
     { key: 'booking_reference', header: 'Ref', width: '120px', sortable: true },
     {
       key: 'customer_first_name', header: 'Customer', sortable: true,
@@ -116,12 +111,13 @@ export function Bookings() {
       ),
     },
   ];
+  const columns = isCustomer ? allColumns.filter((c) => c.key !== 'customer_first_name' && c.key !== 'actions') : allColumns;
 
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Appointments</h1>
-        <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+        <h1 style={styles.title}>{isCustomer ? 'My Bookings' : 'Appointments'}</h1>
+        <div style={{ display: isCustomer ? 'none' : 'flex', gap: 'var(--space-sm)' }}>
           <button style={styles.navBtn} onClick={() => navigate('/bookings/new')}>New Appointment</button>
           <button style={styles.navBtn} onClick={() => navigate('/checkout?new=true')}>New Sale</button>
           <button style={styles.navBtn} onClick={() => navigate('/orders')}>Orders</button>
@@ -139,6 +135,7 @@ export function Bookings() {
           <option value="cancelled">Cancelled</option>
           <option value="no_show">No Show</option>
         </select>
+        {!isCustomer && <>
         <select value={staffFilter} onChange={(e) => { setStaffFilter(e.target.value); setPage(1); }} style={styles.select}>
           <option value="">All Staff</option>
           {staffList.map((s: any) => (
@@ -152,6 +149,7 @@ export function Bookings() {
           ))}
         </select>
         <input type="text" style={styles.select} value={customerFilter} onChange={(e) => { setCustomerFilter(e.target.value); setPage(1); }} placeholder="Customer name..." title="Filter by customer" />
+        </>}
         <input type="date" style={styles.select} value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} title="From date" />
         <input type="date" style={styles.select} value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} title="To date" />
         {(statusFilter || staffFilter || serviceFilter || dateFrom || dateTo || customerFilter) && (
@@ -159,7 +157,7 @@ export function Bookings() {
         )}
       </div>
 
-      <Table columns={columns} data={bookings} loading={loading} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No bookings found" mobileCardMode clientSort onRowClick={(row) => navigate(`/bookings/${row.id}/edit`)} />
+      <Table columns={columns} data={bookings} loading={loading} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No bookings found" mobileCardMode clientSort onRowClick={isCustomer ? undefined : (row) => navigate(`/bookings/${row.id}/edit`)} />
 
       <ConfirmDialog
         open={!!pendingNoShow}

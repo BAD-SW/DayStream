@@ -44,10 +44,12 @@ describe('Events & Workshops', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean up
-    await adminPool.query('DELETE FROM evt_registrations WHERE event_id IN (SELECT id FROM evt_events WHERE tenant_id = $1)', [TENANT_ID]);
-    await adminPool.query('DELETE FROM evt_ticket_tiers WHERE event_id IN (SELECT id FROM evt_events WHERE tenant_id = $1)', [TENANT_ID]);
-    await adminPool.query('DELETE FROM evt_events WHERE tenant_id = $1', [TENANT_ID]);
-    await adminPool.query('DELETE FROM evt_types WHERE tenant_id = $1 AND is_system = false', [TENANT_ID]);
+    // Only the events this file creates — never the rest of the tenant's events.
+    const mine = `SELECT id FROM evt_events WHERE tenant_id = $1 AND title IN ('Breath & Ice Workshop', 'Secret Draft', 'Tiny Event')`;
+    await adminPool.query(`DELETE FROM evt_registrations WHERE event_id IN (${mine})`, [TENANT_ID]);
+    await adminPool.query(`DELETE FROM evt_ticket_tiers WHERE event_id IN (${mine})`, [TENANT_ID]);
+    await adminPool.query(`DELETE FROM evt_events WHERE id IN (${mine})`, [TENANT_ID]);
+    await adminPool.query(`DELETE FROM evt_types WHERE tenant_id = $1 AND is_system = false AND name = 'Workshop' AND id NOT IN (SELECT event_type_id FROM evt_events WHERE event_type_id IS NOT NULL)`, [TENANT_ID]);
 
     // Create a test customer
     const { rows: custRows } = await adminPool.query(
@@ -279,7 +281,7 @@ describe('Events & Workshops', () => {
 
   describe('Public Calendar', () => {
     it('returns published events without auth', async () => {
-      const { statusCode, body } = await request('GET', `/api/v1/events/calendar?tenant_id=${TENANT_ID}`);
+      const { statusCode, body } = await request('GET', `/api/v1/events/calendar?tenant_id=${TENANT_ID}&start_date=2026-01-01`); // the test events are dated mid-2026; the default is "from now"
       expect(statusCode).toBe(200);
       expect(body.data.length).toBeGreaterThanOrEqual(1);
       const found = body.data.find((e: any) => e.title === 'Breath & Ice Workshop');

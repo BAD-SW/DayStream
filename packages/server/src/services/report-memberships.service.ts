@@ -7,28 +7,28 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
   // Active memberships at end of period
   const { rows: activeRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS active_count
-     FROM mem_memberships
-     WHERE tenant_id = $1
+     FROM mbr_enrollments
+     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1)
        AND status = 'active'
-       AND started_at <= $2::date`,
+       AND start_date <= $2::date`,
     [tenantId, endDate],
   );
 
   // New memberships in period
   const { rows: newRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS new_count
-     FROM mem_memberships
-     WHERE tenant_id = $1
-       AND started_at >= $2::date
-       AND started_at < ($3::date + INTERVAL '1 day')`,
+     FROM mbr_enrollments
+     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1)
+       AND start_date >= $2::date
+       AND start_date < ($3::date + INTERVAL '1 day')`,
     [tenantId, startDate, endDate],
   );
 
   // Cancelled in period
   const { rows: cancelledRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS cancelled_count
-     FROM mem_memberships
-     WHERE tenant_id = $1
+     FROM mbr_enrollments
+     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1)
        AND cancelled_at >= $2::date
        AND cancelled_at < ($3::date + INTERVAL '1 day')`,
     [tenantId, startDate, endDate],
@@ -37,10 +37,10 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
   // Active at start of period (for churn calculation)
   const { rows: startRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS start_count
-     FROM mem_memberships
-     WHERE tenant_id = $1
+     FROM mbr_enrollments
+     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1)
        AND status IN ('active', 'cancelled')
-       AND started_at < $2::date
+       AND start_date < $2::date
        AND (cancelled_at IS NULL OR cancelled_at >= $2::date)`,
     [tenantId, startDate],
   );
@@ -57,9 +57,9 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
   // MRR calculation (sum of plan prices for active memberships)
   const { rows: mrrRows } = await adminPool.query(
     `SELECT COALESCE(SUM(mp.price), 0) AS mrr
-     FROM mem_memberships m
-     JOIN mem_plans mp ON mp.id = m.plan_id
-     WHERE m.tenant_id = $1
+     FROM mbr_enrollments m
+     JOIN mbr_plans mp ON mp.id = m.plan_id
+     WHERE m.business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1)
        AND m.status = 'active'`,
     [tenantId],
   );

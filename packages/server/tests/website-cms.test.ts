@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { app } from '../src/app';
 import http from 'http';
 import * as authService from '../src/services/auth.service';
+import { adminPool } from '../src/db/pool';
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001';
 let SITE_ID: string;
@@ -33,7 +34,10 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 }
 
 describe('Website & CMS', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
+    // Remove the page a previous run created, so creating it again does not collide.
+    await adminPool.query(
+      `DELETE FROM web_pages WHERE slug = 'about-unit-test' AND site_id IN (SELECT id FROM web_sites WHERE tenant_id = $1)`, [TENANT_ID]);
     ownerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',
       ['cms:*', 'cms:read'],
@@ -66,11 +70,11 @@ describe('Website & CMS', () => {
   describe('Pages', () => {
     it('creates a page', async () => {
       const { statusCode, body } = await request('POST', '/api/v1/cms/pages', {
-        slug: 'about', title: 'About Us', pageType: 'about',
+        slug: 'about-unit-test', title: 'About Us', pageType: 'about',
         contentBlocks: [{ type: 'text_section', config: { html: '<p>Welcome</p>' } }],
       }, ownerToken);
       expect(statusCode).toBe(201);
-      expect(body.data.slug).toBe('about');
+      expect(body.data.slug).toBe('about-unit-test');
       PAGE_ID = body.data.id;
     });
 

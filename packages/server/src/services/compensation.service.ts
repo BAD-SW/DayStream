@@ -25,6 +25,13 @@ interface CreateCompensationRuleInput {
  * - A rule with reference_ids = NULL means "all items" of that type, so it overlaps with any specific IDs.
  * - Two rules with specific IDs conflict only if their IDs intersect.
  */
+/** YYYY-MM-DD from a date string or a pg DATE value (a Date at local midnight). */
+function toDateOnly(value: string | Date): string {
+  if (typeof value === 'string') return value.split('T')[0];
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+}
+
 async function checkOverlap(
   userId: string, businessId: string, ruleType: string,
   referenceType: string | null, referenceIds: string[] | null,
@@ -177,8 +184,8 @@ export async function updateRule(id: string, businessId: string, updates: Record
     const hasOverlap = await checkOverlap(
       rule.user_id, businessId, rule.rule_type,
       finalRefType || null, finalRefIds || null,
-      typeof finalFrom === 'string' ? finalFrom.split('T')[0] : String(finalFrom),
-      finalTo ? (typeof finalTo === 'string' ? finalTo.split('T')[0] : String(finalTo)) : null,
+      toDateOnly(finalFrom),
+      finalTo ? toDateOnly(finalTo) : null,
       id, // exclude self
     );
     if (hasOverlap) {

@@ -11,6 +11,7 @@ import * as importService from '../src/services/customer-import.service';
 import * as duplicateService from '../src/services/customer-duplicates.service';
 import { createActivity } from '../src/services/customer-activity.service';
 import { adminPool } from '../src/db/pool';
+import { resetBusinessData } from './helpers/test-business';
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001';
 let BUSINESS_ID: string;
@@ -62,6 +63,7 @@ describe('Customer Management — Integration Tests', () => {
       [TENANT_ID],
     );
     BUSINESS_ID = biz1[0].id;
+    await resetBusinessData(BUSINESS_ID);
 
     const { rows: biz2 } = await adminPool.query(
       `INSERT INTO sys_businesses (tenant_id, name, slug, status)
@@ -71,6 +73,7 @@ describe('Customer Management — Integration Tests', () => {
       [TENANT_ID],
     );
     BUSINESS_ID_2 = biz2[0].id;
+    await resetBusinessData(BUSINESS_ID_2);
 
     // Seed lifecycle config
     await adminPool.query(`
@@ -251,9 +254,9 @@ describe('Customer Management — Integration Tests', () => {
   });
 
   describe('13.2.3 CSV Import End-to-End (upload → validate → confirm)', () => {
-    it('validates CSV with errors', () => {
+    it('validates CSV with errors', async () => {
       const csv = 'Email,First,Last\njohn@test.com,John,Doe\n,Missing,Email\nbad-email,Bad,Format';
-      const result = importService.validateImport(csv, {
+      const result = await importService.validateImport(csv, {
         Email: 'email', First: 'first_name', Last: 'last_name',
       });
 

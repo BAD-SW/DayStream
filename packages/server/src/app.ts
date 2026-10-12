@@ -18,7 +18,20 @@ export const app = express();
 // req.ip resolves to Render's own internal proxy address (useless for rate limiting/audit),
 // and any code reading the raw header directly gets the whole comma-separated chain instead
 // of a single IP (broke inet-typed columns — see auth.service.ts's recordLoginAttempt).
-app.set('trust proxy', true);
+//
+// Trusting every hop (`true`) lets a client forge X-Forwarded-For and so pick its own
+// req.ip, which defeats the IP-based auth rate limit. TRUST_PROXY sets how far to trust:
+// a hop count ("1", "2") or "true"/"false". Unset, a deployed server keeps the previous
+// trust-all behaviour (set the real hop count there to close the gap); anywhere else there
+// is no proxy in front, so nothing is trusted.
+const trustProxyEnv = process.env.TRUST_PROXY?.trim().toLowerCase();
+const trustProxy: boolean | number =
+  trustProxyEnv === undefined || trustProxyEnv === '' ? process.env.NODE_ENV === 'production'
+  : trustProxyEnv === 'true' ? true
+  : trustProxyEnv === 'false' ? false
+  : Number.isInteger(Number(trustProxyEnv)) ? Number(trustProxyEnv)
+  : false;
+app.set('trust proxy', trustProxy);
 
 // Request ID middleware
 app.use((req, res, next) => {

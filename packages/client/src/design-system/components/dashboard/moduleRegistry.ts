@@ -49,7 +49,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   { id: 'reports', phase: 17, icon: '📈', titleKey: 'Reports', descriptionKey: 'Analytics and insights', path: '/reports', personas: ['business'], permission: 'reports:read' },
 
   // Marketing
-  { id: 'marketing', phase: 16, icon: '📣', titleKey: 'Marketing', descriptionKey: 'Campaigns and automation', path: '/marketing', personas: ['business'], permission: 'settings:*' },
+  { id: 'marketing', phase: 16, icon: '📣', titleKey: 'Marketing', descriptionKey: 'Campaigns and automation', path: '/marketing', personas: ['business'], permission: 'marketing:read' },
 
   // Offerings
   { id: 'offerings', phase: 28, icon: '🛍️', titleKey: 'Offerings', descriptionKey: 'Services, products, memberships, and promotions', path: '/offers', personas: ['business'], permission: 'services:read' },
@@ -58,7 +58,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   { id: 'business', phase: 12, icon: '🏢', titleKey: 'Business Setup', descriptionKey: 'Staff, resources, and locations', path: '/business', personas: ['business'], permission: 'staff:read' },
 
   // Website
-  { id: 'website', phase: 18, icon: '🌐', titleKey: 'Website', descriptionKey: 'Manage your online presence', path: '/cms', personas: ['business'], permission: 'settings:*' },
+  { id: 'website', phase: 18, icon: '🌐', titleKey: 'Website', descriptionKey: 'Manage your online presence', path: '/cms', personas: ['business'], permission: 'cms:read' },
 
   // Settings
   { id: 'business-settings', phase: 0, icon: '⚙️', titleKey: 'Settings', descriptionKey: 'Business configuration', path: '/settings', personas: ['business'], permission: 'settings:*' },
@@ -107,7 +107,7 @@ export function getVisibleModules(
   const effectivePersonas: Persona[] =
     contextLevel === 'system' ? ['system'] :
     contextLevel === 'tenant' ? ['tenant'] :
-    contextLevel === 'business' ? ['business', 'customer'] :
+    contextLevel === 'business' ? [persona === 'customer' ? 'customer' : 'business'] :
     [persona];
 
   return MODULE_REGISTRY.filter((mod) => {
@@ -119,7 +119,7 @@ export function getVisibleModules(
       const hasPermission = userPermissions.some((perm) => {
         if (perm === '*:*') return true;
         if (perm === mod.permission) return true;
-        const [resource, action] = mod.permission!.split(':');
+        const [resource] = mod.permission!.split(':');
         if (perm === `${resource}:*`) return true;
         return false;
       });

@@ -67,9 +67,9 @@ export function BookingCreate() {
   useEffect(() => {
     if (!businessId) return;
     servicesApi.getServices(businessId, { status: 'active' }).then((res) => setServices(res.data));
-    apiClient.get('/v1/admin/businesses').then((res) => {
-      const biz = res.data.data?.find((b: any) => b.id === businessId);
-      if (biz?.timezone) setBusinessTimezone(biz.timezone);
+    // Readable by every business role (the businesses endpoint is owner-only).
+    bookingsApi.getBookingFilters(businessId).then((f) => {
+      if (f.timezone) setBusinessTimezone(f.timezone);
     }).catch(() => {});
   }, [businessId]);
 

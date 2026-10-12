@@ -18,7 +18,9 @@ function request(method: string, path: string, body?: any, token?: string): Prom
       const address = server.address() as any;
       const data = body ? JSON.stringify(body) : undefined;
       const options: http.RequestOptions = {
-        hostname: 'localhost', port: address.port, path, method,
+        hostname: 'localhost', port: address.port, method,
+        // Resource routes are business-scoped: every call carries the business id.
+        path: BUSINESS_ID && !path.includes('business_id=') ? `${path}${path.includes('?') ? '&' : '?'}business_id=${BUSINESS_ID}` : path,
         headers: {
           'Content-Type': 'application/json',
           ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
@@ -49,8 +51,9 @@ describe('Resource Management', () => {
     BUSINESS_ID = bizRows[0].id;
 
     // Clean up
-    await adminPool.query('DELETE FROM res_resources WHERE tenant_id = $1', [TENANT_ID]);
-    await adminPool.query('DELETE FROM res_types WHERE tenant_id = $1 AND is_system = false', [TENANT_ID]);
+    // Only this test business's resources — never the rest of the tenant's.
+    await adminPool.query('DELETE FROM res_resources WHERE tenant_id = $1 AND business_id = $2', [TENANT_ID, BUSINESS_ID]);
+    await adminPool.query('DELETE FROM res_types WHERE tenant_id = $1 AND business_id = $2 AND is_system = false', [TENANT_ID, BUSINESS_ID]);
 
     ownerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',

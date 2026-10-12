@@ -1,9 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as bookingsApi from '../api/bookings';
-import * as servicesApi from '../api/services';
-import * as locationsApi from '../api/locations';
-import { apiClient } from '../api/client';
 
 // ============================================================
 // Time axis — reflects the business's real operating hours (item 1: a business open 9am-10pm
@@ -347,32 +344,16 @@ export function BookingCalendar() {
   // clips early/late bookings. Falls back to the default range until hours are loaded/configured.
   const [hourRange, setHourRange] = useState<HourRange>(DEFAULT_HOUR_RANGE);
 
-  // Load business timezone
+  // Load the business timezone, the primary location's operating hours (to size the time axis)
+  // and the active service list (for the month view's quick filter). All three come from the
+  // booking filters endpoint, which every business role can read: the businesses, locations and
+  // services endpoints need permissions that reception and providers do not have.
   useEffect(() => {
     if (!businessId) return;
-    apiClient.get('/v1/admin/businesses').then((res) => {
-      const biz = res.data.data?.find((b: any) => b.id === businessId);
-      if (biz?.timezone) setBusinessTimezone(biz.timezone);
-    }).catch(() => {});
-  }, [businessId]);
-
-  // Load the primary location's operating hours to size the calendar's time axis
-  useEffect(() => {
-    if (!businessId) return;
-    locationsApi.getLocations(businessId).then(async (locations) => {
-      const primary = locations.find((l) => l.is_primary) || locations[0];
-      if (!primary) return;
-      const hours = await locationsApi.getLocationHours(primary.id);
-      setHourRange(computeHourRangeFromLocationHours(hours));
-    }).catch(() => {});
-  }, [businessId]);
-
-  // Load full service list (for the month view's quick filter)
-  useEffect(() => {
-    if (!businessId) return;
-    servicesApi.getServices(businessId, { status: 'active' }).then((res: any) => {
-      const list = res.data || res;
-      setAllServices(Array.isArray(list) ? list.map((s: any) => ({ id: s.id, name: s.name })) : []);
+    bookingsApi.getBookingFilters(businessId).then((f) => {
+      if (f.timezone) setBusinessTimezone(f.timezone);
+      if (f.location_hours && f.location_hours.length > 0) setHourRange(computeHourRangeFromLocationHours(f.location_hours));
+      setAllServices((f.services || []).filter((s) => !s.status || s.status === 'active').map((s) => ({ id: s.id, name: s.name })));
     }).catch(() => {});
   }, [businessId]);
 

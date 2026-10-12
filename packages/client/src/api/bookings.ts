@@ -127,6 +127,19 @@ export async function createBooking(data: {
   return res.data.data;
 }
 
+export interface BookingFilters {
+  timezone: string;
+  currency: string | null;
+  staff: Array<{ user_id: string; first_name: string; last_name: string }>;
+  services: Array<{ id: string; name: string; status?: string }>;
+  location_hours?: Array<{ day_of_week: number; is_closed: boolean; open_time: string | null; close_time: string | null }>;
+}
+
+export async function getBookingFilters(businessId: string): Promise<BookingFilters> {
+  const res = await apiClient.get('/v1/bookings/filters', { params: { business_id: businessId } });
+  return res.data.data;
+}
+
 export async function getBookings(businessId: string, filters?: { status?: string; customer_id?: string; customer_search?: string; staff_id?: string; service_id?: string; date_from?: string; date_to?: string; page?: number }) {
   const params = new URLSearchParams({ business_id: businessId });
   if (filters?.status) params.set('status', filters.status);
