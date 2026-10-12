@@ -31,6 +31,61 @@ What was not cleaned up, if anything.
 
 ## Runs
 
+## Run 20261012-6 — full run (in progress)
+- Commit at start: `2a62bc8` · Migrations at end so far: 140 · Processor mode: Stripe test (platform, seed tenant, seed business); mock for the E2E tenant
+- Method: each script is driven through the API by a repeatable script (kept in the session scratchpad: `r00`, `r02`, `r02b`, `r03`, `r05`, `r06`), with the browser used for screens, menus and typed addresses. Data is created in a dedicated tenant `E2E 20261012-6 SysTenant` and its business `E2E 20261012-6 Biz` (time zone Europe/Madrid)
+- A script is marked `Verified` when every check passed after fixes. Scripts whose remaining part is purely visual are noted below
+
+### Progress
+| Suite | Result | Not yet run |
+|---|---|---|
+| 00 Preflight & smoke | 19 of 20 pass | SMK-11 (theme toggle) to be re-checked in suite 16 |
+| 02 Auth, access, isolation | 17 run, all pass after fixes | AUTH-07 (tenant menu, to re-check after the role fix), AUTH-12 (context switcher, browser) |
+| 03 System admin | 13 pass after fixes | SYS-04, SYS-07, SYS-14 (map screen), SYS-15 (needs a Google Places key) |
+| 04 Tenant admin | 10 pass after fixes | TEN-06 (context switcher), TEN-08 (prospect filters) |
+| 05 Billing layers | 16 of 16 pass after fixes, with real Stripe test charges | BILL-03 card entry in the hosted fields was replaced by a server-side confirmation with Stripe test methods |
+| 06 Business setup, schedule, clock | 16 of 16 pass after fixes | Screens themselves only covered by the smoke tour |
+| 01, 07 to 17 | pending | |
+
+### Defects found and fixed in this run
+| Id | Severity | Summary |
+|---|---|---|
+| D-23 | Critical | Any signed-in user could read and change another tenant's customers, services and bookings by passing that business's id. The server never checked that the caller could reach the business named in a request |
+| D-24 | Critical | A tenant owner passed every platform-only check (`requirePermission('*:*')`): all tenants, all users, platform configuration, platform billing |
+| D-25 | Critical | The Query Editor gave a tenant owner the whole database (it was described as tenant-scoped; it has no tenant filter) |
+| D-26 | High | Tenant-level endpoints were open to business owners (`settings:*`): create tenant users as full tenant owners, create and archive businesses, tenant reports and billing, prospects, own billing plan and credits, the tenant's billing run and bank details |
+| D-27 | High | A suspended tenant's users, a deactivated user and users of an archived business could still sign in and keep using open sessions |
+| D-28 | High | Seed tenant owner (and tenant owners of older tenants) held the Business Owner role and became business users after a page reload; staff created from Business Setup had no role and signed in as "customer" with no permissions (migration 138) |
+| D-29 | High | Booking times were compared with opening hours and staff availability on the UTC clock, not in the business's local time. Outside UTC, offered slots were shifted and could be refused when booked |
+| D-30 | High | DATE columns travelled as the previous day on a server outside UTC (holiday closures and day overrides never matched; date fields drifted) |
+| D-31 | High | Service / location assignments on the staff page and those the booking engine reads were two unconnected lists (migration 140) |
+| D-32 | High | Resources required by a service, and their maintenance windows, were never applied to slots or bookings |
+| D-33 | High | A declined platform or tenant charge could not be collected after the card was replaced (processor idempotency key reused with a new card) |
+| D-34 | Medium | Manual "Run now" billing runs did not appear in Billing Activity |
+| D-35 | Medium | A customer login could ask for another customer's saved payment methods; method endpoints did not check the owner level |
+| D-36 | Medium | Platform and tenant screens, and modules outside a staff role's permissions, opened as empty shells when the address was typed |
+| D-37 | Medium | Managers were refused the list of locations on the Schedule screen |
+| D-38 | Medium | Sign-ins, lock-outs and password resets were not in the audit log |
+| D-39 | Medium | Events and Community could not be switched on: their feature flags did not exist (migration 139) |
+| D-40 | Medium | Daily booking limit per provider stored but never enforced; checked-in bookings did not block their provider or resource in conflict checks; deactivated staff still offered as providers and still able to sign in |
+| D-41 | Medium | Second staff member with an existing email accepted (second profile on one login); leave could be requested for another person; overlapping and out-of-hours shifts accepted |
+| D-42 | Low | Tenant contract end date before start accepted; business edits not audited; duplicate prospects accepted; staff metrics failed; time clock refused unusual email endings; a system admin could deactivate themselves |
+| — | — | 635 API handlers answered "server error" without recording the cause; they now log it |
+
+### Observations (not changed)
+- Adding a tenant user always creates a full tenant owner; there is no lesser tenant role in the form.
+- A business owner can change tenant-wide feature overrides and tenant configuration values (`settings:*`). The business Settings screen relies on some of these keys.
+- The audit log is read per tenant: a system admin sees another tenant's entries only after switching context into it.
+- A password-reset email goes to a fake mailbox locally (Ethereal), so the link cannot be read back; the token rules were checked with a known-value token.
+- Punches made at the time clock are never rewritten; a correction is a manual entry.
+- The receiving bank account is shown back to the tenant in full (it is their own data, not a credential).
+- A booking carries one resource, so only the first "required" resource requirement of a service is applied.
+
+### Leftover test data
+Tenant `E2E 20261012-6 SysTenant B` with business `E2E 20261012-6 Biz B`: two staff, a location, a room, a service, four customers, a few bookings in the week of 19 October 2026, billing plans and Stripe test charges. Seed business: staff login `e2e-20261012-6-reset@daystream.test`.
+
+---
+
 ## Run 20261012-5 — remaining People screens (spec 46), exploratory
 - Commit: `5d7937d` plus local changes · Migrations at: 136 · As: business owner, seed business
 - Scope: the screens built in this round. Not a suite run

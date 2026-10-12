@@ -2,7 +2,7 @@
 
 **Owner:** Claude (maintained in every working session) · **Created:** 2026-10-12
 **Synced through commit:** `417c0e6` (feat(payments): accounting hardening, bank-draw reconciliation, and billing UX)
-**Script count:** 298 across 18 suites · **Verified by execution:** 24 · **Failing:** 0 · **Blocked:** 31, of which 29 await specs 47–48 (KI-13) (last full smoke run 20261012-3: 20 of 20 passed; runs 20261012-4 and -5 covered the People screens — see [RUN-LOG.md](./RUN-LOG.md))
+**Script count:** 298 across 18 suites · **Verified by execution:** 95 · **Failing:** 0 · **Blocked:** 31 (specs 47–48, KI-13) · **Draft (not yet run):** 172 — full run 20261012-6 in progress, see [RUN-LOG.md](./RUN-LOG.md)
 
 This is the living end-to-end (E2E) regression book for DayStream. It exists for two goals:
 
@@ -281,3 +281,4 @@ Gaps in the test approach itself:
 | 2026-10-12 | `417c0e6` + local | D-10, D-11, D-13 fixed; KI-11 rewritten. Unit tests after the fixes: server 895 of 895, client 186 of 186; type check: server 0 errors, client 30 (unchanged baseline). Spec 48 renamed Marketing Module (Leads is its first section); stage `trial` is shown as "New customer" |
 | 2026-10-12 | `37aad94` + local | Spec 46 People Foundation built (migration 136). Run 20261012-4: People list, add person, profile, consent, duplicate banner and merge checked in the browser; D-17 to D-20 found and fixed, D-21 logged. CUS-17 to CUS-26 unblocked (CUS-18 verified); CUS-27 and CUS-28 stay blocked on their screens. KI-13, KI-14 rewritten, KI-15 added. Registration test no longer leaves people in the seed business. Unit tests: server 945, client 186 |
 | 2026-10-12 | `5d7937d` + local | Remaining spec 46 screens built: column chooser, bulk actions, segment editing and fixed lists, campaign audience picker with summary, real Financial Summary. Run 20261012-5 checked them in the browser. CUS-27 and CUS-28 unblocked; D-21 and D-22 fixed; KI-13 rewritten, KI-16 added; spec 46 `tasks.md` ticked (63 done, 15 open). Unit tests: server 946, client 186 |
+| 2026-10-12 | `2a62bc8` to `bf50439` | Full run 20261012-6 started: suites 00, 02, 03, 04, 05, 06 executed. Defects D-23 to D-42 found and fixed (three critical access defects among them), migrations 137 to 140. Statuses set from the run |
