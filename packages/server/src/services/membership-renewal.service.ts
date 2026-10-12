@@ -157,6 +157,9 @@ async function renewOne(
     return 'charged';
   }
 
+  // The card on file was removed since the last renewal: that is a failed renewal like a
+  // declined card (retries, notices, and in the end expiry). It used to be skipped quietly on
+  // every run, so the membership stayed active and unpaid for good.
   const charge = await chargeStoredMethod({
     owner,
     amountCents,
@@ -172,6 +175,9 @@ async function renewOne(
       enrollment_id: enr.id,
       period: enr.next_billing_date,
     },
+  }).catch((e: any) => {
+    if (e?.code === 'METHOD_UNAVAILABLE') return { outcome: 'failed' as const, providerReference: null, failureReason: 'The saved payment method is no longer available' };
+    throw e;
   });
 
   const status = charge.outcome === 'succeeded' ? 'completed'

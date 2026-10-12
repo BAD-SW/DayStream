@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
-import { tenantContext } from '../auth/tenant-context';
+import { tenantContext, isCustomerLogin, ownCustomerIds } from '../auth/tenant-context';
 import { requirePermission, requireTenantLevel } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
@@ -105,6 +105,36 @@ async function reconcilePlatformCharge(providerReference: string, type: 'charge.
 // Everything below requires authentication + tenant context.
 paymentPlatformRouter.use(authenticate);
 paymentPlatformRouter.use(tenantContext);
+
+// The Customer role holds bookings:read (for its own bookings), which is also what the read
+// routes below ask for. A customer login keeps what it needs for itself (its saved methods,
+// what the business accepts, its own invoices) and is refused the rest: the business's
+// payments, gift cards and their codes, vouchers, other people's credit.
+paymentPlatformRouter.use(async (req: Request, res: Response, next) => {
+  if (!isCustomerLogin(req)) { next(); return; }
+  try {
+    const p = req.path;
+    const open = /^\/(catalog|available-methods|providers|methods|accepted-methods|invoicing-enabled)(\/|$)/.test(p);
+    if (open && (req.method === 'GET' || /^\/methods(\/|$)/.test(p))) { next(); return; }
+    if (req.method === 'GET' && /^\/invoices(\/|$)/.test(p)) {
+      const own = await ownCustomerIds(req);
+      const byId = p.match(/^\/invoices\/([0-9a-f-]{36})(\/pdf)?$/i);
+      if (byId) {
+        const { rows } = await adminPool.query('SELECT customer_id FROM pay_invoices WHERE id = $1', [byId[1]]);
+        if (rows[0] && own.includes(rows[0].customer_id)) { next(); return; }
+        error(res, 'Invoice not found', 'NOT_FOUND', 404);
+        return;
+      }
+      const asked = req.query.customer_id as string | undefined;
+      if (own.length > 0 && (!asked || own.includes(asked))) {
+        if (!asked) (req.query as any).customer_id = own[0];
+        next();
+        return;
+      }
+    }
+    error(res, 'Insufficient permissions', 'FORBIDDEN', 403);
+  } catch (err: any) { console.error('Payment scope failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+});
 
 // ============================================================
 // Method catalog (reference) + Section C availability

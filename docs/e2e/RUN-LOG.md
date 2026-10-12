@@ -32,8 +32,8 @@ What was not cleaned up, if anything.
 ## Runs
 
 ## Run 20261012-6 — full run (in progress)
-- Commit at start: `2a62bc8` · Migrations at end so far: 141 · Processor mode: Stripe test (platform, seed tenant, seed business); mock for the E2E tenant
-- Method: each script is driven through the API by a repeatable script (kept in the session scratchpad: `r00`, `r02`, `r02b`, `r03`, `r05`, `r06`, `r07`, `r08`, `r09`), with the browser used for screens, menus and typed addresses. Data is created in a dedicated tenant `E2E 20261012-6 SysTenant` and its business `E2E 20261012-6 Biz` (time zone Europe/Madrid)
+- Commit at start: `2a62bc8` · Migrations at end so far: 142 · Processor mode: Stripe test (platform, seed tenant, seed business); mock for the E2E tenant
+- Method: each script is driven through the API by a repeatable script (kept in the session scratchpad: `r00`, `r02`, `r02b`, `r03`, `r05`, `r06`, `r07`, `r08`, `r09`, `r10`, and `sweep` for the cross-organisation check), with the browser used for screens, menus and typed addresses. Data is created in a dedicated tenant `E2E 20261012-6 SysTenant` and its business `E2E 20261012-6 Biz` (time zone Europe/Madrid)
 - A script is marked `Verified` when every check passed after fixes. Scripts whose remaining part is purely visual are noted below
 
 ### Progress
@@ -48,7 +48,9 @@ What was not cleaned up, if anything.
 | 07 Offerings & pricing | 14 of 15 pass after fixes | OFF-05 (image upload, browser) |
 | 08 People | 24 pass after fixes (plus CUS-18 from run 4) | CUS-09 (360 tabs), CUS-10 (quick actions), CUS-27 (column choice) need the screen; their API parts pass |
 | 09 Bookings, calendar, check-in | 21 pass after fixes | BKG-08 (KI-1), BKG-17 and BKG-20 (calendar visuals), CHK-04 (late arrival, membership) |
-| 01, 10 to 17 | pending | |
+| 10 Checkout & payments | 18 of 18 pass after fixes (mock processor; PAY-16 expiry path not waited for) | Card entry in the hosted fields and the receipt screen are browser checks |
+| Cross-organisation sweep | 8,712 calls: every GET route that takes an id, opened as another organisation's owner with this run's record ids. 0 leaks after fixes | The same sweep as a customer login, and for routes that change data |
+| 01, 11 to 17 | pending | |
 
 ### Defects found and fixed in this run
 | Id | Severity | Summary |
@@ -85,6 +87,11 @@ What was not cleaned up, if anything.
 | D-52 | Medium | The profile listed every tag of the business as the person's tags; a first booking or visit never moved the lifecycle stage; archived people could be booked; name search missed accented names; importing a known person did not fill in their missing details |
 | D-53 | Medium | A paused or draft service could be booked and an inactive plan sold; a category with services could be archived; price changes were not written to the price history; a refused booking said only "Failed to create booking" |
 | D-54 | Medium | A no-show without a fee was not recorded (missing from the person's record and the report); the booking horizon was shown but not applied; a freed place was never offered to the waitlist and confirming an offer made no booking; a person could not rejoin a waitlist |
+| D-55 | Critical | An order could be read, and lines added to it, by any signed-in user of any organisation (orders were looked up by id alone). The same for service variants and staff, plan and package contents, merchandise variants, resource requirements and utilisation, found by the sweep. Records addressed by id are now checked against the caller's business |
+| D-56 | Critical | Paying an order by card on the checkout screen booked the money twice (once "on account", once for the order) and left the customer with spendable account credit of the same amount. A cash, transfer or check sale recorded no payment at all (missing from Payments and the Billing tab, not refundable, booking shown as unpaid). The order now takes or records its payment on the server in one step (migration 142) |
+| D-57 | High | A customer login could list the business's payments, transactions, invoices, vouchers and gift cards with their codes (the Customer role's bookings:read permission opened them) |
+| D-58 | High | Two simultaneous "pay" requests could pay an order twice; a card charge had no stable key, so a repeated request charged again |
+| D-59 | Medium | A paid booking could be checked out again (a second order for the same visit); a no-show fee was closed as "paid by card" without charging anything; a renewal whose card had been removed was skipped quietly on every run, so the membership stayed active and unpaid |
 | — | — | 635 API handlers answered "server error" without recording the cause; they now log it |
 
 ### Observations (not changed)
@@ -100,6 +107,12 @@ What was not cleaned up, if anything.
 - Check-in settings (grace period, walk-ins on or off) are shared by all businesses of a tenant.
 - The waitlist has no screen yet; it works through the API only.
 - A customer login cannot create bookings on the staff endpoint; customers book through the widget and portal.
+- Gift cards: issuing a card takes no payment and posts nothing to the ledger; a sale paid with a gift card is posted to Cash like a cash sale. Gift-card accounting needs a decision (a liability account and a sale step).
+- Vouchers can be created and validated, but nothing redeems them at checkout yet (single-use and maximum uses cannot be reached).
+- A subscription started from "Subscriptions" charges nothing at the start; the first charge is the first renewal. A membership sold at checkout is paid in the order.
+- A membership with a failed renewal stays "active" while retries are open; there is no "past due" status.
+- A sale without a customer has an order and a ledger entry but no row in Payments (a payment needs a customer).
+- No split payment: one order, one method.
 
 ### Leftover test data
 Tenant `E2E 20261012-6 SysTenant B` with business `E2E 20261012-6 Biz B`: three staff, a location, a room and a sauna cabin, services (Svc, Svc2, Massage, Sauna), about 60 people, bookings in the weeks of 19 and 26 October 2026 and a few on the day of the run, promotions, pricing rules, discount codes, a kiosk registration, billing plans and Stripe test charges. Seed business: staff login `e2e-20261012-6-reset@daystream.test`.

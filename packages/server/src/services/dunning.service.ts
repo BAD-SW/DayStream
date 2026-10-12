@@ -137,6 +137,8 @@ async function processOne(
     ownerLevel: 'customer', businessId, tenantId, customerId: attempt.customer_id,
   };
 
+  // A card that has been removed counts as a failed retry (it used to stop the retries, so
+  // the membership was never recovered and never expired).
   const charge = await chargeStoredMethod({
     owner,
     amountCents,
@@ -152,6 +154,9 @@ async function processOne(
       enrollment_id: attempt.enrollment_id,
       attempt: String(attempt.attempt_number),
     },
+  }).catch((e: any) => {
+    if (e?.code === 'METHOD_UNAVAILABLE') return { outcome: 'failed' as const, providerReference: null, failureReason: 'The saved payment method is no longer available' };
+    throw e;
   });
 
   const status = charge.outcome === 'succeeded' ? 'completed'

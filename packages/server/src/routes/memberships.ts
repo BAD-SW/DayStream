@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
-import { tenantContext } from '../auth/tenant-context';
+import { tenantContext, recordScopeIn } from '../auth/tenant-context';
 import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
@@ -9,6 +9,11 @@ import * as plansService from '../services/membership-plans.service';
 import * as membershipService from '../services/membership.service';
 
 export const membershipsRouter = Router();
+
+// Records on these routes are addressed by id alone: each must belong to a business the caller
+// can reach, or it does not exist for them. (They were readable, and some changeable, from any
+// other organisation.)
+membershipsRouter.param('id', recordScopeIn(['mbr_plans', 'mbr_enrollments', 'mem_plans', 'mem_memberships'], 'Membership'));
 
 membershipsRouter.use(authenticate);
 membershipsRouter.use(tenantContext);

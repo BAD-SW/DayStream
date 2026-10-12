@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import Joi from 'joi';
 import multer from 'multer';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
-import { tenantContext } from '../auth/tenant-context';
+import { tenantContext, recordScopeIn } from '../auth/tenant-context';
 import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
@@ -20,6 +20,12 @@ import * as utilizationService from '../services/resource-utilization.service';
 import { storage } from '../services/storage.service';
 
 export const resourcesRouter = Router();
+
+// Records on these routes are addressed by id alone: each must belong to a business the caller
+// can reach, or it does not exist for them. (They were readable, and some changeable, from any
+// other organisation.)
+resourcesRouter.param('id', recordScopeIn(['res_resources', 'res_types', 'SELECT s.business_id FROM svc_resource_requirements r JOIN svc_services s ON s.id = r.service_id WHERE r.id = $1'], 'Resource'));
+resourcesRouter.param('serviceId', recordScopeIn(['svc_services'], 'Service'));
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 resourcesRouter.use(authenticate);

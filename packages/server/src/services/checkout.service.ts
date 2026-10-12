@@ -2,6 +2,7 @@ import { adminPool } from '../db/pool';
 import { generateJournalEntries } from './order-journal.service';
 import { touchActivity } from './person-identity.service';
 import { validateCode, redeemCode } from './discount-codes.service';
+import { withBookingLock } from './booking.service';
 
 interface CreateOrderInput {
   businessId: string;
@@ -33,6 +34,9 @@ type OrderPaymentMethod =
 interface CompleteOrderInput {
   paymentMethod: OrderPaymentMethod;
   paymentReference?: string;
+  paymentMethodId?: string | null;
+  giftCardCode?: string | null;
+  checkNumber?: string | null;
   checkedOutBy: string;
 }
 
@@ -57,6 +61,15 @@ export async function createOrder(input: CreateOrderInput) {
  * Create an order pre-populated from a booking (service line item auto-added).
  */
 export async function createOrderFromBooking(bookingId: string, businessId: string, checkedOutBy: string) {
+  // A booking is paid once. (After the first order was completed, "check out" used to start a
+  // second order for the same visit.)
+  const { rows: paid } = await adminPool.query(
+    `SELECT order_number FROM fin_orders WHERE booking_id = $1 AND business_id = $2 AND status IN ('completed', 'refunded') LIMIT 1`,
+    [bookingId, businessId],
+  );
+  if (paid.length > 0) {
+    throw Object.assign(new Error(`This booking has already been checked out (order ${paid[0].order_number})`), { code: 'ALREADY_CHECKED_OUT' });
+  }
   const { rows: bookings } = await adminPool.query(
     `SELECT b.*, s.name AS service_name, s.tax_category_id,
             sv.name AS variant_name, sv.price AS variant_price,
@@ -224,7 +237,22 @@ export async function removeItem(itemId: string, orderId: string) {
 /**
  * Complete an order (process payment).
  */
+/** A payment for an order that was refused (declined card, not enough on the gift card...). */
+export class OrderPaymentError extends Error {
+  constructor(message: string, public code: string) { super(message); }
+}
+
+const MANUAL_METHODS = ['cash', 'bank_transfer', 'check', 'other'];
+
+/**
+ * Complete an order: take or record its payment, then close it. One request at a time per
+ * order, so a double click cannot pay twice.
+ */
 export async function completeOrder(orderId: string, businessId: string, input: CompleteOrderInput) {
+  return withBookingLock(`order:${orderId}`, () => payAndCompleteOrder(orderId, businessId, input));
+}
+
+async function payAndCompleteOrder(orderId: string, businessId: string, input: CompleteOrderInput) {
   const { rows: orderRows } = await adminPool.query(
     'SELECT * FROM fin_orders WHERE id = $1 AND business_id = $2', [orderId, businessId],
   );
@@ -235,6 +263,34 @@ export async function completeOrder(orderId: string, businessId: string, input: 
     'SELECT id FROM fin_order_items WHERE order_id = $1', [orderId],
   );
   if (items.length === 0) throw new Error('Cannot complete an empty order');
+
+  // The payment belongs to the order. It used to be the screen's job to take a card or gift
+  // card payment first and then close the order, and cash, transfer and check sales recorded
+  // no payment at all.
+  const openOrder = orderRows[0];
+  const method = input.paymentMethod === 'transfer' ? 'bank_transfer' : input.paymentMethod;
+  const manual = MANUAL_METHODS.includes(method);
+  if (openOrder.total_amount > 0 && (openOrder.customer_id || !manual)) {
+    if (!openOrder.customer_id) {
+      throw new OrderPaymentError('Select a customer to pay by card, direct debit or gift card', 'CUSTOMER_REQUIRED');
+    }
+    const { rows: tenantRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
+    const { takeOneTimePayment } = await import('./customer-payment.service');
+    const payment = await takeOneTimePayment({
+      businessId, tenantId: tenantRows[0].tenant_id, customerId: openOrder.customer_id,
+      method: method as any, amountCents: openOrder.total_amount,
+      paymentMethodId: input.paymentMethodId || null, giftCardCode: input.giftCardCode || null,
+      checkNumber: method === 'check' ? (input.checkNumber || input.paymentReference || null) : null,
+      bookingId: openOrder.booking_id || null, description: `Order ${openOrder.order_number}`,
+      processedBy: input.checkedOutBy, orderId, idempotencyKey: `order:${orderId}`,
+    });
+    if (payment.status === 'failed') {
+      throw new OrderPaymentError(payment.failureReason || 'The payment was declined', 'PAYMENT_DECLINED');
+    }
+    // A reference typed by the member of staff (the customer's transfer or check number) is
+    // kept on the order; otherwise the order carries the payment's own reference.
+    if (!manual || !input.paymentReference) input.paymentReference = payment.referenceNumber;
+  }
 
   const { rows } = await adminPool.query(
     `UPDATE fin_orders SET status = 'completed', payment_method = $1, payment_reference = $2,
@@ -347,10 +403,26 @@ export async function chargeNoShowFee(input: {
     bookingId: input.bookingId,
   });
 
-  await completeOrder(order.id, input.businessId, {
-    paymentMethod: input.paymentMethod || 'card',
-    checkedOutBy: input.checkedOutBy,
-  });
+  // The fee is charged to the customer's saved card when they have one. Without a card, or if
+  // the card is declined, the fee stays as an open order to collect (it used to be closed as
+  // "paid by card" although nothing had been charged).
+  if (input.paymentMethod && input.paymentMethod !== 'card') {
+    await completeOrder(order.id, input.businessId, { paymentMethod: input.paymentMethod, checkedOutBy: input.checkedOutBy });
+  } else if (input.customerId) {
+    const { rows: cards } = await adminPool.query(
+      `SELECT id FROM pay_payment_methods
+        WHERE owner_level = 'customer' AND customer_id = $1 AND business_id = $2 AND status = 'active' AND method_type = 'card'
+        ORDER BY is_default DESC, created_at DESC LIMIT 1`,
+      [input.customerId, input.businessId],
+    );
+    if (cards[0]) {
+      try {
+        await completeOrder(order.id, input.businessId, { paymentMethod: 'card', paymentMethodId: cards[0].id, checkedOutBy: input.checkedOutBy });
+      } catch (err: any) {
+        if (!(err instanceof OrderPaymentError) && !err?.code) throw err;
+      }
+    }
+  }
 
   return getOrder(order.id);
 }

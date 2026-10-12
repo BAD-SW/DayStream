@@ -125,6 +125,71 @@ export function tenantContext(req: Request, res: Response, next: NextFunction): 
   })().catch(next);
 }
 
+/**
+ * Whether the signed-in user may work with this business: it belongs to their tenant and, for
+ * a login that works for one business, it is that business. A system user may reach any.
+ */
+export async function canReachBusiness(req: Request, businessId: string | null | undefined): Promise<boolean> {
+  if (!businessId || !UUID_RE.test(businessId)) return false;
+  const authReq = req as AuthenticatedRequest;
+  const scope = await callerScope(authReq.user.sub);
+  if (scope?.level === 'system') return true;
+  const tenantId = await tenantOfBusiness(businessId);
+  if (tenantId === null || tenantId !== authReq.user.tid) return false;
+  return scope?.level !== 'business' || !scope.businessId || scope.businessId === businessId;
+}
+
+/**
+ * Guard for records addressed by their id alone (`router.param('id', recordScope(...))`).
+ * `businessOf` returns the business the record belongs to; a record that does not exist, or
+ * belongs to a business out of the caller's reach, answers 404 either way.
+ */
+export function recordScope(businessOf: (id: string) => Promise<string | null | undefined>, what = 'Record') {
+  return (req: Request, res: Response, next: NextFunction, id: string): void => {
+    (async () => {
+      const businessId = UUID_RE.test(id || '') ? await businessOf(id) : null;
+      if (!businessId || !(await canReachBusiness(req, businessId))) {
+        res.status(404).json({ error: `${what} not found`, code: 'NOT_FOUND' });
+        return;
+      }
+      (req as any).recordBusinessId = businessId;
+      next();
+    })().catch(next);
+  };
+}
+
+/**
+ * recordScope for a router whose ids name records of several kinds. Each source is a table
+ * that has a business_id column, or a query returning business_id for the id ($1).
+ */
+export function recordScopeIn(sources: string[], what = 'Record') {
+  return recordScope(async (id) => {
+    for (const source of sources) {
+      const sql = /\s/.test(source) ? source : `SELECT business_id FROM ${source} WHERE id = $1`;
+      const { rows } = await adminPool.query(sql, [id]);
+      if (rows[0]?.business_id) return rows[0].business_id;
+    }
+    return null;
+  }, what);
+}
+
+/** Whether the login is an end customer (the Customer role). */
+export function isCustomerLogin(req: Request): boolean {
+  return (((req as AuthenticatedRequest).user?.role || '') as string).trim().toLowerCase() === 'customer';
+}
+
+/** The customer records that belong to a customer login (one per business they use). */
+export async function ownCustomerIds(req: Request): Promise<string[]> {
+  const authReq = req as AuthenticatedRequest;
+  const { rows } = await adminPool.query(
+    `SELECT c.id FROM cus_customers c
+      WHERE c.user_id = $1
+         OR LOWER(c.email) = (SELECT LOWER(u.email) FROM usr_users u WHERE u.id = $1 AND u.tenant_id = c.tenant_id)`,
+    [authReq.user.sub],
+  );
+  return rows.map((r: any) => r.id);
+}
+
 /** For tests: forget remembered logins (a test may change a user's business between requests). */
 export function clearScopeCache(): void {
   scopeCache.clear();

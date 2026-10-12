@@ -1,11 +1,18 @@
 import { Router, Request, Response } from 'express';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
-import { tenantContext } from '../auth/tenant-context';
+import { tenantContext, recordScopeIn } from '../auth/tenant-context';
 import { requirePermission } from '../auth/permissions';
 import { success, error } from '../utils/response';
 import * as packageService from '../services/package.service';
 
 export const packagesRouter = Router();
+
+// Records on these routes are addressed by id alone: each must belong to a business the caller
+// can reach, or it does not exist for them. (They were readable, and some changeable, from any
+// other organisation.)
+packagesRouter.param('id', recordScopeIn(['pkg_packages'], 'Package'));
+packagesRouter.param('purchaseId', recordScopeIn(['pkg_purchases'], 'Purchase'));
+packagesRouter.param('customerId', recordScopeIn(['cus_customers'], 'Customer'));
 
 packagesRouter.use(authenticate);
 packagesRouter.use(tenantContext);

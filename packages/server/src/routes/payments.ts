@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
-import { tenantContext } from '../auth/tenant-context';
+import { tenantContext, isCustomerLogin, ownCustomerIds } from '../auth/tenant-context';
 import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
@@ -11,6 +11,20 @@ export const paymentsRouter = Router();
 
 paymentsRouter.use(authenticate);
 paymentsRouter.use(tenantContext);
+
+// The Customer role holds bookings:read (for its own bookings), which is also what these
+// routes ask for. A customer login may list its own payments and nothing else here.
+paymentsRouter.use(async (req: Request, res: Response, next) => {
+  if (!isCustomerLogin(req)) { next(); return; }
+  try {
+    if (req.method !== 'GET' || req.path !== '/') { error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return; }
+    const own = await ownCustomerIds(req);
+    const asked = req.query.customer_id as string | undefined;
+    if (own.length === 0 || (asked && !own.includes(asked))) { error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return; }
+    if (!asked) (req.query as any).customer_id = own[0];
+    next();
+  } catch (err: any) { console.error('Payments scope failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+});
 
 // GET /api/v1/payments — List transactions
 paymentsRouter.get('/', requirePermission('bookings:read'), async (req: Request, res: Response) => {

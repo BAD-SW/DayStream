@@ -47,6 +47,13 @@ export interface OneTimePaymentInput {
   checkNumber?: string | null;
   /** The staff user recording/taking the payment. */
   processedBy: string;
+  /**
+   * The order this payment settles. The order posts its own ledger entry (revenue and tax by
+   * line), so the payment is not posted again, and it is never treated as money on account.
+   */
+  orderId?: string | null;
+  /** Stable key for one logical payment, so a repeated request cannot charge twice. */
+  idempotencyKey?: string | null;
 }
 
 export type PaymentStatus = 'completed' | 'pending' | 'failed';
@@ -163,6 +170,7 @@ export async function insertChargeRow(
     isProcessed: boolean; providerReference?: string | null; paymentMethodId?: string | null;
     checkNumber?: string | null; giftCardCode?: string | null;
     cardLast4?: string | null; cardBrand?: string | null;
+    orderId?: string | null;
   },
 ): Promise<any> {
   const { rows } = await exec.query(
@@ -170,8 +178,8 @@ export async function insertChargeRow(
        (business_id, customer_id, booking_id, membership_id, type, status, amount, currency,
         payment_method, reference_number, description, processed_by,
         is_processed, provider_reference, payment_method_id, check_number, gift_card_code,
-        card_last4, card_brand, enrollment_id, invoice_id)
-     VALUES ($1,$2,$3,$4,'charge',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+        card_last4, card_brand, enrollment_id, invoice_id, order_id)
+     VALUES ($1,$2,$3,$4,'charge',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
      RETURNING *`,
     [
       input.businessId, input.customerId, input.bookingId ?? null, input.membershipId ?? null,
@@ -180,7 +188,7 @@ export async function insertChargeRow(
       input.isProcessed, input.providerReference ?? null, input.paymentMethodId ?? null,
       input.checkNumber ?? null, input.giftCardCode ?? null,
       input.cardLast4 ?? null, input.cardBrand ?? null,
-      input.enrollmentId ?? null, input.invoiceId ?? null,
+      input.enrollmentId ?? null, input.invoiceId ?? null, input.orderId ?? null,
     ],
   );
   return rows[0];
@@ -213,7 +221,14 @@ export async function takeOneTimePayment(input: OneTimePaymentInput): Promise<On
   // Reconcile the booking: confirm when the money is in (settled/pending both
   // mean "payment accepted"; pending bank debits finalize via webhook later),
   // release it only on an outright failure.
-  if (input.bookingId) {
+  if (input.bookingId && input.orderId) {
+    // Paying at the desk: a pending booking becomes confirmed; a declined card leaves the
+    // booking as it is (the order stays open and can be paid another way).
+    if (result.status !== 'failed') {
+      const conf = await confirmBooking(input.bookingId, input.businessId, input.processedBy, input.tenantId);
+      result.bookingConfirmed = conf.success;
+    }
+  } else if (input.bookingId) {
     if (result.status === 'failed') {
       const rel = await cancelBooking(input.bookingId, input.businessId, input.processedBy, input.tenantId, 'Payment failed');
       if (!rel.success) logger.warn(`Payment ${reference}: booking release failed: ${rel.error}`);
@@ -252,7 +267,7 @@ async function runProcessed(
     currency,
     paymentMethodId: input.paymentMethodId,
     // Stable per logical payment so a retry never double-charges.
-    idempotencyKey: `onetime:${reference}`,
+    idempotencyKey: input.idempotencyKey || `onetime:${reference}`,
     description: input.description || `Payment ${reference}`,
     metadata: {
       kind: 'customer_one_time',
@@ -270,9 +285,10 @@ async function runProcessed(
     membershipId: input.membershipId, amountCents: input.amountCents, currency, method: input.method,
     status, referenceNumber: reference, description: input.description, processedBy: input.processedBy,
     isProcessed: true, providerReference: providerReference ?? null, paymentMethodId: input.paymentMethodId,
+    orderId: input.orderId ?? null,
   });
 
-  if (status === 'completed') await postPaymentJournalEntry(row);
+  if (status === 'completed' && !input.orderId) await postPaymentJournalEntry(row);
 
   return {
     transactionId: row.id, referenceNumber: reference, status, amountCents: input.amountCents,
@@ -289,9 +305,9 @@ async function runManualRecord(
     businessId: input.businessId, customerId: input.customerId, bookingId: input.bookingId,
     membershipId: input.membershipId, amountCents: input.amountCents, currency, method: input.method,
     status: 'completed', referenceNumber: reference, description: input.description, processedBy: input.processedBy,
-    isProcessed: false, checkNumber: input.checkNumber ?? null,
+    isProcessed: false, checkNumber: input.checkNumber ?? null, orderId: input.orderId ?? null,
   });
-  await postPaymentJournalEntry(row);
+  if (!input.orderId) await postPaymentJournalEntry(row);
   return {
     transactionId: row.id, referenceNumber: reference, status: 'completed', amountCents: input.amountCents,
     method: input.method, isProcessed: false,
@@ -348,7 +364,7 @@ async function runGiftCard(
       businessId: input.businessId, customerId: input.customerId, bookingId: input.bookingId,
       membershipId: input.membershipId, amountCents: input.amountCents, currency, method: 'gift_card',
       status: 'completed', referenceNumber: reference, description: input.description, processedBy: input.processedBy,
-      isProcessed: false, giftCardCode: code,
+      isProcessed: false, giftCardCode: code, orderId: input.orderId ?? null,
     });
 
     await client.query('COMMIT');

@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
-import { tenantContext } from '../auth/tenant-context';
+import { tenantContext, recordScope, isCustomerLogin, ownCustomerIds } from '../auth/tenant-context';
+import { adminPool } from '../db/pool';
 import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
@@ -11,6 +12,30 @@ export const checkoutRouter = Router();
 
 checkoutRouter.use(authenticate);
 checkoutRouter.use(tenantContext);
+
+// An order is addressed by its id alone on most of these routes: the order must belong to a
+// business the caller can reach. (Any signed-in user of any organisation could read an order
+// and add lines to it.)
+checkoutRouter.param('id', recordScope(async (id) => {
+  const { rows } = await adminPool.query('SELECT business_id FROM fin_orders WHERE id = $1', [id]);
+  return rows[0]?.business_id;
+}, 'Order'));
+
+// Checkout is a staff tool. A customer login may only open its own order (the receipt).
+checkoutRouter.use(async (req: Request, res: Response, next) => {
+  if (!isCustomerLogin(req)) { next(); return; }
+  try {
+    const m = req.method === 'GET' ? req.path.match(/^\/orders\/([0-9a-f-]{36})$/i) : null;
+    if (m) {
+      const own = await ownCustomerIds(req);
+      const { rows } = await adminPool.query('SELECT customer_id FROM fin_orders WHERE id = $1', [m[1]]);
+      if (rows[0]?.customer_id && own.includes(rows[0].customer_id)) { next(); return; }
+      error(res, 'Order not found', 'NOT_FOUND', 404);
+      return;
+    }
+    error(res, 'Insufficient permissions', 'FORBIDDEN', 403);
+  } catch (err: any) { console.error('Checkout scope failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+});
 
 // ============================================================
 // Orders
@@ -50,6 +75,7 @@ checkoutRouter.post('/orders/from-booking', requirePermission('bookings:*'), asy
     const order = await checkoutService.createOrderFromBooking(bookingId, businessId, authReq.user.sub);
     success(res, order, undefined, 201);
   } catch (err: any) {
+    if (err?.code === 'ALREADY_CHECKED_OUT') { error(res, err.message, 'ALREADY_CHECKED_OUT', 409); return; }
     if (err.message.includes('not found')) { error(res, err.message, 'NOT_FOUND', 404); }
     else { error(res, 'Failed to create order from booking', 'INTERNAL_ERROR', 500); }
   }
@@ -175,6 +201,10 @@ const completeSchema = Joi.object({
     'cash', 'card', 'bank_draw', 'bank_transfer', 'transfer', 'check', 'gift_card', 'google_pay', 'apple_pay', 'other',
   ).default('cash'),
   payment_reference: Joi.string().max(100).allow('', null),
+  // The customer's stored card or bank account, for card and direct-debit payments.
+  payment_method_id: Joi.string().uuid().allow(null),
+  gift_card_code: Joi.string().max(40).allow('', null),
+  check_number: Joi.string().max(60).allow('', null),
 });
 
 // PUT /api/v1/checkout/orders/:id/promo — Apply promo code
@@ -244,12 +274,22 @@ checkoutRouter.put('/orders/:id/complete', requirePermission('bookings:*'), vali
     const order = await checkoutService.completeOrder(req.params.id, businessId, {
       paymentMethod: req.body.payment_method || 'cash',
       paymentReference: req.body.payment_reference,
+      paymentMethodId: req.body.payment_method_id || null,
+      giftCardCode: req.body.gift_card_code || null,
+      checkNumber: req.body.check_number || null,
       checkedOutBy: authReq.user.sub,
     });
     success(res, order);
   } catch (err: any) {
-    if (err.message.includes('not open') || err.message.includes('empty')) { error(res, err.message, 'CONFLICT', 409); }
-    else { error(res, 'Failed to complete order', 'INTERNAL_ERROR', 500); }
+    // A refused payment: the order stays open and the answer says why.
+    const PAYMENT_STATUS: Record<string, number> = {
+      PAYMENT_DECLINED: 402, CUSTOMER_REQUIRED: 400, INVALID_AMOUNT: 400, INVALID_METHOD: 400, METHOD_REQUIRED: 400,
+      CODE_REQUIRED: 400, NO_CONNECTION: 409, METHOD_UNAVAILABLE: 409, GIFT_CARD_NOT_FOUND: 404,
+      GIFT_CARD_INACTIVE: 409, GIFT_CARD_EXPIRED: 409, GIFT_CARD_CURRENCY: 409, GIFT_CARD_INSUFFICIENT: 409,
+    };
+    if (err?.code && PAYMENT_STATUS[err.code]) { error(res, err.message, err.code, PAYMENT_STATUS[err.code]); return; }
+    if (err.message.includes('not open') || err.message.includes('empty') || err.message === 'Order not found') { error(res, err.message, 'CONFLICT', 409); }
+    else { console.error('Failed to complete order', err?.message || err); error(res, 'Failed to complete order', 'INTERNAL_ERROR', 500); }
   }
 });
 

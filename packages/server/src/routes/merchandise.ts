@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import Joi from 'joi';
 import multer from 'multer';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
-import { tenantContext } from '../auth/tenant-context';
+import { tenantContext, recordScopeIn } from '../auth/tenant-context';
 import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
@@ -10,6 +10,11 @@ import * as merchandiseService from '../services/merchandise.service';
 import * as merchandiseImages from '../services/merchandise-images.service';
 
 export const merchandiseRouter = Router();
+
+// Records on these routes are addressed by id alone: each must belong to a business the caller
+// can reach, or it does not exist for them. (They were readable, and some changeable, from any
+// other organisation.)
+merchandiseRouter.param('id', recordScopeIn(['prd_merchandise'], 'Product'));
 
 merchandiseRouter.use(authenticate);
 merchandiseRouter.use(tenantContext);

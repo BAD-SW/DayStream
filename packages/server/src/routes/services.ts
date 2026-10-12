@@ -2,13 +2,18 @@ import { recordPriceChange } from '../services/price-history.service';
 import { Router, Request, Response } from 'express';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
-import { tenantContext } from '../auth/tenant-context';
+import { tenantContext, recordScopeIn } from '../auth/tenant-context';
 import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import * as categoriesService from '../services/service-categories.service';
 
 export const servicesRouter = Router();
+
+// Records on these routes are addressed by id alone: each must belong to a business the caller
+// can reach, or it does not exist for them. (They were readable, and some changeable, from any
+// other organisation.)
+servicesRouter.param('id', recordScopeIn(['svc_services', 'svc_categories', 'svc_cancellation_policies', 'svc_tax_categories'], 'Service'));
 
 servicesRouter.use(authenticate);
 servicesRouter.use(tenantContext);

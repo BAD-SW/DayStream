@@ -224,41 +224,21 @@ export function Checkout() {
 
     setCompleting(true);
     try {
-      let paymentReference: string | undefined;
-
-      // For processed / gift-card, take the charge through the payment platform
-      // first; only mark the order complete once the money/stored value is in.
-      if (processed || isGift) {
-        const charge = await payApi.takeCharge({
-          business_id: businessId,
-          customer_id: order.customer_id!,
-          method: payMethod as payApi.SectionCMethod,
-          amount: order.total_amount,
-          payment_method_id: processed ? effectiveStoredId : null,
-          gift_card_code: isGift ? payGiftCode.trim() : null,
-          description: `Order ${order.order_number}`,
-        });
-        if (charge.status === 'failed') {
-          alert(charge.failureReason || 'The payment was declined.');
-          setCompleting(false);
-          return;
-        }
-        paymentReference = charge.referenceNumber;
-      }
-
-      // For a check, the check number is the payment reference.
-      if (payMethod === 'check' && payCheckNumber.trim()) {
-        paymentReference = payCheckNumber.trim();
-      }
-
+      // The server takes or records the payment and closes the order in one step: the order
+      // is completed only if the money (or the gift card value) is in.
       const completed = await checkoutApi.completeOrder(order.id, businessId, {
         payment_method: payMethod,
-        payment_reference: paymentReference,
+        payment_method_id: processed ? effectiveStoredId : null,
+        gift_card_code: isGift ? payGiftCode.trim() : null,
+        // For a check, the check number is the payment reference.
+        payment_reference: payMethod === 'check' && payCheckNumber.trim() ? payCheckNumber.trim() : undefined,
       });
       navigate(`/receipt/${completed.id}`);
     } catch (err: any) {
       const code = err?.response?.data?.code;
-      const msg = code === 'NO_CONNECTION'
+      const msg = code === 'PAYMENT_DECLINED'
+        ? (err?.response?.data?.error || 'The payment was declined.')
+        : code === 'NO_CONNECTION'
         ? 'This business has no active payment processor connected.'
         : code === 'GIFT_CARD_INSUFFICIENT'
           ? 'The gift card balance is less than the order total.'

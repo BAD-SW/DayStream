@@ -239,7 +239,7 @@ export async function noShowBooking(bookingId: string, businessId: string, userI
   if (feeAmount > 0) {
     try {
       const { chargeNoShowFee } = await import('./checkout.service');
-      await chargeNoShowFee({
+      const feeOrder = await chargeNoShowFee({
         bookingId,
         businessId,
         customerId: bkRows[0]?.customer_id || null,
@@ -252,10 +252,11 @@ export async function noShowBooking(bookingId: string, businessId: string, userI
       // subsystem hasn't already made one).
       await adminPool.query(
         `INSERT INTO apt_no_show_records (tenant_id, booking_id, customer_id, fee_amount, fee_charged)
-         VALUES ($1, $2, $3, $4, true)
-         ON CONFLICT (booking_id) DO UPDATE SET fee_amount = $4, fee_charged = true`,
-        [tenantId, bookingId, bkRows[0]?.customer_id || null, feeAmount],
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (booking_id) DO UPDATE SET fee_amount = $4, fee_charged = $5`,
+        [tenantId, bookingId, bkRows[0]?.customer_id || null, feeAmount, feeOrder?.status === 'completed'],
       );
+      if (feeOrder?.status !== 'completed') return { ...result, no_show_fee: 0 };
     } catch (err: any) {
       logger.error('No-show fee charge failed', { bookingId, error: err.message });
       // Don't fail the no-show transition if charging fails; report fee unbilled.

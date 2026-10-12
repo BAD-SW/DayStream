@@ -107,6 +107,7 @@ export async function removeItem(orderId: string, itemId: string): Promise<Order
 
 export async function completeOrder(orderId: string, businessId: string, data: {
   payment_method?: string; payment_reference?: string;
+  payment_method_id?: string | null; gift_card_code?: string | null; check_number?: string | null;
 }): Promise<Order> {
   const res = await apiClient.put(`/v1/checkout/orders/${orderId}/complete?business_id=${businessId}`, data);
   return res.data.data;

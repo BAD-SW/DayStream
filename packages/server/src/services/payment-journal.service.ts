@@ -54,6 +54,7 @@ interface JournalTxn {
   booking_id?: string | null;
   enrollment_id?: string | null;
   invoice_id?: string | null;
+  order_id?: string | null;
 }
 
 /**
@@ -65,7 +66,7 @@ interface JournalTxn {
  * invoice (see account-credit.service.ts).
  */
 function isUnapplied(txn: JournalTxn): boolean {
-  return !txn.booking_id && !txn.enrollment_id && !txn.invoice_id;
+  return !txn.booking_id && !txn.enrollment_id && !txn.invoice_id && !txn.order_id;
 }
 
 /** Resolve chart-of-accounts ids by code for a business. */
