@@ -32,8 +32,8 @@ What was not cleaned up, if anything.
 ## Runs
 
 ## Run 20261012-6 — full run (in progress)
-- Commit at start: `2a62bc8` · Migrations at end so far: 140 · Processor mode: Stripe test (platform, seed tenant, seed business); mock for the E2E tenant
-- Method: each script is driven through the API by a repeatable script (kept in the session scratchpad: `r00`, `r02`, `r02b`, `r03`, `r05`, `r06`), with the browser used for screens, menus and typed addresses. Data is created in a dedicated tenant `E2E 20261012-6 SysTenant` and its business `E2E 20261012-6 Biz` (time zone Europe/Madrid)
+- Commit at start: `2a62bc8` · Migrations at end so far: 141 · Processor mode: Stripe test (platform, seed tenant, seed business); mock for the E2E tenant
+- Method: each script is driven through the API by a repeatable script (kept in the session scratchpad: `r00`, `r02`, `r02b`, `r03`, `r05`, `r06`, `r07`, `r08`, `r09`), with the browser used for screens, menus and typed addresses. Data is created in a dedicated tenant `E2E 20261012-6 SysTenant` and its business `E2E 20261012-6 Biz` (time zone Europe/Madrid)
 - A script is marked `Verified` when every check passed after fixes. Scripts whose remaining part is purely visual are noted below
 
 ### Progress
@@ -45,7 +45,10 @@ What was not cleaned up, if anything.
 | 04 Tenant admin | 10 pass after fixes | TEN-06 (context switcher), TEN-08 (prospect filters) |
 | 05 Billing layers | 16 of 16 pass after fixes, with real Stripe test charges | BILL-03 card entry in the hosted fields was replaced by a server-side confirmation with Stripe test methods |
 | 06 Business setup, schedule, clock | 16 of 16 pass after fixes | Screens themselves only covered by the smoke tour |
-| 01, 07 to 17 | pending | |
+| 07 Offerings & pricing | 14 of 15 pass after fixes | OFF-05 (image upload, browser) |
+| 08 People | 24 pass after fixes (plus CUS-18 from run 4) | CUS-09 (360 tabs), CUS-10 (quick actions), CUS-27 (column choice) need the screen; their API parts pass |
+| 09 Bookings, calendar, check-in | 21 pass after fixes | BKG-08 (KI-1), BKG-17 and BKG-20 (calendar visuals), CHK-04 (late arrival, membership) |
+| 01, 10 to 17 | pending | |
 
 ### Defects found and fixed in this run
 | Id | Severity | Summary |
@@ -70,6 +73,18 @@ What was not cleaned up, if anything.
 | D-40 | Medium | Daily booking limit per provider stored but never enforced; checked-in bookings did not block their provider or resource in conflict checks; deactivated staff still offered as providers and still able to sign in |
 | D-41 | Medium | Second staff member with an existing email accepted (second profile on one login); leave could be requested for another person; overlapping and out-of-hours shifts accepted |
 | D-42 | Low | Tenant contract end date before start accepted; business edits not audited; duplicate prospects accepted; staff metrics failed; time clock refused unusual email endings; a system admin could deactivate themselves |
+| D-43 | Critical | Two requests for the same slot at the same moment could both be saved (the checks and the insert were separate steps); the second one failed only by accident, on the booking reference. Bookings of a business are now decided one at a time |
+| D-44 | Critical | The booking edit screen wrote the new time, provider, service and variant straight to the record: no conflict, opening-hours, availability, resource or capacity check, and the end time and price kept the old variant's values. Rescheduling checked only the provider's and customer's other bookings. Both now go through the same rules as a new booking |
+| D-45 | High | Day and week calendar views failed (server error) on any day that had a booking of a shared or group service |
+| D-46 | High | A shared session disappeared from the offered slots as soon as it had one booking; remaining places were not reported unless the service had its own availability rule. Capacity counted bookings, not people |
+| D-47 | High | Check-in covered every business of the tenant (dashboard, no-shows, reports, check-in by booking or code). It is now limited to one business; "today" and report dates are the business's days |
+| D-48 | High | A refused check-in (wrong day, cancelled, already in) still answered "ok" and saved a check-in record, which then blocked the real check-in. Walk-in check-in failed for every service (written against columns that do not exist). A kiosk could not work without a staff login |
+| D-49 | High | Recurring series read their time as UTC (15:00 became 16:00 or 17:00 in Madrid) and skipped opening hours, provider availability and capacity |
+| D-50 | High | A new business got no chart of accounts, so none of its sales reached the ledger (migration 141 repairs existing ones) |
+| D-51 | High | Discount codes could be created but not used at checkout; neither codes nor promotions counted their uses, so limits never applied |
+| D-52 | Medium | The profile listed every tag of the business as the person's tags; a first booking or visit never moved the lifecycle stage; archived people could be booked; name search missed accented names; importing a known person did not fill in their missing details |
+| D-53 | Medium | A paused or draft service could be booked and an inactive plan sold; a category with services could be archived; price changes were not written to the price history; a refused booking said only "Failed to create booking" |
+| D-54 | Medium | A no-show without a fee was not recorded (missing from the person's record and the report); the booking horizon was shown but not applied; a freed place was never offered to the waitlist and confirming an offer made no booking; a person could not rejoin a waitlist |
 | — | — | 635 API handlers answered "server error" without recording the cause; they now log it |
 
 ### Observations (not changed)
@@ -80,9 +95,14 @@ What was not cleaned up, if anything.
 - Punches made at the time clock are never rewritten; a correction is a manual entry.
 - The receiving bank account is shown back to the tenant in full (it is their own data, not a credential).
 - A booking carries one resource, so only the first "required" resource requirement of a service is applied.
+- A promotion changes a price only through its code at checkout; prices shown while booking change through pricing rules.
+- "Reset" on a booking means "undo check-in"; a completed booking cannot be reopened.
+- Check-in settings (grace period, walk-ins on or off) are shared by all businesses of a tenant.
+- The waitlist has no screen yet; it works through the API only.
+- A customer login cannot create bookings on the staff endpoint; customers book through the widget and portal.
 
 ### Leftover test data
-Tenant `E2E 20261012-6 SysTenant B` with business `E2E 20261012-6 Biz B`: two staff, a location, a room, a service, four customers, a few bookings in the week of 19 October 2026, billing plans and Stripe test charges. Seed business: staff login `e2e-20261012-6-reset@daystream.test`.
+Tenant `E2E 20261012-6 SysTenant B` with business `E2E 20261012-6 Biz B`: three staff, a location, a room and a sauna cabin, services (Svc, Svc2, Massage, Sauna), about 60 people, bookings in the weeks of 19 and 26 October 2026 and a few on the day of the run, promotions, pricing rules, discount codes, a kiosk registration, billing plans and Stripe test charges. Seed business: staff login `e2e-20261012-6-reset@daystream.test`.
 
 ---
 

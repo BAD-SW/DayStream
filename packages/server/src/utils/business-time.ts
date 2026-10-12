@@ -57,3 +57,17 @@ export function localSlotMinutes(start: Date, end: Date, timeZone: string | null
   const s = localParts(start, timeZone);
   return { date: s.date, dayOfWeek: s.dayOfWeek, startMinutes: s.minutes, endMinutes: s.minutes + Math.round((end.getTime() - start.getTime()) / 60000) };
 }
+
+/**
+ * The instant at which the clock in `timeZone` shows `date` ('YYYY-MM-DD') and `time` ('HH:MM').
+ */
+export function localToUtc(date: string, time: string, timeZone: string | null | undefined): Date {
+  const [h, m] = time.split(':').map(Number);
+  const wanted = Date.parse(`${date}T00:00:00Z`) + (h * 60 + (m || 0)) * 60000;
+  let guess = wanted;
+  for (let i = 0; i < 2; i++) {
+    const shown = localParts(new Date(guess), timeZone);
+    guess += wanted - (Date.parse(`${shown.date}T00:00:00Z`) + shown.minutes * 60000);
+  }
+  return new Date(guess);
+}

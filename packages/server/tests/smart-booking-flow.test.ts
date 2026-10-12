@@ -176,6 +176,7 @@ describe('Smart Booking Flow — DB-backed (feature 32)', () => {
       [BUSINESS_ID, catRows[0].id],
     );
     SERVICE_ID = svcRows[0].id;
+    await adminPool.query('UPDATE svc_services SET max_advance_booking_days = 400 WHERE id = $1', [SERVICE_ID]);
 
     const { rows: varRows } = await adminPool.query(
       `INSERT INTO svc_variants (service_id, name, duration, price, status) VALUES ($1, '60 min', 60, 5000, 'active') RETURNING id`,

@@ -309,9 +309,13 @@ describe('Booking Engine — Integration Tests', () => {
     it('first customer cancels → next on waitlist promoted', async () => {
       await lifecycleService.cancelBooking(bookingId1, BUSINESS_ID, '00000000-0000-0000-0000-000000000010', TENANT_ID, 'Testing');
 
-      const promoted = await waitlistService.promoteNext(SHARED_SERVICE_ID, sharedSlotTime.toISOString());
-      expect(promoted).not.toBeNull();
-      expect(promoted.status).toBe('notified');
+      const { rows } = await adminPool.query(
+        'SELECT status FROM apt_waitlist_entries WHERE service_id = $1 AND slot_start_time = $2 AND customer_id = $3',
+        [SHARED_SERVICE_ID, sharedSlotTime.toISOString(), CUSTOMER_ID_3],
+      );
+      expect(rows[0]?.status).toBe('notified');
+      // Nobody else is waiting.
+      expect(await waitlistService.promoteNext(SHARED_SERVICE_ID, sharedSlotTime.toISOString())).toBeNull();
     });
   });
 

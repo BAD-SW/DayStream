@@ -1,3 +1,4 @@
+import { withBookingLock, planBookingChange } from './booking.service';
 import { evaluateOnBooking } from './customer-lifecycle.service';
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
@@ -171,6 +172,14 @@ export async function cancelBooking(
   }
 
   const result = await transitionStatus(bookingId, businessId, 'cancelled', userId, tenantId, { reason });
+  if (result.success) {
+    try {
+      const { promoteNext } = await import('./waitlist.service');
+      await promoteNext(booking.service_id, new Date(booking.start_time).toISOString());
+    } catch (err: any) {
+      logger.error('Waitlist not processed after cancellation', { bookingId, error: err.message });
+    }
+  }
   return { ...result, cancellation_fee: cancellationFee };
 }
 
@@ -218,6 +227,14 @@ export async function noShowBooking(bookingId: string, businessId: string, userI
 
   const result = await transitionStatus(bookingId, businessId, 'no_show', userId, tenantId);
   if (!result.success) return result;
+
+  if (bkRows[0]?.customer_id) {
+    await adminPool.query(
+      `INSERT INTO apt_no_show_records (tenant_id, booking_id, customer_id) VALUES ($1, $2, $3)
+       ON CONFLICT (booking_id) DO NOTHING`,
+      [tenantId, bookingId, bkRows[0].customer_id],
+    ).catch((err: any) => logger.error('No-show record not written', { bookingId, error: err.message }));
+  }
 
   if (feeAmount > 0) {
     try {
@@ -276,40 +293,28 @@ export async function rescheduleBooking(
   const endTime = new Date(startTime.getTime() + booking.duration * 60 * 1000);
   const staffId = newStaffId || booking.staff_id;
 
-  // Conflict check for new time
-  if (staffId) {
-    const { rows: conflicts } = await adminPool.query(
-      `SELECT id FROM apt_bookings
-       WHERE staff_id = $1 AND id != $4
-         AND start_time < $3 AND end_time > $2
-         AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
-       LIMIT 1`,
-      [staffId, startTime.toISOString(), endTime.toISOString(), bookingId],
-    );
-    if (conflicts.length > 0) {
-      return { success: false, error: 'Staff has a conflict at the new time' };
-    }
+  // The new time is checked like a new booking: opening hours, the provider's availability,
+  // conflicts, resources and capacity (it used to check only the provider's and customer's
+  // other bookings).
+  try {
+    await withBookingLock(businessId, async () => {
+      const plan = await planBookingChange({
+        businessId, tenantId: tenantId || '', createdBy: userId || '',
+        customerId: booking.customer_id || undefined, walkInName: booking.walk_in_name || undefined,
+        serviceId: booking.service_id, variantId: booking.variant_id, staffId: staffId || undefined,
+        resourceId: booking.resource_id || undefined, startTime: startTime.toISOString(),
+        participantCount: booking.participant_count || 1, excludeBookingId: bookingId,
+      });
+      await adminPool.query(
+        `UPDATE apt_bookings SET start_time = $3, end_time = $4, staff_id = $5, resource_id = COALESCE($6, resource_id), updated_at = NOW()
+         WHERE id = $1 AND business_id = $2`,
+        [bookingId, businessId, startTime.toISOString(), endTime.toISOString(), plan.staff_id || staffId, plan.resource_id || null],
+      );
+    });
+  } catch (err: any) {
+    if (err?.severity || /^(TypeError|ReferenceError|RangeError|SyntaxError)$/.test(err?.name || '')) throw err;
+    return { success: false, error: /conflict/i.test(err.message) ? err.message : `Conflict at the new time: ${err.message}` };
   }
-
-  // Customer conflict check
-  const { rows: custConflicts } = await adminPool.query(
-    `SELECT id FROM apt_bookings
-     WHERE customer_id = $1 AND id != $4
-       AND start_time < $3 AND end_time > $2
-       AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
-     LIMIT 1`,
-    [booking.customer_id, startTime.toISOString(), endTime.toISOString(), bookingId],
-  );
-  if (custConflicts.length > 0) {
-    return { success: false, error: 'Customer has a conflict at the new time' };
-  }
-
-  // Update booking
-  await adminPool.query(
-    `UPDATE apt_bookings SET start_time = $3, end_time = $4, staff_id = $5, updated_at = NOW()
-     WHERE id = $1 AND business_id = $2`,
-    [bookingId, businessId, startTime.toISOString(), endTime.toISOString(), staffId],
-  );
 
   // Log
   await adminPool.query(

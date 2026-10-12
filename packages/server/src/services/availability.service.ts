@@ -164,14 +164,14 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
   // 6. Load existing bookings
   const staffIds = eligibleStaff.map((s: any) => s.user_id);
   const { rows: existingBookings } = await adminPool.query(
-    `SELECT staff_id, start_time, end_time, buffer_before, buffer_after
+    `SELECT staff_id, service_id, participant_count, start_time, end_time, buffer_before, buffer_after
      FROM apt_bookings
      WHERE business_id = $1
        AND start_time < $3::timestamptz
        AND end_time > $2::timestamptz
        AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
-       AND ($4::uuid[] IS NULL OR staff_id = ANY($4))`,
-    [businessId, new Date(dateFrom).toISOString(), new Date(dateTo + 'T23:59:59Z').toISOString(), staffIds.length > 0 ? staffIds : null],
+       AND ($4::uuid[] IS NULL OR staff_id = ANY($4) OR service_id = $5)`,
+    [businessId, new Date(dateFrom).toISOString(), new Date(dateTo + 'T23:59:59Z').toISOString(), staffIds.length > 0 ? staffIds : null, service.id],
   );
 
   // 7. Load slot holds
@@ -325,11 +325,22 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
           ? eligibleStaff.filter((s: any) => window.staffIds!.includes(s.user_id))
           : eligibleStaff;
 
+        // A shared or group session takes several bookings at the same start time. People
+        // already in it do not make the provider busy for the next person; they use up places.
+        // (Such a session used to disappear from the slots as soon as it had its first booking.)
+        const isSession = bookingType === 'shared' || bookingType === 'group';
+        const inThisSession = (bk: any) => bk.service_id === service.id && new Date(bk.start_time).getTime() === slotStart.getTime();
+        const sessionTaken = isSession
+          ? existingBookings.filter(inThisSession).reduce((sum: number, bk: any) => sum + (bk.participant_count || 1), 0)
+          : 0;
+        if (isSession && sessionTaken >= capacity) continue;
+        const bookingsForStaffCheck = isSession ? existingBookings.filter((bk: any) => !inThisSession(bk)) : existingBookings;
+
         // Determine available staff for this slot (check conflicts, working hours, etc.)
         const availableStaffForSlot = needsStaff
           ? getAvailableStaffForSlot(
               windowEligibleStaff, slotStart, slotEnd, bufferBefore, bufferAfter,
-              existingBookings, activeHolds, dayOfWeek, currentDateStr,
+              bookingsForStaffCheck, activeHolds, dayOfWeek, currentDateStr,
               schedulingMode, staffWorkingData, staffOverrides,
               locationHours, locationHourOverrides,
               service.requires_dedicated_staff !== false,
@@ -381,6 +392,12 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
           // Only a resource named by the service's own rule defines the slot's headcount;
           // a required room merely has to be free.
           if (fromRule) slotCapacityRemaining = bestRemaining;
+          // A session cannot take more people than its room has left either.
+          else if (isSession) slotCapacityRemaining = bestRemaining;
+        }
+        if (isSession) {
+          const sessionLeft = capacity - sessionTaken;
+          slotCapacityRemaining = slotCapacityRemaining === undefined ? sessionLeft : Math.min(slotCapacityRemaining, sessionLeft);
         }
 
         // Determine which locations are valid for this window

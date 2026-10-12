@@ -234,10 +234,10 @@ export async function getCalendar(query: CalendarQuery) {
 
     if (row.booking_type === 'shared' || row.booking_type === 'group') {
       const { rows: countRows } = await adminPool.query(
-        `SELECT COUNT(*)::int AS count FROM apt_bookings
-         WHERE service_id = b.service_id AND start_time = $1 AND business_id = $2
+        `SELECT COALESCE(SUM(COALESCE(participant_count, 1)), 0)::int AS count FROM apt_bookings
+         WHERE service_id = $3 AND start_time = $1 AND business_id = $2
            AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')`,
-        [row.start_time, businessId],
+        [row.start_time, businessId, row.service_id],
       );
       entry.participants = countRows[0]?.count || 1;
     }

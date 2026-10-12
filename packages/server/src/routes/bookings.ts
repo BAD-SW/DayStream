@@ -1,3 +1,4 @@
+import { createActivity } from '../services/customer-activity.service';
 import { Router, Request, Response } from 'express';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
@@ -7,6 +8,12 @@ import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import * as availabilityService from '../services/availability.service';
+
+/** A booking refused by a business rule (a plain message for the user), as opposed to a failure. */
+function isBookingRefusal(err: any): boolean {
+  return err instanceof Error && !(err as any).severity && !/^(TypeError|ReferenceError|RangeError|SyntaxError)$/.test(err.name)
+    && ((err as any).code === undefined || (err as any).code === 'BOOKING_RULE');
+}
 
 export const bookingsRouter = Router();
 
@@ -589,6 +596,7 @@ const updateBookingSchema = Joi.object({
   customer_id: Joi.string().uuid().allow(null),
   walk_in_name: Joi.string().allow('', null),
   participant_count: Joi.number().integer().min(1),
+  override_rules: Joi.boolean(),
 });
 
 bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBookingSchema), async (req: Request, res: Response) => {
@@ -610,21 +618,47 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
     if (req.body.participant_count !== undefined) updates.participant_count = req.body.participant_count;
     if (req.body.notes !== undefined) updates.notes = req.body.notes;
 
-    // If start_time changes, recalculate end_time based on variant duration
-    if (req.body.start_time) {
-      const variantId = req.body.variant_id || existing.variant_id;
-      const { rows: variantRows } = await adminPool.query('SELECT duration FROM svc_variants WHERE id = $1', [variantId]);
-      const duration = variantRows[0]?.duration || 60;
-      const startTime = new Date(req.body.start_time);
-      const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
-      updates.start_time = startTime.toISOString();
-      updates.end_time = endTime.toISOString();
-    }
-
-    if (Object.keys(updates).length === 0) {
+    if (Object.keys(updates).length === 0 && !req.body.start_time) {
       success(res, existing);
       return;
     }
+
+    // A change of time, provider, service, variant, customer or headcount is checked exactly
+    // like a new booking (opening hours, provider availability, conflicts, resources, capacity)
+    // and the end time and price follow the variant. The edit screen used to write these
+    // straight to the record, so it could double-book and kept the old length and price.
+    const same = (k: string) => (k === 'start_time'
+      ? new Date(req.body.start_time).getTime() === new Date(existing.start_time).getTime()
+      : String(req.body[k] ?? '') === String((existing as any)[k] ?? ''));
+    const slotChange = ['service_id', 'variant_id', 'staff_id', 'start_time', 'participant_count', 'customer_id']
+      .some((k) => req.body[k] !== undefined && req.body[k] !== '' && !same(k));
+    if (slotChange && !['pending', 'confirmed'].includes(existing.status)) {
+      error(res, `A booking that is ${existing.status} cannot be moved or changed`, 'INVALID_TRANSITION', 400);
+      return;
+    }
+
+    const saved = await bookingService.withBookingLock(businessId, async () => {
+      if (slotChange) {
+        const offeringChanged = (req.body.service_id !== undefined && !same('service_id')) || (req.body.variant_id !== undefined && !same('variant_id'));
+        const plan = await bookingService.planBookingChange({
+          businessId, tenantId: authReq.tenantId, createdBy: authReq.user.sub,
+          customerId: (updates.customer_id !== undefined ? updates.customer_id : existing.customer_id) || undefined,
+          walkInName: updates.walk_in_name ?? existing.walk_in_name ?? undefined,
+          serviceId: updates.service_id || existing.service_id,
+          variantId: updates.variant_id || existing.variant_id,
+          staffId: (updates.staff_id !== undefined ? updates.staff_id : existing.staff_id) || undefined,
+          resourceId: (req.body.service_id !== undefined && !same('service_id')) ? undefined : (existing.resource_id || undefined),
+          startTime: new Date(req.body.start_time || existing.start_time).toISOString(),
+          participantCount: updates.participant_count ?? existing.participant_count ?? 1,
+          overrideRules: req.body.override_rules === true,
+          excludeBookingId: existing.id,
+        });
+        updates.start_time = plan.start_time;
+        updates.end_time = plan.end_time;
+        if (plan.staff_id) updates.staff_id = plan.staff_id;
+        if (plan.resource_id) updates.resource_id = plan.resource_id;
+        if (offeringChanged) { updates.price = plan.price; updates.booking_type = plan.booking_type; }
+      }
 
     // Build SQL update
     const fields: string[] = [];
@@ -641,10 +675,21 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
       `UPDATE apt_bookings SET ${fields.join(', ')} WHERE id = $${idx++} AND business_id = $${idx} RETURNING *`,
       values,
     );
+      return rows[0] || null;
+    });
 
-    if (rows.length === 0) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
-    success(res, rows[0]);
+    if (!saved) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    if (slotChange && saved.customer_id && new Date(saved.start_time).getTime() !== new Date(existing.start_time).getTime()) {
+      await createActivity({
+        customerId: saved.customer_id, businessId, activityType: 'booking',
+        description: `Booking ${saved.booking_reference} moved`,
+        metadata: { booking_id: saved.id, old_start: existing.start_time, new_start: saved.start_time },
+        createdBy: authReq.user.sub,
+      }).catch(() => undefined);
+    }
+    success(res, saved);
   } catch (err: any) {
+    if (isBookingRefusal(err)) { error(res, err.message, /conflict/i.test(err.message) ? 'CONFLICT' : 'BOOKING_NOT_ALLOWED', 409); return; }
     console.error('Failed to update booking', err?.message || err);
     error(res, 'Failed to update booking', 'INTERNAL_ERROR', 500);
   }
@@ -750,6 +795,15 @@ bookingsRouter.post('/:id/waitlist', requirePermission('bookings:*'), validate(j
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
 
+    // Both the session's service and the person must belong to this business.
+    const { rows: ownRows } = await adminPool.query(
+      `SELECT (SELECT COUNT(*) FROM svc_services WHERE id = $1 AND business_id = $3)::int AS svc,
+              (SELECT COUNT(*) FROM cus_customers WHERE id = $2 AND business_id = $3)::int AS cust`,
+      [req.params.id, req.body.customer_id, businessId],
+    );
+    if (!ownRows[0].svc) { error(res, 'Service not found', 'NOT_FOUND', 404); return; }
+    if (!ownRows[0].cust) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+
     const entry = await waitlistService.joinWaitlist(
       businessId, req.params.id, req.body.customer_id,
       req.body.slot_start_time, req.body.slot_end_time,
@@ -759,6 +813,7 @@ bookingsRouter.post('/:id/waitlist', requirePermission('bookings:*'), validate(j
     if (err.message.includes('Already on') || err.message.includes('full')) {
       error(res, err.message, 'CONFLICT', 409);
     } else {
+      console.error('Failed to join waitlist', err?.message || err);
       error(res, 'Failed to join waitlist', 'INTERNAL_ERROR', 500);
     }
   }
@@ -774,7 +829,7 @@ bookingsRouter.delete('/:id/waitlist', requirePermission('bookings:*'), async (r
       return;
     }
 
-    const removed = await waitlistService.leaveWaitlist(req.params.id, slotStartTime, customerId);
+    const removed = await waitlistService.leaveWaitlist(req.params.id, slotStartTime, customerId, req.query.business_id as string | undefined);
     if (!removed) { error(res, 'Waitlist entry not found', 'NOT_FOUND', 404); return; }
     success(res, { removed: true });
   } catch (err: any) {
@@ -791,12 +846,14 @@ bookingsRouter.put('/waitlist/:entryId/confirm', requirePermission('bookings:*')
     const customerId = req.query.customer_id as string;
     if (!customerId) { error(res, 'customer_id required', 'VALIDATION_ERROR', 400); return; }
 
-    const result = await waitlistService.confirmPromotion(req.params.entryId, customerId);
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const result = await waitlistService.confirmPromotion(req.params.entryId, customerId, { businessId, tenantId: authReq.tenantId, userId: authReq.user.sub });
     if (!result.confirmed) {
       error(res, result.error!, 'VALIDATION_ERROR', 400);
       return;
     }
-    success(res, { confirmed: true });
+    success(res, { confirmed: true, booking: result.booking });
   } catch (err: any) {
     console.error('Failed to confirm waitlist', err?.message || err);
     error(res, 'Failed to confirm waitlist', 'INTERNAL_ERROR', 500);

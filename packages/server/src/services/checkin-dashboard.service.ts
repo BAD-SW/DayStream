@@ -13,10 +13,11 @@ export async function getDashboard(
   tenantId: string,
   locationId?: string,
   filters: DashboardFilters = {},
+  businessId?: string,
 ) {
-  const conditions = ['bus.tenant_id = $1', "b.start_time::date = CURRENT_DATE"];
-  const params: any[] = [tenantId];
-  let idx = 2;
+  const conditions = ['bus.tenant_id = $1', '(b.start_time AT TIME ZONE bus.timezone)::date = (NOW() AT TIME ZONE bus.timezone)::date', '($2::uuid IS NULL OR b.business_id = $2)'];
+  const params: any[] = [tenantId, businessId || null];
+  let idx = 3;
 
   if (locationId) {
     conditions.push(`cr.location_id = $${idx++}`);
@@ -95,7 +96,7 @@ export async function getDashboard(
 /**
  * Get next N upcoming bookings for today.
  */
-export async function getUpcoming(tenantId: string, limit = 10) {
+export async function getUpcoming(tenantId: string, limit = 10, businessId?: string) {
   const { rows } = await adminPool.query(
     `SELECT b.id, b.start_time, b.end_time, b.booking_reference,
             c.first_name AS customer_first_name, c.last_name AS customer_last_name,
@@ -107,12 +108,13 @@ export async function getUpcoming(tenantId: string, limit = 10) {
      JOIN svc_services s ON s.id = b.service_id
      LEFT JOIN usr_users u ON u.id = b.staff_id
      WHERE bus.tenant_id = $1
+       AND ($3::uuid IS NULL OR b.business_id = $3)
        AND b.status = 'confirmed'
-       AND b.start_time::date = CURRENT_DATE
+       AND (b.start_time AT TIME ZONE bus.timezone)::date = (NOW() AT TIME ZONE bus.timezone)::date
        AND b.start_time > NOW()
      ORDER BY b.start_time ASC
      LIMIT $2`,
-    [tenantId, limit],
+    [tenantId, limit, businessId || null],
   );
 
   return rows.map(row => ({

@@ -1,6 +1,7 @@
 import { adminPool } from '../db/pool';
 import { createBooking } from './booking.service';
 import { logger } from '../middleware/logger';
+import { localParts, localToUtc } from '../utils/business-time';
 
 interface CreateRecurringInput {
   businessId: string;
@@ -66,12 +67,15 @@ export async function createRecurringSeries(input: CreateRecurringInput): Promis
 export async function generateInstances(series: any, tenantId: string, weeksAhead = 8): Promise<GenerationResult> {
   const result: GenerationResult = { created: 0, skipped: 0, conflicts: [] };
 
-  const dates = calculateOccurrenceDates(series, weeksAhead);
+  // The series' time is a clock time where the business is (15:00 means 15:00 there, in summer
+  // and in winter). It used to be read as UTC, so every occurrence was an hour or two off.
+  const { rows: tzRows } = await adminPool.query('SELECT timezone FROM sys_businesses WHERE id = $1', [series.business_id]);
+  const dates = calculateOccurrenceDates(series, weeksAhead, tzRows[0]?.timezone || 'UTC');
 
   for (const date of dates) {
     // Check if instance already exists
     const { rows: existing } = await adminPool.query(
-      `SELECT id FROM apt_bookings WHERE recurring_series_id = $1 AND start_time::date = $2::date`,
+      `SELECT id FROM apt_bookings WHERE recurring_series_id = $1 AND start_time = $2`,
       [series.id, date.toISOString()],
     );
     if (existing.length > 0) {
@@ -80,7 +84,7 @@ export async function generateInstances(series: any, tenantId: string, weeksAhea
     }
 
     try {
-      await createBooking({
+      const booking = await createBooking({
         businessId: series.business_id,
         customerId: series.customer_id,
         serviceId: series.service_id,
@@ -89,22 +93,19 @@ export async function generateInstances(series: any, tenantId: string, weeksAhea
         startTime: date.toISOString(),
         createdBy: series.created_by,
         tenantId,
-        overrideRules: true, // recurring bookings skip lead time
+        // Only the minimum notice is waived. Opening hours, the provider's availability,
+        // resources and capacity apply to every occurrence like to any other booking.
+        skipLeadTime: true,
       });
 
       // Link to series
-      await adminPool.query(
-        `UPDATE apt_bookings SET recurring_series_id = $1
-         WHERE business_id = $2 AND customer_id = $3 AND service_id = $4
-           AND start_time = $5 AND recurring_series_id IS NULL`,
-        [series.id, series.business_id, series.customer_id, series.service_id, date.toISOString()],
-      );
+      await adminPool.query('UPDATE apt_bookings SET recurring_series_id = $1 WHERE id = $2', [series.id, booking.id]);
 
       result.created++;
     } catch (err: any) {
       // Conflict — skip this occurrence
       result.skipped++;
-      result.conflicts.push(date.toISOString().slice(0, 10));
+      result.conflicts.push(localParts(date, tzRows[0]?.timezone || 'UTC').date);
       logger.debug('Recurring booking skipped (conflict)', { date: date.toISOString(), error: err.message });
     }
   }
@@ -115,50 +116,40 @@ export async function generateInstances(series: any, tenantId: string, weeksAhea
 /**
  * Calculate occurrence dates for a series.
  */
-function calculateOccurrenceDates(series: any, weeksAhead: number): Date[] {
+function calculateOccurrenceDates(series: any, weeksAhead: number, timeZone: string): Date[] {
   const dates: Date[] = [];
   const now = new Date();
   const maxDate = new Date(now.getTime() + weeksAhead * 7 * 24 * 60 * 60 * 1000);
 
-  // If series has an end date, clamp
-  const endLimit = series.end_date ? new Date(series.end_date) : maxDate;
+  // If series has an end date, clamp (the end date itself is included)
+  const endLimit = series.end_date ? localToUtc(String(series.end_date).slice(0, 10), '23:59', timeZone) : maxDate;
   const effectiveEnd = endLimit < maxDate ? endLimit : maxDate;
 
-  // Parse start time (HH:MM)
-  const [hours, minutes] = series.start_time.split(':').map(Number);
-
-  let current = new Date(now);
-  current.setUTCDate(current.getUTCDate() + 1); // start from tomorrow
-
-  let count = 0;
+  const startTime = String(series.start_time).slice(0, 5); // HH:MM
   const maxCount = series.end_count || 100;
 
-  while (current <= effectiveEnd && count < maxCount) {
+  // Walk calendar days of the business, starting tomorrow.
+  const day = new Date(`${localParts(now, timeZone).date}T00:00:00Z`);
+  for (let i = 0; i < weeksAhead * 7 + 1 && dates.length < maxCount; i++) {
+    day.setUTCDate(day.getUTCDate() + 1);
     let isOccurrence = false;
 
     if (series.recurrence_pattern === 'weekly') {
-      isOccurrence = current.getUTCDay() === series.day_of_week;
+      isOccurrence = day.getUTCDay() === series.day_of_week;
     } else if (series.recurrence_pattern === 'biweekly') {
-      if (current.getUTCDay() === series.day_of_week) {
+      if (day.getUTCDay() === series.day_of_week) {
         // Every other week — approximate by checking week number parity
-        const weekNum = Math.floor(current.getTime() / (7 * 24 * 60 * 60 * 1000));
+        const weekNum = Math.floor(day.getTime() / (7 * 24 * 60 * 60 * 1000));
         isOccurrence = weekNum % 2 === 0;
       }
     } else if (series.recurrence_pattern === 'monthly') {
-      isOccurrence = current.getUTCDate() === series.day_of_month;
+      isOccurrence = day.getUTCDate() === series.day_of_month;
     }
+    if (!isOccurrence) continue;
 
-    if (isOccurrence) {
-      const occDate = new Date(current);
-      occDate.setUTCHours(hours, minutes, 0, 0);
-
-      if (occDate > now) {
-        dates.push(occDate);
-        count++;
-      }
-    }
-
-    current.setUTCDate(current.getUTCDate() + 1);
+    const occDate = localToUtc(day.toISOString().slice(0, 10), startTime, timeZone);
+    if (occDate > effectiveEnd) break;
+    if (occDate > now) dates.push(occDate);
   }
 
   return dates;

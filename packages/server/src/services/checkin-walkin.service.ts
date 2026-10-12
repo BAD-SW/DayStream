@@ -1,108 +1,103 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
-import { validateSession } from './checkin-validation.service';
-import { touchVisit } from './person-identity.service';
+import { createBooking } from './booking.service';
+import { CheckInRefused, createCheckInRecord } from './checkin.service';
+import { evaluateOnBooking } from './customer-lifecycle.service';
 
 interface WalkInInput {
+  businessId: string;
   customerId: string;
   serviceId: string;
-  locationId: string;
+  locationId?: string;
+  variantId?: string;
+  staffId?: string;
+  userId: string;
 }
 
 /**
- * Walk-in check-in: checks availability, creates an instant booking, validates, and creates a check-in record.
+ * Walk-in: someone arrives without a booking. A booking starting now is created through the
+ * normal booking rules (opening hours, provider and resource availability, capacity), only
+ * the minimum notice is waived, and it is checked in at once.
  */
 export async function walkInCheckIn(tenantId: string, input: WalkInInput) {
-  const { customerId, serviceId, locationId } = input;
-
-  // Check walk-in is enabled
   const { rows: configRows } = await adminPool.query(
     `SELECT walk_in_enabled FROM apt_check_in_config WHERE tenant_id = $1`,
     [tenantId],
   );
-
   if (configRows.length > 0 && !configRows[0].walk_in_enabled) {
-    throw new Error('Walk-in check-ins are disabled');
+    throw new CheckInRefused('Walk-in check-ins are disabled');
   }
 
-  // Check service exists and get duration
   const { rows: serviceRows } = await adminPool.query(
-    `SELECT s.id, s.name, sv.duration, sv.price, sv.id AS variant_id
-     FROM svc_services s
-     JOIN svc_variants sv ON sv.service_id = s.id AND sv.is_default = true
-     WHERE s.id = $1 AND s.tenant_id = $2 AND s.is_active = true
-     LIMIT 1`,
-    [serviceId, tenantId],
+    `SELECT s.id, s.name, s.status
+       FROM svc_services s JOIN sys_businesses bus ON bus.id = s.business_id
+      WHERE s.id = $1 AND s.business_id = $2 AND bus.tenant_id = $3`,
+    [input.serviceId, input.businessId, tenantId],
   );
+  if (serviceRows.length === 0) throw new CheckInRefused('Service not found');
 
-  if (serviceRows.length === 0) throw new Error('Service not found or inactive');
-
-  const service = serviceRows[0];
-  const now = new Date();
-  const endTime = new Date(now.getTime() + service.duration * 60 * 1000);
-
-  // Check customer doesn't already have an active check-in
-  const { rows: activeCheckins } = await adminPool.query(
-    `SELECT id FROM apt_check_in_records
-     WHERE customer_id = $1 AND tenant_id = $2
-       AND status IN ('checked_in', 'in_progress')
-       AND check_in_time::date = CURRENT_DATE
-     LIMIT 1`,
-    [customerId, tenantId],
+  const { rows: variantRows } = await adminPool.query(
+    `SELECT id FROM svc_variants
+      WHERE service_id = $1 AND status = 'active' AND ($2::uuid IS NULL OR id = $2)
+      ORDER BY display_order NULLS LAST, duration, created_at
+      LIMIT 1`,
+    [input.serviceId, input.variantId || null],
   );
+  if (variantRows.length === 0) throw new CheckInRefused('This service has no active variant to book');
 
-  if (activeCheckins.length > 0) {
-    throw new Error('Customer already has an active check-in today');
-  }
-
-  // Create instant booking
-  const { rows: bookingRows } = await adminPool.query(
-    `INSERT INTO apt_bookings
-       (tenant_id, customer_id, service_id, variant_id, start_time, end_time, status, booking_type, price, notes)
-     VALUES ($1, $2, $3, $4, $5, $6, 'confirmed', 'individual', $7, 'Walk-in')
-     RETURNING *`,
-    [tenantId, customerId, serviceId, service.variant_id, now.toISOString(), endTime.toISOString(), service.price],
+  const { rows: personRows } = await adminPool.query(
+    'SELECT id FROM cus_customers WHERE id = $1 AND business_id = $2', [input.customerId, input.businessId],
   );
+  if (personRows.length === 0) throw new CheckInRefused('Customer not found');
 
-  const booking = bookingRows[0];
-  if (customerId) await touchVisit(customerId).catch(() => undefined);
-
-  // Validate session (should pass for a just-created confirmed booking)
-  const validation = await validateSession(booking.id, customerId, tenantId);
-
-  // Create check-in record
-  const { rows: checkinRows } = await adminPool.query(
-    `INSERT INTO apt_check_in_records
-       (tenant_id, booking_id, customer_id, check_in_method, validated, validation_warnings, location_id)
-     VALUES ($1, $2, $3, 'walk_in', $4, $5, $6)
-     RETURNING *`,
-    [
+  let booking: any;
+  try {
+    booking = await createBooking({
+      businessId: input.businessId,
       tenantId,
-      booking.id,
-      customerId,
-      validation.pass,
-      JSON.stringify(validation.warnings),
-      locationId,
-    ],
-  );
-
-  const record = checkinRows[0];
-
-  // Update booking status to checked_in
-  if (validation.pass) {
-    await adminPool.query(
-      `UPDATE apt_bookings SET status = 'checked_in' WHERE id = $1`,
-      [booking.id],
-    );
+      customerId: input.customerId,
+      serviceId: input.serviceId,
+      variantId: variantRows[0].id,
+      staffId: input.staffId || undefined,
+      startTime: new Date().toISOString(),
+      notes: 'Walk-in',
+      createdBy: input.userId,
+      skipLeadTime: true,
+    });
+  } catch (err: any) {
+    if (err?.severity || /^(TypeError|ReferenceError|RangeError|SyntaxError)$/.test(err?.name || '')) throw err;
+    throw new CheckInRefused(err.message);
   }
+
+  const record = await createCheckInRecord({
+    tenantId,
+    bookingId: booking.id,
+    customerId: input.customerId,
+    method: 'walk_in',
+    validated: true,
+    validationWarnings: [],
+    processedBy: input.userId,
+    locationId: input.locationId,
+  });
+
+  const { rows: updated } = await adminPool.query(
+    `UPDATE apt_bookings SET status = 'checked_in', checked_in_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING *`,
+    [booking.id],
+  );
+  await adminPool.query(
+    `INSERT INTO apt_booking_status_history (booking_id, from_status, to_status, changed_by) VALUES ($1, $2, 'checked_in', $3)`,
+    [booking.id, booking.status, input.userId],
+  ).catch(() => undefined);
+  await evaluateOnBooking(input.customerId, input.businessId).catch(() => undefined);
 
   await logAudit({
     tenantId,
+    userId: input.userId,
     action: 'checkin.walk_in',
     resourceType: 'check_in_record',
     resourceId: record.id,
-    details: { booking_id: booking.id, customer_id: customerId, service_id: serviceId, location_id: locationId },
+    details: { booking_id: booking.id, service_id: input.serviceId, location_id: input.locationId || null },
   });
 
-  return { record, booking, validation };
+  return { booking: updated[0] || booking, record, validation: { pass: true, warnings: [], errors: [] } };
 }

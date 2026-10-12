@@ -42,6 +42,11 @@ export async function joinWaitlist(
   const { rows } = await adminPool.query(
     `INSERT INTO apt_waitlist_entries (business_id, service_id, slot_start_time, slot_end_time, customer_id, position)
      VALUES ($1, $2, $3, $4, $5, $6)
+     -- Someone who left, let an offer lapse or already used one can join again: their old
+     -- entry for this session is reused (it used to fail on the unique key).
+     ON CONFLICT (service_id, slot_start_time, customer_id) DO UPDATE
+       SET status = 'waiting', position = EXCLUDED.position, slot_end_time = EXCLUDED.slot_end_time,
+           notified_at = NULL, expires_at = NULL
      RETURNING *`,
     [businessId, serviceId, slotStartTime, slotEndTime, customerId, position],
   );
@@ -52,11 +57,12 @@ export async function joinWaitlist(
 /**
  * Leave the waitlist.
  */
-export async function leaveWaitlist(serviceId: string, slotStartTime: string, customerId: string): Promise<boolean> {
+export async function leaveWaitlist(serviceId: string, slotStartTime: string, customerId: string, businessId?: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
     `UPDATE apt_waitlist_entries SET status = 'removed'
-     WHERE service_id = $1 AND slot_start_time = $2 AND customer_id = $3 AND status = 'waiting'`,
-    [serviceId, slotStartTime, customerId],
+     WHERE service_id = $1 AND slot_start_time = $2 AND customer_id = $3 AND status IN ('waiting', 'notified')
+       AND ($4::uuid IS NULL OR business_id = $4)`,
+    [serviceId, slotStartTime, customerId, businessId || null],
   );
   return (rowCount ?? 0) > 0;
 }
@@ -113,10 +119,14 @@ export async function promoteNext(serviceId: string, slotStartTime: string): Pro
 /**
  * Confirm a waitlist promotion (customer accepts the spot).
  */
-export async function confirmPromotion(entryId: string, customerId: string): Promise<{ confirmed: boolean; error?: string }> {
+export async function confirmPromotion(
+  entryId: string, customerId: string,
+  ctx?: { businessId: string; tenantId: string; userId: string },
+): Promise<{ confirmed: boolean; error?: string; booking?: any }> {
   const { rows } = await adminPool.query(
-    `SELECT * FROM apt_waitlist_entries WHERE id = $1 AND customer_id = $2 AND status = 'notified'`,
-    [entryId, customerId],
+    `SELECT * FROM apt_waitlist_entries WHERE id = $1 AND customer_id = $2 AND status = 'notified'
+        AND ($3::uuid IS NULL OR business_id = $3)`,
+    [entryId, customerId, ctx?.businessId || null],
   );
 
   if (rows.length === 0) {
@@ -134,13 +144,44 @@ export async function confirmPromotion(entryId: string, customerId: string): Pro
     return { confirmed: false, error: 'Confirmation window has expired' };
   }
 
+  // Taking the place means a booking in that session, made through the normal booking rules
+  // (confirming used to change the entry only, so the person had no booking).
+  let booking: any;
+  if (ctx) {
+    const { rows: like } = await adminPool.query(
+      `SELECT variant_id, staff_id FROM apt_bookings WHERE service_id = $1 AND start_time = $2 ORDER BY created_at LIMIT 1`,
+      [entry.service_id, entry.slot_start_time],
+    );
+    let variantId = like[0]?.variant_id;
+    if (!variantId) {
+      const { rows: v } = await adminPool.query(
+        `SELECT id FROM svc_variants WHERE service_id = $1 AND status = 'active' ORDER BY display_order NULLS LAST, duration LIMIT 1`,
+        [entry.service_id],
+      );
+      variantId = v[0]?.id;
+    }
+    if (!variantId) return { confirmed: false, error: 'This service has no active variant to book' };
+    try {
+      const { createBooking } = await import('./booking.service');
+      booking = await createBooking({
+        businessId: entry.business_id, tenantId: ctx.tenantId, createdBy: ctx.userId,
+        customerId: entry.customer_id, serviceId: entry.service_id, variantId,
+        staffId: like[0]?.staff_id || undefined, startTime: new Date(entry.slot_start_time).toISOString(),
+        notes: 'From the waitlist', skipLeadTime: true,
+      });
+    } catch (err: any) {
+      if (err?.severity || /^(TypeError|ReferenceError|RangeError|SyntaxError)$/.test(err?.name || '')) throw err;
+      return { confirmed: false, error: err.message };
+    }
+  }
+
   // Mark as confirmed
   await adminPool.query(
     "UPDATE apt_waitlist_entries SET status = 'confirmed' WHERE id = $1",
     [entryId],
   );
 
-  return { confirmed: true };
+  return { confirmed: true, booking };
 }
 
 /**

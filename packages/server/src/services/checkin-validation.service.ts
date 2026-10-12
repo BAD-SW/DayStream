@@ -46,7 +46,15 @@ export async function validateSession(
   }
 
   if (booking.status !== 'confirmed') {
-    errors.push(`Booking status is "${booking.status}", expected "confirmed"`);
+    const why: Record<string, string> = {
+      checked_in: 'Already checked in for this booking',
+      in_progress: 'Already checked in for this booking',
+      completed: 'This booking is already completed',
+      cancelled: 'This booking was cancelled',
+      no_show: 'This booking was marked as a no-show',
+      pending: 'This booking is not confirmed yet',
+    };
+    errors.push(why[booking.status] || `Booking status is "${booking.status}", expected "confirmed"`);
     return { pass: false, warnings, errors };
   }
 

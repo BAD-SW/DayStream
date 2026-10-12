@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'async_hooks';
 import { evaluateOnBooking } from './customer-lifecycle.service';
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
@@ -22,6 +23,9 @@ interface CreateBookingInput {
   tenantId: string;
   overrideRules?: boolean;  // staff can override lead time, staff hours, AND resource capacity
   participantCount?: number; // headcount this booking occupies on its resource; default 1
+  skipLeadTime?: boolean;   // a walk-in, or moving an existing booking: minimum notice does not apply
+  excludeBookingId?: string; // when re-checking an existing booking, it does not conflict with itself
+  dryRun?: boolean;          // run every check and return what would be saved, without saving
   initialStatus?: 'pending' | 'confirmed'; // default 'confirmed' — widget bookings awaiting payment use 'pending'
   source?: 'admin' | 'widget'; // default 'admin' (spec 38)
 }
@@ -47,10 +51,56 @@ export class BookingRuleError extends Error {
   code = 'BOOKING_RULE';
 }
 
+/** The booking being re-checked (an edit or a move), which must not count as a conflict with itself. */
+const excludeStore = new AsyncLocalStorage<string | null>();
+const excludedId = (): string | null => excludeStore.getStore() ?? null;
+
+/**
+ * One booking decision at a time per business. The checks (is the provider free, is there room)
+ * and the insert are separate statements, so two requests for the same slot arriving together
+ * both passed the checks and both saved. Requests queue here (in this process) and on a
+ * database advisory lock (across processes).
+ */
+const bookingQueues = new Map<string, Promise<unknown>>();
+export async function withBookingLock<T>(businessId: string, fn: () => Promise<T>): Promise<T> {
+  const previous = bookingQueues.get(businessId) || Promise.resolve();
+  let release!: () => void;
+  const mine = new Promise<void>((resolve) => { release = resolve; });
+  const chain = previous.then(() => mine);
+  bookingQueues.set(businessId, chain);
+  await previous;
+  const key = `booking:${businessId}`;
+  let client: any = null;
+  try {
+    client = await adminPool.connect();
+    await client.query('SELECT pg_advisory_lock(hashtext($1))', [key]);
+    return await fn();
+  } finally {
+    if (client) {
+      await client.query('SELECT pg_advisory_unlock(hashtext($1))', [key]).catch(() => undefined);
+      client.release();
+    }
+    release();
+    if (bookingQueues.get(businessId) === chain) bookingQueues.delete(businessId);
+  }
+}
+
 /**
  * Create a booking.
  */
 export async function createBooking(input: CreateBookingInput) {
+  return withBookingLock(input.businessId, () => excludeStore.run(input.excludeBookingId || null, () => checkAndSaveBooking(input)));
+}
+
+/**
+ * Run every booking rule for a change to an existing booking (new time, provider, service,
+ * variant or headcount) and return what should be saved. Call it inside withBookingLock.
+ */
+export async function planBookingChange(input: CreateBookingInput & { excludeBookingId: string }) {
+  return excludeStore.run(input.excludeBookingId, () => checkAndSaveBooking({ ...input, dryRun: true, skipLeadTime: true }));
+}
+
+async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
   // Load service + variant
   const { rows: svcRows } = await adminPool.query(
     `SELECT s.*, sv.duration, sv.price, sv.pricing_model
@@ -85,6 +135,9 @@ export async function createBooking(input: CreateBookingInput) {
   const startTime = new Date(input.startTime);
   const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
   const participantCount = input.participantCount && input.participantCount >= 1 ? Math.floor(input.participantCount) : 1;
+  if ((bookingType === 'shared' || bookingType === 'group') && participantCount > (service.max_capacity || 1)) {
+    throw new BookingRuleError(`This session takes at most ${service.max_capacity || 1} people`);
+  }
 
   // Calculate price with applicable rules
   let price = basePrice;
@@ -103,10 +156,17 @@ export async function createBooking(input: CreateBookingInput) {
   }
 
   // Enforce lead time (unless staff override)
-  if (!input.overrideRules) {
+  if (!input.overrideRules && !input.skipLeadTime) {
     const minAdvanceMs = (service.min_advance_booking_hours || 2) * 60 * 60 * 1000;
     if (startTime.getTime() - Date.now() < minAdvanceMs) {
       throw new Error('Booking is within the minimum advance booking window');
+    }
+  }
+
+  if (!input.overrideRules && !input.skipLeadTime) {
+    const maxAdvanceDays = service.max_advance_booking_days || 30;
+    if (startTime.getTime() - Date.now() > maxAdvanceDays * 24 * 60 * 60 * 1000) {
+      throw new Error(`Bookings can be made at most ${maxAdvanceDays} days ahead (maximum advance booking window)`);
     }
   }
 
@@ -266,8 +326,9 @@ export async function createBooking(input: CreateBookingInput) {
       const { rows: dayCount } = await adminPool.query(
         `SELECT COUNT(*)::int AS n FROM apt_bookings
           WHERE staff_id = $1 AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress', 'completed')
-            AND (start_time AT TIME ZONE $3)::date = $2::date`,
-        [input.staffId, slotLocal.date, tzRows[0]?.timezone || 'UTC'],
+            AND (start_time AT TIME ZONE $3)::date = $2::date
+            AND ($4::uuid IS NULL OR id <> $4)`,
+        [input.staffId, slotLocal.date, tzRows[0]?.timezone || 'UTC', excludedId()],
       );
       if (dayCount[0].n >= maxPerDay) {
         throw new Error(`Staff member has reached their limit of ${maxPerDay} bookings for this day`);
@@ -347,13 +408,15 @@ export async function createBooking(input: CreateBookingInput) {
   if (bookingType === 'shared' || bookingType === 'group') {
     const capacity = service.max_capacity || 1;
     const { rows: countRows } = await adminPool.query(
-      `SELECT COUNT(*)::int AS count FROM apt_bookings
+      `SELECT COALESCE(SUM(COALESCE(participant_count, 1)), 0)::int AS count FROM apt_bookings
        WHERE service_id = $1 AND business_id = $2
-         AND start_time = $3 AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')`,
-      [input.serviceId, input.businessId, startTime.toISOString()],
+         AND start_time = $3 AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
+         AND ($4::uuid IS NULL OR id <> $4)`,
+      [input.serviceId, input.businessId, startTime.toISOString(), excludedId()],
     );
-    if (countRows[0].count >= capacity) {
-      throw new Error('Session is at full capacity');
+    if (countRows[0].count + participantCount > capacity) {
+      const left = Math.max(capacity - countRows[0].count, 0);
+      throw new Error(left === 0 ? 'Session is at full capacity' : `Only ${left} place(s) left in this session — exceeds its capacity`);
     }
   }
 
@@ -361,6 +424,13 @@ export async function createBooking(input: CreateBookingInput) {
   if (input.customerId) {
     const customerConflict = await checkCustomerConflict(input.customerId, startTime, endTime);
     if (customerConflict) throw new Error('Customer has a conflicting booking at this time');
+  }
+
+  if (input.dryRun) {
+    return {
+      start_time: startTime.toISOString(), end_time: endTime.toISOString(), price, staff_id: staffId,
+      resource_id: resourceId, booking_type: bookingType, participant_count: participantCount,
+    };
   }
 
   // Generate booking reference
@@ -572,8 +642,9 @@ async function checkStaffConflict(staffId: string, startTime: Date, endTime: Dat
        AND start_time < $3
        AND end_time > $2
        AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
+       AND ($4::uuid IS NULL OR id <> $4)
      LIMIT 1`,
-    [staffId, blockStart.toISOString(), blockEnd.toISOString()],
+    [staffId, blockStart.toISOString(), blockEnd.toISOString(), excludedId()],
   );
 
   if (rows.length > 0) return true;
@@ -611,8 +682,9 @@ async function getResourceRemainingCapacity(resourceId: string, startTime: Date,
      WHERE resource_id = $1
        AND start_time < $3
        AND end_time > $2
-       AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')`,
-    [resourceId, startTime.toISOString(), endTime.toISOString()],
+       AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
+       AND ($4::uuid IS NULL OR id <> $4)`,
+    [resourceId, startTime.toISOString(), endTime.toISOString(), excludedId()],
   );
 
   if (overlapping.length === 0) return capacity;
@@ -642,8 +714,9 @@ async function checkCustomerConflict(customerId: string, startTime: Date, endTim
        AND start_time < $3
        AND end_time > $2
        AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
+       AND ($4::uuid IS NULL OR id <> $4)
      LIMIT 1`,
-    [customerId, startTime.toISOString(), endTime.toISOString()],
+    [customerId, startTime.toISOString(), endTime.toISOString(), excludedId()],
   );
   return rows.length > 0;
 }

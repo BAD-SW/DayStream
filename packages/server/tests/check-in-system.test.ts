@@ -110,7 +110,7 @@ describe('Check-In System', () => {
 
   describe('QR Codes', () => {
     it('generates a booking QR code', async () => {
-      const { statusCode, body } = await request('GET', `/api/v1/check-in/qr-code/booking/${BOOKING_ID}`, undefined, ownerToken);
+      const { statusCode, body } = await request('GET', `/api/v1/check-in/qr-code/booking/${BOOKING_ID}?business_id=${BUSINESS_ID}`, undefined, ownerToken);
       expect(statusCode).toBe(200);
       expect(body.data.code).toMatch(/^DSCI-/);
       expect(body.data.code_type).toBe('booking');
@@ -118,14 +118,14 @@ describe('Check-In System', () => {
     });
 
     it('generates a customer QR code', async () => {
-      const { statusCode, body } = await request('GET', `/api/v1/check-in/qr-code/customer/${CUSTOMER_ID}`, undefined, ownerToken);
+      const { statusCode, body } = await request('GET', `/api/v1/check-in/qr-code/customer/${CUSTOMER_ID}?business_id=${BUSINESS_ID}`, undefined, ownerToken);
       expect(statusCode).toBe(200);
       expect(body.data.code).toMatch(/^DSCC-/);
       expect(body.data.code_type).toBe('customer');
     });
 
     it('regenerates a customer QR code', async () => {
-      const { statusCode, body } = await request('POST', `/api/v1/check-in/qr-code/customer/${CUSTOMER_ID}/regenerate`, undefined, ownerToken);
+      const { statusCode, body } = await request('POST', `/api/v1/check-in/qr-code/customer/${CUSTOMER_ID}/regenerate?business_id=${BUSINESS_ID}`, undefined, ownerToken);
       expect(statusCode).toBe(200);
       expect(body.data.code).toMatch(/^DSCC-/);
     });
@@ -133,7 +133,7 @@ describe('Check-In System', () => {
 
   describe('Session Validation', () => {
     it('validates a valid booking (dry run)', async () => {
-      const { statusCode, body } = await request('GET', `/api/v1/check-in/validate/${BOOKING_ID}`, undefined, ownerToken);
+      const { statusCode, body } = await request('GET', `/api/v1/check-in/validate/${BOOKING_ID}?business_id=${BUSINESS_ID}`, undefined, ownerToken);
       expect(statusCode).toBe(200);
       expect(body.data.pass).toBe(true);
       expect(body.data.errors).toHaveLength(0);
@@ -142,14 +142,14 @@ describe('Check-In System', () => {
 
   describe('Check-In Methods', () => {
     it('checks in via QR code', async () => {
-      const { statusCode, body } = await request('POST', '/api/v1/check-in/qr', { code: QR_CODE }, ownerToken);
+      const { statusCode, body } = await request('POST', `/api/v1/check-in/qr?business_id=${BUSINESS_ID}`, { code: QR_CODE }, ownerToken);
       expect(statusCode).toBe(200);
       expect(body.data.record.check_in_method).toBe('qr_staff');
       expect(body.data.validation.pass).toBe(true);
     });
 
     it('prevents double check-in', async () => {
-      const { statusCode, body } = await request('POST', '/api/v1/check-in/qr', { code: QR_CODE }, ownerToken);
+      const { statusCode, body } = await request('POST', `/api/v1/check-in/qr?business_id=${BUSINESS_ID}`, { code: QR_CODE }, ownerToken);
       // A repeat scan is either refused outright or recorded as a FAILED check-in
       // (validation.pass false); it must never count as a second valid check-in.
       if (statusCode === 200) expect(body.data.validation.pass).toBe(false);
@@ -168,7 +168,7 @@ describe('Check-In System', () => {
          VALUES ($1, $2, $3, $4, $5, $6, 'confirmed', 'individual', $7, 5000) RETURNING id`,
         [BUSINESS_ID, CUSTOMER_ID, svcRows[0].id, varRows[0].id, start.toISOString(), end.toISOString(), `BK-CI-${Date.now().toString(36)}`]);
 
-      const { statusCode, body } = await request('POST', '/api/v1/check-in/reception', { booking_id: bkRows[0].id }, ownerToken);
+      const { statusCode, body } = await request('POST', `/api/v1/check-in/reception?business_id=${BUSINESS_ID}`, { booking_id: bkRows[0].id }, ownerToken);
       expect(statusCode).toBe(200);
       expect(body.data.record.check_in_method).toBe('reception');
     });
@@ -176,7 +176,7 @@ describe('Check-In System', () => {
 
   describe('Configuration', () => {
     it('gets default config', async () => {
-      const { statusCode, body } = await request('GET', '/api/v1/check-in/config', undefined, ownerToken);
+      const { statusCode, body } = await request('GET', `/api/v1/check-in/config?business_id=${BUSINESS_ID}`, undefined, ownerToken);
       expect(statusCode).toBe(200);
       // The config is tenant-wide and a later test changes it, so only the shape is fixed.
       expect(typeof body.data.grace_period_minutes).toBe('number');
@@ -184,7 +184,7 @@ describe('Check-In System', () => {
     });
 
     it('updates config', async () => {
-      const { statusCode, body } = await request('PUT', '/api/v1/check-in/config', {
+      const { statusCode, body } = await request('PUT', `/api/v1/check-in/config?business_id=${BUSINESS_ID}`, {
         grace_period_minutes: 20, walk_in_enabled: false,
       }, ownerToken);
       expect(statusCode).toBe(200);
@@ -192,13 +192,13 @@ describe('Check-In System', () => {
       expect(body.data.walk_in_enabled).toBe(false);
 
       // Reset for other tests
-      await request('PUT', '/api/v1/check-in/config', { walk_in_enabled: true }, ownerToken);
+      await request('PUT', `/api/v1/check-in/config?business_id=${BUSINESS_ID}`, { walk_in_enabled: true }, ownerToken);
     });
   });
 
   describe('Dashboard', () => {
     it('gets today\'s dashboard', async () => {
-      const { statusCode, body } = await request('GET', '/api/v1/check-in/dashboard', undefined, ownerToken);
+      const { statusCode, body } = await request('GET', `/api/v1/check-in/dashboard?business_id=${BUSINESS_ID}`, undefined, ownerToken);
       expect(statusCode).toBe(200);
       expect(body.data).toHaveProperty('upcoming');
       expect(body.data).toHaveProperty('awaiting');
@@ -208,7 +208,7 @@ describe('Check-In System', () => {
     });
 
     it('gets upcoming bookings', async () => {
-      const { statusCode, body } = await request('GET', '/api/v1/check-in/dashboard/upcoming?limit=5', undefined, ownerToken);
+      const { statusCode, body } = await request('GET', `/api/v1/check-in/dashboard/upcoming?limit=5&business_id=${BUSINESS_ID}`, undefined, ownerToken);
       expect(statusCode).toBe(200);
       expect(Array.isArray(body.data)).toBe(true);
     });
@@ -216,7 +216,7 @@ describe('Check-In System', () => {
 
   describe('No-Show Management', () => {
     it('lists no-shows (empty initially)', async () => {
-      const { statusCode, body } = await request('GET', '/api/v1/check-in/no-shows', undefined, ownerToken);
+      const { statusCode, body } = await request('GET', `/api/v1/check-in/no-shows?business_id=${BUSINESS_ID}`, undefined, ownerToken);
       expect(statusCode).toBe(200);
       expect(Array.isArray(body.data)).toBe(true);
     });
@@ -224,8 +224,13 @@ describe('Check-In System', () => {
 
   describe('Kiosk', () => {
     it('registers a kiosk device', async () => {
-      const { statusCode, body } = await request('POST', '/api/v1/check-in/kiosk/register', {
-        location_id: '00000000-0000-0000-0000-000000000099', device_name: 'Front Desk iPad',
+      // A kiosk stands at a location of this business.
+      const { rows: locRows } = await adminPool.query(
+        `INSERT INTO sys_locations (business_id, name, slug) VALUES ($1, 'Kiosk Test Location', $2) RETURNING id`,
+        [BUSINESS_ID, `kiosk-test-${Date.now().toString(36)}`],
+      );
+      const { statusCode, body } = await request('POST', `/api/v1/check-in/kiosk/register?business_id=${BUSINESS_ID}`, {
+        location_id: locRows[0].id, device_name: 'Front Desk iPad',
       }, ownerToken);
       expect(statusCode).toBe(201);
       expect(body.data.device_name).toBe('Front Desk iPad');
@@ -235,26 +240,26 @@ describe('Check-In System', () => {
 
   describe('Reports', () => {
     it('gets attendance rate', async () => {
-      const { statusCode, body } = await request('GET', '/api/v1/check-in/reports/attendance', undefined, ownerToken);
+      const { statusCode, body } = await request('GET', `/api/v1/check-in/reports/attendance?business_id=${BUSINESS_ID}`, undefined, ownerToken);
       expect(statusCode).toBe(200);
       expect(body.data).toHaveProperty('percentage');
       expect(body.data).toHaveProperty('total_bookings');
     });
 
     it('gets no-show rate', async () => {
-      const { statusCode, body } = await request('GET', '/api/v1/check-in/reports/no-shows', undefined, ownerToken);
+      const { statusCode, body } = await request('GET', `/api/v1/check-in/reports/no-shows?business_id=${BUSINESS_ID}`, undefined, ownerToken);
       expect(statusCode).toBe(200);
       expect(body.data).toHaveProperty('no_show_count');
     });
 
     it('gets peak times', async () => {
-      const { statusCode, body } = await request('GET', '/api/v1/check-in/reports/peak-times', undefined, ownerToken);
+      const { statusCode, body } = await request('GET', `/api/v1/check-in/reports/peak-times?business_id=${BUSINESS_ID}`, undefined, ownerToken);
       expect(statusCode).toBe(200);
       expect(Array.isArray(body.data)).toBe(true);
     });
 
     it('gets method breakdown', async () => {
-      const { statusCode, body } = await request('GET', '/api/v1/check-in/reports/methods', undefined, ownerToken);
+      const { statusCode, body } = await request('GET', `/api/v1/check-in/reports/methods?business_id=${BUSINESS_ID}`, undefined, ownerToken);
       expect(statusCode).toBe(200);
       expect(Array.isArray(body.data)).toBe(true);
     });

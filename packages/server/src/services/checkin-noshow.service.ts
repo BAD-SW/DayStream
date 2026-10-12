@@ -67,21 +67,22 @@ export async function detectNoShows(tenantId: string) {
 export async function getNoShows(
   tenantId: string,
   filters: { startDate?: string; endDate?: string; customerId?: string } = {},
+  businessId?: string,
 ) {
-  const conditions = ['ns.tenant_id = $1'];
-  const params: any[] = [tenantId];
-  let idx = 2;
+  const conditions = ['ns.tenant_id = $1', '($2::uuid IS NULL OR b.business_id = $2)'];
+  const params: any[] = [tenantId, businessId || null];
+  let idx = 3;
 
   if (filters.customerId) {
     conditions.push(`ns.customer_id = $${idx++}`);
     params.push(filters.customerId);
   }
   if (filters.startDate) {
-    conditions.push(`ns.detected_at >= $${idx++}`);
+    conditions.push(`ns.detected_at >= $${idx++}::date`);
     params.push(filters.startDate);
   }
   if (filters.endDate) {
-    conditions.push(`ns.detected_at <= $${idx++}`);
+    conditions.push(`ns.detected_at < ($${idx++}::date + 1)`);
     params.push(filters.endDate);
   }
 
@@ -102,13 +103,14 @@ export async function getNoShows(
 /**
  * Waive a no-show record with a reason.
  */
-export async function waiveNoShow(id: string, tenantId: string, waivedBy: string, reason: string) {
+export async function waiveNoShow(id: string, tenantId: string, waivedBy: string, reason: string, businessId?: string) {
   const { rows } = await adminPool.query(
     `UPDATE apt_no_show_records
      SET waived = true, waived_by = $1, waive_reason = $2
      WHERE id = $3 AND tenant_id = $4
+       AND ($5::uuid IS NULL OR booking_id IN (SELECT id FROM apt_bookings WHERE business_id = $5))
      RETURNING *`,
-    [waivedBy, reason, id, tenantId],
+    [waivedBy, reason, id, tenantId, businessId || null],
   );
 
   if (rows.length === 0) throw new Error('No-show record not found');
@@ -140,15 +142,15 @@ export async function getCustomerNoShowCount(customerId: string, tenantId: strin
 /**
  * Get detailed no-show history for a customer.
  */
-export async function getCustomerNoShowHistory(customerId: string, tenantId: string) {
+export async function getCustomerNoShowHistory(customerId: string, tenantId: string, businessId?: string) {
   const { rows } = await adminPool.query(
     `SELECT ns.*, b.start_time AS booking_start_time, s.name AS service_name
      FROM apt_no_show_records ns
      JOIN apt_bookings b ON b.id = ns.booking_id
      LEFT JOIN svc_services s ON s.id = b.service_id
-     WHERE ns.customer_id = $1 AND ns.tenant_id = $2
+     WHERE ns.customer_id = $1 AND ns.tenant_id = $2 AND ($3::uuid IS NULL OR b.business_id = $3)
      ORDER BY ns.detected_at DESC`,
-    [customerId, tenantId],
+    [customerId, tenantId, businessId || null],
   );
   return rows;
 }
