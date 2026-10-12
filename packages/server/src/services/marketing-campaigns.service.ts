@@ -2,6 +2,8 @@ import { adminPool } from '../db/pool';
 import { getMemberIds } from './customer-segments.service';
 import { filterAudience, summarise } from './contactability.service';
 import { logAudit } from './audit.service';
+import { getEmailAdapter, getSmsAdapter } from './marketing-adapters.service';
+import { createActivity } from './customer-activity.service';
 
 /** A campaign, segment or person of one business used from another (Phase 46 R14). */
 export class CrossBusinessError extends Error {
@@ -173,7 +175,7 @@ export async function updateCampaign(id: string, tenantId: string, updates: Reco
 export async function scheduleCampaign(id: string, tenantId: string, scheduledAt: string) {
   const { rows } = await adminPool.query(
     `UPDATE mkt_campaigns SET status = 'scheduled', scheduled_at = $1, updated_at = NOW()
-     WHERE id = $2 AND tenant_id = $3 AND status = 'draft' RETURNING *`,
+     WHERE id = $2 AND tenant_id = $3 AND status IN ('draft', 'scheduled') RETURNING *`,
     [scheduledAt, id, tenantId],
   );
 
@@ -249,6 +251,64 @@ export async function sendCampaign(id: string, tenantId: string) {
     details: { totalRecipients: customers.length, audience: summarise(audience) },
   });
 
+  // Hand the messages to the provider. (Recipients used to be queued and nothing ever sent
+  // them: a campaign stayed "sending" for good.) A large audience is delivered in the
+  // background so the request does not wait for it.
+  if (customers.length <= 200) return deliverCampaign(rows[0]);
+  deliverCampaign(rows[0]).catch((err) => console.error('[Campaign] Delivery failed:', err?.message || err));
+  return rows[0];
+}
+
+const fill = (text: string | null | undefined, values: Record<string, string>): string =>
+  (text || '').replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, key) => values[key] ?? '');
+
+/** Send a queued campaign to its pending recipients and close it. */
+export async function deliverCampaign(campaign: any) {
+  const { rows: pending } = await adminPool.query(
+    `SELECT r.id, r.customer_id, r.email, r.phone, c.first_name, c.last_name
+       FROM mkt_campaign_recipients r LEFT JOIN cus_customers c ON c.id = r.customer_id
+      WHERE r.campaign_id = $1 AND r.status = 'pending'`,
+    [campaign.id],
+  );
+  const { rows: biz } = await adminPool.query('SELECT name FROM sys_businesses WHERE id = $1', [campaign.business_id]);
+  let html: string = campaign.html_content || campaign.content || '';
+  let text: string = campaign.content || '';
+  if (campaign.template_id) {
+    const { rows: tpl } = await adminPool.query('SELECT html_content, text_content FROM mkt_message_templates WHERE id = $1', [campaign.template_id]);
+    if (tpl[0]) { html = tpl[0].html_content || html; text = tpl[0].text_content || text; }
+  }
+  const email = getEmailAdapter(campaign.tenant_id);
+  const sms = getSmsAdapter(campaign.tenant_id);
+
+  for (const r of pending) {
+    const values = { first_name: r.first_name || '', last_name: r.last_name || '', business_name: biz[0]?.name || '' };
+    let result: { success: boolean; messageId?: string } = { success: false };
+    try {
+      if (campaign.channel === 'sms') {
+        if (r.phone) result = await sms.sendSms(r.phone, fill(text || html, values));
+      } else if (r.email) {
+        result = await email.sendEmail(r.email, fill(campaign.subject, values), fill(html, values), fill(text, values));
+      }
+    } catch (err: any) {
+      console.error('[Campaign] Message not sent:', err?.message || err);
+    }
+    await adminPool.query(
+      `UPDATE mkt_campaign_recipients SET status = $2::text, sent_at = CASE WHEN $2::text = 'sent' THEN NOW() ELSE sent_at END, provider_message_id = $3 WHERE id = $1`,
+      [r.id, result.success ? 'sent' : 'failed', (result as any).messageId || null],
+    );
+    if (result.success && r.customer_id && campaign.business_id) {
+      await createActivity({
+        customerId: r.customer_id, businessId: campaign.business_id, activityType: 'campaign',
+        description: `Campaign sent: ${campaign.name}`,
+        metadata: { campaign_id: campaign.id, channel: campaign.channel },
+      }).catch(() => undefined);
+    }
+  }
+
+  const { rows } = await adminPool.query(
+    `UPDATE mkt_campaigns SET status = 'sent', sent_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING *`,
+    [campaign.id],
+  );
   return rows[0];
 }
 
@@ -259,11 +319,14 @@ export async function sendTestEmail(id: string, tenantId: string, toEmail: strin
   const campaign = await getCampaignById(id, tenantId);
   if (!campaign) throw new Error('Campaign not found');
 
-  // Placeholder: in production this would call the email adapter
+  const sample = { first_name: 'Alex', last_name: 'Sample', business_name: '' };
+  const result = await getEmailAdapter(tenantId).sendEmail(
+    toEmail, fill(campaign.subject, sample), fill(campaign.html_content || campaign.content, sample), fill(campaign.content, sample),
+  );
   return {
-    success: true,
+    success: result.success,
     to: toEmail,
-    subject: campaign.subject,
-    message: 'Test email queued (mock)',
+    subject: fill(campaign.subject, sample),
+    message: result.success ? 'Test email sent' : 'The test email could not be sent',
   };
 }

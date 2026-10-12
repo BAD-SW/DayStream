@@ -134,7 +134,7 @@ describe('Marketing & Automation', () => {
 
     it('schedules a campaign', async () => {
       const { statusCode, body } = await request('POST', inBusiness(`/api/v1/marketing/campaigns/${CAMPAIGN_ID}/schedule`), {
-        scheduled_at: '2026-07-01T10:00:00Z',
+        scheduled_at: new Date(Date.now() + 7 * 86400000).toISOString(), // a campaign is scheduled for the future
       }, ownerToken);
       expect(statusCode).toBe(200);
       expect(body.data.status).toBe('scheduled');
@@ -174,6 +174,16 @@ describe('Marketing & Automation', () => {
     });
 
     it('activates a sequence', async () => {
+      // A sequence can be switched on once it has a start and an end that are connected.
+      const { rows: steps } = await adminPool.query(
+        `INSERT INTO mkt_sequence_steps (sequence_id, step_category, step_type, label, config, position_x, position_y)
+         VALUES ($1, 'start', 'trigger', 'Start', '{}', 0, 0), ($1, 'end', 'end', 'End', '{}', 0, 100) RETURNING id, step_category`,
+        [SEQUENCE_ID],
+      );
+      await adminPool.query(
+        `INSERT INTO mkt_sequence_connections (sequence_id, source_step_id, target_step_id) VALUES ($1, $2, $3)`,
+        [SEQUENCE_ID, steps.find((x: any) => x.step_category === 'start').id, steps.find((x: any) => x.step_category === 'end').id],
+      );
       const { statusCode, body } = await request('POST', inBusiness(`/api/v1/marketing/sequences/${SEQUENCE_ID}/activate`), undefined, ownerToken);
       expect(statusCode).toBe(200);
       expect(body.data.status).toBe('active');

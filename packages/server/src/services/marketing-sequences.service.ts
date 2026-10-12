@@ -126,6 +126,10 @@ export async function updateSequence(id: string, tenantId: string, updates: Reco
  * Activate a sequence.
  */
 export async function activateSequence(id: string, tenantId: string) {
+  const check = await validateSequence(id, tenantId).catch(() => null);
+  if (check && !check.valid) {
+    throw Object.assign(new Error(`This sequence cannot be switched on yet: ${check.errors.join('; ')}`), { code: 'SEQUENCE_INVALID' });
+  }
   const { rows } = await adminPool.query(
     `UPDATE mkt_sequences SET status = 'active', activated_at = NOW(), updated_at = NOW()
      WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'paused') RETURNING *`,

@@ -7,49 +7,49 @@ Persona: owner (Marketing needs `settings:*`). Covers spec 16: templates, campai
 ---
 
 ### MKT-01 · Email template with merge fields
-`P1` `regression` · Spec 16 R6 · Status: Draft
+`P1` `regression` · Spec 16 R6 · Status: Verified
 1. Create template `E2E {RUN} Tpl` using first-name and business-name merge fields. Preview it for an E2E customer. Edit; delete a second throw-away template.
 **Expect:** the preview shows the customer's real values, with a sensible fallback when a field is empty; no raw `{{…}}` remains.
 
 ### MKT-02 · Create a campaign for a segment and send a test
-`P0` `regression` · Spec 16 R1 · Status: Draft
+`P0` `regression` · Spec 16 R1 · Status: Verified
 1. `/marketing/campaigns/new`: campaign `E2E {RUN} Camp`, the template from MKT-01, audience = the E2E segment from CUS-06. Send a test to a `.test` address.
 **Expect:** the audience size shown equals the segment's member count; the test send reports success or a specific failure.
 
 ### MKT-03 · Schedule, then send a campaign
-`P0` `regression` `guarded` · Spec 16 R1, R10 · Status: Draft
+`P0` `regression` `guarded` · Spec 16 R1, R10 · Status: Verified
 **Pre:** the audience is the E2E segment (re-check the count before sending).
 1. Schedule the campaign for 10 minutes ahead; reschedule; then send now. 2. Try to edit or re-send it after sending.
-**Expect:** status draft → scheduled → sent; a sent campaign cannot be edited or sent twice.
+**Expect:** status draft → scheduled (a new time can be set; a time in the past is refused) → sent; a sent campaign cannot be edited or sent twice.
 **Cross-check:** the recipients list has exactly the segment's contactable members, each with a delivery status; each recipient's customer Timeline shows the campaign.
 
 ### MKT-04 · Consent and unsubscribe are honoured
-`P0` `regression` · Specs 16 R8, 02 R8 · Status: Draft
+`P0` `regression` · Specs 16 R8, 02 R8 · Status: Verified
 1. Before MKT-03, turn marketing email off for one member of the E2E segment (CUS-15). 2. After sending, use the unsubscribe link / endpoint for another recipient. 3. Send a second campaign to the same segment.
 **Expect:** the opted-out member is excluded from the first send; the unsubscribed one is excluded from the second; the unsubscribe works without logging in and updates the customer's preferences.
 
 ### MKT-05 · Automated sequence
-`P1` `regression` · Spec 16 R4, R5 · Status: Draft
+`P1` `regression` · Spec 16 R4, R5 · Status: Blocked (the sequence builder is not built: a sequence cannot be given steps, so it cannot be switched on)
 1. `/marketing/sequences/new`: from a pre-built template (for example a welcome series) or from scratch, trigger "customer created", two steps with a delay. Validate; activate. 2. Create a new E2E customer. 3. Pause the sequence.
 **Expect:** validation catches an empty step or a missing template; the new customer is enrolled after step 2; pausing stops further steps without losing enrolments.
 **Cross-check:** the enrolments list shows the customer and their current step.
 
 ### MKT-06 · Campaign analytics
-`P2` `regression` · Spec 16 R7 · Status: Draft
+`P2` `regression` · Spec 16 R7 · Status: Verified
 1. Open the sent campaign's analytics.
 **Expect:** sent equals the recipient count; rates are percentages between 0 and 100 with no division-by-zero artefacts when opens / clicks are zero.
 
 ### MKT-07 · Lead funnel creates a lead
-`P1` `regression` `known-issue` (D-14) · Spec 16 R9 · Status: Draft
+`P1` `regression` `known-issue` (D-14) · Spec 16 R9 · Status: Verified
 1. Create funnel `E2E {RUN} Funnel`. 2. Logged out, open its public page and submit the form with a `.test` email; submit invalid data; submit the same email twice.
 **Expect:** a new customer is created at stage `lead` with the funnel as source; invalid input is refused; the repeat submission does not create a duplicate customer.
 **Cross-check:** funnel analytics count one submission; the lead appears in `/customers` filtered by stage lead.
 
 ### MKT-08 · SMS campaign respects channel consent
-`P2` `regression` `needs-config` · Spec 16 R2 · Status: Draft
+`P2` `regression` `needs-config` · Spec 16 R2 · Status: Verified
 **Pre:** an SMS provider is configured; otherwise verify only up to the audience step and mark sending `Blocked`.
 1. Create an SMS campaign for the E2E segment.
-**Expect:** only members with a phone number and SMS consent are counted; message length / segments are shown before sending.
+**Expect:** only members with a phone number and SMS consent are counted; message length / segments are shown before sending. Locally no SMS provider is configured: the audience is verified, sending is not attempted.
 
 ---
 

@@ -24,7 +24,11 @@ marketingRouter.get('/funnels/:slug', async (req: Request, res: Response) => {
     const funnel = await funnelsService.getFunnelBySlug(tenantId, req.params.slug, req.query.business_id as string | undefined);
     if (!funnel) { error(res, 'Funnel not found', 'NOT_FOUND', 404); return; }
     await funnelsService.incrementPageViews(funnel.id);
-    success(res, funnel);
+    // The public page gets what it shows, not the record's internals.
+    success(res, {
+      name: funnel.name, slug: funnel.slug, headline: funnel.headline, description: funnel.description,
+      image_path: funnel.image_path, form_fields: funnel.form_fields, cta_text: funnel.cta_text,
+    });
   } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
@@ -34,15 +38,29 @@ marketingRouter.post('/funnels/:slug/submit', async (req: Request, res: Response
     if (!tenantId) { error(res, 'tenant_id required', 'VALIDATION_ERROR', 400); return; }
     const funnel = await funnelsService.getFunnelBySlug(tenantId, req.params.slug, req.query.business_id as string | undefined);
     if (!funnel) { error(res, 'Funnel not found', 'NOT_FOUND', 404); return; }
-    const result = await funnelsService.submitForm(funnel.id, req.body);
-    success(res, result, undefined, 201);
-  } catch (err: any) { error(res, err.message || 'Submission failed', 'INTERNAL_ERROR', 500); }
+    const result = await funnelsService.submitForm(funnel.id, req.body || {});
+    success(res, { received: true, enrolled: !!result.enrollmentId }, undefined, 201);
+  } catch (err: any) {
+    if (err?.code === 'INVALID_FORM' || err?.name === 'ContactPointRequiredError') { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
+    console.error('Form submission failed', err?.message || err);
+    error(res, 'Submission failed', 'INTERNAL_ERROR', 500);
+  }
 });
 
 marketingRouter.post('/unsubscribe', async (req: Request, res: Response) => {
   try {
     const { tenant_id, customer_id, channel, category } = req.body;
     if (!tenant_id || !customer_id || !channel) { error(res, 'Missing fields', 'VALIDATION_ERROR', 400); return; }
+    // The person must belong to the organisation (and business) the link names. Without this,
+    // anyone could switch off messages for any person whose id they had.
+    const uuid = /^[0-9a-f-]{36}$/i;
+    const business = (req.body.business_id || req.query.business_id) as string | undefined;
+    const { rows: own } = uuid.test(customer_id) && uuid.test(tenant_id) ? await adminPool.query(
+      `SELECT 1 FROM cus_customers c JOIN sys_businesses b ON b.id = c.business_id
+        WHERE c.id = $1 AND b.tenant_id = $2 AND ($3::uuid IS NULL OR c.business_id = $3)`,
+      [customer_id, tenant_id, business && uuid.test(business) ? business : null],
+    ) : { rows: [] };
+    if (own.length === 0) { error(res, 'This unsubscribe link is not valid', 'NOT_FOUND', 404); return; }
     await consentService.processUnsubscribe(tenant_id, customer_id, channel, category);
     success(res, { unsubscribed: true });
   } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
@@ -162,7 +180,7 @@ marketingRouter.put('/campaigns/:id', requirePermission('marketing:*'), async (r
   catch (err: any) { if (err?.code === 'CROSS_BUSINESS') { error(res, err.message, 'VALIDATION_ERROR', 400); return; } error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.post('/campaigns/:id/schedule', requirePermission('marketing:*'), async (req: Request, res: Response) => {
-  try { const authReq = req as AuthenticatedRequest; const c = await campaignsService.scheduleCampaign(req.params.id, authReq.tenantId, req.body.scheduled_at); if (!c) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, c); }
+  try { const authReq = req as AuthenticatedRequest; const at = Date.parse(req.body.scheduled_at || ''); if (Number.isNaN(at) || at <= Date.now()) { error(res, 'Choose a date and time in the future', 'VALIDATION_ERROR', 400); return; } const c = await campaignsService.scheduleCampaign(req.params.id, authReq.tenantId, req.body.scheduled_at); if (!c) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, c); }
   catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.post('/campaigns/:id/send', requirePermission('marketing:*'), async (req: Request, res: Response) => {
@@ -205,7 +223,7 @@ marketingRouter.put('/sequences/:id', requirePermission('marketing:*'), async (r
 });
 marketingRouter.post('/sequences/:id/activate', requirePermission('marketing:*'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const s = await sequencesService.activateSequence(req.params.id, authReq.tenantId); if (!s) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, s); }
-  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { if (err?.code === 'SEQUENCE_INVALID') { error(res, err.message, 'SEQUENCE_INVALID', 400); return; } console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 marketingRouter.post('/sequences/:id/pause', requirePermission('marketing:*'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const s = await sequencesService.pauseSequence(req.params.id, authReq.tenantId); if (!s) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, s); }

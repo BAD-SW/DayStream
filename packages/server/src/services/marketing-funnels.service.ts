@@ -102,7 +102,10 @@ export async function submitForm(funnelId: string, formData: Record<string, any>
 
   // Find or create the person (Phase 46). The lead goes to the form's own business; a form
   // created before forms had one falls back to the tenant's first business.
-  const email = formData.email;
+  const email = typeof formData.email === 'string' ? formData.email.trim() : '';
+  const phoneGiven = typeof formData.phone === 'string' ? formData.phone.trim() : '';
+  if (!email && !phoneGiven) throw Object.assign(new Error('An email address or a phone number is required'), { code: 'INVALID_FORM' });
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw Object.assign(new Error('That email address does not look right'), { code: 'INVALID_FORM' });
   const firstName = formData.firstName || formData.first_name || null;
   const lastName = formData.lastName || formData.last_name || null;
   const phone = formData.phone || null;
@@ -175,8 +178,9 @@ export async function getFunnelAnalytics(funnelId: string) {
   if (!rows[0]) return null;
 
   const { page_views, submissions } = rows[0];
+  // Never above 100 %: a form can be submitted without its page being counted (an embed, a repeat).
   const conversionRate = page_views > 0
-    ? Math.round((submissions / page_views) * 10000) / 100
+    ? Math.min(100, Math.round((submissions / page_views) * 10000) / 100)
     : 0;
 
   return {
