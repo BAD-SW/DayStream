@@ -1,3 +1,4 @@
+import { reportDb } from '../lib/report-db';
 import { adminPool } from '../../../db/pool';
 import { ReportDefinition } from '../types';
 
@@ -26,7 +27,7 @@ export const bookingsSummaryReport: ReportDefinition = {
     { key: 'price', header: 'Price', type: 'currency', total: true },
   ],
   run: async (ctx) => {
-    const { rows } = await adminPool.query(
+    const { rows } = await reportDb.query(
       `SELECT b.start_time::date AS entry_date,
               TO_CHAR(b.start_time, 'HH24:MI') AS start_time,
               b.booking_reference AS reference,

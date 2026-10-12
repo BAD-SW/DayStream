@@ -1,3 +1,4 @@
+import { reportDb } from '../lib/report-db';
 import { adminPool } from '../../../db/pool';
 import { ReportDefinition } from '../types';
 import { recognizedRevenueByCustomer } from '../lib/recognized-revenue';
@@ -26,7 +27,7 @@ export const customerLifetimeValueReport: ReportDefinition = {
     if (byCustomer.size === 0) return [];
 
     const ids = [...byCustomer.keys()];
-    const { rows: customers } = await adminPool.query(
+    const { rows: customers } = await reportDb.query(
       `SELECT id,
               TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, ''))
                 || ' (' || reference_number || ')' AS customer

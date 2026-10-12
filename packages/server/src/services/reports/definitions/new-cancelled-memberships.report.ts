@@ -1,3 +1,4 @@
+import { reportDb } from '../lib/report-db';
 import { adminPool } from '../../../db/pool';
 import { ReportDefinition } from '../types';
 
@@ -28,7 +29,7 @@ export const newCancelledMembershipsReport: ReportDefinition = {
     { key: 'price', header: 'Price', type: 'currency', total: true },
   ],
   run: async (ctx) => {
-    const { rows } = await adminPool.query(
+    const { rows } = await reportDb.query(
       `SELECT CASE
                 WHEN e.start_date BETWEEN $2::date AND $3::date
                      AND e.cancelled_at::date BETWEEN $2::date AND $3::date THEN 'New & Cancelled'

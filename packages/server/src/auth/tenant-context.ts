@@ -54,6 +54,7 @@ async function tenantOfBusiness(businessId: string): Promise<string | null> {
 function namedBusinessIds(req: Request): string[] {
   const ids = new Set<string>();
   const add = (v: unknown) => { if (typeof v === 'string' && v) ids.add(v); };
+  add(req.headers['x-business-id']);
   add(req.query.business_id);
   add(req.query.businessId);
   if (req.body && typeof req.body === 'object') { add(req.body.business_id); add(req.body.businessId); }

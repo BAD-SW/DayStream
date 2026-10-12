@@ -1,3 +1,4 @@
+import { bizAnd } from './report-scope';
 import { adminPool } from '../db/pool';
 
 /**
@@ -8,7 +9,7 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
   const { rows: activeRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS active_count
      FROM mbr_enrollments
-     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1)
+     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1${bizAnd('id')})
        AND status = 'active'
        AND start_date <= $2::date`,
     [tenantId, endDate],
@@ -18,7 +19,7 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
   const { rows: newRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS new_count
      FROM mbr_enrollments
-     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1)
+     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1${bizAnd('id')})
        AND start_date >= $2::date
        AND start_date < ($3::date + INTERVAL '1 day')`,
     [tenantId, startDate, endDate],
@@ -28,7 +29,7 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
   const { rows: cancelledRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS cancelled_count
      FROM mbr_enrollments
-     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1)
+     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1${bizAnd('id')})
        AND cancelled_at >= $2::date
        AND cancelled_at < ($3::date + INTERVAL '1 day')`,
     [tenantId, startDate, endDate],
@@ -38,7 +39,7 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
   const { rows: startRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS start_count
      FROM mbr_enrollments
-     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1)
+     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1${bizAnd('id')})
        AND status IN ('active', 'cancelled')
        AND start_date < $2::date
        AND (cancelled_at IS NULL OR cancelled_at >= $2::date)`,
@@ -59,7 +60,7 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
     `SELECT COALESCE(SUM(mp.price), 0) AS mrr
      FROM mbr_enrollments m
      JOIN mbr_plans mp ON mp.id = m.plan_id
-     WHERE m.business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1)
+     WHERE m.business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1${bizAnd('id')})
        AND m.status = 'active'`,
     [tenantId],
   );

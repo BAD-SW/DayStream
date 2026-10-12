@@ -1,3 +1,4 @@
+import { reportDb } from '../lib/report-db';
 import { adminPool } from '../../../db/pool';
 import { ReportDefinition } from '../types';
 import { recognizedRevenueByCustomer } from '../lib/recognized-revenue';
@@ -43,7 +44,7 @@ export const customerRetentionReport: ReportDefinition = {
   run: async (ctx) => {
     const byCustomer = await recognizedRevenueByCustomer(ctx.businessId);
 
-    const { rows } = await adminPool.query(
+    const { rows } = await reportDb.query(
       `SELECT c.id,
               TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, ''))
                 || ' (' || c.reference_number || ')' AS customer,

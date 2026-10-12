@@ -1,3 +1,4 @@
+import { bizAnd } from './report-scope';
 import { adminPool } from '../db/pool';
 
 interface ExportableData {
@@ -54,7 +55,7 @@ export async function getExportData(
         `SELECT b.start_time::date AS date, b.service_id, b.price, b.status
          FROM apt_bookings b
          JOIN sys_businesses bus ON bus.id = b.business_id
-         WHERE bus.tenant_id = $1
+         WHERE bus.tenant_id = $1${bizAnd('bus.id')}
            AND b.status = 'completed'
            AND b.start_time >= $2::date
            AND b.start_time < ($3::date + INTERVAL '1 day')
@@ -72,7 +73,7 @@ export async function getExportData(
         `SELECT b.id, b.start_time, b.end_time, b.status, b.customer_id, b.service_id, b.price
          FROM apt_bookings b
          JOIN sys_businesses bus ON bus.id = b.business_id
-         WHERE bus.tenant_id = $1
+         WHERE bus.tenant_id = $1${bizAnd('bus.id')}
            AND b.start_time >= $2::date
            AND b.start_time < ($3::date + INTERVAL '1 day')
          ORDER BY b.start_time`,
@@ -88,7 +89,7 @@ export async function getExportData(
       const { rows } = await adminPool.query(
         `SELECT m.id, m.customer_id, m.plan_id, m.status, m.start_date AS started_at, m.cancelled_at
          FROM mbr_enrollments m
-         WHERE m.business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1)
+         WHERE m.business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1${bizAnd('id')})
            AND m.start_date <= $2::date
            AND (m.cancelled_at IS NULL OR m.cancelled_at >= $3::date)
          ORDER BY m.start_date`,
@@ -104,7 +105,7 @@ export async function getExportData(
       const { rows } = await adminPool.query(
         `SELECT c.id, c.status, c.created_at
          FROM cus_customers c
-         WHERE c.tenant_id = $1
+         WHERE c.tenant_id = $1${bizAnd('c.business_id')}
            AND c.created_at >= $2::date
            AND c.created_at < ($3::date + INTERVAL '1 day')
          ORDER BY c.created_at`,

@@ -1,3 +1,4 @@
+import { reportDb } from '../lib/report-db';
 import { adminPool } from '../../../db/pool';
 import { ReportDefinition } from '../types';
 import { computeDailyHours } from '../../clock.service';
@@ -27,14 +28,14 @@ export const timesheetReport: ReportDefinition = {
   run: async (ctx) => {
     const { businessId, start, end } = ctx;
 
-    const { rows: bizRows } = await adminPool.query(
+    const { rows: bizRows } = await reportDb.query(
       `SELECT COALESCE(timezone, 'UTC') AS tz FROM sys_businesses WHERE id = $1`,
       [businessId],
     );
     const tz: string = bizRows[0]?.tz || 'UTC';
 
     // Staff who have any clock activity in the range, with display names.
-    const { rows: staff } = await adminPool.query(
+    const { rows: staff } = await reportDb.query(
       `SELECT DISTINCT ce.user_id,
               TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS staff
          FROM clk_events ce

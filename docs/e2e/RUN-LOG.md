@@ -33,7 +33,7 @@ What was not cleaned up, if anything.
 
 ## Run 20261012-6 — full run (in progress)
 - Commit at start: `2a62bc8` · Migrations at end so far: 142 · Processor mode: Stripe test (platform, seed tenant, seed business); mock for the E2E tenant
-- Method: each script is driven through the API by a repeatable script (kept in the session scratchpad: `r00`, `r02`, `r02b`, `r03`, `r05`, `r06`, `r07`, `r08`, `r09`, `r10`, `r11`, and `sweep` for the cross-organisation check), with the browser used for screens, menus and typed addresses. Data is created in a dedicated tenant `E2E 20261012-6 SysTenant` and its business `E2E 20261012-6 Biz` (time zone Europe/Madrid)
+- Method: each script is driven through the API by a repeatable script (kept in the session scratchpad: `r00`, `r02`, `r02b`, `r03`, `r05`, `r06`, `r07`, `r08`, `r09`, `r10`, `r11`, `r12`, and `sweep` for the cross-organisation check), with the browser used for screens, menus and typed addresses. Data is created in a dedicated tenant `E2E 20261012-6 SysTenant` and its business `E2E 20261012-6 Biz` (time zone Europe/Madrid)
 - A script is marked `Verified` when every check passed after fixes. Scripts whose remaining part is purely visual are noted below
 
 ### Progress
@@ -51,7 +51,8 @@ What was not cleaned up, if anything.
 | 10 Checkout & payments | 18 of 18 pass after fixes (mock processor; PAY-16 expiry path not waited for) | Card entry in the hosted fields and the receipt screen are browser checks |
 | Cross-organisation sweep | 8,712 calls: every GET route that takes an id, opened as another organisation's owner with this run's record ids. 0 leaks after fixes | The same sweep as a customer login, and for routes that change data |
 | 11 Accounting & payroll | 14 of 14 pass after fixes | Screens only covered by the smoke tour |
-| 01, 12 to 17 | pending | |
+| 12 Reports | 8 of 8 pass after fixes (all 19 catalogue reports run) | Dashboard cards, sorting and filtering on screen are browser checks |
+| 01, 13 to 17 | pending | |
 
 ### Defects found and fixed in this run
 | Id | Severity | Summary |
@@ -98,6 +99,10 @@ What was not cleaned up, if anything.
 | D-62 | High | A sale with a discount posted an entry that did not balance (revenue net of the discount, and the discount again). A voided journal entry counted twice in the P&L (the original left out, the reversal kept) |
 | D-63 | High | A bill could be paid before approval, and paid any number of times for any amount. A bank statement and its lines could be read by any organisation; one journal entry could be matched to several statement lines |
 | D-64 | Medium | Finalizing payroll posted nothing to the ledger; the staff-costs report left out the current period; a recovered (retried) renewal was not posted to the ledger; pay periods generated ahead kept the old length after a change of pay frequency; tax profiles accepted negative values and any pay frequency was accepted |
+| D-65 | Critical | A business named in the X-Business-Id header was never checked: any signed-in user could run any report, and export it, for any business of any organisation |
+| D-66 | High | The summary reports (revenue, bookings, memberships, staff, customers, financial) covered every business of the tenant for every user |
+| D-67 | High | Payments Received counted a sale twice when it had a payment (order and payment both listed). The dashboard showed revenue as a fixed 0 and counted cancelled bookings in "today" |
+| D-68 | Medium | Reports bucketed days by the database server's clock, not the business's (a sale just after midnight fell on the previous day or month); an inverted date range was accepted and a malformed date crashed; a scheduled report had no run time, so it never ran |
 | — | — | 635 API handlers answered "server error" without recording the cause; they now log it |
 
 ### Observations (not changed)
@@ -122,6 +127,9 @@ What was not cleaned up, if anything.
 - The manual, approvable "time entries" in payroll are not used by the pay run; hours come from the time clock, the schedule or bookings, as the hourly rule says.
 - Tax documents are always of the US "W-2" kind and show no withheld tax, also for Spain.
 - AP aging includes a bill from the moment it is entered, before approval.
+- The stored daily metrics behind the configurable dashboard widgets, and scheduled reports, exist per organisation only. A business-level user may use them when the organisation has a single business; otherwise they get an empty set.
+- The summary "revenue" report (older generation) means the price of completed bookings, not money taken; the catalogue's Revenue and Payments Received reports are the money figures.
+- A scheduled report is created and listed, but nothing was seen sending it during this run.
 - Orders completed before a business had a chart of accounts (earlier in this run) have no ledger entry; they are not back-filled.
 
 ### Leftover test data

@@ -1,3 +1,4 @@
+import { bizAnd } from './report-scope';
 import { adminPool } from '../db/pool';
 
 /**
@@ -9,7 +10,7 @@ export async function getCustomersReport(tenantId: string, startDate: string, en
     `SELECT COUNT(DISTINCT b.customer_id)::int AS active_count
      FROM apt_bookings b
      JOIN sys_businesses bus ON bus.id = b.business_id
-     WHERE bus.tenant_id = $1
+     WHERE bus.tenant_id = $1${bizAnd('bus.id')}
        AND b.start_time >= $2::date
        AND b.start_time < ($3::date + INTERVAL '1 day')`,
     [tenantId, startDate, endDate],
@@ -19,7 +20,7 @@ export async function getCustomersReport(tenantId: string, startDate: string, en
   const { rows: newRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS new_count
      FROM cus_customers
-     WHERE tenant_id = $1
+     WHERE tenant_id = $1${bizAnd('business_id')}
        AND created_at >= $2::date
        AND created_at < ($3::date + INTERVAL '1 day')`,
     [tenantId, startDate, endDate],
@@ -32,7 +33,7 @@ export async function getCustomersReport(tenantId: string, startDate: string, en
        SELECT DISTINCT b.customer_id
        FROM apt_bookings b
        JOIN sys_businesses bus ON bus.id = b.business_id
-       WHERE bus.tenant_id = $1
+       WHERE bus.tenant_id = $1${bizAnd('bus.id')}
          AND b.start_time >= ($2::date - ($3::date - $2::date + 1))
          AND b.start_time < $2::date
      ) prev
@@ -40,7 +41,7 @@ export async function getCustomersReport(tenantId: string, startDate: string, en
        SELECT DISTINCT b.customer_id
        FROM apt_bookings b
        JOIN sys_businesses bus ON bus.id = b.business_id
-       WHERE bus.tenant_id = $1
+       WHERE bus.tenant_id = $1${bizAnd('bus.id')}
          AND b.start_time >= $2::date
          AND b.start_time < ($3::date + INTERVAL '1 day')
      )`,
@@ -51,7 +52,7 @@ export async function getCustomersReport(tenantId: string, startDate: string, en
   const { rows: lifecycle } = await adminPool.query(
     `SELECT status, COUNT(*)::int AS count
      FROM cus_customers
-     WHERE tenant_id = $1
+     WHERE tenant_id = $1${bizAnd('business_id')}
      GROUP BY status`,
     [tenantId],
   );
@@ -61,7 +62,7 @@ export async function getCustomersReport(tenantId: string, startDate: string, en
     `SELECT b.customer_id, COALESCE(SUM(b.price), 0) AS total_revenue, COUNT(*)::int AS bookings
      FROM apt_bookings b
      JOIN sys_businesses bus ON bus.id = b.business_id
-     WHERE bus.tenant_id = $1
+     WHERE bus.tenant_id = $1${bizAnd('bus.id')}
        AND b.status = 'completed'
        AND b.start_time >= $2::date
        AND b.start_time < ($3::date + INTERVAL '1 day')

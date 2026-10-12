@@ -1,3 +1,4 @@
+import { reportDb } from '../lib/report-db';
 import { adminPool } from '../../../db/pool';
 import { ReportDefinition } from '../types';
 
@@ -28,7 +29,7 @@ export const taxSummaryReport: ReportDefinition = {
     { key: 'tax_collected', header: 'Tax Collected', type: 'currency', total: true },
   ],
   run: async (ctx) => {
-    const { rows } = await adminPool.query(
+    const { rows } = await reportDb.query(
       `SELECT o.completed_at::date AS entry_date,
               o.order_number,
               o.id AS order_id,

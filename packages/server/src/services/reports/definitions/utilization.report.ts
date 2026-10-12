@@ -1,3 +1,4 @@
+import { reportDb } from '../lib/report-db';
 import { adminPool } from '../../../db/pool';
 import { ReportColumn } from '@daystream/shared';
 import { ReportContext, ReportSectionDef } from '../types';
@@ -90,7 +91,7 @@ async function resolveStaffIntervals(
   businessId: string, start: string, end: string,
 ): Promise<{ scheduledByUser: Map<string, number>; intervals: WorkInterval[] }> {
   const days = eachDay(start, end);
-  const { rows: bizRows } = await adminPool.query(
+  const { rows: bizRows } = await reportDb.query(
     'SELECT scheduling_mode FROM sys_businesses WHERE id = $1', [businessId],
   );
   const mode = bizRows[0]?.scheduling_mode || 'availability';
@@ -104,7 +105,7 @@ async function resolveStaffIntervals(
   };
 
   if (mode === 'schedule') {
-    const { rows } = await adminPool.query(
+    const { rows } = await reportDb.query(
       `SELECT sp.user_id, e.schedule_date, e.start_time, e.end_time
          FROM stf_schedule_entries e
          JOIN stf_profiles sp ON sp.id = e.staff_id
@@ -116,7 +117,7 @@ async function resolveStaffIntervals(
       add(r.user_id, toYmd(r.schedule_date)!, timeToMinutes(r.start_time), timeToMinutes(r.end_time));
     }
   } else {
-    const { rows: slots } = await adminPool.query(
+    const { rows: slots } = await reportDb.query(
       `SELECT sp.user_id, ps.day_of_week, ps.start_time, ps.end_time, p.effective_from, p.effective_to
          FROM stf_availability_pattern_slots ps
          JOIN stf_availability_patterns p ON p.id = ps.pattern_id
@@ -125,7 +126,7 @@ async function resolveStaffIntervals(
         WHERE u.business_id = $1 AND p.is_default = true`,
       [businessId],
     );
-    const { rows: overrides } = await adminPool.query(
+    const { rows: overrides } = await reportDb.query(
       `SELECT sp.user_id, o.override_date, o.override_type, o.start_time, o.end_time
          FROM stf_availability_overrides o
          JOIN stf_profiles sp ON sp.id = o.staff_id
@@ -190,7 +191,7 @@ async function bookedSecondsByKey(
   businessId: string, start: string, end: string, keyCol: 'staff_id' | 'resource_id',
 ): Promise<Map<string, number>> {
   const today = new Date().toISOString().slice(0, 10);
-  const { rows } = await adminPool.query(
+  const { rows } = await reportDb.query(
     `SELECT ${keyCol} AS key,
             SUM(
               EXTRACT(EPOCH FROM (b.end_time - b.start_time))
@@ -235,7 +236,7 @@ function buildStaffSection(
 async function buildResourceSection(
   businessId: string, start: string, end: string, openSecs: number,
 ): Promise<ReportSectionDef> {
-  const { rows: resources } = await adminPool.query(
+  const { rows: resources } = await reportDb.query(
     `SELECT r.id, r.name, r.capacity
        FROM res_resources r
        JOIN sys_businesses b ON b.tenant_id = r.tenant_id
@@ -271,7 +272,7 @@ export const utilizationReport = {
     const { businessId, start, end } = ctx;
 
     // Active staff (for the staff section rows)
-    const { rows: staff } = await adminPool.query(
+    const { rows: staff } = await reportDb.query(
       `SELECT sp.user_id, u.first_name, u.last_name
          FROM stf_profiles sp
          JOIN usr_users u ON u.id = sp.user_id

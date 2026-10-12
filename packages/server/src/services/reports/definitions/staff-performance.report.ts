@@ -1,3 +1,4 @@
+import { reportDb } from '../lib/report-db';
 import { adminPool } from '../../../db/pool';
 import { ReportDefinition } from '../types';
 
@@ -44,7 +45,7 @@ export const staffPerformanceReport: ReportDefinition = {
     { key: 'no_show_fees', header: 'No-Show Fees', type: 'currency', total: true },
   ],
   run: async (ctx) => {
-    const { rows } = await adminPool.query(
+    const { rows } = await reportDb.query(
       `WITH bookings AS (
          SELECT b.staff_id,
                 COUNT(*)::int AS booked,

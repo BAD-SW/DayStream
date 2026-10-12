@@ -1,3 +1,4 @@
+import { bizAnd } from './report-scope';
 import { adminPool } from '../db/pool';
 
 /**
@@ -9,7 +10,7 @@ export async function getRevenueReport(tenantId: string, startDate: string, endD
     `SELECT COALESCE(SUM(b.price), 0) AS total_revenue, COUNT(*)::int AS total_bookings
      FROM apt_bookings b
      JOIN sys_businesses bus ON bus.id = b.business_id
-     WHERE bus.tenant_id = $1
+     WHERE bus.tenant_id = $1${bizAnd('bus.id')}
        AND b.status = 'completed'
        AND b.start_time >= $2::date
        AND b.start_time < ($3::date + INTERVAL '1 day')`,
@@ -24,7 +25,7 @@ export async function getRevenueReport(tenantId: string, startDate: string, endD
     `SELECT b.service_id, COALESCE(SUM(b.price), 0) AS revenue, COUNT(*)::int AS bookings
      FROM apt_bookings b
      JOIN sys_businesses bus ON bus.id = b.business_id
-     WHERE bus.tenant_id = $1
+     WHERE bus.tenant_id = $1${bizAnd('bus.id')}
        AND b.status = 'completed'
        AND b.start_time >= $2::date
        AND b.start_time < ($3::date + INTERVAL '1 day')
@@ -38,7 +39,7 @@ export async function getRevenueReport(tenantId: string, startDate: string, endD
     `SELECT b.start_time::date AS date, COALESCE(SUM(b.price), 0) AS revenue, COUNT(*)::int AS bookings
      FROM apt_bookings b
      JOIN sys_businesses bus ON bus.id = b.business_id
-     WHERE bus.tenant_id = $1
+     WHERE bus.tenant_id = $1${bizAnd('bus.id')}
        AND b.status = 'completed'
        AND b.start_time >= $2::date
        AND b.start_time < ($3::date + INTERVAL '1 day')
@@ -53,7 +54,7 @@ export async function getRevenueReport(tenantId: string, startDate: string, endD
     `SELECT COALESCE(SUM(b.price), 0) AS prev_revenue, COUNT(*)::int AS prev_bookings
      FROM apt_bookings b
      JOIN sys_businesses bus ON bus.id = b.business_id
-     WHERE bus.tenant_id = $1
+     WHERE bus.tenant_id = $1${bizAnd('bus.id')}
        AND b.status = 'completed'
        AND b.start_time >= ($2::date - ($3::date - $2::date + 1))
        AND b.start_time < $2::date`,

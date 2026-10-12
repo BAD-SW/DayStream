@@ -1,3 +1,4 @@
+import { reportDb } from '../lib/report-db';
 import { adminPool } from '../../../db/pool';
 import { ReportDefinition } from '../types';
 
@@ -30,7 +31,7 @@ export const paymentsReceivedReport: ReportDefinition = {
     { key: 'amount', header: 'Amount', type: 'currency', total: true },
   ],
   run: async (ctx) => {
-    const { rows } = await adminPool.query(
+    const { rows } = await reportDb.query(
       `
       -- Checkout / POS completed orders
       SELECT
@@ -79,6 +80,8 @@ export const paymentsReceivedReport: ReportDefinition = {
       JOIN cus_customers c ON c.id = t.customer_id
       WHERE t.business_id = $1
         AND t.status = 'completed'
+        AND t.order_id IS NULL
+        AND t.payment_method <> 'account_credit'
         AND t.created_at::date BETWEEN $2::date AND $3::date
 
       ORDER BY sort_ts DESC

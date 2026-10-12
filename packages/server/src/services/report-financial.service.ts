@@ -1,3 +1,4 @@
+import { bizAnd } from './report-scope';
 import { adminPool } from '../db/pool';
 
 /**
@@ -9,7 +10,7 @@ export async function getFinancialReport(tenantId: string, startDate: string, en
     `SELECT COALESCE(SUM(b.price), 0) AS total_revenue
      FROM apt_bookings b
      JOIN sys_businesses bus ON bus.id = b.business_id
-     WHERE bus.tenant_id = $1
+     WHERE bus.tenant_id = $1${bizAnd('bus.id')}
        AND b.status = 'completed'
        AND b.start_time >= $2::date
        AND b.start_time < ($3::date + INTERVAL '1 day')`,
@@ -21,7 +22,7 @@ export async function getFinancialReport(tenantId: string, startDate: string, en
     `SELECT COALESCE(SUM(e.amount), 0) AS total_expenses
      FROM fin_expenses e
      JOIN sys_businesses bus ON bus.id = e.business_id
-     WHERE bus.tenant_id = $1
+     WHERE bus.tenant_id = $1${bizAnd('bus.id')}
        AND e.date >= $2::date
        AND e.date <= $3::date`,
     [tenantId, startDate, endDate],
@@ -46,7 +47,7 @@ export async function getFinancialReport(tenantId: string, startDate: string, en
        COALESCE(SUM(bi.amount - bi.amount_paid), 0) AS outstanding
      FROM fin_bills bi
      JOIN sys_businesses bus ON bus.id = bi.business_id
-     WHERE bus.tenant_id = $1
+     WHERE bus.tenant_id = $1${bizAnd('bus.id')}
        AND bi.status != 'paid'
      GROUP BY 1
      ) aged
@@ -68,7 +69,7 @@ export async function getFinancialReport(tenantId: string, startDate: string, en
        COUNT(*)::int AS count,
        COALESCE(SUM(inv.total_cents - inv.amount_paid_cents), 0) AS outstanding
      FROM pay_invoices inv
-     WHERE inv.tenant_id = $1
+     WHERE inv.tenant_id = $1${bizAnd('inv.business_id')}
        AND inv.status NOT IN ('draft', 'void', 'paid')
        AND inv.total_cents > inv.amount_paid_cents
      GROUP BY 1
@@ -83,7 +84,7 @@ export async function getFinancialReport(tenantId: string, startDate: string, en
      FROM fin_payroll_entries pe
      JOIN fin_pay_periods pp ON pp.id = pe.pay_period_id
      JOIN sys_businesses bus ON bus.id = pp.business_id
-     WHERE bus.tenant_id = $1
+     WHERE bus.tenant_id = $1${bizAnd('bus.id')}
        AND pp.period_end >= $2::date
        AND pp.period_end <= $3::date`,
     [tenantId, startDate, endDate],
@@ -94,7 +95,7 @@ export async function getFinancialReport(tenantId: string, startDate: string, en
     `SELECT COALESCE(SUM(b.price), 0) AS total_refunds, COUNT(*)::int AS refund_count
      FROM apt_bookings b
      JOIN sys_businesses bus ON bus.id = b.business_id
-     WHERE bus.tenant_id = $1
+     WHERE bus.tenant_id = $1${bizAnd('bus.id')}
        AND b.status = 'refunded'
        AND b.start_time >= $2::date
        AND b.start_time < ($3::date + INTERVAL '1 day')`,

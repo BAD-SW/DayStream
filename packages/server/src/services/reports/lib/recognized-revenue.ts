@@ -1,3 +1,4 @@
+import { reportDb } from './report-db';
 import { adminPool } from '../../../db/pool';
 
 /**
@@ -29,7 +30,7 @@ export async function recognizedRevenueByCustomer(businessId: string): Promise<M
   };
 
   // Service + product recognized revenue from completed order line items (pre-tax, net of discount)
-  const { rows: orderRows } = await adminPool.query(
+  const { rows: orderRows } = await reportDb.query(
     `SELECT o.customer_id,
             oi.item_type,
             COALESCE(SUM(oi.unit_price * oi.quantity - oi.discount_amount), 0)::int AS amount
@@ -50,7 +51,7 @@ export async function recognizedRevenueByCustomer(businessId: string): Promise<M
 
   // Membership recognized revenue from the per-enrollment tracking table,
   // summed across all of the customer's enrollments.
-  const { rows: memRows } = await adminPool.query(
+  const { rows: memRows } = await reportDb.query(
     `SELECT e.customer_id,
             COALESCE(SUM(rr.amount_recognized), 0)::int AS amount
        FROM fin_revenue_recognized rr

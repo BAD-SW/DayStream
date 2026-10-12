@@ -1,3 +1,4 @@
+import { bizAnd } from './report-scope';
 import { adminPool } from '../db/pool';
 
 /**
@@ -9,7 +10,7 @@ export async function getBookingsReport(tenantId: string, startDate: string, end
     `SELECT b.status, COUNT(*)::int AS count
      FROM apt_bookings b
      JOIN sys_businesses bus ON bus.id = b.business_id
-     WHERE bus.tenant_id = $1
+     WHERE bus.tenant_id = $1${bizAnd('bus.id')}
        AND b.start_time >= $2::date
        AND b.start_time < ($3::date + INTERVAL '1 day')
      GROUP BY b.status`,
@@ -33,7 +34,7 @@ export async function getBookingsReport(tenantId: string, startDate: string, end
             COUNT(*)::int AS count
      FROM apt_bookings b
      JOIN sys_businesses bus ON bus.id = b.business_id
-     WHERE bus.tenant_id = $1
+     WHERE bus.tenant_id = $1${bizAnd('bus.id')}
        AND b.start_time >= $2::date
        AND b.start_time < ($3::date + INTERVAL '1 day')
      GROUP BY day_of_week, hour
@@ -46,7 +47,7 @@ export async function getBookingsReport(tenantId: string, startDate: string, end
     `SELECT AVG(EXTRACT(EPOCH FROM (b.start_time - b.created_at)) / 3600)::numeric(10,1) AS avg_lead_hours
      FROM apt_bookings b
      JOIN sys_businesses bus ON bus.id = b.business_id
-     WHERE bus.tenant_id = $1
+     WHERE bus.tenant_id = $1${bizAnd('bus.id')}
        AND b.start_time >= $2::date
        AND b.start_time < ($3::date + INTERVAL '1 day')
        AND b.created_at IS NOT NULL`,

@@ -1,6 +1,7 @@
 import { ReportColumn, ReportRunResult, ReportSection } from '@daystream/shared';
 import { adminPool } from '../../db/pool';
 import { ReportContext, ReportDefinition } from './types';
+import { onBusinessClock } from './lib/report-db';
 
 /** Sum `total: true` numeric/currency columns over a row set. */
 function computeTotals(columns: ReportColumn[], rows: Record<string, any>[]): Record<string, number> {
@@ -20,6 +21,13 @@ function computeTotals(columns: ReportColumn[], rows: Record<string, any>[]): Re
  * (business name + currency, date range, generated timestamp).
  */
 export async function runReport(
+  definition: ReportDefinition,
+  ctx: ReportContext,
+): Promise<ReportRunResult> {
+  return onBusinessClock(ctx.businessId, () => runReportOnClock(definition, ctx));
+}
+
+async function runReportOnClock(
   definition: ReportDefinition,
   ctx: ReportContext,
 ): Promise<ReportRunResult> {

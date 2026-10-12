@@ -1,3 +1,4 @@
+import { reportDb } from '../lib/report-db';
 import { adminPool } from '../../../db/pool';
 import { ReportDefinition } from '../types';
 
@@ -29,7 +30,7 @@ export const cancellationsNoShowsReport: ReportDefinition = {
     { key: 'fee_charged', header: 'Fee Charged', type: 'currency', total: true },
   ],
   run: async (ctx) => {
-    const { rows } = await adminPool.query(
+    const { rows } = await reportDb.query(
       `SELECT b.start_time::date AS entry_date,
               b.booking_reference AS reference,
               COALESCE(s.name, '—')

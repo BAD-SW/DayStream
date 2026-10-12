@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
-import { tenantContext } from '../auth/tenant-context';
+import { tenantContext, callerScope } from '../auth/tenant-context';
+import { withReportBusiness } from '../services/report-scope';
+import { adminPool } from '../db/pool';
 import { requirePermission } from '../auth/permissions';
 import { success, error } from '../utils/response';
 import * as aggregationService from '../services/report-aggregation.service';
@@ -20,6 +22,52 @@ import { toCsv, toPdf, exportFilename } from '../services/reports/export.service
 export const reportsRouter = Router();
 reportsRouter.use(authenticate);
 reportsRouter.use(tenantContext);
+
+// Reports are for one business: the one named in the request (already checked by
+// tenantContext) or the caller's own. Only a tenant-level user who names none gets the whole
+// tenant. The older reports used to cover every business of the tenant for everyone.
+reportsRouter.use(async (req: Request, res: Response, next) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const scope = await callerScope(authReq.user.sub);
+    let businessId = resolveBusinessId(req);
+    if (scope?.level === 'business' && scope.businessId) businessId = scope.businessId;
+    (req as any).reportBusinessId = businessId;
+    (req as any).reportWholeTenant = !businessId;
+    withReportBusiness(businessId, () => next());
+  } catch (err: any) { console.error('Report scope failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+});
+
+/**
+ * Figures that exist per tenant only (the stored daily metrics, scheduled reports): a
+ * business-level user may use them when the tenant has just that one business.
+ */
+async function tenantWideAllowed(req: Request): Promise<boolean> {
+  const authReq = req as AuthenticatedRequest;
+  const scope = await callerScope(authReq.user.sub);
+  if (scope?.level !== 'business') return true;
+  const { rows } = await adminPool.query("SELECT COUNT(*)::int AS n FROM sys_businesses WHERE tenant_id = $1 AND status <> 'archived'", [authReq.tenantId]);
+  return rows[0].n <= 1;
+}
+
+// A report period is two calendar days, the first not after the second.
+reportsRouter.use((req: Request, res: Response, next) => {
+  const { start_date: a, end_date: b } = req.query as Record<string, string | undefined>;
+  const isDay = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v + 'T00:00:00Z'));
+  if ((a !== undefined && !isDay(a)) || (b !== undefined && !isDay(b))) { error(res, 'Dates must be given as YYYY-MM-DD', 'VALIDATION_ERROR', 400); return; }
+  if (a && b && a > b) { error(res, 'The start date is after the end date', 'VALIDATION_ERROR', 400); return; }
+  next();
+});
+
+reportsRouter.use(async (req: Request, res: Response, next) => {
+  const tenantWide = /^\/(dashboard|scheduled|aggregate)(\/|$)/.test(req.path) && !req.path.startsWith('/dashboard/config');
+  if (!tenantWide) { next(); return; }
+  try {
+    if (await tenantWideAllowed(req)) { next(); return; }
+    if (req.method !== 'GET') { error(res, 'This is managed for the whole organisation by a tenant administrator', 'FORBIDDEN', 403); return; }
+    success(res, req.path.startsWith('/scheduled') ? [] : { widgets: [] });
+  } catch (err: any) { console.error('Report scope failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+});
 
 // --- Report Framework (generic run + export, keyed by report id) ---
 
@@ -228,39 +276,38 @@ reportsRouter.get('/business-kpis', requirePermission('reports:read'), async (re
       return;
     }
 
-    // Today's bookings
-    const { rows: todayRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM apt_bookings WHERE business_id = $1 AND DATE(start_time) = CURRENT_DATE`,
+    // Days, weeks and months are the business's own (its time zone), and cancelled bookings
+    // are not counted. Revenue is the money taken: completed sales, plus payments recorded
+    // outside a sale, less refunds. (Revenue was a fixed 0 and "today" was the server's day.)
+    const { rows } = await adminPool.query(
+      `WITH biz AS (SELECT id, timezone AS tz FROM sys_businesses WHERE id = $1),
+            clock AS (SELECT (NOW() AT TIME ZONE tz)::date AS today,
+                             date_trunc('week', NOW() AT TIME ZONE tz)::date AS week_start,
+                             date_trunc('month', NOW() AT TIME ZONE tz)::date AS month_start,
+                             date_trunc('year', NOW() AT TIME ZONE tz)::date AS year_start, tz FROM biz),
+            money AS (
+              SELECT (o.completed_at AT TIME ZONE clock.tz)::date AS day, o.total_amount AS amount
+                FROM fin_orders o, clock WHERE o.business_id = $1 AND o.status IN ('completed', 'refunded')
+              UNION ALL
+              SELECT (t.created_at AT TIME ZONE clock.tz)::date,
+                     CASE WHEN t.type = 'charge' THEN t.amount ELSE -ABS(t.amount) END
+                FROM pay_transactions t, clock
+               WHERE t.business_id = $1 AND t.status = 'completed' AND t.payment_method <> 'account_credit'
+                 AND ((t.type = 'charge' AND t.order_id IS NULL) OR t.type = 'refund'))
+       SELECT
+         (SELECT COALESCE(SUM(amount), 0)::int FROM money, clock WHERE day >= clock.year_start) AS revenue_ytd,
+         (SELECT COALESCE(SUM(amount), 0)::int FROM money, clock WHERE day >= clock.month_start) AS revenue_mtd,
+         (SELECT COUNT(*)::int FROM apt_bookings b, clock WHERE b.business_id = $1 AND b.status <> 'cancelled'
+             AND (b.start_time AT TIME ZONE clock.tz)::date = clock.today) AS todays_bookings,
+         (SELECT COUNT(*)::int FROM apt_bookings b, clock WHERE b.business_id = $1 AND b.status <> 'cancelled'
+             AND (b.start_time AT TIME ZONE clock.tz)::date >= clock.week_start
+             AND (b.start_time AT TIME ZONE clock.tz)::date < clock.week_start + 7) AS week_bookings,
+         (SELECT COUNT(*)::int FROM cus_customers c WHERE c.business_id = $1 AND c.status = 'active') AS active_customers,
+         (SELECT COUNT(*)::int FROM cus_customers c, clock WHERE c.business_id = $1 AND c.status = 'active'
+             AND (c.created_at AT TIME ZONE clock.tz)::date >= clock.month_start) AS new_customers_month`,
       [businessId],
     );
-
-    // This week's bookings
-    const { rows: weekRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM apt_bookings WHERE business_id = $1 AND start_time >= date_trunc('week', NOW()) AND start_time < date_trunc('week', NOW()) + INTERVAL '7 days'`,
-      [businessId],
-    );
-
-    // Active customers (from customers table, scoped to business — all non-archived)
-    const { rows: custRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM cus_customers WHERE business_id = $1 AND status != 'archived' AND status != 'anonymized'`,
-      [businessId],
-    );
-
-    // New customers this month
-    const { rows: newCustRows } = await adminPool.query(
-      `SELECT COUNT(*) as count FROM cus_customers WHERE business_id = $1 AND status != 'archived' AND status != 'anonymized' AND created_at >= date_trunc('month', NOW())`,
-      [businessId],
-    );
-
-    // Revenue MTD/YTD - placeholder until payment ledger exists
-    success(res, {
-      revenue_ytd: 0,
-      revenue_mtd: 0,
-      todays_bookings: parseInt(todayRows[0].count),
-      week_bookings: parseInt(weekRows[0].count),
-      active_customers: parseInt(custRows[0].count),
-      new_customers_month: parseInt(newCustRows[0].count),
-    });
+    success(res, rows[0]);
   } catch (err: any) {
     console.error('Failed to get business KPIs', err?.message || err);
     error(res, 'Failed to get business KPIs', 'INTERNAL_ERROR', 500);

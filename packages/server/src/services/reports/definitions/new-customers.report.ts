@@ -1,3 +1,4 @@
+import { reportDb } from '../lib/report-db';
 import { adminPool } from '../../../db/pool';
 import { ReportDefinition } from '../types';
 
@@ -21,7 +22,7 @@ export const newCustomersReport: ReportDefinition = {
     { key: 'country', header: 'Country', type: 'text', filterable: true, groupable: true },
   ],
   run: async (ctx) => {
-    const { rows } = await adminPool.query(
+    const { rows } = await reportDb.query(
       `SELECT c.created_at::date AS joined,
               c.id AS customer_id,
               TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, ''))

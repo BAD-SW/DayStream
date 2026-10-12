@@ -38,7 +38,7 @@ export async function createScheduledReport(tenantId: string, input: {
       JSON.stringify(input.recipients),
       input.format || 'pdf',
       input.created_by || null,
-      input.next_run_at || null,
+      input.next_run_at || firstRunAfterNow(input.schedule_type),
     ],
   );
   return rows[0];
@@ -80,6 +80,15 @@ export async function deleteScheduledReport(id: string, tenantId: string) {
     [id, tenantId],
   );
   return (rowCount ?? 0) > 0;
+}
+
+/** The first run of a new schedule: 06:00 (UTC) on the next day, week or month. */
+function firstRunAfterNow(scheduleType: string | undefined): string {
+  const next = new Date();
+  if (scheduleType === 'monthly') next.setUTCMonth(next.getUTCMonth() + 1, 1);
+  else next.setUTCDate(next.getUTCDate() + (scheduleType === 'weekly' ? 7 : 1));
+  next.setUTCHours(6, 0, 0, 0);
+  return next.toISOString();
 }
 
 /**

@@ -1,3 +1,4 @@
+import { reportDb } from '../lib/report-db';
 import { adminPool } from '../../../db/pool';
 import { ReportDefinition, ReportSectionDef, ReportContext } from '../types';
 
@@ -68,7 +69,7 @@ function compLines(r: PayrollRow): CompLine[] {
 }
 
 async function fetchEntries(ctx: ReportContext): Promise<PayrollRow[]> {
-  const { rows } = await adminPool.query(
+  const { rows } = await reportDb.query(
     `SELECT pp.period_start,
             pp.period_end,
             pe.status,

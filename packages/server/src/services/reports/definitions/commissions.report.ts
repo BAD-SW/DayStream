@@ -1,3 +1,4 @@
+import { reportDb } from '../lib/report-db';
 import { adminPool } from '../../../db/pool';
 import { ReportDefinition } from '../types';
 import { computeOrderCommissionLines } from '../../commission.service';
@@ -51,7 +52,7 @@ export const commissionsReport: ReportDefinition = {
 
     // Finalized pay periods for the business — an order completed within one has
     // had its commission posted to payroll; otherwise it's still projected.
-    const { rows: periods } = await adminPool.query(
+    const { rows: periods } = await reportDb.query(
       `SELECT period_start, period_end
          FROM fin_pay_periods
         WHERE business_id = $1 AND status = 'finalized'`,
@@ -78,7 +79,7 @@ export const commissionsReport: ReportDefinition = {
 
     const staffById = new Map<string, string>();
     if (staffIds.length > 0) {
-      const { rows } = await adminPool.query(
+      const { rows } = await reportDb.query(
         `SELECT id, TRIM(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')) AS name
            FROM usr_users WHERE id = ANY($1)`,
         [staffIds],
@@ -87,7 +88,7 @@ export const commissionsReport: ReportDefinition = {
     }
     const customerById = new Map<string, string>();
     if (customerIds.length > 0) {
-      const { rows } = await adminPool.query(
+      const { rows } = await reportDb.query(
         `SELECT id, TRIM(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')) AS name
            FROM cus_customers WHERE id = ANY($1)`,
         [customerIds],
