@@ -37,7 +37,17 @@ export async function getStatementLines(statementId: string) {
 /**
  * Match a statement line to a journal entry.
  */
-export async function matchLine(lineId: string, journalEntryId: string): Promise<boolean> {
+export async function matchLine(lineId: string, journalEntryId: string, businessId?: string): Promise<boolean | 'entry_not_found' | 'entry_taken'> {
+  // The entry must be one of this business's, and one entry explains one statement line.
+  if (!/^[0-9a-f-]{36}$/i.test(journalEntryId || '')) return 'entry_not_found';
+  const { rows: entry } = await adminPool.query(
+    'SELECT 1 FROM fin_journal_entries WHERE id = $1 AND ($2::uuid IS NULL OR business_id = $2)', [journalEntryId, businessId || null],
+  );
+  if (entry.length === 0) return 'entry_not_found';
+  const { rows: taken } = await adminPool.query(
+    'SELECT 1 FROM fin_bank_statement_lines WHERE matched_entry_id = $1 AND id <> $2 LIMIT 1', [journalEntryId, lineId],
+  );
+  if (taken.length > 0) return 'entry_taken';
   const { rowCount } = await adminPool.query(
     "UPDATE fin_bank_statement_lines SET reconciliation_status = 'matched', matched_entry_id = $2, reconciled_at = NOW() WHERE id = $1",
     [lineId, journalEntryId],

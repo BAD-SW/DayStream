@@ -5,6 +5,7 @@ import {
 } from './customer-payment.service';
 import { advanceEnrollmentPeriod } from './membership-renewal.service';
 import { getRetrySchedule } from './dunning-schedule';
+import { postPaymentJournalEntry } from './payment-journal.service';
 import { logAudit } from './audit.service';
 import { queueNotification } from './booking-notifications.service';
 import type { MethodOwner } from './payment-methods.service';
@@ -171,6 +172,8 @@ async function processOne(
       processedBy: null, isProcessed: true, providerReference: charge.providerReference ?? null,
       paymentMethodId: attempt.payment_method_id,
     });
+    // A recovered renewal is money received like any other renewal: it goes to the ledger.
+    if (status === 'completed') await postPaymentJournalEntry(txn);
     await closeAttempt(attempt.id, 'settled', txn.id, null);
     await advanceEnrollmentPeriod({
       enrollmentId: attempt.enrollment_id, currentPlanId: attempt.plan_id, effectivePlanId,

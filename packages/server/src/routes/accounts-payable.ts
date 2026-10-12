@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
-import { tenantContext } from '../auth/tenant-context';
+import { tenantContext, recordScopeIn } from '../auth/tenant-context';
 import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
@@ -10,6 +10,11 @@ import * as billsService from '../services/bills.service';
 import * as expensesService from '../services/expenses.service';
 
 export const apRouter = Router();
+
+// A bank statement and its lines are addressed by id alone: they must belong to a business the
+// caller can reach.
+apRouter.param('statementId', recordScopeIn(['fin_bank_statements'], 'Statement'));
+apRouter.param('lineId', recordScopeIn(['SELECT s.business_id FROM fin_bank_statement_lines l JOIN fin_bank_statements s ON s.id = l.statement_id WHERE l.id = $1'], 'Statement line'));
 
 apRouter.use(authenticate);
 apRouter.use(tenantContext);
@@ -144,7 +149,9 @@ apRouter.put('/bills/:id/pay', requirePermission('settings:*'), validate(recordP
     });
     if (!bill) { error(res, 'Bill not found', 'NOT_FOUND', 404); return; }
     success(res, bill);
-  } catch (err: any) { console.error('Failed to record payment', err?.message || err); error(res, 'Failed to record payment', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) {
+    if (String(err?.code || '').startsWith('BILL_')) { error(res, err.message, err.code, 409); return; }
+    console.error('Failed to record payment', err?.message || err); error(res, 'Failed to record payment', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -459,7 +466,9 @@ apRouter.put('/reconciliation/:lineId/match', requirePermission('settings:*'), a
   try {
     const { journal_entry_id } = req.body;
     if (!journal_entry_id) { error(res, 'journal_entry_id required', 'VALIDATION_ERROR', 400); return; }
-    const matched = await reconService.matchLine(req.params.lineId, journal_entry_id);
+    const matched = await reconService.matchLine(req.params.lineId, journal_entry_id, (req as any).recordBusinessId);
+    if (matched === 'entry_not_found') { error(res, 'Journal entry not found', 'NOT_FOUND', 404); return; }
+    if (matched === 'entry_taken') { error(res, 'This journal entry is already matched to another statement line', 'ALREADY_MATCHED', 409); return; }
     if (!matched) { error(res, 'Line not found', 'NOT_FOUND', 404); return; }
     success(res, { matched: true });
   } catch (err: any) { console.error('Failed to match', err?.message || err); error(res, 'Failed to match', 'INTERNAL_ERROR', 500); }

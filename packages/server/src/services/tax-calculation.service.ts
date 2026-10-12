@@ -47,7 +47,8 @@ export async function calculateTaxes(
   const { rows: jurisdictions } = await adminPool.query(
     `SELECT id FROM pay_tax_jurisdictions
      WHERE country_code = $1 AND (state_code = $2 OR (state_code IS NULL AND $2 IS NULL))
-       AND jurisdiction_type = 'federal' AND tax_year = $3 AND active = true`,
+       AND jurisdiction_type = 'federal' AND tax_year <= $3 AND active = true
+     ORDER BY tax_year DESC LIMIT 1`,
     [profile.country_code, profile.state_code || null, taxYear],
   );
 
@@ -56,7 +57,8 @@ export async function calculateTaxes(
     const { rows: fedOnly } = await adminPool.query(
       `SELECT id FROM pay_tax_jurisdictions
        WHERE country_code = $1 AND state_code IS NULL
-         AND jurisdiction_type = 'federal' AND tax_year = $2 AND active = true`,
+         AND jurisdiction_type = 'federal' AND tax_year <= $2 AND active = true
+       ORDER BY tax_year DESC LIMIT 1`,
       [profile.country_code, taxYear],
     );
     if (fedOnly.length === 0) {

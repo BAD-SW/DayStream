@@ -19,7 +19,7 @@ export async function getProfitAndLoss(filters: ReportFilters) {
      JOIN fin_chart_of_accounts coa ON coa.id = jel.account_id
      JOIN fin_journal_entries je ON je.id = jel.journal_entry_id
      WHERE je.business_id = $1 AND je.entry_date >= $2 AND je.entry_date <= $3
-       AND coa.account_type = 'revenue' AND je.is_void = false
+       AND coa.account_type = 'revenue'
      GROUP BY coa.name ORDER BY amount DESC`,
     [businessId, dateFrom, dateTo],
   );
@@ -31,7 +31,7 @@ export async function getProfitAndLoss(filters: ReportFilters) {
      JOIN fin_chart_of_accounts coa ON coa.id = jel.account_id
      JOIN fin_journal_entries je ON je.id = jel.journal_entry_id
      WHERE je.business_id = $1 AND je.entry_date >= $2 AND je.entry_date <= $3
-       AND coa.account_type = 'expense' AND je.is_void = false
+       AND coa.account_type = 'expense'
      GROUP BY coa.name ORDER BY amount DESC`,
     [businessId, dateFrom, dateTo],
   );
@@ -63,7 +63,7 @@ export async function getStaffCosts(filters: ReportFilters) {
      FROM fin_payroll_entries pe
      JOIN fin_pay_periods pp ON pp.id = pe.pay_period_id
      JOIN usr_users u ON u.id = pe.user_id
-     WHERE pp.business_id = $1 AND pp.period_start >= $2 AND pp.period_end <= $3
+     WHERE pp.business_id = $1 AND pp.period_start <= $3 AND pp.period_end >= $2
      GROUP BY pe.user_id, u.first_name, u.last_name
      ORDER BY total_gross DESC`,
     [businessId, dateFrom, dateTo],

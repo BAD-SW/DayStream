@@ -200,7 +200,7 @@ payrollRouter.post('/periods/:id/run', requirePermission('staff:*'), async (req:
     success(res, result);
   } catch (err: any) {
     if (err.message.includes('not found') || err.message.includes('not open')) { error(res, err.message, 'VALIDATION_ERROR', 400); }
-    else { error(res, 'Failed to run payroll', 'INTERNAL_ERROR', 500); }
+    else { console.error('Failed to run payroll', err?.message || err); error(res, 'Failed to run payroll', 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -369,6 +369,17 @@ payrollRouter.put('/tax-profiles/:userId', requirePermission('staff:*'), async (
   try {
     const businessId = req.body.business_id;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { country_code: cc, allowances: al, additional_withholding: aw } = req.body;
+    if (!/^[A-Za-z]{2}$/.test(cc || '')) { error(res, 'country_code must be a two-letter country code', 'VALIDATION_ERROR', 400); return; }
+    if ((al !== undefined && al !== null && (!Number.isInteger(al) || al < 0)) || (aw !== undefined && aw !== null && (!Number.isInteger(aw) || aw < 0))) {
+      error(res, 'allowances and additional_withholding must be whole numbers, zero or more', 'VALIDATION_ERROR', 400); return;
+    }
+    const { rows: member } = await adminPool.query(
+      `SELECT 1 FROM usr_users u WHERE u.id = $1 AND (u.business_id = $2 OR EXISTS (SELECT 1 FROM stf_profiles p WHERE p.user_id = u.id))
+          AND u.tenant_id = (SELECT tenant_id FROM sys_businesses WHERE id = $2)`,
+      [/^[0-9a-f-]{36}$/i.test(req.params.userId) ? req.params.userId : null, businessId],
+    );
+    if (member.length === 0) { error(res, 'Staff member not found', 'NOT_FOUND', 404); return; }
     const profile = await upsertEmployeeTaxProfile(businessId, req.params.userId, {
       country_code: req.body.country_code,
       state_code: req.body.state_code,
@@ -405,6 +416,16 @@ payrollRouter.put('/settings', requirePermission('settings:*'), async (req: Requ
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     const { pay_frequency, pay_period_start_date } = req.body;
+    if (pay_frequency && !['weekly', 'biweekly', 'semi_monthly', 'monthly'].includes(pay_frequency)) {
+      error(res, 'pay_frequency must be weekly, biweekly, semi_monthly or monthly', 'VALIDATION_ERROR', 400); return;
+    }
+    // Periods that were generated ahead but never run follow the new setting: they are
+    // generated again. Periods with payroll lines, and finalized ones, are left as they are.
+    await adminPool.query(
+      `DELETE FROM fin_pay_periods p WHERE p.business_id = $1 AND p.status = 'open'
+          AND NOT EXISTS (SELECT 1 FROM fin_payroll_entries e WHERE e.pay_period_id = p.id)`,
+      [businessId],
+    );
     await adminPool.query(
       'UPDATE sys_businesses SET pay_frequency = $1, pay_period_start_date = $2 WHERE id = $3',
       [pay_frequency || 'monthly', pay_period_start_date || null, businessId],

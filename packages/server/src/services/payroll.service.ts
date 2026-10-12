@@ -48,12 +48,17 @@ export async function getPayPeriods(businessId: string) {
 export async function runPayroll(periodId: string, businessId: string, tenantId: string): Promise<{ entries: any[]; totals: any }> {
   // Load period
   const { rows: periodRows } = await adminPool.query(
-    "SELECT * FROM fin_pay_periods WHERE id = $1 AND business_id = $2 AND status = 'open'",
+    "SELECT * FROM fin_pay_periods WHERE id = $1 AND business_id = $2 AND status IN ('open', 'processing')",
     [periodId, businessId],
   );
   if (periodRows.length === 0) throw new Error('Pay period not found or not open');
 
   const period = periodRows[0];
+
+  // A period can be run again until it is finalized (hours corrected, a rule changed, or an
+  // earlier run that failed half-way): the lines are calculated afresh, never added twice.
+  // It used to be runnable once only, so a failed run left the period stuck.
+  await adminPool.query("DELETE FROM fin_payroll_entries WHERE pay_period_id = $1 AND status <> 'finalized'", [periodId]);
 
   // Update status
   await adminPool.query("UPDATE fin_pay_periods SET status = 'processing' WHERE id = $1", [periodId]);
@@ -170,10 +175,9 @@ export async function runPayroll(periodId: string, businessId: string, tenantId:
     if (taxProfile && grossPay > 0) {
       // Get business pay frequency (default monthly)
       const { rows: bizRows } = await adminPool.query(
-        'SELECT config_data FROM sys_business_configurations WHERE business_id = $1 AND key = $2',
-        [businessId, 'payroll.frequency'],
+        'SELECT pay_frequency FROM sys_businesses WHERE id = $1', [businessId],
       );
-      const payFrequency = bizRows[0]?.config_data || 'monthly';
+      const payFrequency = bizRows[0]?.pay_frequency || 'monthly';
 
       // Get YTD gross for wage base calculations
       const { rows: ytdRows } = await adminPool.query(
@@ -257,6 +261,44 @@ export async function finalizePayroll(periodId: string, businessId: string, user
     "UPDATE fin_pay_periods SET status = 'finalized', finalized_at = NOW(), finalized_by = $2 WHERE id = $1",
     [periodId, userId],
   );
+
+  try {
+    const { rows: tot } = await adminPool.query(
+      'SELECT COALESCE(SUM(gross_pay), 0)::int AS gross FROM fin_payroll_entries WHERE pay_period_id = $1', [periodId],
+    );
+    const gross = tot[0].gross;
+    const { rows: posted } = await adminPool.query(
+      `SELECT 1 FROM fin_journal_entries WHERE reference_type = 'payroll' AND reference_id = $1 AND is_void = false LIMIT 1`, [periodId],
+    );
+    if (gross > 0 && posted.length === 0) {
+      // The standard chart has Payroll Payable (2200) but no wages account: add it once.
+      await adminPool.query(
+        `INSERT INTO fin_chart_of_accounts (business_id, code, name, account_type, is_system)
+         VALUES ($1, '6050', 'Wages & Salaries', 'expense', true) ON CONFLICT (business_id, code) DO NOTHING`,
+        [businessId],
+      );
+      const { rows: acc } = await adminPool.query(
+        `SELECT code, id FROM fin_chart_of_accounts WHERE business_id = $1 AND code IN ('6050', '2200')`, [businessId],
+      );
+      const wages = acc.find((a: any) => a.code === '6050')?.id;
+      const payable = acc.find((a: any) => a.code === '2200')?.id;
+      if (wages && payable) {
+        const period = rows[0];
+        const { rows: entry } = await adminPool.query(
+          `INSERT INTO fin_journal_entries (business_id, entry_date, description, reference_type, reference_id, created_by)
+           VALUES ($1, $2, $3, 'payroll', $4, $5) RETURNING id`,
+          [businessId, period.period_end, `Payroll ${String(period.period_start).slice(0, 10)} to ${String(period.period_end).slice(0, 10)}`, periodId, userId],
+        );
+        await adminPool.query(
+          `INSERT INTO fin_journal_entry_lines (journal_entry_id, account_id, debit, credit, description)
+           VALUES ($1, $2, $3, 0, 'Gross pay'), ($1, $4, 0, $3, 'Net pay, withholding and deductions owed')`,
+          [entry[0].id, wages, gross, payable],
+        );
+      }
+    }
+  } catch (err: any) {
+    console.error('[Payroll] Ledger entry not posted:', err?.message || err);
+  }
 
   await logAudit({ tenantId, userId, action: 'payroll.finalized', resourceType: 'pay_period', resourceId: periodId });
 

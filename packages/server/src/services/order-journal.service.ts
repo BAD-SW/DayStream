@@ -91,7 +91,7 @@ export async function generateJournalEntries(orderId: string, businessId: string
     const grossAmount = item.unit_price * item.quantity;
     const discount = item.discount_amount > 0 ? item.discount_amount : 0;
     const surcharge = item.discount_amount < 0 ? Math.abs(item.discount_amount) : 0;
-    const netRevenue = grossAmount - discount + surcharge;
+    const netRevenue = discountsAccountId ? grossAmount + surcharge : grossAmount - discount + surcharge;
     const revenueCode = REVENUE_ACCOUNT_CODES[item.item_type] || '4100';
 
     if (DEFERRED_ITEM_TYPES.includes(item.item_type)) {
