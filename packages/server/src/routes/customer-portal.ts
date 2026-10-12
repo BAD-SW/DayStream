@@ -8,6 +8,7 @@ import { adminPool } from '../db/pool';
 import { logAudit } from '../services/audit.service';
 import * as importService from '../services/customer-import.service';
 import * as activityService from '../services/customer-activity.service';
+import * as consentService from '../services/consent.service';
 
 export const customerPortalRouter = Router();
 
@@ -217,12 +218,8 @@ customerPortalRouter.get('/preferences', async (req: Request, res: Response) => 
     const customer = await resolveCustomer(req);
     if (!customer) { error(res, 'Customer profile not found', 'NOT_FOUND', 404); return; }
 
-    const { rows } = await adminPool.query(
-      'SELECT email_marketing, sms_marketing, push_notifications, booking_reminders, updated_at FROM cus_preferences WHERE customer_id = $1',
-      [customer.id],
-    );
-
-    success(res, rows[0] || { email_marketing: false, sms_marketing: false, push_notifications: false, booking_reminders: true });
+    const { customer_id: _omit, ...prefs } = await consentService.getLegacyPreferences(customer.id);
+    success(res, prefs);
   } catch (err: any) {
     error(res, 'Failed to get preferences', 'INTERNAL_ERROR', 500);
   }
@@ -235,25 +232,10 @@ customerPortalRouter.put('/preferences', validate(updatePreferencesSchema), asyn
     const customer = await resolveCustomer(req);
     if (!customer) { error(res, 'Customer profile not found', 'NOT_FOUND', 404); return; }
 
-    const fields: string[] = [];
-    const values: any[] = [];
-    let idx = 1;
-
-    for (const [key, value] of Object.entries(req.body)) {
-      if (['email_marketing', 'sms_marketing', 'push_notifications', 'booking_reminders'].includes(key)) {
-        fields.push(`${key} = $${idx++}`);
-        values.push(value);
-      }
-    }
-
-    fields.push('updated_at = NOW()');
-    values.push(customer.id);
-
-    await adminPool.query(
-      `INSERT INTO cus_preferences (customer_id) VALUES ($${idx})
-       ON CONFLICT (customer_id) DO UPDATE SET ${fields.join(', ')}`,
-      values,
-    );
+    // The person changing their own settings in the portal is itself the proof of consent.
+    const updated = await consentService.setLegacyPreferences(customer.id, req.body, {
+      method: 'portal', actorUserId: authReq.user.sub, ipAddress: req.ip,
+    });
 
     await logAudit({
       tenantId: authReq.tenantId,
@@ -264,12 +246,8 @@ customerPortalRouter.put('/preferences', validate(updatePreferencesSchema), asyn
       details: { ...req.body, source: 'customer_portal' },
     });
 
-    const { rows } = await adminPool.query(
-      'SELECT email_marketing, sms_marketing, push_notifications, booking_reminders, updated_at FROM cus_preferences WHERE customer_id = $1',
-      [customer.id],
-    );
-
-    success(res, rows[0]);
+    const { customer_id: _omit, ...prefs } = updated;
+    success(res, prefs);
   } catch (err: any) {
     error(res, 'Failed to update preferences', 'INTERNAL_ERROR', 500);
   }

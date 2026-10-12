@@ -1,6 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import { app } from '../src/app';
 import http from 'http';
+import { adminPool } from '../src/db/pool';
+import { deletePeopleByEmail } from './helpers/test-business';
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001';
 const TEST_EMAIL = `authtest_${Date.now()}@transcend.test`;
@@ -42,6 +44,12 @@ function request(method: string, path: string, body?: any): Promise<{ statusCode
 }
 
 describe('Auth API', () => {
+  // Registration creates a login and a person in the seeded business: leave neither behind.
+  afterAll(async () => {
+    await deletePeopleByEmail(TEST_EMAIL);
+    await adminPool.query('DELETE FROM usr_users WHERE email = $1', [TEST_EMAIL]).catch(() => {});
+  });
+
   describe('POST /api/v1/auth/register', () => {
     it('registers a new user', async () => {
       const { statusCode, body } = await request('POST', '/api/v1/auth/register', {

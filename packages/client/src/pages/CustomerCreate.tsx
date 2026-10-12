@@ -22,7 +22,10 @@ export function CustomerCreate() {
     date_of_birth: '',
     gender: '',
     preferred_language: 'en',
+    source: 'manual',
   });
+  // When the person already exists we offer to open them instead of showing a bare error.
+  const [existing, setExisting] = useState<{ id: string; name?: string } | null>(null);
   const [countryIso2, setCountryIso2] = useState('');
   const [phoneCountryIso2, setPhoneCountryIso2] = useState('US');
 
@@ -58,6 +61,12 @@ export function CustomerCreate() {
     }
 
     setPhoneError('');
+    setExisting(null);
+    // A person needs at least one way to be reached; either is enough.
+    if (!form.email.trim() && !form.phone.trim()) {
+      setError('Enter an email address or a phone number.');
+      return;
+    }
     if (form.phone.trim() && !isValidPhoneNumber(form.phone.trim(), phoneCountryIso2 as any)) {
       const countryName = iso2ToCountry(phoneCountryIso2)?.name || phoneCountryIso2;
       const dialCode = iso2ToCountry(phoneCountryIso2)?.dialCode || '';
@@ -72,9 +81,10 @@ export function CustomerCreate() {
       const dialCode = iso2ToCountry(phoneCountryIso2)?.dialCode || '';
       const customer = await customersApi.createCustomer({
         business_id: businessId,
-        email: form.email,
+        email: form.email.trim() || undefined,
         first_name: form.first_name,
-        last_name: form.last_name,
+        last_name: form.last_name.trim() || undefined,
+        source: form.source,
         phone: form.phone.trim() ? `${dialCode} ${form.phone.trim()}` : undefined,
         date_of_birth: form.date_of_birth || undefined,
         gender: form.gender || undefined,
@@ -83,8 +93,9 @@ export function CustomerCreate() {
       });
       navigate(`/customers/${customer.id}`);
     } catch (err: any) {
-      const msg = err.response?.data?.error || 'Failed to create customer';
-      setError(msg);
+      const data = err.response?.data;
+      if (data?.details?.existing_id) setExisting({ id: data.details.existing_id, name: data.details.existing_name });
+      setError(data?.error || 'Failed to add this person');
     } finally {
       setLoading(false);
     }
@@ -92,20 +103,27 @@ export function CustomerCreate() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/customers')}>← Back to Customers</button>
-      <h1 style={styles.title}>Add Customer</h1>
+      <button style={styles.back} onClick={() => navigate('/customers')}>← Back to People</button>
+      <h1 style={styles.title}>Add Person</h1>
 
       {error && <Alert variant="error">{error}</Alert>}
+      {existing && (
+        <div style={styles.existing}>
+          <span>This person already exists{existing.name ? `: ${existing.name}` : ''}.</span>
+          <Button type="button" size="sm" onClick={() => navigate(`/customers/${existing.id}`)}>Open their profile</Button>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} style={styles.form}>
         <section style={styles.section}>
           <h2 style={styles.sectionTitle}>Basic Info</h2>
           <div style={styles.row}>
             <Field label="First Name *" value={form.first_name} onChange={(v) => handleChange('first_name', v)} required />
-            <Field label="Last Name *" value={form.last_name} onChange={(v) => handleChange('last_name', v)} required />
+            <Field label="Last Name" value={form.last_name} onChange={(v) => handleChange('last_name', v)} />
           </div>
 
-          <Field label="Email *" type="email" value={form.email} onChange={(v) => handleChange('email', v)} required />
+          <p style={styles.hintText}>Enter an email, a phone number, or both. One is enough to save the person.</p>
+          <Field label="Email" type="email" value={form.email} onChange={(v) => handleChange('email', v)} />
 
           <div style={styles.fieldWrapper}>
             <label style={styles.label}>Phone</label>
@@ -153,12 +171,23 @@ export function CustomerCreate() {
               <CountrySelect value={countryIso2} onChange={handleCountryChange} mode="name" />
             </div>
           </div>
+
+          <div style={styles.row}>
+            <div style={styles.fieldWrapper}>
+              <label style={styles.label} htmlFor="person-source">How did they come to us?</label>
+              <select id="person-source" value={form.source} onChange={(e) => handleChange('source', e.target.value)} style={styles.input}>
+                <option value="manual">Added by staff</option>
+                <option value="walk_in">Walk-in</option>
+                <option value="referral">Referral</option>
+              </select>
+            </div>
+          </div>
         </section>
 
         <div style={styles.actions}>
           <Button type="button" onClick={() => navigate('/customers')}>Cancel</Button>
           <Button type="submit" disabled={loading}>
-            {loading ? 'Creating...' : 'Create Customer'}
+            {loading ? 'Saving...' : 'Add Person'}
           </Button>
         </div>
       </form>
@@ -200,5 +229,12 @@ const styles: Record<string, React.CSSProperties> = {
   inputError: { borderColor: 'var(--color-error)', background: 'var(--color-error-bg)' },
   phoneRow: { display: 'flex', gap: '8px' },
   errMsg: { fontSize: 'var(--font-size-xs)', color: 'var(--color-error)' },
+  hintText: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 },
+  existing: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-md)',
+    padding: 'var(--space-sm) var(--space-md)', marginBottom: 'var(--space-md)',
+    border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)',
+    color: 'var(--color-text)', fontSize: 'var(--font-size-sm)',
+  },
   actions: { display: 'flex', gap: 'var(--space-md)', justifyContent: 'flex-end' },
 };

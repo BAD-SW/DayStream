@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { findOrCreatePerson } from './person-identity.service';
 import { logAudit } from './audit.service';
 
 /**
@@ -93,41 +94,35 @@ export async function submitForm(funnelId: string, formData: Record<string, any>
 
   const tenantId = funnel.tenant_id;
 
-  // Create or find the customer
+  // Find or create the person (Phase 46). Funnels still belong to a tenant, not a business
+  // (the Marketing module rework moves them), so the lead goes to the funnel's own business when
+  // it has one, otherwise to the tenant's first business.
   const email = formData.email;
   const firstName = formData.firstName || formData.first_name || null;
   const lastName = formData.lastName || formData.last_name || null;
   const phone = formData.phone || null;
 
-  let customerId: string;
-
-  if (email) {
-    // Try to find existing customer by email
-    const { rows: existing } = await adminPool.query(
-      `SELECT id FROM cus_customers WHERE tenant_id = $1 AND email = $2 LIMIT 1`,
-      [tenantId, email],
+  let businessId: string | null = funnel.business_id || null;
+  if (!businessId) {
+    const { rows: biz } = await adminPool.query(
+      `SELECT id FROM sys_businesses WHERE tenant_id = $1 AND status = 'active' ORDER BY created_at LIMIT 1`,
+      [tenantId],
     );
-
-    if (existing.length > 0) {
-      customerId = existing[0].id;
-    } else {
-      // Create new customer
-      const { rows: newCustomer } = await adminPool.query(
-        `INSERT INTO cus_customers (tenant_id, email, first_name, last_name, phone, source, status)
-         VALUES ($1, $2, $3, $4, $5, 'funnel', 'active') RETURNING id`,
-        [tenantId, email, firstName, lastName, phone],
-      );
-      customerId = newCustomer[0].id;
-    }
-  } else {
-    // Create anonymous lead
-    const { rows: newCustomer } = await adminPool.query(
-      `INSERT INTO cus_customers (tenant_id, first_name, last_name, phone, source, status)
-       VALUES ($1, $2, $3, $4, 'funnel', 'active') RETURNING id`,
-      [tenantId, firstName, lastName, phone],
-    );
-    customerId = newCustomer[0].id;
+    businessId = biz[0]?.id || null;
   }
+  if (!businessId) throw new Error('This form is not attached to a business');
+
+  const { person } = await findOrCreatePerson({
+    businessId,
+    tenantId,
+    email,
+    phone,
+    firstName,
+    lastName,
+    source: 'lead_form',
+    sourceDetail: funnel.name,
+  });
+  const customerId: string = person.id;
 
   // Increment submissions
   await adminPool.query(

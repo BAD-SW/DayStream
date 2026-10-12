@@ -9,6 +9,8 @@ import { adminPool } from '../db/pool';
 import * as customerService from '../services/customer.service';
 import * as lifecycleService from '../services/customer-lifecycle.service';
 import { logAudit } from '../services/audit.service';
+import * as consentService from '../services/consent.service';
+import * as identityService from '../services/person-identity.service';
 
 export const customersRouter = Router();
 
@@ -18,22 +20,28 @@ customersRouter.use(tenantContext);
 
 // --- Validation schemas ---
 
+// A person needs a first name and at least one way to reach them (email or phone). Surname and
+// email are optional: a front desk can save someone who only gave a phone number (Phase 46 R2).
 const createCustomerSchema = Joi.object({
-  email: Joi.string().email({ tlds: false }).required(),
+  email: Joi.string().email({ tlds: false }).allow('', null),
   first_name: Joi.string().min(1).max(100).required(),
-  last_name: Joi.string().min(1).max(100).required(),
+  last_name: Joi.string().max(100).allow('', null),
   phone: Joi.string().max(50).allow('', null),
   date_of_birth: Joi.string().isoDate().allow(null),
   gender: Joi.string().max(20).allow('', null),
   preferred_language: Joi.string().max(5).default('en'),
   country: Joi.string().max(100).allow('', null),
+  source: Joi.string().valid('manual', 'walk_in', 'referral').default('manual'),
+  source_detail: Joi.string().max(200).allow('', null),
   business_id: Joi.string().uuid().required(),
 });
 
 const updateCustomerSchema = Joi.object({
-  email: Joi.string().email({ tlds: false }),
+  email: Joi.string().email({ tlds: false }).allow('', null),
   first_name: Joi.string().min(1).max(100),
-  last_name: Joi.string().min(1).max(100),
+  last_name: Joi.string().max(100).allow(''),
+  owner_user_id: Joi.string().uuid().allow('', null),
+  source_detail: Joi.string().max(200).allow('', null),
   phone: Joi.string().max(50).allow('', null),
   date_of_birth: Joi.string().isoDate().allow(null, ''),
   gender: Joi.string().max(20).allow('', null),
@@ -50,6 +58,10 @@ const updateCustomerSchema = Joi.object({
 customersRouter.post('/', requirePermission('customers:*'), validate(createCustomerSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
+    if (!(req.body.email || '').trim() && !(req.body.phone || '').trim()) {
+      error(res, 'An email address or a phone number is required', 'CONTACT_POINT_REQUIRED', 400);
+      return;
+    }
     const result = await customerService.createCustomer({
       businessId: req.body.business_id,
       tenantId: authReq.tenantId,
@@ -61,20 +73,27 @@ customersRouter.post('/', requirePermission('customers:*'), validate(createCusto
       gender: req.body.gender,
       preferredLanguage: req.body.preferred_language,
       country: req.body.country,
+      source: req.body.source,
+      sourceDetail: req.body.source_detail,
       createdBy: authReq.user.sub,
     });
 
     if (result.duplicate) {
+      // The person already exists: hand back who it is so the screen can open them.
+      const byPhone = result.matchedBy === 'phone';
       res.status(409).json({
-        error: 'A customer with this email already exists in this business',
-        code: 'DUPLICATE_EMAIL',
-        details: { existing_id: result.existingId },
+        error: byPhone
+          ? 'This phone number already belongs to a person in this business'
+          : 'A customer with this email already exists in this business',
+        code: byPhone ? 'DUPLICATE_PHONE' : 'DUPLICATE_EMAIL',
+        details: { existing_id: result.existingId, existing_name: result.customer?.display_name, matched_by: result.matchedBy },
       });
       return;
     }
 
     success(res, result.customer, undefined, 201);
   } catch (err: any) {
+    if (err?.code === 'CONTACT_POINT_REQUIRED') { error(res, err.message, err.code, 400); return; }
     console.error('[customers] Create customer failed:', err.message, err.stack);
     error(res, 'Failed to create customer', 'INTERNAL_ERROR', 500);
   }
@@ -103,6 +122,7 @@ customersRouter.get('/', requirePermission('customers:read'), async (req: Reques
       phone: req.query.phone as string,
       created_from: req.query.created_from as string,
       created_to: req.query.created_to as string,
+      ...peopleFilters(req),
     });
 
     success(res, result.customers, {
@@ -113,6 +133,104 @@ customersRouter.get('/', requirePermission('customers:read'), async (req: Reques
     });
   } catch (err: any) {
     error(res, 'Failed to list customers', 'INTERNAL_ERROR', 500);
+  }
+});
+
+/** The Phase 46 list filters, read once so the list, the counts and bulk actions agree. */
+function peopleFilters(req: Request) {
+  const q = req.query;
+  const owner = q.owner as string | undefined;
+  return {
+    view: q.view as string | undefined,
+    source: q.source as string | undefined,
+    owner: owner === 'me' ? (req as AuthenticatedRequest).user.sub : owner,
+    incomplete: q.incomplete === 'true',
+    segment_id: q.segment_id as string | undefined,
+    include_archived: q.include_archived === 'true',
+    last_activity_from: q.last_activity_from as string | undefined,
+    last_activity_to: q.last_activity_to as string | undefined,
+  };
+}
+
+// GET /api/v1/customers/view-counts — People in each system view (must be before /:id)
+customersRouter.get('/view-counts', requirePermission('customers:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, await customerService.getViewCounts(businessId));
+  } catch (err: any) {
+    error(res, 'Failed to get view counts', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/customers/owners — Staff who can be set as a person's owner (must be before /:id)
+customersRouter.get('/owners', requirePermission('customers:read'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { rows } = await adminPool.query(
+      `SELECT id, first_name, last_name FROM usr_users
+        WHERE tenant_id = $1 AND business_id = $2 AND status = 'active' AND persona = 'business'
+        ORDER BY first_name, last_name`,
+      [authReq.tenantId, businessId],
+    );
+    success(res, rows);
+  } catch (err: any) {
+    error(res, 'Failed to list owners', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// --- Bulk actions ---
+
+const bulkFiltersSchema = Joi.object({
+  view: Joi.string(), search: Joi.string().allow(''), lifecycle_stage: Joi.string(), source: Joi.string(),
+  owner: Joi.string(), incomplete: Joi.boolean(), segment_id: Joi.string().uuid(), include_archived: Joi.boolean(),
+  ref: Joi.string(), first_name: Joi.string(), last_name: Joi.string(), email: Joi.string(), phone: Joi.string(),
+  created_from: Joi.string(), created_to: Joi.string(), last_activity_from: Joi.string(), last_activity_to: Joi.string(),
+});
+
+const bulkSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  // Either the people ticked on screen, or "everyone matching these filters".
+  ids: Joi.array().items(Joi.string().uuid()).max(5000),
+  filters: bulkFiltersSchema,
+  action: Joi.string().valid('add_tag', 'remove_tag', 'assign_owner', 'change_stage', 'add_to_list', 'archive'),
+  payload: Joi.object({
+    tag_id: Joi.string().uuid(),
+    owner_user_id: Joi.string().uuid().allow(null),
+    stage: Joi.string().valid('lead', 'trial', 'active', 'at_risk', 'churned', 'winback'),
+    segment_id: Joi.string().uuid(),
+  }).default({}),
+}).xor('ids', 'filters');
+
+function bulkTarget(req: Request) {
+  const filters = req.body.filters ? { ...req.body.filters } : undefined;
+  if (filters?.owner === 'me') filters.owner = (req as AuthenticatedRequest).user.sub;
+  return { ids: req.body.ids, filters };
+}
+
+// POST /api/v1/customers/bulk/preview — How many people a bulk action would touch
+customersRouter.post('/bulk/preview', requirePermission('customers:*'), validate(bulkSchema), async (req: Request, res: Response) => {
+  try {
+    const ids = await customerService.resolveBulkTarget(req.body.business_id, bulkTarget(req));
+    success(res, { count: ids.length });
+  } catch (err: any) {
+    error(res, 'Failed to preview the bulk action', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// POST /api/v1/customers/bulk — Apply one change to many people
+customersRouter.post('/bulk', requirePermission('customers:*'), validate(bulkSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    if (!req.body.action) { error(res, 'action is required', 'VALIDATION_ERROR', 400); return; }
+    const result = await customerService.runBulkAction(
+      req.body.business_id, authReq.tenantId, bulkTarget(req), req.body.action, req.body.payload, authReq.user.sub,
+    );
+    success(res, result);
+  } catch (err: any) {
+    error(res, err.message || 'Failed to run the bulk action', 'VALIDATION_ERROR', 400);
   }
 });
 
@@ -383,6 +501,12 @@ customersRouter.get('/:id', requirePermission('customers:read'), async (req: Req
       return;
     }
 
+    if (customer.status === 'merged' && customer.merged_into_id) {
+      // An old link to a merged record: tell the screen where the person lives now.
+      success(res, { id: customer.id, status: 'merged', merged_into_id: customer.merged_into_id });
+      return;
+    }
+
     success(res, customer);
   } catch (err: any) {
     error(res, 'Failed to get customer', 'INTERNAL_ERROR', 500);
@@ -407,6 +531,12 @@ customersRouter.put('/:id', requirePermission('customers:*'), validate(updateCus
 
     success(res, customer);
   } catch (err: any) {
+    if (err?.code === 'CONTACT_POINT_REQUIRED') { error(res, err.message, err.code, 400); return; }
+    if (err?.code === 'EMAIL_IN_USE') {
+      res.status(409).json({ error: err.message, code: err.code, details: { existing_id: err.existingId } });
+      return;
+    }
+    if (/Owner must be/.test(err?.message || '')) { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
     error(res, 'Failed to update customer', 'INTERNAL_ERROR', 500);
   }
 });
@@ -829,6 +959,41 @@ const mergeSchema = Joi.object({
   business_id: Joi.string().uuid().required(),
 });
 
+// POST /api/v1/customers/merge/preview — What a merge would move, and anything that would stop it
+customersRouter.post('/merge/preview', requirePermission('customers:*'), validate(mergeSchema), async (req: Request, res: Response) => {
+  try {
+    const result = await duplicateService.previewMerge(req.body.primary_id, req.body.secondary_id, req.body.business_id);
+    if (result.error) { error(res, result.error, 'VALIDATION_ERROR', 400); return; }
+    success(res, result.preview);
+  } catch (err: any) {
+    error(res, 'Failed to preview the merge', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/customers/:id/duplicates — Possible duplicates flagged for this person
+customersRouter.get('/:id/duplicates', requirePermission('customers:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, await identityService.getDuplicateFlags(req.params.id, businessId));
+  } catch (err: any) {
+    error(res, 'Failed to get possible duplicates', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// POST /api/v1/customers/:id/duplicates/:flagId/dismiss — "These are different people"
+customersRouter.post('/:id/duplicates/:flagId/dismiss', requirePermission('customers:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = (req.query.business_id || req.body.business_id) as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const done = await identityService.dismissDuplicateFlag(req.params.flagId, businessId);
+    if (!done) { error(res, 'Flag not found', 'NOT_FOUND', 404); return; }
+    success(res, { dismissed: true });
+  } catch (err: any) {
+    error(res, 'Failed to dismiss', 'INTERNAL_ERROR', 500);
+  }
+});
+
 // POST /api/v1/customers/merge — Merge two customers
 customersRouter.post('/merge', requirePermission('customers:*'), validate(mergeSchema), async (req: Request, res: Response) => {
   try {
@@ -860,7 +1025,61 @@ const updatePreferencesSchema = Joi.object({
   sms_marketing: Joi.boolean(),
   push_notifications: Joi.boolean(),
   booking_reminders: Joi.boolean(),
-}).min(1);
+  // How the consent was obtained. Needed when staff switch a marketing channel ON.
+  evidence: Joi.string().max(500).allow('', null),
+}).or('email_marketing', 'sms_marketing', 'push_notifications', 'booking_reminders');
+
+const setConsentSchema = Joi.object({
+  channel: Joi.string().valid('email', 'sms', 'whatsapp', 'in_app', 'push').required(),
+  category: Joi.string().valid('marketing', 'reminders').default('marketing'),
+  given: Joi.boolean().required(),
+  evidence: Joi.string().max(500).allow('', null),
+});
+
+// GET /api/v1/customers/:id/consent — Current consent per channel
+customersRouter.get('/:id/consent', requirePermission('customers:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const customer = await customerService.getCustomerById(req.params.id, businessId);
+    if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+    success(res, await consentService.getConsent(req.params.id));
+  } catch (err: any) {
+    error(res, 'Failed to get consent', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/customers/:id/consent/history — Every consent change, newest first
+customersRouter.get('/:id/consent/history', requirePermission('customers:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const customer = await customerService.getCustomerById(req.params.id, businessId);
+    if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+    success(res, await consentService.getConsentHistory(req.params.id));
+  } catch (err: any) {
+    error(res, 'Failed to get consent history', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/customers/:id/consent — Record one consent change (staff)
+customersRouter.put('/:id/consent', requirePermission('customers:*'), validate(setConsentSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const customer = await customerService.getCustomerById(req.params.id, businessId);
+    if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+    await consentService.setConsent({
+      customerId: req.params.id, channel: req.body.channel, category: req.body.category, given: req.body.given,
+      method: 'staff_entry', evidence: req.body.evidence, actorUserId: authReq.user.sub, ipAddress: req.ip,
+    });
+    success(res, await consentService.getConsent(req.params.id));
+  } catch (err: any) {
+    if (err instanceof consentService.ConsentEvidenceRequiredError) { error(res, err.message, err.code, 400); return; }
+    error(res, 'Failed to record consent', 'INTERNAL_ERROR', 500);
+  }
+});
 
 // GET /api/v1/customers/:id/preferences — Get preferences
 customersRouter.get('/:id/preferences', requirePermission('customers:read'), async (req: Request, res: Response) => {
@@ -872,12 +1091,7 @@ customersRouter.get('/:id/preferences', requirePermission('customers:read'), asy
     const customer = await customerService.getCustomerById(req.params.id, businessId);
     if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
 
-    const { rows } = await adminPool.query(
-      'SELECT * FROM cus_preferences WHERE customer_id = $1',
-      [req.params.id],
-    );
-
-    success(res, rows[0] || { email_marketing: false, sms_marketing: false, push_notifications: false, booking_reminders: true });
+    success(res, await consentService.getLegacyPreferences(req.params.id));
   } catch (err: any) {
     error(res, 'Failed to get preferences', 'INTERNAL_ERROR', 500);
   }
@@ -893,25 +1107,10 @@ customersRouter.put('/:id/preferences', requirePermission('customers:*'), valida
     const customer = await customerService.getCustomerById(req.params.id, businessId);
     if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
 
-    const fields: string[] = [];
-    const values: any[] = [];
-    let idx = 1;
-
-    for (const [key, value] of Object.entries(req.body)) {
-      if (['email_marketing', 'sms_marketing', 'push_notifications', 'booking_reminders'].includes(key)) {
-        fields.push(`${key} = $${idx++}`);
-        values.push(value);
-      }
-    }
-
-    fields.push('updated_at = NOW()');
-    values.push(req.params.id);
-
-    await adminPool.query(
-      `INSERT INTO cus_preferences (customer_id) VALUES ($${idx})
-       ON CONFLICT (customer_id) DO UPDATE SET ${fields.join(', ')}`,
-      values,
-    );
+    const { evidence, ...changes } = req.body;
+    const updated = await consentService.setLegacyPreferences(req.params.id, changes, {
+      method: 'staff_entry', evidence, actorUserId: authReq.user.sub, ipAddress: req.ip,
+    });
 
     // Audit log
     await logAudit({
@@ -923,14 +1122,9 @@ customersRouter.put('/:id/preferences', requirePermission('customers:*'), valida
       details: req.body,
     });
 
-    // Get updated preferences
-    const { rows } = await adminPool.query(
-      'SELECT * FROM cus_preferences WHERE customer_id = $1',
-      [req.params.id],
-    );
-
-    success(res, rows[0]);
+    success(res, updated);
   } catch (err: any) {
+    if (err instanceof consentService.ConsentEvidenceRequiredError) { error(res, err.message, err.code, 400); return; }
     error(res, 'Failed to update preferences', 'INTERNAL_ERROR', 500);
   }
 });
@@ -957,7 +1151,10 @@ customersRouter.put('/:id/lifecycle-stage', requirePermission('customers:*'), va
 
     // Update lifecycle stage
     await adminPool.query(
-      'UPDATE cus_customers SET lifecycle_stage = $1, updated_at = NOW() WHERE id = $2 AND business_id = $3',
+      `UPDATE cus_customers
+          SET lifecycle_stage = $1, updated_at = NOW(),
+              lifecycle_changed_at = CASE WHEN lifecycle_stage IS DISTINCT FROM $1 THEN NOW() ELSE lifecycle_changed_at END
+        WHERE id = $2 AND business_id = $3`,
       [stage, customerId, business_id],
     );
 

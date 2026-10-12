@@ -31,7 +31,7 @@ const navByPersona: Record<Persona, NavItem[]> = {
   business: [
     { label: 'Dashboard', path: '/dashboard', icon: '🏠' },
     { label: 'Bookings', path: '/bookings', icon: '📅' },
-    { label: 'Customers', path: '/customers', icon: '👥' },
+    { label: 'People', path: '/customers', icon: '👥' },
     { label: 'Services', path: '/services', icon: '💼' },
     { label: 'Staff', path: '/staff', icon: '👔' },
     { label: 'Reports', path: '/reports', icon: '📈' },

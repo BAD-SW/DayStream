@@ -138,12 +138,17 @@ describe('Customer Duplicate Detection & Merge', () => {
       expect(rows.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('deletes secondary customer after merge', async () => {
+    // Phase 46: the secondary record is kept, marked as merged into the primary, so old links
+    // still resolve and nothing is hard-deleted.
+    it('keeps the secondary customer, marked as merged into the primary', async () => {
       const { rows } = await adminPool.query(
         'SELECT * FROM cus_customers WHERE id = $1',
         [CUSTOMER_B_ID],
       );
-      expect(rows.length).toBe(0);
+      expect(rows.length).toBe(1);
+      expect(rows[0].status).toBe('merged');
+      expect(rows[0].merged_into_id).toBe(CUSTOMER_A_ID);
+      expect(rows[0].email).toBeNull();
     });
 
     it('rejects merging non-existent customer', async () => {

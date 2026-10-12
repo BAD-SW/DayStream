@@ -48,6 +48,11 @@ export { SUPPORTED_LANGUAGES, SUPPORTED_CURRENCIES } from './constants/supported
 export type { SupportedLanguage, SupportedCurrency } from './constants/supported';
 export { COUNTRIES, countryNameToIso2, countryNameToDialCode, iso2ToCountry } from './constants/countries';
 export type { CountryInfo } from './constants/countries';
+export {
+  LIFECYCLE_STAGES, LIFECYCLE_STAGE_LABELS, lifecycleStageLabel,
+  PERSON_SOURCE_LABELS, personSourceLabel, PEOPLE_VIEWS,
+} from './constants/people';
+export type { LifecycleStageValue } from './constants/people';
 
 // Utilities
 export { formatCurrency } from './utils/currency';

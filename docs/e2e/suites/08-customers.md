@@ -101,75 +101,75 @@ Persona: owner or manager unless stated. Covers spec 05. Customers are the hub t
 Written from the spec on 2026-10-12, before the feature exists. All are `Blocked` until the spec 46 task named on each script is done (KI-13); then they become `Draft` and are calibrated on the first run. When spec 46 ships, the navigation label is "People" (the address stays `/customers`), and CUS-01, CUS-13 and CUS-15 above are revised: CUS-01 for the optional email and the Source field, CUS-13 is replaced by CUS-23, CUS-15 by CUS-21.
 
 ### CUS-17 · People list: system views and counts
-`P0` `regression` · Spec 46 R1 · Status: Blocked (spec 46 task 7)
+`P0` `regression` · Spec 46 R1 · Status: Draft
 **Pre:** E2E people at stages lead, trial, active, at_risk and churned (set by hand, CUS-07).
 1. Open People. 2. Visit each view: All, Leads, Customers, At risk, Former. 3. Search and sort inside the Leads view. 4. Leave and come back.
 **Expect:** the menu and page title say "People"; each view lists only its stages (Customers = trial, active, at risk, winback) and its count matches the rows; search and sort stay inside the view; the last view used is remembered; an old `/customers` link still opens.
 **Cross-check:** `GET /api/v1/customers/view-counts` equals the counts on screen; the Leads view lists the same people as Marketing → Leads (MKT-09).
 
 ### CUS-18 · Person with only a phone number
-`P0` `regression` · Spec 46 R2 · As: owner · Status: Blocked (spec 46 tasks 1, 8)
+`P0` `regression` · Spec 46 R2 · As: owner · Status: Verified
 1. Create a person with first name `E2E {RUN} PhoneOnly` and a phone number, no email. 2. Try to save with neither email nor phone. 3. Start a booking for this person.
 **Expect:** step 1 saves and the profile shows an "Incomplete" marker; step 2 is refused with a clear message; step 3 asks for the missing email and surname before the booking can be confirmed.
 **Cross-check:** the person is found by searching the phone number typed with and without the country prefix.
 
 ### CUS-19 · One person, however they arrive
-`P0` `regression` · Spec 46 R3 · Status: Blocked (spec 46 task 2)
+`P0` `regression` · Spec 46 R3 · Status: Draft
 1. Create `e2e-{RUN}-same@daystream.test` by hand. 2. Create again with the same email in capitals. 3. Import a CSV row with the same email. 4. Register the same email through the booking widget.
 **Expect:** one person throughout; step 2 offers the existing person instead of an error; details that were empty are filled in, existing ones are not overwritten; the Timeline shows each later arrival.
 **Cross-check:** SQL: one `cus_customers` row for that email in the business; a second business of the same tenant can still create the same email as its own person.
 
 ### CUS-20 · Ambiguous phone match is flagged, not merged
-`P1` `regression` · Spec 46 R3 · Status: Blocked (spec 46 tasks 2, 4)
+`P1` `regression` · Spec 46 R3 · Status: Draft
 **Pre:** two E2E people sharing one phone number, different emails.
 1. Create a third person with only that phone number.
 **Expect:** a new person is created; all three show a "possible duplicate" banner with review and dismiss actions; two people with the same name but different contact details are never matched.
 
 ### CUS-21 · Consent: one record, full history
-`P0` `regression` · Specs 46 R9, 02 R8 · As: owner, customer · Status: Blocked (spec 46 task 3)
+`P0` `regression` · Specs 46 R9, 02 R8 · As: owner, customer · Status: Draft
 1. As owner, give email marketing consent for an E2E person without saying how it was obtained. 2. Repeat with a reason. 3. As that customer, withdraw it in the portal. 4. Open the consent history.
 **Expect:** step 1 is refused; step 2 saves; step 3 shows on the staff side at once; the history lists both changes with date, who, method, old and new value; a brand-new person has no marketing consent on any channel.
 **Cross-check:** the campaign audience summary (CUS-22) and the profile agree; `cus_preferences` is no longer written.
 
 ### CUS-22 · A message that must not be sent is stopped, with the reason
-`P0` `regression` · Spec 46 R10 · Status: Blocked (spec 46 task 3)
+`P0` `regression` · Spec 46 R10 · Status: Draft
 **Pre:** an E2E segment of five people: one with email consent, one without, one with no email, one archived, one whose email is marked bounced.
 1. Open the audience summary for an email marketing send to this segment. 2. Send the campaign (MKT-03 rules).
 **Expect:** "5 in segment, 4 excluded, 1 will receive", each exclusion with its reason in plain words; exactly one recipient is sent to.
 **Cross-check:** a booking confirmation still reaches the person without marketing consent; withdrawing consent after the audience was shown but before sending excludes that person.
 
 ### CUS-23 · Merge keeps everything
-`P0` `regression` `guarded` · Spec 46 R12 · As: owner · Status: Blocked (spec 46 task 4)
+`P0` `regression` `guarded` · Spec 46 R12 · As: owner · Status: Draft
 **Pre:** two E2E people. A: one paid booking, a note, a tag, email consent given. B: one booking, a membership, a campaign received, email consent withdrawn.
 1. Start a merge of B into A and read the preview. 2. Confirm. 3. Open B's old link.
 **Expect:** the preview lists what will move; afterwards A holds both bookings, the payment, the membership, the note, the tag and the campaign history; email consent is "withdrawn" (the stricter one); B's link opens A; as manager, the merge action is not offered.
 **Cross-check:** `/payments` and reports show the same totals as before; SQL: B has `status = 'merged'` and no table still points at B; the audit log names both records and the user.
 
 ### CUS-24 · Source is recorded and never overwritten
-`P1` `regression` · Spec 46 R4 · Status: Blocked (spec 46 task 2)
+`P1` `regression` · Spec 46 R4 · Status: Draft
 1. Create one person by hand choosing "Walk-in", one by import, one through the widget, one through a lead form. 2. Have the walk-in person submit the lead form afterwards.
 **Expect:** sources are walk-in, import, booking widget and lead form (with the form name); the walk-in person keeps "Walk-in" after step 2; people created before spec 46 show "Unknown".
 **Cross-check:** filtering the list by each source returns exactly those people.
 
 ### CUS-25 · Owner assignment
-`P1` `regression` · Spec 46 R5 · As: manager · Status: Blocked (spec 46 tasks 7, 8)
+`P1` `regression` · Spec 46 R5 · As: manager · Status: Draft
 1. Assign an E2E person to `E2E Therapist` from the profile. 2. Assign three more in bulk. 3. Filter by "Mine", "Unassigned" and the named owner.
 **Expect:** each change is on the Timeline; filters return the right people; only staff of this business are offered as owners.
 
 ### CUS-26 · Last activity, last visit, last login
-`P1` `regression` · Spec 46 R6 · Status: Blocked (spec 46 task 2)
+`P1` `regression` · Spec 46 R6 · Status: Draft
 1. Note the three values for the person behind `customer@transcend.test`. 2. Log in as that customer. 3. As staff, check the person in for a booking.
 **Expect:** last login and last activity move after step 2; last visit moves after step 3; a person without a login shows "No account"; all times are in the business's time zone.
 **Cross-check:** sorting the list by last activity puts this person first.
 
 ### CUS-27 · Columns and bulk actions
-`P1` `regression` · Spec 46 R8 · As: manager · Status: Blocked (spec 46 task 7)
+`P1` `regression` · Spec 46 R8 · As: manager · Status: Blocked (server side built; the column chooser and bulk-action screens of spec 46 task 7 are not)
 1. Hide and show columns; reload. 2. Select three E2E people and add a tag. 3. Use "select all matching" on the E2E tag filter, read the count, change stage, confirm.
 **Expect:** the column choice survives a reload; the confirmation states the exact number affected; every affected person's Timeline shows the change.
 **Cross-check:** reception (`customers:read`) is offered no bulk change.
 
 ### CUS-28 · Segments: edit, static list, starter set
-`P1` `regression` · Spec 46 R11 · Status: Blocked (spec 46 task 5)
+`P1` `regression` · Spec 46 R11 · Status: Blocked (server side built; the segment editing and fixed-list screens of spec 46 task 5 are not)
 1. Edit the rules of the CUS-06 segment. 2. Create a static list and add three people from the list page. 3. Open the starter segments. 4. Try to delete a segment used by a scheduled campaign.
 **Expect:** the edit changes the membership at once; the static list holds exactly the three people and is labelled as a fixed list; Leads, New customers, Active, At risk, Former, New this month, No visit in 30 days and Birthday this month exist; step 4 is refused, naming the campaign.
 **Cross-check:** every segment is offered both as a People view and as a campaign audience (MKT-19).

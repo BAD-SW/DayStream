@@ -1,20 +1,36 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
 import { logger } from '../middleware/logger';
+import { findOrCreatePerson, findPersonByContactPoint, normalisePhone, defaultRegionFor, PersonSource } from './person-identity.service';
+import { createActivity } from './customer-activity.service';
+import { transitionLifecycle, LIFECYCLE_STAGES, LifecycleStage } from './customer-lifecycle.service';
+import * as segmentsService from './customer-segments.service';
 
 interface CreateCustomerInput {
   businessId: string;
   tenantId: string;
-  email: string;
+  email?: string | null;
   firstName: string;
-  lastName: string;
+  lastName?: string | null;
   phone?: string;
   dateOfBirth?: string;
   gender?: string;
   preferredLanguage?: string;
   country?: string;
+  /** How the person came to the business. Staff may choose manual, walk_in or referral. */
+  source?: PersonSource;
+  sourceDetail?: string | null;
   createdBy: string;
 }
+
+/** System views of the People list (Phase 46 R1): a view is a fixed set of lifecycle stages. */
+export const PEOPLE_VIEWS: Record<string, LifecycleStage[] | null> = {
+  all: null,
+  leads: ['lead'],
+  customers: ['trial', 'active', 'at_risk', 'winback'],
+  at_risk: ['at_risk'],
+  former: ['churned'],
+};
 
 interface CustomerFilters {
   search?: string;
@@ -32,78 +48,129 @@ interface CustomerFilters {
   phone?: string;
   created_from?: string;
   created_to?: string;
+  // Phase 46
+  view?: string;
+  source?: string;
+  /** 'me' is resolved by the route to the caller's id; 'none' means unassigned. */
+  owner?: string;
+  incomplete?: boolean;
+  segment_id?: string;
+  include_archived?: boolean;
+  last_activity_from?: string;
+  last_activity_to?: string;
 }
 
+/**
+ * Create a person by hand. Goes through the identity service like every other entry point:
+ * if the email (or a unique phone) already belongs to someone in this business, that person
+ * is returned instead of a second record being created.
+ *
+ * The caller reports that as a refusal ("already exists"), so the existing person is left
+ * exactly as they are: unlike a booking or a form, a refused add must not fill in their
+ * details behind the user's back.
+ */
 export async function createCustomer(input: CreateCustomerInput) {
-  // Check for duplicate email within business
-  const { rows: existing } = await adminPool.query(
-    'SELECT id FROM cus_customers WHERE business_id = $1 AND email = $2',
-    [input.businessId, input.email],
-  );
-
-  if (existing.length > 0) {
-    return { duplicate: true, existingId: existing[0].id };
+  const existing = await findPersonByContactPoint(input.businessId, { email: input.email, phone: input.phone, country: input.country });
+  if (existing.person) {
+    return { duplicate: true, existingId: existing.person.id, matchedBy: existing.matchedBy, customer: existing.person };
   }
 
-  // Generate reference number
-  const { rows: refRows } = await adminPool.query(
-    'SELECT generate_customer_reference($1) AS ref',
-    [input.businessId],
-  );
-  const referenceNumber = refRows[0].ref;
-
-  // Insert customer
-  const { rows } = await adminPool.query(
-    `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, phone, date_of_birth, gender, preferred_language, country, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-     RETURNING *`,
-    [input.tenantId, input.businessId, referenceNumber, input.email, input.firstName, input.lastName, input.phone || null, input.dateOfBirth || null, input.gender || null, input.preferredLanguage || 'en', input.country || null, input.createdBy],
-  );
-
-  const customer = rows[0];
-
-  // Create default preferences (opted out of marketing)
-  await adminPool.query(
-    'INSERT INTO cus_preferences (customer_id) VALUES ($1)',
-    [customer.id],
-  );
-
-  // Audit log
-  await logAudit({
+  const result = await findOrCreatePerson({
+    businessId: input.businessId,
     tenantId: input.tenantId,
-    userId: input.createdBy,
-    action: 'customer.created',
-    resourceType: 'customer',
-    resourceId: customer.id,
-    details: { email: input.email, businessId: input.businessId },
+    email: input.email,
+    phone: input.phone,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    dateOfBirth: input.dateOfBirth,
+    gender: input.gender,
+    preferredLanguage: input.preferredLanguage,
+    country: input.country,
+    source: input.source || 'manual',
+    sourceDetail: input.sourceDetail,
+    actorUserId: input.createdBy,
   });
 
-  return { duplicate: false, customer };
+  if (!result.created) {
+    return { duplicate: true, existingId: result.person.id, matchedBy: result.matchedBy, customer: result.person };
+  }
+  return { duplicate: false, customer: result.person, duplicateFlagIds: result.duplicateFlagIds };
 }
 
-export async function getCustomers(businessId: string, filters: CustomerFilters) {
-  const conditions = ['business_id = $1', "status != 'anonymized'"];
+/** Conditions shared by the list, the view counts and bulk actions. All columns are prefixed `c.`. */
+async function buildListConditions(businessId: string, filters: CustomerFilters, skipView = false) {
+  const conditions = ['c.business_id = $1', "c.status NOT IN ('anonymized', 'merged')"];
   const params: any[] = [businessId];
   let paramIndex = 2;
 
+  if (!filters.include_archived) conditions.push("c.status <> 'archived'");
+
   if (filters.search) {
-    conditions.push(`(first_name ILIKE $${paramIndex} OR last_name ILIKE $${paramIndex} OR email ILIKE $${paramIndex} OR COALESCE(phone, '') ILIKE $${paramIndex} OR COALESCE(reference_number, '') ILIKE $${paramIndex})`);
+    conditions.push(`(c.first_name ILIKE $${paramIndex} OR c.last_name ILIKE $${paramIndex} OR COALESCE(c.email, '') ILIKE $${paramIndex} OR COALESCE(c.phone, '') ILIKE $${paramIndex} OR COALESCE(c.phone_e164, '') ILIKE $${paramIndex} OR COALESCE(c.reference_number, '') ILIKE $${paramIndex})`);
     params.push(`%${filters.search}%`);
     paramIndex++;
   }
 
+  const viewStages = skipView ? null : PEOPLE_VIEWS[filters.view || 'all'];
+  if (viewStages) {
+    conditions.push(`c.lifecycle_stage = ANY($${paramIndex}::text[])`);
+    params.push(viewStages);
+    paramIndex++;
+  }
+
   if (filters.lifecycle_stage) {
-    conditions.push(`lifecycle_stage = $${paramIndex}`);
+    conditions.push(`c.lifecycle_stage = $${paramIndex}`);
     params.push(filters.lifecycle_stage);
     paramIndex++;
   }
 
+  if (filters.source) {
+    conditions.push(`c.source = $${paramIndex}`);
+    params.push(filters.source);
+    paramIndex++;
+  }
+
+  if (filters.owner === 'none') {
+    // Unassigned also covers people whose owner has since been deactivated.
+    conditions.push(`(c.owner_user_id IS NULL OR NOT EXISTS (SELECT 1 FROM usr_users ou WHERE ou.id = c.owner_user_id AND ou.status = 'active'))`);
+  } else if (filters.owner) {
+    conditions.push(`c.owner_user_id = $${paramIndex}`);
+    params.push(filters.owner);
+    paramIndex++;
+  }
+
+  if (filters.incomplete) {
+    conditions.push(`(c.email IS NULL OR BTRIM(c.first_name) = '' OR BTRIM(c.last_name) = '')`);
+  }
+
+  if (filters.last_activity_from) {
+    conditions.push(`c.last_activity_at >= $${paramIndex}`);
+    params.push(filters.last_activity_from);
+    paramIndex++;
+  }
+  if (filters.last_activity_to) {
+    conditions.push(`(c.last_activity_at IS NULL OR c.last_activity_at < ($${paramIndex}::date + INTERVAL '1 day'))`);
+    params.push(filters.last_activity_to);
+    paramIndex++;
+  }
+
+  if (filters.segment_id) {
+    const member = await segmentsService.memberFilterSql(filters.segment_id, businessId, 'c', paramIndex);
+    if (member) {
+      conditions.push(member.sql);
+      params.push(...member.params);
+      paramIndex += member.params.length;
+    } else {
+      conditions.push('false');
+    }
+  }
+
   const containsFilters: [string | undefined, string][] = [
-    [filters.ref, 'reference_number'],
-    [filters.first_name, 'first_name'],
-    [filters.last_name, 'last_name'],
-    [filters.email, 'email'],
-    [filters.phone, 'phone'],
+    [filters.ref, 'c.reference_number'],
+    [filters.first_name, 'c.first_name'],
+    [filters.last_name, 'c.last_name'],
+    [filters.email, 'c.email'],
+    [filters.phone, 'c.phone'],
   ];
   for (const [value, column] of containsFilters) {
     if (value) {
@@ -114,18 +181,45 @@ export async function getCustomers(businessId: string, filters: CustomerFilters)
   }
 
   if (filters.created_from) {
-    conditions.push(`created_at >= $${paramIndex}`);
+    conditions.push(`c.created_at >= $${paramIndex}`);
     params.push(filters.created_from);
     paramIndex++;
   }
   if (filters.created_to) {
-    conditions.push(`created_at < ($${paramIndex}::date + INTERVAL '1 day')`);
+    conditions.push(`c.created_at < ($${paramIndex}::date + INTERVAL '1 day')`);
     params.push(filters.created_to);
     paramIndex++;
   }
 
-  const where = conditions.join(' AND ');
-  const sort = ['first_name', 'last_name', 'email', 'phone', 'reference_number', 'created_at', 'lifecycle_stage'].includes(filters.sort || '') ? filters.sort : 'created_at';
+  return { where: conditions.join(' AND '), params };
+}
+
+/** The extra facts shown next to each person: owner, login, next booking, consent, incomplete. */
+const PERSON_EXTRAS = `
+  NULLIF(BTRIM(COALESCE(ou.first_name, '') || ' ' || COALESCE(ou.last_name, '')), '') AS owner_name,
+  lu.last_login_at,
+  (c.user_id IS NOT NULL) AS has_account,
+  (c.email IS NULL OR BTRIM(c.first_name) = '' OR BTRIM(c.last_name) = '') AS incomplete,
+  (SELECT MIN(b.start_time) FROM apt_bookings b
+    WHERE b.customer_id = c.id AND b.start_time > NOW() AND b.status NOT IN ('cancelled', 'no_show')) AS next_booking_at,
+  COALESCE((SELECT array_agg(p.channel ORDER BY p.channel) FROM mkt_communication_preferences p
+    WHERE p.customer_id = c.id AND p.category = 'marketing' AND p.opted_in), '{}') AS marketing_consent`;
+
+const PERSON_JOINS = `
+  LEFT JOIN usr_users ou ON ou.id = c.owner_user_id
+  LEFT JOIN usr_users lu ON lu.id = c.user_id`;
+
+const SORT_COLUMNS: Record<string, string> = {
+  first_name: 'c.first_name', last_name: 'c.last_name', email: 'c.email', phone: 'c.phone',
+  reference_number: 'c.reference_number', created_at: 'c.created_at', lifecycle_stage: 'c.lifecycle_stage',
+  source: 'c.source', last_activity_at: 'c.last_activity_at', last_visit_at: 'c.last_visit_at',
+  last_login_at: 'lu.last_login_at', owner_name: 'owner_name',
+};
+
+export async function getCustomers(businessId: string, filters: CustomerFilters) {
+  const { where, params } = await buildListConditions(businessId, filters);
+
+  const sort = SORT_COLUMNS[filters.sort || ''] || 'c.created_at';
   const order = filters.order === 'asc' ? 'ASC' : 'DESC';
   const limit = Math.min(filters.limit || 20, 100);
   const page = filters.page || 1;
@@ -133,10 +227,11 @@ export async function getCustomers(businessId: string, filters: CustomerFilters)
 
   const [dataResult, countResult] = await Promise.all([
     adminPool.query(
-      `SELECT * FROM cus_customers WHERE ${where} ORDER BY ${sort} ${order} LIMIT ${limit} OFFSET ${offset}`,
+      `SELECT c.*, ${PERSON_EXTRAS} FROM cus_customers c ${PERSON_JOINS}
+        WHERE ${where} ORDER BY ${sort} ${order} NULLS LAST, c.id LIMIT ${limit} OFFSET ${offset}`,
       params,
     ),
-    adminPool.query(`SELECT COUNT(*) AS total FROM cus_customers WHERE ${where}`, params),
+    adminPool.query(`SELECT COUNT(*) AS total FROM cus_customers c WHERE ${where}`, params),
   ]);
 
   return {
@@ -147,9 +242,131 @@ export async function getCustomers(businessId: string, filters: CustomerFilters)
   };
 }
 
+/** How many people are in each system view, for the tabs above the list. */
+export async function getViewCounts(businessId: string): Promise<Record<string, number>> {
+  const { rows } = await adminPool.query(
+    `SELECT lifecycle_stage, COUNT(*)::int AS n FROM cus_customers
+      WHERE business_id = $1 AND status = 'active' GROUP BY lifecycle_stage`,
+    [businessId],
+  );
+  const byStage: Record<string, number> = {};
+  for (const r of rows) byStage[r.lifecycle_stage] = r.n;
+  const counts: Record<string, number> = {};
+  for (const [view, stages] of Object.entries(PEOPLE_VIEWS)) {
+    counts[view] = (stages || [...LIFECYCLE_STAGES]).reduce((sum, s) => sum + (byStage[s] || 0), 0);
+  }
+  return counts;
+}
+
+// --- Bulk actions (Phase 46 R8) ---
+
+export type BulkAction = 'add_tag' | 'remove_tag' | 'assign_owner' | 'change_stage' | 'add_to_list' | 'archive';
+
+export interface BulkTarget { ids?: string[]; filters?: CustomerFilters }
+
+/** The people a bulk action will touch: an explicit selection, or everyone matching the filters. */
+export async function resolveBulkTarget(businessId: string, target: BulkTarget): Promise<string[]> {
+  if (target.ids && target.ids.length > 0) {
+    const { rows } = await adminPool.query(
+      `SELECT id FROM cus_customers WHERE business_id = $1 AND id = ANY($2::uuid[]) AND status NOT IN ('anonymized', 'merged')`,
+      [businessId, target.ids],
+    );
+    return rows.map((r) => r.id);
+  }
+  const { where, params } = await buildListConditions(businessId, target.filters || {});
+  const { rows } = await adminPool.query(`SELECT c.id FROM cus_customers c WHERE ${where}`, params);
+  return rows.map((r) => r.id);
+}
+
+export async function runBulkAction(
+  businessId: string,
+  tenantId: string,
+  target: BulkTarget,
+  action: BulkAction,
+  payload: { tag_id?: string; owner_user_id?: string | null; stage?: LifecycleStage; segment_id?: string },
+  userId: string,
+): Promise<{ affected: number }> {
+  const ids = await resolveBulkTarget(businessId, target);
+  if (ids.length === 0) return { affected: 0 };
+  let affected = ids.length;
+
+  if (action === 'add_tag' || action === 'remove_tag') {
+    const { rows: tag } = await adminPool.query('SELECT id, name FROM cus_tags WHERE id = $1 AND business_id = $2', [payload.tag_id, businessId]);
+    if (!tag[0]) throw new Error('Tag not found');
+    if (action === 'add_tag') {
+      const { rows } = await adminPool.query(
+        `INSERT INTO cus_customer_tags (customer_id, tag_id, assigned_by)
+         SELECT unnest($1::uuid[]), $2, $3 ON CONFLICT (customer_id, tag_id) DO NOTHING RETURNING customer_id`,
+        [ids, tag[0].id, userId],
+      );
+      await logBulk(rows.map((r) => r.customer_id), businessId, 'tag', `Tag added: ${tag[0].name}`, userId);
+      affected = rows.length;
+    } else {
+      const { rows } = await adminPool.query(
+        'DELETE FROM cus_customer_tags WHERE tag_id = $2 AND customer_id = ANY($1::uuid[]) RETURNING customer_id',
+        [ids, tag[0].id],
+      );
+      await logBulk(rows.map((r) => r.customer_id), businessId, 'tag', `Tag removed: ${tag[0].name}`, userId);
+      affected = rows.length;
+    }
+  } else if (action === 'assign_owner') {
+    const ownerName = await assertOwner(payload.owner_user_id || null, tenantId);
+    const { rows } = await adminPool.query(
+      `UPDATE cus_customers SET owner_user_id = $2, updated_at = NOW()
+        WHERE id = ANY($1::uuid[]) AND owner_user_id IS DISTINCT FROM $2 RETURNING id`,
+      [ids, payload.owner_user_id || null],
+    );
+    await logBulk(rows.map((r) => r.id), businessId, 'profile_change', ownerName ? `Owner: ${ownerName}` : 'Owner removed', userId);
+    affected = rows.length;
+  } else if (action === 'change_stage') {
+    if (!payload.stage || !LIFECYCLE_STAGES.includes(payload.stage)) throw new Error('Unknown stage');
+    affected = 0;
+    for (const id of ids) {
+      const r = await transitionLifecycle(id, businessId, payload.stage, 'Bulk change by staff', userId);
+      if (r.success && r.from !== r.to) affected++;
+    }
+  } else if (action === 'add_to_list') {
+    const added = await segmentsService.addMembers(payload.segment_id || '', businessId, ids, userId);
+    if (added === null) throw new Error('Fixed list not found');
+    affected = added;
+  } else if (action === 'archive') {
+    const { rows } = await adminPool.query(
+      `UPDATE cus_customers SET status = 'archived', updated_at = NOW() WHERE id = ANY($1::uuid[]) AND status = 'active' RETURNING id`,
+      [ids],
+    );
+    await logBulk(rows.map((r) => r.id), businessId, 'profile_change', 'Archived', userId);
+    affected = rows.length;
+  } else {
+    throw new Error('Unknown action');
+  }
+
+  await logAudit({ tenantId, userId, action: `customer.bulk_${action}`, resourceType: 'customer', details: { businessId, selected: ids.length, affected, payload } });
+  return { affected };
+}
+
+async function logBulk(ids: string[], businessId: string, type: string, description: string, userId: string) {
+  if (ids.length === 0) return;
+  await adminPool.query(
+    `INSERT INTO cus_activities (customer_id, business_id, activity_type, description, metadata, created_by)
+     SELECT unnest($1::uuid[]), $2, $3, $4, $5, $6`,
+    [ids, businessId, type, description, JSON.stringify({ bulk: true }), userId],
+  );
+}
+
+/** An owner must be an active staff login of the same tenant. Returns their name, or null for "nobody". */
+async function assertOwner(ownerUserId: string | null, tenantId: string): Promise<string | null> {
+  if (!ownerUserId) return null;
+  const { rows } = await adminPool.query(
+    `SELECT first_name, last_name FROM usr_users WHERE id = $1 AND tenant_id = $2 AND status = 'active' AND persona <> 'customer'`,
+    [ownerUserId, tenantId],
+  );
+  if (!rows[0]) throw new Error('Owner must be an active staff member of this business');
+  return `${rows[0].first_name} ${rows[0].last_name}`.trim();
+}
+
 export async function getCustomerById(id: string, businessId: string) {
   const { rows } = await adminPool.query(
-    'SELECT * FROM cus_customers WHERE id = $1 AND business_id = $2',
+    `SELECT c.*, ${PERSON_EXTRAS} FROM cus_customers c ${PERSON_JOINS} WHERE c.id = $1 AND c.business_id = $2`,
     [id, businessId],
   );
   return rows[0] || null;
@@ -159,10 +376,30 @@ export async function updateCustomer(id: string, businessId: string, updates: Re
   const customer = await getCustomerById(id, businessId);
   if (!customer) return null;
 
-  const allowedFields = ['email', 'first_name', 'last_name', 'phone', 'date_of_birth', 'gender', 'preferred_language', 'country', 'avatar_url', 'status', 'lifecycle_stage'];
+  const allowedFields = ['email', 'first_name', 'last_name', 'phone', 'date_of_birth', 'gender', 'preferred_language', 'country', 'avatar_url', 'status', 'lifecycle_stage', 'owner_user_id', 'source_detail'];
   const fields: string[] = [];
   const values: any[] = [];
   let idx = 1;
+
+  // An email or phone cleared on screen arrives as '': store that as "none".
+  for (const key of ['email', 'phone', 'owner_user_id']) {
+    if (updates[key] === '') updates[key] = null;
+  }
+  if (typeof updates.email === 'string') updates.email = updates.email.trim().toLowerCase();
+
+  const nextEmail = 'email' in updates ? updates.email : customer.email;
+  const nextPhone = 'phone' in updates ? updates.phone : customer.phone;
+  if (!nextEmail && !nextPhone) {
+    throw Object.assign(new Error('An email address or a phone number is required'), { code: 'CONTACT_POINT_REQUIRED' });
+  }
+  if (updates.email && updates.email !== (customer.email || '').toLowerCase()) {
+    const { rows: taken } = await adminPool.query(
+      `SELECT id FROM cus_customers WHERE business_id = $1 AND LOWER(email) = $2 AND id <> $3 AND status <> 'merged' LIMIT 1`,
+      [businessId, updates.email, id],
+    );
+    if (taken[0]) throw Object.assign(new Error('Another person in this business already has this email'), { code: 'EMAIL_IN_USE', existingId: taken[0].id });
+  }
+  if ('owner_user_id' in updates && updates.owner_user_id) await assertOwner(updates.owner_user_id, customer.tenant_id);
 
   for (const [key, value] of Object.entries(updates)) {
     if (allowedFields.includes(key)) {
@@ -170,6 +407,15 @@ export async function updateCustomer(id: string, businessId: string, updates: Re
       // Convert empty strings to null for date fields
       values.push(key === 'date_of_birth' && value === '' ? null : value);
     }
+  }
+
+  if ('phone' in updates) {
+    // Keep the international form in step with what was typed.
+    fields.push(`phone_e164 = $${idx++}`);
+    values.push(normalisePhone(updates.phone, await defaultRegionFor(businessId)));
+  }
+  if ('lifecycle_stage' in updates && updates.lifecycle_stage !== customer.lifecycle_stage) {
+    fields.push('lifecycle_changed_at = NOW()');
   }
 
   if (fields.length === 0) return customer;

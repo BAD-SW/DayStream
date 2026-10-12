@@ -3,6 +3,8 @@ import { countryNameToIso2 } from '@daystream/shared';
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
 import { logger } from '../middleware/logger';
+import { findOrCreatePerson } from './person-identity.service';
+import { getLegacyPreferences } from './consent.service';
 
 interface ColumnMapping {
   [csvColumn: string]: string; // maps CSV header → customer field
@@ -25,7 +27,8 @@ interface ImportResult {
   errors: ValidationError[];
 }
 
-const REQUIRED_FIELDS = ['email', 'first_name', 'last_name'];
+// Phase 46: a person needs a first name and one way to reach them. Surname and email are optional.
+const REQUIRED_FIELDS = ['first_name'];
 const VALID_FIELDS = [
   'email', 'first_name', 'last_name', 'phone', 'date_of_birth',
   'gender', 'preferred_language', 'country',
@@ -108,6 +111,10 @@ export async function validateRows(
       }
     }
 
+    if (!(mapped.email || '').trim() && !(mapped.phone || '').trim()) {
+      errors.push({ row: rowNum, field: 'email', message: 'email or phone is required' });
+    }
+
     // Validate email format
     if (mapped.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mapped.email)) {
       errors.push({ row: rowNum, field: 'email', message: 'Invalid email format' });
@@ -186,6 +193,7 @@ export async function executeImport(
   businessId: string,
   tenantId: string,
   userId: string,
+  fileName?: string,
 ): Promise<ImportResult> {
   const { rows } = parseCSV(csvText);
   const errors = await validateRows(rows, mapping, businessId);
@@ -206,35 +214,32 @@ export async function executeImport(
     const mapped = applyMapping(rows[i], mapping);
 
     try {
-      // Check for duplicate email
-      const { rows: existing } = await adminPool.query(
-        'SELECT id FROM cus_customers WHERE business_id = $1 AND email = $2',
-        [businessId, mapped.email],
-      );
+      const result = await findOrCreatePerson({
+        businessId,
+        tenantId,
+        email: mapped.email,
+        phone: mapped.phone,
+        firstName: mapped.first_name,
+        lastName: mapped.last_name,
+        dateOfBirth: mapped.date_of_birth || null,
+        gender: mapped.gender || null,
+        preferredLanguage: mapped.preferred_language || 'en',
+        country: mapped.country || null,
+        source: 'import',
+        sourceDetail: fileName || null,
+        actorUserId: userId,
+      });
 
-      if (existing.length > 0) {
-        errors.push({ row: rowNum, field: 'email', message: 'Duplicate email in business' });
+      if (!result.created) {
+        // The person is already known: nothing new is created, and the row is reported.
+        errors.push({
+          row: rowNum,
+          field: result.matchedBy === 'phone' ? 'phone' : 'email',
+          message: result.matchedBy === 'phone' ? 'Phone number already belongs to a person in this business' : 'Duplicate email in business',
+        });
         skipped++;
         continue;
       }
-
-      // Generate reference number
-      const { rows: refRows } = await adminPool.query(
-        'SELECT generate_customer_reference($1) AS ref',
-        [businessId],
-      );
-
-      await adminPool.query(
-        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, phone, date_of_birth, gender, preferred_language, country, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          tenantId, businessId, refRows[0].ref,
-          mapped.email, mapped.first_name, mapped.last_name,
-          mapped.phone || null, mapped.date_of_birth || null,
-          mapped.gender || null, mapped.preferred_language || 'en',
-          mapped.country || null, userId,
-        ],
-      );
 
       imported++;
     } catch (err: any) {
@@ -256,6 +261,10 @@ export async function executeImport(
 
   return { total: rows.length, imported, skipped, errors };
 }
+
+const STAGE_EXPORT_LABELS: Record<string, string> = {
+  lead: 'Lead', trial: 'New customer', active: 'Active', at_risk: 'At risk', churned: 'Former', winback: 'Won back',
+};
 
 /**
  * Export customers to CSV format.
@@ -323,10 +332,12 @@ export async function exportCustomers(
   const order = filters?.order === 'desc' ? 'DESC' : 'ASC';
 
   const where = conditions.join(' AND ');
-  const { rows } = await adminPool.query(
-    `SELECT * FROM cus_customers WHERE ${where} ORDER BY ${sort} ${order}${sort !== 'first_name' ? ', first_name' : ''}`,
+  const { rows: rawRows } = await adminPool.query(
+    `SELECT * FROM cus_customers WHERE ${where} AND status <> 'merged' ORDER BY ${sort} ${order}${sort !== 'first_name' ? ', first_name' : ''}`,
     params,
   );
+  // Stages are exported under the names shown on screen ('trial' is "New customer").
+  const rows = rawRows.map((r) => ({ ...r, lifecycle_stage: STAGE_EXPORT_LABELS[r.lifecycle_stage] || r.lifecycle_stage }));
 
   const exportColumns = columns || ['reference_number', 'email', 'first_name', 'last_name', 'phone', 'date_of_birth', 'gender', 'preferred_language', 'country', 'lifecycle_stage', 'created_at'];
 
@@ -376,11 +387,8 @@ export async function exportGDPR(customerId: string, businessId: string): Promis
     [customerId],
   );
 
-  // Get preferences
-  const { rows: prefs } = await adminPool.query(
-    'SELECT * FROM cus_preferences WHERE customer_id = $1',
-    [customerId],
-  );
+  // Get preferences (from the single consent store)
+  const prefs = [await getLegacyPreferences(customerId)];
 
   // Get tags
   const { rows: tags } = await adminPool.query(

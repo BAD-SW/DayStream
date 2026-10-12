@@ -31,6 +31,36 @@ What was not cleaned up, if anything.
 
 ## Runs
 
+## Run 20261012-4 — People screens (spec 46), exploratory
+- Commit: `37aad94` plus the uncommitted spec 46 work · Migrations at: 136 · As: business owner, seed business
+- Scope: not a suite run. First look in the browser at screens that until now were covered only by unit tests
+- Result: all screens work after four fixes
+
+| Checked | Result |
+|---|---|
+| Menu and list named "People"; view tabs All / Leads / Customers / At risk / Former with counts; Source, Owner, Last activity columns | Pass |
+| Add person with a phone number and no email (CUS-18) | Pass: saved as CUST-0003, source "Added by staff", marked Incomplete |
+| Add person whose phone already exists | Pass: refused with "Open their profile" |
+| Profile: fact strip, owner picker, stage | Pass (badge layout fixed) |
+| Consent tab: switching SMS marketing on asks for a reason and shows it in the history | Pass (after D-20) |
+| Possible-duplicate banner, merge preview, merge; old link redirects to the surviving person | Pass (after D-18) |
+| Segments page lists the eight starter segments | Pass |
+
+### Findings
+| Id | Severity | Summary | State |
+|---|---|---|---|
+| D-17 | High | A refused "add person" filled in the existing person's empty details (an email was attached to someone else's record) | Fixed, test added |
+| D-18 | High | After a merge the profile form kept its old values and offered them as unsaved changes | Fixed |
+| D-19 | Medium | Date of birth did not show in the profile form and lost a day per save on a server outside UTC | Fixed |
+| D-20 | Low | Consent reason asked through a browser pop-up; replaced by an inline field | Fixed |
+| — | Low | Profile header badges stretched across the card; style warning on the view tabs; timeline not refreshed after a merge | Fixed |
+| D-21 | Low | Profile Financial Summary shows fixed "$0.00 / Good" placeholders | Open |
+
+### Leftover test data
+In the seed business: `E2E PhoneOnly` (CUST-0003, SMS consent recorded) with two merged records behind it (CUST-0004, CUST-0005). The 17 stray people left by earlier test runs were removed.
+
+---
+
 ## Run 20261012-3 — smoke (suite 00), after the second round of fixes
 - Commit: `417c0e6` plus uncommitted local fixes · Migrations at: 135 · Processor mode: stripe-test
 - Result: 20 passed · 0 failed · 0 blocked (of 20). SMK-11 (theme toggle) carried over from run 2; everything else re-executed

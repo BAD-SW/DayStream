@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
+import { setConsent, isGiven, ConsentChannel } from './consent.service';
 
 /**
  * Get all communication preferences for a customer.
@@ -25,24 +26,13 @@ export async function updatePreferences(
   const results = [];
 
   for (const pref of prefs) {
+    // Phase 46: written through the single consent store, which also records the history.
+    await setConsent({
+      customerId, channel: pref.channel as ConsentChannel, category: pref.category, given: pref.optedIn, method: 'portal',
+    });
     const { rows } = await adminPool.query(
-      `INSERT INTO mkt_communication_preferences (tenant_id, customer_id, channel, category, opted_in, opted_in_at, opted_out_at, source)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'user_preference')
-       ON CONFLICT (tenant_id, customer_id, channel, category)
-       DO UPDATE SET
-         opted_in = EXCLUDED.opted_in,
-         opted_in_at = CASE WHEN EXCLUDED.opted_in = true THEN NOW() ELSE mkt_communication_preferences.opted_in_at END,
-         opted_out_at = CASE WHEN EXCLUDED.opted_in = false THEN NOW() ELSE mkt_communication_preferences.opted_out_at END
-       RETURNING *`,
-      [
-        tenantId,
-        customerId,
-        pref.channel,
-        pref.category,
-        pref.optedIn,
-        pref.optedIn ? new Date() : null,
-        pref.optedIn ? null : new Date(),
-      ],
+      `SELECT * FROM mkt_communication_preferences WHERE tenant_id = $1 AND customer_id = $2 AND channel = $3 AND category = $4`,
+      [tenantId, customerId, pref.channel, pref.category],
     );
     results.push(rows[0]);
   }
@@ -69,30 +59,19 @@ export async function processUnsubscribe(
 ) {
   if (category) {
     // Unsubscribe from a specific category
-    await adminPool.query(
-      `INSERT INTO mkt_communication_preferences (tenant_id, customer_id, channel, category, opted_in, opted_out_at, source)
-       VALUES ($1, $2, $3, $4, false, NOW(), 'unsubscribe')
-       ON CONFLICT (tenant_id, customer_id, channel, category)
-       DO UPDATE SET opted_in = false, opted_out_at = NOW()`,
-      [tenantId, customerId, channel, category],
-    );
+    await setConsent({ customerId, channel: channel as ConsentChannel, category, given: false, method: 'unsubscribe_link' });
   } else {
-    // Unsubscribe from all categories for the channel
-    await adminPool.query(
-      `UPDATE mkt_communication_preferences
-       SET opted_in = false, opted_out_at = NOW()
-       WHERE tenant_id = $1 AND customer_id = $2 AND channel = $3`,
+    // Unsubscribe from every marketing category for the channel. Booking reminders are not
+    // marketing and stay as they are.
+    const { rows: existing } = await adminPool.query(
+      `SELECT category FROM mkt_communication_preferences
+        WHERE tenant_id = $1 AND customer_id = $2 AND channel = $3 AND opted_in = true AND category <> 'reminders'`,
       [tenantId, customerId, channel],
     );
-
-    // Also insert a global marketing opt-out record
-    await adminPool.query(
-      `INSERT INTO mkt_communication_preferences (tenant_id, customer_id, channel, category, opted_in, opted_out_at, source)
-       VALUES ($1, $2, $3, 'marketing', false, NOW(), 'unsubscribe')
-       ON CONFLICT (tenant_id, customer_id, channel, category)
-       DO UPDATE SET opted_in = false, opted_out_at = NOW()`,
-      [tenantId, customerId, channel],
-    );
+    for (const row of existing) {
+      await setConsent({ customerId, channel: channel as ConsentChannel, category: row.category, given: false, method: 'unsubscribe_link' });
+    }
+    await setConsent({ customerId, channel: channel as ConsentChannel, category: 'marketing', given: false, method: 'unsubscribe_link' });
   }
 
   await logAudit({
@@ -113,13 +92,6 @@ export async function isOptedIn(
   channel: string,
   category: string,
 ): Promise<boolean> {
-  const { rows } = await adminPool.query(
-    `SELECT opted_in FROM mkt_communication_preferences
-     WHERE tenant_id = $1 AND customer_id = $2 AND channel = $3 AND category = $4`,
-    [tenantId, customerId, channel, category],
-  );
-
-  // If no preference record exists, default to not opted in
-  if (rows.length === 0) return false;
-  return rows[0].opted_in;
+  // No record means: marketing not given, reminders on (see consent.service).
+  return isGiven(customerId, channel as ConsentChannel, category);
 }

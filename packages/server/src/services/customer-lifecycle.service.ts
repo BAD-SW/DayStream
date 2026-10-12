@@ -1,6 +1,7 @@
 import { adminPool } from '../db/pool';
 import { createActivity } from './customer-activity.service';
 import { logger } from '../middleware/logger';
+import { touchActivity } from './person-identity.service';
 
 // Valid lifecycle stages
 export const LIFECYCLE_STAGES = ['lead', 'trial', 'active', 'at_risk', 'churned', 'winback'] as const;
@@ -71,7 +72,7 @@ export async function transitionLifecycle(
 
   // Update lifecycle stage
   await adminPool.query(
-    'UPDATE cus_customers SET lifecycle_stage = $1, updated_at = NOW() WHERE id = $2 AND business_id = $3',
+    'UPDATE cus_customers SET lifecycle_stage = $1, lifecycle_changed_at = NOW(), updated_at = NOW() WHERE id = $2 AND business_id = $3',
     [newStage, customerId, businessId],
   );
 
@@ -137,6 +138,8 @@ export async function getLifecycleSummary(businessId: string): Promise<Record<st
  * Called when a booking is created or attended.
  */
 export async function evaluateOnBooking(customerId: string, businessId: string): Promise<void> {
+  // Booking or attending is something the person did: it moves their "last activity" (Phase 46).
+  await touchActivity(customerId).catch(() => undefined);
   const config = await getLifecycleConfig(businessId);
 
   const { rows } = await adminPool.query(
@@ -313,6 +316,11 @@ export async function evaluateScheduledTransitions(): Promise<{ processed: numbe
 /**
  * Format a lifecycle stage for display.
  */
+/** Stage names as people read them. 'trial' is a new customer, not a free trial. */
+export const STAGE_LABELS: Record<string, string> = {
+  lead: 'Lead', trial: 'New customer', active: 'Active', at_risk: 'At risk', churned: 'Former', winback: 'Won back',
+};
+
 function formatStage(stage: string): string {
-  return stage.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('-');
+  return STAGE_LABELS[stage] || stage;
 }

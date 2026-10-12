@@ -90,7 +90,8 @@ describe('Customer Communication Preferences API', () => {
   it('PUT /customers/:id/preferences updates preferences', async () => {
     const { statusCode, body } = await request(
       'PUT', `/api/v1/customers/${CUSTOMER_ID}/preferences?business_id=${BUSINESS_ID}`,
-      { email_marketing: true, sms_marketing: true },
+      // Phase 46: staff must say how marketing consent was obtained.
+      { email_marketing: true, sms_marketing: true, evidence: 'Ticked the box on the paper sign-up form' },
       ownerToken,
     );
 

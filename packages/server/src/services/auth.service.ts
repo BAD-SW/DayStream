@@ -5,6 +5,7 @@ import { pool, adminPool } from '../db/pool';
 import { tenantQuery } from '../db/tenant-query';
 import { logger } from '../middleware/logger';
 import { JwtPayload } from '../auth/middleware';
+import { findOrCreatePerson, recordLogin } from './person-identity.service';
 
 const SALT_ROUNDS = 12;
 const ACCESS_TOKEN_EXPIRY = '24h';
@@ -315,6 +316,16 @@ export async function registerUser(
   const refreshToken = generateRefreshToken();
   await storeRefreshToken(user.id, refreshToken, '', '');
 
+  // Phase 46: someone who registers with a business is a person that business now knows, even
+  // if they never go on to book. Never blocks a registration.
+  if (businessId) {
+    await findOrCreatePerson({
+      businessId, tenantId, email, firstName, lastName,
+      source: 'online_registration', userId: user.id, actorUserId: user.id,
+    }).catch((err: any) => logger.warn('Could not create the person for a new registration', { error: err?.message }));
+    await recordLogin(user.id).catch(() => undefined);
+  }
+
   return { user, accessToken, refreshToken };
 }
 
@@ -373,6 +384,7 @@ export async function loginUser(
     const accessToken = generateAccessToken(foundUser.id, effectiveTenantId, role, permissions);
     const refreshToken = generateRefreshToken();
     await storeRefreshToken(foundUser.id, refreshToken, userAgent, ip);
+    await recordLogin(foundUser.id).catch(() => undefined);
 
     return { user: foundUser, accessToken, refreshToken, requiresMfa: false };
   }
@@ -409,6 +421,8 @@ export async function loginUser(
   const accessToken = generateAccessToken(user.id, tenantId, role, permissions);
   const refreshToken = generateRefreshToken();
   await storeRefreshToken(user.id, refreshToken, userAgent, ip);
+  // Phase 46: the login date, shown on the person's profile. Never blocks a login.
+  await recordLogin(user.id).catch(() => undefined);
 
   return { user, accessToken, refreshToken, requiresMfa: false };
 }

@@ -1,4 +1,6 @@
 import { adminPool } from '../db/pool';
+import { getMemberIds } from './customer-segments.service';
+import { filterAudience, summarise } from './contactability.service';
 import { logAudit } from './audit.service';
 
 /**
@@ -164,10 +166,25 @@ export async function sendCampaign(id: string, tenantId: string) {
     throw new Error('Campaign must be in draft or scheduled status to send');
   }
 
-  // Resolve segment recipients (placeholder: fetch all customers with email for the tenant)
-  const { rows: customers } = await adminPool.query(
-    `SELECT id, email, phone FROM cus_customers WHERE tenant_id = $1 AND status = 'active'`,
-    [tenantId],
+  // Phase 46: the audience is the campaign's segment, evaluated now, and only the people who may
+  // be contacted on this channel for marketing. Until this change every active person of the
+  // whole tenant was made a recipient, whatever the segment or their consent.
+  if (!campaign.segment_id) throw new Error('Choose an audience (a segment) before sending');
+  const { rows: segmentRows } = await adminPool.query(
+    `SELECT s.id, s.business_id FROM cus_segments s
+       JOIN sys_businesses b ON b.id = s.business_id
+      WHERE s.id = $1 AND b.tenant_id = $2`,
+    [campaign.segment_id, tenantId],
+  );
+  if (!segmentRows[0]) throw new Error('The audience of this campaign no longer exists');
+  const audienceBusinessId: string = segmentRows[0].business_id;
+
+  const memberIds = (await getMemberIds(campaign.segment_id, audienceBusinessId)) || [];
+  const audience = await filterAudience(audienceBusinessId, memberIds, campaign.channel, 'marketing');
+  const allowedIds = audience.allowed.map((a) => a.personId);
+  const { rows: customers } = allowedIds.length === 0 ? { rows: [] as any[] } : await adminPool.query(
+    `SELECT id, email, COALESCE(phone_e164, phone) AS phone FROM cus_customers WHERE id = ANY($1::uuid[])`,
+    [allowedIds],
   );
 
   // Create recipient records
@@ -192,7 +209,7 @@ export async function sendCampaign(id: string, tenantId: string) {
     action: 'campaign.sending',
     resourceType: 'campaign',
     resourceId: id,
-    details: { totalRecipients: customers.length },
+    details: { totalRecipients: customers.length, audience: summarise(audience) },
   });
 
   return rows[0];

@@ -13,19 +13,26 @@ import { CurrencyInput } from '../components/CurrencyInput';
 import * as payApi from '../api/payments';
 import type { PayTransaction, Invoice, PaymentMethod } from '../api/payments';
 import { formatCurrency } from '../utils/currency';
+import { lifecycleStageLabel, personSourceLabel } from '@daystream/shared';
 
 const LIFECYCLE_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   lead: 'neutral', trial: 'info', active: 'success', at_risk: 'warning', churned: 'error', winback: 'info',
 };
 
-function formatStage(stage: string): string {
-  return stage.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+// Stage and source names come from one shared map ('trial' is shown as "New customer").
+const formatStage = lifecycleStageLabel;
+
+function formatWhen(value?: string | null): string {
+  return value ? new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 }
 
 export function CustomerDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [customer, setCustomer] = useState<Customer | null>(null);
+  // Bumped after a merge so the edit form restarts from the merged record instead of
+  // showing its old values as "unsaved changes".
+  const [mergeCount, setMergeCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
@@ -44,6 +51,11 @@ export function CustomerDetail() {
       customersApi.getPreferences(id, businessId).catch(() => null),
       customersApi.getTags(businessId).catch(() => []),
     ]).then(([cust, n, acts, prefs, t]) => {
+      // An old link to a record that was merged: go to the person it was merged into.
+      if (cust?.status === 'merged' && cust.merged_into_id) {
+        navigate(`/customers/${cust.merged_into_id}`, { replace: true });
+        return;
+      }
       setCustomer(cust);
       setNotes(n);
       setActivities(acts);
@@ -55,41 +67,70 @@ export function CustomerDetail() {
   if (loading) return <div style={styles.loading}>Loading...</div>;
   if (!customer) return <div style={styles.loading}>Customer not found</div>;
 
-  const handlePreferenceChange = async (key: string, value: boolean) => {
-    const updated = await customersApi.updatePreferences(customer.id, businessId, { [key]: value });
-    setPreferences(updated);
+  // Switching a marketing channel ON records the person's consent, so the Consent tab
+  // sends how it was obtained as `evidence`.
+  const handlePreferenceChange = async (key: string, value: boolean, evidence?: string) => {
+    const payload: Record<string, any> = { [key]: value };
+    if (evidence) payload.evidence = evidence;
+    try {
+      const updated = await customersApi.updatePreferences(customer.id, businessId, payload);
+      setPreferences(updated);
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to update preferences');
+    }
   };
+
+  const displayName = customer.display_name || `${customer.first_name} ${customer.last_name}`.trim() || customer.email || customer.phone || 'Unknown';
 
   return (
     <div style={styles.page}>
       {/* Back button */}
-      <button style={styles.back} onClick={() => navigate('/customers')}>← Back to Customers</button>
+      <button style={styles.back} onClick={() => navigate('/customers')}>← Back to People</button>
 
       {/* Profile Header */}
       <div style={styles.profileHeader}>
         <div style={styles.avatar}>
-          {customer.first_name[0]}{customer.last_name[0]}
+          {(customer.first_name || displayName)[0]?.toUpperCase()}{customer.last_name?.[0]?.toUpperCase()}
         </div>
         <div style={styles.profileInfo}>
-          <h1 style={styles.name}>{customer.first_name} {customer.last_name}</h1>
+          <h1 style={styles.name}>{displayName}</h1>
           <span style={styles.refNum}>{customer.reference_number}</span>
-          <Badge variant={LIFECYCLE_VARIANTS[customer.lifecycle_stage] || 'neutral'}>
-            {formatStage(customer.lifecycle_stage)}
-          </Badge>
+          <div style={styles.headerBadges}>
+            <Badge variant={LIFECYCLE_VARIANTS[customer.lifecycle_stage] || 'neutral'}>
+              {formatStage(customer.lifecycle_stage)}
+            </Badge>
+            {customer.incomplete && <Badge variant="warning">Incomplete</Badge>}
+          </div>
         </div>
         <div style={styles.headerActions}>
           <Badge variant={customer.status === 'active' ? 'success' : 'neutral'}>{customer.status}</Badge>
-          <span style={styles.joinedDate}>Customer since {new Date(customer.created_at).toLocaleDateString()}</span>
+          <span style={styles.joinedDate}>Known since {new Date(customer.created_at).toLocaleDateString()}</span>
         </div>
       </div>
+
+      {/* Who this person is, at a glance (Phase 46) */}
+      <dl style={styles.factStrip}>
+        <div style={styles.fact}><dt style={styles.factLabel}>Source</dt><dd style={styles.factValue}>{personSourceLabel(customer.source, customer.source_detail)}</dd></div>
+        <div style={styles.fact}><dt style={styles.factLabel}>Owner</dt><dd style={styles.factValue}>{customer.owner_name || 'Unassigned'}</dd></div>
+        <div style={styles.fact}><dt style={styles.factLabel}>Last activity</dt><dd style={styles.factValue}>{formatWhen(customer.last_activity_at)}</dd></div>
+        <div style={styles.fact}><dt style={styles.factLabel}>Last visit</dt><dd style={styles.factValue}>{formatWhen(customer.last_visit_at)}</dd></div>
+        <div style={styles.fact}><dt style={styles.factLabel}>Last login</dt><dd style={styles.factValue}>{customer.has_account ? formatWhen(customer.last_login_at) : 'No account'}</dd></div>
+        <div style={styles.fact}><dt style={styles.factLabel}>In this stage since</dt><dd style={styles.factValue}>{customer.lifecycle_changed_at ? new Date(customer.lifecycle_changed_at).toLocaleDateString() : '—'}</dd></div>
+      </dl>
+
+      <DuplicateBanner customer={customer} businessId={businessId} onMerged={(c) => {
+        setCustomer(c);
+        setMergeCount((n) => n + 1);
+        customersApi.getActivities(c.id, businessId).then((r) => setActivities(r.data)).catch(() => {});
+      }} />
 
       {/* Tabs */}
       <Tabs
         items={[
-          { id: 'overview', label: 'Overview', content: <OverviewTab customer={customer} tags={tags} onUpdate={setCustomer} /> },
+          { id: 'overview', label: 'Overview', content: <OverviewTab key={mergeCount} customer={customer} tags={tags} onUpdate={setCustomer} /> },
           { id: 'notes', label: 'Notes', content: <NotesTab notes={notes} customerId={customer.id} businessId={businessId} onRefresh={(n) => setNotes(n)} /> },
           { id: 'billing', label: 'Billing', content: <BillingTab customerId={customer.id} businessId={businessId} /> },
-          { id: 'preferences', label: 'Preferences', content: <PreferencesTab preferences={preferences} onChange={handlePreferenceChange} /> },
+          { id: 'preferences', label: 'Consent', content: <PreferencesTab preferences={preferences} onChange={handlePreferenceChange} customerId={customer.id} businessId={businessId} /> },
           { id: 'timeline', label: 'Timeline', content: <TimelineTab activities={activities} customerId={customer.id} businessId={businessId} /> },
         ]}
       />
@@ -99,31 +140,51 @@ export function CustomerDetail() {
 
 // --- Sub-components for tabs ---
 
+/**
+ * A stored date as the YYYY-MM-DD a date field needs. The API sends date columns as a
+ * timestamp at the server's local midnight (e.g. "1990-04-30T22:00:00.000Z" for 1 May on a
+ * server in Madrid), so the calendar day is read from noon of that day, not from the text.
+ */
+function dateOnly(value?: string | null): string {
+  if (!value) return '';
+  if (/^d{4}-d{2}-d{2}$/.test(value)) return value;
+  const t = new Date(value).getTime();
+  return Number.isNaN(t) ? '' : new Date(t + 12 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: any[]; onUpdate: (c: Customer) => void }) {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     first_name: customer.first_name,
     last_name: customer.last_name,
-    email: customer.email,
+    email: customer.email || '',
     phone: customer.phone || '',
-    date_of_birth: customer.date_of_birth || '',
+    date_of_birth: dateOnly(customer.date_of_birth),
     gender: customer.gender || '',
     preferred_language: customer.preferred_language || 'en',
     country: customer.country || '',
     lifecycle_stage: customer.lifecycle_stage || 'lead',
+    owner_user_id: customer.owner_user_id || '',
   });
+  const [owners, setOwners] = useState<Array<{ id: string; first_name: string; last_name: string }>>([]);
   const [statusChanging, setStatusChanging] = useState(false);
   const [anonymizing, setAnonymizing] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
 
   const businessId = localStorage.getItem('business_id') || '';
 
+  useEffect(() => {
+    if (!businessId) return;
+    customersApi.getOwners(businessId).then(setOwners).catch(() => setOwners([]));
+  }, [businessId]);
+
   // Detect if form has unsaved changes
   const isDirty = form.first_name !== customer.first_name ||
     form.last_name !== customer.last_name ||
-    form.email !== customer.email ||
+    form.email !== (customer.email || '') ||
+    form.owner_user_id !== (customer.owner_user_id || '') ||
     form.phone !== (customer.phone || '') ||
-    form.date_of_birth !== (customer.date_of_birth || '') ||
+    form.date_of_birth !== dateOnly(customer.date_of_birth) ||
     form.gender !== (customer.gender || '') ||
     form.preferred_language !== (customer.preferred_language || 'en') ||
     form.country !== (customer.country || '') ||
@@ -134,7 +195,7 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
     try {
       const updated = await customersApi.updateCustomer(customer.id, businessId, form);
       onUpdate(updated);
-    } catch { alert('Failed to update customer'); }
+    } catch (err: any) { alert(err.response?.data?.error || 'Failed to update this person'); }
     finally { setSaving(false); }
   };
 
@@ -142,13 +203,14 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
     setForm({
       first_name: customer.first_name,
       last_name: customer.last_name,
-      email: customer.email,
+      email: customer.email || '',
       phone: customer.phone || '',
-      date_of_birth: customer.date_of_birth || '',
+      date_of_birth: dateOnly(customer.date_of_birth),
       gender: customer.gender || '',
       preferred_language: customer.preferred_language || 'en',
       country: customer.country || '',
       lifecycle_stage: customer.lifecycle_stage || 'lead',
+      owner_user_id: customer.owner_user_id || '',
     });
   };
 
@@ -256,11 +318,17 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
             <div style={styles.formGroup}><label style={styles.fieldLabel}>Lifecycle Stage</label>
               <select style={styles.fieldInput} value={form.lifecycle_stage} onChange={(e) => setForm({ ...form, lifecycle_stage: e.target.value })}>
                 <option value="lead">Lead</option>
-                <option value="trial">Trial</option>
+                <option value="trial">New customer</option>
                 <option value="active">Active</option>
-                <option value="at_risk">At Risk</option>
-                <option value="churned">Churned</option>
-                <option value="winback">Winback</option>
+                <option value="at_risk">At risk</option>
+                <option value="churned">Former</option>
+                <option value="winback">Won back</option>
+              </select>
+            </div>
+            <div style={styles.formGroup}><label style={styles.fieldLabel}>Owner</label>
+              <select style={styles.fieldInput} value={form.owner_user_id} onChange={(e) => setForm({ ...form, owner_user_id: e.target.value })}>
+                <option value="">Unassigned</option>
+                {owners.map((o) => <option key={o.id} value={o.id}>{o.first_name} {o.last_name}</option>)}
               </select>
             </div>
           </div>
@@ -934,27 +1002,162 @@ const refundInputStyle: React.CSSProperties = {
   background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)',
 };
 
-function PreferencesTab({ preferences, onChange }: { preferences: any; onChange: (key: string, val: boolean) => void }) {
+const CONSENT_METHOD_LABELS: Record<string, string> = {
+  form: 'Form', portal: 'Customer portal', unsubscribe_link: 'Unsubscribe link', staff_entry: 'Recorded by staff',
+  import: 'Import', keyword_reply: 'Reply keyword', merge: 'Merge', migration: 'Carried over',
+};
+const CONSENT_CHANNEL_LABELS: Record<string, string> = { email: 'Email', sms: 'SMS', whatsapp: 'WhatsApp', in_app: 'In-app', push: 'Push' };
+
+/** Possible duplicates flagged for this person, with review-and-merge (Phase 46 R3, R12). */
+function DuplicateBanner({ customer, businessId, onMerged }: { customer: Customer; businessId: string; onMerged: (c: Customer) => void }) {
+  const [flags, setFlags] = useState<customersApi.DuplicateFlag[]>([]);
+  const [preview, setPreview] = useState<customersApi.MergePreview | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    customersApi.getDuplicateFlags(customer.id, businessId).then(setFlags).catch(() => setFlags([]));
+  }, [customer.id, businessId]);
+  useEffect(() => { load(); }, [load]);
+
+  if (flags.length === 0) return null;
+
+  const review = async (flag: customersApi.DuplicateFlag) => {
+    try { setPreview(await customersApi.previewMerge(customer.id, flag.other_id, businessId)); }
+    catch (err: any) { alert(err.response?.data?.error || 'Could not prepare the merge'); }
+  };
+  const merge = async () => {
+    if (!preview) return;
+    setBusy(true);
+    try {
+      const merged = await customersApi.mergeCustomers(preview.primary.id, preview.secondary.id, businessId);
+      setPreview(null);
+      onMerged(merged);
+      load();
+    } catch (err: any) { alert(err.response?.data?.error || 'Merge failed'); }
+    finally { setBusy(false); }
+  };
+  const dismiss = async (flag: customersApi.DuplicateFlag) => {
+    await customersApi.dismissDuplicateFlag(customer.id, flag.id, businessId).catch(() => {});
+    load();
+  };
+
+  return (
+    <div style={styles.duplicateBanner} role="status">
+      <strong>Possible duplicate{flags.length > 1 ? 's' : ''}</strong>
+      {flags.map((f) => (
+        <div key={f.id} style={styles.duplicateRow}>
+          <span>{f.other_name} · {f.other_reference} · same {f.match_type === 'phone' ? 'phone number' : 'email'}</span>
+          <span style={{ display: 'flex', gap: '8px' }}>
+            <Button size="sm" variant="secondary" onClick={() => review(f)}>Review and merge</Button>
+            <Button size="sm" variant="outline" onClick={() => dismiss(f)}>Different people</Button>
+          </span>
+        </div>
+      ))}
+      <Modal open={!!preview} onClose={() => setPreview(null)} title="Merge these two records?">
+        {preview && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+            <p style={{ margin: 0 }}>
+              Everything on <strong>{preview.secondary.name}</strong> ({preview.secondary.reference_number}) moves to{' '}
+              <strong>{preview.primary.name}</strong> ({preview.primary.reference_number}). This cannot be undone.
+            </p>
+            {preview.moves.length > 0 ? (
+              <ul style={{ margin: 0, paddingLeft: 'var(--space-lg)' }}>
+                {preview.moves.map((m) => <li key={m.table}>{m.label}: {m.count}</li>)}
+              </ul>
+            ) : <p style={{ margin: 0 }}>The other record has nothing linked to it.</p>}
+            {preview.blockers.length > 0 && (
+              <p style={{ margin: 0, color: 'var(--color-error)' }}>
+                Cannot merge yet: both records have {preview.blockers.map((b) => b.label.toLowerCase()).join(', ')} that must be resolved first.
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <Button variant="outline" onClick={() => setPreview(null)}>Cancel</Button>
+              <Button onClick={merge} loading={busy} disabled={preview.blockers.length > 0}>Merge</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function PreferencesTab({ preferences, onChange, customerId, businessId }: {
+  preferences: any; onChange: (key: string, val: boolean, evidence?: string) => void; customerId: string; businessId: string;
+}) {
+  const [history, setHistory] = useState<customersApi.ConsentEvent[] | null>(null);
+  // The marketing channel being switched on, waiting for how the consent was given.
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [evidence, setEvidence] = useState('');
+
+  const toggle = (key: string, checked: boolean) => {
+    if (checked && key !== 'booking_reminders') { setPendingKey(key); setEvidence(''); return; }
+    setPendingKey(null);
+    onChange(key, checked);
+  };
+  const confirmConsent = () => {
+    if (!pendingKey || !evidence.trim()) return;
+    onChange(pendingKey, true, evidence.trim());
+    setPendingKey(null);
+  };
+  const channelRow = (key: string, label: string) => (
+    <div key={key}>
+      <div style={styles.prefRow}>
+        <span>{label}</span>
+        <input type="checkbox" aria-label={label} checked={!!preferences[key] || pendingKey === key} onChange={(e) => toggle(key, e.target.checked)} style={styles.checkbox} />
+      </div>
+      {pendingKey === key && (
+        <div style={styles.consentEvidence}>
+          <label htmlFor="consent-evidence" style={styles.fieldLabel}>How did this person give their consent?</label>
+          <input
+            id="consent-evidence" autoFocus style={styles.fieldInput} value={evidence}
+            placeholder="For example: ticked the box on the sign-up form"
+            onChange={(e) => setEvidence(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') confirmConsent(); }}
+          />
+          <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end' }}>
+            <Button size="sm" variant="secondary" onClick={() => setPendingKey(null)}>Cancel</Button>
+            <Button size="sm" variant="primary" disabled={!evidence.trim()} onClick={confirmConsent}>Record consent</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // Reload the history whenever a switch changes.
+  useEffect(() => {
+    customersApi.getConsentHistory(customerId, businessId).then(setHistory).catch(() => setHistory([]));
+  }, [customerId, businessId, preferences]);
+
   if (!preferences) return <p style={styles.empty}>Loading preferences...</p>;
 
   return (
     <div style={styles.tabContent}>
-      <div style={styles.prefRow}>
-        <span>Email Marketing</span>
-        <input type="checkbox" checked={preferences.email_marketing} onChange={(e) => onChange('email_marketing', e.target.checked)} style={styles.checkbox} />
-      </div>
-      <div style={styles.prefRow}>
-        <span>SMS Marketing</span>
-        <input type="checkbox" checked={preferences.sms_marketing} onChange={(e) => onChange('sms_marketing', e.target.checked)} style={styles.checkbox} />
-      </div>
-      <div style={styles.prefRow}>
-        <span>Push Notifications</span>
-        <input type="checkbox" checked={preferences.push_notifications} onChange={(e) => onChange('push_notifications', e.target.checked)} style={styles.checkbox} />
-      </div>
-      <div style={styles.prefRow}>
-        <span>Booking Reminders</span>
-        <input type="checkbox" checked={preferences.booking_reminders} onChange={(e) => onChange('booking_reminders', e.target.checked)} style={styles.checkbox} />
-      </div>
+      <p style={styles.empty}>
+        Marketing needs the person's own agreement, channel by channel. Booking confirmations and replies to their messages are always allowed.
+      </p>
+      {channelRow('email_marketing', 'Email Marketing')}
+      {channelRow('sms_marketing', 'SMS Marketing')}
+      {channelRow('push_notifications', 'Push Notifications')}
+      {channelRow('booking_reminders', 'Booking Reminders')}
+
+      <h3 style={styles.cardTitle}>Consent history</h3>
+      {history === null && <p style={styles.empty}>Loading…</p>}
+      {history !== null && history.length === 0 && <p style={styles.empty}>No consent has been recorded or withdrawn yet.</p>}
+      {history !== null && history.length > 0 && (
+        <ul style={styles.consentHistory}>
+          {history.map((e) => (
+            <li key={e.id} style={styles.consentHistoryRow}>
+              <span>
+                <strong>{CONSENT_CHANNEL_LABELS[e.channel] || e.channel}</strong>{' '}
+                {e.category === 'reminders' ? 'reminders' : 'marketing'}: {e.new_state ? 'given' : 'withdrawn'}
+                {' · '}{CONSENT_METHOD_LABELS[e.method] || e.method}{e.actor_name ? ` by ${e.actor_name}` : ''}
+                {e.evidence ? ` · "${e.evidence}"` : ''}
+              </span>
+              <span style={{ color: 'var(--color-text-secondary)' }}>{formatWhen(e.created_at)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -1159,6 +1362,29 @@ const styles: Record<string, React.CSSProperties> = {
   refNum: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   headerActions: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: 'var(--space-xs)' },
   joinedDate: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
+  factStrip: {
+    display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 'var(--space-md)',
+    margin: '0 0 var(--space-lg)', padding: 'var(--space-md) var(--space-lg)',
+    background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)',
+  },
+  fact: { display: 'flex', flexDirection: 'column' as const, gap: '2px', minWidth: 0 },
+  factLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
+  factValue: { margin: 0, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', overflowWrap: 'anywhere' as const },
+  duplicateBanner: {
+    display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)',
+    margin: '0 0 var(--space-lg)', padding: 'var(--space-md) var(--space-lg)',
+    background: 'var(--color-surface)', border: '1px solid var(--color-warning)', borderRadius: 'var(--radius-lg)',
+    fontSize: 'var(--font-size-sm)', color: 'var(--color-text)',
+  },
+  duplicateRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-md)', flexWrap: 'wrap' as const },
+  headerBadges: { display: 'flex', flexWrap: 'wrap' as const, gap: 'var(--space-xs)', alignItems: 'center' },
+  consentEvidence: { display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)', padding: 'var(--space-md) 0', borderBottom: '1px solid var(--color-border)' },
+  consentHistory: { listStyle: 'none', margin: 0, padding: 0 },
+  consentHistoryRow: {
+    display: 'flex', justifyContent: 'space-between', gap: 'var(--space-md)', flexWrap: 'wrap' as const,
+    padding: 'var(--space-sm) 0', borderBottom: '1px solid var(--color-border)',
+    fontSize: 'var(--font-size-sm)', color: 'var(--color-text)',
+  },
   tabContent: { padding: 'var(--space-md) 0' },
   quickActionsBar: { display: 'flex', gap: '8px', marginBottom: 'var(--space-md)', padding: 'var(--space-sm) var(--space-md)', background: 'var(--color-surface)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', alignItems: 'center' },
   saveBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-sm) var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-primary)' },

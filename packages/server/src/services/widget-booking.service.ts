@@ -5,6 +5,7 @@ import { createBooking, getBookingById } from './booking.service';
 import { createHold } from './slot-hold.service';
 import { queueBookingConfirmation } from './booking-notifications.service';
 import { createActivity } from './customer-activity.service';
+import { findOrCreatePerson } from './person-identity.service';
 import { resolveForBusiness } from './theme.service';
 import { computeDayStatus, getDaysInMonth, isDayClosedForBusiness } from '../routes/bookings';
 import * as availabilityService from './availability.service';
@@ -221,28 +222,23 @@ export async function findOrCreateCustomer(businessId: string, user: AuthUser, p
   const authAccount = userRows[0];
   if (!authAccount) throw new WidgetError('Account not found', 404);
 
-  const { rows: existing } = await adminPool.query(
-    'SELECT id, first_name, last_name, email, phone FROM cus_customers WHERE business_id = $1 AND email = $2',
-    [businessId, authAccount.email],
-  );
-  if (existing.length > 0) {
-    if (phone && !existing[0].phone) {
-      await adminPool.query('UPDATE cus_customers SET phone = $1, updated_at = NOW() WHERE id = $2', [phone, existing[0].id]);
-      existing[0].phone = phone;
-    }
-    return { customer: existing[0], isNew: false };
-  }
-
-  const { rows: created } = await adminPool.query(
-    `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, phone, lifecycle_stage, status, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'lead', 'active', $8)
-     RETURNING id, first_name, last_name, email, phone`,
-    [
-      tenantId, businessId, `CUS-${Date.now().toString(36).toUpperCase()}`,
-      authAccount.email, authAccount.first_name, authAccount.last_name, phone || null, user.sub,
-    ],
-  );
-  const customer = created[0];
+  // Phase 46: the widget finds or creates the person through the identity service, so someone
+  // who was already added by staff, imported, or captured by a lead form is recognised here.
+  // A person the widget creates starts as a lead; the booking that follows moves them on.
+  const result = await findOrCreatePerson({
+    businessId,
+    tenantId,
+    email: authAccount.email,
+    phone,
+    firstName: authAccount.first_name,
+    lastName: authAccount.last_name,
+    source: 'booking_widget',
+    userId: user.sub,
+    actorUserId: user.sub,
+  });
+  const p = result.person;
+  const customer = { id: p.id, first_name: p.first_name, last_name: p.last_name, email: p.email, phone: p.phone };
+  if (!result.created) return { customer, isNew: false };
 
   await createActivity({
     customerId: customer.id,

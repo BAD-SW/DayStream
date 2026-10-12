@@ -17,8 +17,8 @@ export interface ModuleDefinition {
  * Each module specifies which personas can see it and what permission is needed.
  */
 export const MODULE_REGISTRY: ModuleDefinition[] = [
-  // Customers
-  { id: 'customers', phase: 5, icon: '👥', titleKey: 'Customers', descriptionKey: 'Manage customer accounts', path: '/customers', personas: ['business'], permission: 'customers:read' },
+  // People (Phase 46): leads and customers are one list. The id and path stay 'customers'.
+  { id: 'customers', phase: 5, icon: '👥', titleKey: 'People', descriptionKey: 'Leads and customers in one place', path: '/customers', personas: ['business'], permission: 'customers:read' },
 
   // Appointments
   { id: 'appointments', phase: 7, icon: '📅', titleKey: 'Bookings/Orders', descriptionKey: 'Appointments and order history', path: '/bookings', personas: ['business', 'customer'], permission: 'bookings:read' },

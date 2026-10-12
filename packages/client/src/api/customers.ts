@@ -3,10 +3,27 @@ import { apiClient } from './client';
 export interface Customer {
   id: string;
   reference_number: string;
-  email: string;
+  /** A person may be known by phone only (Phase 46). */
+  email: string | null;
   first_name: string;
   last_name: string;
   phone?: string;
+  // Phase 46 — People Foundation
+  /** Name, else email, else phone: what to show when a name is asked for. */
+  display_name?: string;
+  source?: string;
+  source_detail?: string | null;
+  owner_user_id?: string | null;
+  owner_name?: string | null;
+  has_account?: boolean;
+  incomplete?: boolean;
+  last_activity_at?: string | null;
+  last_visit_at?: string | null;
+  last_login_at?: string | null;
+  next_booking_at?: string | null;
+  lifecycle_changed_at?: string;
+  marketing_consent?: string[];
+  merged_into_id?: string | null;
   date_of_birth?: string;
   gender?: string;
   preferred_language?: string;
@@ -31,6 +48,33 @@ export interface CustomerFilters {
   phone?: string;
   created_from?: string;
   created_to?: string;
+  // Phase 46
+  view?: string;
+  source?: string;
+  owner?: string;
+  incomplete?: boolean;
+  segment_id?: string;
+}
+
+export type ViewCounts = Record<string, number>;
+
+export interface ConsentState { channel: string; marketing: boolean; marketing_changed_at: string | null; reminders: boolean }
+
+export interface ConsentEvent {
+  id: string; channel: string; category: string; previous_state: boolean | null; new_state: boolean;
+  method: string; evidence: string | null; created_at: string; actor_name: string | null;
+}
+
+export interface DuplicateFlag {
+  id: string; match_type: string; other_id: string; other_name: string; other_email: string | null;
+  other_phone: string | null; other_reference: string; other_stage: string;
+}
+
+export interface MergePreview {
+  primary: { id: string; name: string; reference_number: string };
+  secondary: { id: string; name: string; reference_number: string };
+  moves: Array<{ table: string; label: string; count: number }>;
+  blockers: Array<{ table: string; label: string; count: number }>;
 }
 
 export interface PaginatedResponse<T> {
@@ -52,6 +96,9 @@ export interface Segment {
   name: string;
   rules: { logic: string; rules: any[] };
   is_predefined: boolean;
+  /** 'dynamic' follows its rules; 'static' is a fixed, hand-picked list. */
+  kind?: 'dynamic' | 'static';
+  description?: string | null;
   created_at: string;
 }
 
@@ -72,9 +119,59 @@ export async function getCustomers(businessId: string, filters: CustomerFilters 
   if (filters.phone) params.set('phone', filters.phone);
   if (filters.created_from) params.set('created_from', filters.created_from);
   if (filters.created_to) params.set('created_to', filters.created_to);
+  if (filters.view && filters.view !== 'all') params.set('view', filters.view);
+  if (filters.source) params.set('source', filters.source);
+  if (filters.owner) params.set('owner', filters.owner);
+  if (filters.incomplete) params.set('incomplete', 'true');
+  if (filters.segment_id) params.set('segment_id', filters.segment_id);
 
   const res = await apiClient.get(`/v1/customers?${params}`);
   return res.data;
+}
+
+/** People in each system view (All, Leads, Customers, At risk, Former). */
+export async function getViewCounts(businessId: string): Promise<ViewCounts> {
+  const res = await apiClient.get(`/v1/customers/view-counts?business_id=${businessId}`);
+  return res.data.data;
+}
+
+/** Staff who can be set as a person's owner. */
+export async function getOwners(businessId: string): Promise<Array<{ id: string; first_name: string; last_name: string }>> {
+  const res = await apiClient.get(`/v1/customers/owners?business_id=${businessId}`);
+  return res.data.data;
+}
+
+// --- Consent (Phase 46) ---
+
+export async function getConsent(customerId: string, businessId: string): Promise<ConsentState[]> {
+  const res = await apiClient.get(`/v1/customers/${customerId}/consent?business_id=${businessId}`);
+  return res.data.data;
+}
+
+export async function getConsentHistory(customerId: string, businessId: string): Promise<ConsentEvent[]> {
+  const res = await apiClient.get(`/v1/customers/${customerId}/consent/history?business_id=${businessId}`);
+  return res.data.data;
+}
+
+// --- Duplicates and merge (Phase 46) ---
+
+export async function getDuplicateFlags(customerId: string, businessId: string): Promise<DuplicateFlag[]> {
+  const res = await apiClient.get(`/v1/customers/${customerId}/duplicates?business_id=${businessId}`);
+  return res.data.data;
+}
+
+export async function dismissDuplicateFlag(customerId: string, flagId: string, businessId: string): Promise<void> {
+  await apiClient.post(`/v1/customers/${customerId}/duplicates/${flagId}/dismiss?business_id=${businessId}`);
+}
+
+export async function previewMerge(primaryId: string, secondaryId: string, businessId: string): Promise<MergePreview> {
+  const res = await apiClient.post('/v1/customers/merge/preview', { primary_id: primaryId, secondary_id: secondaryId, business_id: businessId });
+  return res.data.data;
+}
+
+export async function mergeCustomers(primaryId: string, secondaryId: string, businessId: string): Promise<Customer> {
+  const res = await apiClient.post('/v1/customers/merge', { primary_id: primaryId, secondary_id: secondaryId, business_id: businessId });
+  return res.data.data;
 }
 
 export async function getCustomer(id: string, businessId: string): Promise<Customer> {

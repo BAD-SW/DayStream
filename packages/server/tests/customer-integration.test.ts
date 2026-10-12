@@ -268,7 +268,7 @@ describe('Customer Management — Integration Tests', () => {
     });
 
     it('imports valid rows and skips invalid ones', async () => {
-      const csv = 'Email,First,Last,Phone\nimport-int1@example.com,Import,One,+111\nimport-int2@example.com,Import,Two,+222\n,Missing,Email,+333';
+      const csv = 'Email,First,Last,Phone\nimport-int1@example.com,Import,One,+111\nimport-int2@example.com,Import,Two,+222\n,Missing,Contact,';
       const result = await importService.executeImport(
         csv,
         { Email: 'email', First: 'first_name', Last: 'last_name', Phone: 'phone' },

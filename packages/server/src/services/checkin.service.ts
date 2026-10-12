@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { touchVisit } from './person-identity.service';
 import { logAudit } from './audit.service';
 import { validateQrCode } from './checkin-qr.service';
 import { validateSession } from './checkin-validation.service';
@@ -285,5 +286,7 @@ async function createCheckInRecord(input: {
       input.locationId || null,
     ],
   );
+  // A check-in is a visit: it moves the person's "last visit" and "last activity" (Phase 46).
+  if (input.customerId) await touchVisit(input.customerId).catch(() => undefined);
   return rows[0];
 }
