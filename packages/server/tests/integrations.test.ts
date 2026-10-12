@@ -26,7 +26,7 @@ function request(method: string, path: string, body?: any, token?: string): Prom
 
 describe('Integrations', () => {
   beforeAll(() => {
-    ownerToken = authService.generateAccessToken('00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner', ['integrations:*', 'integrations:read']);
+    ownerToken = authService.generateAccessToken('00000000-0000-0000-0000-000000000021', TENANT_ID, 'business_owner', ['integrations:*', 'integrations:read']);
   });
 
   describe('Marketplace', () => {

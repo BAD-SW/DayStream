@@ -673,9 +673,36 @@ function ownerFromRequest(req: Request): MethodOwner {
   };
 }
 
+/**
+ * The owner of the payment methods a request is about, once the caller is known to be allowed
+ * to act for that owner. Sends a 403 and returns null otherwise.
+ * - platform, tenant and business methods follow the same level rule as processor settings;
+ * - a customer's saved methods: staff of that business may manage them (they take payments);
+ *   a customer login may only reach its own customer record.
+ */
+async function methodOwnerOrRefuse(req: Request, res: Response): Promise<MethodOwner | null> {
+  const owner = ownerFromRequest(req);
+  if (owner.ownerLevel !== 'customer') {
+    return (await authorizeProcessorOwner(req, res, owner)) ? owner : null;
+  }
+  const authReq = req as AuthenticatedRequest;
+  const isCustomer = (authReq.user.role || '').trim().toLowerCase() === 'customer';
+  if (!isCustomer) return owner;
+  const { rows } = owner.customerId && owner.businessId
+    ? await adminPool.query(
+      `SELECT 1 FROM cus_customers c JOIN usr_users u ON LOWER(u.email) = LOWER(c.email)
+        WHERE u.id = $1 AND c.id = $2 AND c.business_id = $3`,
+      [authReq.user.sub, owner.customerId, owner.businessId],
+    )
+    : { rows: [] as any[] };
+  if (!rows[0]) { error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return null; }
+  return owner;
+}
+
 paymentPlatformRouter.get('/methods', async (req: Request, res: Response) => {
   try {
-    const owner = ownerFromRequest(req);
+    const owner = await methodOwnerOrRefuse(req, res);
+    if (!owner) return;
     if (!owner.ownerLevel) { error(res, 'owner_level required', 'VALIDATION_ERROR', 400); return; }
     const list = await methods.listPaymentMethods(owner);
     success(res, list);
@@ -695,7 +722,8 @@ const captureSessionSchema = Joi.object({
 
 paymentPlatformRouter.post('/methods/capture-session', validate(captureSessionSchema), async (req: Request, res: Response) => {
   try {
-    const owner = ownerFromRequest(req);
+    const owner = await methodOwnerOrRefuse(req, res);
+    if (!owner) return;
     const session = await methods.beginCaptureSession(owner, req.body.method_type as MethodType);
     success(res, session, undefined, 201);
   } catch (e: any) {
@@ -717,7 +745,8 @@ const storeMethodSchema = Joi.object({
 
 paymentPlatformRouter.post('/methods', validate(storeMethodSchema), async (req: Request, res: Response) => {
   try {
-    const owner = ownerFromRequest(req);
+    const owner = await methodOwnerOrRefuse(req, res);
+    if (!owner) return;
     const stored = await methods.storePaymentMethod(owner, req.body.method_type as MethodType, req.body.capture_payload || {});
     success(res, stored, undefined, 201);
   } catch (e: any) {
@@ -728,7 +757,8 @@ paymentPlatformRouter.post('/methods', validate(storeMethodSchema), async (req: 
 
 paymentPlatformRouter.put('/methods/:id/default', async (req: Request, res: Response) => {
   try {
-    const owner = ownerFromRequest(req);
+    const owner = await methodOwnerOrRefuse(req, res);
+    if (!owner) return;
     const ok = await methods.setDefaultPaymentMethod(req.params.id, owner);
     if (!ok) { error(res, 'Payment method not found', 'NOT_FOUND', 404); return; }
     success(res, { updated: true });
@@ -737,7 +767,8 @@ paymentPlatformRouter.put('/methods/:id/default', async (req: Request, res: Resp
 
 paymentPlatformRouter.delete('/methods/:id', async (req: Request, res: Response) => {
   try {
-    const owner = ownerFromRequest(req);
+    const owner = await methodOwnerOrRefuse(req, res);
+    if (!owner) return;
     const ok = await methods.removePaymentMethod(req.params.id, owner);
     if (!ok) { error(res, 'Payment method not found', 'NOT_FOUND', 404); return; }
     success(res, { removed: true });

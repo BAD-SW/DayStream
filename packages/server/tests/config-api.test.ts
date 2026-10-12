@@ -43,7 +43,7 @@ describe('Configuration API', () => {
 
   beforeAll(() => {
     ownerToken = authService.generateAccessToken(
-      '00000000-0000-0000-0000-000000000010',
+      '00000000-0000-0000-0000-000000000021',
       TENANT_ID,
       'Business Owner',
       ['services:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*', 'customers:*'],
@@ -94,13 +94,13 @@ describe('Feature Flag API', () => {
 
   beforeAll(() => {
     ownerToken = authService.generateAccessToken(
-      '00000000-0000-0000-0000-000000000010',
+      '00000000-0000-0000-0000-000000000021',
       TENANT_ID,
       'Business Owner',
       ['services:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*', 'customers:*'],
     );
     adminToken = authService.generateAccessToken(
-      '00000000-0000-0000-0000-000000000010',
+      '00000000-0000-0000-0000-000000000021',
       TENANT_ID,
       'Super Admin',
       ['*:*'],

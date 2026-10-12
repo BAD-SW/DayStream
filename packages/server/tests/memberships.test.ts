@@ -12,7 +12,7 @@ import { adminPool } from '../src/db/pool';
  */
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001';
-const USER_ID = '00000000-0000-0000-0000-000000000010';
+const USER_ID = '00000000-0000-0000-0000-000000000021';
 let BUSINESS_ID: string;
 let CUSTOMER_ID: string;
 let PLAN_ID: string;

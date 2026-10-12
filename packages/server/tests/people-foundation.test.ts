@@ -18,7 +18,7 @@ import { resetBusinessData } from './helpers/test-business';
  */
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001';
-const STAFF_ID = '00000000-0000-0000-0000-000000000010';
+const STAFF_ID = '00000000-0000-0000-0000-000000000021';
 let BUSINESS_ID: string;
 let OTHER_BUSINESS_ID: string;
 let ownerToken: string;

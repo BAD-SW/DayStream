@@ -56,7 +56,7 @@ describe('Resource Management', () => {
     await adminPool.query('DELETE FROM res_types WHERE tenant_id = $1 AND business_id = $2 AND is_system = false', [TENANT_ID, BUSINESS_ID]);
 
     ownerToken = authService.generateAccessToken(
-      '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',
+      '00000000-0000-0000-0000-000000000021', TENANT_ID, 'business_owner',
       ['resources:*', 'services:*', 'bookings:*'],
     );
   });

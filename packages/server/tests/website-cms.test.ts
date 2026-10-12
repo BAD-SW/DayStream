@@ -39,7 +39,7 @@ describe('Website & CMS', () => {
     await adminPool.query(
       `DELETE FROM web_pages WHERE slug = 'about-unit-test' AND site_id IN (SELECT id FROM web_sites WHERE tenant_id = $1)`, [TENANT_ID]);
     ownerToken = authService.generateAccessToken(
-      '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',
+      '00000000-0000-0000-0000-000000000021', TENANT_ID, 'business_owner',
       ['cms:*', 'cms:read'],
     );
   });

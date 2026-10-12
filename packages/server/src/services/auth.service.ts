@@ -219,10 +219,10 @@ export async function createPasswordResetToken(userId: string): Promise<string> 
 /**
  * Consume a reset token and set the user's new password. Validates the token is
  * unexpired and unused, updates the password (bcrypt), marks the token used,
- * records password history, and revokes existing sessions. Returns false if the
- * token is invalid/expired/used.
+ * records password history, and revokes existing sessions. Returns the user whose
+ * password changed, or null if the token is invalid/expired/used.
  */
-export async function resetPasswordWithToken(rawToken: string, newPassword: string): Promise<boolean> {
+export async function resetPasswordWithToken(rawToken: string, newPassword: string): Promise<{ id: string; tenant_id: string } | null> {
   const tokenHash = hashToken(rawToken);
   const { rows } = await adminPool.query(
     `SELECT id, user_id FROM usr_password_reset_tokens
@@ -230,7 +230,7 @@ export async function resetPasswordWithToken(rawToken: string, newPassword: stri
     [tokenHash],
   );
   const tokenRow = rows[0];
-  if (!tokenRow) return false;
+  if (!tokenRow) return null;
 
   const passwordHash = await hashPassword(newPassword);
   await adminPool.query(
@@ -244,7 +244,8 @@ export async function resetPasswordWithToken(rawToken: string, newPassword: stri
   await addToPasswordHistory(tokenRow.user_id, passwordHash);
   // Reset invalidates all existing sessions.
   await revokeAllUserTokens(tokenRow.user_id);
-  return true;
+  const { rows: users } = await adminPool.query('SELECT id, tenant_id FROM usr_users WHERE id = $1', [tokenRow.user_id]);
+  return users[0] || { id: tokenRow.user_id, tenant_id: '' };
 }
 
 // --- Password history ---

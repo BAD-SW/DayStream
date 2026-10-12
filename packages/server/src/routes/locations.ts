@@ -2,7 +2,10 @@ import { Router, Request, Response } from 'express';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { tenantContext } from '../auth/tenant-context';
-import { requirePermission } from '../auth/permissions';
+import { requirePermission, requireAnyPermission } from '../auth/permissions';
+
+// Reading locations (list, detail, hours, assigned staff) is open to managers as well as
+// owners: the Schedule and Business Setup screens need them. Changing them stays owner-only.
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import * as locationService from '../services/location.service';
@@ -60,7 +63,7 @@ const updateLocationSchema = Joi.object({
 // ============================================================
 
 // GET /api/v1/locations — List locations for a business
-locationsRouter.get('/', requirePermission('settings:read'), async (req: Request, res: Response) => {
+locationsRouter.get('/', requireAnyPermission('settings:read', 'staff:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
@@ -112,7 +115,7 @@ locationsRouter.post('/', requirePermission('settings:*'), validate(createLocati
 });
 
 // GET /api/v1/locations/:id — Get location detail
-locationsRouter.get('/:id', requirePermission('settings:read'), async (req: Request, res: Response) => {
+locationsRouter.get('/:id', requireAnyPermission('settings:read', 'staff:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
@@ -176,7 +179,7 @@ locationsRouter.put('/:id/deactivate', requirePermission('settings:*'), async (r
 import * as locationHoursService from '../services/location-hours.service';
 
 // GET /api/v1/locations/:id/hours
-locationsRouter.get('/:id/hours', requirePermission('settings:read'), async (req: Request, res: Response) => {
+locationsRouter.get('/:id/hours', requireAnyPermission('settings:read', 'staff:read'), async (req: Request, res: Response) => {
   try {
     const hours = await locationHoursService.getLocationHours(req.params.id);
     success(res, hours);
@@ -201,7 +204,7 @@ locationsRouter.put('/:id/hours', requirePermission('settings:*'), async (req: R
 
 
 // GET /api/v1/locations/:id/hours/overrides
-locationsRouter.get('/:id/hours/overrides', requirePermission('settings:read'), async (req: Request, res: Response) => {
+locationsRouter.get('/:id/hours/overrides', requireAnyPermission('settings:read', 'staff:read'), async (req: Request, res: Response) => {
   try {
     const year = req.query.year ? parseInt(req.query.year as string, 10) : undefined;
     const overrides = await locationHoursService.getLocationHourOverrides(req.params.id, year);
@@ -241,7 +244,7 @@ locationsRouter.delete('/:id/hours/overrides/:overrideId', requirePermission('se
 
 
 // GET /api/v1/locations/:id/hours/overrides/years
-locationsRouter.get('/:id/hours/overrides/years', requirePermission('settings:read'), async (req: Request, res: Response) => {
+locationsRouter.get('/:id/hours/overrides/years', requireAnyPermission('settings:read', 'staff:read'), async (req: Request, res: Response) => {
   try {
     const years = await locationHoursService.getLocationHourOverrideYears(req.params.id);
     success(res, years);
@@ -256,7 +259,7 @@ locationsRouter.get('/:id/hours/overrides/years', requirePermission('settings:re
 // ============================================================
 
 // GET /api/v1/locations/:id/staff
-locationsRouter.get('/:id/staff', requirePermission('settings:read'), async (req: Request, res: Response) => {
+locationsRouter.get('/:id/staff', requireAnyPermission('settings:read', 'staff:read'), async (req: Request, res: Response) => {
   try {
     const staff = await locationHoursService.getLocationStaff(req.params.id);
     success(res, staff);

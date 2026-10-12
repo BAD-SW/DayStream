@@ -1,10 +1,17 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useContextManager, resolvePersona } from '../context/ContextManager';
+import { useContextManager, resolvePersona, getPermissionsFromRole } from '../context/ContextManager';
+import { mayOpenBusinessPath } from '../design-system/components/dashboard/moduleRegistry';
 import { LoadingSpinner } from './LoadingSpinner';
 import { AppLayout } from './AppLayout';
 
 const CUSTOMER_PATHS = [/^\/dashboard$/, /^\/profile$/, /^\/bookings$/, /^\/events(\/(?!new$)[^/]+)?$/, /^\/community$/];
+
+// Platform screens (DayStream's own staff) and organisation screens (a tenant's owner). A user
+// below that level never sees them, even by typing the address: the server would refuse the
+// data anyway, so the page would only be an empty shell.
+const SYSTEM_PATHS = [/^\/query-editor/, /^\/admin$/, /^\/admin\/(tenants|config|system-reports|processes|audit-log|users|coverage-map|prospect-categories)(\/|$)/];
+const TENANT_PATHS = [/^\/admin\//];
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -41,6 +48,17 @@ export function ProtectedRoute({ children, requiredRole, layout = 'app' }: Prote
   // Customers only have self-service screens; every other route is a staff screen whose
   // API calls they are not permitted to make.
   if (resolvePersona(user?.role || '') === 'customer' && !CUSTOMER_PATHS.some((p) => p.test(location.pathname))) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  const persona = resolvePersona(user?.role || '');
+  const isSystemPath = SYSTEM_PATHS.some((p) => p.test(location.pathname));
+  if ((persona === 'tenant' && isSystemPath) || (persona === 'business' && (isSystemPath || TENANT_PATHS.some((p) => p.test(location.pathname))))) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // Staff roles: a module their role has no permission for is not opened by its address either.
+  if (persona === 'business' && !mayOpenBusinessPath(location.pathname, getPermissionsFromRole(user?.role || ''))) {
     return <Navigate to="/dashboard" replace />;
   }
 

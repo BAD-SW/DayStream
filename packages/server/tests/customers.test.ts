@@ -56,7 +56,7 @@ describe('Customer CRUD API', () => {
     await resetBusinessData(BUSINESS_ID);
 
     businessOwnerToken = authService.generateAccessToken(
-      '00000000-0000-0000-0000-000000000010',
+      '00000000-0000-0000-0000-000000000021',
       TENANT_ID,
       'Business Owner',
       ['services:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*', 'customers:*'],

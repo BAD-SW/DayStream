@@ -157,8 +157,11 @@ async function seed() {
     const roleMap: Record<string, string> = {};
     for (const r of roleRows) {
       const nameLower = r.name.toLowerCase();
-      if (nameLower.includes('owner')) { roleMap['business_owner'] = r.id; roleMap['tenant_owner'] = r.id; }
-      if (nameLower.includes('manager')) { roleMap['manager'] = r.id; roleMap['tenant_manager'] = r.id; }
+      // Exact names: "Tenant Owner" and "Business Owner" both contain "owner", and giving the
+      // tenant owner the business role made them a business user after a page reload.
+      if (nameLower === 'business owner') roleMap['business_owner'] = r.id;
+      if (nameLower === 'tenant owner') roleMap['tenant_owner'] = r.id;
+      if (nameLower === 'manager') { roleMap['manager'] = r.id; roleMap['tenant_manager'] = r.id; }
       if (nameLower === 'staff') { roleMap['reception'] = r.id; roleMap['therapist'] = r.id; roleMap['trainer'] = r.id; }
       if (nameLower === 'customer') { roleMap['customer'] = r.id; }
     }

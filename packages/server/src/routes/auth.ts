@@ -4,6 +4,16 @@ import { validate } from '../middleware/validate';
 import * as authService from '../services/auth.service';
 import { sendPasswordResetEmail } from '../services/email.service';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
+import { logAudit } from '../services/audit.service';
+
+/** Sign-ins, lock-outs and password resets are security events: keep them in the audit log (spec 02 R9). */
+function auditAuth(action: string, user: { id?: string; tenant_id?: string } | null, req: Request, details: Record<string, any> = {}): void {
+  if (!user?.tenant_id) return;
+  logAudit({
+    tenantId: user.tenant_id, userId: user.id, action, resourceType: 'user', resourceId: user.id,
+    details, ipAddress: req.ip,
+  } as any).catch(() => undefined);
+}
 
 export const authRouter = Router();
 
@@ -99,6 +109,8 @@ authRouter.post('/login', validate(loginSchema), async (req: Request, res: Respo
       return;
     }
 
+    auditAuth('auth.login', result.user, req);
+
     // Set refresh token as httpOnly cookie
     res.cookie('refresh_token', result.refreshToken, {
       httpOnly: true,
@@ -124,6 +136,9 @@ authRouter.post('/login', validate(loginSchema), async (req: Request, res: Respo
     });
   } catch (err: any) {
     if (err.message === 'Account is locked. Please try again later.') {
+      authService.findActiveUserByEmailAnyTenant(req.body?.email, req.body?.tenant_id)
+        .then((u: any) => auditAuth('auth.login_refused_locked', u, req))
+        .catch(() => undefined);
       res.status(423).json({ error: err.message, code: 'ACCOUNT_LOCKED' });
     } else if (err.message === 'Invalid credentials') {
       res.status(401).json({ error: err.message, code: 'INVALID_CREDENTIALS' });
@@ -193,6 +208,7 @@ authRouter.post('/logout-all', authenticate, async (req: Request, res: Response)
   try {
     const authReq = req as AuthenticatedRequest;
     await authService.revokeAllUserTokens(authReq.user.sub);
+    auditAuth('auth.logout_all', { id: authReq.user.sub, tenant_id: authReq.user.tid }, req);
     res.status(200).json({ data: { message: 'All sessions revoked' } });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to revoke sessions', code: 'INTERNAL_ERROR' });
@@ -213,6 +229,7 @@ authRouter.post('/forgot-password', validate(forgotPasswordSchema), async (req: 
       // email the raw token in the reset link.
       const resetToken = await authService.createPasswordResetToken(user.id);
       await sendPasswordResetEmail(user.email, resetToken);
+      auditAuth('auth.password_reset_requested', user, req);
     }
 
     // Always return success
@@ -229,7 +246,9 @@ authRouter.post('/forgot-password', validate(forgotPasswordSchema), async (req: 
 authRouter.post('/reset-password', validate(resetPasswordSchema), async (req: Request, res: Response) => {
   try {
     const { token, password } = req.body;
-    const ok = await authService.resetPasswordWithToken(token, password);
+    const user = await authService.resetPasswordWithToken(token, password);
+    const ok = !!user;
+    if (user) auditAuth('auth.password_reset', user, req);
     if (!ok) {
       res.status(400).json({ error: 'This reset link is invalid or has expired. Please request a new one.', code: 'INVALID_RESET_TOKEN' });
       return;

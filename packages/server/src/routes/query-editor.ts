@@ -1,3 +1,4 @@
+import { isSystemRole } from '../auth/permissions';
 import { Router, Request, Response, NextFunction } from 'express';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { isFeatureEnabled } from '../services/feature-flag.service';
@@ -22,8 +23,9 @@ const schemaService = new SchemaService();
 // --- Middleware ---
 
 /**
- * Role check middleware: restricts access to users with *:* permission (super admins)
- * or specific allowed roles.
+ * Role check middleware: the Query Editor is for platform staff only. It runs raw SQL over the
+ * whole database with no tenant filter, so no tenant-level role may use it — including tenant
+ * owners, who hold '*:*' within their own tenant.
  */
 function roleCheck(allowedRoles: string[]) {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -32,13 +34,7 @@ function roleCheck(allowedRoles: string[]) {
       error(res, 'Insufficient permissions to access Query Editor', 'FORBIDDEN', 403);
       return;
     }
-    // Allow if user has wildcard permission
-    if (authReq.user.permissions?.includes('*:*')) {
-      next();
-      return;
-    }
-    // Allow if role matches
-    if (allowedRoles.includes(authReq.user.role)) {
+    if (isSystemRole(authReq.user.role) || allowedRoles.includes(authReq.user.role)) {
       next();
       return;
     }
@@ -55,7 +51,7 @@ function featureFlagCheck(flagKey: string) {
     const authReq = req as AuthenticatedRequest;
     try {
       // Super admins bypass feature flag checks
-      if (authReq.user.permissions?.includes('*:*')) {
+      if (isSystemRole(authReq.user.role)) {
         next();
         return;
       }
@@ -75,7 +71,7 @@ function featureFlagCheck(flagKey: string) {
 // Apply middleware chain to all routes: authenticate → roleCheck → featureFlagCheck
 queryEditorRouter.use(
   authenticate,
-  roleCheck(['Super Admin', 'system_admin', 'system_support', 'tenant_owner']),
+  roleCheck(['Super Admin', 'system_admin', 'system_support']),
   featureFlagCheck('query_editor_enabled'),
 );
 

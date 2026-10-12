@@ -22,7 +22,21 @@ function matchPermission(userPerm: string, required: string): boolean {
 }
 
 /**
+ * Whether a role is a platform (DayStream staff) role. A login token carries the role's
+ * display name ("Super Admin"); the column value form ("system_admin") is accepted as well.
+ */
+export function isSystemRole(role: string | undefined | null): boolean {
+  const r = String(role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return r === 'super_admin' || r === 'system_admin' || r === 'system_support';
+}
+
+/**
  * Require ALL of the specified permissions to proceed.
+ *
+ * Requiring '*:*' means "platform staff only". Holding the '*:*' permission is not enough for
+ * that: a tenant owner holds it too (everything, within their own tenant), and platform
+ * endpoints (all tenants, all users, platform configuration, platform billing) must stay closed
+ * to them. So a '*:*' requirement also demands a platform role.
  */
 export function requirePermission(...permissions: string[]) {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -37,7 +51,7 @@ export function requirePermission(...permissions: string[]) {
 
     const hasAll = permissions.every((required) =>
       userPermissions.some((userPerm) => matchPermission(userPerm, required)),
-    );
+    ) && (!permissions.includes('*:*') || isSystemRole(authReq.user.role));
 
     if (!hasAll) {
       logger.warn('Permission denied', {

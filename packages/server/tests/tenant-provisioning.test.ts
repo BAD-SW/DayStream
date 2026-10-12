@@ -48,7 +48,7 @@ describe('Tenant Provisioning API', () => {
   beforeAll(async () => {
     // Generate a super admin token for testing
     adminToken = authService.generateAccessToken(
-      '00000000-0000-0000-0000-000000000010', // owner user
+      '00000000-0000-0000-0000-000000000021', // owner user
       TENANT_ID,
       'Super Admin',
       ['*:*'],

@@ -1,3 +1,4 @@
+import { isSystemRole } from '../auth/permissions';
 import { Pool, PoolClient } from 'pg';
 
 type Queryable = Pool | PoolClient;
@@ -31,16 +32,17 @@ export interface CallerScope {
 /**
  * Resolves the calling user's persona and own business_id from usr_users — the JWT
  * carries only { sub, tid, role, permissions }, not persona/business_id, so this is
- * looked up per write request. System persona is additionally recognised by the
- * platform-wide '*:*' permission (mirrors tenantContext's own check) since some
- * system operator accounts may not carry persona = 'system' in every seed.
+ * looked up per write request. System persona is additionally recognised by a platform
+ * role in the token, since some system operator accounts may not carry persona = 'system'
+ * in every seed. The '*:*' permission alone does not make a system user: tenant owners hold
+ * it within their own tenant.
  */
 export async function getCallerScope(req: AuthenticatedRequest, pool: Queryable): Promise<CallerScope> {
   const { rows } = await pool.query(
     'SELECT persona, business_id FROM usr_users WHERE id = $1 AND tenant_id = $2',
     [req.user.sub, req.tenantId],
   );
-  const hasPlatformPermission = (req.user.permissions || []).includes('*:*');
+  const hasPlatformPermission = isSystemRole(req.user.role);
   const persona = hasPlatformPermission ? 'system' : (rows[0]?.persona as CallerScope['persona']) || 'business';
   return {
     userId: req.user.sub,

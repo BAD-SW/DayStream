@@ -132,3 +132,32 @@ export function getVisibleModules(
     return true;
   });
 }
+
+// Business screens that belong to a module but live outside its path.
+const EXTRA_MODULE_PATHS: Array<{ path: string; permission: string }> = [
+  { path: '/payroll', permission: 'reports:*' },
+  { path: '/payments', permission: 'reports:*' },
+  { path: '/integrations', permission: 'settings:*' },
+];
+
+function permissionGranted(userPermissions: string[], needed: string): boolean {
+  const [resource] = needed.split(':');
+  return userPermissions.some((perm) => perm === '*:*' || perm === needed || perm === `${resource}:*`);
+}
+
+/**
+ * Whether a user may open a business screen by its address. The menu already hides the
+ * modules a role cannot use; this stops the same screens being opened by typing the address,
+ * where they would only show an empty shell of refused requests. A path no module claims is
+ * allowed (the server decides).
+ */
+export function mayOpenBusinessPath(pathname: string, userPermissions: string[]): boolean {
+  const candidates = [
+    ...MODULE_REGISTRY.filter((m) => m.personas.includes('business') && m.permission).map((m) => ({ path: m.path, permission: m.permission! })),
+    ...EXTRA_MODULE_PATHS,
+  ].filter((m) => pathname === m.path || pathname.startsWith(`${m.path}/`));
+  if (candidates.length === 0) return true;
+  // The most specific module decides (/clock/admin before /clock).
+  const owner = candidates.sort((a, b) => b.path.length - a.path.length)[0];
+  return permissionGranted(userPermissions, owner.permission);
+}

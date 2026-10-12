@@ -33,6 +33,31 @@ interface StaffFilters {
   limit?: number;
 }
 
+/** The tenant role (usr_roles) that carries the permissions for a staff job title. */
+function roleNameFor(role: string): 'Business Owner' | 'Manager' | 'Staff' {
+  const r = (role || '').toLowerCase();
+  if (r === 'business_owner') return 'Business Owner';
+  if (r === 'manager' || r === 'business_manager') return 'Manager';
+  return 'Staff';
+}
+
+/**
+ * Give a staff login the role its permissions come from. The login token takes its role and
+ * permissions from usr_user_roles; a user without a row there is treated as a customer.
+ */
+async function assignStaffRole(userId: string, tenantId: string, role: string): Promise<void> {
+  // The tenant's own role when it has one, otherwise the shared system role of that name.
+  const { rows } = await adminPool.query(
+    'SELECT id FROM usr_roles WHERE name = $2 AND (tenant_id = $1 OR tenant_id IS NULL) ORDER BY (tenant_id IS NULL), created_at LIMIT 1',
+    [tenantId, roleNameFor(role)],
+  );
+  if (!rows[0]) return;
+  await adminPool.query(
+    'INSERT INTO usr_user_roles (user_id, role_id, tenant_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+    [userId, rows[0].id, tenantId],
+  );
+}
+
 /**
  * Generate a unique staff reference per tenant (STF-001, STF-002, etc.)
  */
@@ -88,6 +113,7 @@ export async function createStaff(input: CreateStaffInput) {
         [input.tenantId, input.businessId || null, input.email, input.firstName, input.lastName, passwordHash, role],
       );
       userId = userRows[0].id;
+      await assignStaffRole(userRows[0].id, input.tenantId, role);
     }
   }
 
@@ -345,6 +371,7 @@ export async function linkUserAccount(staffId: string, tenantId: string, email: 
      RETURNING id`,
     [tenantId, businessId || null, email, staff.first_name, staff.last_name, passwordHash, role],
   );
+  await assignStaffRole(userRows[0].id, tenantId, role);
 
   // Link to staff profile
   await adminPool.query(

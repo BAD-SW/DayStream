@@ -135,7 +135,7 @@ describe('Booking Lifecycle', () => {
     BOOKING_ID_3 = bk3[0].id;
 
     ownerToken = authService.generateAccessToken(
-      '00000000-0000-0000-0000-000000000010', TENANT_ID, 'business_owner',
+      '00000000-0000-0000-0000-000000000021', TENANT_ID, 'business_owner',
       ['services:*', 'customers:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*'],
     );
   });
