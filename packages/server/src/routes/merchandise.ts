@@ -70,6 +70,7 @@ merchandiseRouter.get('/', requirePermission('services:read'), async (req: Reque
       totalPages: Math.ceil(result.total / result.limit),
     });
   } catch (err: any) {
+    console.error('Failed to list merchandise', err?.message || err);
     error(res, 'Failed to list merchandise', 'INTERNAL_ERROR', 500);
   }
 });
@@ -112,6 +113,7 @@ merchandiseRouter.get('/:id', requirePermission('services:read'), async (req: Re
     if (!item) { error(res, 'Product not found', 'NOT_FOUND', 404); return; }
     success(res, item);
   } catch (err: any) {
+    console.error('Failed to get merchandise', err?.message || err);
     error(res, 'Failed to get merchandise', 'INTERNAL_ERROR', 500);
   }
 });
@@ -144,6 +146,7 @@ merchandiseRouter.put('/:id/archive', requirePermission('services:*'), async (re
     if (!archived) { error(res, 'Product not found', 'NOT_FOUND', 404); return; }
     success(res, { archived: true });
   } catch (err: any) {
+    console.error('Failed to archive merchandise', err?.message || err);
     error(res, 'Failed to archive merchandise', 'INTERNAL_ERROR', 500);
   }
 });
@@ -158,6 +161,7 @@ merchandiseRouter.put('/:id/pause', requirePermission('services:*'), async (req:
     if (!paused) { error(res, 'Product not found or not active', 'NOT_FOUND', 404); return; }
     success(res, { paused: true });
   } catch (err: any) {
+    console.error('Failed to pause merchandise', err?.message || err);
     error(res, 'Failed to pause merchandise', 'INTERNAL_ERROR', 500);
   }
 });
@@ -172,6 +176,7 @@ merchandiseRouter.put('/:id/activate', requirePermission('services:*'), async (r
     if (!activated) { error(res, 'Product not found or already active', 'NOT_FOUND', 404); return; }
     success(res, { activated: true });
   } catch (err: any) {
+    console.error('Failed to activate merchandise', err?.message || err);
     error(res, 'Failed to activate merchandise', 'INTERNAL_ERROR', 500);
   }
 });
@@ -186,6 +191,7 @@ merchandiseRouter.put('/:id/restore', requirePermission('services:*'), async (re
     if (!restored) { error(res, 'Product not found or not archived', 'NOT_FOUND', 404); return; }
     success(res, { restored: true });
   } catch (err: any) {
+    console.error('Failed to restore merchandise', err?.message || err);
     error(res, 'Failed to restore merchandise', 'INTERNAL_ERROR', 500);
   }
 });
@@ -213,6 +219,7 @@ merchandiseRouter.get('/:id/variants', requirePermission('services:read'), async
     const variants = await merchandiseService.getVariants(req.params.id);
     success(res, variants);
   } catch (err: any) {
+    console.error('Failed to get variants', err?.message || err);
     error(res, 'Failed to get variants', 'INTERNAL_ERROR', 500);
   }
 });
@@ -228,6 +235,7 @@ merchandiseRouter.post('/:id/variants', requirePermission('services:*'), validat
     });
     success(res, variant, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to create variant', err?.message || err);
     error(res, 'Failed to create variant', 'INTERNAL_ERROR', 500);
   }
 });
@@ -245,6 +253,7 @@ merchandiseRouter.put('/:id/variants/:variantId', requirePermission('services:*'
     if (!variant) { error(res, 'Variant not found', 'NOT_FOUND', 404); return; }
     success(res, variant);
   } catch (err: any) {
+    console.error('Failed to update variant', err?.message || err);
     error(res, 'Failed to update variant', 'INTERNAL_ERROR', 500);
   }
 });
@@ -256,6 +265,7 @@ merchandiseRouter.delete('/:id/variants/:variantId', requirePermission('services
     if (!deleted) { error(res, 'Variant not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to delete variant', err?.message || err);
     error(res, 'Failed to delete variant', 'INTERNAL_ERROR', 500);
   }
 });
@@ -292,6 +302,7 @@ merchandiseRouter.delete('/:id/image', requirePermission('services:*'), async (r
     if (!deleted) { error(res, 'No image to delete', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to delete image', err?.message || err);
     error(res, 'Failed to delete image', 'INTERNAL_ERROR', 500);
   }
 });

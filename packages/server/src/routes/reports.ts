@@ -49,6 +49,7 @@ reportsRouter.get('/run/:reportId', requirePermission('reports:read'), async (re
     const result = await runReport(definition, { tenantId: authReq.tenantId, businessId, start, end });
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to run report', err?.message || err);
     error(res, 'Failed to run report', 'INTERNAL_ERROR', 500);
   }
 });
@@ -80,6 +81,7 @@ reportsRouter.get('/run/:reportId/export', requirePermission('reports:read'), as
       res.send(toCsv(result));
     }
   } catch (err: any) {
+    console.error('Failed to export report', err?.message || err);
     error(res, 'Failed to export report', 'INTERNAL_ERROR', 500);
   }
 });
@@ -92,7 +94,7 @@ reportsRouter.get('/dashboard', requirePermission('reports:read'), async (req: R
     const end = req.query.end_date as string || new Date().toISOString().split('T')[0];
     const data = await dashboardService.getDashboardData(authReq.tenantId, authReq.user.sub, { start, end });
     success(res, data);
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 reportsRouter.get('/dashboard/config', requirePermission('reports:read'), async (req: Request, res: Response) => {
@@ -100,7 +102,7 @@ reportsRouter.get('/dashboard/config', requirePermission('reports:read'), async 
     const authReq = req as AuthenticatedRequest;
     const config = await dashboardService.getDashboardConfig(authReq.tenantId, authReq.user.sub);
     success(res, config || { widgets: dashboardService.getDefaultWidgets('owner') });
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 reportsRouter.put('/dashboard/config', requirePermission('reports:read'), async (req: Request, res: Response) => {
@@ -108,7 +110,7 @@ reportsRouter.put('/dashboard/config', requirePermission('reports:read'), async 
     const authReq = req as AuthenticatedRequest;
     const config = await dashboardService.saveDashboardConfig(authReq.tenantId, authReq.user.sub, req.body.widgets || []);
     success(res, config);
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 // --- Domain Reports ---
@@ -119,7 +121,7 @@ reportsRouter.get('/revenue', requirePermission('reports:read'), async (req: Req
     const end = req.query.end_date as string || new Date().toISOString().split('T')[0];
     const data = await revenueService.getRevenueReport(authReq.tenantId, start, end);
     success(res, data);
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 reportsRouter.get('/bookings', requirePermission('reports:read'), async (req: Request, res: Response) => {
@@ -129,7 +131,7 @@ reportsRouter.get('/bookings', requirePermission('reports:read'), async (req: Re
     const end = req.query.end_date as string || new Date().toISOString().split('T')[0];
     const data = await bookingsService.getBookingsReport(authReq.tenantId, start, end);
     success(res, data);
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 reportsRouter.get('/memberships', requirePermission('reports:read'), async (req: Request, res: Response) => {
@@ -139,7 +141,7 @@ reportsRouter.get('/memberships', requirePermission('reports:read'), async (req:
     const end = req.query.end_date as string || new Date().toISOString().split('T')[0];
     const data = await membershipsService.getMembershipsReport(authReq.tenantId, start, end);
     success(res, data);
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 reportsRouter.get('/staff', requirePermission('reports:read'), async (req: Request, res: Response) => {
@@ -149,7 +151,7 @@ reportsRouter.get('/staff', requirePermission('reports:read'), async (req: Reque
     const end = req.query.end_date as string || new Date().toISOString().split('T')[0];
     const data = await staffService.getStaffReport(authReq.tenantId, start, end);
     success(res, data);
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 reportsRouter.get('/customers', requirePermission('reports:read'), async (req: Request, res: Response) => {
@@ -159,7 +161,7 @@ reportsRouter.get('/customers', requirePermission('reports:read'), async (req: R
     const end = req.query.end_date as string || new Date().toISOString().split('T')[0];
     const data = await customersService.getCustomersReport(authReq.tenantId, start, end);
     success(res, data);
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 reportsRouter.get('/financial', requirePermission('reports:read'), async (req: Request, res: Response) => {
@@ -169,7 +171,7 @@ reportsRouter.get('/financial', requirePermission('reports:read'), async (req: R
     const end = req.query.end_date as string || new Date().toISOString().split('T')[0];
     const data = await financialService.getFinancialReport(authReq.tenantId, start, end);
     success(res, data);
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 // --- Aggregation ---
@@ -179,25 +181,25 @@ reportsRouter.post('/aggregate', requirePermission('reports:*'), async (req: Req
     const date = req.body.date || new Date(Date.now() - 86400000).toISOString().split('T')[0];
     await aggregationService.runDailyAggregation(authReq.tenantId, date);
     success(res, { aggregated: true, date });
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 // --- Scheduled Reports ---
 reportsRouter.get('/scheduled', requirePermission('reports:read'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const data = await schedulingService.getScheduledReports(authReq.tenantId); success(res, data); }
-  catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 reportsRouter.post('/scheduled', requirePermission('reports:*'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const r = await schedulingService.createScheduledReport(authReq.tenantId, { ...req.body, created_by: authReq.user.sub }); success(res, r, undefined, 201); }
-  catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 reportsRouter.put('/scheduled/:id', requirePermission('reports:*'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const r = await schedulingService.updateScheduledReport(req.params.id, authReq.tenantId, req.body); if (!r) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, r); }
-  catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 reportsRouter.delete('/scheduled/:id', requirePermission('reports:*'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const d = await schedulingService.deleteScheduledReport(req.params.id, authReq.tenantId); if (!d) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, { deleted: true }); }
-  catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 // --- Export ---
@@ -210,7 +212,7 @@ reportsRouter.get('/:type/export', requirePermission('reports:read'), async (req
     const data = await exportService.getExportData(authReq.tenantId, req.params.type, start, end);
     if (format === 'json') { success(res, JSON.parse(exportService.exportToJson(data))); }
     else { res.setHeader('Content-Type', 'text/csv'); res.send(exportService.exportToCsv(data)); }
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 
@@ -260,6 +262,7 @@ reportsRouter.get('/business-kpis', requirePermission('reports:read'), async (re
       new_customers_month: parseInt(newCustRows[0].count),
     });
   } catch (err: any) {
+    console.error('Failed to get business KPIs', err?.message || err);
     error(res, 'Failed to get business KPIs', 'INTERNAL_ERROR', 500);
   }
 });
@@ -303,6 +306,7 @@ reportsRouter.get('/staff-kpis', async (req: Request, res: Response) => {
       next_appointment: nextAppt,
     });
   } catch (err: any) {
+    console.error('Failed to get staff KPIs', err?.message || err);
     error(res, 'Failed to get staff KPIs', 'INTERNAL_ERROR', 500);
   }
 });

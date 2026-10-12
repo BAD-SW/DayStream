@@ -39,6 +39,16 @@ export async function assignStaff(input: AssignStaffInput) {
     [input.serviceId, input.userId, input.variantId || null, input.isPrimary ?? false],
   );
 
+  // The staff module's copy, so the assignment also shows on the staff member's own page
+  // (see staff-assignments.service: the two lists are kept in step).
+  await adminPool.query(
+    `INSERT INTO stf_service_assignments (staff_id, service_id, variant_id, is_primary)
+     SELECT sp.id, $1, $3, $4 FROM stf_profiles sp
+      WHERE sp.user_id = $2
+        AND NOT EXISTS (SELECT 1 FROM stf_service_assignments x WHERE x.staff_id = sp.id AND x.service_id = $1 AND x.variant_id IS NOT DISTINCT FROM $3)`,
+    [input.serviceId, input.userId, input.variantId || null, input.isPrimary ?? false],
+  );
+
   return rows[0];
 }
 
@@ -73,6 +83,11 @@ export async function removeStaff(serviceId: string, userId: string, variantId?:
   }
 
   const { rowCount } = await adminPool.query(query, params);
+  await adminPool.query(
+    `DELETE FROM stf_service_assignments WHERE service_id = $1 AND variant_id IS NOT DISTINCT FROM $3
+        AND staff_id IN (SELECT id FROM stf_profiles WHERE user_id = $2)`,
+    [serviceId, userId, variantId || null],
+  );
   return (rowCount ?? 0) > 0;
 }
 

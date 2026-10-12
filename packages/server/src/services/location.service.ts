@@ -266,6 +266,18 @@ export async function deactivateLocation(id: string, businessId: string, userId:
     throw new Error('Cannot deactivate the only active location');
   }
 
+  // Bookings are tied to a location through the room or equipment they use. A location whose
+  // resources still have bookings ahead is not closed until those are moved or cancelled.
+  const { rows: ahead } = await adminPool.query(
+    `SELECT COUNT(*)::int AS n FROM apt_bookings b
+       JOIN res_resources r ON r.id = b.resource_id
+      WHERE r.location_id = $1 AND b.start_time > NOW() AND b.status IN ('pending', 'confirmed')`,
+    [id],
+  );
+  if (ahead[0].n > 0) {
+    throw Object.assign(new Error(`This location still has ${ahead[0].n} upcoming booking(s). Move or cancel them first.`), { code: 'HAS_FUTURE_BOOKINGS' });
+  }
+
   const { rowCount } = await adminPool.query(
     "UPDATE sys_locations SET status = 'inactive', updated_at = NOW() WHERE id = $1 AND business_id = $2",
     [id, businessId],

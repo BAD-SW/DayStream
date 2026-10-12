@@ -45,7 +45,7 @@ export async function detectConflicts(input: ConflictCheckInput): Promise<Confli
          WHERE staff_id = $1
            AND start_time < $3
            AND end_time > $2
-           AND status IN ('pending', 'confirmed', 'in_progress')
+           AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
            ${excludeClause}
          FOR UPDATE NOWAIT`,
         [input.staffId, blockStart.toISOString(), blockEnd.toISOString()],
@@ -83,7 +83,7 @@ export async function detectConflicts(input: ConflictCheckInput): Promise<Confli
        WHERE resource_id = $1
          AND start_time < $3
          AND end_time > $2
-         AND status IN ('pending', 'confirmed', 'in_progress')
+         AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
          ${excludeClause}`,
       [input.resourceId, blockStart.toISOString(), blockEnd.toISOString()],
     );
@@ -106,7 +106,7 @@ export async function detectConflicts(input: ConflictCheckInput): Promise<Confli
        WHERE customer_id = $1
          AND start_time < $3
          AND end_time > $2
-         AND status IN ('pending', 'confirmed', 'in_progress')
+         AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
          ${excludeClause}`,
       [input.customerId, input.startTime.toISOString(), input.endTime.toISOString()],
     );
@@ -182,7 +182,7 @@ export async function suggestAlternatives(
        WHERE staff_id = $1
          AND start_time < $3
          AND end_time > $2
-         AND status IN ('pending', 'confirmed', 'in_progress')
+         AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
        LIMIT 1`,
       [staffId, blockStart.toISOString(), blockEnd.toISOString()],
     );

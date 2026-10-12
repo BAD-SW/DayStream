@@ -41,6 +41,7 @@ usersRouter.get('/', requirePermission('customers:*'), async (req: Request, res:
     const total = parseInt(countResult.rows[0].total, 10);
     success(res, dataResult.rows, paginationMeta(total, pagination));
   } catch (err: any) {
+    console.error('Failed to list users', err?.message || err);
     error(res, 'Failed to list users', 'INTERNAL_ERROR', 500);
   }
 });
@@ -62,6 +63,7 @@ usersRouter.get('/:id', requirePermission('customers:*'), async (req: Request, r
 
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to get user', err?.message || err);
     error(res, 'Failed to get user', 'INTERNAL_ERROR', 500);
   }
 });

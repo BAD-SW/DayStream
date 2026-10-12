@@ -75,7 +75,7 @@ paymentPlatformRouter.post('/webhooks/:provider', async (req: Request, res: Resp
     }
 
     success(res, { received: true, type: event.type, reference: event.providerReference ?? null });
-  } catch (err: any) { error(res, 'Webhook processing failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Webhook processing failed', err?.message || err); error(res, 'Webhook processing failed', 'INTERNAL_ERROR', 500); }
 });
 
 /** Best-effort finalize of a pending Section C customer charge from a webhook. */
@@ -121,7 +121,7 @@ paymentPlatformRouter.get('/available-methods', async (req: Request, res: Respon
     const recurring = req.query.recurring === 'true';
     const available = await resolveAvailableMethods(businessId, { recurring });
     success(res, available);
-  } catch (err: any) { error(res, 'Failed to resolve available methods', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to resolve available methods', err?.message || err); error(res, 'Failed to resolve available methods', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -180,7 +180,7 @@ paymentPlatformRouter.get('/processors', requirePermission('settings:*'), async 
        FROM pay_processor_connections ORDER BY owner_level, created_at`,
     );
     success(res, rows);
-  } catch (err: any) { error(res, 'Failed to list processor connections', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list processor connections', err?.message || err); error(res, 'Failed to list processor connections', 'INTERNAL_ERROR', 500); }
 });
 
 paymentPlatformRouter.post('/processors/connect', requirePermission('settings:*'), validate(connectSchema), async (req: Request, res: Response) => {
@@ -197,7 +197,7 @@ paymentPlatformRouter.post('/processors/connect', requirePermission('settings:*'
       [tenant_id ?? null, business_id ?? null, owner_level, provider, provider_account_ref ?? null],
     );
     success(res, rows[0], undefined, 201);
-  } catch (err: any) { error(res, 'Failed to connect processor', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to connect processor', err?.message || err); error(res, 'Failed to connect processor', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -233,7 +233,7 @@ paymentPlatformRouter.get('/processors/config', requirePermission('settings:*'),
     if (!(await authorizeProcessorOwner(req, res, owner))) return;
     const view = await processorConfig.getProcessorConfig(owner);
     success(res, view); // null when nothing configured yet
-  } catch (err: any) { error(res, 'Failed to read processor config', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read processor config', err?.message || err); error(res, 'Failed to read processor config', 'INTERNAL_ERROR', 500); }
 });
 
 const saveConfigSchema = Joi.object({
@@ -252,6 +252,7 @@ paymentPlatformRouter.post('/processors/test', requirePermission('settings:*'), 
     const result = await processorConfig.testProcessorConnection(owner, req.body.provider, req.body.config || {});
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to test connection', err?.message || err);
     error(res, 'Failed to test connection', 'INTERNAL_ERROR', 500);
   }
 });
@@ -266,6 +267,7 @@ paymentPlatformRouter.post('/processors/test-probe', requirePermission('settings
     const result = await processorConfig.prepareConnectionProbe(owner, req.body.provider, req.body.config || {});
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to prepare connection probe', err?.message || err);
     error(res, 'Failed to prepare connection probe', 'INTERNAL_ERROR', 500);
   }
 });
@@ -294,7 +296,7 @@ paymentPlatformRouter.get('/platform-billing/:tenantId/plan', requirePermission(
   try {
     const plan = await platformBilling.getTenantPlan(req.params.tenantId);
     success(res, plan);
-  } catch (err: any) { error(res, 'Failed to read tenant plan', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read tenant plan', err?.message || err); error(res, 'Failed to read tenant plan', 'INTERNAL_ERROR', 500); }
 });
 
 const planSchema = Joi.object({
@@ -315,14 +317,14 @@ paymentPlatformRouter.put('/platform-billing/:tenantId/plan', requirePermission(
     const authReq = req as AuthenticatedRequest;
     const plan = await platformBilling.saveTenantPlan(req.params.tenantId, req.body, authReq.user.sub);
     success(res, plan);
-  } catch (err: any) { error(res, 'Failed to save tenant plan', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save tenant plan', err?.message || err); error(res, 'Failed to save tenant plan', 'INTERNAL_ERROR', 500); }
 });
 
 // A tenant's plan version history (all versions, newest first).
 paymentPlatformRouter.get('/platform-billing/:tenantId/plan-history', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
     success(res, await platformBilling.listTenantPlanVersions(req.params.tenantId));
-  } catch (err: any) { error(res, 'Failed to read plan history', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read plan history', err?.message || err); error(res, 'Failed to read plan history', 'INTERNAL_ERROR', 500); }
 });
 
 // A tenant's audit trail — all changes made to this tenant (paged, with who/when).
@@ -331,7 +333,7 @@ paymentPlatformRouter.get('/platform-billing/:tenantId/audit', requirePermission
     const page = parseInt(req.query.page as string, 10) || 1;
     const limit = Math.min(parseInt(req.query.limit as string, 10) || 25, 100);
     success(res, await queryResourceAudit('tenant', req.params.tenantId, { page, limit }));
-  } catch (err: any) { error(res, 'Failed to read tenant audit', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read tenant audit', err?.message || err); error(res, 'Failed to read tenant audit', 'INTERNAL_ERROR', 500); }
 });
 
 // A tenant's charge history + current credit balance.
@@ -342,14 +344,14 @@ paymentPlatformRouter.get('/platform-billing/:tenantId/charges', requirePermissi
       platformBilling.getTenantCreditBalance(req.params.tenantId),
     ]);
     success(res, { charges, creditBalance });
-  } catch (err: any) { error(res, 'Failed to read tenant charges', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read tenant charges', err?.message || err); error(res, 'Failed to read tenant charges', 'INTERNAL_ERROR', 500); }
 });
 
 // A tenant's credits.
 paymentPlatformRouter.get('/platform-billing/:tenantId/credits', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
     success(res, await platformBilling.listTenantCredits(req.params.tenantId));
-  } catch (err: any) { error(res, 'Failed to read tenant credits', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read tenant credits', err?.message || err); error(res, 'Failed to read tenant credits', 'INTERNAL_ERROR', 500); }
 });
 
 const creditSchema = Joi.object({
@@ -363,7 +365,7 @@ paymentPlatformRouter.post('/platform-billing/:tenantId/credits', requirePermiss
     const authReq = req as AuthenticatedRequest;
     const credit = await platformBilling.issueTenantCredit(req.params.tenantId, req.body.amountCents, req.body.reason, authReq.user.sub);
     success(res, credit, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to issue credit', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to issue credit', err?.message || err); error(res, 'Failed to issue credit', 'INTERNAL_ERROR', 500); }
 });
 
 const chargeNowSchema = Joi.object({
@@ -388,7 +390,7 @@ paymentPlatformRouter.post('/platform-billing/:tenantId/charge-now', requirePerm
 paymentPlatformRouter.get('/platform-billing-schedule', requirePermission('*:*'), async (_req: Request, res: Response) => {
   try {
     success(res, await platformBilling.getPlatformSchedule());
-  } catch (err: any) { error(res, 'Failed to read schedule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read schedule', err?.message || err); error(res, 'Failed to read schedule', 'INTERNAL_ERROR', 500); }
 });
 
 const scheduleSchema = Joi.object({
@@ -401,14 +403,14 @@ paymentPlatformRouter.put('/platform-billing-schedule', requirePermission('*:*')
   try {
     const { scheduleTime, scheduleTimezone, enabled } = req.body;
     success(res, await platformBilling.savePlatformSchedule(scheduleTime, scheduleTimezone, enabled));
-  } catch (err: any) { error(res, 'Failed to save schedule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save schedule', err?.message || err); error(res, 'Failed to save schedule', 'INTERNAL_ERROR', 500); }
 });
 
 // Run the platform billing now (manual trigger).
 paymentPlatformRouter.post('/platform-billing-run-now', requirePermission('*:*'), async (_req: Request, res: Response) => {
   try {
     success(res, await platformBilling.runPlatformBillingNow());
-  } catch (err: any) { error(res, 'Failed to run platform billing', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to run platform billing', err?.message || err); error(res, 'Failed to run platform billing', 'INTERNAL_ERROR', 500); }
 });
 
 // Platform billing job runs within a date range (default last 7 days).
@@ -418,14 +420,14 @@ paymentPlatformRouter.get('/platform-billing-runs', requirePermission('*:*'), as
     const to = req.query.to as string | undefined;
     const limit = Math.min(parseInt(req.query.limit as string, 10) || 200, 500);
     success(res, await platformBilling.listPlatformBillingRuns({ from, to, limit }));
-  } catch (err: any) { error(res, 'Failed to read billing runs', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read billing runs', err?.message || err); error(res, 'Failed to read billing runs', 'INTERNAL_ERROR', 500); }
 });
 
 // The charges attempted during a specific run (drill-down).
 paymentPlatformRouter.get('/platform-billing-runs/:runId/charges', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
     success(res, await platformBilling.getRunCharges(req.params.runId));
-  } catch (err: any) { error(res, 'Failed to read run charges', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read run charges', err?.message || err); error(res, 'Failed to read run charges', 'INTERNAL_ERROR', 500); }
 });
 
 // Platform-wide charges across all tenants; ?status=failed for the failed-charge report.
@@ -434,7 +436,7 @@ paymentPlatformRouter.get('/platform-billing-charges', requirePermission('*:*'),
     const status = req.query.status as string | undefined;
     const limit = Math.min(parseInt(req.query.limit as string, 10) || 100, 500);
     success(res, await platformBilling.listAllPlatformCharges({ status, limit }));
-  } catch (err: any) { error(res, 'Failed to read charges', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read charges', err?.message || err); error(res, 'Failed to read charges', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -464,7 +466,7 @@ paymentPlatformRouter.get('/tenant-billing/:businessId/plan', tenantContext, req
     const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
     if (!owned) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
     success(res, await tenantBilling.getBusinessPlan(req.params.businessId));
-  } catch (err: any) { error(res, 'Failed to read business plan', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read business plan', err?.message || err); error(res, 'Failed to read business plan', 'INTERNAL_ERROR', 500); }
 });
 
 const businessPlanSchema = Joi.object({
@@ -487,7 +489,7 @@ paymentPlatformRouter.put('/tenant-billing/:businessId/plan', tenantContext, req
     if (!owned) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
     const plan = await tenantBilling.saveBusinessPlan(req.params.businessId, authReq.tenantId!, req.body, authReq.user.sub);
     success(res, plan);
-  } catch (err: any) { error(res, 'Failed to save business plan', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save business plan', err?.message || err); error(res, 'Failed to save business plan', 'INTERNAL_ERROR', 500); }
 });
 
 // A business's plan version history (all versions, newest first).
@@ -497,7 +499,7 @@ paymentPlatformRouter.get('/tenant-billing/:businessId/plan-history', tenantCont
     const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
     if (!owned) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
     success(res, await tenantBilling.listBusinessPlanVersions(req.params.businessId));
-  } catch (err: any) { error(res, 'Failed to read plan history', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read plan history', err?.message || err); error(res, 'Failed to read plan history', 'INTERNAL_ERROR', 500); }
 });
 
 // A business's audit trail — all changes made to this business (paged).
@@ -509,7 +511,7 @@ paymentPlatformRouter.get('/tenant-billing/:businessId/audit', tenantContext, re
     const page = parseInt(req.query.page as string, 10) || 1;
     const limit = Math.min(parseInt(req.query.limit as string, 10) || 25, 100);
     success(res, await queryResourceAudit('business', req.params.businessId, { page, limit }));
-  } catch (err: any) { error(res, 'Failed to read business audit', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read business audit', err?.message || err); error(res, 'Failed to read business audit', 'INTERNAL_ERROR', 500); }
 });
 
 // A business's charge history + current credit balance.
@@ -523,7 +525,7 @@ paymentPlatformRouter.get('/tenant-billing/:businessId/charges', tenantContext, 
       tenantBilling.getBusinessCreditBalance(req.params.businessId),
     ]);
     success(res, { charges, creditBalance });
-  } catch (err: any) { error(res, 'Failed to read business charges', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read business charges', err?.message || err); error(res, 'Failed to read business charges', 'INTERNAL_ERROR', 500); }
 });
 
 // A business's credits.
@@ -533,7 +535,7 @@ paymentPlatformRouter.get('/tenant-billing/:businessId/credits', tenantContext, 
     const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
     if (!owned) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
     success(res, await tenantBilling.listBusinessCredits(req.params.businessId));
-  } catch (err: any) { error(res, 'Failed to read business credits', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read business credits', err?.message || err); error(res, 'Failed to read business credits', 'INTERNAL_ERROR', 500); }
 });
 
 const businessCreditSchema = Joi.object({
@@ -549,7 +551,7 @@ paymentPlatformRouter.post('/tenant-billing/:businessId/credits', tenantContext,
     if (!owned) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
     const credit = await tenantBilling.issueBusinessCredit(req.params.businessId, authReq.tenantId!, req.body.amountCents, req.body.reason, authReq.user.sub);
     success(res, credit, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to issue credit', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to issue credit', err?.message || err); error(res, 'Failed to issue credit', 'INTERNAL_ERROR', 500); }
 });
 
 const businessChargeNowSchema = Joi.object({
@@ -578,7 +580,7 @@ paymentPlatformRouter.get('/tenant-billing-schedule', tenantContext, requireTena
   try {
     const authReq = req as AuthenticatedRequest;
     success(res, await tenantBilling.getTenantSchedule(authReq.tenantId!));
-  } catch (err: any) { error(res, 'Failed to read schedule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read schedule', err?.message || err); error(res, 'Failed to read schedule', 'INTERNAL_ERROR', 500); }
 });
 
 const tenantScheduleSchema = Joi.object({
@@ -592,7 +594,7 @@ paymentPlatformRouter.put('/tenant-billing-schedule', tenantContext, requireTena
     const authReq = req as AuthenticatedRequest;
     const { scheduleTime, scheduleTimezone, enabled } = req.body;
     success(res, await tenantBilling.saveTenantSchedule(authReq.tenantId!, scheduleTime, scheduleTimezone, enabled));
-  } catch (err: any) { error(res, 'Failed to save schedule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save schedule', err?.message || err); error(res, 'Failed to save schedule', 'INTERNAL_ERROR', 500); }
 });
 
 // Run this tenant's billing now (manual trigger).
@@ -600,7 +602,7 @@ paymentPlatformRouter.post('/tenant-billing-run-now', tenantContext, requireTena
   try {
     const authReq = req as AuthenticatedRequest;
     success(res, await tenantBilling.runTenantBillingNow(authReq.tenantId!));
-  } catch (err: any) { error(res, 'Failed to run tenant billing', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to run tenant billing', err?.message || err); error(res, 'Failed to run tenant billing', 'INTERNAL_ERROR', 500); }
 });
 
 // This tenant's billing job runs within a date range (default last 7 days).
@@ -611,14 +613,14 @@ paymentPlatformRouter.get('/tenant-billing-runs', tenantContext, requireTenantLe
     const to = req.query.to as string | undefined;
     const limit = Math.min(parseInt(req.query.limit as string, 10) || 200, 500);
     success(res, await tenantBilling.listTenantBillingRuns(authReq.tenantId!, { from, to, limit }));
-  } catch (err: any) { error(res, 'Failed to read billing runs', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read billing runs', err?.message || err); error(res, 'Failed to read billing runs', 'INTERNAL_ERROR', 500); }
 });
 
 // The charges attempted during a specific run (drill-down).
 paymentPlatformRouter.get('/tenant-billing-runs/:runId/charges', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     success(res, await tenantBilling.getRunCharges(req.params.runId));
-  } catch (err: any) { error(res, 'Failed to read run charges', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read run charges', err?.message || err); error(res, 'Failed to read run charges', 'INTERNAL_ERROR', 500); }
 });
 
 // Tenant-wide charges across all this tenant's businesses; ?status=failed for the failed-charge report.
@@ -628,7 +630,7 @@ paymentPlatformRouter.get('/tenant-billing-charges', tenantContext, requireTenan
     const status = req.query.status as string | undefined;
     const limit = Math.min(parseInt(req.query.limit as string, 10) || 100, 500);
     success(res, await tenantBilling.listAllBusinessCharges(authReq.tenantId!, { status, limit }));
-  } catch (err: any) { error(res, 'Failed to read charges', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read charges', err?.message || err); error(res, 'Failed to read charges', 'INTERNAL_ERROR', 500); }
 });
 
 // The tenant's own receiving/billing bank account (where its businesses' payments
@@ -637,7 +639,7 @@ paymentPlatformRouter.get('/tenant-billing-account', tenantContext, requireTenan
   try {
     const authReq = req as AuthenticatedRequest;
     success(res, await tenantBilling.getTenantBillingAccount(authReq.tenantId!));
-  } catch (err: any) { error(res, 'Failed to read billing account', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read billing account', err?.message || err); error(res, 'Failed to read billing account', 'INTERNAL_ERROR', 500); }
 });
 
 const tenantBillingAccountSchema = Joi.object({
@@ -653,7 +655,7 @@ paymentPlatformRouter.put('/tenant-billing-account', tenantContext, requireTenan
   try {
     const authReq = req as AuthenticatedRequest;
     success(res, await tenantBilling.saveTenantBillingAccount(authReq.tenantId!, req.body, authReq.user.sub));
-  } catch (err: any) { error(res, 'Failed to save billing account', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save billing account', err?.message || err); error(res, 'Failed to save billing account', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -706,7 +708,7 @@ paymentPlatformRouter.get('/methods', async (req: Request, res: Response) => {
     if (!owner.ownerLevel) { error(res, 'owner_level required', 'VALIDATION_ERROR', 400); return; }
     const list = await methods.listPaymentMethods(owner);
     success(res, list);
-  } catch (err: any) { error(res, 'Failed to list payment methods', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list payment methods', err?.message || err); error(res, 'Failed to list payment methods', 'INTERNAL_ERROR', 500); }
 });
 
 const captureSessionSchema = Joi.object({
@@ -762,7 +764,7 @@ paymentPlatformRouter.put('/methods/:id/default', async (req: Request, res: Resp
     const ok = await methods.setDefaultPaymentMethod(req.params.id, owner);
     if (!ok) { error(res, 'Payment method not found', 'NOT_FOUND', 404); return; }
     success(res, { updated: true });
-  } catch (err: any) { error(res, 'Failed to set default', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to set default', err?.message || err); error(res, 'Failed to set default', 'INTERNAL_ERROR', 500); }
 });
 
 paymentPlatformRouter.delete('/methods/:id', async (req: Request, res: Response) => {
@@ -772,7 +774,7 @@ paymentPlatformRouter.delete('/methods/:id', async (req: Request, res: Response)
     const ok = await methods.removePaymentMethod(req.params.id, owner);
     if (!ok) { error(res, 'Payment method not found', 'NOT_FOUND', 404); return; }
     success(res, { removed: true });
-  } catch (err: any) { error(res, 'Failed to remove payment method', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to remove payment method', err?.message || err); error(res, 'Failed to remove payment method', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -829,7 +831,7 @@ paymentPlatformRouter.get('/invoicing-enabled', requirePermission('bookings:read
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     success(res, { enabled: await invoices.isInvoicingEnabled(businessId) });
-  } catch (e: any) { error(res, 'Failed to read invoicing setting', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to read invoicing setting', e?.message || e); error(res, 'Failed to read invoicing setting', 'INTERNAL_ERROR', 500); }
 });
 
 const invoicingEnabledSchema = Joi.object({
@@ -842,7 +844,7 @@ paymentPlatformRouter.put('/invoicing-enabled', requirePermission('bookings:*'),
     const authReq = req as AuthenticatedRequest;
     const enabled = await invoices.setInvoicingEnabled(req.body.business_id, req.body.enabled, authReq.user.sub);
     success(res, { enabled });
-  } catch (e: any) { error(res, 'Failed to update invoicing setting', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to update invoicing setting', e?.message || e); error(res, 'Failed to update invoicing setting', 'INTERNAL_ERROR', 500); }
 });
 
 // List a business's invoices.
@@ -943,7 +945,7 @@ paymentPlatformRouter.get('/invoices/:id/pdf', requirePermission('bookings:read'
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="invoice-${req.params.id}.pdf"`);
     res.send(pdf);
-  } catch (e: any) { error(res, 'Failed to render invoice PDF', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to render invoice PDF', e?.message || e); error(res, 'Failed to render invoice PDF', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -997,7 +999,7 @@ paymentPlatformRouter.get('/gift-cards/lookup', requirePermission('bookings:read
     const card = await giftCards.getGiftCardByCode(code, businessId);
     if (!card) { error(res, 'Gift card not found', 'NOT_FOUND', 404); return; }
     success(res, card);
-  } catch (e: any) { error(res, 'Failed to look up gift card', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to look up gift card', e?.message || e); error(res, 'Failed to look up gift card', 'INTERNAL_ERROR', 500); }
 });
 
 paymentPlatformRouter.get('/gift-cards/:id', requirePermission('bookings:read'), async (req: Request, res: Response) => {
@@ -1007,7 +1009,7 @@ paymentPlatformRouter.get('/gift-cards/:id', requirePermission('bookings:read'),
     const card = await giftCards.getGiftCard(req.params.id, businessId);
     if (!card) { error(res, 'Gift card not found', 'NOT_FOUND', 404); return; }
     success(res, card);
-  } catch (e: any) { error(res, 'Failed to read gift card', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to read gift card', e?.message || e); error(res, 'Failed to read gift card', 'INTERNAL_ERROR', 500); }
 });
 
 const giftCardBizSchema = Joi.object({ business_id: Joi.string().uuid().required() });
@@ -1018,7 +1020,7 @@ paymentPlatformRouter.post('/gift-cards/:id/void', requirePermission('bookings:*
     const ok = await giftCards.voidGiftCard(req.params.id, req.body.business_id, authReq.tenantId, authReq.user.sub);
     if (!ok) { error(res, 'Gift card not found or not voidable', 'NOT_FOUND', 404); return; }
     success(res, { voided: true });
-  } catch (e: any) { error(res, 'Failed to void gift card', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to void gift card', e?.message || e); error(res, 'Failed to void gift card', 'INTERNAL_ERROR', 500); }
 });
 
 paymentPlatformRouter.post('/gift-cards/:id/email', requirePermission('bookings:*'), validate(giftCardBizSchema), async (req: Request, res: Response) => {
@@ -1026,7 +1028,7 @@ paymentPlatformRouter.post('/gift-cards/:id/email', requirePermission('bookings:
     const ok = await giftCards.emailGiftCard(req.params.id, req.body.business_id);
     if (!ok) { error(res, 'Gift card not found or has no recipient email', 'NOT_FOUND', 404); return; }
     success(res, { queued: true });
-  } catch (e: any) { error(res, 'Failed to email gift card', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to email gift card', e?.message || e); error(res, 'Failed to email gift card', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -1041,7 +1043,7 @@ paymentPlatformRouter.get('/vouchers', requirePermission('bookings:read'), async
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     success(res, await vouchers.listVouchers(businessId, { status: req.query.status as string | undefined }));
-  } catch (e: any) { error(res, 'Failed to list vouchers', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to list vouchers', e?.message || e); error(res, 'Failed to list vouchers', 'INTERNAL_ERROR', 500); }
 });
 
 const createVoucherSchema = Joi.object({
@@ -1088,7 +1090,7 @@ paymentPlatformRouter.post('/vouchers/validate', requirePermission('bookings:rea
       amountCents: req.body.amount,
     });
     success(res, result);
-  } catch (e: any) { error(res, 'Failed to validate voucher', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to validate voucher', e?.message || e); error(res, 'Failed to validate voucher', 'INTERNAL_ERROR', 500); }
 });
 
 paymentPlatformRouter.get('/vouchers/:id', requirePermission('bookings:read'), async (req: Request, res: Response) => {
@@ -1098,7 +1100,7 @@ paymentPlatformRouter.get('/vouchers/:id', requirePermission('bookings:read'), a
     const voucher = await vouchers.getVoucher(req.params.id, businessId);
     if (!voucher) { error(res, 'Voucher not found', 'NOT_FOUND', 404); return; }
     success(res, voucher);
-  } catch (e: any) { error(res, 'Failed to read voucher', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to read voucher', e?.message || e); error(res, 'Failed to read voucher', 'INTERNAL_ERROR', 500); }
 });
 
 paymentPlatformRouter.post('/vouchers/:id/void', requirePermission('bookings:*'), validate(giftCardBizSchema), async (req: Request, res: Response) => {
@@ -1107,7 +1109,7 @@ paymentPlatformRouter.post('/vouchers/:id/void', requirePermission('bookings:*')
     const ok = await vouchers.voidVoucher(req.params.id, req.body.business_id, authReq.tenantId, authReq.user.sub);
     if (!ok) { error(res, 'Voucher not found or not voidable', 'NOT_FOUND', 404); return; }
     success(res, { voided: true });
-  } catch (e: any) { error(res, 'Failed to void voucher', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to void voucher', e?.message || e); error(res, 'Failed to void voucher', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -1183,7 +1185,7 @@ paymentPlatformRouter.get('/account-credit', requirePermission('bookings:read'),
       accountCredit.listCustomerCredits(businessId, customerId),
     ]);
     success(res, { balance, credits });
-  } catch (e: any) { error(res, 'Failed to read account credit', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to read account credit', e?.message || e); error(res, 'Failed to read account credit', 'INTERNAL_ERROR', 500); }
 });
 
 const applyCreditSchema = Joi.object({
@@ -1229,7 +1231,7 @@ paymentPlatformRouter.get('/transactions', requirePermission('bookings:read'), a
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
     });
     success(res, result.transactions, { total: result.total, page: result.page, limit: result.limit });
-  } catch (e: any) { error(res, 'Failed to list transactions', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to list transactions', e?.message || e); error(res, 'Failed to list transactions', 'INTERNAL_ERROR', 500); }
 });
 
 // --- Subscriptions (membership enrollments) ---
@@ -1273,7 +1275,7 @@ paymentPlatformRouter.put('/subscriptions/:id/cancel', requirePermission('bookin
     const ok = await membership.cancelEnrollment(req.params.id, req.body.business_id);
     if (!ok) { error(res, 'Subscription not found or not active', 'NOT_FOUND', 404); return; }
     success(res, { cancelled: true });
-  } catch (e: any) { error(res, 'Failed to cancel subscription', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to cancel subscription', e?.message || e); error(res, 'Failed to cancel subscription', 'INTERNAL_ERROR', 500); }
 });
 
 // --- Accepted methods (per business) ---
@@ -1283,7 +1285,7 @@ paymentPlatformRouter.get('/accepted-methods', requirePermission('bookings:read'
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     success(res, await paymentLedger.getAcceptedMethods(businessId));
-  } catch (e: any) { error(res, 'Failed to get accepted methods', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to get accepted methods', e?.message || e); error(res, 'Failed to get accepted methods', 'INTERNAL_ERROR', 500); }
 });
 
 const acceptedMethodsSchema = Joi.object({
@@ -1297,7 +1299,7 @@ const acceptedMethodsSchema = Joi.object({
 paymentPlatformRouter.put('/accepted-methods', requirePermission('bookings:*'), validate(acceptedMethodsSchema), async (req: Request, res: Response) => {
   try {
     success(res, await paymentLedger.updateAcceptedMethods(req.body.business_id, req.body.methods));
-  } catch (e: any) { error(res, 'Failed to update accepted methods', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to update accepted methods', e?.message || e); error(res, 'Failed to update accepted methods', 'INTERNAL_ERROR', 500); }
 });
 
 // --- Business recurring-billing run schedule (C6a) ---
@@ -1307,7 +1309,7 @@ paymentPlatformRouter.get('/billing-schedule', requirePermission('bookings:*'), 
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     success(res, await membershipRenewal.getBusinessBillingSchedule(businessId));
-  } catch (e: any) { error(res, 'Failed to read billing schedule', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to read billing schedule', e?.message || e); error(res, 'Failed to read billing schedule', 'INTERNAL_ERROR', 500); }
 });
 
 const businessScheduleSchema = Joi.object({
@@ -1324,11 +1326,11 @@ paymentPlatformRouter.put('/billing-schedule', requirePermission('bookings:*'), 
       req.body.business_id, authReq.tenantId, req.body.scheduleTime, req.body.scheduleTimezone, req.body.enabled,
     );
     success(res, view);
-  } catch (e: any) { error(res, 'Failed to save billing schedule', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to save billing schedule', e?.message || e); error(res, 'Failed to save billing schedule', 'INTERNAL_ERROR', 500); }
 });
 
 paymentPlatformRouter.post('/billing-run-now', requirePermission('bookings:*'), validate(giftCardBizSchema), async (req: Request, res: Response) => {
   try {
     success(res, await membershipRenewal.runBusinessBillingNow(req.body.business_id));
-  } catch (e: any) { error(res, 'Failed to run billing', 'INTERNAL_ERROR', 500); }
+  } catch (e: any) { console.error('Failed to run billing', e?.message || e); error(res, 'Failed to run billing', 'INTERNAL_ERROR', 500); }
 });

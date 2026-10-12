@@ -38,7 +38,7 @@ apRouter.get('/vendors', requirePermission('settings:*'), async (req: Request, r
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     const vendors = await vendorsService.getVendors(businessId);
     success(res, vendors);
-  } catch (err: any) { error(res, 'Failed to list vendors', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list vendors', err?.message || err); error(res, 'Failed to list vendors', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.post('/vendors', requirePermission('settings:*'), validate(createVendorSchema), async (req: Request, res: Response) => {
@@ -49,7 +49,7 @@ apRouter.post('/vendors', requirePermission('settings:*'), validate(createVendor
       taxId: req.body.tax_id, paymentTerms: req.body.payment_terms, category: req.body.category, defaultAccountId: req.body.default_account_id, notes: req.body.notes,
     });
     success(res, vendor, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to create vendor', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create vendor', err?.message || err); error(res, 'Failed to create vendor', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.put('/vendors/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -59,7 +59,7 @@ apRouter.put('/vendors/:id', requirePermission('settings:*'), async (req: Reques
     const vendor = await vendorsService.updateVendor(req.params.id, businessId, req.body);
     if (!vendor) { error(res, 'Vendor not found', 'NOT_FOUND', 404); return; }
     success(res, vendor);
-  } catch (err: any) { error(res, 'Failed to update vendor', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update vendor', err?.message || err); error(res, 'Failed to update vendor', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -95,7 +95,7 @@ apRouter.get('/bills', requirePermission('settings:*'), async (req: Request, res
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     const bills = await billsService.getBills(businessId, { status: req.query.status as string, vendorId: req.query.vendor_id as string });
     success(res, bills);
-  } catch (err: any) { error(res, 'Failed to list bills', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list bills', err?.message || err); error(res, 'Failed to list bills', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.post('/bills', requirePermission('settings:*'), validate(createBillSchema), async (req: Request, res: Response) => {
@@ -109,7 +109,7 @@ apRouter.post('/bills', requirePermission('settings:*'), validate(createBillSche
       createdBy: authReq.user.sub,
     });
     success(res, bill, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to create bill', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create bill', err?.message || err); error(res, 'Failed to create bill', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.put('/bills/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -119,7 +119,7 @@ apRouter.put('/bills/:id', requirePermission('settings:*'), async (req: Request,
     const bill = await billsService.updateBill(req.params.id, businessId, req.body);
     if (!bill) { error(res, 'Bill not found', 'NOT_FOUND', 404); return; }
     success(res, bill);
-  } catch (err: any) { error(res, 'Failed to update bill', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update bill', err?.message || err); error(res, 'Failed to update bill', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.put('/bills/:id/approve', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -130,7 +130,7 @@ apRouter.put('/bills/:id/approve', requirePermission('settings:*'), async (req: 
     const approved = await billsService.approveBill(req.params.id, businessId, authReq.user.sub);
     if (!approved) { error(res, 'Bill not found or already approved', 'VALIDATION_ERROR', 400); return; }
     success(res, { approved: true });
-  } catch (err: any) { error(res, 'Failed to approve bill', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to approve bill', err?.message || err); error(res, 'Failed to approve bill', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.put('/bills/:id/pay', requirePermission('settings:*'), validate(recordPaymentSchema), async (req: Request, res: Response) => {
@@ -144,7 +144,7 @@ apRouter.put('/bills/:id/pay', requirePermission('settings:*'), validate(recordP
     });
     if (!bill) { error(res, 'Bill not found', 'NOT_FOUND', 404); return; }
     success(res, bill);
-  } catch (err: any) { error(res, 'Failed to record payment', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to record payment', err?.message || err); error(res, 'Failed to record payment', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -171,7 +171,7 @@ apRouter.get('/expenses', requirePermission('settings:*'), async (req: Request, 
       dateFrom: req.query.date_from as string, dateTo: req.query.date_to as string,
     });
     success(res, expenses);
-  } catch (err: any) { error(res, 'Failed to list expenses', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list expenses', err?.message || err); error(res, 'Failed to list expenses', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.post('/expenses', requirePermission('settings:*'), validate(createExpenseSchema), async (req: Request, res: Response) => {
@@ -183,7 +183,7 @@ apRouter.post('/expenses', requirePermission('settings:*'), validate(createExpen
       paymentMethod: req.body.payment_method, isRecurring: req.body.is_recurring, submittedBy: authReq.user.sub,
     });
     success(res, expense, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to create expense', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create expense', err?.message || err); error(res, 'Failed to create expense', 'INTERNAL_ERROR', 500); }
 });
 
 const updateExpenseSchema = Joi.object({
@@ -205,7 +205,7 @@ apRouter.put('/expenses/:id', requirePermission('settings:*'), validate(updateEx
     });
     if (!updated) { error(res, 'Expense not found', 'NOT_FOUND', 404); return; }
     success(res, updated);
-  } catch (err: any) { error(res, 'Failed to update expense', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update expense', err?.message || err); error(res, 'Failed to update expense', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.delete('/expenses/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -215,7 +215,7 @@ apRouter.delete('/expenses/:id', requirePermission('settings:*'), async (req: Re
     const deleted = await expensesService.deleteExpense(req.params.id, businessId);
     if (!deleted) { error(res, 'Expense not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { error(res, 'Failed to delete expense', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete expense', err?.message || err); error(res, 'Failed to delete expense', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.put('/expenses/:id/approve', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -226,7 +226,7 @@ apRouter.put('/expenses/:id/approve', requirePermission('settings:*'), async (re
     const approved = await expensesService.approveExpense(req.params.id, businessId, authReq.user.sub);
     if (!approved) { error(res, 'Expense not found or already processed', 'VALIDATION_ERROR', 400); return; }
     success(res, { approved: true });
-  } catch (err: any) { error(res, 'Failed to approve expense', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to approve expense', err?.message || err); error(res, 'Failed to approve expense', 'INTERNAL_ERROR', 500); }
 });
 
 
@@ -252,7 +252,7 @@ apRouter.get('/accounts', requirePermission('settings:*'), async (req: Request, 
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     const accounts = await coaService.getAccounts(businessId);
     success(res, accounts);
-  } catch (err: any) { error(res, 'Failed to list accounts', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list accounts', err?.message || err); error(res, 'Failed to list accounts', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/ap/accounts
@@ -277,7 +277,7 @@ apRouter.put('/accounts/:id/archive', requirePermission('settings:*'), async (re
     const result = await coaService.archiveAccount(req.params.id, businessId);
     if (!result.success) { error(res, result.error!, 'VALIDATION_ERROR', 400); return; }
     success(res, { archived: true });
-  } catch (err: any) { error(res, 'Failed to archive account', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to archive account', err?.message || err); error(res, 'Failed to archive account', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/ap/accounts/:id/unarchive
@@ -288,7 +288,7 @@ apRouter.put('/accounts/:id/unarchive', requirePermission('settings:*'), async (
     const result = await coaService.unarchiveAccount(req.params.id, businessId);
     if (!result.success) { error(res, result.error!, 'VALIDATION_ERROR', 400); return; }
     success(res, { unarchived: true });
-  } catch (err: any) { error(res, 'Failed to unarchive account', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to unarchive account', err?.message || err); error(res, 'Failed to unarchive account', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/ap/accounts/:id
@@ -318,7 +318,7 @@ apRouter.post('/accounts/seed', requirePermission('settings:*'), async (req: Req
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     await coaService.seedDefaults(businessId);
     success(res, { seeded: true });
-  } catch (err: any) { error(res, 'Failed to seed accounts', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to seed accounts', err?.message || err); error(res, 'Failed to seed accounts', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -352,7 +352,7 @@ apRouter.get('/journal', requirePermission('settings:*'), async (req: Request, r
       page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
     });
     success(res, result.entries, { page: result.page, limit: result.limit, total: result.total });
-  } catch (err: any) { error(res, 'Failed to list journal entries', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list journal entries', err?.message || err); error(res, 'Failed to list journal entries', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/ap/journal
@@ -380,7 +380,7 @@ apRouter.put('/journal/:id/void', requirePermission('settings:*'), async (req: R
     const result = await journalService.voidEntry(req.params.id, businessId, authReq.user.sub);
     if (!result.success) { error(res, result.error!, 'VALIDATION_ERROR', 400); return; }
     success(res, { voided: true, reversing_entry_id: result.reversing_entry_id });
-  } catch (err: any) { error(res, 'Failed to void entry', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to void entry', err?.message || err); error(res, 'Failed to void entry', 'INTERNAL_ERROR', 500); }
 });
 
 
@@ -398,7 +398,7 @@ apRouter.get('/reports/pnl', requirePermission('reports:*'), async (req: Request
     if (!businessId || !dateFrom || !dateTo) { error(res, 'business_id, date_from, date_to required', 'VALIDATION_ERROR', 400); return; }
     const report = await reportsService.getProfitAndLoss({ businessId, dateFrom, dateTo });
     success(res, report);
-  } catch (err: any) { error(res, 'Failed to generate P&L', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to generate P&L', err?.message || err); error(res, 'Failed to generate P&L', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.get('/reports/staff-costs', requirePermission('reports:*'), async (req: Request, res: Response) => {
@@ -409,7 +409,7 @@ apRouter.get('/reports/staff-costs', requirePermission('reports:*'), async (req:
     if (!businessId || !dateFrom || !dateTo) { error(res, 'business_id, date_from, date_to required', 'VALIDATION_ERROR', 400); return; }
     const report = await reportsService.getStaffCosts({ businessId, dateFrom, dateTo });
     success(res, report);
-  } catch (err: any) { error(res, 'Failed to generate staff costs', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to generate staff costs', err?.message || err); error(res, 'Failed to generate staff costs', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.get('/reports/ap-aging', requirePermission('reports:*'), async (req: Request, res: Response) => {
@@ -418,7 +418,7 @@ apRouter.get('/reports/ap-aging', requirePermission('reports:*'), async (req: Re
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     const report = await reportsService.getAPAging(businessId);
     success(res, report);
-  } catch (err: any) { error(res, 'Failed to generate AP aging', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to generate AP aging', err?.message || err); error(res, 'Failed to generate AP aging', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.get('/reports/expenses', requirePermission('reports:*'), async (req: Request, res: Response) => {
@@ -429,7 +429,7 @@ apRouter.get('/reports/expenses', requirePermission('reports:*'), async (req: Re
     if (!businessId || !dateFrom || !dateTo) { error(res, 'business_id, date_from, date_to required', 'VALIDATION_ERROR', 400); return; }
     const report = await reportsService.getExpenseBreakdown({ businessId, dateFrom, dateTo });
     success(res, report);
-  } catch (err: any) { error(res, 'Failed to generate expense report', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to generate expense report', err?.message || err); error(res, 'Failed to generate expense report', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -444,7 +444,7 @@ apRouter.post('/reconciliation/import', requirePermission('settings:*'), async (
     if (!business_id || !account_name || !lines) { error(res, 'business_id, account_name, lines required', 'VALIDATION_ERROR', 400); return; }
     const statement = await reconService.importStatement(business_id, account_name, statement_date || new Date().toISOString().slice(0, 10), lines);
     success(res, statement, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to import statement', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to import statement', err?.message || err); error(res, 'Failed to import statement', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.get('/reconciliation/:statementId', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -452,7 +452,7 @@ apRouter.get('/reconciliation/:statementId', requirePermission('settings:*'), as
     const lines = await reconService.getStatementLines(req.params.statementId);
     const status = await reconService.getReconciliationStatus(req.params.statementId);
     success(res, { lines, status });
-  } catch (err: any) { error(res, 'Failed to get statement', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get statement', err?.message || err); error(res, 'Failed to get statement', 'INTERNAL_ERROR', 500); }
 });
 
 apRouter.put('/reconciliation/:lineId/match', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -462,5 +462,5 @@ apRouter.put('/reconciliation/:lineId/match', requirePermission('settings:*'), a
     const matched = await reconService.matchLine(req.params.lineId, journal_entry_id);
     if (!matched) { error(res, 'Line not found', 'NOT_FOUND', 404); return; }
     success(res, { matched: true });
-  } catch (err: any) { error(res, 'Failed to match', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to match', err?.message || err); error(res, 'Failed to match', 'INTERNAL_ERROR', 500); }
 });

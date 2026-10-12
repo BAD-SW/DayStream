@@ -109,6 +109,7 @@ servicesRouter.delete('/categories/:id', requirePermission('services:*'), async 
     if (!archived) { error(res, 'Category not found', 'NOT_FOUND', 404); return; }
     success(res, { archived: true });
   } catch (err: any) {
+    console.error('Failed to archive category', err?.message || err);
     error(res, 'Failed to archive category', 'INTERNAL_ERROR', 500);
   }
 });
@@ -149,6 +150,7 @@ servicesRouter.get('/cancellation-policies', requirePermission('services:read'),
     const policies = await policiesService.getPolicies(businessId);
     success(res, policies);
   } catch (err: any) {
+    console.error('Failed to list policies', err?.message || err);
     error(res, 'Failed to list policies', 'INTERNAL_ERROR', 500);
   }
 });
@@ -168,6 +170,7 @@ servicesRouter.post('/cancellation-policies', requirePermission('services:*'), v
     });
     success(res, policy, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to create policy', err?.message || err);
     error(res, 'Failed to create policy', 'INTERNAL_ERROR', 500);
   }
 });
@@ -191,6 +194,7 @@ servicesRouter.put('/cancellation-policies/:id', requirePermission('services:*')
     if (!policy) { error(res, 'Policy not found', 'NOT_FOUND', 404); return; }
     success(res, policy);
   } catch (err: any) {
+    console.error('Failed to update policy', err?.message || err);
     error(res, 'Failed to update policy', 'INTERNAL_ERROR', 500);
   }
 });
@@ -205,6 +209,7 @@ servicesRouter.delete('/cancellation-policies/:id', requirePermission('services:
     if (!deleted) { error(res, 'Policy not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to delete policy', err?.message || err);
     error(res, 'Failed to delete policy', 'INTERNAL_ERROR', 500);
   }
 });
@@ -228,6 +233,7 @@ servicesRouter.get('/templates', requirePermission('services:read'), async (req:
     const businessTypes = await templatesService.getBusinessTypes();
     success(res, { templates, business_types: businessTypes });
   } catch (err: any) {
+    console.error('Failed to list templates', err?.message || err);
     error(res, 'Failed to list templates', 'INTERNAL_ERROR', 500);
   }
 });
@@ -278,6 +284,7 @@ servicesRouter.get('/tax-categories', requirePermission('services:read'), async 
     const categories = await taxService.getTaxCategories(businessId);
     success(res, categories);
   } catch (err: any) {
+    console.error('Failed to list tax categories', err?.message || err);
     error(res, 'Failed to list tax categories', 'INTERNAL_ERROR', 500);
   }
 });
@@ -316,6 +323,7 @@ servicesRouter.put('/tax-categories/:id', requirePermission('services:*'), valid
     if (!category) { error(res, 'Tax category not found', 'NOT_FOUND', 404); return; }
     success(res, category);
   } catch (err: any) {
+    console.error('Failed to update tax category', err?.message || err);
     error(res, 'Failed to update tax category', 'INTERNAL_ERROR', 500);
   }
 });
@@ -457,6 +465,7 @@ servicesRouter.get('/:id', requirePermission('services:read'), async (req: Reque
     if (!service) { error(res, 'Service not found', 'NOT_FOUND', 404); return; }
     success(res, service);
   } catch (err: any) {
+    console.error('Failed to get service', err?.message || err);
     error(res, 'Failed to get service', 'INTERNAL_ERROR', 500);
   }
 });
@@ -491,6 +500,7 @@ servicesRouter.put('/:id/archive', requirePermission('services:*'), async (req: 
     if (!archived) { error(res, 'Service not found', 'NOT_FOUND', 404); return; }
     success(res, { archived: true });
   } catch (err: any) {
+    console.error('Failed to archive service', err?.message || err);
     error(res, 'Failed to archive service', 'INTERNAL_ERROR', 500);
   }
 });
@@ -505,6 +515,7 @@ servicesRouter.put('/:id/restore', requirePermission('services:*'), async (req: 
     if (!restored) { error(res, 'Service not found or not archived', 'NOT_FOUND', 404); return; }
     success(res, { restored: true });
   } catch (err: any) {
+    console.error('Failed to restore service', err?.message || err);
     error(res, 'Failed to restore service', 'INTERNAL_ERROR', 500);
   }
 });
@@ -519,6 +530,7 @@ servicesRouter.put('/:id/pause', requirePermission('services:*'), async (req: Re
     if (!paused) { error(res, 'Service not found or not active', 'NOT_FOUND', 404); return; }
     success(res, { paused: true });
   } catch (err: any) {
+    console.error('Failed to pause service', err?.message || err);
     error(res, 'Failed to pause service', 'INTERNAL_ERROR', 500);
   }
 });
@@ -581,6 +593,7 @@ servicesRouter.get('/:id/variants', requirePermission('services:read'), async (r
     const variants = await variantsService.getVariants(req.params.id);
     success(res, variants);
   } catch (err: any) {
+    console.error('Failed to list variants', err?.message || err);
     error(res, 'Failed to list variants', 'INTERNAL_ERROR', 500);
   }
 });
@@ -653,6 +666,7 @@ servicesRouter.delete('/:id/variants/:variantId', requirePermission('services:*'
     }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to delete variant', err?.message || err);
     error(res, 'Failed to delete variant', 'INTERNAL_ERROR', 500);
   }
 });
@@ -682,6 +696,7 @@ servicesRouter.get('/:id/images', requirePermission('services:read'), async (req
     const images = await imagesService.getImages(req.params.id);
     success(res, images);
   } catch (err: any) {
+    console.error('Failed to list images', err?.message || err);
     error(res, 'Failed to list images', 'INTERNAL_ERROR', 500);
   }
 });
@@ -720,6 +735,7 @@ servicesRouter.put('/:id/images/:imageId', requirePermission('services:*'), vali
     if (!image) { error(res, 'Image not found', 'NOT_FOUND', 404); return; }
     success(res, image);
   } catch (err: any) {
+    console.error('Failed to update image', err?.message || err);
     error(res, 'Failed to update image', 'INTERNAL_ERROR', 500);
   }
 });
@@ -731,6 +747,7 @@ servicesRouter.delete('/:id/images/:imageId', requirePermission('services:*'), a
     if (!deleted) { error(res, 'Image not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to delete image', err?.message || err);
     error(res, 'Failed to delete image', 'INTERNAL_ERROR', 500);
   }
 });
@@ -754,6 +771,7 @@ servicesRouter.get('/:id/staff', requirePermission('services:read'), async (req:
     const staff = await staffService.getStaff(req.params.id);
     success(res, staff);
   } catch (err: any) {
+    console.error('Failed to list staff', err?.message || err);
     error(res, 'Failed to list staff', 'INTERNAL_ERROR', 500);
   }
 });
@@ -785,6 +803,7 @@ servicesRouter.delete('/:id/staff/:userId', requirePermission('services:*'), asy
     if (!removed) { error(res, 'Assignment not found', 'NOT_FOUND', 404); return; }
     success(res, { removed: true });
   } catch (err: any) {
+    console.error('Failed to remove staff', err?.message || err);
     error(res, 'Failed to remove staff', 'INTERNAL_ERROR', 500);
   }
 });
@@ -819,6 +838,7 @@ servicesRouter.get('/:id/availability', requirePermission('services:read'), asyn
     const rules = await availabilityService.getRules(req.params.id);
     success(res, rules);
   } catch (err: any) {
+    console.error('Failed to list availability rules', err?.message || err);
     error(res, 'Failed to list availability rules', 'INTERNAL_ERROR', 500);
   }
 });
@@ -858,6 +878,7 @@ servicesRouter.delete('/:id/availability/:ruleId', requirePermission('services:*
     if (!deleted) { error(res, 'Rule not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to delete rule', err?.message || err);
     error(res, 'Failed to delete rule', 'INTERNAL_ERROR', 500);
   }
 });
@@ -897,6 +918,7 @@ servicesRouter.put('/:id/availability/:ruleId', requirePermission('services:*'),
     if (!updated) { error(res, 'Rule not found', 'NOT_FOUND', 404); return; }
     success(res, updated);
   } catch (err: any) {
+    console.error('Failed to update rule', err?.message || err);
     error(res, 'Failed to update rule', 'INTERNAL_ERROR', 500);
   }
 });
@@ -920,6 +942,7 @@ servicesRouter.get('/:id/locations', requirePermission('services:read'), async (
     );
     success(res, rows.map((r: any) => r.location_id));
   } catch (err: any) {
+    console.error('Failed to get service locations', err?.message || err);
     error(res, 'Failed to get service locations', 'INTERNAL_ERROR', 500);
   }
 });
@@ -957,6 +980,7 @@ servicesRouter.put('/:id/locations', requirePermission('services:*'), async (req
 
     success(res, locationIds);
   } catch (err: any) {
+    console.error('Failed to update service locations', err?.message || err);
     error(res, 'Failed to update service locations', 'INTERNAL_ERROR', 500);
   }
 });

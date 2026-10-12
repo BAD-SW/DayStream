@@ -36,7 +36,7 @@ checkoutRouter.post('/orders', requirePermission('bookings:*'), validate(createO
       notes: req.body.notes,
     });
     success(res, order, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to create order', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create order', err?.message || err); error(res, 'Failed to create order', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/checkout/orders/from-booking — Create order pre-populated from a booking
@@ -69,7 +69,7 @@ checkoutRouter.get('/orders', requirePermission('bookings:read'), async (req: Re
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
     });
     success(res, result.orders, result.meta);
-  } catch (err: any) { error(res, 'Failed to list orders', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list orders', err?.message || err); error(res, 'Failed to list orders', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/checkout/orders/:id — Get single order with items
@@ -78,7 +78,7 @@ checkoutRouter.get('/orders/:id', requirePermission('bookings:read'), async (req
     const order = await checkoutService.getOrder(req.params.id);
     if (!order) { error(res, 'Order not found', 'NOT_FOUND', 404); return; }
     success(res, order);
-  } catch (err: any) { error(res, 'Failed to get order', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get order', err?.message || err); error(res, 'Failed to get order', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================

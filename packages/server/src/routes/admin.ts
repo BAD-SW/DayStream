@@ -102,6 +102,7 @@ adminRouter.get('/tenants', requirePermission('*:*'), async (req: Request, res: 
     const tenants = await tenantService.getTenants();
     success(res, tenants);
   } catch (err: any) {
+    console.error('Failed to list tenants', err?.message || err);
     error(res, 'Failed to list tenants', 'INTERNAL_ERROR', 500);
   }
 });
@@ -122,6 +123,7 @@ adminRouter.get('/tenants/:id', requirePermission('*:*'), async (req: Request, r
     const owner = ownerRows[0] || null;
     success(res, { ...tenant, owner });
   } catch (err: any) {
+    console.error('Failed to get tenant', err?.message || err);
     error(res, 'Failed to get tenant', 'INTERNAL_ERROR', 500);
   }
 });
@@ -233,6 +235,7 @@ adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantS
 
     success(res, { ...updated, owner: ownerRows[0] || null });
   } catch (err: any) {
+    console.error('Failed to update tenant', err?.message || err);
     error(res, 'Failed to update tenant', 'INTERNAL_ERROR', 500);
   }
 });
@@ -287,6 +290,7 @@ adminRouter.get('/businesses', tenantContext, requirePermission('settings:*'), a
     const rows = scope?.level === 'business' ? allRows.filter((b: any) => b.id === ownOnly) : allRows;
     success(res, rows);
   } catch (err: any) {
+    console.error('Failed to list businesses', err?.message || err);
     error(res, 'Failed to list businesses', 'INTERNAL_ERROR', 500);
   }
 });
@@ -482,6 +486,7 @@ adminRouter.delete('/businesses/:id', tenantContext, requireTenantLevel(), requi
     if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to archive business', err?.message || err);
     error(res, 'Failed to archive business', 'INTERNAL_ERROR', 500);
   }
 });
@@ -498,6 +503,7 @@ adminRouter.get('/config', tenantContext, requirePermission('settings:*'), async
     const overridden = await configService.getOverriddenKeys(authReq.tenantId, Object.keys(config));
     success(res, config, { overridden: Array.from(overridden) });
   } catch (err: any) {
+    console.error('Failed to get configuration', err?.message || err);
     error(res, 'Failed to get configuration', 'INTERNAL_ERROR', 500);
   }
 });
@@ -513,6 +519,7 @@ adminRouter.get('/config/:key', tenantContext, requirePermission('settings:*'), 
     }
     success(res, { key: req.params.key, value });
   } catch (err: any) {
+    console.error('Failed to get configuration', err?.message || err);
     error(res, 'Failed to get configuration', 'INTERNAL_ERROR', 500);
   }
 });
@@ -544,6 +551,7 @@ adminRouter.delete('/config/:key', tenantContext, requirePermission('settings:*'
     const value = await configService.getConfig(authReq.tenantId, req.params.key);
     success(res, { key: req.params.key, value });
   } catch (err: any) {
+    console.error('Failed to reset configuration', err?.message || err);
     error(res, 'Failed to reset configuration', 'INTERNAL_ERROR', 500);
   }
 });
@@ -568,6 +576,7 @@ adminRouter.get('/system-theme', requirePermission('*:*'), async (req: Request, 
     for (const row of rows) result[row.key] = row.default_value;
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to get system theme', err?.message || err);
     error(res, 'Failed to get system theme', 'INTERNAL_ERROR', 500);
   }
 });
@@ -611,6 +620,7 @@ adminRouter.put('/system-theme', requirePermission('*:*'), validate(systemThemeS
     for (const row of rows) result[row.key] = row.default_value;
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to update system theme', err?.message || err);
     error(res, 'Failed to update system theme', 'INTERNAL_ERROR', 500);
   }
 });
@@ -624,6 +634,7 @@ adminRouter.get('/feature-flags', tenantContext, requirePermission('settings:*')
     const flags = await featureFlagService.evaluateAllFlags({ tenantId: authReq.tenantId });
     success(res, flags);
   } catch (err: any) {
+    console.error('Failed to get feature flags', err?.message || err);
     error(res, 'Failed to get feature flags', 'INTERNAL_ERROR', 500);
   }
 });
@@ -650,6 +661,7 @@ adminRouter.put('/feature-flags/:key', requirePermission('*:*'), validate(update
     });
     success(res, { key: req.params.key, enabled: req.body.enabled });
   } catch (err: any) {
+    console.error('Failed to update feature flag', err?.message || err);
     error(res, 'Failed to update feature flag', 'INTERNAL_ERROR', 500);
   }
 });
@@ -681,6 +693,7 @@ adminRouter.put('/feature-flags/:key/override', tenantContext, requirePermission
     });
     success(res, { key: req.params.key, enabled: req.body.enabled, scope: 'tenant' });
   } catch (err: any) {
+    console.error('Failed to update feature flag override', err?.message || err);
     error(res, 'Failed to update feature flag override', 'INTERNAL_ERROR', 500);
   }
 });
@@ -703,6 +716,7 @@ adminRouter.get('/audit-log', tenantContext, requirePermission('settings:*'), as
     });
     success(res, result.entries, { page: result.page, limit: result.limit, total: result.total });
   } catch (err: any) {
+    console.error('Failed to query audit log', err?.message || err);
     error(res, 'Failed to query audit log', 'INTERNAL_ERROR', 500);
   }
 });
@@ -741,6 +755,7 @@ adminRouter.get('/my-context', tenantContext, async (req: Request, res: Response
 
     success(res, { tenant: tenantRows[0], business });
   } catch (err: any) {
+    console.error('Failed to get context info', err?.message || err);
     error(res, 'Failed to get context info', 'INTERNAL_ERROR', 500);
   }
 });
@@ -761,6 +776,7 @@ adminRouter.get('/my-billing', tenantContext, requireTenantLevel(), requirePermi
     if (rows.length === 0) { error(res, 'Tenant not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to get billing info', err?.message || err);
     error(res, 'Failed to get billing info', 'INTERNAL_ERROR', 500);
   }
 });
@@ -787,6 +803,7 @@ adminRouter.put('/my-billing/payment-method', tenantContext, requireTenantLevel(
     await adminPool.query(`UPDATE sys_tenants SET ${fields.join(', ')} WHERE id = $${idx}`, values);
     success(res, { message: 'Payment method updated' });
   } catch (err: any) {
+    console.error('Failed to update payment method', err?.message || err);
     error(res, 'Failed to update payment method', 'INTERNAL_ERROR', 500);
   }
 });
@@ -838,6 +855,7 @@ adminRouter.get('/reports/tenant-revenue', tenantContext, requireTenantLevel(), 
       expected_remaining_mtd: parseInt(expectedMtdRows[0].expected_remaining_mtd),
     });
   } catch (err: any) {
+    console.error('Failed to get revenue report', err?.message || err);
     error(res, 'Failed to get revenue report', 'INTERNAL_ERROR', 500);
   }
 });
@@ -885,6 +903,7 @@ adminRouter.get('/reports/tenant-customers', tenantContext, requireTenantLevel()
       churned_this_month_prior: parseInt(churnedPriorRows[0].count),
     });
   } catch (err: any) {
+    console.error('Failed to get business report', err?.message || err);
     error(res, 'Failed to get business report', 'INTERNAL_ERROR', 500);
   }
 });
@@ -928,6 +947,7 @@ adminRouter.get('/reports/tenant-bookings', tenantContext, requireTenantLevel(),
       cancellation_rate: total > 0 ? Math.round((cancelled / total) * 100) : 0,
     });
   } catch (err: any) {
+    console.error('Failed to get booking report', err?.message || err);
     error(res, 'Failed to get booking report', 'INTERNAL_ERROR', 500);
   }
 });
@@ -960,6 +980,7 @@ adminRouter.get('/reports/tenant-memberships', tenantContext, requireTenantLevel
       churn_rate: 0, // Placeholder: would calculate from cancellations
     });
   } catch (err: any) {
+    console.error('Failed to get membership report', err?.message || err);
     error(res, 'Failed to get membership report', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1014,6 +1035,7 @@ adminRouter.get('/reports/tenant-revenue/detail', tenantContext, requireTenantLe
       success(res, rows);
     }
   } catch (err: any) {
+    console.error('Failed to get revenue detail', err?.message || err);
     error(res, 'Failed to get revenue detail', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1035,6 +1057,7 @@ adminRouter.get('/reports/tenant-customers/detail', tenantContext, requireTenant
     const { rows } = await adminPool.query(query, [authReq.tenantId]);
     success(res, rows);
   } catch (err: any) {
+    console.error('Failed to get business detail', err?.message || err);
     error(res, 'Failed to get business detail', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1062,6 +1085,7 @@ adminRouter.get('/reports/tenant-bookings/detail', tenantContext, requireTenantL
     const { rows } = await adminPool.query(query, [bizIds]);
     success(res, rows);
   } catch (err: any) {
+    console.error('Failed to get booking detail', err?.message || err);
     error(res, 'Failed to get booking detail', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1091,6 +1115,7 @@ adminRouter.get('/reports/tenant-memberships/detail', tenantContext, requireTena
     const { rows } = await adminPool.query(query, [bizIds]);
     success(res, rows);
   } catch (err: any) {
+    console.error('Failed to get membership detail', err?.message || err);
     error(res, 'Failed to get membership detail', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1120,6 +1145,7 @@ adminRouter.get('/reports/system-kpis', requirePermission('*:*'), async (req: Re
       expected_remaining_mtd: 0,
     });
   } catch (err: any) {
+    console.error('Failed to get system KPIs', err?.message || err);
     error(res, 'Failed to get system KPIs', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1142,6 +1168,7 @@ adminRouter.get('/reports/system-revenue/detail', requirePermission('*:*'), asyn
       success(res, []);
     }
   } catch (err: any) {
+    console.error('Failed to get system revenue detail', err?.message || err);
     error(res, 'Failed to get system revenue detail', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1182,6 +1209,7 @@ adminRouter.get('/users', requirePermission('*:*'), async (req: Request, res: Re
     const { rows } = await adminPool.query(query, params);
     success(res, rows);
   } catch (err: any) {
+    console.error('Failed to list users', err?.message || err);
     error(res, 'Failed to list users', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1204,6 +1232,7 @@ adminRouter.get('/users/:id', requirePermission('*:*'), async (req: Request, res
     }
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to get user', err?.message || err);
     error(res, 'Failed to get user', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1292,6 +1321,7 @@ adminRouter.post('/users', requirePermission('*:*'), validate(createUserSchema),
 
     success(res, user, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to create user', err?.message || err);
     error(res, 'Failed to create user', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1391,6 +1421,7 @@ adminRouter.delete('/users/:id', requirePermission('*:*'), async (req: Request, 
 
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to deactivate user', err?.message || err);
     error(res, 'Failed to deactivate user', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1412,6 +1443,7 @@ adminRouter.get('/tenant-users', tenantContext, requireTenantLevel(), requirePer
     );
     success(res, rows);
   } catch (err: any) {
+    console.error('Failed to list tenant users', err?.message || err);
     error(res, 'Failed to list tenant users', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1484,6 +1516,7 @@ adminRouter.post('/tenant-users', tenantContext, requireTenantLevel(), requirePe
 
     success(res, user, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to create user', err?.message || err);
     error(res, 'Failed to create user', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1578,6 +1611,7 @@ adminRouter.delete('/tenant-users/:id', tenantContext, requireTenantLevel(), req
 
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to deactivate user', err?.message || err);
     error(res, 'Failed to deactivate user', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1592,6 +1626,7 @@ adminRouter.get('/businesses/:id/settings', tenantContext, requirePermission('se
     if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to get settings', err?.message || err);
     error(res, 'Failed to get settings', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1619,6 +1654,7 @@ adminRouter.put('/businesses/:id/settings', tenantContext, requirePermission('se
     if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to update settings', err?.message || err);
     error(res, 'Failed to update settings', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1649,6 +1685,7 @@ adminRouter.get('/businesses/:id/widget-config', tenantContext, requirePermissio
     );
     success(res, rows[0] ? { ...rows[0], allowed_origins: rows[0].allowed_origins || [] } : WIDGET_DEFAULTS);
   } catch (err: any) {
+    console.error('Failed to get the widget settings', err?.message || err);
     error(res, 'Failed to get the widget settings', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1691,6 +1728,7 @@ adminRouter.put('/businesses/:id/widget-config', tenantContext, requirePermissio
     });
     success(res, { ...rows[0], allowed_origins: rows[0].allowed_origins || [] });
   } catch (err: any) {
+    console.error('Failed to save the widget settings', err?.message || err);
     error(res, 'Failed to save the widget settings', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1705,6 +1743,7 @@ adminRouter.get('/businesses/:id/appearance', tenantContext, requirePermission('
     if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to get appearance settings', err?.message || err);
     error(res, 'Failed to get appearance settings', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1746,6 +1785,7 @@ adminRouter.put('/businesses/:id/appearance', tenantContext, requirePermission('
     if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to update appearance settings', err?.message || err);
     error(res, 'Failed to update appearance settings', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1768,6 +1808,7 @@ adminRouter.post('/businesses/:id/logo', tenantContext, requirePermission('setti
     if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to upload logo', err?.message || err);
     error(res, 'Failed to upload logo', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1790,6 +1831,7 @@ adminRouter.post('/businesses/:id/favicon', tenantContext, requirePermission('se
     if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to upload favicon', err?.message || err);
     error(res, 'Failed to upload favicon', 'INTERNAL_ERROR', 500);
   }
 });

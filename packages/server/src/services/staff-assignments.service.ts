@@ -5,6 +5,12 @@ import { validateQualificationsForService } from './staff-qualifications.service
 // Service Assignments
 // ============================================================
 
+// Who provides which service, and where, is kept in two places for historical reasons: the
+// staff module's own tables (stf_service_assignments, stf_location_assignments) and the ones
+// the booking engine reads (svc_staff, sys_location_staff). They used to drift apart: assigning
+// a service on a staff member's page had no effect on what could be booked. Every change is
+// now written to both.
+
 /**
  * Get service assignments for a staff member.
  */
@@ -50,6 +56,15 @@ export async function assignServices(staffId: string, assignments: Array<{
       [staffId, assignment.serviceId, assignment.variantId || null, assignment.isPrimary ?? false],
     );
     results.push(rows[0]);
+
+    // The booking engine's copy (keyed by the staff member's login).
+    await adminPool.query(
+      `INSERT INTO svc_staff (service_id, user_id, variant_id, is_primary)
+       SELECT $2, sp.user_id, $3, $4 FROM stf_profiles sp
+        WHERE sp.id = $1 AND sp.user_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM svc_staff x WHERE x.service_id = $2 AND x.user_id = sp.user_id AND x.variant_id IS NOT DISTINCT FROM $3)`,
+      [staffId, assignment.serviceId, assignment.variantId || null, assignment.isPrimary ?? false],
+    );
   }
 
   return { assignments: results, errors };
@@ -70,6 +85,11 @@ export async function removeServiceAssignment(staffId: string, serviceId: string
   }
 
   const { rowCount } = await adminPool.query(query, params);
+  await adminPool.query(
+    `DELETE FROM svc_staff WHERE service_id = $2 AND variant_id IS NOT DISTINCT FROM $3
+        AND user_id = (SELECT user_id FROM stf_profiles WHERE id = $1)`,
+    [staffId, serviceId, variantId || null],
+  );
   return (rowCount ?? 0) > 0;
 }
 
@@ -129,6 +149,10 @@ export async function assignLocations(staffId: string, assignments: Array<{
       [staffId, assignment.locationId, assignment.isPrimary ?? false],
     );
     results.push(rows[0]);
+    await adminPool.query(
+      'INSERT INTO sys_location_staff (location_id, staff_id) VALUES ($1, $2) ON CONFLICT (location_id, staff_id) DO NOTHING',
+      [assignment.locationId, staffId],
+    );
   }
 
   return results;
@@ -142,6 +166,7 @@ export async function removeLocationAssignment(staffId: string, locationId: stri
     `DELETE FROM stf_location_assignments WHERE staff_id = $1 AND location_id = $2`,
     [staffId, locationId],
   );
+  await adminPool.query('DELETE FROM sys_location_staff WHERE staff_id = $1 AND location_id = $2', [staffId, locationId]);
   return (rowCount ?? 0) > 0;
 }
 

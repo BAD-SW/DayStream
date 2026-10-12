@@ -33,6 +33,7 @@ paymentsRouter.get('/', requirePermission('bookings:read'), async (req: Request,
 
     success(res, result.transactions, { page: result.page, limit: result.limit, total: result.total, totalPages: Math.ceil(result.total / result.limit) });
   } catch (err: any) {
+    console.error('Failed to list transactions', err?.message || err);
     error(res, 'Failed to list transactions', 'INTERNAL_ERROR', 500);
   }
 });
@@ -45,6 +46,7 @@ paymentsRouter.get('/summary', requirePermission('bookings:read'), async (req: R
     const summary = await paymentService.getTransactionSummary(businessId);
     success(res, summary);
   } catch (err: any) {
+    console.error('Failed to get payment summary', err?.message || err);
     error(res, 'Failed to get payment summary', 'INTERNAL_ERROR', 500);
   }
 });
@@ -128,6 +130,7 @@ paymentsRouter.get('/refundable', requirePermission('bookings:read'), async (req
     });
     success(res, result.charges, { total: result.total, limit: result.limit, offset: result.offset, distinctMethods: result.distinctMethods });
   } catch (err: any) {
+    console.error('Failed to get refundable charges', err?.message || err);
     error(res, 'Failed to get refundable charges', 'INTERNAL_ERROR', 500);
   }
 });
@@ -140,6 +143,7 @@ paymentsRouter.get('/methods', requirePermission('bookings:read'), async (req: R
     const methods = await paymentService.getAcceptedMethods(businessId);
     success(res, methods);
   } catch (err: any) {
+    console.error('Failed to get accepted methods', err?.message || err);
     error(res, 'Failed to get accepted methods', 'INTERNAL_ERROR', 500);
   }
 });
@@ -158,6 +162,7 @@ paymentsRouter.put('/methods', requirePermission('bookings:*'), validate(updateM
     const result = await paymentService.updateAcceptedMethods(req.body.business_id, req.body.methods);
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to update accepted methods', err?.message || err);
     error(res, 'Failed to update accepted methods', 'INTERNAL_ERROR', 500);
   }
 });
@@ -171,6 +176,7 @@ paymentsRouter.get('/:id', requirePermission('bookings:read'), async (req: Reque
     if (!transaction) { error(res, 'Transaction not found', 'NOT_FOUND', 404); return; }
     success(res, transaction);
   } catch (err: any) {
+    console.error('Failed to get transaction', err?.message || err);
     error(res, 'Failed to get transaction', 'INTERNAL_ERROR', 500);
   }
 });

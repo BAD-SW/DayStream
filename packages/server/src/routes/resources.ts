@@ -6,6 +6,7 @@ import { tenantContext } from '../auth/tenant-context';
 import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
+import { adminPool } from '../db/pool';
 import * as typesService from '../services/resource-types.service';
 import * as resourceService from '../services/resource.service';
 import * as scheduleService from '../services/resource-schedule.service';
@@ -36,7 +37,7 @@ resourcesRouter.get('/types', requirePermission('resources:read'), async (req: R
 
     const types = await typesService.getResourceTypes(authReq.tenantId, businessId);
     success(res, types);
-  } catch (err: any) { error(res, 'Failed to list resource types', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list resource types', err?.message || err); error(res, 'Failed to list resource types', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.post('/types', requirePermission('resources:*'), async (req: Request, res: Response) => {
@@ -62,7 +63,7 @@ resourcesRouter.put('/types/:id', requirePermission('resources:*'), async (req: 
     const type = await typesService.updateResourceType(req.params.id, authReq.tenantId, req.body);
     if (!type) { error(res, 'Type not found', 'NOT_FOUND', 404); return; }
     success(res, type);
-  } catch (err: any) { error(res, 'Failed to update type', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update type', err?.message || err); error(res, 'Failed to update type', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.delete('/types/:id', requirePermission('resources:*'), async (req: Request, res: Response) => {
@@ -85,7 +86,7 @@ resourcesRouter.get('/service-requirements/:serviceId', requirePermission('resou
   try {
     const reqs = await requirementsService.getServiceRequirements(req.params.serviceId);
     success(res, reqs);
-  } catch (err: any) { error(res, 'Failed to list requirements', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list requirements', err?.message || err); error(res, 'Failed to list requirements', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.post('/service-requirements', requirePermission('resources:*'), async (req: Request, res: Response) => {
@@ -104,7 +105,7 @@ resourcesRouter.put('/service-requirements/:id', requirePermission('resources:*'
     const req2 = await requirementsService.updateRequirement(req.params.id, req.body);
     if (!req2) { error(res, 'Requirement not found', 'NOT_FOUND', 404); return; }
     success(res, req2);
-  } catch (err: any) { error(res, 'Failed to update requirement', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update requirement', err?.message || err); error(res, 'Failed to update requirement', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.delete('/service-requirements/:id', requirePermission('resources:*'), async (req: Request, res: Response) => {
@@ -112,7 +113,7 @@ resourcesRouter.delete('/service-requirements/:id', requirePermission('resources
     const deleted = await requirementsService.deleteRequirement(req.params.id);
     if (!deleted) { error(res, 'Requirement not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { error(res, 'Failed to delete requirement', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete requirement', err?.message || err); error(res, 'Failed to delete requirement', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -126,7 +127,7 @@ resourcesRouter.post('/find-available', requirePermission('resources:read'), asy
       req.body.start_time, req.body.end_time, req.body.location_id);
     if (result.error) { error(res, result.error, 'CONFLICT', 409); return; }
     success(res, result.resources);
-  } catch (err: any) { error(res, 'Failed to find resources', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to find resources', err?.message || err); error(res, 'Failed to find resources', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -145,7 +146,7 @@ resourcesRouter.get('/calendar/timeline', requirePermission('resources:read'), a
       locationId: req.query.location_id as string,
     });
     success(res, data);
-  } catch (err: any) { error(res, 'Failed to get timeline', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get timeline', err?.message || err); error(res, 'Failed to get timeline', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -163,7 +164,7 @@ resourcesRouter.get('/utilization', requirePermission('resources:read'), async (
       locationId: req.query.location_id as string,
     });
     success(res, data);
-  } catch (err: any) { error(res, 'Failed to get utilization', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get utilization', err?.message || err); error(res, 'Failed to get utilization', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -200,7 +201,7 @@ resourcesRouter.get('/', requirePermission('resources:read'), async (req: Reques
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 50,
     });
     success(res, result.resources, { page: result.page, limit: result.limit, total: result.total });
-  } catch (err: any) { error(res, 'Failed to list resources', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list resources', err?.message || err); error(res, 'Failed to list resources', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.post('/', requirePermission('resources:*'), validate(createResourceSchema), async (req: Request, res: Response) => {
@@ -219,7 +220,7 @@ resourcesRouter.post('/', requirePermission('resources:*'), validate(createResou
       customAttributes: req.body.custom_attributes, createdBy: authReq.user.sub,
     });
     success(res, resource, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to create resource', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create resource', err?.message || err); error(res, 'Failed to create resource', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.get('/:id', requirePermission('resources:read'), async (req: Request, res: Response) => {
@@ -230,7 +231,7 @@ resourcesRouter.get('/:id', requirePermission('resources:read'), async (req: Req
     const resource = await resourceService.getResourceById(req.params.id, businessId);
     if (!resource) { error(res, 'Resource not found', 'NOT_FOUND', 404); return; }
     success(res, resource);
-  } catch (err: any) { error(res, 'Failed to get resource', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get resource', err?.message || err); error(res, 'Failed to get resource', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.put('/:id', requirePermission('resources:*'), async (req: Request, res: Response) => {
@@ -242,7 +243,7 @@ resourcesRouter.put('/:id', requirePermission('resources:*'), async (req: Reques
     const resource = await resourceService.updateResource(req.params.id, businessId, req.body, authReq.user.sub);
     if (!resource) { error(res, 'Resource not found', 'NOT_FOUND', 404); return; }
     success(res, resource);
-  } catch (err: any) { error(res, 'Failed to update resource', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update resource', err?.message || err); error(res, 'Failed to update resource', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.put('/:id/deactivate', requirePermission('resources:*'), async (req: Request, res: Response) => {
@@ -254,7 +255,7 @@ resourcesRouter.put('/:id/deactivate', requirePermission('resources:*'), async (
     const resource = await resourceService.deactivateResource(req.params.id, businessId, authReq.user.sub);
     if (!resource) { error(res, 'Resource not found or already inactive', 'NOT_FOUND', 404); return; }
     success(res, resource);
-  } catch (err: any) { error(res, 'Failed to deactivate', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to deactivate', err?.message || err); error(res, 'Failed to deactivate', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.post('/:id/photo', requirePermission('resources:*'), upload.single('photo'), async (req: Request, res: Response) => {
@@ -269,7 +270,7 @@ resourcesRouter.post('/:id/photo', requirePermission('resources:*'), upload.sing
     await storage.save(relativePath, req.file.buffer);
     const resource = await resourceService.updateResource(req.params.id, businessId, { photo_path: relativePath }, authReq.user.sub);
     success(res, resource);
-  } catch (err: any) { error(res, 'Failed to upload photo', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to upload photo', err?.message || err); error(res, 'Failed to upload photo', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -280,7 +281,7 @@ resourcesRouter.get('/:id/schedule', requirePermission('resources:read'), async 
   try {
     const schedules = await scheduleService.getSchedules(req.params.id);
     success(res, schedules);
-  } catch (err: any) { error(res, 'Failed to get schedules', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get schedules', err?.message || err); error(res, 'Failed to get schedules', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.post('/:id/schedule', requirePermission('resources:*'), async (req: Request, res: Response) => {
@@ -316,14 +317,14 @@ resourcesRouter.delete('/:id/schedule/:sid', requirePermission('resources:*'), a
     const deleted = await scheduleService.deleteSchedule(req.params.sid, req.params.id);
     if (!deleted) { error(res, 'Schedule not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { error(res, 'Failed to delete schedule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete schedule', err?.message || err); error(res, 'Failed to delete schedule', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.get('/:id/schedule/blocks', requirePermission('resources:read'), async (req: Request, res: Response) => {
   try {
     const blocks = await scheduleService.getScheduleBlocks(req.params.id, req.query.start_date as string, req.query.end_date as string);
     success(res, blocks);
-  } catch (err: any) { error(res, 'Failed to get blocks', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get blocks', err?.message || err); error(res, 'Failed to get blocks', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.post('/:id/schedule/blocks', requirePermission('resources:*'), async (req: Request, res: Response) => {
@@ -332,7 +333,7 @@ resourcesRouter.post('/:id/schedule/blocks', requirePermission('resources:*'), a
       blockDate: req.body.block_date, startTime: req.body.start_time, endTime: req.body.end_time, reason: req.body.reason,
     });
     success(res, block, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to add block', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to add block', err?.message || err); error(res, 'Failed to add block', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.delete('/:id/schedule/blocks/:bid', requirePermission('resources:*'), async (req: Request, res: Response) => {
@@ -340,7 +341,7 @@ resourcesRouter.delete('/:id/schedule/blocks/:bid', requirePermission('resources
     const deleted = await scheduleService.deleteScheduleBlock(req.params.bid, req.params.id);
     if (!deleted) { error(res, 'Block not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { error(res, 'Failed to delete block', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete block', err?.message || err); error(res, 'Failed to delete block', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -354,7 +355,7 @@ resourcesRouter.get('/:id/availability', requirePermission('resources:read'), as
     if (!startDate || !endDate) { error(res, 'start_date and end_date required', 'VALIDATION_ERROR', 400); return; }
     const avail = await availService.getResourceAvailabilityRange(req.params.id, startDate, endDate);
     success(res, avail);
-  } catch (err: any) { error(res, 'Failed to get availability', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get availability', err?.message || err); error(res, 'Failed to get availability', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -367,7 +368,7 @@ resourcesRouter.get('/:id/bookings', requirePermission('resources:read'), async 
     const endDate = req.query.end_date as string || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
     const bookings = await bookingsService.getResourceBookings(req.params.id, startDate, endDate);
     success(res, bookings);
-  } catch (err: any) { error(res, 'Failed to list bookings', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list bookings', err?.message || err); error(res, 'Failed to list bookings', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.post('/:id/bookings', requirePermission('resources:*'), async (req: Request, res: Response) => {
@@ -390,7 +391,7 @@ resourcesRouter.delete('/:id/bookings/:bid', requirePermission('resources:*'), a
     const cancelled = await bookingsService.cancelResourceBooking(req.params.bid, req.params.id);
     if (!cancelled) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
     success(res, cancelled);
-  } catch (err: any) { error(res, 'Failed to cancel booking', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to cancel booking', err?.message || err); error(res, 'Failed to cancel booking', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -401,7 +402,7 @@ resourcesRouter.get('/:id/maintenance', requirePermission('resources:read'), asy
   try {
     const schedules = await maintenanceService.getMaintenanceSchedules(req.params.id);
     success(res, schedules);
-  } catch (err: any) { error(res, 'Failed to list maintenance', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list maintenance', err?.message || err); error(res, 'Failed to list maintenance', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.post('/:id/maintenance', requirePermission('resources:*'), async (req: Request, res: Response) => {
@@ -411,8 +412,23 @@ resourcesRouter.post('/:id/maintenance', requirePermission('resources:*'), async
       startTime: req.body.start_time, endTime: req.body.end_time,
       specificDate: req.body.specific_date, description: req.body.description,
     });
+    // Bookings already made in that window are not moved: tell the person who set it.
+    const { rows: hit } = maint.maintenance_type === 'one_time' && maint.specific_date ? await adminPool.query(
+      `SELECT COUNT(*)::int AS n FROM apt_bookings b
+         JOIN res_resources r ON r.id = b.resource_id
+         JOIN sys_businesses biz ON biz.id = r.business_id
+        WHERE b.resource_id = $1 AND b.status IN ('pending', 'confirmed', 'checked_in')
+          AND (b.start_time AT TIME ZONE COALESCE(biz.timezone, 'UTC'))::date = $2::date
+          AND (b.start_time AT TIME ZONE COALESCE(biz.timezone, 'UTC'))::time < $4::time
+          AND (b.end_time AT TIME ZONE COALESCE(biz.timezone, 'UTC'))::time > $3::time`,
+      [req.params.id, maint.specific_date, maint.start_time, maint.end_time],
+    ) : { rows: [{ n: 0 }] };
+    if (hit[0].n > 0) {
+      res.status(201).json({ data: maint, warnings: [`${hit[0].n} existing booking(s) use this resource during the maintenance window and need to be moved`] });
+      return;
+    }
     success(res, maint, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to create maintenance', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create maintenance', err?.message || err); error(res, 'Failed to create maintenance', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.delete('/:id/maintenance/:mid', requirePermission('resources:*'), async (req: Request, res: Response) => {
@@ -420,7 +436,7 @@ resourcesRouter.delete('/:id/maintenance/:mid', requirePermission('resources:*')
     const deleted = await maintenanceService.deleteMaintenance(req.params.mid, req.params.id);
     if (!deleted) { error(res, 'Maintenance not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { error(res, 'Failed to delete maintenance', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete maintenance', err?.message || err); error(res, 'Failed to delete maintenance', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -431,7 +447,7 @@ resourcesRouter.get('/:id/dependencies', requirePermission('resources:read'), as
   try {
     const deps = await depsService.getDependencies(req.params.id);
     success(res, deps);
-  } catch (err: any) { error(res, 'Failed to list dependencies', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list dependencies', err?.message || err); error(res, 'Failed to list dependencies', 'INTERNAL_ERROR', 500); }
 });
 
 resourcesRouter.post('/:id/dependencies', requirePermission('resources:*'), async (req: Request, res: Response) => {
@@ -452,7 +468,7 @@ resourcesRouter.delete('/:id/dependencies/:did', requirePermission('resources:*'
     const deleted = await depsService.removeDependency(req.params.did, req.params.id);
     if (!deleted) { error(res, 'Dependency not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { error(res, 'Failed to remove dependency', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to remove dependency', err?.message || err); error(res, 'Failed to remove dependency', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -466,7 +482,7 @@ resourcesRouter.get('/:id/calendar', requirePermission('resources:read'), async 
     if (!startDate || !endDate) { error(res, 'start_date and end_date required', 'VALIDATION_ERROR', 400); return; }
     const calendar = await calendarService.getResourceCalendar(req.params.id, startDate, endDate);
     success(res, calendar);
-  } catch (err: any) { error(res, 'Failed to get calendar', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get calendar', err?.message || err); error(res, 'Failed to get calendar', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -479,5 +495,5 @@ resourcesRouter.get('/:id/utilization', requirePermission('resources:read'), asy
     const endDate = req.query.end_date as string || new Date().toISOString().split('T')[0];
     const data = await utilizationService.getResourceUtilization(req.params.id, startDate, endDate);
     success(res, data);
-  } catch (err: any) { error(res, 'Failed to get utilization', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get utilization', err?.message || err); error(res, 'Failed to get utilization', 'INTERNAL_ERROR', 500); }
 });

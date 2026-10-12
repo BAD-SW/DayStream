@@ -42,6 +42,45 @@ export async function getScheduleEntries(businessId: string, dateFrom: string, d
 /**
  * Create a schedule entry (ad hoc shift).
  */
+/** A shift that cannot be saved as asked; `code` says why. */
+export class ShiftError extends Error {
+  constructor(message: string, public code: 'SHIFT_OVERLAP' | 'OUTSIDE_HOURS' | 'INVALID_TIMES') { super(message); }
+}
+
+const toMinutes = (t: string) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + (m || 0); };
+
+/**
+ * Refuse a shift that ends before it starts, overlaps another shift of the same person that
+ * day, or falls outside the location's opening hours for that weekday.
+ */
+async function assertShiftAllowed(shift: { businessId: string; staffId: string; scheduleDate: string; startTime: string; endTime: string; locationId?: string | null; entryType?: string }, ignoreEntryId?: string): Promise<void> {
+  if ((shift.entryType || 'shift') !== 'shift') return;
+  const start = toMinutes(shift.startTime); const end = toMinutes(shift.endTime);
+  if (!(start < end)) throw new ShiftError('A shift must end after it starts', 'INVALID_TIMES');
+
+  const { rows: others } = await adminPool.query(
+    `SELECT id FROM stf_schedule_entries
+      WHERE staff_id = $1 AND schedule_date = $2::date AND entry_type = 'shift'
+        AND start_time < $4::time AND end_time > $3::time AND ($5::uuid IS NULL OR id <> $5)`,
+    [shift.staffId, shift.scheduleDate, shift.startTime, shift.endTime, ignoreEntryId || null],
+  );
+  if (others.length > 0) throw new ShiftError('This person already has a shift at that time', 'SHIFT_OVERLAP');
+
+  const { rows: hours } = await adminPool.query(
+    `SELECT h.is_closed, h.open_time, h.close_time
+       FROM sys_location_hours h
+       JOIN sys_locations l ON l.id = h.location_id
+      WHERE l.business_id = $1 AND l.status = 'active' AND ($2::uuid IS NULL AND l.is_primary OR l.id = $2)
+        AND h.day_of_week = EXTRACT(DOW FROM $3::date)::int
+      LIMIT 1`,
+    [shift.businessId, shift.locationId || null, shift.scheduleDate],
+  );
+  const day = hours[0];
+  if (day && (day.is_closed || (day.open_time && day.close_time && (start < toMinutes(day.open_time) || end > toMinutes(day.close_time))))) {
+    throw new ShiftError(day.is_closed ? 'The location is closed on that day' : 'The shift is outside the location\'s opening hours', 'OUTSIDE_HOURS');
+  }
+}
+
 export async function createScheduleEntry(input: {
   businessId: string;
   staffId: string;
@@ -52,6 +91,7 @@ export async function createScheduleEntry(input: {
   entryType?: string;
   notes?: string;
 }) {
+  await assertShiftAllowed(input);
   const { rows } = await adminPool.query(
     `INSERT INTO stf_schedule_entries (business_id, staff_id, schedule_date, start_time, end_time, location_id, entry_type, notes)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)

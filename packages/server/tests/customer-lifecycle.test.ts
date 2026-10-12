@@ -292,7 +292,7 @@ describe('Customer Lifecycle Tracking', () => {
         [CUSTOMER_ID_3, BUSINESS_ID],
       );
 
-      const result = await lifecycleService.evaluateScheduledTransitions();
+      const result = await lifecycleService.evaluateScheduledTransitions(BUSINESS_ID);
 
       const { rows } = await adminPool.query(
         'SELECT lifecycle_stage FROM cus_customers WHERE id = $1',
@@ -322,7 +322,7 @@ describe('Customer Lifecycle Tracking', () => {
         [CUSTOMER_ID_3, BUSINESS_ID],
       );
 
-      const result = await lifecycleService.evaluateScheduledTransitions();
+      const result = await lifecycleService.evaluateScheduledTransitions(BUSINESS_ID);
 
       const { rows } = await adminPool.query(
         'SELECT lifecycle_stage FROM cus_customers WHERE id = $1',

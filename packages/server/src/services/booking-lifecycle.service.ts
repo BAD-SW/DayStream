@@ -267,7 +267,7 @@ export async function rescheduleBooking(
       `SELECT id FROM apt_bookings
        WHERE staff_id = $1 AND id != $4
          AND start_time < $3 AND end_time > $2
-         AND status IN ('pending', 'confirmed', 'in_progress')
+         AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
        LIMIT 1`,
       [staffId, startTime.toISOString(), endTime.toISOString(), bookingId],
     );
@@ -281,7 +281,7 @@ export async function rescheduleBooking(
     `SELECT id FROM apt_bookings
      WHERE customer_id = $1 AND id != $4
        AND start_time < $3 AND end_time > $2
-       AND status IN ('pending', 'confirmed', 'in_progress')
+       AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
      LIMIT 1`,
     [booking.customer_id, startTime.toISOString(), endTime.toISOString(), bookingId],
   );

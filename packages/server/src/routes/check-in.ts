@@ -70,7 +70,7 @@ checkInRouter.get('/validate/:bookingId', requirePermission('checkin:read'), asy
     if (rows.length === 0) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
     const result = await validationService.validateSession(req.params.bookingId, rows[0].customer_id, authReq.tenantId);
     success(res, result);
-  } catch (err: any) { error(res, 'Validation failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Validation failed', err?.message || err); error(res, 'Validation failed', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -112,7 +112,7 @@ checkInRouter.get('/dashboard', requirePermission('checkin:read'), async (req: R
       staffId: req.query.staff_id as string, serviceId: req.query.service_id as string,
     });
     success(res, dashboard);
-  } catch (err: any) { error(res, 'Failed to get dashboard', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get dashboard', err?.message || err); error(res, 'Failed to get dashboard', 'INTERNAL_ERROR', 500); }
 });
 
 checkInRouter.get('/dashboard/upcoming', requirePermission('checkin:read'), async (req: Request, res: Response) => {
@@ -121,7 +121,7 @@ checkInRouter.get('/dashboard/upcoming', requirePermission('checkin:read'), asyn
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
     const upcoming = await dashboardService.getUpcoming(authReq.tenantId, limit);
     success(res, upcoming);
-  } catch (err: any) { error(res, 'Failed to get upcoming', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get upcoming', err?.message || err); error(res, 'Failed to get upcoming', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -136,7 +136,7 @@ checkInRouter.get('/no-shows', requirePermission('checkin:read'), async (req: Re
       customerId: req.query.customer_id as string,
     });
     success(res, records);
-  } catch (err: any) { error(res, 'Failed to list no-shows', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list no-shows', err?.message || err); error(res, 'Failed to list no-shows', 'INTERNAL_ERROR', 500); }
 });
 
 checkInRouter.put('/no-shows/:id/waive', requirePermission('checkin:*'), async (req: Request, res: Response) => {
@@ -152,7 +152,7 @@ checkInRouter.get('/no-shows/customer/:customerId', requirePermission('checkin:r
     const authReq = req as AuthenticatedRequest;
     const history = await noshowService.getCustomerNoShowHistory(req.params.customerId, authReq.tenantId);
     success(res, history);
-  } catch (err: any) { error(res, 'Failed to get history', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get history', err?.message || err); error(res, 'Failed to get history', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -164,7 +164,7 @@ checkInRouter.get('/config', requirePermission('checkin:read'), async (req: Requ
     const authReq = req as AuthenticatedRequest;
     const config = await configService.getConfig(authReq.tenantId);
     success(res, config);
-  } catch (err: any) { error(res, 'Failed to get config', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get config', err?.message || err); error(res, 'Failed to get config', 'INTERNAL_ERROR', 500); }
 });
 
 checkInRouter.put('/config', requirePermission('checkin:*'), async (req: Request, res: Response) => {
@@ -172,7 +172,7 @@ checkInRouter.put('/config', requirePermission('checkin:*'), async (req: Request
     const authReq = req as AuthenticatedRequest;
     const config = await configService.updateConfig(authReq.tenantId, req.body);
     success(res, config);
-  } catch (err: any) { error(res, 'Failed to update config', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update config', err?.message || err); error(res, 'Failed to update config', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -184,7 +184,7 @@ checkInRouter.post('/kiosk/register', requirePermission('checkin:*'), async (req
     const authReq = req as AuthenticatedRequest;
     const kiosk = await kioskService.registerKiosk(authReq.tenantId, req.body.location_id, req.body.device_name);
     success(res, kiosk, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to register kiosk', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to register kiosk', err?.message || err); error(res, 'Failed to register kiosk', 'INTERNAL_ERROR', 500); }
 });
 
 checkInRouter.get('/kiosk/status', async (req: Request, res: Response) => {
@@ -194,7 +194,7 @@ checkInRouter.get('/kiosk/status', async (req: Request, res: Response) => {
     const kiosk = await kioskService.getKioskStatus(token);
     if (!kiosk) { error(res, 'Kiosk not found or inactive', 'NOT_FOUND', 404); return; }
     success(res, kiosk);
-  } catch (err: any) { error(res, 'Failed to get status', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get status', err?.message || err); error(res, 'Failed to get status', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -208,7 +208,7 @@ checkInRouter.get('/reports/attendance', requirePermission('checkin:read'), asyn
     const endDate = req.query.end_date as string || new Date().toISOString();
     const data = await reportsService.getAttendanceRate(authReq.tenantId, startDate, endDate);
     success(res, data);
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 checkInRouter.get('/reports/no-shows', requirePermission('checkin:read'), async (req: Request, res: Response) => {
@@ -218,7 +218,7 @@ checkInRouter.get('/reports/no-shows', requirePermission('checkin:read'), async 
     const endDate = req.query.end_date as string || new Date().toISOString();
     const data = await reportsService.getNoShowRate(authReq.tenantId, startDate, endDate);
     success(res, data);
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 checkInRouter.get('/reports/walk-ins', requirePermission('checkin:read'), async (req: Request, res: Response) => {
@@ -228,7 +228,7 @@ checkInRouter.get('/reports/walk-ins', requirePermission('checkin:read'), async 
     const endDate = req.query.end_date as string || new Date().toISOString();
     const data = await reportsService.getWalkInVolume(authReq.tenantId, startDate, endDate);
     success(res, data);
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 checkInRouter.get('/reports/peak-times', requirePermission('checkin:read'), async (req: Request, res: Response) => {
@@ -238,7 +238,7 @@ checkInRouter.get('/reports/peak-times', requirePermission('checkin:read'), asyn
     const endDate = req.query.end_date as string || new Date().toISOString();
     const data = await reportsService.getPeakTimes(authReq.tenantId, startDate, endDate);
     success(res, data);
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 checkInRouter.get('/reports/methods', requirePermission('checkin:read'), async (req: Request, res: Response) => {
@@ -248,5 +248,5 @@ checkInRouter.get('/reports/methods', requirePermission('checkin:read'), async (
     const endDate = req.query.end_date as string || new Date().toISOString();
     const data = await reportsService.getMethodBreakdown(authReq.tenantId, startDate, endDate);
     success(res, data);
-  } catch (err: any) { error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });

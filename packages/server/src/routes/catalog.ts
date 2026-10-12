@@ -23,6 +23,7 @@ catalogRouter.get('/:businessSlug', async (req: Request, res: Response) => {
 
     success(res, catalog);
   } catch (err: any) {
+    console.error('Failed to load catalog', err?.message || err);
     error(res, 'Failed to load catalog', 'INTERNAL_ERROR', 500);
   }
 });
@@ -35,6 +36,7 @@ catalogRouter.get('/:businessSlug/:serviceSlug', async (req: Request, res: Respo
 
     success(res, detail);
   } catch (err: any) {
+    console.error('Failed to load service detail', err?.message || err);
     error(res, 'Failed to load service detail', 'INTERNAL_ERROR', 500);
   }
 });

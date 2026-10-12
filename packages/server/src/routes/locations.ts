@@ -75,6 +75,7 @@ locationsRouter.get('/', requireAnyPermission('settings:read', 'staff:read'), as
 
     success(res, locations);
   } catch (err: any) {
+    console.error('Failed to list locations', err?.message || err);
     error(res, 'Failed to list locations', 'INTERNAL_ERROR', 500);
   }
 });
@@ -128,6 +129,7 @@ locationsRouter.get('/:id', requireAnyPermission('settings:read', 'staff:read'),
 
     success(res, { ...location, ...summary });
   } catch (err: any) {
+    console.error('Failed to get location', err?.message || err);
     error(res, 'Failed to get location', 'INTERNAL_ERROR', 500);
   }
 });
@@ -146,6 +148,7 @@ locationsRouter.put('/:id', requirePermission('settings:*'), validate(updateLoca
     if (!location) { error(res, 'Location not found', 'NOT_FOUND', 404); return; }
     success(res, location);
   } catch (err: any) {
+    console.error('Failed to update location', err?.message || err);
     error(res, 'Failed to update location', 'INTERNAL_ERROR', 500);
   }
 });
@@ -164,7 +167,9 @@ locationsRouter.put('/:id/deactivate', requirePermission('settings:*'), async (r
     if (!deactivated) { error(res, 'Location not found or already inactive', 'NOT_FOUND', 404); return; }
     success(res, { deactivated: true });
   } catch (err: any) {
-    if (err.message?.includes('only active location')) {
+    if (err.code === 'HAS_FUTURE_BOOKINGS') {
+      error(res, err.message, 'HAS_FUTURE_BOOKINGS', 409);
+    } else if (err.message?.includes('only active location')) {
       error(res, err.message, 'VALIDATION_ERROR', 400);
     } else {
       error(res, 'Failed to deactivate location', 'INTERNAL_ERROR', 500);
@@ -184,6 +189,7 @@ locationsRouter.get('/:id/hours', requireAnyPermission('settings:read', 'staff:r
     const hours = await locationHoursService.getLocationHours(req.params.id);
     success(res, hours);
   } catch (err: any) {
+    console.error('Failed to get location hours', err?.message || err);
     error(res, 'Failed to get location hours', 'INTERNAL_ERROR', 500);
   }
 });
@@ -198,6 +204,7 @@ locationsRouter.put('/:id/hours', requirePermission('settings:*'), async (req: R
     const hours = await locationHoursService.setLocationHours(req.params.id, req.body.hours);
     success(res, hours);
   } catch (err: any) {
+    console.error('Failed to set location hours', err?.message || err);
     error(res, 'Failed to set location hours', 'INTERNAL_ERROR', 500);
   }
 });
@@ -210,6 +217,7 @@ locationsRouter.get('/:id/hours/overrides', requireAnyPermission('settings:read'
     const overrides = await locationHoursService.getLocationHourOverrides(req.params.id, year);
     success(res, overrides);
   } catch (err: any) {
+    console.error('Failed to get hour overrides', err?.message || err);
     error(res, 'Failed to get hour overrides', 'INTERNAL_ERROR', 500);
   }
 });
@@ -227,6 +235,7 @@ locationsRouter.post('/:id/hours/overrides', requirePermission('settings:*'), as
     });
     success(res, override, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to save hour override', err?.message || err);
     error(res, 'Failed to save hour override', 'INTERNAL_ERROR', 500);
   }
 });
@@ -238,6 +247,7 @@ locationsRouter.delete('/:id/hours/overrides/:overrideId', requirePermission('se
     if (!deleted) { error(res, 'Override not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to delete hour override', err?.message || err);
     error(res, 'Failed to delete hour override', 'INTERNAL_ERROR', 500);
   }
 });
@@ -249,6 +259,7 @@ locationsRouter.get('/:id/hours/overrides/years', requireAnyPermission('settings
     const years = await locationHoursService.getLocationHourOverrideYears(req.params.id);
     success(res, years);
   } catch (err: any) {
+    console.error('Failed to get override years', err?.message || err);
     error(res, 'Failed to get override years', 'INTERNAL_ERROR', 500);
   }
 });
@@ -264,6 +275,7 @@ locationsRouter.get('/:id/staff', requireAnyPermission('settings:read', 'staff:r
     const staff = await locationHoursService.getLocationStaff(req.params.id);
     success(res, staff);
   } catch (err: any) {
+    console.error('Failed to get location staff', err?.message || err);
     error(res, 'Failed to get location staff', 'INTERNAL_ERROR', 500);
   }
 });
@@ -275,6 +287,7 @@ locationsRouter.post('/:id/staff', requirePermission('settings:*'), async (req: 
     const assignment = await locationHoursService.assignStaffToLocation(req.params.id, req.body.staff_id);
     success(res, assignment, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to assign staff', err?.message || err);
     error(res, 'Failed to assign staff', 'INTERNAL_ERROR', 500);
   }
 });
@@ -286,6 +299,7 @@ locationsRouter.delete('/:id/staff/:staffId', requirePermission('settings:*'), a
     if (!removed) { error(res, 'Assignment not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to remove staff', err?.message || err);
     error(res, 'Failed to remove staff', 'INTERNAL_ERROR', 500);
   }
 });

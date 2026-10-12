@@ -42,6 +42,7 @@ systemConfigRouter.get('/email', requirePermission('*:*'), async (req: Request, 
     const data = await getSystemConfig('email');
     success(res, data);
   } catch (err: any) {
+    console.error('Failed to get email config', err?.message || err);
     error(res, 'Failed to get email config', 'INTERNAL_ERROR', 500);
   }
 });
@@ -59,6 +60,7 @@ systemConfigRouter.put('/email', requirePermission('*:*'), async (req: Request, 
     });
     success(res, req.body);
   } catch (err: any) {
+    console.error('Failed to save email config', err?.message || err);
     error(res, 'Failed to save email config', 'INTERNAL_ERROR', 500);
   }
 });
@@ -103,6 +105,7 @@ systemConfigRouter.get('/storage', requirePermission('*:*'), async (req: Request
     const data = await getSystemConfig('storage');
     success(res, data);
   } catch (err: any) {
+    console.error('Failed to get storage config', err?.message || err);
     error(res, 'Failed to get storage config', 'INTERNAL_ERROR', 500);
   }
 });
@@ -120,6 +123,7 @@ systemConfigRouter.put('/storage', requirePermission('*:*'), async (req: Request
     });
     success(res, req.body);
   } catch (err: any) {
+    console.error('Failed to save storage config', err?.message || err);
     error(res, 'Failed to save storage config', 'INTERNAL_ERROR', 500);
   }
 });
@@ -175,6 +179,7 @@ systemConfigRouter.get('/notifications', requirePermission('*:*'), async (req: R
     const data = await getSystemConfig('notifications');
     success(res, data);
   } catch (err: any) {
+    console.error('Failed to get notifications config', err?.message || err);
     error(res, 'Failed to get notifications config', 'INTERNAL_ERROR', 500);
   }
 });
@@ -192,6 +197,7 @@ systemConfigRouter.put('/notifications', requirePermission('*:*'), async (req: R
     });
     success(res, req.body);
   } catch (err: any) {
+    console.error('Failed to save notifications config', err?.message || err);
     error(res, 'Failed to save notifications config', 'INTERNAL_ERROR', 500);
   }
 });
@@ -205,6 +211,7 @@ systemConfigRouter.get('/platform-billing', requirePermission('*:*'), async (req
     const data = await getSystemConfig('platform-billing');
     success(res, data);
   } catch (err: any) {
+    console.error('Failed to get platform billing config', err?.message || err);
     error(res, 'Failed to get platform billing config', 'INTERNAL_ERROR', 500);
   }
 });
@@ -222,6 +229,7 @@ systemConfigRouter.put('/platform-billing', requirePermission('*:*'), async (req
     });
     success(res, req.body);
   } catch (err: any) {
+    console.error('Failed to save platform billing config', err?.message || err);
     error(res, 'Failed to save platform billing config', 'INTERNAL_ERROR', 500);
   }
 });
@@ -255,6 +263,7 @@ systemConfigRouter.get('/logs', requirePermission('*:*'), async (req: Request, r
     const { rows } = await adminPool.query(query, params);
     success(res, rows);
   } catch (err: any) {
+    console.error('Failed to fetch logs', err?.message || err);
     error(res, 'Failed to fetch logs', 'INTERNAL_ERROR', 500);
   }
 });
@@ -307,6 +316,7 @@ systemConfigRouter.get('/query-history', requirePermission('*:*'), async (req: R
 
     success(res, rows, { page, limit, total, totalPages: Math.ceil(total / limit) });
   } catch (err: any) {
+    console.error('Failed to fetch query log', err?.message || err);
     error(res, 'Failed to fetch query log', 'INTERNAL_ERROR', 500);
   }
 });
@@ -331,7 +341,7 @@ systemConfigRouter.get('/api-keys', requirePermission('*:*'), async (req: Reques
       }
     }
     success(res, { keys: masked, configured: Object.keys(data || {}) });
-  } catch (err: any) { error(res, 'Failed to get API keys', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get API keys', err?.message || err); error(res, 'Failed to get API keys', 'INTERNAL_ERROR', 500); }
 });
 
 systemConfigRouter.put('/api-keys', requirePermission('*:*'), async (req: Request, res: Response) => {
@@ -346,7 +356,7 @@ systemConfigRouter.put('/api-keys', requirePermission('*:*'), async (req: Reques
     }
     await upsertSystemConfig('api_keys', updated, authReq.user.sub);
     success(res, { saved: true });
-  } catch (err: any) { error(res, 'Failed to save API keys', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save API keys', err?.message || err); error(res, 'Failed to save API keys', 'INTERNAL_ERROR', 500); }
 });
 
 
@@ -358,7 +368,7 @@ systemConfigRouter.get('/prospects', requirePermission('*:*'), async (req: Reque
   try {
     const data = await getSystemConfig('prospects');
     success(res, data || { h3_resolution: 5 });
-  } catch (err: any) { error(res, 'Failed to get prospect settings', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get prospect settings', err?.message || err); error(res, 'Failed to get prospect settings', 'INTERNAL_ERROR', 500); }
 });
 
 systemConfigRouter.put('/prospects', requirePermission('*:*'), async (req: Request, res: Response) => {
@@ -366,5 +376,5 @@ systemConfigRouter.put('/prospects', requirePermission('*:*'), async (req: Reque
     const authReq = req as AuthenticatedRequest;
     await upsertSystemConfig('prospects', req.body, authReq.user.sub);
     success(res, { saved: true });
-  } catch (err: any) { error(res, 'Failed to save prospect settings', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save prospect settings', err?.message || err); error(res, 'Failed to save prospect settings', 'INTERNAL_ERROR', 500); }
 });

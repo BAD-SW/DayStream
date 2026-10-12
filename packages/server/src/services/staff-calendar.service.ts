@@ -148,8 +148,8 @@ export async function getStaffMetrics(staffId: string, startDate: string, endDat
        COUNT(*)::int AS sessions_delivered,
        COUNT(DISTINCT start_time::date)::int AS days_worked
      FROM apt_bookings
-     WHERE staff_id = $1
-       AND start_time::date BETWEEN $1 AND $2
+     WHERE staff_id = (SELECT user_id FROM stf_profiles WHERE id = $1)
+       AND start_time::date BETWEEN $2::date AND $3::date
        AND status = 'completed'`,
     [staffId, startDate, endDate],
   );

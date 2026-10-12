@@ -3,6 +3,8 @@ import { logAudit } from './audit.service';
 import { createActivity } from './customer-activity.service';
 import { calculatePrice } from './pricing.service';
 import { logger } from '../middleware/logger';
+import { localSlotMinutes } from '../utils/business-time';
+import { requiredResourceAlternatives, loadMaintenance, underMaintenance } from './required-resources.service';
 import { touchActivity } from './person-identity.service';
 
 interface CreateBookingInput {
@@ -87,16 +89,27 @@ export async function createBooking(input: CreateBookingInput) {
   }
 
   // Check business hours (location hours + holiday overrides)
+  // The same location the slot calculation uses: one where the service is offered, the
+  // primary location first.
   const { rows: locRows } = await adminPool.query(
-    "SELECT id FROM sys_locations WHERE business_id = $1 AND status = 'active' AND is_primary = true LIMIT 1",
-    [input.businessId],
+    `SELECT l.id FROM sys_locations l
+      WHERE l.business_id = $1 AND l.status = 'active'
+        AND (NOT EXISTS (SELECT 1 FROM svc_locations x JOIN sys_locations xl ON xl.id = x.location_id AND xl.status = 'active' WHERE x.service_id = $2)
+             OR l.id IN (SELECT location_id FROM svc_locations WHERE service_id = $2))
+      ORDER BY l.is_primary DESC, l.created_at LIMIT 1`,
+    [input.businessId, input.serviceId],
   );
   const locationId = locRows[0]?.id;
+  // Opening hours, shifts and availability patterns are wall-clock times where the business
+  // is: read the appointment in the business's time zone, not on the UTC clock (which is off
+  // by the zone's offset and, near midnight, on the wrong day).
+  const { rows: tzRows } = await adminPool.query('SELECT timezone FROM sys_businesses WHERE id = $1', [input.businessId]);
+  const slotLocal = localSlotMinutes(startTime, endTime, tzRows[0]?.timezone || 'UTC');
   if (locationId) {
-    const bookingDate = startTime.toISOString().split('T')[0];
-    const dayOfWeek = startTime.getUTCDay();
-    const slotMins = startTime.getUTCHours() * 60 + startTime.getUTCMinutes();
-    const endMins = endTime.getUTCHours() * 60 + endTime.getUTCMinutes();
+    const bookingDate = slotLocal.date;
+    const dayOfWeek = slotLocal.dayOfWeek;
+    const slotMins = slotLocal.startMinutes;
+    const endMins = slotLocal.endMinutes;
 
     // Check holiday overrides first
     const { rows: overrides } = await adminPool.query(
@@ -144,10 +157,10 @@ export async function createBooking(input: CreateBookingInput) {
       [input.businessId],
     );
     const schedulingMode = bizRows[0]?.scheduling_mode || 'availability';
-    const bookingDate = startTime.toISOString().split('T')[0];
-    const dayOfWeek = startTime.getUTCDay();
-    const slotMins = startTime.getUTCHours() * 60 + startTime.getUTCMinutes();
-    const endMins = endTime.getUTCHours() * 60 + endTime.getUTCMinutes();
+    const bookingDate = slotLocal.date;
+    const dayOfWeek = slotLocal.dayOfWeek;
+    const slotMins = slotLocal.startMinutes;
+    const endMins = slotLocal.endMinutes;
 
     if (schedulingMode === 'schedule') {
       // Check if staff has a schedule entry covering this time
@@ -216,6 +229,30 @@ export async function createBooking(input: CreateBookingInput) {
     }
   }
 
+  // The provider's daily booking limit (Business Setup → staff → capacity).
+  if (input.staffId && !input.overrideRules) {
+    const { rows: cap } = await adminPool.query(
+      `SELECT COALESCE(o.max_bookings, c.max_bookings_per_day) AS max_per_day
+         FROM stf_profiles sp
+         LEFT JOIN stf_capacity_config c ON c.staff_id = sp.id
+         LEFT JOIN stf_capacity_overrides o ON o.staff_id = sp.id AND o.override_date = $2::date
+        WHERE sp.user_id = $1 LIMIT 1`,
+      [input.staffId, slotLocal.date],
+    );
+    const maxPerDay = cap[0]?.max_per_day;
+    if (maxPerDay !== null && maxPerDay !== undefined) {
+      const { rows: dayCount } = await adminPool.query(
+        `SELECT COUNT(*)::int AS n FROM apt_bookings
+          WHERE staff_id = $1 AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress', 'completed')
+            AND (start_time AT TIME ZONE $3)::date = $2::date`,
+        [input.staffId, slotLocal.date, tzRows[0]?.timezone || 'UTC'],
+      );
+      if (dayCount[0].n >= maxPerDay) {
+        throw new Error(`Staff member has reached their limit of ${maxPerDay} bookings for this day`);
+      }
+    }
+  }
+
   // Resolve staff (auto-assign if not provided for individual bookings)
   let staffId = input.staffId || null;
   if (!staffId && bookingType === 'individual') {
@@ -251,6 +288,26 @@ export async function createBooking(input: CreateBookingInput) {
     }
   }
 
+  // The resource the service requires on the Resources page (see required-resources.service).
+  const businessTimeZone = tzRows[0]?.timezone || 'UTC';
+  if (!resourceId) {
+    const alternatives = await requiredResourceAlternatives(input.serviceId, input.variantId, input.businessId);
+    if (alternatives.length > 0) {
+      const maintenance = await loadMaintenance(alternatives);
+      for (const resId of alternatives) {
+        if (underMaintenance(maintenance, resId, startTime, endTime, businessTimeZone)) continue;
+        if ((await getResourceRemainingCapacity(resId, startTime, endTime)) >= participantCount) { resourceId = resId; break; }
+      }
+      if (!resourceId && !input.overrideRules) throw new Error('Resource has a conflicting booking at this time');
+      if (!resourceId) resourceId = alternatives[0];
+    }
+  } else if (!input.overrideRules) {
+    const maintenance = await loadMaintenance([resourceId]);
+    if (underMaintenance(maintenance, resourceId, startTime, endTime, businessTimeZone)) {
+      throw new Error('Resource is under maintenance at this time');
+    }
+  }
+
   if (resourceId) {
     const remaining = await getResourceRemainingCapacity(resourceId, startTime, endTime);
     if (participantCount > remaining) {
@@ -270,7 +327,7 @@ export async function createBooking(input: CreateBookingInput) {
     const { rows: countRows } = await adminPool.query(
       `SELECT COUNT(*)::int AS count FROM apt_bookings
        WHERE service_id = $1 AND business_id = $2
-         AND start_time = $3 AND status IN ('pending', 'confirmed', 'in_progress')`,
+         AND start_time = $3 AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')`,
       [input.serviceId, input.businessId, startTime.toISOString()],
     );
     if (countRows[0].count >= capacity) {
@@ -488,7 +545,7 @@ async function checkStaffConflict(staffId: string, startTime: Date, endTime: Dat
      WHERE staff_id = $1
        AND start_time < $3
        AND end_time > $2
-       AND status IN ('pending', 'confirmed', 'in_progress')
+       AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
      LIMIT 1`,
     [staffId, blockStart.toISOString(), blockEnd.toISOString()],
   );
@@ -528,7 +585,7 @@ async function getResourceRemainingCapacity(resourceId: string, startTime: Date,
      WHERE resource_id = $1
        AND start_time < $3
        AND end_time > $2
-       AND status IN ('pending', 'confirmed', 'in_progress')`,
+       AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')`,
     [resourceId, startTime.toISOString(), endTime.toISOString()],
   );
 
@@ -558,7 +615,7 @@ async function checkCustomerConflict(customerId: string, startTime: Date, endTim
      WHERE customer_id = $1
        AND start_time < $3
        AND end_time > $2
-       AND status IN ('pending', 'confirmed', 'in_progress')
+       AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
      LIMIT 1`,
     [customerId, startTime.toISOString(), endTime.toISOString()],
   );

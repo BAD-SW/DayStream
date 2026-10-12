@@ -22,7 +22,7 @@ scheduleRouter.get('/', requirePermission('staff:read'), async (req: Request, re
 
     const entries = await scheduleService.getScheduleEntries(businessId, dateFrom, dateTo, req.query.staff_id as string);
     success(res, entries);
-  } catch (err: any) { error(res, 'Failed to get schedule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get schedule', err?.message || err); error(res, 'Failed to get schedule', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/schedule/staff — Get all active staff for the schedule view
@@ -32,7 +32,7 @@ scheduleRouter.get('/staff', requirePermission('staff:read'), async (req: Reques
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     const staff = await scheduleService.getScheduleStaff(businessId);
     success(res, staff);
-  } catch (err: any) { error(res, 'Failed to get staff', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get staff', err?.message || err); error(res, 'Failed to get staff', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/schedule/business-hours — Get location hours for the schedule backdrop
@@ -42,7 +42,7 @@ scheduleRouter.get('/business-hours', requirePermission('staff:read'), async (re
     if (!locationId) { error(res, 'location_id required', 'VALIDATION_ERROR', 400); return; }
     const hours = await locationHoursService.getLocationHours(locationId);
     success(res, hours);
-  } catch (err: any) { error(res, 'Failed to get business hours', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get business hours', err?.message || err); error(res, 'Failed to get business hours', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/schedule — Create a schedule entry
@@ -67,7 +67,9 @@ scheduleRouter.post('/', requirePermission('staff:*'), async (req: Request, res:
     });
     success(res, entry, undefined, 201);
   } catch (err: any) {
-    if (err.code === '23505') { error(res, 'A shift already exists for this staff member at this time', 'CONFLICT', 409); }
+    if (err.code === 'SHIFT_OVERLAP') { error(res, err.message, 'CONFLICT', 409); }
+    else if (err.code === 'OUTSIDE_HOURS' || err.code === 'INVALID_TIMES') { error(res, err.message, 'VALIDATION_ERROR', 400); }
+    else if (err.code === '23505') { error(res, 'A shift already exists for this staff member at this time', 'CONFLICT', 409); }
     else { error(res, 'Failed to create schedule entry', 'INTERNAL_ERROR', 500); }
   }
 });
@@ -88,7 +90,7 @@ scheduleRouter.put('/:id', requirePermission('staff:*'), async (req: Request, re
     });
     if (!entry) { error(res, 'Entry not found', 'NOT_FOUND', 404); return; }
     success(res, entry);
-  } catch (err: any) { error(res, 'Failed to update schedule entry', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update schedule entry', err?.message || err); error(res, 'Failed to update schedule entry', 'INTERNAL_ERROR', 500); }
 });
 
 // DELETE /api/v1/schedule/:id — Delete a schedule entry
@@ -100,5 +102,5 @@ scheduleRouter.delete('/:id', requirePermission('staff:*'), async (req: Request,
     const deleted = await scheduleService.deleteScheduleEntry(req.params.id, businessId);
     if (!deleted) { error(res, 'Entry not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { error(res, 'Failed to delete schedule entry', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete schedule entry', err?.message || err); error(res, 'Failed to delete schedule entry', 'INTERNAL_ERROR', 500); }
 });

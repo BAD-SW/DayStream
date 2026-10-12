@@ -97,7 +97,7 @@ prospectsRouter.get('/territories/:tenantId', requirePermission('*:*'), async (r
       `SELECT COUNT(*)::int AS n FROM prp_tenant_territories WHERE tenant_id = $1`, [req.params.tenantId],
     );
     success(res, { ...rows[0], hexagons: hexCount[0]?.n ?? 0 });
-  } catch (err: any) { error(res, 'Failed to read territory', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to read territory', err?.message || err); error(res, 'Failed to read territory', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/prospects/territories/hydrate — Re-hydrate stored territory components
@@ -279,7 +279,7 @@ prospectsRouter.get('/territories', requirePermission('*:*'), async (_req: Reque
     const { getAllTerritories } = await import('../services/h3-territory.service');
     const territories = await getAllTerritories();
     success(res, territories);
-  } catch (err: any) { error(res, 'Failed to list territories', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list territories', err?.message || err); error(res, 'Failed to list territories', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -293,7 +293,7 @@ prospectsRouter.get('/categories', requireTenantLevel(), requirePermission('sett
     const where = includeInactive ? '' : 'WHERE active = true';
     const { rows } = await adminPool.query(`SELECT * FROM prp_category_mappings ${where} ORDER BY display_order`);
     success(res, rows);
-  } catch (err: any) { error(res, 'Failed to list categories', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list categories', err?.message || err); error(res, 'Failed to list categories', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/prospects/categories — Add a category mapping
@@ -309,7 +309,7 @@ prospectsRouter.post('/categories', requirePermission('*:*'), async (req: Reques
       [ui_category_name, google_search_strings, api_exclusion_types || []],
     );
     success(res, rows[0], undefined, 201);
-  } catch (err: any) { error(res, 'Failed to add category', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to add category', err?.message || err); error(res, 'Failed to add category', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/prospects/categories/:id — Update a category mapping
@@ -330,7 +330,7 @@ prospectsRouter.put('/categories/:id', requirePermission('*:*'), async (req: Req
     );
     if (rows.length === 0) { error(res, 'Category not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
-  } catch (err: any) { error(res, 'Failed to update category', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update category', err?.message || err); error(res, 'Failed to update category', 'INTERNAL_ERROR', 500); }
 });
 
 // DELETE /api/v1/prospects/categories/:id — Delete a category mapping
@@ -338,7 +338,7 @@ prospectsRouter.delete('/categories/:id', requirePermission('*:*'), async (req: 
   try {
     await adminPool.query('DELETE FROM prp_category_mappings WHERE id = $1', [req.params.id]);
     success(res, { deleted: true });
-  } catch (err: any) { error(res, 'Failed to delete category', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete category', err?.message || err); error(res, 'Failed to delete category', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -353,7 +353,7 @@ prospectsRouter.get('/maps-key', requirePermission('*:*'), async (_req: Request,
     );
     const key = rows[0]?.config_data?.google_places || null;
     success(res, { key });
-  } catch (err: any) { error(res, 'Failed to get maps key', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get maps key', err?.message || err); error(res, 'Failed to get maps key', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/prospects/territory-info — Get current tenant's territory info
@@ -367,7 +367,7 @@ prospectsRouter.get('/territory-info', requireTenantLevel(), requirePermission('
       [tenantId],
     );
     success(res, rows[0] || null);
-  } catch (err: any) { error(res, 'Failed to get territory info', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get territory info', err?.message || err); error(res, 'Failed to get territory info', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/prospects — List prospects for the current tenant
@@ -397,7 +397,7 @@ prospectsRouter.get('/', requireTenantLevel(), requirePermission('settings:*'), 
       params,
     );
     success(res, rows);
-  } catch (err: any) { error(res, 'Failed to list prospects', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list prospects', err?.message || err); error(res, 'Failed to list prospects', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/prospects — Manually add a prospect
@@ -430,7 +430,7 @@ prospectsRouter.post('/', requireTenantLevel(), requirePermission('settings:*'),
       [tenantId, name, address || null, phone || null, website || null, category || null, notes || null],
     );
     success(res, rows[0], undefined, 201);
-  } catch (err: any) { error(res, 'Failed to add prospect', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to add prospect', err?.message || err); error(res, 'Failed to add prospect', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/prospects/:id — Update prospect (status, notes)
@@ -457,7 +457,7 @@ prospectsRouter.put('/:id', requireTenantLevel(), requirePermission('settings:*'
     );
     if (rows.length === 0) { error(res, 'Prospect not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
-  } catch (err: any) { error(res, 'Failed to update prospect', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update prospect', err?.message || err); error(res, 'Failed to update prospect', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/prospects/:id/dismiss — Dismiss a prospect
@@ -471,7 +471,7 @@ prospectsRouter.put('/:id/dismiss', requireTenantLevel(), requirePermission('set
     );
     if (rows.length === 0) { error(res, 'Prospect not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
-  } catch (err: any) { error(res, 'Failed to dismiss prospect', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to dismiss prospect', err?.message || err); error(res, 'Failed to dismiss prospect', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -487,7 +487,7 @@ prospectsRouter.get('/:tenantId/generate/preview', requirePermission('*:*'), asy
     const categoryIds = req.query.category_ids ? String(req.query.category_ids).split(',') : null;
     const { previewProspectPlan } = await import('../services/prospect-generation.service');
     success(res, await previewProspectPlan(req.params.tenantId, categoryIds));
-  } catch (err: any) { error(res, 'Failed to preview prospect plan', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to preview prospect plan', err?.message || err); error(res, 'Failed to preview prospect plan', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/prospects/:tenantId/generate — Generate/refresh a tenant's prospect list.
@@ -524,7 +524,7 @@ prospectsRouter.get('/:tenantId/territory-info', requirePermission('*:*'), async
       [req.params.tenantId],
     );
     success(res, rows[0] || null);
-  } catch (err: any) { error(res, 'Failed to get territory info', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get territory info', err?.message || err); error(res, 'Failed to get territory info', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/prospects/:tenantId/prospects — list a tenant's prospects (+ filters).
@@ -545,7 +545,7 @@ prospectsRouter.get('/:tenantId/prospects', requirePermission('*:*'), async (req
       `SELECT * FROM prp_prospects WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`, params,
     );
     success(res, rows);
-  } catch (err: any) { error(res, 'Failed to list prospects', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list prospects', err?.message || err); error(res, 'Failed to list prospects', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/prospects/:tenantId/prospects — manually add a prospect for a tenant.
@@ -559,7 +559,7 @@ prospectsRouter.post('/:tenantId/prospects', requirePermission('*:*'), async (re
       [req.params.tenantId, name, address || null, phone || null, website || null, category || null, notes || null],
     );
     success(res, rows[0], undefined, 201);
-  } catch (err: any) { error(res, 'Failed to add prospect', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to add prospect', err?.message || err); error(res, 'Failed to add prospect', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/prospects/:tenantId/prospects/:id — update a tenant's prospect (status/notes).
@@ -579,7 +579,7 @@ prospectsRouter.put('/:tenantId/prospects/:id', requirePermission('*:*'), async 
     );
     if (rows.length === 0) { error(res, 'Prospect not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
-  } catch (err: any) { error(res, 'Failed to update prospect', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update prospect', err?.message || err); error(res, 'Failed to update prospect', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/prospects/:tenantId/prospects/:id/dismiss — dismiss a tenant's prospect.
@@ -592,7 +592,7 @@ prospectsRouter.put('/:tenantId/prospects/:id/dismiss', requirePermission('*:*')
     );
     if (rows.length === 0) { error(res, 'Prospect not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
-  } catch (err: any) { error(res, 'Failed to dismiss prospect', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to dismiss prospect', err?.message || err); error(res, 'Failed to dismiss prospect', 'INTERNAL_ERROR', 500); }
 });
 
 /** Build the prospect CSV for a tenant (optional status/category filters). */
@@ -636,7 +636,7 @@ prospectsRouter.get('/export', requireTenantLevel(), requirePermission('settings
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="prospects.csv"');
     res.send(csv);
-  } catch (err: any) { error(res, 'Failed to export prospects', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to export prospects', err?.message || err); error(res, 'Failed to export prospects', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/prospects/:tenantId/prospects/export — SYSTEM ADMIN: export a tenant's prospects.
@@ -646,5 +646,5 @@ prospectsRouter.get('/:tenantId/prospects/export', requirePermission('*:*'), asy
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="prospects.csv"');
     res.send(csv);
-  } catch (err: any) { error(res, 'Failed to export prospects', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to export prospects', err?.message || err); error(res, 'Failed to export prospects', 'INTERNAL_ERROR', 500); }
 });

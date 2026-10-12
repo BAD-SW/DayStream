@@ -71,7 +71,13 @@ export async function isResourceAvailable(
      WHERE resource_id = $1 AND status = 'confirmed'
        AND start_time < $3::timestamptz AND end_time > $2::timestamptz`,
     [resourceId, startTime, endTime]);
-  const currentBookings = overlapCount[0].count;
+  // Appointments booked through the booking engine hold the resource on the booking itself.
+  const { rows: apptCount } = await adminPool.query(
+    `SELECT COALESCE(SUM(participant_count), 0)::int AS count FROM apt_bookings
+      WHERE resource_id = $1 AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
+        AND start_time < $3::timestamptz AND end_time > $2::timestamptz`,
+    [resourceId, startTime, endTime]);
+  const currentBookings = overlapCount[0].count + apptCount[0].count;
   if (currentBookings >= resource.capacity) {
     return { available: false, reason: 'At capacity', remainingCapacity: 0 };
   }

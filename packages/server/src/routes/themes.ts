@@ -50,6 +50,7 @@ themesRouter.get('/resolve', async (req: Request, res: Response) => {
         : await themeService.resolveSystemDefault(adminPool);
     success(res, resolved);
   } catch (err: any) {
+    console.error('Failed to resolve theme', err?.message || err);
     error(res, 'Failed to resolve theme', 'INTERNAL_ERROR', 500);
   }
 });
@@ -67,6 +68,7 @@ themesRouter.get('/', authenticate, tenantContext, async (req: Request, res: Res
     const result = await themeService.listForCaller(caller, adminPool);
     success(res, result.themes);
   } catch (err: any) {
+    console.error('Failed to list themes', err?.message || err);
     error(res, 'Failed to list themes', 'INTERNAL_ERROR', 500);
   }
 });

@@ -27,7 +27,7 @@ async function businessTimezone(businessId: string): Promise<string> {
 
 const punchSchema = Joi.object({
   business_id: Joi.string().uuid().required(),
-  email: Joi.string().email().required(),
+  email: Joi.string().email({ tlds: false }).required(),
   pin: Joi.string().pattern(/^\d{4}$/).required(),
   event_type: Joi.string().valid(...EVENT_TYPES).required(),
 });
@@ -58,14 +58,14 @@ clockRouter.post('/punch', validate(punchSchema), async (req: Request, res: Resp
       if (e.code === 'INVALID_TRANSITION') { error(res, e.message, 'INVALID_TRANSITION', 409); return; }
       throw e;
     }
-  } catch (err: any) { error(res, 'Failed to record punch', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to record punch', err?.message || err); error(res, 'Failed to record punch', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/clock/state — current state for a staff member (email + PIN),
 // so the shared screen can show only the valid actions after identifying them.
 const stateSchema = Joi.object({
   business_id: Joi.string().uuid().required(),
-  email: Joi.string().email().required(),
+  email: Joi.string().email({ tlds: false }).required(),
   pin: Joi.string().pattern(/^\d{4}$/).required(),
 });
 
@@ -83,7 +83,7 @@ clockRouter.post('/state', validate(stateSchema), async (req: Request, res: Resp
 
     const state = await clockService.getCurrentState(staff.user_id, business_id);
     success(res, { ...state, staff: { first_name: staff.first_name, last_name: staff.last_name } });
-  } catch (err: any) { error(res, 'Failed to get state', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get state', err?.message || err); error(res, 'Failed to get state', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -117,7 +117,7 @@ clockRouter.get('/my-pin', async (req: Request, res: Response) => {
     const authReq = req as AuthenticatedRequest;
     const status = await clockService.getOwnClockPinStatus(authReq.user.sub);
     success(res, status);
-  } catch (err: any) { error(res, 'Failed to get PIN status', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get PIN status', err?.message || err); error(res, 'Failed to get PIN status', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/clock/my-pin — the caller sets/changes their OWN PIN. The target
@@ -146,7 +146,7 @@ clockRouter.get('/my-events', async (req: Request, res: Response) => {
     if (!start || !end) { error(res, 'start, end required', 'VALIDATION_ERROR', 400); return; }
     const events = await clockService.listOwnEvents(authReq.user.sub, start, end);
     success(res, events);
-  } catch (err: any) { error(res, 'Failed to list events', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list events', err?.message || err); error(res, 'Failed to list events', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/clock/my-hours — the caller's OWN computed daily hours (net of
@@ -159,7 +159,7 @@ clockRouter.get('/my-hours', async (req: Request, res: Response) => {
     if (!start || !end) { error(res, 'start, end required', 'VALIDATION_ERROR', 400); return; }
     const days = await clockService.computeOwnDailyHours(authReq.user.sub, start, end);
     success(res, days);
-  } catch (err: any) { error(res, 'Failed to compute hours', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to compute hours', err?.message || err); error(res, 'Failed to compute hours', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -178,7 +178,7 @@ clockRouter.get('/events', requirePermission('staff:read'), async (req: Request,
     }
     const events = await clockService.listEvents(businessId, userId, start, end);
     success(res, events);
-  } catch (err: any) { error(res, 'Failed to list events', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list events', err?.message || err); error(res, 'Failed to list events', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/clock/hours — computed daily hours (net of breaks) for a staff member.
@@ -194,7 +194,7 @@ clockRouter.get('/hours', requirePermission('staff:read'), async (req: Request, 
     const tz = await businessTimezone(businessId);
     const days = await clockService.computeDailyHours(businessId, userId, start, end, tz);
     success(res, days);
-  } catch (err: any) { error(res, 'Failed to compute hours', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to compute hours', err?.message || err); error(res, 'Failed to compute hours', 'INTERNAL_ERROR', 500); }
 });
 
 const manualEventSchema = Joi.object({
@@ -219,7 +219,7 @@ clockRouter.post('/events', requirePermission('staff:read'), validate(manualEven
       createdBy: authReq.user.sub,
     });
     success(res, event, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to create event', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create event', err?.message || err); error(res, 'Failed to create event', 'INTERNAL_ERROR', 500); }
 });
 
 const updateEventSchema = Joi.object({
@@ -239,7 +239,7 @@ clockRouter.put('/events/:id', requirePermission('staff:read'), validate(updateE
     });
     if (!updated) { error(res, 'Event not found or not editable (only manual corrections can be edited)', 'NOT_FOUND', 404); return; }
     success(res, updated);
-  } catch (err: any) { error(res, 'Failed to update event', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update event', err?.message || err); error(res, 'Failed to update event', 'INTERNAL_ERROR', 500); }
 });
 
 // DELETE /api/v1/clock/events/:id — manager deletes an event.
@@ -250,5 +250,5 @@ clockRouter.delete('/events/:id', requirePermission('staff:read'), async (req: R
     const ok = await clockService.deleteEvent(req.params.id, businessId);
     if (!ok) { error(res, 'Event not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { error(res, 'Failed to delete event', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete event', err?.message || err); error(res, 'Failed to delete event', 'INTERNAL_ERROR', 500); }
 });

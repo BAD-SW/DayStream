@@ -67,6 +67,7 @@ segmentsRouter.get('/', requirePermission('customers:read'), async (req: Request
     const segments = await segmentsService.getSegments(businessId);
     success(res, segments);
   } catch (err: any) {
+    console.error('Failed to list segments', err?.message || err);
     error(res, 'Failed to list segments', 'INTERNAL_ERROR', 500);
   }
 });
@@ -85,6 +86,7 @@ segmentsRouter.post('/', requirePermission('customers:*'), validate(createSegmen
     });
     success(res, segment, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to create segment', err?.message || err);
     error(res, 'Failed to create segment', 'INTERNAL_ERROR', 500);
   }
 });
@@ -94,6 +96,7 @@ segmentsRouter.post('/count', requirePermission('customers:read'), validate(coun
   try {
     success(res, { total: await segmentsService.countRules(req.body.rules, req.body.business_id) });
   } catch (err: any) {
+    console.error('Failed to count segment members', err?.message || err);
     error(res, 'Failed to count segment members', 'INTERNAL_ERROR', 500);
   }
 });
@@ -109,6 +112,7 @@ segmentsRouter.put('/:id', requirePermission('customers:*'), validate(updateSegm
     if (!segment) { error(res, 'Segment not found', 'NOT_FOUND', 404); return; }
     success(res, segment);
   } catch (err: any) {
+    console.error('Failed to update segment', err?.message || err);
     error(res, 'Failed to update segment', 'INTERNAL_ERROR', 500);
   }
 });
@@ -135,6 +139,7 @@ segmentsRouter.get('/:id/members', requirePermission('customers:read'), async (r
       totalPages: Math.ceil(result.total / result.limit),
     });
   } catch (err: any) {
+    console.error('Failed to evaluate segment', err?.message || err);
     error(res, 'Failed to evaluate segment', 'INTERNAL_ERROR', 500);
   }
 });
@@ -147,6 +152,7 @@ segmentsRouter.post('/:id/members', requirePermission('customers:*'), validate(m
     if (added === null) { error(res, 'Fixed list not found', 'NOT_FOUND', 404); return; }
     success(res, { added });
   } catch (err: any) {
+    console.error('Failed to add people to the list', err?.message || err);
     error(res, 'Failed to add people to the list', 'INTERNAL_ERROR', 500);
   }
 });
@@ -158,6 +164,7 @@ segmentsRouter.delete('/:id/members', requirePermission('customers:*'), validate
     if (removed === null) { error(res, 'Fixed list not found', 'NOT_FOUND', 404); return; }
     success(res, { removed });
   } catch (err: any) {
+    console.error('Failed to remove people from the list', err?.message || err);
     error(res, 'Failed to remove people from the list', 'INTERNAL_ERROR', 500);
   }
 });
@@ -176,6 +183,7 @@ segmentsRouter.get('/:id/audience-summary', requirePermission('customers:read'),
     if (!summary) { error(res, 'Segment not found', 'NOT_FOUND', 404); return; }
     success(res, summary);
   } catch (err: any) {
+    console.error('Failed to summarise the audience', err?.message || err);
     error(res, 'Failed to summarise the audience', 'INTERNAL_ERROR', 500);
   }
 });

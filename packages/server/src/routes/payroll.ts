@@ -54,7 +54,7 @@ payrollRouter.get('/compensation-rules', requirePermission('staff:read'), async 
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     const rules = await compensationService.getRules(businessId, req.query.user_id as string);
     success(res, rules);
-  } catch (err: any) { error(res, 'Failed to list rules', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list rules', err?.message || err); error(res, 'Failed to list rules', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/payroll/compensation-rules
@@ -97,7 +97,7 @@ payrollRouter.delete('/compensation-rules/:id', requirePermission('staff:*'), as
     const deleted = await compensationService.deleteRule(req.params.id, businessId);
     if (!deleted) { error(res, 'Rule not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { error(res, 'Failed to delete rule', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete rule', err?.message || err); error(res, 'Failed to delete rule', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -127,7 +127,7 @@ payrollRouter.get('/time-entries', requirePermission('staff:read'), async (req: 
       approved: req.query.approved === 'true' ? true : req.query.approved === 'false' ? false : undefined,
     });
     success(res, entries);
-  } catch (err: any) { error(res, 'Failed to list time entries', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list time entries', err?.message || err); error(res, 'Failed to list time entries', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/payroll/time-entries
@@ -139,7 +139,7 @@ payrollRouter.post('/time-entries', requirePermission('staff:*'), validate(creat
       hours: req.body.hours, description: req.body.description, bookingId: req.body.booking_id,
     });
     success(res, entry, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to create time entry', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create time entry', err?.message || err); error(res, 'Failed to create time entry', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/payroll/time-entries/:id/approve
@@ -151,7 +151,7 @@ payrollRouter.put('/time-entries/:id/approve', requirePermission('staff:*'), asy
     const approved = await timeService.approveTimeEntry(req.params.id, businessId, authReq.user.sub);
     if (!approved) { error(res, 'Entry not found', 'NOT_FOUND', 404); return; }
     success(res, { approved: true });
-  } catch (err: any) { error(res, 'Failed to approve', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to approve', err?.message || err); error(res, 'Failed to approve', 'INTERNAL_ERROR', 500); }
 });
 
 
@@ -174,7 +174,7 @@ payrollRouter.get('/periods', requirePermission('staff:read'), async (req: Reque
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     const periods = await payrollService.getPayPeriods(businessId);
     success(res, periods);
-  } catch (err: any) { error(res, 'Failed to list periods', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list periods', err?.message || err); error(res, 'Failed to list periods', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/payroll/periods
@@ -213,7 +213,7 @@ payrollRouter.put('/periods/:id/finalize', requirePermission('staff:*'), async (
     const finalized = await payrollService.finalizePayroll(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
     if (!finalized) { error(res, 'Period not found or not in processing status', 'VALIDATION_ERROR', 400); return; }
     success(res, { finalized: true });
-  } catch (err: any) { error(res, 'Failed to finalize', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to finalize', err?.message || err); error(res, 'Failed to finalize', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/payroll/periods/:id/entries
@@ -221,7 +221,7 @@ payrollRouter.get('/periods/:id/entries', requirePermission('staff:read'), async
   try {
     const entries = await payrollService.getPayrollEntries(req.params.id);
     success(res, entries);
-  } catch (err: any) { error(res, 'Failed to get entries', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get entries', err?.message || err); error(res, 'Failed to get entries', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -261,7 +261,7 @@ payrollRouter.get('/deductions', requirePermission('staff:read'), async (req: Re
       [businessId],
     );
     success(res, rows);
-  } catch (err: any) { error(res, 'Failed to list deductions', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list deductions', err?.message || err); error(res, 'Failed to list deductions', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/payroll/deductions
@@ -273,7 +273,7 @@ payrollRouter.post('/deductions', requirePermission('staff:*'), validate(createD
       [req.body.business_id, req.body.user_id, req.body.name, req.body.deduction_type, req.body.calculation_type, req.body.value, req.body.is_recurring, req.body.effective_from, req.body.effective_to || null],
     );
     success(res, rows[0], undefined, 201);
-  } catch (err: any) { error(res, 'Failed to create deduction', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create deduction', err?.message || err); error(res, 'Failed to create deduction', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/payroll/deductions/:id
@@ -297,7 +297,7 @@ payrollRouter.put('/deductions/:id', requirePermission('staff:*'), validate(upda
     );
     if (rows.length === 0) { error(res, 'Deduction not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
-  } catch (err: any) { error(res, 'Failed to update deduction', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update deduction', err?.message || err); error(res, 'Failed to update deduction', 'INTERNAL_ERROR', 500); }
 });
 
 import { adminPool } from '../db/pool';
@@ -318,7 +318,7 @@ payrollRouter.post('/tax-documents/generate', requirePermission('staff:*'), asyn
     if (!businessId || !taxYear) { error(res, 'business_id and tax_year required', 'VALIDATION_ERROR', 400); return; }
     const result = await taxDocsService.generateTaxDocuments(businessId, taxYear, authReq.user.sub);
     success(res, result);
-  } catch (err: any) { error(res, 'Failed to generate tax documents', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to generate tax documents', err?.message || err); error(res, 'Failed to generate tax documents', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/payroll/tax-documents
@@ -332,7 +332,7 @@ payrollRouter.get('/tax-documents', requirePermission('staff:read'), async (req:
       userId: req.query.user_id as string,
     });
     success(res, docs);
-  } catch (err: any) { error(res, 'Failed to list tax documents', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list tax documents', err?.message || err); error(res, 'Failed to list tax documents', 'INTERNAL_ERROR', 500); }
 });
 
 
@@ -361,7 +361,7 @@ payrollRouter.get('/tax-profiles', requirePermission('staff:read'), async (req: 
       [businessId],
     );
     success(res, rows);
-  } catch (err: any) { error(res, 'Failed to list tax profiles', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list tax profiles', err?.message || err); error(res, 'Failed to list tax profiles', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/payroll/tax-profiles/:userId — Create or update an employee's tax profile
@@ -378,7 +378,7 @@ payrollRouter.put('/tax-profiles/:userId', requirePermission('staff:*'), async (
       exempt: req.body.exempt,
     });
     success(res, profile);
-  } catch (err: any) { error(res, 'Failed to update tax profile', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update tax profile', err?.message || err); error(res, 'Failed to update tax profile', 'INTERNAL_ERROR', 500); }
 });
 
 
@@ -396,7 +396,7 @@ payrollRouter.get('/settings', requirePermission('settings:*'), async (req: Requ
       [businessId],
     );
     success(res, rows[0] || { pay_frequency: 'monthly', pay_period_start_date: null });
-  } catch (err: any) { error(res, 'Failed to get payroll settings', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get payroll settings', err?.message || err); error(res, 'Failed to get payroll settings', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/payroll/settings — Update payroll settings
@@ -410,7 +410,7 @@ payrollRouter.put('/settings', requirePermission('settings:*'), async (req: Requ
       [pay_frequency || 'monthly', pay_period_start_date || null, businessId],
     );
     success(res, { saved: true });
-  } catch (err: any) { error(res, 'Failed to save payroll settings', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save payroll settings', err?.message || err); error(res, 'Failed to save payroll settings', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -426,7 +426,7 @@ payrollRouter.get('/periods/unprocessed', requirePermission('staff:read'), async
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     const periods = await getUnprocessedPeriods(businessId);
     success(res, periods);
-  } catch (err: any) { error(res, 'Failed to get unprocessed periods', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get unprocessed periods', err?.message || err); error(res, 'Failed to get unprocessed periods', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/payroll/periods/history — Get finalized periods
@@ -436,5 +436,5 @@ payrollRouter.get('/periods/history', requirePermission('staff:read'), async (re
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     const periods = await getFinalizedPeriods(businessId);
     success(res, periods);
-  } catch (err: any) { error(res, 'Failed to get finalized periods', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get finalized periods', err?.message || err); error(res, 'Failed to get finalized periods', 'INTERNAL_ERROR', 500); }
 });

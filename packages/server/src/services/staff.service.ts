@@ -96,7 +96,12 @@ export async function createStaff(input: CreateStaffInput) {
     );
 
     if (existingUsers.length > 0) {
-      // Link to existing user
+      // Link to existing user — unless that person already is a staff member: a second
+      // profile for the same login would show them twice and split their bookings.
+      const { rows: already } = await adminPool.query('SELECT id FROM stf_profiles WHERE user_id = $1 LIMIT 1', [existingUsers[0].id]);
+      if (already.length > 0) {
+        throw Object.assign(new Error('A staff member with this email already exists'), { code: 'DUPLICATE_STAFF' });
+      }
       userId = existingUsers[0].id;
     } else {
       // Create a new user account
@@ -317,6 +322,12 @@ export async function deactivateStaff(id: string, tenantId: string, userId: stri
   );
 
   if (rows.length === 0) return null;
+
+  // A deactivated staff member can no longer sign in, and any open session ends.
+  if (rows[0].user_id) {
+    await adminPool.query(`UPDATE usr_users SET status = 'inactive', updated_at = NOW() WHERE id = $1 AND tenant_id = $2`, [rows[0].user_id, tenantId]);
+    await adminPool.query('UPDATE usr_refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL', [rows[0].user_id]).catch(() => undefined);
+  }
 
   await logAudit({
     tenantId,

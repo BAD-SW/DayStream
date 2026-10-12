@@ -29,6 +29,7 @@ profileRouter.get('/', async (req: Request, res: Response) => {
 
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to get profile', err?.message || err);
     error(res, 'Failed to get profile', 'INTERNAL_ERROR', 500);
   }
 });
@@ -68,6 +69,7 @@ profileRouter.put('/', validate(updateProfileSchema), async (req: Request, res: 
 
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to update profile', err?.message || err);
     error(res, 'Failed to update profile', 'INTERNAL_ERROR', 500);
   }
 });

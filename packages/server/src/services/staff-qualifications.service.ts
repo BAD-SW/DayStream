@@ -5,7 +5,10 @@ import { adminPool } from '../db/pool';
  */
 export async function getQualifications(staffId: string) {
   const { rows } = await adminPool.query(
-    `SELECT * FROM stf_qualifications WHERE staff_id = $1 ORDER BY created_at DESC`,
+    `SELECT q.*,
+            (q.expiry_date IS NOT NULL AND q.expiry_date < CURRENT_DATE) AS is_expired,
+            (q.expiry_date IS NOT NULL AND q.expiry_date >= CURRENT_DATE AND q.expiry_date <= CURRENT_DATE + 30) AS expires_soon
+       FROM stf_qualifications q WHERE q.staff_id = $1 ORDER BY q.created_at DESC`,
     [staffId],
   );
   return rows;

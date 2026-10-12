@@ -147,6 +147,11 @@ export async function assignStaffToLocation(locationId: string, staffId: string)
      RETURNING *`,
     [locationId, staffId],
   );
+  // The staff module's copy (see staff-assignments.service: the two lists are kept in step).
+  await adminPool.query(
+    'INSERT INTO stf_location_assignments (staff_id, location_id, is_primary) VALUES ($1, $2, false) ON CONFLICT (staff_id, location_id) DO NOTHING',
+    [staffId, locationId],
+  );
   return rows[0];
 }
 
@@ -158,5 +163,6 @@ export async function removeStaffFromLocation(locationId: string, staffId: strin
     'DELETE FROM sys_location_staff WHERE location_id = $1 AND staff_id = $2',
     [locationId, staffId],
   );
+  await adminPool.query('DELETE FROM stf_location_assignments WHERE staff_id = $1 AND location_id = $2', [staffId, locationId]);
   return (rowCount ?? 0) > 0;
 }

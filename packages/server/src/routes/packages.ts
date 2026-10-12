@@ -23,7 +23,7 @@ packagesRouter.get('/', requirePermission('services:read'), async (req: Request,
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
     });
     success(res, result.packages, { total: result.total, page: result.page, limit: result.limit });
-  } catch (err: any) { error(res, 'Failed to list packages', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list packages', err?.message || err); error(res, 'Failed to list packages', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/packages
@@ -44,7 +44,7 @@ packagesRouter.post('/', requirePermission('services:*'), async (req: Request, r
       newCustomersOnly: req.body.new_customers_only,
     });
     success(res, pkg, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to create package', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create package', err?.message || err); error(res, 'Failed to create package', 'INTERNAL_ERROR', 500); }
 });
 
 // --- Package Purchases (registered before /:id to avoid route conflict) ---
@@ -57,7 +57,7 @@ packagesRouter.get('/purchases/customer/:customerId', requirePermission('service
 
     const purchases = await packageService.getCustomerPurchases(req.params.customerId, businessId);
     success(res, purchases);
-  } catch (err: any) { error(res, 'Failed to get purchases', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get purchases', err?.message || err); error(res, 'Failed to get purchases', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/packages/purchases/:purchaseId/status
@@ -65,7 +65,7 @@ packagesRouter.get('/purchases/:purchaseId/status', requirePermission('services:
   try {
     const status = await packageService.getPurchaseStatus(req.params.purchaseId);
     success(res, status);
-  } catch (err: any) { error(res, 'Failed to get purchase status', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get purchase status', err?.message || err); error(res, 'Failed to get purchase status', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/packages/purchases/:purchaseId/balance/:itemId
@@ -73,7 +73,7 @@ packagesRouter.get('/purchases/:purchaseId/balance/:itemId', requirePermission('
   try {
     const balance = await packageService.getRemainingBalance(req.params.purchaseId, req.params.itemId);
     success(res, balance);
-  } catch (err: any) { error(res, 'Failed to get balance', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get balance', err?.message || err); error(res, 'Failed to get balance', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/packages/purchases/:purchaseId/redeem
@@ -105,7 +105,7 @@ packagesRouter.get('/:id', requirePermission('services:read'), async (req: Reque
     const pkg = await packageService.getPackageById(req.params.id, businessId);
     if (!pkg) { error(res, 'Package not found', 'NOT_FOUND', 404); return; }
     success(res, pkg);
-  } catch (err: any) { error(res, 'Failed to get package', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get package', err?.message || err); error(res, 'Failed to get package', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/packages/:id
@@ -116,7 +116,7 @@ packagesRouter.put('/:id', requirePermission('services:*'), async (req: Request,
     const pkg = await packageService.updatePackage(req.params.id, businessId, req.body);
     if (!pkg) { error(res, 'Package not found', 'NOT_FOUND', 404); return; }
     success(res, pkg);
-  } catch (err: any) { error(res, 'Failed to update package', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update package', err?.message || err); error(res, 'Failed to update package', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/packages/:id/archive
@@ -127,7 +127,7 @@ packagesRouter.put('/:id/archive', requirePermission('services:*'), async (req: 
     const archived = await packageService.archivePackage(req.params.id, businessId);
     if (!archived) { error(res, 'Package not found', 'NOT_FOUND', 404); return; }
     success(res, { archived: true });
-  } catch (err: any) { error(res, 'Failed to archive package', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to archive package', err?.message || err); error(res, 'Failed to archive package', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/packages/:id/activate
@@ -138,7 +138,7 @@ packagesRouter.put('/:id/activate', requirePermission('services:*'), async (req:
     const activated = await packageService.activatePackage(req.params.id, businessId);
     if (!activated) { error(res, 'Package not found', 'NOT_FOUND', 404); return; }
     success(res, { activated: true });
-  } catch (err: any) { error(res, 'Failed to activate package', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to activate package', err?.message || err); error(res, 'Failed to activate package', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/packages/:id/pause
@@ -149,7 +149,7 @@ packagesRouter.put('/:id/pause', requirePermission('services:*'), async (req: Re
     const paused = await packageService.pausePackage(req.params.id, businessId);
     if (!paused) { error(res, 'Package not found', 'NOT_FOUND', 404); return; }
     success(res, { paused: true });
-  } catch (err: any) { error(res, 'Failed to pause package', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to pause package', err?.message || err); error(res, 'Failed to pause package', 'INTERNAL_ERROR', 500); }
 });
 
 // --- Package Items ---
@@ -159,7 +159,7 @@ packagesRouter.get('/:id/items', requirePermission('services:read'), async (req:
   try {
     const items = await packageService.getPackageItems(req.params.id);
     success(res, items);
-  } catch (err: any) { error(res, 'Failed to get package items', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get package items', err?.message || err); error(res, 'Failed to get package items', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/packages/:id/items
@@ -175,7 +175,7 @@ packagesRouter.post('/:id/items', requirePermission('services:*'), async (req: R
       redemptionType: req.body.redemption_type,
     });
     success(res, item, undefined, 201);
-  } catch (err: any) { error(res, 'Failed to add item', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to add item', err?.message || err); error(res, 'Failed to add item', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/packages/:id/items/:itemId
@@ -188,7 +188,7 @@ packagesRouter.put('/:id/items/:itemId', requirePermission('services:*'), async 
     });
     if (!updated) { error(res, 'Item not found', 'NOT_FOUND', 404); return; }
     success(res, updated);
-  } catch (err: any) { error(res, 'Failed to update item', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update item', err?.message || err); error(res, 'Failed to update item', 'INTERNAL_ERROR', 500); }
 });
 
 // DELETE /api/v1/packages/:id/items/:itemId
@@ -197,7 +197,7 @@ packagesRouter.delete('/:id/items/:itemId', requirePermission('services:*'), asy
     const deleted = await packageService.removePackageItem(req.params.itemId);
     if (!deleted) { error(res, 'Item not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { error(res, 'Failed to remove item', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to remove item', err?.message || err); error(res, 'Failed to remove item', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/packages/:id/purchase — Purchase a package for a customer

@@ -38,7 +38,7 @@ export async function createHold(input: CreateHoldInput) {
     const { rows: conflicts } = await adminPool.query(
       `SELECT id FROM apt_bookings
        WHERE staff_id = $1 AND start_time < $3 AND end_time > $2
-         AND status IN ('pending', 'confirmed', 'in_progress')
+         AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
        LIMIT 1`,
       [input.staffId, input.startTime, input.endTime],
     );

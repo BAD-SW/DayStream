@@ -236,7 +236,7 @@ export async function getCalendar(query: CalendarQuery) {
       const { rows: countRows } = await adminPool.query(
         `SELECT COUNT(*)::int AS count FROM apt_bookings
          WHERE service_id = b.service_id AND start_time = $1 AND business_id = $2
-           AND status IN ('pending', 'confirmed', 'in_progress')`,
+           AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')`,
         [row.start_time, businessId],
       );
       entry.participants = countRows[0]?.count || 1;
@@ -250,7 +250,7 @@ export async function getCalendar(query: CalendarQuery) {
   // have one consistent capacity; a staff member's capacity ceiling is taken from whichever
   // service(s) they're actively running (a 1:1 service caps at 1, a staff-led group class at its
   // own max_capacity).
-  const activeStatuses = ['pending', 'confirmed', 'in_progress'];
+  const activeStatuses = ['pending', 'confirmed', 'checked_in', 'in_progress'];
   const byResource = new Map<string, Array<{ start_time: string; end_time: string; participant_count: number; capacity: number }>>();
   const byStaff = new Map<string, Array<{ start_time: string; end_time: string; participant_count: number; capacity: number }>>();
   for (const row of rows) {

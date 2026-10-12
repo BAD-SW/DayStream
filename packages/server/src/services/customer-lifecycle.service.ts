@@ -245,14 +245,27 @@ export async function evaluateOnMembership(customerId: string, businessId: strin
  * Checks last activity date against configured thresholds.
  * Should be called periodically (e.g., daily).
  */
-export async function evaluateScheduledTransitions(): Promise<{ processed: number; transitioned: number }> {
+export async function evaluateScheduledTransitions(onlyBusinessId?: string): Promise<{ processed: number; transitioned: number }> {
   let processed = 0;
   let transitioned = 0;
 
-  // Get all active businesses
+  // Get all active businesses (or just the one asked for)
   const { rows: businesses } = await adminPool.query(
-    "SELECT id FROM sys_businesses WHERE status = 'active'",
+    "SELECT id FROM sys_businesses WHERE status = 'active' AND ($1::uuid IS NULL OR id = $1)",
+    [onlyBusinessId || null],
   );
+
+  // One person who cannot be moved (deleted or merged while the job runs) must not stop the
+  // job for everyone else.
+  const move = async (customerId: string, businessId: string, stage: LifecycleStage, reason: string): Promise<boolean> => {
+    try {
+      await transitionLifecycle(customerId, businessId, stage, reason);
+      return true;
+    } catch (err: any) {
+      logger.warn('Lifecycle transition skipped', { customerId, stage, error: err.message });
+      return false;
+    }
+  };
 
   for (const business of businesses) {
     const businessId = business.id;
@@ -281,8 +294,7 @@ export async function evaluateScheduledTransitions(): Promise<{ processed: numbe
     );
 
     for (const candidate of atRiskCandidates) {
-      await transitionLifecycle(candidate.id, businessId, 'at_risk', `No activity in ${atRiskDays} days`);
-      transitioned++;
+      if (await move(candidate.id, businessId, 'at_risk', `No activity in ${atRiskDays} days`)) transitioned++;
     }
     processed += atRiskCandidates.length;
 
@@ -303,8 +315,7 @@ export async function evaluateScheduledTransitions(): Promise<{ processed: numbe
     );
 
     for (const candidate of churnedCandidates) {
-      await transitionLifecycle(candidate.id, businessId, 'churned', `No activity in ${churnedDays} days`);
-      transitioned++;
+      if (await move(candidate.id, businessId, 'churned', `No activity in ${churnedDays} days`)) transitioned++;
     }
     processed += churnedCandidates.length;
   }

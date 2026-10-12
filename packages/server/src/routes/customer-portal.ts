@@ -62,6 +62,7 @@ customerPortalRouter.get('/', async (req: Request, res: Response) => {
     const { anonymized_at, anonymized_by, ...profile } = customer;
     success(res, profile);
   } catch (err: any) {
+    console.error('Failed to get profile', err?.message || err);
     error(res, 'Failed to get profile', 'INTERNAL_ERROR', 500);
   }
 });
@@ -107,6 +108,7 @@ customerPortalRouter.put('/', validate(updateProfileSchema), async (req: Request
     const { rows } = await adminPool.query('SELECT * FROM cus_customers WHERE id = $1', [customer.id]);
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to update profile', err?.message || err);
     error(res, 'Failed to update profile', 'INTERNAL_ERROR', 500);
   }
 });
@@ -127,6 +129,7 @@ customerPortalRouter.get('/notes', async (req: Request, res: Response) => {
 
     success(res, rows);
   } catch (err: any) {
+    console.error('Failed to get notes', err?.message || err);
     error(res, 'Failed to get notes', 'INTERNAL_ERROR', 500);
   }
 });
@@ -154,6 +157,7 @@ customerPortalRouter.get('/activities', async (req: Request, res: Response) => {
       totalPages: Math.ceil(result.total / result.limit),
     });
   } catch (err: any) {
+    console.error('Failed to get activities', err?.message || err);
     error(res, 'Failed to get activities', 'INTERNAL_ERROR', 500);
   }
 });
@@ -177,6 +181,7 @@ customerPortalRouter.post('/export', async (req: Request, res: Response) => {
 
     success(res, data);
   } catch (err: any) {
+    console.error('Failed to export data', err?.message || err);
     error(res, 'Failed to export data', 'INTERNAL_ERROR', 500);
   }
 });
@@ -208,6 +213,7 @@ customerPortalRouter.post('/delete', async (req: Request, res: Response) => {
 
     success(res, { message: 'Deletion request submitted. You will be notified when processed.' });
   } catch (err: any) {
+    console.error('Failed to submit deletion request', err?.message || err);
     error(res, 'Failed to submit deletion request', 'INTERNAL_ERROR', 500);
   }
 });
@@ -221,6 +227,7 @@ customerPortalRouter.get('/preferences', async (req: Request, res: Response) => 
     const { customer_id: _omit, ...prefs } = await consentService.getLegacyPreferences(customer.id);
     success(res, prefs);
   } catch (err: any) {
+    console.error('Failed to get preferences', err?.message || err);
     error(res, 'Failed to get preferences', 'INTERNAL_ERROR', 500);
   }
 });
@@ -249,6 +256,7 @@ customerPortalRouter.put('/preferences', validate(updatePreferencesSchema), asyn
     const { customer_id: _omit, ...prefs } = updated;
     success(res, prefs);
   } catch (err: any) {
+    console.error('Failed to update preferences', err?.message || err);
     error(res, 'Failed to update preferences', 'INTERNAL_ERROR', 500);
   }
 });

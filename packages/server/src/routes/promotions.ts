@@ -49,7 +49,7 @@ promotionsRouter.get('/', requirePermission('services:read'), async (req: Reques
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
     });
     success(res, result.promotions, { total: result.total, page: result.page, limit: result.limit });
-  } catch (err: any) { error(res, 'Failed to list promotions', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to list promotions', err?.message || err); error(res, 'Failed to list promotions', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/promotions
@@ -92,7 +92,7 @@ promotionsRouter.get('/:id', requirePermission('services:read'), async (req: Req
     const promo = await promotionService.getPromotionById(req.params.id, businessId);
     if (!promo) { error(res, 'Promotion not found', 'NOT_FOUND', 404); return; }
     success(res, promo);
-  } catch (err: any) { error(res, 'Failed to get promotion', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get promotion', err?.message || err); error(res, 'Failed to get promotion', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/promotions/:id
@@ -103,7 +103,7 @@ promotionsRouter.put('/:id', requirePermission('services:*'), async (req: Reques
     const promo = await promotionService.updatePromotion(req.params.id, businessId, req.body);
     if (!promo) { error(res, 'Promotion not found', 'NOT_FOUND', 404); return; }
     success(res, promo);
-  } catch (err: any) { error(res, 'Failed to update promotion', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to update promotion', err?.message || err); error(res, 'Failed to update promotion', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/promotions/:id/archive
@@ -114,7 +114,7 @@ promotionsRouter.put('/:id/archive', requirePermission('services:*'), async (req
     const archived = await promotionService.archivePromotion(req.params.id, businessId);
     if (!archived) { error(res, 'Promotion not found', 'NOT_FOUND', 404); return; }
     success(res, { archived: true });
-  } catch (err: any) { error(res, 'Failed to archive promotion', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to archive promotion', err?.message || err); error(res, 'Failed to archive promotion', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/promotions/:id/activate
@@ -125,7 +125,7 @@ promotionsRouter.put('/:id/activate', requirePermission('services:*'), async (re
     const activated = await promotionService.activatePromotion(req.params.id, businessId);
     if (!activated) { error(res, 'Promotion not found', 'NOT_FOUND', 404); return; }
     success(res, { activated: true });
-  } catch (err: any) { error(res, 'Failed to activate promotion', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to activate promotion', err?.message || err); error(res, 'Failed to activate promotion', 'INTERNAL_ERROR', 500); }
 });
 
 // PUT /api/v1/promotions/:id/pause
@@ -136,5 +136,5 @@ promotionsRouter.put('/:id/pause', requirePermission('services:*'), async (req: 
     const paused = await promotionService.pausePromotion(req.params.id, businessId);
     if (!paused) { error(res, 'Promotion not found', 'NOT_FOUND', 404); return; }
     success(res, { paused: true });
-  } catch (err: any) { error(res, 'Failed to pause promotion', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to pause promotion', err?.message || err); error(res, 'Failed to pause promotion', 'INTERNAL_ERROR', 500); }
 });

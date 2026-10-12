@@ -1,3 +1,5 @@
+import { requiredResourceAlternatives, loadMaintenance, underMaintenance } from './required-resources.service';
+import { localSlotMinutes } from '../utils/business-time';
 import { adminPool } from '../db/pool';
 
 interface AvailabilityQuery {
@@ -108,9 +110,16 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
   );
 
   // 3. Load all business locations (location scoping is handled by availability rules)
+  // The locations where this service is offered (Offerings → service → locations); when none
+  // are set, every active location. The primary location comes first: its opening hours and
+  // holiday closures are the ones that apply when the request names no location.
   const { rows: allLocs } = await adminPool.query(
-    "SELECT id, name FROM sys_locations WHERE business_id = $1 AND status = 'active'",
-    [businessId],
+    `SELECT l.id, l.name FROM sys_locations l
+      WHERE l.business_id = $1 AND l.status = 'active'
+        AND (NOT EXISTS (SELECT 1 FROM svc_locations x JOIN sys_locations xl ON xl.id = x.location_id AND xl.status = 'active' WHERE x.service_id = $2)
+             OR l.id IN (SELECT location_id FROM svc_locations WHERE service_id = $2))
+      ORDER BY l.is_primary DESC, l.created_at`,
+    [businessId, serviceId],
   );
   let serviceLocations: Array<{ id: string; name: string }> = allLocs;
   // Apply location filter if specified in query
@@ -125,7 +134,10 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
     `SELECT DISTINCT ss.user_id, u.first_name, u.last_name
      FROM svc_staff ss
      JOIN usr_users u ON u.id = ss.user_id
-     WHERE ss.service_id = $1 ${staffCondition}`,
+     LEFT JOIN stf_profiles sp ON sp.user_id = u.id
+     WHERE ss.service_id = $1 ${staffCondition}
+       -- a deactivated staff member is no longer offered
+       AND u.status = 'active' AND COALESCE(sp.status, 'active') = 'active'`,
     staffParams,
   );
 
@@ -157,7 +169,7 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
      WHERE business_id = $1
        AND start_time < $3::timestamptz
        AND end_time > $2::timestamptz
-       AND status IN ('pending', 'confirmed', 'in_progress')
+       AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
        AND ($4::uuid[] IS NULL OR staff_id = ANY($4))`,
     [businessId, new Date(dateFrom).toISOString(), new Date(dateTo + 'T23:59:59Z').toISOString(), staffIds.length > 0 ? staffIds : null],
   );
@@ -176,7 +188,10 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
 
   // 7b. Load resource bookings for conflict checking
   // Collect all resource IDs referenced in availability rules
-  const ruleResourceIds = [...new Set(availRules.flatMap((r: any) => r.resource_ids || []))];
+  // Plus the resource the service requires on the Resources page, when its rules name none.
+  const requiredAlternatives = await requiredResourceAlternatives(serviceId, variantId, businessId);
+  const ruleResourceIds = [...new Set([...availRules.flatMap((r: any) => r.resource_ids || []), ...requiredAlternatives])];
+  const maintenanceWindows = await loadMaintenance(ruleResourceIds);
   let resourceBookings: any[] = [];
   let resourceCapacities = new Map<string, number>();
   if (ruleResourceIds.length > 0) {
@@ -187,7 +202,7 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
          AND resource_id = ANY($2)
          AND start_time < $4::timestamptz
          AND end_time > $3::timestamptz
-         AND status IN ('pending', 'confirmed', 'in_progress')`,
+         AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')`,
       [businessId, ruleResourceIds, new Date(dateFrom).toISOString(), new Date(dateTo + 'T23:59:59Z').toISOString()],
     );
     resourceBookings = resBookings;
@@ -318,6 +333,7 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
               schedulingMode, staffWorkingData, staffOverrides,
               locationHours, locationHourOverrides,
               service.requires_dedicated_staff !== false,
+              businessTimezone,
             )
           : windowEligibleStaff;
 
@@ -328,8 +344,12 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
         // reported capacity_remaining is the best (max) remaining headcount across them, and the
         // slot is only excluded when every alternative is fully booked.
         let slotCapacityRemaining: number | undefined;
-        if (window.resourceIds && window.resourceIds.length > 0) {
-          const remainingByResource = window.resourceIds.map((resId: string) => {
+        const fromRule = !!(window.resourceIds && window.resourceIds.length > 0);
+        const slotResourceIds: string[] = fromRule ? window.resourceIds! : requiredAlternatives;
+        if (slotResourceIds.length > 0) {
+          const remainingByResource = slotResourceIds.map((resId: string) => {
+            // A resource under maintenance during the slot cannot be used at all.
+            if (underMaintenance(maintenanceWindows, resId, slotStart, slotEnd, businessTimezone)) return 0;
             const cap = resourceCapacities.get(resId) || 1;
             // Find all bookings that overlap this slot for this resource
             const overlapping = resourceBookings.filter((rb: any) =>
@@ -356,8 +376,11 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
             }, 0);
             return cap - maxConcurrentParticipants;
           });
-          slotCapacityRemaining = Math.max(...remainingByResource);
-          if (slotCapacityRemaining <= 0) continue;
+          const bestRemaining = Math.max(...remainingByResource);
+          if (bestRemaining <= 0) continue;
+          // Only a resource named by the service's own rule defines the slot's headcount;
+          // a required room merely has to be free.
+          if (fromRule) slotCapacityRemaining = bestRemaining;
         }
 
         // Determine which locations are valid for this window
@@ -514,7 +537,11 @@ function getAvailableStaffForSlot(
   locationHours: any[],
   locationHourOverrides: any[],
   requiresDedicatedStaff: boolean,
+  businessTimezone: string = 'UTC',
 ): any[] {
+  // Opening hours, shifts and availability patterns are wall-clock times where the business
+  // is, so the slot is compared with them in the business's own time zone (not its UTC clock).
+  const slotLocal = localSlotMinutes(slotStart, slotEnd, businessTimezone);
   const blockStart = new Date(slotStart.getTime() - bufferBefore * 60 * 1000);
   const blockEnd = new Date(slotEnd.getTime() + bufferAfter * 60 * 1000);
 
@@ -528,8 +555,8 @@ function getAvailableStaffForSlot(
     if (override) {
       if (override.is_closed) return []; // Business closed this day
       if (override.open_time && override.close_time) {
-        const slotMinutes = slotStart.getUTCHours() * 60 + slotStart.getUTCMinutes();
-        const slotEndMinutes = slotEnd.getUTCHours() * 60 + slotEnd.getUTCMinutes();
+        const slotMinutes = slotLocal.startMinutes;
+        const slotEndMinutes = slotLocal.endMinutes;
         const openMin = timeToMinutes(override.open_time);
         const closeMin = timeToMinutes(override.close_time);
         if (slotMinutes < openMin || slotEndMinutes > closeMin) return [];
@@ -540,8 +567,8 @@ function getAvailableStaffForSlot(
       if (bh) {
         if (bh.is_closed) return [];
         if (bh.open_time && bh.close_time) {
-          const slotMinutes = slotStart.getUTCHours() * 60 + slotStart.getUTCMinutes();
-          const slotEndMinutes = slotEnd.getUTCHours() * 60 + slotEnd.getUTCMinutes();
+          const slotMinutes = slotLocal.startMinutes;
+          const slotEndMinutes = slotLocal.endMinutes;
           const openMin = timeToMinutes(bh.open_time);
           const closeMin = timeToMinutes(bh.close_time);
           if (slotMinutes < openMin || slotEndMinutes > closeMin) return [];
@@ -562,8 +589,8 @@ function getAvailableStaffForSlot(
       });
       // If no schedule entries exist for this staff member, treat as available (unscheduled = no restrictions)
       if (entries.length > 0) {
-        const slotMinutes = slotStart.getUTCHours() * 60 + slotStart.getUTCMinutes();
-        const slotEndMinutes = slotEnd.getUTCHours() * 60 + slotEnd.getUTCMinutes();
+        const slotMinutes = slotLocal.startMinutes;
+        const slotEndMinutes = slotLocal.endMinutes;
         const isWithinShift = entries.some((e: any) => {
           const shiftStart = timeToMinutes(e.start_time);
           const shiftEnd = timeToMinutes(e.end_time);
@@ -582,8 +609,8 @@ function getAvailableStaffForSlot(
         if (dateOverride.override_type === 'remove') return false; // Day off
         if (dateOverride.override_type === 'modify' || dateOverride.override_type === 'add') {
           if (dateOverride.start_time && dateOverride.end_time) {
-            const slotMinutes = slotStart.getUTCHours() * 60 + slotStart.getUTCMinutes();
-            const slotEndMinutes = slotEnd.getUTCHours() * 60 + slotEnd.getUTCMinutes();
+            const slotMinutes = slotLocal.startMinutes;
+            const slotEndMinutes = slotLocal.endMinutes;
             const oStart = timeToMinutes(dateOverride.start_time);
             const oEnd = timeToMinutes(dateOverride.end_time);
             if (slotMinutes < oStart || slotEndMinutes > oEnd) return false;
@@ -597,8 +624,8 @@ function getAvailableStaffForSlot(
         if (allStaffPatterns.length === 0) {
           // No patterns defined at all — assume staff is available (no restrictions set up)
         } else if (dayPatterns.length > 0) {
-          const slotMinutes = slotStart.getUTCHours() * 60 + slotStart.getUTCMinutes();
-          const slotEndMinutes = slotEnd.getUTCHours() * 60 + slotEnd.getUTCMinutes();
+          const slotMinutes = slotLocal.startMinutes;
+          const slotEndMinutes = slotLocal.endMinutes;
           const isAvailable = dayPatterns.some((p: any) => {
             if (p.effective_from && dateStr < p.effective_from) return false;
             if (p.effective_to && dateStr > p.effective_to) return false;

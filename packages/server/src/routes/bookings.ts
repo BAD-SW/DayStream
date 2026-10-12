@@ -72,6 +72,7 @@ bookingsRouter.get('/availability', requirePermission('bookings:read'), async (r
 
     success(res, slots, { count: slots.length });
   } catch (err: any) {
+    console.error('Failed to calculate availability', err?.message || err);
     error(res, 'Failed to calculate availability', 'INTERNAL_ERROR', 500);
   }
 });
@@ -101,6 +102,7 @@ bookingsRouter.get('/availability/combinations', requirePermission('bookings:rea
 
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to calculate availability combinations', err?.message || err);
     error(res, 'Failed to calculate availability combinations', 'INTERNAL_ERROR', 500);
   }
 });
@@ -195,6 +197,7 @@ bookingsRouter.get('/availability/days', requirePermission('bookings:read'), asy
 
     success(res, { timezone, days: result });
   } catch (err: any) {
+    console.error('Failed to load day availability', err?.message || err);
     error(res, 'Failed to load day availability', 'INTERNAL_ERROR', 500);
   }
 });
@@ -219,6 +222,7 @@ bookingsRouter.get('/calendar', requirePermission('bookings:read'), async (req: 
     });
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to load calendar', err?.message || err);
     error(res, 'Failed to load calendar', 'INTERNAL_ERROR', 500);
   }
 });
@@ -259,6 +263,7 @@ bookingsRouter.get('/filters', requirePermission('bookings:read'), async (req: R
       location_hours: locationHours,
     });
   } catch (err: any) {
+    console.error('Failed to load booking filters', err?.message || err);
     error(res, 'Failed to load booking filters', 'INTERNAL_ERROR', 500);
   }
 });
@@ -275,6 +280,7 @@ bookingsRouter.get('/rules', requirePermission('bookings:read'), async (req: Req
     if (!rules) { error(res, 'Service not found', 'NOT_FOUND', 404); return; }
     success(res, rules);
   } catch (err: any) {
+    console.error('Failed to get rules', err?.message || err);
     error(res, 'Failed to get rules', 'INTERNAL_ERROR', 500);
   }
 });
@@ -292,6 +298,7 @@ bookingsRouter.get('/recurring/:seriesId', requirePermission('bookings:read'), a
     if (!series) { error(res, 'Series not found', 'NOT_FOUND', 404); return; }
     success(res, series);
   } catch (err: any) {
+    console.error('Failed to get series', err?.message || err);
     error(res, 'Failed to get series', 'INTERNAL_ERROR', 500);
   }
 });
@@ -384,6 +391,7 @@ bookingsRouter.get('/', requirePermission('bookings:read'), async (req: Request,
       totalPages: Math.ceil(result.total / result.limit),
     });
   } catch (err: any) {
+    console.error('Failed to list bookings', err?.message || err);
     error(res, 'Failed to list bookings', 'INTERNAL_ERROR', 500);
   }
 });
@@ -401,6 +409,7 @@ bookingsRouter.get('/:id', requirePermission('bookings:read'), async (req: Reque
 
     success(res, booking);
   } catch (err: any) {
+    console.error('Failed to get booking', err?.message || err);
     error(res, 'Failed to get booking', 'INTERNAL_ERROR', 500);
   }
 });
@@ -436,6 +445,7 @@ bookingsRouter.put('/:id/confirm', requirePermission('bookings:*'), async (req: 
     }
     success(res, result.booking);
   } catch (err: any) {
+    console.error('Failed to confirm booking', err?.message || err);
     error(res, 'Failed to confirm booking', 'INTERNAL_ERROR', 500);
   }
 });
@@ -455,6 +465,7 @@ bookingsRouter.put('/:id/cancel', requirePermission('bookings:*'), validate(canc
     }
     success(res, { ...result.booking, cancellation_fee: result.cancellation_fee });
   } catch (err: any) {
+    console.error('Failed to cancel booking', err?.message || err);
     error(res, 'Failed to cancel booking', 'INTERNAL_ERROR', 500);
   }
 });
@@ -494,6 +505,7 @@ bookingsRouter.put('/:id/complete', requirePermission('bookings:*'), async (req:
     }
     success(res, result.booking);
   } catch (err: any) {
+    console.error('Failed to complete booking', err?.message || err);
     error(res, 'Failed to complete booking', 'INTERNAL_ERROR', 500);
   }
 });
@@ -513,6 +525,7 @@ bookingsRouter.put('/:id/reset', requirePermission('bookings:*'), async (req: Re
     }
     success(res, result.booking);
   } catch (err: any) {
+    console.error('Failed to reset booking', err?.message || err);
     error(res, 'Failed to reset booking', 'INTERNAL_ERROR', 500);
   }
 });
@@ -532,6 +545,7 @@ bookingsRouter.put('/:id/no-show', requirePermission('bookings:*'), async (req: 
     }
     success(res, { ...result.booking, no_show_fee: result.no_show_fee ?? 0 });
   } catch (err: any) {
+    console.error('Failed to mark no-show', err?.message || err);
     error(res, 'Failed to mark no-show', 'INTERNAL_ERROR', 500);
   }
 });
@@ -555,6 +569,7 @@ bookingsRouter.put('/:id/reschedule', requirePermission('bookings:*'), validate(
     }
     success(res, result.booking);
   } catch (err: any) {
+    console.error('Failed to reschedule booking', err?.message || err);
     error(res, 'Failed to reschedule booking', 'INTERNAL_ERROR', 500);
   }
 });
@@ -625,6 +640,7 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
     if (rows.length === 0) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to update booking', err?.message || err);
     error(res, 'Failed to update booking', 'INTERNAL_ERROR', 500);
   }
 });
@@ -652,6 +668,7 @@ bookingsRouter.get('/:id/ical', requirePermission('bookings:read'), async (req: 
     res.setHeader('Content-Disposition', `attachment; filename="${booking.booking_reference}.ics"`);
     res.send(ical);
   } catch (err: any) {
+    console.error('Failed to generate iCal', err?.message || err);
     error(res, 'Failed to generate iCal', 'INTERNAL_ERROR', 500);
   }
 });
@@ -705,6 +722,7 @@ bookingsRouter.delete('/hold/:id', requirePermission('bookings:*'), async (req: 
     if (!released) { error(res, 'Hold not found', 'NOT_FOUND', 404); return; }
     success(res, { released: true });
   } catch (err: any) {
+    console.error('Failed to release hold', err?.message || err);
     error(res, 'Failed to release hold', 'INTERNAL_ERROR', 500);
   }
 });
@@ -755,6 +773,7 @@ bookingsRouter.delete('/:id/waitlist', requirePermission('bookings:*'), async (r
     if (!removed) { error(res, 'Waitlist entry not found', 'NOT_FOUND', 404); return; }
     success(res, { removed: true });
   } catch (err: any) {
+    console.error('Failed to leave waitlist', err?.message || err);
     error(res, 'Failed to leave waitlist', 'INTERNAL_ERROR', 500);
   }
 });
@@ -774,6 +793,7 @@ bookingsRouter.put('/waitlist/:entryId/confirm', requirePermission('bookings:*')
     }
     success(res, { confirmed: true });
   } catch (err: any) {
+    console.error('Failed to confirm waitlist', err?.message || err);
     error(res, 'Failed to confirm waitlist', 'INTERNAL_ERROR', 500);
   }
 });
@@ -843,6 +863,7 @@ bookingsRouter.put('/recurring/:seriesId/cancel', requirePermission('bookings:*'
     const result = await recurringService.cancelSeries(req.params.seriesId, businessId, authReq.user.sub, authReq.tenantId);
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to cancel series', err?.message || err);
     error(res, 'Failed to cancel series', 'INTERNAL_ERROR', 500);
   }
 });

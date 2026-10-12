@@ -3,6 +3,13 @@ import { config } from '../config';
 
 const { Pool } = pg;
 
+// A DATE column is a calendar day, not an instant. The driver's default turns it into a
+// JavaScript Date at the server's local midnight, which then travels as a timestamp: on a
+// server outside UTC "2026-10-22" becomes "2026-10-21T22:00:00.000Z", so day comparisons
+// fail and screens show (and save back) the previous day. Read DATE as the plain
+// 'YYYY-MM-DD' text it is. (1082 is PostgreSQL's type id for DATE.)
+pg.types.setTypeParser(1082, (value: string) => value);
+
 // Managed hosts (Neon, etc.) hand out one connection string that requires SSL; local
 // Postgres uses discrete DB_HOST/PORT/USER/PASSWORD/NAME and no SSL. RLS-based per-role
 // connections were removed post-migration-#43 (tenant isolation is application-level

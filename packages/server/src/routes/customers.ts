@@ -132,6 +132,7 @@ customersRouter.get('/', requirePermission('customers:read'), async (req: Reques
       totalPages: Math.ceil(result.total / result.limit),
     });
   } catch (err: any) {
+    console.error('Failed to list customers', err?.message || err);
     error(res, 'Failed to list customers', 'INTERNAL_ERROR', 500);
   }
 });
@@ -159,6 +160,7 @@ customersRouter.get('/view-counts', requirePermission('customers:read'), async (
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     success(res, await customerService.getViewCounts(businessId));
   } catch (err: any) {
+    console.error('Failed to get view counts', err?.message || err);
     error(res, 'Failed to get view counts', 'INTERNAL_ERROR', 500);
   }
 });
@@ -177,6 +179,7 @@ customersRouter.get('/owners', requirePermission('customers:read'), async (req: 
     );
     success(res, rows);
   } catch (err: any) {
+    console.error('Failed to list owners', err?.message || err);
     error(res, 'Failed to list owners', 'INTERNAL_ERROR', 500);
   }
 });
@@ -219,6 +222,7 @@ customersRouter.post('/bulk/preview', requirePermission('customers:*'), validate
     const ids = await customerService.resolveBulkTarget(req.body.business_id, bulkTarget(req));
     success(res, { count: ids.length });
   } catch (err: any) {
+    console.error('Failed to preview the bulk action', err?.message || err);
     error(res, 'Failed to preview the bulk action', 'INTERNAL_ERROR', 500);
   }
 });
@@ -259,6 +263,7 @@ customersRouter.get('/lifecycle-summary', requirePermission('customers:read'), a
     const summary = await lifecycleService.getLifecycleSummary(businessId);
     success(res, summary);
   } catch (err: any) {
+    console.error('Failed to get lifecycle summary', err?.message || err);
     error(res, 'Failed to get lifecycle summary', 'INTERNAL_ERROR', 500);
   }
 });
@@ -279,7 +284,7 @@ customersRouter.get('/lifecycle-config', requirePermission('settings:*'), async 
       if (row.key === 'lifecycle.run_time') config.run_time = row.value;
     }
     success(res, config);
-  } catch (err: any) { error(res, 'Failed to get lifecycle config', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get lifecycle config', err?.message || err); error(res, 'Failed to get lifecycle config', 'INTERNAL_ERROR', 500); }
 });
 
 customersRouter.put('/lifecycle-config', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -301,7 +306,7 @@ customersRouter.put('/lifecycle-config', requirePermission('settings:*'), async 
       );
     }
     success(res, { enabled, at_risk_days, churned_days, run_time });
-  } catch (err: any) { error(res, 'Failed to save lifecycle config', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to save lifecycle config', err?.message || err); error(res, 'Failed to save lifecycle config', 'INTERNAL_ERROR', 500); }
 });
 
 customersRouter.get('/scheduled-jobs/types', requirePermission('settings:*'), async (_req: Request, res: Response) => {
@@ -317,7 +322,7 @@ customersRouter.get('/scheduled-jobs', requirePermission('settings:*'), async (r
       [businessId],
     );
     success(res, rows);
-  } catch (err: any) { error(res, 'Failed to get scheduled jobs', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get scheduled jobs', err?.message || err); error(res, 'Failed to get scheduled jobs', 'INTERNAL_ERROR', 500); }
 });
 
 customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -338,7 +343,7 @@ customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (
       [businessId, authReq.tenantId, job_type, time, schedule_timezone || 'UTC', frequency || 'daily', day_of_week ?? null, day_of_month ?? null, enabled !== false, nextRun.toISOString()],
     );
     success(res, rows[0], undefined, 201);
-  } catch (err: any) { error(res, 'Failed to create scheduled job', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to create scheduled job', err?.message || err); error(res, 'Failed to create scheduled job', 'INTERNAL_ERROR', 500); }
 });
 
 customersRouter.put('/scheduled-jobs/:id/toggle', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -346,7 +351,7 @@ customersRouter.put('/scheduled-jobs/:id/toggle', requirePermission('settings:*'
     const { rows } = await adminPool.query(`UPDATE sys_scheduled_jobs SET enabled = NOT enabled, updated_at = NOW() WHERE id = $1 RETURNING id, enabled`, [req.params.id]);
     if (rows.length === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
-  } catch (err: any) { error(res, 'Failed to toggle job', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to toggle job', err?.message || err); error(res, 'Failed to toggle job', 'INTERNAL_ERROR', 500); }
 });
 
 customersRouter.delete('/scheduled-jobs/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -354,7 +359,7 @@ customersRouter.delete('/scheduled-jobs/:id', requirePermission('settings:*'), a
     const { rowCount } = await adminPool.query('DELETE FROM sys_scheduled_jobs WHERE id = $1', [req.params.id]);
     if (rowCount === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
-  } catch (err: any) { error(res, 'Failed to delete job', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to delete job', err?.message || err); error(res, 'Failed to delete job', 'INTERNAL_ERROR', 500); }
 });
 
 customersRouter.get('/scheduled-jobs/:id/history', requirePermission('settings:*'), async (req: Request, res: Response) => {
@@ -364,7 +369,7 @@ customersRouter.get('/scheduled-jobs/:id/history', requirePermission('settings:*
       [req.params.id],
     );
     success(res, rows);
-  } catch (err: any) { error(res, 'Failed to get job history', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to get job history', err?.message || err); error(res, 'Failed to get job history', 'INTERNAL_ERROR', 500); }
 });
 
 // POST /api/v1/customers/scheduled-jobs/run — Run a process by type (no DB record needed)
@@ -459,7 +464,7 @@ customersRouter.post('/scheduled-jobs/:id/run', requirePermission('settings:*'),
       ).catch(() => {});
       error(res, `Job failed: ${err.message}`, 'INTERNAL_ERROR', 500);
     }
-  } catch (err: any) { error(res, 'Failed to run job', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) { console.error('Failed to run job', err?.message || err); error(res, 'Failed to run job', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /api/v1/customers/export — Export to CSV (must be before /:id)
@@ -498,6 +503,7 @@ customersRouter.get('/export', requirePermission('customers:read'), async (req: 
     res.setHeader('Content-Disposition', 'attachment; filename="customers-export.csv"');
     res.send(csv);
   } catch (err: any) {
+    console.error('Failed to export customers', err?.message || err);
     error(res, 'Failed to export customers', 'INTERNAL_ERROR', 500);
   }
 });
@@ -511,6 +517,7 @@ customersRouter.get('/:id/financial-summary', requirePermission('customers:read'
     if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
     success(res, await customerService.getFinancialSummary(req.params.id, businessId));
   } catch (err: any) {
+    console.error('Failed to get the financial summary', err?.message || err);
     error(res, 'Failed to get the financial summary', 'INTERNAL_ERROR', 500);
   }
 });
@@ -538,6 +545,7 @@ customersRouter.get('/:id', requirePermission('customers:read'), async (req: Req
 
     success(res, customer);
   } catch (err: any) {
+    console.error('Failed to get customer', err?.message || err);
     error(res, 'Failed to get customer', 'INTERNAL_ERROR', 500);
   }
 });
@@ -588,6 +596,7 @@ customersRouter.put('/:id/archive', requirePermission('customers:*'), async (req
 
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to archive customer', err?.message || err);
     error(res, 'Failed to archive customer', 'INTERNAL_ERROR', 500);
   }
 });
@@ -622,6 +631,7 @@ customersRouter.put('/:id/reactivate', requirePermission('customers:*'), async (
 
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to reactivate customer', err?.message || err);
     error(res, 'Failed to reactivate customer', 'INTERNAL_ERROR', 500);
   }
 });
@@ -644,6 +654,7 @@ customersRouter.post('/:id/anonymize', requirePermission('customers:*'), async (
 
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to anonymize customer', err?.message || err);
     error(res, 'Failed to anonymize customer', 'INTERNAL_ERROR', 500);
   }
 });
@@ -712,6 +723,7 @@ customersRouter.get('/:id/notes', requirePermission('customers:read'), async (re
 
     success(res, result.notes, { total: result.total, limit: result.limit, offset: result.offset });
   } catch (err: any) {
+    console.error('Failed to get notes', err?.message || err);
     error(res, 'Failed to get notes', 'INTERNAL_ERROR', 500);
   }
 });
@@ -726,6 +738,7 @@ customersRouter.delete('/:id/notes/:noteId', requirePermission('customers:*'), a
     if (!deleted) { error(res, 'Note not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to delete note', err?.message || err);
     error(res, 'Failed to delete note', 'INTERNAL_ERROR', 500);
   }
 });
@@ -739,6 +752,7 @@ customersRouter.get('/note-categories/list', requirePermission('customers:read')
     const categories = await notesService.getCategories(businessId);
     success(res, categories);
   } catch (err: any) {
+    console.error('Failed to get categories', err?.message || err);
     error(res, 'Failed to get categories', 'INTERNAL_ERROR', 500);
   }
 });
@@ -755,6 +769,7 @@ customersRouter.post('/note-categories', requirePermission('settings:*'), valida
 
     success(res, category, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to create category', err?.message || err);
     error(res, 'Failed to create category', 'INTERNAL_ERROR', 500);
   }
 });
@@ -769,6 +784,7 @@ customersRouter.delete('/note-categories/:id', requirePermission('settings:*'), 
     if (!deleted) { error(res, 'Category not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to delete category', err?.message || err);
     error(res, 'Failed to delete category', 'INTERNAL_ERROR', 500);
   }
 });
@@ -798,6 +814,7 @@ customersRouter.get('/tags/list', requirePermission('customers:read'), async (re
     const tags = await tagsService.getTags(businessId);
     success(res, tags);
   } catch (err: any) {
+    console.error('Failed to get tags', err?.message || err);
     error(res, 'Failed to get tags', 'INTERNAL_ERROR', 500);
   }
 });
@@ -810,6 +827,7 @@ customersRouter.post('/tags', requirePermission('customers:*'), validate(createT
     const tag = await tagsService.createTag(businessId, req.body.name, req.body.color);
     success(res, tag, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to create tag', err?.message || err);
     error(res, 'Failed to create tag', 'INTERNAL_ERROR', 500);
   }
 });
@@ -823,6 +841,7 @@ customersRouter.put('/tags/:tagId', requirePermission('customers:*'), validate(u
     if (!tag) { error(res, 'Tag not found', 'NOT_FOUND', 404); return; }
     success(res, tag);
   } catch (err: any) {
+    console.error('Failed to update tag', err?.message || err);
     error(res, 'Failed to update tag', 'INTERNAL_ERROR', 500);
   }
 });
@@ -836,6 +855,7 @@ customersRouter.delete('/tags/:tagId', requirePermission('customers:*'), async (
     if (!deleted) { error(res, 'Tag not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to delete tag', err?.message || err);
     error(res, 'Failed to delete tag', 'INTERNAL_ERROR', 500);
   }
 });
@@ -858,6 +878,7 @@ customersRouter.post('/:id/tags', requirePermission('customers:*'), validate(ass
 
     success(res, { assigned: true }, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to assign tag', err?.message || err);
     error(res, 'Failed to assign tag', 'INTERNAL_ERROR', 500);
   }
 });
@@ -868,6 +889,7 @@ customersRouter.delete('/:id/tags/:tagId', requirePermission('customers:*'), asy
     await tagsService.removeTag(req.params.id, req.params.tagId);
     success(res, { removed: true });
   } catch (err: any) {
+    console.error('Failed to remove tag', err?.message || err);
     error(res, 'Failed to remove tag', 'INTERNAL_ERROR', 500);
   }
 });
@@ -900,6 +922,7 @@ customersRouter.put('/:id/lifecycle', requirePermission('customers:*'), validate
 
     success(res, { from: result.from, to: result.to });
   } catch (err: any) {
+    console.error('Failed to update lifecycle stage', err?.message || err);
     error(res, 'Failed to update lifecycle stage', 'INTERNAL_ERROR', 500);
   }
 });
@@ -930,6 +953,7 @@ customersRouter.get('/:id/activities', requirePermission('customers:read'), asyn
       totalPages: Math.ceil(result.total / result.limit),
     });
   } catch (err: any) {
+    console.error('Failed to get activities', err?.message || err);
     error(res, 'Failed to get activities', 'INTERNAL_ERROR', 500);
   }
 });
@@ -955,6 +979,7 @@ customersRouter.post('/import/validate', requirePermission('customers:*'), valid
     const result = await importService.validateImport(req.body.csv_text, req.body.mapping, req.body.business_id);
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to validate import', err?.message || err);
     error(res, 'Failed to validate import', 'INTERNAL_ERROR', 500);
   }
 });
@@ -972,6 +997,7 @@ customersRouter.post('/import', requirePermission('customers:*'), validate(impor
     );
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to execute import', err?.message || err);
     error(res, 'Failed to execute import', 'INTERNAL_ERROR', 500);
   }
 });
@@ -995,6 +1021,7 @@ customersRouter.post('/merge/preview', requirePermission('customers:*'), validat
     if (result.error) { error(res, result.error, 'VALIDATION_ERROR', 400); return; }
     success(res, result.preview);
   } catch (err: any) {
+    console.error('Failed to preview the merge', err?.message || err);
     error(res, 'Failed to preview the merge', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1006,6 +1033,7 @@ customersRouter.get('/:id/duplicates', requirePermission('customers:read'), asyn
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     success(res, await identityService.getDuplicateFlags(req.params.id, businessId));
   } catch (err: any) {
+    console.error('Failed to get possible duplicates', err?.message || err);
     error(res, 'Failed to get possible duplicates', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1019,6 +1047,7 @@ customersRouter.post('/:id/duplicates/:flagId/dismiss', requirePermission('custo
     if (!done) { error(res, 'Flag not found', 'NOT_FOUND', 404); return; }
     success(res, { dismissed: true });
   } catch (err: any) {
+    console.error('Failed to dismiss', err?.message || err);
     error(res, 'Failed to dismiss', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1043,6 +1072,7 @@ customersRouter.post('/merge', requirePermission('customers:*'), validate(mergeS
 
     success(res, result.customer);
   } catch (err: any) {
+    console.error('Failed to merge customers', err?.message || err);
     error(res, 'Failed to merge customers', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1074,6 +1104,7 @@ customersRouter.get('/:id/consent', requirePermission('customers:read'), async (
     if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
     success(res, await consentService.getConsent(req.params.id));
   } catch (err: any) {
+    console.error('Failed to get consent', err?.message || err);
     error(res, 'Failed to get consent', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1087,6 +1118,7 @@ customersRouter.get('/:id/consent/history', requirePermission('customers:read'),
     if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
     success(res, await consentService.getConsentHistory(req.params.id));
   } catch (err: any) {
+    console.error('Failed to get consent history', err?.message || err);
     error(res, 'Failed to get consent history', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1122,6 +1154,7 @@ customersRouter.get('/:id/preferences', requirePermission('customers:read'), asy
 
     success(res, await consentService.getLegacyPreferences(req.params.id));
   } catch (err: any) {
+    console.error('Failed to get preferences', err?.message || err);
     error(res, 'Failed to get preferences', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1198,6 +1231,7 @@ customersRouter.put('/:id/lifecycle-stage', requirePermission('customers:*'), va
 
     success(res, { ...customer, lifecycle_stage: stage });
   } catch (err: any) {
+    console.error('Failed to update lifecycle stage', err?.message || err);
     error(res, 'Failed to update lifecycle stage', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1232,6 +1266,7 @@ customersRouter.get('/lifecycle-config', requirePermission('settings:*'), async 
 
     success(res, config);
   } catch (err: any) {
+    console.error('Failed to get lifecycle config', err?.message || err);
     error(res, 'Failed to get lifecycle config', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1263,6 +1298,7 @@ customersRouter.put('/lifecycle-config', requirePermission('settings:*'), async 
 
     success(res, { enabled, at_risk_days, churned_days, run_time });
   } catch (err: any) {
+    console.error('Failed to save lifecycle config', err?.message || err);
     error(res, 'Failed to save lifecycle config', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1289,6 +1325,7 @@ customersRouter.get('/scheduled-jobs', requirePermission('settings:*'), async (r
     );
     success(res, rows);
   } catch (err: any) {
+    console.error('Failed to get scheduled jobs', err?.message || err);
     error(res, 'Failed to get scheduled jobs', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1322,6 +1359,7 @@ customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (
     );
     success(res, rows[0], undefined, 201);
   } catch (err: any) {
+    console.error('Failed to create scheduled job', err?.message || err);
     error(res, 'Failed to create scheduled job', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1336,6 +1374,7 @@ customersRouter.put('/scheduled-jobs/:id/toggle', requirePermission('settings:*'
     if (rows.length === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
     success(res, rows[0]);
   } catch (err: any) {
+    console.error('Failed to toggle job', err?.message || err);
     error(res, 'Failed to toggle job', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1347,6 +1386,7 @@ customersRouter.delete('/scheduled-jobs/:id', requirePermission('settings:*'), a
     if (rowCount === 0) { error(res, 'Job not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to delete job', err?.message || err);
     error(res, 'Failed to delete job', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1361,6 +1401,7 @@ customersRouter.get('/scheduled-jobs/:id/history', requirePermission('settings:*
     );
     success(res, rows);
   } catch (err: any) {
+    console.error('Failed to get job history', err?.message || err);
     error(res, 'Failed to get job history', 'INTERNAL_ERROR', 500);
   }
 });

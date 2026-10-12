@@ -63,6 +63,7 @@ staffRouter.get('/directory', async (req: Request, res: Response) => {
 
     success(res, staff);
   } catch (err: any) {
+    console.error('Failed to load directory', err?.message || err);
     error(res, 'Failed to load directory', 'INTERNAL_ERROR', 500);
   }
 });
@@ -85,6 +86,7 @@ staffRouter.get('/me', async (req: Request, res: Response) => {
     if (!staff) { error(res, 'No staff profile linked to this user', 'NOT_FOUND', 404); return; }
     success(res, staff);
   } catch (err: any) {
+    console.error('Failed to get profile', err?.message || err);
     error(res, 'Failed to get profile', 'INTERNAL_ERROR', 500);
   }
 });
@@ -104,6 +106,7 @@ staffRouter.put('/me', async (req: Request, res: Response) => {
     const updated = await staffService.updateStaff(staff.id, authReq.tenantId, allowed, authReq.user.sub);
     success(res, updated);
   } catch (err: any) {
+    console.error('Failed to update profile', err?.message || err);
     error(res, 'Failed to update profile', 'INTERNAL_ERROR', 500);
   }
 });
@@ -119,6 +122,7 @@ staffRouter.get('/me/calendar', async (req: Request, res: Response) => {
     const calendar = await calendarService.getStaffCalendar(staff.id, startDate, endDate);
     success(res, calendar);
   } catch (err: any) {
+    console.error('Failed to get calendar', err?.message || err);
     error(res, 'Failed to get calendar', 'INTERNAL_ERROR', 500);
   }
 });
@@ -134,6 +138,7 @@ staffRouter.get('/me/metrics', async (req: Request, res: Response) => {
     const metrics = await calendarService.getStaffMetrics(staff.id, startDate, endDate);
     success(res, metrics);
   } catch (err: any) {
+    console.error('Failed to get metrics', err?.message || err);
     error(res, 'Failed to get metrics', 'INTERNAL_ERROR', 500);
   }
 });
@@ -165,6 +170,7 @@ staffRouter.get('/me/notifications/preferences', async (req: Request, res: Respo
 
     success(res, prefs);
   } catch (err: any) {
+    console.error('Failed to get preferences', err?.message || err);
     error(res, 'Failed to get preferences', 'INTERNAL_ERROR', 500);
   }
 });
@@ -205,6 +211,7 @@ staffRouter.put('/me/notifications/preferences', async (req: Request, res: Respo
 
     success(res, prefs);
   } catch (err: any) {
+    console.error('Failed to update preferences', err?.message || err);
     error(res, 'Failed to update preferences', 'INTERNAL_ERROR', 500);
   }
 });
@@ -220,6 +227,7 @@ staffRouter.get('/qualifications/expiring', requirePermission('staff:read'), asy
     const expiring = await qualService.getExpiringQualifications(authReq.tenantId, days);
     success(res, expiring);
   } catch (err: any) {
+    console.error('Failed to get expiring qualifications', err?.message || err);
     error(res, 'Failed to get expiring qualifications', 'INTERNAL_ERROR', 500);
   }
 });
@@ -241,6 +249,7 @@ staffRouter.get('/leave', requirePermission('staff:read'), async (req: Request, 
     });
     success(res, result.requests, { page: result.page, limit: result.limit, total: result.total });
   } catch (err: any) {
+    console.error('Failed to list leave requests', err?.message || err);
     error(res, 'Failed to list leave requests', 'INTERNAL_ERROR', 500);
   }
 });
@@ -252,6 +261,7 @@ staffRouter.put('/leave/:lid/approve', requirePermission('staff:*'), async (req:
     if (!result) { error(res, 'Leave request not found or not pending', 'NOT_FOUND', 404); return; }
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to approve leave', err?.message || err);
     error(res, 'Failed to approve leave', 'INTERNAL_ERROR', 500);
   }
 });
@@ -263,6 +273,7 @@ staffRouter.put('/leave/:lid/reject', requirePermission('staff:*'), async (req: 
     if (!result) { error(res, 'Leave request not found or not pending', 'NOT_FOUND', 404); return; }
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to reject leave', err?.message || err);
     error(res, 'Failed to reject leave', 'INTERNAL_ERROR', 500);
   }
 });
@@ -274,6 +285,7 @@ staffRouter.put('/leave/:lid/cancel', async (req: Request, res: Response) => {
     if (!result) { error(res, 'Leave request not found', 'NOT_FOUND', 404); return; }
     success(res, result);
   } catch (err: any) {
+    console.error('Failed to cancel leave', err?.message || err);
     error(res, 'Failed to cancel leave', 'INTERNAL_ERROR', 500);
   }
 });
@@ -295,6 +307,7 @@ staffRouter.get('/calendar/team', requirePermission('staff:read'), async (req: R
     });
     success(res, data);
   } catch (err: any) {
+    console.error('Failed to get team calendar', err?.message || err);
     error(res, 'Failed to get team calendar', 'INTERNAL_ERROR', 500);
   }
 });
@@ -352,6 +365,7 @@ staffRouter.get('/', requirePermission('staff:read'), async (req: Request, res: 
     });
     success(res, result.staff, { page: result.page, limit: result.limit, total: result.total });
   } catch (err: any) {
+    console.error('Failed to list staff', err?.message || err);
     error(res, 'Failed to list staff', 'INTERNAL_ERROR', 500);
   }
 });
@@ -381,6 +395,8 @@ staffRouter.post('/', requirePermission('staff:*'), validate(createStaffSchema),
     });
     success(res, staff, undefined, 201);
   } catch (err: any) {
+    if ((err as any)?.code === 'DUPLICATE_STAFF') { error(res, (err as any).message, 'DUPLICATE_STAFF', 409); return; }
+    console.error('Failed to create staff', err?.message || err);
     error(res, 'Failed to create staff', 'INTERNAL_ERROR', 500);
   }
 });
@@ -393,6 +409,7 @@ staffRouter.get('/:id', requirePermission('staff:read'), async (req: Request, re
     if (!staff) { error(res, 'Staff not found', 'NOT_FOUND', 404); return; }
     success(res, staff);
   } catch (err: any) {
+    console.error('Failed to get staff', err?.message || err);
     error(res, 'Failed to get staff', 'INTERNAL_ERROR', 500);
   }
 });
@@ -405,6 +422,7 @@ staffRouter.put('/:id', requirePermission('staff:*'), validate(updateStaffSchema
     if (!staff) { error(res, 'Staff not found', 'NOT_FOUND', 404); return; }
     success(res, staff);
   } catch (err: any) {
+    console.error('Failed to update staff', err?.message || err);
     error(res, 'Failed to update staff', 'INTERNAL_ERROR', 500);
   }
 });
@@ -417,6 +435,7 @@ staffRouter.put('/:id/deactivate', requirePermission('staff:*'), async (req: Req
     if (!staff) { error(res, 'Staff not found or already inactive', 'NOT_FOUND', 404); return; }
     success(res, staff);
   } catch (err: any) {
+    console.error('Failed to deactivate staff', err?.message || err);
     error(res, 'Failed to deactivate staff', 'INTERNAL_ERROR', 500);
   }
 });
@@ -437,6 +456,7 @@ staffRouter.post('/:id/photo', requirePermission('staff:*'), upload.single('phot
     const updated = await staffService.updateProfilePhoto(req.params.id, authReq.tenantId, relativePath);
     success(res, updated);
   } catch (err: any) {
+    console.error('Failed to upload photo', err?.message || err);
     error(res, 'Failed to upload photo', 'INTERNAL_ERROR', 500);
   }
 });
@@ -450,6 +470,7 @@ staffRouter.get('/:id/qualifications', requirePermission('staff:read'), async (r
     const quals = await qualService.getQualifications(req.params.id);
     success(res, quals);
   } catch (err: any) {
+    console.error('Failed to list qualifications', err?.message || err);
     error(res, 'Failed to list qualifications', 'INTERNAL_ERROR', 500);
   }
 });
@@ -467,6 +488,7 @@ staffRouter.post('/:id/qualifications', requirePermission('staff:*'), async (req
     });
     success(res, qual, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to add qualification', err?.message || err);
     error(res, 'Failed to add qualification', 'INTERNAL_ERROR', 500);
   }
 });
@@ -477,6 +499,7 @@ staffRouter.put('/:id/qualifications/:qid', requirePermission('staff:*'), async 
     if (!qual) { error(res, 'Qualification not found', 'NOT_FOUND', 404); return; }
     success(res, qual);
   } catch (err: any) {
+    console.error('Failed to update qualification', err?.message || err);
     error(res, 'Failed to update qualification', 'INTERNAL_ERROR', 500);
   }
 });
@@ -487,6 +510,7 @@ staffRouter.delete('/:id/qualifications/:qid', requirePermission('staff:*'), asy
     if (!deleted) { error(res, 'Qualification not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to delete qualification', err?.message || err);
     error(res, 'Failed to delete qualification', 'INTERNAL_ERROR', 500);
   }
 });
@@ -500,6 +524,7 @@ staffRouter.get('/:id/availability/patterns', requirePermission('staff:read'), a
     const patterns = await availService.getPatterns(req.params.id);
     success(res, patterns);
   } catch (err: any) {
+    console.error('Failed to list patterns', err?.message || err);
     error(res, 'Failed to list patterns', 'INTERNAL_ERROR', 500);
   }
 });
@@ -521,6 +546,7 @@ staffRouter.post('/:id/availability/patterns', requirePermission('staff:*'), asy
     });
     success(res, pattern, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to create pattern', err?.message || err);
     error(res, 'Failed to create pattern', 'INTERNAL_ERROR', 500);
   }
 });
@@ -542,6 +568,7 @@ staffRouter.put('/:id/availability/patterns/:pid', requirePermission('staff:*'),
     if (!pattern) { error(res, 'Pattern not found', 'NOT_FOUND', 404); return; }
     success(res, pattern);
   } catch (err: any) {
+    console.error('Failed to update pattern', err?.message || err);
     error(res, 'Failed to update pattern', 'INTERNAL_ERROR', 500);
   }
 });
@@ -552,6 +579,7 @@ staffRouter.delete('/:id/availability/patterns/:pid', requirePermission('staff:*
     if (!deleted) { error(res, 'Pattern not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to delete pattern', err?.message || err);
     error(res, 'Failed to delete pattern', 'INTERNAL_ERROR', 500);
   }
 });
@@ -562,6 +590,7 @@ staffRouter.post('/:id/availability/patterns/:pid/copy', requirePermission('staf
     if (!pattern) { error(res, 'Pattern not found', 'NOT_FOUND', 404); return; }
     success(res, pattern, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to copy pattern', err?.message || err);
     error(res, 'Failed to copy pattern', 'INTERNAL_ERROR', 500);
   }
 });
@@ -577,6 +606,7 @@ staffRouter.get('/:id/availability', requirePermission('staff:read'), async (req
     const availability = await availService.getEffectiveAvailabilityRange(req.params.id, startDate, endDate, locationId);
     success(res, availability);
   } catch (err: any) {
+    console.error('Failed to get availability', err?.message || err);
     error(res, 'Failed to get availability', 'INTERNAL_ERROR', 500);
   }
 });
@@ -592,6 +622,7 @@ staffRouter.get('/:id/availability/overrides', requirePermission('staff:read'), 
     const overrides = await availService.getOverrides(req.params.id, startDate, endDate);
     success(res, overrides);
   } catch (err: any) {
+    console.error('Failed to list overrides', err?.message || err);
     error(res, 'Failed to list overrides', 'INTERNAL_ERROR', 500);
   }
 });
@@ -608,6 +639,7 @@ staffRouter.post('/:id/availability/overrides', requirePermission('staff:*'), as
     });
     success(res, override, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to create override', err?.message || err);
     error(res, 'Failed to create override', 'INTERNAL_ERROR', 500);
   }
 });
@@ -618,6 +650,7 @@ staffRouter.delete('/:id/availability/overrides/:oid', requirePermission('staff:
     if (!deleted) { error(res, 'Override not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to delete override', err?.message || err);
     error(res, 'Failed to delete override', 'INTERNAL_ERROR', 500);
   }
 });
@@ -629,6 +662,11 @@ staffRouter.delete('/:id/availability/overrides/:oid', requirePermission('staff:
 staffRouter.post('/:id/leave', async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
+    // Leave is requested by the person themselves, or entered for them by someone who manages staff.
+    const target = await staffService.getStaffById(req.params.id, authReq.tenantId);
+    if (!target) { error(res, 'Staff not found', 'NOT_FOUND', 404); return; }
+    const managesStaff = (authReq.user.permissions || []).some((p) => p === '*:*' || p === 'staff:*');
+    if (target.user_id !== authReq.user.sub && !managesStaff) { error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return; }
     const request = await leaveService.submitLeaveRequest({
       staffId: req.params.id,
       tenantId: authReq.tenantId,
@@ -639,6 +677,7 @@ staffRouter.post('/:id/leave', async (req: Request, res: Response) => {
     });
     success(res, request, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to submit leave request', err?.message || err);
     error(res, 'Failed to submit leave request', 'INTERNAL_ERROR', 500);
   }
 });
@@ -649,6 +688,7 @@ staffRouter.get('/:id/leave/balance', requirePermission('staff:read'), async (re
     const balances = await leaveService.getLeaveBalances(req.params.id, year);
     success(res, balances);
   } catch (err: any) {
+    console.error('Failed to get leave balances', err?.message || err);
     error(res, 'Failed to get leave balances', 'INTERNAL_ERROR', 500);
   }
 });
@@ -662,6 +702,7 @@ staffRouter.get('/:id/services', requirePermission('staff:read'), async (req: Re
     const assignments = await assignService.getServiceAssignments(req.params.id);
     success(res, assignments);
   } catch (err: any) {
+    console.error('Failed to list service assignments', err?.message || err);
     error(res, 'Failed to list service assignments', 'INTERNAL_ERROR', 500);
   }
 });
@@ -675,6 +716,7 @@ staffRouter.post('/:id/services', requirePermission('staff:*'), async (req: Requ
       success(res, result.assignments, undefined, 201);
     }
   } catch (err: any) {
+    console.error('Failed to assign services', err?.message || err);
     error(res, 'Failed to assign services', 'INTERNAL_ERROR', 500);
   }
 });
@@ -686,6 +728,7 @@ staffRouter.delete('/:id/services/:sid', requirePermission('staff:*'), async (re
     if (!deleted) { error(res, 'Assignment not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to remove assignment', err?.message || err);
     error(res, 'Failed to remove assignment', 'INTERNAL_ERROR', 500);
   }
 });
@@ -699,6 +742,7 @@ staffRouter.get('/:id/locations', requirePermission('staff:read'), async (req: R
     const assignments = await assignService.getLocationAssignments(req.params.id);
     success(res, assignments);
   } catch (err: any) {
+    console.error('Failed to list location assignments', err?.message || err);
     error(res, 'Failed to list location assignments', 'INTERNAL_ERROR', 500);
   }
 });
@@ -708,6 +752,7 @@ staffRouter.post('/:id/locations', requirePermission('staff:*'), async (req: Req
     const result = await assignService.assignLocations(req.params.id, req.body.assignments || []);
     success(res, result, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to assign locations', err?.message || err);
     error(res, 'Failed to assign locations', 'INTERNAL_ERROR', 500);
   }
 });
@@ -718,6 +763,7 @@ staffRouter.delete('/:id/locations/:lid', requirePermission('staff:*'), async (r
     if (!deleted) { error(res, 'Location assignment not found', 'NOT_FOUND', 404); return; }
     success(res, { deleted: true });
   } catch (err: any) {
+    console.error('Failed to remove location', err?.message || err);
     error(res, 'Failed to remove location', 'INTERNAL_ERROR', 500);
   }
 });
@@ -731,6 +777,7 @@ staffRouter.get('/:id/capacity', requirePermission('staff:read'), async (req: Re
     const config = await capacityService.getCapacityConfig(req.params.id);
     success(res, config || { max_bookings_per_day: null, max_bookings_per_week: null, max_consecutive_hours: null });
   } catch (err: any) {
+    console.error('Failed to get capacity config', err?.message || err);
     error(res, 'Failed to get capacity config', 'INTERNAL_ERROR', 500);
   }
 });
@@ -744,6 +791,7 @@ staffRouter.put('/:id/capacity', requirePermission('staff:*'), async (req: Reque
     });
     success(res, config);
   } catch (err: any) {
+    console.error('Failed to update capacity config', err?.message || err);
     error(res, 'Failed to update capacity config', 'INTERNAL_ERROR', 500);
   }
 });
@@ -760,6 +808,7 @@ staffRouter.post('/:id/capacity/override', requirePermission('staff:*'), async (
     });
     success(res, override, undefined, 201);
   } catch (err: any) {
+    console.error('Failed to create capacity override', err?.message || err);
     error(res, 'Failed to create capacity override', 'INTERNAL_ERROR', 500);
   }
 });
@@ -778,6 +827,7 @@ staffRouter.get('/:id/calendar', requirePermission('staff:read'), async (req: Re
     const calendar = await calendarService.getStaffCalendar(req.params.id, startDate, endDate, locationId);
     success(res, calendar);
   } catch (err: any) {
+    console.error('Failed to get calendar', err?.message || err);
     error(res, 'Failed to get calendar', 'INTERNAL_ERROR', 500);
   }
 });
