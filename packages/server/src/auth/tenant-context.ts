@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from './middleware';
 import { adminPool } from '../db/pool';
+import { accountBlockReason } from '../services/auth.service';
 
 const CONTEXT_TENANT_HEADER = 'x-context-tenant-id';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -11,6 +12,8 @@ interface CallerScope {
   level: 'system' | 'tenant' | 'business';
   tenantId: string | null;
   businessId: string | null;
+  /** Set when the account may not be used: deactivated, tenant suspended or business archived. */
+  blocked: 'inactive' | 'tenant_suspended' | 'business_archived' | null;
 }
 
 const SYSTEM_ROLES = ['system_admin', 'system_support', 'super_admin'];
@@ -22,17 +25,18 @@ const scopeCache = new Map<string, { scope: CallerScope; at: number }>();
 // Which tenant a business belongs to never changes.
 const businessTenantCache = new Map<string, string>();
 
-async function callerScope(userId: string): Promise<CallerScope | null> {
+/** Who a login is, as far as scope goes (level, tenant, business). Briefly cached. */
+export async function callerScope(userId: string): Promise<CallerScope | null> {
   const hit = scopeCache.get(userId);
   if (hit && Date.now() - hit.at < SCOPE_TTL_MS) return hit.scope;
-  const { rows } = await adminPool.query('SELECT role, persona, tenant_id, business_id FROM usr_users WHERE id = $1', [userId]);
+  const { rows } = await adminPool.query('SELECT id, status, role, persona, tenant_id, business_id FROM usr_users WHERE id = $1', [userId]);
   if (!rows[0]) return null;
   const role = String(rows[0].role || '').toLowerCase();
   const level: CallerScope['level'] =
     SYSTEM_ROLES.includes(role) || rows[0].persona === 'system' ? 'system'
       : TENANT_ROLES.includes(role) || rows[0].persona === 'tenant' ? 'tenant'
         : 'business';
-  const scope = { level, tenantId: rows[0].tenant_id, businessId: rows[0].business_id };
+  const scope: CallerScope = { level, tenantId: rows[0].tenant_id, businessId: rows[0].business_id, blocked: await accountBlockReason(rows[0]) };
   scopeCache.set(userId, { scope, at: Date.now() });
   return scope;
 }
@@ -53,7 +57,7 @@ function namedBusinessIds(req: Request): string[] {
   add(req.query.business_id);
   add(req.query.businessId);
   if (req.body && typeof req.body === 'object') { add(req.body.business_id); add(req.body.businessId); }
-  const inPath = (req.originalUrl || '').split('?')[0].match(/\/businesses\/([0-9a-f-]{36})(?:\/|$)/i);
+  const inPath = (req.originalUrl || '').split('?')[0].match(/\/(?:businesses|tenant-billing)\/([0-9a-f-]{36})(?:\/|$)/i);
   if (inPath) add(inPath[1]);
   return [...ids];
 }
@@ -87,6 +91,16 @@ export function tenantContext(req: Request, res: Response, next: NextFunction): 
   (async () => {
     const scope = await callerScope(authReq.user.sub);
     const isSystem = scope?.level === 'system';
+
+    if (scope?.blocked) {
+      const messages = {
+        inactive: 'This account is no longer active',
+        tenant_suspended: 'This organisation\'s account is suspended',
+        business_archived: 'This business is no longer active',
+      };
+      res.status(403).json({ error: messages[scope.blocked], code: `ACCOUNT_${scope.blocked.toUpperCase()}` });
+      return;
+    }
 
     const contextTenantHeader = req.headers[CONTEXT_TENANT_HEADER];
     if (isSystem && typeof contextTenantHeader === 'string' && UUID_RE.test(contextTenantHeader)) {

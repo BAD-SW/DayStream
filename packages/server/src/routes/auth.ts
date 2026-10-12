@@ -140,6 +140,8 @@ authRouter.post('/login', validate(loginSchema), async (req: Request, res: Respo
         .then((u: any) => auditAuth('auth.login_refused_locked', u, req))
         .catch(() => undefined);
       res.status(423).json({ error: err.message, code: 'ACCOUNT_LOCKED' });
+    } else if (err.code === 'TENANT_SUSPENDED' || err.code === 'BUSINESS_ARCHIVED') {
+      res.status(403).json({ error: err.message, code: err.code });
     } else if (err.message === 'Invalid credentials') {
       res.status(401).json({ error: err.message, code: 'INVALID_CREDENTIALS' });
     } else {

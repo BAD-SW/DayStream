@@ -3,8 +3,8 @@ import Joi from 'joi';
 import multer from 'multer';
 import { validate } from '../middleware/validate';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
-import { requirePermission } from '../auth/permissions';
-import { tenantContext } from '../auth/tenant-context';
+import { requirePermission, requireTenantLevel } from '../auth/permissions';
+import { tenantContext, callerScope, clearScopeCache } from '../auth/tenant-context';
 import * as tenantService from '../services/tenant.service';
 import * as configService from '../services/config.service';
 import * as featureFlagService from '../services/feature-flag.service';
@@ -25,6 +25,15 @@ export const adminRouter = Router();
 
 // All admin routes require authentication
 adminRouter.use(authenticate);
+
+// Admin changes are what alter who may use the application (suspending a tenant, archiving a
+// business, deactivating a user, changing a role). The scope check remembers each login for a
+// short while; forget that after every admin change so it takes effect at once, in both
+// directions (a re-activated tenant is not kept waiting).
+adminRouter.use((req: Request, res: Response, next) => {
+  if (req.method !== 'GET') res.on('finish', clearScopeCache);
+  next();
+});
 
 /**
  * Calculate the next billing date based on last billing date (or signup date as fallback) and frequency.
@@ -141,6 +150,15 @@ adminRouter.put('/tenants/:id', requirePermission('*:*'), validate(updateTenantS
 
     // Separate tenant fields from owner fields
     const { owner_email, owner_first_name, owner_last_name, ...tenantFields } = req.body;
+
+    // A contract cannot end before it starts (comparing with the stored date when only one is sent).
+    const dateOnly = (v: any) => (v ? new Date(v).toISOString().slice(0, 10) : null);
+    const startDate = 'contract_start_date' in tenantFields ? dateOnly(tenantFields.contract_start_date) : dateOnly((tenant as any).contract_start_date);
+    const endDate = 'contract_expire_date' in tenantFields ? dateOnly(tenantFields.contract_expire_date) : dateOnly((tenant as any).contract_expire_date);
+    if (startDate && endDate && endDate < startDate) {
+      error(res, 'The contract end date cannot be before its start date', 'VALIDATION_ERROR', 400);
+      return;
+    }
 
     // Check slug uniqueness if changing
     if (tenantFields.slug && tenantFields.slug !== tenant.slug) {
@@ -259,10 +277,14 @@ adminRouter.put('/tenants/:id/activate', requirePermission('*:*'), async (req: R
 adminRouter.get('/businesses', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const { rows } = await adminPool.query(
+    const scope = await callerScope(authReq.user.sub);
+    const ownOnly = scope?.level === 'business' ? scope.businessId : null;
+    const { rows: allRows } = await adminPool.query(
       'SELECT id, name, slug, status, email, phone, address, default_language, currency, timezone, primary_color, secondary_color, title_color, font_family, base_font_size, base_theme, favicon_url, billing_frequency, billing_amount, billing_method, created_at, updated_at FROM sys_businesses WHERE tenant_id = $1 ORDER BY name',
       [authReq.tenantId],
     );
+    // A business user's token is tied to one business: the rest of the portfolio is the tenant's.
+    const rows = scope?.level === 'business' ? allRows.filter((b: any) => b.id === ownOnly) : allRows;
     success(res, rows);
   } catch (err: any) {
     error(res, 'Failed to list businesses', 'INTERNAL_ERROR', 500);
@@ -270,7 +292,7 @@ adminRouter.get('/businesses', tenantContext, requirePermission('settings:*'), a
 });
 
 // POST /api/v1/admin/businesses — Create a business (with owner user)
-adminRouter.post('/businesses', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+adminRouter.post('/businesses', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const { name, slug, email, phone, address, default_language, currency, timezone, primary_color, secondary_color, title_color, font_family, base_font_size, base_theme, favicon_url, billing_frequency, billing_amount, billing_method, signup_date, next_billing_date, owner_email, owner_first_name, owner_last_name, owner_password } = req.body;
@@ -418,11 +440,27 @@ adminRouter.put('/businesses/:id', tenantContext, requirePermission('settings:*'
     if (fields.length === 0) { error(res, 'No fields to update', 'VALIDATION_ERROR', 400); return; }
     fields.push('updated_at = NOW()');
     values.push(req.params.id, authReq.tenantId);
+    const { rows: beforeRows } = await adminPool.query('SELECT * FROM sys_businesses WHERE id = $1 AND tenant_id = $2', [req.params.id, authReq.tenantId]);
     const { rows } = await adminPool.query(
       `UPDATE sys_businesses SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
       values,
     );
     if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+
+    // Audit: which fields changed (from → to), as for tenants.
+    const changes: { field: string; from: any; to: any }[] = [];
+    for (const key of Object.keys(rows[0])) {
+      if (key === 'updated_at') continue;
+      const from = beforeRows[0]?.[key];
+      const to = rows[0][key];
+      if (String(from ?? '') !== String(to ?? '')) changes.push({ field: key, from: from ?? null, to: to ?? null });
+    }
+    if (changes.length > 0) {
+      await logAudit({
+        tenantId: authReq.tenantId, userId: authReq.user.sub, action: 'business.updated',
+        resourceType: 'business', resourceId: req.params.id, details: { changes },
+      });
+    }
     success(res, rows[0]);
   } catch (err: any) {
     if (err.code === '23505') {
@@ -434,7 +472,7 @@ adminRouter.put('/businesses/:id', tenantContext, requirePermission('settings:*'
 });
 
 // DELETE /api/v1/admin/businesses/:id — Archive a business
-adminRouter.delete('/businesses/:id', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+adminRouter.delete('/businesses/:id', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const { rows } = await adminPool.query(
@@ -710,7 +748,7 @@ adminRouter.get('/my-context', tenantContext, async (req: Request, res: Response
 // --- Tenant Billing Self-Service ---
 
 // GET /api/v1/admin/my-billing — Tenant views their own billing info (read-only terms + editable payment method)
-adminRouter.get('/my-billing', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+adminRouter.get('/my-billing', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const { rows } = await adminPool.query(
@@ -728,7 +766,7 @@ adminRouter.get('/my-billing', tenantContext, requirePermission('settings:*'), a
 });
 
 // PUT /api/v1/admin/my-billing/payment-method — Tenant updates their own payment method
-adminRouter.put('/my-billing/payment-method', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+adminRouter.put('/my-billing/payment-method', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const { payment_bank_name, payment_account_holder, payment_account_number, payment_routing_number, payment_iban, payment_card_last4, payment_card_brand, payment_card_exp } = req.body;
@@ -757,7 +795,7 @@ adminRouter.put('/my-billing/payment-method', tenantContext, requirePermission('
 // --- Tenant Reports ---
 
 // GET /api/v1/admin/reports/tenant-revenue
-adminRouter.get('/reports/tenant-revenue', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+adminRouter.get('/reports/tenant-revenue', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const { rows: bizRows } = await adminPool.query(
@@ -805,7 +843,7 @@ adminRouter.get('/reports/tenant-revenue', tenantContext, requirePermission('set
 });
 
 // GET /api/v1/admin/reports/tenant-customers
-adminRouter.get('/reports/tenant-customers', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+adminRouter.get('/reports/tenant-customers', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     // Active businesses
@@ -852,7 +890,7 @@ adminRouter.get('/reports/tenant-customers', tenantContext, requirePermission('s
 });
 
 // GET /api/v1/admin/reports/tenant-bookings
-adminRouter.get('/reports/tenant-bookings', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+adminRouter.get('/reports/tenant-bookings', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     // Get business IDs for this tenant
@@ -895,7 +933,7 @@ adminRouter.get('/reports/tenant-bookings', tenantContext, requirePermission('se
 });
 
 // GET /api/v1/admin/reports/tenant-memberships
-adminRouter.get('/reports/tenant-memberships', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+adminRouter.get('/reports/tenant-memberships', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const { rows: bizRows } = await adminPool.query(
@@ -930,7 +968,7 @@ adminRouter.get('/reports/tenant-memberships', tenantContext, requirePermission(
 // --- Tenant Report Details ---
 
 // GET /api/v1/admin/reports/tenant-revenue/detail
-adminRouter.get('/reports/tenant-revenue/detail', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+adminRouter.get('/reports/tenant-revenue/detail', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const type = req.query.type as string;
@@ -981,7 +1019,7 @@ adminRouter.get('/reports/tenant-revenue/detail', tenantContext, requirePermissi
 });
 
 // GET /api/v1/admin/reports/tenant-customers/detail
-adminRouter.get('/reports/tenant-customers/detail', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+adminRouter.get('/reports/tenant-customers/detail', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const type = req.query.type as string;
@@ -1002,7 +1040,7 @@ adminRouter.get('/reports/tenant-customers/detail', tenantContext, requirePermis
 });
 
 // GET /api/v1/admin/reports/tenant-bookings/detail
-adminRouter.get('/reports/tenant-bookings/detail', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+adminRouter.get('/reports/tenant-bookings/detail', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const type = req.query.type as string;
@@ -1029,7 +1067,7 @@ adminRouter.get('/reports/tenant-bookings/detail', tenantContext, requirePermiss
 });
 
 // GET /api/v1/admin/reports/tenant-memberships/detail
-adminRouter.get('/reports/tenant-memberships/detail', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+adminRouter.get('/reports/tenant-memberships/detail', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const type = req.query.type as string;
@@ -1281,6 +1319,12 @@ adminRouter.put('/users/:id', requirePermission('*:*'), validate(updateUserSchem
     }
 
     const { email, first_name, last_name, role, status, password } = req.body;
+
+    const isSelf = req.params.id === (req as AuthenticatedRequest).user.sub;
+    if (isSelf && (status === 'inactive' || (role !== undefined && role !== existingRows[0].role))) {
+      error(res, 'You cannot deactivate your own account or change your own role', 'VALIDATION_ERROR', 400);
+      return;
+    }
     const fields: string[] = [];
     const values: any[] = [];
     let idx = 1;
@@ -1357,7 +1401,7 @@ adminRouter.delete('/users/:id', requirePermission('*:*'), async (req: Request, 
 // ============================================================
 
 // GET /api/v1/admin/tenant-users — List users in current tenant
-adminRouter.get('/tenant-users', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+adminRouter.get('/tenant-users', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const { rows } = await adminPool.query(
@@ -1380,7 +1424,7 @@ const createTenantUserSchema = Joi.object({
   password: Joi.string().min(10).required(),
 });
 
-adminRouter.post('/tenant-users', tenantContext, requirePermission('settings:*'), validate(createTenantUserSchema), async (req: Request, res: Response) => {
+adminRouter.post('/tenant-users', tenantContext, requireTenantLevel(), requirePermission('settings:*'), validate(createTenantUserSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const { email, first_name, last_name, password } = req.body;
@@ -1453,7 +1497,7 @@ const updateTenantUserSchema = Joi.object({
   password: Joi.string().min(10),
 }).min(1);
 
-adminRouter.put('/tenant-users/:id', tenantContext, requirePermission('settings:*'), validate(updateTenantUserSchema), async (req: Request, res: Response) => {
+adminRouter.put('/tenant-users/:id', tenantContext, requireTenantLevel(), requirePermission('settings:*'), validate(updateTenantUserSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
 
@@ -1502,7 +1546,7 @@ adminRouter.put('/tenant-users/:id', tenantContext, requirePermission('settings:
 });
 
 // DELETE /api/v1/admin/tenant-users/:id — Deactivate a tenant user
-adminRouter.delete('/tenant-users/:id', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+adminRouter.delete('/tenant-users/:id', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
 

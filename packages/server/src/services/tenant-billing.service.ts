@@ -1,3 +1,4 @@
+import { recordManualRun } from './platform-billing.service';
 import { adminPool } from '../db/pool';
 import { getConfiguredAdapter } from './payments';
 import { resolveConnectedAccount, getProviderToken, getCustomerRef } from './payment-methods.service';
@@ -489,7 +490,12 @@ export async function settleCharge(chargeRow: any, runContext: RunContext = MANU
       methodToken: tokenInfo.token,
       methodType: tokenInfo.methodType as any,
       customerRef,
-      idempotencyKey: `tenbill:${businessId}:${chargeRow.cycle_year}-${chargeRow.cycle_month}`,
+      // The key is per cycle AND per payment method. Per cycle alone, a declined charge could
+      // never be collected after the card was replaced: the processor refuses a key reused with
+      // different parameters, and replays the first refusal for the same ones. With the method
+      // in the key, the same card is still never charged twice for a cycle, and a new card
+      // gets a fresh attempt.
+      idempotencyKey: `tenbill:${businessId}:${chargeRow.cycle_year}-${chargeRow.cycle_month}:${tokenInfo.token}`,
       description: `Tenant billing ${chargeRow.cycle_year}-${String(chargeRow.cycle_month).padStart(2, '0')}`,
       // Metadata must be STABLE for a given idempotency key (business+cycle).
       metadata: {
@@ -764,7 +770,13 @@ export async function saveTenantSchedule(
 
 /** Run a tenant's billing now (manual trigger of the daily run). */
 export async function runTenantBillingNow(tenantId: string): Promise<BillingRunSummary> {
-  return runTenantBilling(tenantId);
+  // Recorded like a scheduled run, so it appears in the tenant's Billing Activity.
+  const { rows: jobs } = await adminPool.query(
+    `SELECT id FROM sys_scheduled_jobs WHERE scope_level = 'tenant' AND job_type = 'tenant_billing' AND tenant_id = $1::uuid LIMIT 1`,
+    [tenantId],
+  );
+  if (!jobs[0]) return runTenantBilling(tenantId);
+  return recordManualRun(jobs[0].id, 'tenant_billing', (executionId) => runTenantBilling(tenantId, new Date(), executionId));
 }
 
 // ============================================================

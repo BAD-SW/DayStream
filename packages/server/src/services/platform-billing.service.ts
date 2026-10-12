@@ -480,7 +480,12 @@ export async function settleCharge(chargeRow: any, runContext: RunContext = MANU
       methodToken: tokenInfo.token,
       methodType: tokenInfo.methodType as any,
       customerRef,
-      idempotencyKey: `platbill:${tenantId}:${chargeRow.cycle_year}-${chargeRow.cycle_month}`,
+      // The key is per cycle AND per payment method. Per cycle alone, a declined charge could
+      // never be collected after the card was replaced: the processor refuses a key reused with
+      // different parameters, and replays the first refusal for the same ones. With the method
+      // in the key, the same card is still never charged twice for a cycle, and a new card
+      // gets a fresh attempt.
+      idempotencyKey: `platbill:${tenantId}:${chargeRow.cycle_year}-${chargeRow.cycle_month}:${tokenInfo.token}`,
       description: `DayStream platform billing ${chargeRow.cycle_year}-${String(chargeRow.cycle_month).padStart(2, '0')}`,
       // Metadata must be STABLE for a given idempotency key (tenant+cycle), so it
       // excludes the charge row's UUID (which can differ if a row is recreated).
@@ -745,9 +750,41 @@ export async function savePlatformSchedule(
   return (await getPlatformSchedule())!;
 }
 
-/** Run the platform billing now (manual trigger of the daily run). */
+/**
+ * Run the platform billing now (manual trigger of the daily run). The run is recorded like a
+ * scheduled one, so it appears in Billing Activity and its charges link back to it. Until a
+ * schedule has been saved there is no job to record it under, and it runs unrecorded.
+ */
 export async function runPlatformBillingNow(): Promise<BillingRunSummary> {
-  return runPlatformBilling();
+  const { rows: jobs } = await adminPool.query(
+    `SELECT id FROM sys_scheduled_jobs WHERE scope_level = 'platform' AND job_type = 'platform_billing' LIMIT 1`,
+  );
+  if (!jobs[0]) return runPlatformBilling();
+  return recordManualRun(jobs[0].id, 'platform_billing', (executionId) => runPlatformBilling(new Date(), executionId));
+}
+
+/** Record a manually started run in sys_job_executions, as the scheduler does for its own. */
+export async function recordManualRun<T>(jobId: string, jobType: string, run: (executionId: string) => Promise<T>): Promise<T> {
+  const started = Date.now();
+  const { rows } = await adminPool.query(
+    `INSERT INTO sys_job_executions (job_id, job_type, started_at, status) VALUES ($1, $2, NOW(), 'running') RETURNING id`,
+    [jobId, jobType],
+  );
+  const executionId: string = rows[0].id;
+  try {
+    const result = await run(executionId);
+    await adminPool.query(
+      `UPDATE sys_job_executions SET completed_at = NOW(), status = 'success', duration_ms = $1, result = $2 WHERE id = $3`,
+      [Date.now() - started, JSON.stringify(result), executionId],
+    );
+    return result;
+  } catch (err: any) {
+    await adminPool.query(
+      `UPDATE sys_job_executions SET completed_at = NOW(), status = 'failed', duration_ms = $1, error = $2 WHERE id = $3`,
+      [Date.now() - started, String(err?.message || err), executionId],
+    );
+    throw err;
+  }
 }
 
 // ============================================================

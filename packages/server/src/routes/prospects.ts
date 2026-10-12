@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import Joi from 'joi';
 import { validate } from '../middleware/validate';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
-import { requirePermission } from '../auth/permissions';
+import { requirePermission, requireTenantLevel } from '../auth/permissions';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
@@ -287,7 +287,7 @@ prospectsRouter.get('/territories', requirePermission('*:*'), async (_req: Reque
 // ============================================================
 
 // GET /api/v1/prospects/categories — List all category mappings
-prospectsRouter.get('/categories', requirePermission('settings:*'), async (req: Request, res: Response) => {
+prospectsRouter.get('/categories', requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const includeInactive = req.query.include_inactive === 'true';
     const where = includeInactive ? '' : 'WHERE active = true';
@@ -357,7 +357,7 @@ prospectsRouter.get('/maps-key', requirePermission('*:*'), async (_req: Request,
 });
 
 // GET /api/v1/prospects/territory-info — Get current tenant's territory info
-prospectsRouter.get('/territory-info', requirePermission('settings:*'), async (req: Request, res: Response) => {
+prospectsRouter.get('/territory-info', requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const tenantId = authReq.tenantId;
@@ -371,7 +371,7 @@ prospectsRouter.get('/territory-info', requirePermission('settings:*'), async (r
 });
 
 // GET /api/v1/prospects — List prospects for the current tenant
-prospectsRouter.get('/', requirePermission('settings:*'), async (req: Request, res: Response) => {
+prospectsRouter.get('/', requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const tenantId = authReq.tenantId;
@@ -401,7 +401,7 @@ prospectsRouter.get('/', requirePermission('settings:*'), async (req: Request, r
 });
 
 // POST /api/v1/prospects — Manually add a prospect
-prospectsRouter.post('/', requirePermission('settings:*'), async (req: Request, res: Response) => {
+prospectsRouter.post('/', requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const tenantId = authReq.tenantId;
@@ -409,6 +409,20 @@ prospectsRouter.post('/', requirePermission('settings:*'), async (req: Request, 
 
     const { name, address, phone, website, category, notes } = req.body;
     if (!name) { error(res, 'name required', 'VALIDATION_ERROR', 400); return; }
+
+    // Same name at the same address (ignoring case and spacing) is the same business.
+    const { rows: same } = await adminPool.query(
+      `SELECT id, name FROM prp_prospects
+        WHERE tenant_id = $1
+          AND LOWER(BTRIM(name)) = LOWER(BTRIM($2))
+          AND LOWER(BTRIM(COALESCE(address, ''))) = LOWER(BTRIM(COALESCE($3, '')))
+        LIMIT 1`,
+      [tenantId, name, address || ''],
+    );
+    if (same[0]) {
+      res.status(409).json({ error: 'This business is already in your prospect list', code: 'DUPLICATE_PROSPECT', details: { existing_id: same[0].id } });
+      return;
+    }
 
     const { rows } = await adminPool.query(
       `INSERT INTO prp_prospects (tenant_id, name, address, phone, website, category, notes, source)
@@ -420,7 +434,7 @@ prospectsRouter.post('/', requirePermission('settings:*'), async (req: Request, 
 });
 
 // PUT /api/v1/prospects/:id — Update prospect (status, notes)
-prospectsRouter.put('/:id', requirePermission('settings:*'), async (req: Request, res: Response) => {
+prospectsRouter.put('/:id', requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const tenantId = authReq.tenantId;
@@ -447,7 +461,7 @@ prospectsRouter.put('/:id', requirePermission('settings:*'), async (req: Request
 });
 
 // PUT /api/v1/prospects/:id/dismiss — Dismiss a prospect
-prospectsRouter.put('/:id/dismiss', requirePermission('settings:*'), async (req: Request, res: Response) => {
+prospectsRouter.put('/:id/dismiss', requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const tenantId = authReq.tenantId;
@@ -614,7 +628,7 @@ async function buildProspectsCsv(tenantId: string, status?: string, category?: s
 }
 
 // GET /api/v1/prospects/export — Export the current tenant's prospects as CSV.
-prospectsRouter.get('/export', requirePermission('settings:*'), async (req: Request, res: Response) => {
+prospectsRouter.get('/export', requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     if (!authReq.tenantId) { error(res, 'Tenant context required', 'VALIDATION_ERROR', 400); return; }

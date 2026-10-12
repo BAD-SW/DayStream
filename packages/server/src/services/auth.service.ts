@@ -332,6 +332,37 @@ export async function registerUser(
 
 // --- Login ---
 
+/** Why an account may not be used right now, or null when it may. */
+export async function accountBlockReason(user: { id: string; status?: string; role?: string; persona?: string; tenant_id?: string | null; business_id?: string | null }): Promise<'inactive' | 'tenant_suspended' | 'business_archived' | null> {
+  if (user.status && user.status !== 'active') return 'inactive';
+  const role = String(user.role || '').toLowerCase();
+  const isSystem = ['system_admin', 'system_support', 'super_admin'].includes(role) || user.persona === 'system';
+  if (isSystem) return null;
+  if (user.tenant_id) {
+    const { rows } = await adminPool.query('SELECT status FROM sys_tenants WHERE id = $1', [user.tenant_id]);
+    if (rows[0] && rows[0].status !== 'active') return 'tenant_suspended';
+  }
+  const isTenantLevel = ['tenant_owner', 'tenant_manager'].includes(role) || user.persona === 'tenant';
+  if (!isTenantLevel && user.business_id) {
+    const { rows } = await adminPool.query('SELECT status FROM sys_businesses WHERE id = $1', [user.business_id]);
+    if (rows[0] && rows[0].status === 'archived') return 'business_archived';
+  }
+  return null;
+}
+
+/**
+ * Refuse a sign-in for an account that may not be used: a deactivated user, a user of a
+ * suspended tenant, or a user of an archived business. A deactivated user gets the same
+ * answer as a wrong password (the account's existence is not confirmed); the other two get a
+ * message that says what happened, because the person does have a valid account.
+ */
+async function assertAccountUsable(user: any): Promise<void> {
+  const reason = await accountBlockReason(user);
+  if (reason === 'inactive') throw new Error('Invalid credentials');
+  if (reason === 'tenant_suspended') throw Object.assign(new Error('This organisation\'s account is suspended. Please contact DayStream.'), { code: 'TENANT_SUSPENDED' });
+  if (reason === 'business_archived') throw Object.assign(new Error('This business is no longer active. Please contact your organisation\'s administrator.'), { code: 'BUSINESS_ARCHIVED' });
+}
+
 export async function loginUser(
   tenantId: string,
   email: string,
@@ -369,6 +400,7 @@ export async function loginUser(
       throw new Error('Invalid credentials');
     }
 
+    await assertAccountUsable(foundUser);
     await recordLoginAttempt(email, effectiveTenantId, ip, true);
     await clearLoginAttempts(email, effectiveTenantId);
 
@@ -399,6 +431,8 @@ export async function loginUser(
     await recordLoginAttempt(email, tenantId, ip, false);
     throw new Error('Invalid credentials');
   }
+
+  await assertAccountUsable(user);
 
   // Successful login
   await recordLoginAttempt(email, tenantId, ip, true);
@@ -440,6 +474,9 @@ export async function refreshAccessToken(
 
   const user = await findUserById(stored.user_id);
   if (!user || user.status !== 'active') {
+    throw new Error('User not found or inactive');
+  }
+  if (await accountBlockReason(user)) {
     throw new Error('User not found or inactive');
   }
 

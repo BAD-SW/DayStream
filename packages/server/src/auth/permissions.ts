@@ -98,3 +98,29 @@ export function requireAnyPermission(...permissions: string[]) {
     next();
   };
 }
+
+/** Whether a role works at tenant level (a tenant's owner or manager). */
+export function isTenantRole(role: string | undefined | null): boolean {
+  const r = String(role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return r === 'tenant_owner' || r === 'tenant_manager';
+}
+
+/**
+ * Require a tenant-level (or platform) user. For what a tenant does to its businesses —
+ * billing them, their plans and credits, the tenant's own receiving account — which a
+ * business owner must not do to themselves even though they hold 'settings:*'.
+ */
+export function requireTenantLevel() {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const authReq = req as AuthenticatedRequest;
+    if (!authReq.user) {
+      res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+      return;
+    }
+    if (!isSystemRole(authReq.user.role) && !isTenantRole(authReq.user.role)) {
+      res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+      return;
+    }
+    next();
+  };
+}

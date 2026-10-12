@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { tenantContext } from '../auth/tenant-context';
-import { requirePermission } from '../auth/permissions';
+import { requirePermission, requireTenantLevel } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
@@ -480,7 +480,7 @@ const businessPlanSchema = Joi.object({
 });
 
 // Save a new plan version for a business.
-paymentPlatformRouter.put('/tenant-billing/:businessId/plan', tenantContext, requirePermission('settings:*'), validate(businessPlanSchema), async (req: Request, res: Response) => {
+paymentPlatformRouter.put('/tenant-billing/:businessId/plan', tenantContext, requireTenantLevel(), requirePermission('settings:*'), validate(businessPlanSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
@@ -491,7 +491,7 @@ paymentPlatformRouter.put('/tenant-billing/:businessId/plan', tenantContext, req
 });
 
 // A business's plan version history (all versions, newest first).
-paymentPlatformRouter.get('/tenant-billing/:businessId/plan-history', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+paymentPlatformRouter.get('/tenant-billing/:businessId/plan-history', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
@@ -501,7 +501,7 @@ paymentPlatformRouter.get('/tenant-billing/:businessId/plan-history', tenantCont
 });
 
 // A business's audit trail — all changes made to this business (paged).
-paymentPlatformRouter.get('/tenant-billing/:businessId/audit', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+paymentPlatformRouter.get('/tenant-billing/:businessId/audit', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
@@ -542,7 +542,7 @@ const businessCreditSchema = Joi.object({
 });
 
 // Issue a credit to a business.
-paymentPlatformRouter.post('/tenant-billing/:businessId/credits', tenantContext, requirePermission('settings:*'), validate(businessCreditSchema), async (req: Request, res: Response) => {
+paymentPlatformRouter.post('/tenant-billing/:businessId/credits', tenantContext, requireTenantLevel(), requirePermission('settings:*'), validate(businessCreditSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
@@ -559,7 +559,7 @@ const businessChargeNowSchema = Joi.object({
 });
 
 // Manually bill a business for a specific cycle (idempotent per business+cycle).
-paymentPlatformRouter.post('/tenant-billing/:businessId/charge-now', tenantContext, requirePermission('settings:*'), validate(businessChargeNowSchema), async (req: Request, res: Response) => {
+paymentPlatformRouter.post('/tenant-billing/:businessId/charge-now', tenantContext, requireTenantLevel(), requirePermission('settings:*'), validate(businessChargeNowSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const owned = await requireOwnedBusiness(req.params.businessId, authReq.tenantId!);
@@ -574,7 +574,7 @@ paymentPlatformRouter.post('/tenant-billing/:businessId/charge-now', tenantConte
 });
 
 // This tenant's billing run schedule (B6).
-paymentPlatformRouter.get('/tenant-billing-schedule', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+paymentPlatformRouter.get('/tenant-billing-schedule', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     success(res, await tenantBilling.getTenantSchedule(authReq.tenantId!));
@@ -587,7 +587,7 @@ const tenantScheduleSchema = Joi.object({
   enabled: Joi.boolean().default(true),
 });
 
-paymentPlatformRouter.put('/tenant-billing-schedule', tenantContext, requirePermission('settings:*'), validate(tenantScheduleSchema), async (req: Request, res: Response) => {
+paymentPlatformRouter.put('/tenant-billing-schedule', tenantContext, requireTenantLevel(), requirePermission('settings:*'), validate(tenantScheduleSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const { scheduleTime, scheduleTimezone, enabled } = req.body;
@@ -596,7 +596,7 @@ paymentPlatformRouter.put('/tenant-billing-schedule', tenantContext, requirePerm
 });
 
 // Run this tenant's billing now (manual trigger).
-paymentPlatformRouter.post('/tenant-billing-run-now', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+paymentPlatformRouter.post('/tenant-billing-run-now', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     success(res, await tenantBilling.runTenantBillingNow(authReq.tenantId!));
@@ -604,7 +604,7 @@ paymentPlatformRouter.post('/tenant-billing-run-now', tenantContext, requirePerm
 });
 
 // This tenant's billing job runs within a date range (default last 7 days).
-paymentPlatformRouter.get('/tenant-billing-runs', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+paymentPlatformRouter.get('/tenant-billing-runs', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const from = req.query.from as string | undefined;
@@ -615,14 +615,14 @@ paymentPlatformRouter.get('/tenant-billing-runs', tenantContext, requirePermissi
 });
 
 // The charges attempted during a specific run (drill-down).
-paymentPlatformRouter.get('/tenant-billing-runs/:runId/charges', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+paymentPlatformRouter.get('/tenant-billing-runs/:runId/charges', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     success(res, await tenantBilling.getRunCharges(req.params.runId));
   } catch (err: any) { error(res, 'Failed to read run charges', 'INTERNAL_ERROR', 500); }
 });
 
 // Tenant-wide charges across all this tenant's businesses; ?status=failed for the failed-charge report.
-paymentPlatformRouter.get('/tenant-billing-charges', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+paymentPlatformRouter.get('/tenant-billing-charges', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const status = req.query.status as string | undefined;
@@ -633,7 +633,7 @@ paymentPlatformRouter.get('/tenant-billing-charges', tenantContext, requirePermi
 
 // The tenant's own receiving/billing bank account (where its businesses' payments
 // are deposited). The tenant-level mirror of the Platform Receiving Account.
-paymentPlatformRouter.get('/tenant-billing-account', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+paymentPlatformRouter.get('/tenant-billing-account', tenantContext, requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     success(res, await tenantBilling.getTenantBillingAccount(authReq.tenantId!));
@@ -649,7 +649,7 @@ const tenantBillingAccountSchema = Joi.object({
   swift: Joi.string().allow('').max(255),
 }).min(1);
 
-paymentPlatformRouter.put('/tenant-billing-account', tenantContext, requirePermission('settings:*'), validate(tenantBillingAccountSchema), async (req: Request, res: Response) => {
+paymentPlatformRouter.put('/tenant-billing-account', tenantContext, requireTenantLevel(), requirePermission('settings:*'), validate(tenantBillingAccountSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     success(res, await tenantBilling.saveTenantBillingAccount(authReq.tenantId!, req.body, authReq.user.sub));
