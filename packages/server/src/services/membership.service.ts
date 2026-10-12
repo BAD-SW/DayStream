@@ -305,6 +305,9 @@ export async function enrollCustomer(input: EnrollInput) {
   // Get plan to determine billing frequency
   const plan = await getPlanById(input.planId, input.businessId);
   if (!plan) throw new Error('Plan not found');
+  if (plan.status !== 'active') {
+    throw Object.assign(new Error(`This plan is ${plan.status} and cannot be sold`), { code: 'PLAN_NOT_ACTIVE' });
+  }
 
   // Prevent multiple active/paused memberships for the same customer
   const { rows: existing } = await adminPool.query(

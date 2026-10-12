@@ -107,7 +107,8 @@ async function buildListConditions(businessId: string, filters: CustomerFilters,
   if (!filters.include_archived) conditions.push("c.status <> 'archived'");
 
   if (filters.search) {
-    conditions.push(`(c.first_name ILIKE $${paramIndex} OR c.last_name ILIKE $${paramIndex} OR COALESCE(c.email, '') ILIKE $${paramIndex} OR COALESCE(c.phone, '') ILIKE $${paramIndex} OR COALESCE(c.phone_e164, '') ILIKE $${paramIndex} OR COALESCE(c.reference_number, '') ILIKE $${paramIndex})`);
+    // Names are compared without accents, so "garcia" finds "García" and the other way round.
+    conditions.push(`(${plainText('c.first_name')} LIKE ${plainText(`$${paramIndex}`)} OR ${plainText('c.last_name')} LIKE ${plainText(`$${paramIndex}`)} OR ${plainText("c.first_name || ' ' || c.last_name")} LIKE ${plainText(`$${paramIndex}`)} OR COALESCE(c.email, '') ILIKE $${paramIndex} OR COALESCE(c.phone, '') ILIKE $${paramIndex} OR COALESCE(c.phone_e164, '') ILIKE $${paramIndex} OR COALESCE(c.reference_number, '') ILIKE $${paramIndex})`);
     params.push(`%${filters.search}%`);
     paramIndex++;
   }
@@ -196,6 +197,13 @@ async function buildListConditions(businessId: string, filters: CustomerFilters,
 }
 
 /** The extra facts shown next to each person: owner, login, next booking, consent, incomplete. */
+/** SQL for a text without accents and in lower case, for name searches. */
+const ACCENTED = 'áàäâãåéèëêíìïîóòöôõúùüûñç';
+const UNACCENTED = 'aaaaaaeeeeiiiiooooouuuunc';
+export function plainText(expr: string): string {
+  return `TRANSLATE(LOWER(COALESCE(${expr}, '')), '${ACCENTED}', '${UNACCENTED}')`;
+}
+
 const PERSON_EXTRAS = `
   NULLIF(BTRIM(COALESCE(ou.first_name, '') || ' ' || COALESCE(ou.last_name, '')), '') AS owner_name,
   lu.last_login_at,
@@ -370,7 +378,14 @@ export async function getCustomerById(id: string, businessId: string) {
     `SELECT c.*, ${PERSON_EXTRAS} FROM cus_customers c ${PERSON_JOINS} WHERE c.id = $1 AND c.business_id = $2`,
     [id, businessId],
   );
-  return rows[0] || null;
+  if (!rows[0]) return null;
+  // The person's own tags. The profile used to show every tag of the business instead.
+  const { rows: tags } = await adminPool.query(
+    `SELECT t.id, t.name, t.color FROM cus_customer_tags ct JOIN cus_tags t ON t.id = ct.tag_id
+      WHERE ct.customer_id = $1 ORDER BY t.name`,
+    [id],
+  );
+  return { ...rows[0], tags };
 }
 
 export async function updateCustomer(id: string, businessId: string, updates: Record<string, any>, userId: string) {

@@ -1,3 +1,4 @@
+import { evaluateOnBooking } from './customer-lifecycle.service';
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
 import { createActivity } from './customer-activity.service';
@@ -39,6 +40,14 @@ interface BookingFilters {
 }
 
 /**
+ * A booking refused by a business rule (closed, outside hours, provider not available, limit
+ * reached, resource taken...). The message is meant for the person booking.
+ */
+export class BookingRuleError extends Error {
+  code = 'BOOKING_RULE';
+}
+
+/**
  * Create a booking.
  */
 export async function createBooking(input: CreateBookingInput) {
@@ -54,6 +63,19 @@ export async function createBooking(input: CreateBookingInput) {
   if (svcRows.length === 0) throw new Error('Service or variant not found');
 
   const service = svcRows[0];
+  // A paused, archived or draft service is not for sale, whoever is booking.
+  if (service.status !== 'active') {
+    throw new BookingRuleError(`This service is ${service.status} and cannot be booked`);
+  }
+  if (input.customerId) {
+    const { rows: personRows } = await adminPool.query(
+      'SELECT status FROM cus_customers WHERE id = $1 AND business_id = $2', [input.customerId, input.businessId],
+    );
+    if (personRows.length === 0) throw new BookingRuleError('This person does not belong to this business');
+    if (personRows[0].status !== 'active') {
+      throw new BookingRuleError(`This person is ${personRows[0].status} and cannot be booked. Reactivate them first.`);
+    }
+  }
   const duration = service.duration;
   const basePrice = service.price;
   const bookingType = service.booking_type;
@@ -389,6 +411,10 @@ export async function createBooking(input: CreateBookingInput) {
       metadata: { booking_id: booking.id, service_id: input.serviceId, start_time: startTime.toISOString() },
       createdBy: input.createdBy,
     });
+    // A booking can move the person on (lead → new customer, at risk → active, former → winback).
+    // This was written but never called, so stages only ever changed by hand or overnight.
+    await evaluateOnBooking(input.customerId, input.businessId)
+      .catch((e) => console.error('[Booking] Lifecycle not evaluated:', e?.message || e));
   }
 
   // Audit

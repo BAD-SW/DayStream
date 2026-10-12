@@ -350,6 +350,11 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
       error(res, err.message, 'NOT_FOUND', 404);
     } else if (err.message.includes('conflict') || err.message.includes('capacity') || err.message.includes('advance booking') || err.message.includes('No staff')) {
       error(res, err.message, 'CONFLICT', 409);
+    } else if (err instanceof Error && !(err as any).severity && !/^(TypeError|ReferenceError|RangeError|SyntaxError)$/.test(err.name) && ((err as any).code === undefined || (err as any).code === 'BOOKING_RULE')) {
+      // Closed that day, outside opening hours, provider not available, daily limit reached,
+      // resource under maintenance, service paused... The person booking needs the reason;
+      // they used to get "Failed to create booking".
+      error(res, err.message, 'BOOKING_NOT_ALLOWED', 409);
     } else {
       console.error('Booking creation error:', err);
       error(res, 'Failed to create booking', 'INTERNAL_ERROR', 500);

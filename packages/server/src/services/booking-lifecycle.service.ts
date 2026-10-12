@@ -1,3 +1,4 @@
+import { evaluateOnBooking } from './customer-lifecycle.service';
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
 import { createActivity } from './customer-activity.service';
@@ -120,6 +121,16 @@ export async function confirmBooking(bookingId: string, businessId: string, user
 /**
  * Cancel a booking. Calculates cancellation fee if applicable.
  */
+/** After a visit (check-in or completion) the person's stage is looked at again. */
+async function afterVisit(bookingId: string, businessId: string): Promise<void> {
+  try {
+    const { rows } = await adminPool.query('SELECT customer_id FROM apt_bookings WHERE id = $1', [bookingId]);
+    if (rows[0]?.customer_id) await evaluateOnBooking(rows[0].customer_id, businessId);
+  } catch (e: any) {
+    console.error('[Booking] Lifecycle not evaluated:', e?.message || e);
+  }
+}
+
 export async function cancelBooking(
   bookingId: string, businessId: string, userId: string, tenantId: string, reason?: string,
 ): Promise<TransitionResult> {
@@ -167,7 +178,9 @@ export async function cancelBooking(
  * Check in a customer (Confirmed → Checked In).
  */
 export async function checkInBooking(bookingId: string, businessId: string, userId: string, tenantId: string): Promise<TransitionResult> {
-  return transitionStatus(bookingId, businessId, 'checked_in', userId, tenantId);
+  const result = await transitionStatus(bookingId, businessId, 'checked_in', userId, tenantId);
+  if (result.success) await afterVisit(bookingId, businessId);
+  return result;
 }
 
 /**
@@ -181,7 +194,9 @@ export async function resetBooking(bookingId: string, businessId: string, userId
  * Mark a booking as completed.
  */
 export async function completeBooking(bookingId: string, businessId: string, userId: string, tenantId: string): Promise<TransitionResult> {
-  return transitionStatus(bookingId, businessId, 'completed', userId, tenantId);
+  const result = await transitionStatus(bookingId, businessId, 'completed', userId, tenantId);
+  if (result.success) await afterVisit(bookingId, businessId);
+  return result;
 }
 
 /**

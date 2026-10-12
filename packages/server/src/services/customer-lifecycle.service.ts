@@ -174,9 +174,8 @@ export async function evaluateOnBooking(customerId: string, businessId: string):
   // Trial → Active: 3+ visits (attendance)
   if (currentStage === 'trial') {
     const { rows: visitCount } = await adminPool.query(
-      `SELECT COUNT(*)::int AS count FROM cus_activities
-       WHERE customer_id = $1 AND business_id = $2 AND activity_type = 'booking'
-       AND (metadata->>'status' = 'attended' OR metadata->>'attended' = 'true')`,
+      `SELECT COUNT(*)::int AS count FROM apt_bookings
+       WHERE customer_id = $1 AND business_id = $2 AND status IN ('checked_in', 'in_progress', 'completed')`,
       [customerId, businessId],
     );
 

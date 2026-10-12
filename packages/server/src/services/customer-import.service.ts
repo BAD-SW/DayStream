@@ -206,12 +206,21 @@ export async function executeImport(
 
   for (let i = 0; i < rows.length; i++) {
     const rowNum = i + 2;
+    const mapped = applyMapping(rows[i], mapping);
+
     if (errorRows.has(rowNum)) {
+      const onlyKnownPerson = errors.filter((e) => e.row === rowNum).every((e) => e.message === 'Duplicate email in business');
+      if (onlyKnownPerson) {
+        await findOrCreatePerson({
+          businessId, tenantId, email: mapped.email, phone: mapped.phone,
+          firstName: mapped.first_name, lastName: mapped.last_name,
+          dateOfBirth: mapped.date_of_birth || null, gender: mapped.gender || null, country: mapped.country || null,
+          source: 'import', sourceDetail: fileName || null, actorUserId: userId,
+        }).catch((e: any) => logger.warn('Import: known person not updated', { row: rowNum, error: e?.message }));
+      }
       skipped++;
       continue;
     }
-
-    const mapped = applyMapping(rows[i], mapping);
 
     try {
       const result = await findOrCreatePerson({

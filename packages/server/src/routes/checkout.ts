@@ -187,7 +187,7 @@ checkoutRouter.put('/orders/:id/promo', requirePermission('bookings:*'), async (
     const order = await checkoutService.applyPromoCode(req.params.id, businessId, code);
     success(res, order);
   } catch (err: any) {
-    if (err.message.includes('Invalid') || err.message.includes('expired') || err.message.includes('not started') || err.message.includes('maximum') || err.message.includes('cannot be applied') || err.message.includes('does not apply')) {
+    if (/^(Code |You have |Minimum purchase)/.test(err.message) || err.message.includes('Invalid') || err.message.includes('expired') || err.message.includes('not started') || err.message.includes('maximum') || err.message.includes('cannot be applied') || err.message.includes('does not apply')) {
       error(res, err.message, 'VALIDATION_ERROR', 400);
     } else if (err.message.includes('not found') || err.message.includes('not open')) {
       error(res, err.message, 'CONFLICT', 409);

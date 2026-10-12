@@ -149,6 +149,13 @@ export async function updateCategory(id: string, businessId: string, updates: Up
  * Services in this category are NOT automatically moved.
  */
 export async function archiveCategory(id: string, businessId: string): Promise<boolean> {
+  const { rows: inUse } = await adminPool.query(
+    `SELECT COUNT(*)::int AS n FROM svc_services WHERE category_id = $1 AND business_id = $2 AND status <> 'archived'`,
+    [id, businessId],
+  );
+  if (inUse[0].n > 0) {
+    throw Object.assign(new Error(`This category still has ${inUse[0].n} service(s). Move or archive them first.`), { code: 'CATEGORY_IN_USE' });
+  }
   const { rowCount } = await adminPool.query(
     "UPDATE svc_categories SET status = 'archived', updated_at = NOW() WHERE id = $1 AND business_id = $2",
     [id, businessId],

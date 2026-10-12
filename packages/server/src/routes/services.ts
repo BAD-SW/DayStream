@@ -1,3 +1,4 @@
+import { recordPriceChange } from '../services/price-history.service';
 import { Router, Request, Response } from 'express';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
@@ -109,6 +110,7 @@ servicesRouter.delete('/categories/:id', requirePermission('services:*'), async 
     if (!archived) { error(res, 'Category not found', 'NOT_FOUND', 404); return; }
     success(res, { archived: true });
   } catch (err: any) {
+    if (err?.code === 'CATEGORY_IN_USE') { error(res, err.message, 'CATEGORY_IN_USE', 409); return; }
     console.error('Failed to archive category', err?.message || err);
     error(res, 'Failed to archive category', 'INTERNAL_ERROR', 500);
   }
@@ -627,6 +629,10 @@ servicesRouter.post('/:id/variants', requirePermission('services:*'), validate(c
 // PUT /api/v1/services/:id/variants/:variantId — Update variant
 servicesRouter.put('/:id/variants/:variantId', requirePermission('services:*'), validate(updateVariantSchema), async (req: Request, res: Response) => {
   try {
+    const { rows: beforeRows } = await adminPool.query(
+      `SELECT v.price, s.business_id FROM svc_variants v JOIN svc_services s ON s.id = v.service_id WHERE v.id = $1 AND v.service_id = $2`,
+      [req.params.variantId, req.params.id],
+    );
     const variant = await variantsService.updateVariant(req.params.variantId, req.params.id, {
       name: req.body.name,
       duration: req.body.duration,
@@ -642,6 +648,10 @@ servicesRouter.put('/:id/variants/:variantId', requirePermission('services:*'), 
     });
 
     if (!variant) { error(res, 'Variant not found', 'NOT_FOUND', 404); return; }
+    if (beforeRows[0] && req.body.price !== undefined && beforeRows[0].price !== variant.price) {
+      await recordPriceChange(beforeRows[0].business_id, 'service_variant', variant.id, beforeRows[0].price, variant.price, (req as AuthenticatedRequest).user.sub)
+        .catch((e) => console.error('Price history not recorded', e?.message || e));
+    }
     success(res, variant);
   } catch (err: any) {
     if (err.message.includes('billing interval')) {

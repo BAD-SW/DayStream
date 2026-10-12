@@ -1,6 +1,7 @@
 import { adminPool } from '../db/pool';
 import { generateJournalEntries } from './order-journal.service';
 import { touchActivity } from './person-identity.service';
+import { validateCode, redeemCode } from './discount-codes.service';
 
 interface CreateOrderInput {
   businessId: string;
@@ -285,6 +286,25 @@ export async function completeOrder(orderId: string, businessId: string, input: 
 
   // A completed purchase counts as activity for the person (Phase 46).
   const order = await getOrder(orderId);
+
+  // The code used on this order has now been redeemed once. Neither kind of code was ever
+  // counted, so "maximum redemptions" and "maximum uses" never took effect.
+  if (order?.promo_code) {
+    try {
+      if (order.promotion_id) {
+        await adminPool.query('UPDATE prm_promotions SET redemption_count = COALESCE(redemption_count, 0) + 1 WHERE id = $1', [order.promotion_id]);
+      } else if (order.customer_id) {
+        await redeemCode(order.promo_code, businessId, order.customer_id, Math.max(order.discount_amount || 0, 0));
+      } else {
+        await adminPool.query(
+          `UPDATE pri_discount_codes SET current_uses = current_uses + 1 WHERE business_id = $1 AND UPPER(code) = UPPER($2)`,
+          [businessId, order.promo_code],
+        );
+      }
+    } catch (err: any) {
+      console.error('[Checkout] Code redemption not recorded:', err.message);
+    }
+  }
   if (order?.customer_id) await touchActivity(order.customer_id).catch(() => undefined);
   return order;
 }
@@ -350,8 +370,33 @@ export async function applyPromoCode(orderId: string, businessId: string, promoC
     `SELECT * FROM prm_promotions WHERE business_id = $1 AND LOWER(promo_code) = LOWER($2) AND status = 'active'`,
     [businessId, promoCode.trim()],
   );
-  if (promos.length === 0) throw new Error('Invalid promotion code');
-  const promo = promos[0];
+  let promo = promos[0];
+
+  // Not a promotion: it may be a discount code from Pricing → Discount Codes. Those were
+  // created and listed but could not be used on an order. Such a code is applied through the
+  // same line-by-line discount as a promotion code.
+  if (!promo) {
+    const { rows: orderItems } = await adminPool.query(
+      'SELECT item_type, item_id, unit_price, quantity FROM fin_order_items WHERE order_id = $1', [orderId],
+    );
+    const purchaseAmount = orderItems.reduce((sum: number, i: any) => sum + i.unit_price * i.quantity, 0);
+    const serviceIds = orderItems.filter((i: any) => i.item_type === 'service' && i.item_id).map((i: any) => i.item_id);
+    const verdict = await validateCode(promoCode.trim(), businessId, orderRows[0].customer_id || undefined, purchaseAmount, serviceIds);
+    if (!verdict.valid) {
+      throw new Error(verdict.error === 'Code not found or inactive' ? 'Invalid promotion code' : (verdict.error || 'Invalid promotion code'));
+    }
+    const { rows: codeRows } = await adminPool.query(
+      `SELECT * FROM pri_discount_codes WHERE business_id = $1 AND UPPER(code) = UPPER($2) AND status = 'active'`,
+      [businessId, promoCode.trim()],
+    );
+    const dc = codeRows[0];
+    promo = {
+      id: null, // no promotion row: fin_orders.promotion_id stays empty and the code text identifies it
+      type: dc.discount_type === 'fixed' ? 'discount_fixed' : 'discount_percentage',
+      value: dc.discount_value,
+      service_ids: dc.applies_to_all_services ? null : dc.service_ids,
+    };
+  }
 
   // Date validation
   const now = new Date();

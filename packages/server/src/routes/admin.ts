@@ -363,6 +363,10 @@ adminRouter.post('/businesses', tenantContext, requireTenantLevel(), requirePerm
         );
       }
 
+      // Every business keeps books: give it the standard chart of accounts now. Without it the
+      // first sale has no Cash or Revenue account to post to and is left out of the ledger.
+      await client.query('SELECT seed_chart_of_accounts($1)', [business.id]);
+
       // Create staff profile for the business owner
       const { rows: staffRefRows } = await client.query(
         'SELECT COUNT(*)::int AS cnt FROM stf_profiles WHERE tenant_id = $1',

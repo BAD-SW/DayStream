@@ -49,8 +49,7 @@ export function CustomerDetail() {
       customersApi.getNotes(id, businessId).catch(() => []),
       customersApi.getActivities(id, businessId).then((r) => r.data).catch(() => []),
       customersApi.getPreferences(id, businessId).catch(() => null),
-      customersApi.getTags(businessId).catch(() => []),
-    ]).then(([cust, n, acts, prefs, t]) => {
+    ]).then(([cust, n, acts, prefs]) => {
       // An old link to a record that was merged: go to the person it was merged into.
       if (cust?.status === 'merged' && cust.merged_into_id) {
         navigate(`/customers/${cust.merged_into_id}`, { replace: true });
@@ -60,7 +59,7 @@ export function CustomerDetail() {
       setNotes(n);
       setActivities(acts);
       setPreferences(prefs);
-      setTags(t);
+      setTags((cust as any)?.tags || []);
     }).catch(() => setCustomer(null)).finally(() => setLoading(false));
   }, [id, businessId]);
 
