@@ -179,6 +179,20 @@ export async function getCustomer(id: string, businessId: string): Promise<Custo
   return res.data.data;
 }
 
+export interface FinancialSummary {
+  currency: string;
+  balance_due_cents: number;
+  open_invoices: number;
+  overdue_invoices: number;
+  lifetime_value_cents: number;
+  account_credit_cents: number;
+}
+
+export async function getFinancialSummary(id: string, businessId: string): Promise<FinancialSummary> {
+  const res = await apiClient.get(`/v1/customers/${id}/financial-summary?business_id=${businessId}`);
+  return res.data.data;
+}
+
 export async function createCustomer(data: any): Promise<Customer> {
   const res = await apiClient.post('/v1/customers', data);
   return res.data.data;
@@ -281,6 +295,67 @@ export async function getSegmentMembers(segmentId: string, businessId: string, p
 
 export async function deleteSegment(segmentId: string, businessId: string) {
   await apiClient.delete(`/v1/segments/${segmentId}?business_id=${businessId}`);
+}
+
+export async function createFixedList(data: { name: string; business_id: string; description?: string }): Promise<Segment> {
+  const res = await apiClient.post('/v1/segments', { ...data, kind: 'static' });
+  return res.data.data;
+}
+
+export async function updateSegment(segmentId: string, businessId: string, data: { name?: string; description?: string | null; rules?: Segment['rules'] }): Promise<Segment> {
+  const res = await apiClient.put(`/v1/segments/${segmentId}`, { ...data, business_id: businessId });
+  return res.data.data;
+}
+
+/** How many people a set of rules matches right now, before it is saved. */
+export async function countSegmentRules(rules: Segment['rules'], businessId: string): Promise<number> {
+  const res = await apiClient.post('/v1/segments/count', { rules, business_id: businessId });
+  return res.data.data.total;
+}
+
+export async function removeSegmentMembers(segmentId: string, businessId: string, customerIds: string[]): Promise<number> {
+  const res = await apiClient.delete(`/v1/segments/${segmentId}/members`, { data: { customer_ids: customerIds, business_id: businessId } });
+  return res.data.data.removed;
+}
+
+export interface AudienceSummary {
+  total: number;
+  willReceive: number;
+  excluded: number;
+  excludedByReason: Array<{ reason: string; label: string; count: number }>;
+}
+
+/** Who in a segment would receive a marketing message on this channel, and why the rest would not. */
+export async function getAudienceSummary(segmentId: string, businessId: string, channel: string): Promise<AudienceSummary> {
+  const res = await apiClient.get(`/v1/segments/${segmentId}/audience-summary?business_id=${businessId}&channel=${channel}`);
+  return res.data.data;
+}
+
+// --- Bulk actions ---
+
+export type BulkAction = 'add_tag' | 'remove_tag' | 'assign_owner' | 'change_stage' | 'add_to_list' | 'archive';
+/** Either the people ticked on screen, or everyone matching the list's filters. */
+export interface BulkTarget { ids?: string[]; filters?: Record<string, any> }
+export interface BulkPayload { tag_id?: string; owner_user_id?: string | null; stage?: string; segment_id?: string }
+
+function bulkBody(businessId: string, target: BulkTarget) {
+  if (target.ids) return { business_id: businessId, ids: target.ids };
+  // Drop empty filters and the paging / sorting keys the bulk endpoint does not take.
+  const filters: Record<string, any> = {};
+  for (const [k, v] of Object.entries(target.filters || {})) {
+    if (v !== undefined && v !== '' && !['sort', 'order', 'page', 'limit'].includes(k)) filters[k] = v;
+  }
+  return { business_id: businessId, filters };
+}
+
+export async function previewBulk(businessId: string, target: BulkTarget): Promise<number> {
+  const res = await apiClient.post('/v1/customers/bulk/preview', bulkBody(businessId, target));
+  return res.data.data.count;
+}
+
+export async function runBulk(businessId: string, target: BulkTarget, action: BulkAction, payload: BulkPayload): Promise<number> {
+  const res = await apiClient.post('/v1/customers/bulk', { ...bulkBody(businessId, target), action, payload });
+  return res.data.data.affected;
 }
 
 // --- Import ---

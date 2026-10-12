@@ -3,6 +3,7 @@ import { logAudit } from './audit.service';
 import { createActivity } from './customer-activity.service';
 import { calculatePrice } from './pricing.service';
 import { logger } from '../middleware/logger';
+import { touchActivity } from './person-identity.service';
 
 interface CreateBookingInput {
   businessId: string;
@@ -310,6 +311,9 @@ export async function createBooking(input: CreateBookingInput) {
   );
 
   const booking = rows[0];
+
+  // A new booking counts as activity for the person (Phase 46).
+  if (booking.customer_id) await touchActivity(booking.customer_id).catch(() => undefined);
 
   // Record status history
   await adminPool.query(

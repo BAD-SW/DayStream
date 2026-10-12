@@ -31,6 +31,33 @@ What was not cleaned up, if anything.
 
 ## Runs
 
+## Run 20261012-5 — remaining People screens (spec 46), exploratory
+- Commit: `5d7937d` plus local changes · Migrations at: 136 · As: business owner, seed business
+- Scope: the screens built in this round. Not a suite run
+
+| Checked | Result |
+|---|---|
+| Segments: starter set listed in plain words, labelled Rules / Fixed list | Pass |
+| Create a fixed list ("E2E VIP list") | Pass |
+| Create a segment with a rule; live count before saving ("3 people match right now") | Pass |
+| People list: hide Phone and Added columns; their filters go too; choice remembered | Pass |
+| Tick all three people, bulk "Add to a fixed list", confirmation states "3 people", result "3 people changed" | Pass |
+| Campaign form: audience picker; email "0 of 3 will receive it" (nobody agreed), SMS "1 of 3" with the reasons for the rest | Pass |
+| Profile Financial Summary in euros (balance due, lifetime value, account credit) | Pass |
+
+### Findings
+| Id | Severity | Summary | State |
+|---|---|---|---|
+| D-21 | Low | Profile Financial Summary showed fixed placeholders | Fixed, test added |
+| D-22 | High | A campaign could not be given an audience from the screen, so none could be sent since the segment became mandatory | Fixed |
+
+Not exercised in the browser: bulk tag / owner / stage / archive (covered by unit tests), removing a person from a fixed list, editing an existing segment, reception seeing no bulk controls (CUS-27 cross-check).
+
+### Leftover test data
+In the seed business: fixed list `E2E VIP list` (3 people), segment `E2E leads`.
+
+---
+
 ## Run 20261012-4 — People screens (spec 46), exploratory
 - Commit: `37aad94` plus the uncommitted spec 46 work · Migrations at: 136 · As: business owner, seed business
 - Scope: not a suite run. First look in the browser at screens that until now were covered only by unit tests

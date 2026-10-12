@@ -486,6 +486,19 @@ customersRouter.get('/export', requirePermission('customers:read'), async (req: 
   }
 });
 
+// GET /api/v1/customers/:id/financial-summary — Balance due, lifetime value and account credit
+customersRouter.get('/:id/financial-summary', requirePermission('customers:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id query parameter is required', 'VALIDATION_ERROR', 400); return; }
+    const customer = await customerService.getCustomerById(req.params.id, businessId);
+    if (!customer) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+    success(res, await customerService.getFinancialSummary(req.params.id, businessId));
+  } catch (err: any) {
+    error(res, 'Failed to get the financial summary', 'INTERNAL_ERROR', 500);
+  }
+});
+
 // GET /api/v1/customers/:id — Get customer detail
 customersRouter.get('/:id', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {

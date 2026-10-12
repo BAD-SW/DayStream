@@ -511,6 +511,34 @@ describe('People Foundation (spec 46)', () => {
     });
   });
 
+  describe('Financial summary on the profile', () => {
+    it('reports what is owed, what was paid in total and the business currency', async () => {
+      const { person: p } = await person({ firstName: 'Money', email: 'money@example.com' });
+      await adminPool.query(
+        `INSERT INTO pay_invoices (tenant_id, business_id, customer_id, invoice_number, due_date, total_cents, amount_paid_cents, status)
+         VALUES ($1, $2, $3, 990001, CURRENT_DATE - 5, 10000, 2500, 'issued'),
+                ($1, $2, $3, 990002, CURRENT_DATE + 5, 4000, 4000, 'paid')`,
+        [TENANT_ID, BUSINESS_ID, p.id],
+      );
+      await adminPool.query(
+        `INSERT INTO pay_transactions (business_id, customer_id, type, status, amount, payment_method)
+         VALUES ($1, $2, 'charge', 'completed', 6500, 'card'),
+                ($1, $2, 'refund', 'completed', 1500, 'card'),
+                ($1, $2, 'charge', 'failed', 9999, 'card')`,
+        [BUSINESS_ID, p.id],
+      );
+
+      const res = await request('GET', `/api/v1/customers/${p.id}/financial-summary?business_id=${BUSINESS_ID}`, undefined, ownerToken);
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data.balance_due_cents).toBe(7500);
+      expect(res.body.data.open_invoices).toBe(1);
+      expect(res.body.data.overdue_invoices).toBe(1);
+      expect(res.body.data.lifetime_value_cents).toBe(5000);
+      expect(res.body.data.account_credit_cents).toBe(0);
+      expect(typeof res.body.data.currency).toBe('string');
+    });
+  });
+
   describe('Segments (R11)', () => {
     it('every business has the starter segments, with "New customers" for the trial stage', async () => {
       const res = await request('GET', `/api/v1/segments?business_id=${BUSINESS_ID}`, undefined, ownerToken);

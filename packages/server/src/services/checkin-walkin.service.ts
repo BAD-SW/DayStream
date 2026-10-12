@@ -1,6 +1,7 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
 import { validateSession } from './checkin-validation.service';
+import { touchVisit } from './person-identity.service';
 
 interface WalkInInput {
   customerId: string;
@@ -64,6 +65,7 @@ export async function walkInCheckIn(tenantId: string, input: WalkInInput) {
   );
 
   const booking = bookingRows[0];
+  if (customerId) await touchVisit(customerId).catch(() => undefined);
 
   // Validate session (should pass for a just-created confirmed booking)
   const validation = await validateSession(booking.id, customerId, tenantId);

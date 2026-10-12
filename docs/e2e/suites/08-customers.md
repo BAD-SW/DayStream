@@ -163,13 +163,13 @@ Written from the spec on 2026-10-12, before the feature exists. All are `Blocked
 **Cross-check:** sorting the list by last activity puts this person first.
 
 ### CUS-27 · Columns and bulk actions
-`P1` `regression` · Spec 46 R8 · As: manager · Status: Blocked (server side built; the column chooser and bulk-action screens of spec 46 task 7 are not)
+`P1` `regression` · Spec 46 R8 · As: manager · Status: Draft
 1. Hide and show columns; reload. 2. Select three E2E people and add a tag. 3. Use "select all matching" on the E2E tag filter, read the count, change stage, confirm.
 **Expect:** the column choice survives a reload; the confirmation states the exact number affected; every affected person's Timeline shows the change.
 **Cross-check:** reception (`customers:read`) is offered no bulk change.
 
 ### CUS-28 · Segments: edit, static list, starter set
-`P1` `regression` · Spec 46 R11 · Status: Blocked (server side built; the segment editing and fixed-list screens of spec 46 task 5 are not)
+`P1` `regression` · Spec 46 R11 · Status: Draft
 1. Edit the rules of the CUS-06 segment. 2. Create a static list and add three people from the list page. 3. Open the starter segments. 4. Try to delete a segment used by a scheduled campaign.
 **Expect:** the edit changes the membership at once; the static list holds exactly the three people and is labelled as a fixed list; Leads, New customers, Active, At risk, Former, New this month, No visit in 30 days and Birthday this month exist; step 4 is refused, naming the campaign.
 **Cross-check:** every segment is offered both as a People view and as a campaign audience (MKT-19).

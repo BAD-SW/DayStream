@@ -10,6 +10,8 @@ export function CampaignDetail() {
   const [campaign, setCampaign] = useState<any>(null);
   const [analytics, setAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [confirmSend, setConfirmSend] = useState(false);
+  const [sendError, setSendError] = useState('');
 
   useEffect(() => {
     if (!id) return;
@@ -20,11 +22,13 @@ export function CampaignDetail() {
   }, [id]);
 
   const handleSend = async () => {
-    if (!id || !confirm('Send this campaign now?')) return;
+    if (!id) return;
+    setConfirmSend(false);
+    setSendError('');
     try {
       await marketingApi.sendCampaign(id);
       setCampaign({ ...campaign, status: 'sent' });
-    } catch { alert('Send failed'); }
+    } catch (err: any) { setSendError(err.response?.data?.error || 'The campaign could not be sent'); }
   };
 
   if (loading) return <div style={styles.page}><p>Loading...</p></div>;
@@ -46,9 +50,19 @@ export function CampaignDetail() {
 
       {campaign.status === 'draft' && (
         <div style={styles.actions}>
-          <Button onClick={handleSend}>Send Now</Button>
+          {confirmSend ? (
+            <>
+              <span style={styles.label}>Send this campaign now?</span>
+              <Button variant="secondary" onClick={() => setConfirmSend(false)}>Cancel</Button>
+              <Button onClick={handleSend}>Send</Button>
+            </>
+          ) : (
+            <Button onClick={() => setConfirmSend(true)}>Send Now</Button>
+          )}
         </div>
       )}
+
+      {sendError && <p role="alert" style={{ color: 'var(--color-error, #b42318)', fontSize: 'var(--font-size-sm)' }}>{sendError}</p>}
 
       {analytics && (
         <>

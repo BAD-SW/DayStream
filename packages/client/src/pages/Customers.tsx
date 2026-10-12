@@ -6,6 +6,8 @@ import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import { DateRangeFilter, DateRange } from '../design-system/components/data/DateRangeFilter';
 import * as customersApi from '../api/customers';
+import { useAuth } from '../context/AuthContext';
+import { getPermissionsFromRole } from '../context/ContextManager';
 import type { Customer, ViewCounts, Segment } from '../api/customers';
 
 const STAGE_COLORS: Record<string, { bg: string; fg: string }> = {
@@ -18,6 +20,27 @@ const STAGE_COLORS: Record<string, { bg: string; fg: string }> = {
 };
 
 const VIEW_STORAGE_KEY = 'ds_people_view';
+const COLUMNS_STORAGE_KEY = 'ds_people_columns';
+
+// Columns the user may hide. Ref, name and surname always stay.
+const OPTIONAL_COLUMNS: Array<{ key: string; label: string }> = [
+  { key: 'email', label: 'Email' },
+  { key: 'phone', label: 'Phone' },
+  { key: 'lifecycle_stage', label: 'Stage' },
+  { key: 'source', label: 'Source' },
+  { key: 'owner_name', label: 'Owner' },
+  { key: 'last_activity_at', label: 'Last activity' },
+  { key: 'created_at', label: 'Added' },
+];
+
+const BULK_ACTIONS: Array<{ id: customersApi.BulkAction; label: string }> = [
+  { id: 'add_tag', label: 'Add a tag' },
+  { id: 'remove_tag', label: 'Remove a tag' },
+  { id: 'assign_owner', label: 'Assign an owner' },
+  { id: 'change_stage', label: 'Change stage' },
+  { id: 'add_to_list', label: 'Add to a fixed list' },
+  { id: 'archive', label: 'Archive' },
+];
 
 interface ColumnFilters {
   ref: string;
@@ -43,6 +66,10 @@ function relativeDay(value?: string | null): string {
 export function Customers() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Bulk changes need the right to edit people; read-only roles (reception) are not offered them.
+  const { user } = useAuth();
+  const canEditPeople = getPermissionsFromRole(user?.role || '').some((p) => p === '*:*' || p === 'customers:*');
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,6 +103,23 @@ export function Customers() {
     email: searchParams.get('email') || '',
     phone: searchParams.get('phone') || '',
   });
+  // Columns hidden by this user (remembered on this device).
+  const [hiddenColumns, setHiddenColumns] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(COLUMNS_STORAGE_KEY) || '[]'); } catch { return []; }
+  });
+  const [showColumns, setShowColumns] = useState(false);
+
+  // Bulk actions: the people ticked on this page, or everyone matching the filters.
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [allMatching, setAllMatching] = useState(false);
+  const [bulkAction, setBulkAction] = useState<customersApi.BulkAction | ''>('');
+  const [bulkValue, setBulkValue] = useState('');
+  const [bulkConfirm, setBulkConfirm] = useState<number | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState('');
+  const [tags, setTags] = useState<Array<{ id: string; name: string }>>([]);
+  const [owners, setOwners] = useState<Array<{ id: string; first_name: string; last_name: string }>>([]);
+
   // Debounced text-filter values actually sent to the API
   const [debouncedFilters, setDebouncedFilters] = useState<ColumnFilters>(columnFilters);
 
@@ -135,6 +179,10 @@ export function Customers() {
     try {
       const result = await customersApi.getCustomers(businessId, { ...currentFilters(), page, limit: 20 });
       setCustomers(result.data);
+      // A new page or filter is a new set of rows: the old ticks no longer describe it.
+      setSelectedIds([]);
+      setAllMatching(false);
+      setBulkConfirm(null);
       setTotalPages(result.meta.totalPages);
       setTotal(result.meta.total);
     } catch {
@@ -150,7 +198,74 @@ export function Customers() {
     if (!businessId) return;
     customersApi.getViewCounts(businessId).then(setViewCounts).catch(() => {});
     customersApi.getSegments(businessId).then(setSegments).catch(() => setSegments([]));
+    customersApi.getTags(businessId).then(setTags).catch(() => setTags([]));
+    customersApi.getOwners(businessId).then(setOwners).catch(() => setOwners([]));
   }, [businessId]);
+
+  function toggleColumn(key: string) {
+    setHiddenColumns((hidden) => {
+      const next = hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key];
+      try { localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      return next;
+    });
+  }
+
+  const fixedLists = segments.filter((seg) => seg.kind === 'static');
+  const bulkNeedsValue = bulkAction !== '' && bulkAction !== 'archive';
+  const bulkReady = bulkAction !== '' && (!bulkNeedsValue || bulkValue !== '');
+  const selectedCount = allMatching ? total : selectedIds.length;
+
+  function bulkTarget(): customersApi.BulkTarget {
+    if (!allMatching) return { ids: selectedIds };
+    const { sort: _sort, order: _order, ...filters } = currentFilters();
+    return { filters };
+  }
+
+  function bulkPayload(): customersApi.BulkPayload {
+    switch (bulkAction) {
+      case 'add_tag': case 'remove_tag': return { tag_id: bulkValue };
+      case 'assign_owner': return { owner_user_id: bulkValue === 'none' ? null : bulkValue };
+      case 'change_stage': return { stage: bulkValue };
+      case 'add_to_list': return { segment_id: bulkValue };
+      default: return {};
+    }
+  }
+
+  // Step 1: ask the server how many people the change would touch, and show that for confirmation.
+  async function previewBulk() {
+    if (!bulkReady) return;
+    setBulkBusy(true);
+    setBulkMessage('');
+    try { setBulkConfirm(await customersApi.previewBulk(businessId, bulkTarget())); }
+    catch (err: any) { setBulkMessage(err.response?.data?.error || 'Could not prepare this change'); }
+    finally { setBulkBusy(false); }
+  }
+
+  // Step 2: apply it.
+  async function applyBulk() {
+    if (!bulkAction) return;
+    setBulkBusy(true);
+    try {
+      const affected = await customersApi.runBulk(businessId, bulkTarget(), bulkAction, bulkPayload());
+      const label = BULK_ACTIONS.find((a) => a.id === bulkAction)?.label || 'Change';
+      setBulkAction('');
+      setBulkValue('');
+      await fetchCustomers();
+      customersApi.getViewCounts(businessId).then(setViewCounts).catch(() => {});
+      setBulkMessage(`${label}: ${affected} ${affected === 1 ? 'person' : 'people'} changed.`);
+    } catch (err: any) {
+      setBulkConfirm(null);
+      setBulkMessage(err.response?.data?.error || 'The change could not be applied');
+    } finally { setBulkBusy(false); }
+  }
+
+  function clearSelection() {
+    setSelectedIds([]);
+    setAllMatching(false);
+    setBulkConfirm(null);
+    setBulkAction('');
+    setBulkValue('');
+  }
 
   function chooseView(next: string) {
     setView(next);
@@ -173,7 +288,7 @@ export function Customers() {
   // Stages offered in the stage filter: only those of the current view.
   const viewStages = PEOPLE_VIEWS.find((v) => v.id === view)?.stages || [...LIFECYCLE_STAGES];
 
-  const columns = [
+  const allColumns = [
     { key: 'reference_number', header: 'Ref', width: '110px', sortable: true },
     {
       key: 'first_name', header: 'Name', sortable: true,
@@ -209,58 +324,49 @@ export function Customers() {
       render: (val: string) => new Date(val).toLocaleDateString(),
     },
   ];
+  const columns = allColumns.filter((c) => !hiddenColumns.includes(c.key));
+
+  // One filter control per column, keyed like the columns so hiding a column hides its filter.
+  const textFilter = (key: keyof ColumnFilters) => (
+    <input
+      style={styles.filterInput}
+      placeholder="Filter…"
+      aria-label={`Filter by ${key.replace('_', ' ')}`}
+      value={columnFilters[key]}
+      onChange={(e) => updateColumnFilter(key, e.target.value)}
+    />
+  );
+  const filterControls: Record<string, React.ReactNode> = {
+    reference_number: textFilter('ref'),
+    first_name: textFilter('first_name'),
+    last_name: textFilter('last_name'),
+    email: textFilter('email'),
+    phone: textFilter('phone'),
+    lifecycle_stage: (
+      <select style={styles.filterInput} aria-label="Filter by stage" value={stageFilter} onChange={(e) => { setStageFilter(e.target.value); setPage(1); }}>
+        <option value="">All stages</option>
+        {viewStages.map((st) => <option key={st} value={st}>{lifecycleStageLabel(st)}</option>)}
+      </select>
+    ),
+    source: (
+      <select style={styles.filterInput} aria-label="Filter by source" value={sourceFilter} onChange={(e) => { setSourceFilter(e.target.value); setPage(1); }}>
+        <option value="">All sources</option>
+        {Object.entries(PERSON_SOURCE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select>
+    ),
+    owner_name: (
+      <select style={styles.filterInput} aria-label="Filter by owner" value={ownerFilter} onChange={(e) => { setOwnerFilter(e.target.value); setPage(1); }}>
+        <option value="">Anyone</option>
+        <option value="me">Mine</option>
+        <option value="none">Unassigned</option>
+      </select>
+    ),
+    created_at: <DateRangeFilter value={dateRange} onChange={(v) => { setDateRange(v); setPage(1); }} />,
+  };
 
   const filterRow = (
     <>
-      {(['ref', 'first_name', 'last_name', 'email', 'phone'] as (keyof ColumnFilters)[]).map((key) => (
-        <th key={key} style={styles.filterCell}>
-          <input
-            style={styles.filterInput}
-            placeholder="Filter…"
-            aria-label={`Filter by ${key.replace('_', ' ')}`}
-            value={columnFilters[key]}
-            onChange={(e) => updateColumnFilter(key, e.target.value)}
-          />
-        </th>
-      ))}
-      <th style={styles.filterCell}>
-        <select
-          style={styles.filterInput}
-          aria-label="Filter by stage"
-          value={stageFilter}
-          onChange={(e) => { setStageFilter(e.target.value); setPage(1); }}
-        >
-          <option value="">All stages</option>
-          {viewStages.map((s) => <option key={s} value={s}>{lifecycleStageLabel(s)}</option>)}
-        </select>
-      </th>
-      <th style={styles.filterCell}>
-        <select
-          style={styles.filterInput}
-          aria-label="Filter by source"
-          value={sourceFilter}
-          onChange={(e) => { setSourceFilter(e.target.value); setPage(1); }}
-        >
-          <option value="">All sources</option>
-          {Object.entries(PERSON_SOURCE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
-      </th>
-      <th style={styles.filterCell}>
-        <select
-          style={styles.filterInput}
-          aria-label="Filter by owner"
-          value={ownerFilter}
-          onChange={(e) => { setOwnerFilter(e.target.value); setPage(1); }}
-        >
-          <option value="">Anyone</option>
-          <option value="me">Mine</option>
-          <option value="none">Unassigned</option>
-        </select>
-      </th>
-      <th style={styles.filterCell} />
-      <th style={styles.filterCell}>
-        <DateRangeFilter value={dateRange} onChange={(v) => { setDateRange(v); setPage(1); }} />
-      </th>
+      {columns.map((c) => <th key={c.key} style={styles.filterCell}>{filterControls[c.key]}</th>)}
     </>
   );
 
@@ -322,7 +428,84 @@ export function Customers() {
         </select>
       </div>
 
-      <p style={styles.resultCount} aria-live="polite">{loading ? ' ' : `${total} ${total === 1 ? 'person' : 'people'}`}</p>
+      <div style={styles.listToolbar}>
+        <p style={styles.resultCount} aria-live="polite">{loading ? ' ' : `${total} ${total === 1 ? 'person' : 'people'}`}</p>
+        <div style={styles.columnsWrap}>
+          <button style={styles.columnsButton} aria-expanded={showColumns} onClick={() => setShowColumns((v) => !v)}>Columns</button>
+          {showColumns && (
+            <div style={styles.columnsMenu} role="group" aria-label="Columns shown">
+              {OPTIONAL_COLUMNS.map((c) => (
+                <label key={c.key} style={styles.columnsOption}>
+                  <input type="checkbox" checked={!hiddenColumns.includes(c.key)} onChange={() => toggleColumn(c.key)} />
+                  {c.label}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {bulkMessage && selectedCount === 0 && <p style={styles.bulkMessage} role="status">{bulkMessage}</p>}
+
+      {/* Bulk actions: shown once someone is ticked */}
+      {selectedCount > 0 && (
+        <div style={styles.bulkBar} role="region" aria-label="Bulk actions">
+          <div style={styles.bulkLine}>
+            <strong>{selectedCount} selected</strong>
+            {!allMatching && selectedIds.length === customers.length && total > customers.length && (
+              <button style={styles.linkButton} onClick={() => { setAllMatching(true); setBulkConfirm(null); }}>
+                Select all {total} matching these filters
+              </button>
+            )}
+            {allMatching && <span style={styles.bulkHint}>Everyone matching these filters, on all pages.</span>}
+            <button style={styles.linkButton} onClick={clearSelection}>Clear selection</button>
+          </div>
+          {bulkConfirm === null ? (
+            <div style={styles.bulkLine}>
+              <select style={styles.bulkSelect} aria-label="Bulk action" value={bulkAction} onChange={(e) => { setBulkAction(e.target.value as customersApi.BulkAction | ''); setBulkValue(''); }}>
+                <option value="">Choose an action…</option>
+                {BULK_ACTIONS.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+              </select>
+              {(bulkAction === 'add_tag' || bulkAction === 'remove_tag') && (
+                <select style={styles.bulkSelect} aria-label="Tag" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
+                  <option value="">{tags.length ? 'Choose a tag…' : 'No tags defined yet'}</option>
+                  {tags.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              )}
+              {bulkAction === 'assign_owner' && (
+                <select style={styles.bulkSelect} aria-label="Owner" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
+                  <option value="">Choose an owner…</option>
+                  <option value="none">Unassigned</option>
+                  {owners.map((o) => <option key={o.id} value={o.id}>{o.first_name} {o.last_name}</option>)}
+                </select>
+              )}
+              {bulkAction === 'change_stage' && (
+                <select style={styles.bulkSelect} aria-label="Stage" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
+                  <option value="">Choose a stage…</option>
+                  {LIFECYCLE_STAGES.map((st) => <option key={st} value={st}>{lifecycleStageLabel(st)}</option>)}
+                </select>
+              )}
+              {bulkAction === 'add_to_list' && (
+                <select style={styles.bulkSelect} aria-label="Fixed list" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
+                  <option value="">{fixedLists.length ? 'Choose a list…' : 'No fixed lists yet (create one in Segments)'}</option>
+                  {fixedLists.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              )}
+              <Button size="sm" disabled={!bulkReady} loading={bulkBusy} onClick={previewBulk}>Continue</Button>
+            </div>
+          ) : (
+            <div style={styles.bulkLine}>
+              <span>
+                {BULK_ACTIONS.find((a) => a.id === bulkAction)?.label} for <strong>{bulkConfirm} {bulkConfirm === 1 ? 'person' : 'people'}</strong>?
+                {bulkAction === 'archive' ? ' They will be hidden from the list.' : ''}
+              </span>
+              <Button size="sm" variant="secondary" onClick={() => setBulkConfirm(null)}>Back</Button>
+              <Button size="sm" loading={bulkBusy} onClick={applyBulk}>Confirm</Button>
+            </div>
+          )}
+          {bulkMessage && <p style={styles.bulkMessage} role="status">{bulkMessage}</p>}
+        </div>
+      )}
 
       {/* Table */}
       {!businessId && !loading && (
@@ -337,6 +520,9 @@ export function Customers() {
         onRowClick={(row) => navigate(`/customers/${row.id}`)}
         onSort={handleSort}
         filterRow={filterRow}
+        selectable={canEditPeople}
+        selectedIds={selectedIds}
+        onSelectionChange={(ids) => { setSelectedIds(ids); setAllMatching(false); setBulkConfirm(null); setBulkMessage(''); }}
         page={page}
         totalPages={totalPages}
         onPageChange={setPage}
@@ -364,6 +550,34 @@ const styles: Record<string, React.CSSProperties> = {
     marginLeft: 'auto', fontSize: 'var(--font-size-sm)', padding: 'var(--space-sm) var(--space-md)',
     border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
     background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', maxWidth: '100%',
+  },
+  listToolbar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-md)' },
+  columnsWrap: { position: 'relative' as const, marginBottom: 'var(--space-sm)' },
+  columnsButton: {
+    padding: '4px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)',
+    color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-xs)',
+  },
+  columnsMenu: {
+    position: 'absolute' as const, right: 0, top: 'calc(100% + 4px)', zIndex: 10, minWidth: '170px', display: 'flex', flexDirection: 'column' as const,
+    gap: 'var(--space-xs)', padding: 'var(--space-md)', background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-md)', boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+  },
+  columnsOption: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', cursor: 'pointer' },
+  bulkBar: {
+    display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)', padding: 'var(--space-md)', marginBottom: 'var(--space-sm)',
+    border: '1px solid var(--color-primary)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)',
+    fontSize: 'var(--font-size-sm)', color: 'var(--color-text)',
+  },
+  bulkLine: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', flexWrap: 'wrap' as const },
+  bulkHint: { color: 'var(--color-text-secondary)' },
+  bulkSelect: {
+    fontSize: 'var(--font-size-sm)', padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
+    background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', maxWidth: '100%',
+  },
+  bulkMessage: { margin: '0 0 var(--space-sm)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
+  linkButton: {
+    background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline',
+    fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)',
   },
   resultCount: { margin: '0 0 var(--space-sm)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', minHeight: '1.2em' },
   nameCell: { display: 'inline-flex', alignItems: 'center', gap: 'var(--space-sm)' },

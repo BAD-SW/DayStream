@@ -140,6 +140,47 @@ export function CustomerDetail() {
 
 // --- Sub-components for tabs ---
 
+/** What the person owes, what they have paid in total and their unused credit, in the business currency. */
+function FinancialSummaryCard({ customerId, businessId }: { customerId: string; businessId: string }) {
+  const [summary, setSummary] = useState<customersApi.FinancialSummary | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setSummary(null);
+    setFailed(false);
+    customersApi.getFinancialSummary(customerId, businessId).then(setSummary).catch(() => setFailed(true));
+  }, [customerId, businessId]);
+
+  const money = (cents: number) => (summary ? formatCurrency(cents, summary.currency) : '—');
+  const invoiceNote = !summary || summary.open_invoices === 0
+    ? 'Nothing outstanding'
+    : `${summary.open_invoices} open invoice${summary.open_invoices === 1 ? '' : 's'}${summary.overdue_invoices ? `, ${summary.overdue_invoices} overdue` : ''}`;
+
+  return (
+    <div style={styles.card}>
+      <h3 style={styles.cardTitle}>Financial Summary</h3>
+      {failed && <p style={styles.empty}>The figures could not be loaded.</p>}
+      {!failed && (
+        <div style={styles.financialGrid}>
+          <div style={styles.financialItem}>
+            <span style={styles.financialLabel}>Balance due</span>
+            <span style={styles.financialValue}>{summary ? money(summary.balance_due_cents) : '…'}</span>
+            {summary && <span style={styles.financialLabel}>{invoiceNote}</span>}
+          </div>
+          <div style={styles.financialItem}>
+            <span style={styles.financialLabel}>Lifetime value</span>
+            <span style={styles.financialValue}>{summary ? money(summary.lifetime_value_cents) : '…'}</span>
+          </div>
+          <div style={styles.financialItem}>
+            <span style={styles.financialLabel}>Account credit</span>
+            <span style={styles.financialValue}>{summary ? money(summary.account_credit_cents) : '…'}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * A stored date as the YYYY-MM-DD a date field needs. The API sends date columns as a
  * timestamp at the server's local midnight (e.g. "1990-04-30T22:00:00.000Z" for 1 May on a
@@ -335,26 +376,7 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
         </div>
 
         {/* Financial Summary Card */}
-        <div style={styles.card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-            <h3 style={{ ...styles.cardTitle, margin: 0 }}>Financial Summary</h3>
-            <Button size="sm" variant="secondary" onClick={() => { /* TODO: open invoices modal */ }}>View Invoices</Button>
-          </div>
-          <div style={styles.financialGrid}>
-            <div style={styles.financialItem}>
-              <span style={styles.financialLabel}>Balance</span>
-              <span style={styles.financialValue}>$0.00</span>
-            </div>
-            <div style={styles.financialItem}>
-              <span style={styles.financialLabel}>Lifetime Value</span>
-              <span style={styles.financialValue}>$0.00</span>
-            </div>
-            <div style={styles.financialItem}>
-              <span style={styles.financialLabel}>Credit Status</span>
-              <span style={styles.financialValue}>Good</span>
-            </div>
-          </div>
-        </div>
+        <FinancialSummaryCard customerId={customer.id} businessId={businessId} />
 
         {/* Membership Card */}
         <MembershipCard customerId={customer.id} businessId={businessId} />

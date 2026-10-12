@@ -5,6 +5,7 @@ import { findOrCreatePerson, findPersonByContactPoint, normalisePhone, defaultRe
 import { createActivity } from './customer-activity.service';
 import { transitionLifecycle, LIFECYCLE_STAGES, LifecycleStage } from './customer-lifecycle.service';
 import * as segmentsService from './customer-segments.service';
+import { getCustomerCreditBalance } from './account-credit.service';
 
 interface CreateCustomerInput {
   businessId: string;
@@ -501,4 +502,38 @@ export async function anonymizeCustomer(id: string, businessId: string, userId: 
   await logAudit({ tenantId, userId, action: 'customer.anonymized', resourceType: 'customer', resourceId: id });
 
   return { id, status: 'anonymized' };
+}
+
+/**
+ * One person's money at a glance, for the profile: what they still owe on issued invoices,
+ * what they have paid in total (charges less refunds) and their unused account credit.
+ * Amounts are integer cents in the business currency.
+ */
+export async function getFinancialSummary(customerId: string, businessId: string) {
+  const [business, invoices, payments, credit] = await Promise.all([
+    adminPool.query('SELECT currency FROM sys_businesses WHERE id = $1', [businessId]),
+    adminPool.query(
+      `SELECT COALESCE(SUM(total_cents - amount_paid_cents), 0)::int AS balance_due_cents,
+              COUNT(*)::int AS open_invoices,
+              COUNT(*) FILTER (WHERE status = 'overdue' OR due_date < CURRENT_DATE)::int AS overdue_invoices
+         FROM pay_invoices
+        WHERE business_id = $1 AND customer_id = $2 AND status IN ('issued', 'overdue')`,
+      [businessId, customerId],
+    ),
+    adminPool.query(
+      `SELECT COALESCE(SUM(CASE WHEN type = 'charge' THEN amount WHEN type = 'refund' THEN -ABS(amount) ELSE 0 END), 0)::int AS lifetime_value_cents
+         FROM pay_transactions
+        WHERE business_id = $1 AND customer_id = $2 AND status = 'completed' AND payment_method <> 'account_credit'`,
+      [businessId, customerId],
+    ),
+    getCustomerCreditBalance(businessId, customerId).catch(() => null),
+  ]);
+  return {
+    currency: business.rows[0]?.currency || 'USD',
+    balance_due_cents: invoices.rows[0].balance_due_cents,
+    open_invoices: invoices.rows[0].open_invoices,
+    overdue_invoices: invoices.rows[0].overdue_invoices,
+    lifetime_value_cents: payments.rows[0].lifetime_value_cents,
+    account_credit_cents: credit?.availableCents ?? 0,
+  };
 }

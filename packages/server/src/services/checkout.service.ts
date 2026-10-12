@@ -1,5 +1,6 @@
 import { adminPool } from '../db/pool';
 import { generateJournalEntries } from './order-journal.service';
+import { touchActivity } from './person-identity.service';
 
 interface CreateOrderInput {
   businessId: string;
@@ -282,7 +283,10 @@ export async function completeOrder(orderId: string, businessId: string, input: 
     console.error('[Enrollment] Failed to process membership enrollments:', err.message);
   }
 
-  return getOrder(orderId);
+  // A completed purchase counts as activity for the person (Phase 46).
+  const order = await getOrder(orderId);
+  if (order?.customer_id) await touchActivity(order.customer_id).catch(() => undefined);
+  return order;
 }
 
 /**
