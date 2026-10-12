@@ -1,3 +1,4 @@
+import { emitEvent } from '../services/integration-webhooks.service';
 import { createActivity } from '../services/customer-activity.service';
 import { Router, Request, Response } from 'express';
 import Joi from 'joi';
@@ -351,6 +352,10 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
       participantCount: req.body.participant_count,
     });
 
+    emitEvent(authReq.tenantId, 'booking.created', {
+      id: booking.id, business_id: booking.business_id, booking_reference: booking.booking_reference, customer_id: booking.customer_id,
+      service_id: booking.service_id, staff_id: booking.staff_id, start_time: booking.start_time, end_time: booking.end_time, status: booking.status,
+    });
     success(res, booking, undefined, 201);
   } catch (err: any) {
     if (err.message.includes('not found')) {
@@ -475,6 +480,7 @@ bookingsRouter.put('/:id/cancel', requirePermission('bookings:*'), validate(canc
       error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INVALID_TRANSITION', status);
       return;
     }
+    emitEvent(authReq.tenantId, 'booking.cancelled', { id: req.params.id, business_id: businessId, reason: req.body.reason || null });
     success(res, { ...result.booking, cancellation_fee: result.cancellation_fee });
   } catch (err: any) {
     console.error('Failed to cancel booking', err?.message || err);

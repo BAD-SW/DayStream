@@ -55,6 +55,9 @@ export async function redeemPoints(
   points: number,
   description?: string,
 ) {
+  if (!Number.isInteger(points) || points <= 0) {
+    throw new Error('Insufficient points balance: choose a whole number of points above zero');
+  }
   const balance = await getBalance(tenantId, customerId);
   if (balance < points) {
     throw new Error('Insufficient points balance');

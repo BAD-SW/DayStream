@@ -90,7 +90,7 @@ export async function updateTemplate(id: string, tenantId: string, updates: Reco
  */
 export async function cancelTemplate(id: string, tenantId: string) {
   const { rows } = await adminPool.query(
-    `UPDATE evt_recurring_templates SET status = 'cancelled', updated_at = NOW()
+    `UPDATE evt_recurring_templates SET status = 'cancelled'
      WHERE id = $1 AND tenant_id = $2 AND status = 'active' RETURNING *`,
     [id, tenantId],
   );
@@ -129,7 +129,20 @@ export async function generateInstances(templateId: string, tenantId: string) {
     ? new Date(new Date(lastInstance[0].last_start).getTime() + 24 * 60 * 60 * 1000)
     : now;
 
-  const dates = computeOccurrences(template, generateFrom, endWindow);
+  // The recurrence stops where it was told to: after a number of occurrences, or on a date.
+  // (Both were ignored: "3 times" produced every week for the next 90 days.)
+  let until = endWindow;
+  if (template.end_type === 'date' && template.end_date) {
+    const last = new Date(`${String(template.end_date).slice(0, 10)}T23:59:59`);
+    if (last < until) until = last;
+  }
+  let dates = computeOccurrences(template, generateFrom, until);
+  if (template.end_type === 'count' && template.end_after_count) {
+    const { rows: have } = await adminPool.query(
+      'SELECT COUNT(*)::int AS n FROM evt_events WHERE recurrence_id = $1 AND tenant_id = $2', [templateId, tenantId],
+    );
+    dates = dates.slice(0, Math.max(template.end_after_count - have[0].n, 0));
+  }
   const created: any[] = [];
 
   for (const date of dates) {

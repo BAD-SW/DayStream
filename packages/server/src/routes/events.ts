@@ -1,7 +1,9 @@
-import { Router, Request, Response } from 'express';
+import { createActivity } from '../services/customer-activity.service';
+import { Router, Request, Response, NextFunction } from 'express';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
-import { tenantContext } from '../auth/tenant-context';
+import { tenantContext, callerScope, ownCustomerIds } from '../auth/tenant-context';
+import { adminPool } from '../db/pool';
 import { requirePermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
@@ -34,7 +36,11 @@ eventsRouter.get('/calendar', async (req: Request, res: Response) => {
       page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
     });
-    success(res, result.events, { page: result.page, limit: result.limit, total: result.total });
+    const visible = result.events.map((e: any) => ({
+      id: e.id, slug: e.slug, title: e.title, description: e.description, start_time: e.start_time, end_time: e.end_time,
+      location_name: e.location_name, capacity: e.capacity, tags: e.tags, event_type_id: e.event_type_id, status: e.status,
+    }));
+    success(res, visible, { page: result.page, limit: result.limit, total: result.total });
   } catch (err: any) { console.error('Failed to load calendar', err?.message || err); error(res, 'Failed to load calendar', 'INTERNAL_ERROR', 500); }
 });
 
@@ -59,6 +65,33 @@ eventsRouter.get('/calendar/:slug', async (req: Request, res: Response) => {
 
 eventsRouter.use(authenticate);
 eventsRouter.use(tenantContext);
+
+// Events belong to an organisation. Every record addressed by id on these routes must be one of
+// the caller's organisation, or it does not exist for them. (Registrations, attendees and
+// tickets of any organisation's event could be read and changed by its id.)
+const UUID = /^[0-9a-f-]{36}$/i;
+function inOwnTenant(sql: string, what: string) {
+  return (req: Request, res: Response, next: NextFunction, id: string): void => {
+    (async () => {
+      const authReq = req as AuthenticatedRequest;
+      const { rows } = UUID.test(id || '') ? await adminPool.query(sql, [id]) : { rows: [] as any[] };
+      const scope = await callerScope(authReq.user.sub);
+      if (!rows[0] || (scope?.level !== 'system' && rows[0].tenant_id !== authReq.tenantId)) {
+        res.status(404).json({ error: `${what} not found`, code: 'NOT_FOUND' });
+        return;
+      }
+      next();
+    })().catch(next);
+  };
+}
+eventsRouter.param('id', inOwnTenant(
+  `SELECT tenant_id FROM evt_events WHERE id = $1 UNION ALL SELECT tenant_id FROM evt_recurring_templates WHERE id = $1
+   UNION ALL SELECT tenant_id FROM evt_series WHERE id = $1 UNION ALL SELECT tenant_id FROM evt_types WHERE id = $1`, 'Event'));
+eventsRouter.param('rid', inOwnTenant('SELECT e.tenant_id FROM evt_registrations r JOIN evt_events e ON e.id = r.event_id WHERE r.id = $1', 'Registration'));
+eventsRouter.param('wid', inOwnTenant('SELECT e.tenant_id FROM evt_waitlist w JOIN evt_events e ON e.id = w.event_id WHERE w.id = $1', 'Waitlist entry'));
+
+const canManageEvents = (req: Request): boolean =>
+  ((req as AuthenticatedRequest).user.permissions || []).some((p: string) => p === 'events:*' || p === '*:*');
 
 // ============================================================
 // Event Types (before /:id)
@@ -217,10 +250,21 @@ eventsRouter.put('/registrations/:rid/check-in', requirePermission('events:*'), 
 });
 
 // Waitlist confirm
+// A paid ticket is held as "pending" until it is paid; staff confirm it when the money is in.
+eventsRouter.put('/registrations/:rid/confirm', requirePermission('events:*'), async (req: Request, res: Response) => {
+  try { success(res, await registrationService.confirmRegistration(req.params.rid)); }
+  catch (err: any) { error(res, err.message || 'Failed to confirm', 'CONFLICT', 409); }
+});
+
 eventsRouter.put('/waitlist/:wid/confirm', async (req: Request, res: Response) => {
   try {
+    const { rows: w } = await adminPool.query('SELECT event_id, customer_id, ticket_tier_id FROM evt_waitlist WHERE id = $1', [req.params.wid]);
+    const own = await ownCustomerIds(req);
+    if (!canManageEvents(req) && !own.includes(w[0]?.customer_id)) { error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return; }
     const entry = await waitlistService.confirmWaitlistSpot(req.params.wid);
-    success(res, entry);
+    // Taking the place means being registered (confirming used to change the entry only).
+    const registration = await registrationService.registerForEvent(w[0].event_id, { customerId: w[0].customer_id, ticketTierId: w[0].ticket_tier_id || undefined, groupSize: 1 } as any);
+    success(res, { ...entry, registration });
   } catch (err: any) { error(res, err.message || 'Failed to confirm', 'NOT_FOUND', 404); }
 });
 
@@ -368,11 +412,39 @@ eventsRouter.delete('/:id/tickets/:tid', requirePermission('events:*'), async (r
 
 eventsRouter.post('/:id/register', async (req: Request, res: Response) => {
   try {
-    const reg = await registrationService.registerForEvent(req.params.id, {
-      customerId: req.body.customer_id, ticketTierId: req.body.ticket_tier_id,
-      attendeeInfo: req.body.attendee_info, groupSize: req.body.group_size,
-    });
-    success(res, reg, undefined, 201);
+    const authReq = req as AuthenticatedRequest;
+    // A customer registers themself; staff who manage events register anyone of the organisation.
+    const own = await ownCustomerIds(req);
+    const customerId = req.body.customer_id as string;
+    if (!canManageEvents(req) && !own.includes(customerId)) { error(res, 'You can register yourself only', 'FORBIDDEN', 403); return; }
+    const { rows: person } = UUID.test(customerId || '') ? await adminPool.query(
+      `SELECT 1 FROM cus_customers c JOIN sys_businesses b ON b.id = c.business_id WHERE c.id = $1 AND b.tenant_id = $2 AND c.status = 'active'`,
+      [customerId, authReq.tenantId]) : { rows: [] as any[] };
+    if (person.length === 0) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+    const groupSize = req.body.group_size === undefined ? 1 : req.body.group_size;
+    if (!Number.isInteger(groupSize) || groupSize < 1 || groupSize > 20) { error(res, 'group_size must be between 1 and 20', 'VALIDATION_ERROR', 400); return; }
+    try {
+      const reg = await registrationService.registerForEvent(req.params.id, {
+        customerId, ticketTierId: req.body.ticket_tier_id,
+        attendeeInfo: req.body.attendee_info, groupSize,
+      });
+      // On the person's timeline, like a booking.
+      const { rows: info } = await adminPool.query(
+        'SELECT c.business_id, e.title FROM cus_customers c, evt_events e WHERE c.id = $1 AND e.id = $2', [customerId, req.params.id]);
+      if (info[0]) {
+        await createActivity({
+          customerId, businessId: info[0].business_id, activityType: 'event',
+          description: `Registered for the event: ${info[0].title}`,
+          metadata: { event_id: req.params.id, registration_id: reg.id }, createdBy: authReq.user.sub,
+        }).catch(() => undefined);
+      }
+      success(res, reg, undefined, 201);
+    } catch (err: any) {
+      // Full: the person goes on the waitlist instead of being turned away.
+      if (!err.message?.includes('at capacity')) throw err;
+      const entry = await waitlistService.addToWaitlist(req.params.id, customerId, req.body.ticket_tier_id);
+      success(res, { waitlisted: true, ...entry }, undefined, 202);
+    }
   } catch (err: any) {
     if (err.message?.includes('capacity') || err.message?.includes('sold out')) error(res, err.message, 'CONFLICT', 409);
     else error(res, err.message || 'Failed to register', 'VALIDATION_ERROR', 400);

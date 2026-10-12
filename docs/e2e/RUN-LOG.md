@@ -33,7 +33,7 @@ What was not cleaned up, if anything.
 
 ## Run 20261012-6 — full run (in progress)
 - Commit at start: `2a62bc8` · Migrations at end so far: 143 · Processor mode: Stripe test (platform, seed tenant, seed business); mock for the E2E tenant
-- Method: each script is driven through the API by a repeatable script (kept in the session scratchpad: `r00`, `r02`, `r02b`, `r03`, `r05`, `r06`, `r07`, `r08`, `r09`, `r10`, `r11`, `r12`, `r13`, `r14`, and `sweep` for the cross-organisation check), with the browser used for screens, menus and typed addresses. Data is created in a dedicated tenant `E2E 20261012-6 SysTenant` and its business `E2E 20261012-6 Biz` (time zone Europe/Madrid)
+- Method: each script is driven through the API by a repeatable script (kept in the session scratchpad: `r00`, `r02`, `r02b`, `r03`, `r05`, `r06`, `r07`, `r08`, `r09`, `r10`, `r11`, `r12`, `r13`, `r14`, `r15`, and `sweep` for the cross-organisation check), with the browser used for screens, menus and typed addresses. Data is created in a dedicated tenant `E2E 20261012-6 SysTenant` and its business `E2E 20261012-6 Biz` (time zone Europe/Madrid)
 - A script is marked `Verified` when every check passed after fixes. Scripts whose remaining part is purely visual are noted below
 
 ### Progress
@@ -54,7 +54,8 @@ What was not cleaned up, if anything.
 | 12 Reports | 8 of 8 pass after fixes (all 19 catalogue reports run) | Dashboard cards, sorting and filtering on screen are browser checks |
 | 13 Marketing | 7 pass after fixes; MKT-05 Blocked (no sequence builder); MKT-09 to MKT-20 Blocked (spec 48 not built) | Screens |
 | 14 Website & widget | 12 pass after fixes | WEB-05 (media upload) and the widget's own screen and messages are browser checks |
-| 01, 15 to 17 | pending | |
+| 15 Events, community, integrations | 11 pass after fixes; INT-03 Blocked (API keys cannot be used yet) | Screens; the feature flags for Events and Community are off by default |
+| 01, 16, 17 | pending | |
 
 ### Defects found and fixed in this run
 | Id | Severity | Summary |
@@ -111,6 +112,10 @@ What was not cleaned up, if anything.
 | D-72 | High | A website page had no published version: every saved edit was public at once (migration 143 keeps the published copy) |
 | D-73 | Medium | The public site data returned the whole site record with the organisation's id and hosting details; the contact form accepted empty and malformed submissions, answered with the stored record, crashed for an unknown organisation and had no limit on how often it could be sent; a second page with the same address answered "server error" |
 | D-74 | Medium | A slot held in the booking widget stayed on offer in the internal booking form (holds without a chosen provider were ignored) |
+| D-75 | Critical | Events: registrations, attendees, tickets and the waitlist of any organisation's event could be read and changed by id; anyone signed in could register any person for any event |
+| D-76 | High | Redeeming a negative number of points added points. A review could be left by someone who never had the service |
+| D-77 | High | Webhooks never fired: nothing sent "booking created" or "booking cancelled" to subscribers. The signing secret was returned in every listing; deliveries of any organisation's webhook could be read by id; a webhook could point into the server's own network |
+| D-78 | Medium | Events: an event could be published with no ticket; a full event turned people away instead of using its waitlist, and nothing could confirm a paid registration or a waitlist offer into a registration; cancelling an event left its registrations active; a recurrence ignored "end after N" and could not be cancelled (query error); the public calendar returned the whole record. A provider could not get their own calendar feed |
 | — | — | 635 API handlers answered "server error" without recording the cause; they now log it |
 
 ### Observations (not changed)
@@ -137,6 +142,9 @@ What was not cleaned up, if anything.
 - AP aging includes a bill from the moment it is entered, before approval.
 - The stored daily metrics behind the configurable dashboard widgets, and scheduled reports, exist per organisation only. A business-level user may use them when the organisation has a single business; otherwise they get an empty set.
 - The summary "revenue" report (older generation) means the price of completed bookings, not money taken; the catalogue's Revenue and Payments Received reports are the money figures.
+- Events, Community and Integrations (webhooks, API keys, calendar feeds), like the website, belong to the organisation, not to a business: in an organisation with several businesses every business owner sees and manages the same ones. Making them per business needs a business column on their tables and is not done.
+- API keys can be created and revoked but nothing accepts them yet.
+- Event tickets have no payment step: staff confirm a paid registration by hand after taking the money at checkout. Recurring events are created already published and without tickets.
 - The website is one per organisation, not per business: every business owner of the organisation edits the same site.
 - With "payment before confirmation" switched off, a package or membership taken through the widget becomes active without any payment.
 - Sequences: there is no builder (screen or endpoint) to give a sequence its steps, and no pre-built ones, so a sequence cannot be switched on. The engine behind it is covered by unit tests only.

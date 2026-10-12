@@ -211,6 +211,10 @@ export async function updateEvent(
  * Publish an event (make it visible for registration).
  */
 export async function publishEvent(id: string, tenantId: string) {
+  const { rows: tiers } = await adminPool.query(
+    'SELECT 1 FROM evt_ticket_tiers t JOIN evt_events e ON e.id = t.event_id WHERE t.event_id = $1 AND e.tenant_id = $2 LIMIT 1', [id, tenantId],
+  );
+  if (tiers.length === 0) throw new Error('Add at least one ticket (it can be free) before publishing: nobody could register otherwise');
   const { rows } = await adminPool.query(
     `UPDATE evt_events SET status = 'published', updated_at = NOW()
      WHERE id = $1 AND tenant_id = $2 AND status = 'draft' RETURNING *`,
@@ -238,6 +242,8 @@ export async function cancelEvent(id: string, tenantId: string, userId: string) 
     [id, tenantId],
   );
   if (!rows[0]) throw new Error('Event not found or cannot be cancelled');
+  await adminPool.query(`UPDATE evt_registrations SET status = 'cancelled' WHERE event_id = $1 AND status IN ('confirmed', 'pending')`, [id]);
+  await adminPool.query(`UPDATE evt_waitlist SET status = 'expired' WHERE event_id = $1 AND status IN ('waiting', 'notified')`, [id]).catch(() => undefined);
 
   await logAudit({
     tenantId,

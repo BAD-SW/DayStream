@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
-import { tenantContext } from '../auth/tenant-context';
+import { tenantContext, isCustomerLogin, ownCustomerIds, canReachBusiness } from '../auth/tenant-context';
+import { adminPool } from '../db/pool';
 import { requirePermission } from '../auth/permissions';
 import { success, error } from '../utils/response';
 import * as webhooksService from '../services/integration-webhooks.service';
@@ -59,7 +60,7 @@ integrationsRouter.get('/webhooks', requirePermission('integrations:read'), asyn
   try { const authReq = req as AuthenticatedRequest; success(res, await webhooksService.getSubscriptions(authReq.tenantId)); } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 integrationsRouter.post('/webhooks', requirePermission('integrations:*'), async (req: Request, res: Response) => {
-  try { const authReq = req as AuthenticatedRequest; const s = await webhooksService.createSubscription(authReq.tenantId, { url: req.body.url, eventTypes: req.body.event_types }); success(res, s, undefined, 201); } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const authReq = req as AuthenticatedRequest; const s = await webhooksService.createSubscription(authReq.tenantId, { url: req.body.url, eventTypes: req.body.event_types }); success(res, s, undefined, 201); } catch (err: any) { if (err?.code === 'INVALID_WEBHOOK_URL') { error(res, err.message, 'VALIDATION_ERROR', 400); return; } console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 integrationsRouter.put('/webhooks/:id', requirePermission('integrations:*'), async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const s = await webhooksService.updateSubscription(req.params.id, authReq.tenantId, req.body); if (!s) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, s); } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
@@ -71,7 +72,7 @@ integrationsRouter.post('/webhooks/:id/test', requirePermission('integrations:*'
   try { const authReq = req as AuthenticatedRequest; const r = await webhooksService.testWebhook(req.params.id, authReq.tenantId); success(res, r); } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 integrationsRouter.get('/webhooks/:id/deliveries', requirePermission('integrations:read'), async (req: Request, res: Response) => {
-  try { success(res, await webhooksService.getDeliveries(req.params.id)); } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { success(res, await webhooksService.getDeliveries(req.params.id, 50, (req as AuthenticatedRequest).tenantId)); } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 
 // --- API Keys ---
@@ -86,12 +87,27 @@ integrationsRouter.delete('/api-keys/:id', requirePermission('integrations:*'), 
 });
 
 // --- iCal Feeds ---
-integrationsRouter.get('/ical/staff', requirePermission('integrations:read'), async (req: Request, res: Response) => {
+integrationsRouter.get('/ical/staff', async (req: Request, res: Response) => {
   try { const authReq = req as AuthenticatedRequest; const feed = await icalService.getOrCreateFeed(authReq.tenantId, { userId: authReq.user.sub, feedType: 'staff' }); success(res, feed); } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
-integrationsRouter.get('/ical/customer', requirePermission('integrations:read'), async (req: Request, res: Response) => {
-  try { const authReq = req as AuthenticatedRequest; const feed = await icalService.getOrCreateFeed(authReq.tenantId, { customerId: req.query.customer_id as string, feedType: 'customer' }); success(res, feed); } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+integrationsRouter.get('/ical/customer', async (req: Request, res: Response) => {
+  try { const authReq = req as AuthenticatedRequest;
+    const asked = req.query.customer_id as string | undefined;
+    if (isCustomerLogin(req)) {
+      const own = await ownCustomerIds(req);
+      if (own.length === 0 || (asked && !own.includes(asked))) { error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return; }
+      (req.query as any).customer_id = asked || own[0];
+    } else {
+      if (!(authReq.user.permissions || []).some((p: string) => p === 'integrations:read' || p === 'integrations:*' || p === '*:*')) { error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return; }
+      const { rows } = /^[0-9a-f-]{36}$/i.test(asked || '') ? await adminPool.query('SELECT business_id FROM cus_customers WHERE id = $1', [asked]) : { rows: [] as any[] };
+      if (!rows[0] || !(await canReachBusiness(req, rows[0].business_id))) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
+    } const feed = await icalService.getOrCreateFeed(authReq.tenantId, { customerId: req.query.customer_id as string, feedType: 'customer' }); success(res, feed); } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
-integrationsRouter.post('/ical/regenerate', requirePermission('integrations:*'), async (req: Request, res: Response) => {
-  try { const authReq = req as AuthenticatedRequest; const feed = await icalService.regenerateFeed(authReq.tenantId, req.body.feed_id); if (!feed) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, feed); } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+integrationsRouter.post('/ical/regenerate', async (req: Request, res: Response) => {
+  try { const authReq = req as AuthenticatedRequest;
+    const { rows: feedRows } = /^[0-9a-f-]{36}$/i.test(req.body.feed_id || '') ? await adminPool.query('SELECT user_id, customer_id FROM int_ical_feeds WHERE id = $1 AND tenant_id = $2', [req.body.feed_id, authReq.tenantId]) : { rows: [] as any[] };
+    if (!feedRows[0]) { error(res, 'Not found', 'NOT_FOUND', 404); return; }
+    const mine = feedRows[0].user_id === authReq.user.sub || (feedRows[0].customer_id && (await ownCustomerIds(req)).includes(feedRows[0].customer_id));
+    const admin = (authReq.user.permissions || []).some((p: string) => p === 'integrations:*' || p === '*:*');
+    if (!mine && !admin) { error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return; } const feed = await icalService.regenerateFeed(authReq.tenantId, req.body.feed_id); if (!feed) { error(res, 'Not found', 'NOT_FOUND', 404); return; } success(res, feed); } catch (err: any) { console.error('Failed', err?.message || err); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });

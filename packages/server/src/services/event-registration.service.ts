@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { promoteFromWaitlist } from './event-waitlist.service';
 import { logAudit } from './audit.service';
 import crypto from 'crypto';
 
@@ -153,6 +154,7 @@ export async function cancelRegistration(id: string, tenantId: string) {
     [id, tenantId],
   );
   if (!rows[0]) throw new Error('Registration not found or cannot be cancelled');
+  await promoteFromWaitlist(rows[0].event_id).catch(() => undefined);
 
   await logAudit({
     tenantId,

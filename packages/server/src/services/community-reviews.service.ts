@@ -11,6 +11,21 @@ export async function submitReview(tenantId: string, input: {
   rating: number;
   content?: string;
 }) {
+  // The screens send snake_case names.
+  const anyInput = input as any;
+  input = { ...input, serviceId: input.serviceId || anyInput.service_id, bookingId: input.bookingId || anyInput.booking_id, staffId: input.staffId || anyInput.staff_id };
+  if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5) {
+    throw Object.assign(new Error('A rating is a whole number from 1 to 5'), { code: 'INVALID_REVIEW' });
+  }
+  const { rows: visits } = await adminPool.query(
+    `SELECT 1 FROM apt_bookings
+      WHERE customer_id = $1 AND status IN ('completed', 'checked_in')
+        AND ($2::uuid IS NULL OR service_id = $2) AND ($3::uuid IS NULL OR id = $3) LIMIT 1`,
+    [input.customerId, input.serviceId || null, input.bookingId || null],
+  );
+  if (visits.length === 0) {
+    throw Object.assign(new Error('You can review a service after you have had it'), { code: 'INVALID_REVIEW' });
+  }
   const { rows } = await adminPool.query(
     `INSERT INTO eng_reviews (tenant_id, customer_id, booking_id, service_id, staff_id, rating, content)
      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,

@@ -59,7 +59,7 @@ communityRouter.post('/challenges', requirePermission('community:*'), async (req
   try { const a = req as AuthenticatedRequest; const c = await challengeService.createChallenge(a.tenantId, req.body); success(res, c, undefined, 201); } catch (e: any) { console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.post('/challenges/:id/join', async (req: Request, res: Response) => {
-  try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { error(res, 'No customer profile for this login', 'NO_CUSTOMER_PROFILE', 403); return; } const p = await challengeService.joinChallenge(req.params.id, customerId, req.body.goal_target || 10); success(res, p, undefined, 201); } catch (e: any) { console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { error(res, 'No customer profile for this login', 'NO_CUSTOMER_PROFILE', 403); return; } const p = await challengeService.joinChallenge(req.params.id, customerId, req.body.goal_target || 10); success(res, p, undefined, 201); } catch (e: any) { if (e?.code === '23505') { error(res, 'You have already joined this challenge', 'ALREADY_JOINED', 409); return; } console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.get('/challenges/:id/leaderboard', async (req: Request, res: Response) => {
   try { success(res, await challengeService.getChallengeLeaderboard(req.params.id)); } catch (e: any) { console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
@@ -124,7 +124,7 @@ communityRouter.put('/courses/:id/lessons/:lid/complete', async (req: Request, r
 
 // --- Reviews ---
 communityRouter.post('/reviews', async (req: Request, res: Response) => {
-  try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { error(res, 'No customer profile for this login', 'NO_CUSTOMER_PROFILE', 403); return; } const r = await reviewsService.submitReview(a.tenantId, { ...req.body, customerId }); success(res, r, undefined, 201); } catch (e: any) { console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { error(res, 'No customer profile for this login', 'NO_CUSTOMER_PROFILE', 403); return; } const r = await reviewsService.submitReview(a.tenantId, { ...req.body, customerId }); success(res, r, undefined, 201); } catch (e: any) { if (e?.code === 'INVALID_REVIEW') { error(res, e.message, 'VALIDATION_ERROR', 400); return; } console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.get('/reviews/service/:sid', async (req: Request, res: Response) => {
   try { success(res, await reviewsService.getServiceReviews(req.params.sid, req.query.status as string)); } catch (e: any) { console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
@@ -133,5 +133,5 @@ communityRouter.put('/reviews/:id/respond', requirePermission('community:*'), as
   try { const a = req as AuthenticatedRequest; const r = await reviewsService.respondToReview(req.params.id, a.tenantId, req.body.response); success(res, r); } catch (e: any) { console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.put('/reviews/:id/moderate', requirePermission('community:*'), async (req: Request, res: Response) => {
-  try { const a = req as AuthenticatedRequest; const r = await reviewsService.moderateReview(req.params.id, a.tenantId, req.body.status); success(res, r); } catch (e: any) { console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const a = req as AuthenticatedRequest; if (!['pending', 'published', 'rejected'].includes(req.body.status)) { error(res, 'status must be pending, published or rejected', 'VALIDATION_ERROR', 400); return; } const r = await reviewsService.moderateReview(req.params.id, a.tenantId, req.body.status); success(res, r); } catch (e: any) { console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });

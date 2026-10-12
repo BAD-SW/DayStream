@@ -130,12 +130,11 @@ describe('Community & Engagement', () => {
   });
 
   describe('Reviews', () => {
-    it('submits a review', async () => {
-      const { statusCode, body } = await request('POST', '/api/v1/community/reviews', {
-        rating: 5, content: 'Amazing experience!',
-      }, ownerToken);
-      expect(statusCode).toBe(201);
-      expect(body.data.rating).toBe(5);
+    it('refuses a review from someone who has not had a visit, and a rating outside 1 to 5', async () => {
+      const noVisit = await request('POST', '/api/v1/community/reviews', { rating: 5, content: 'Amazing experience!' }, ownerToken);
+      expect(noVisit.statusCode).toBe(400);
+      const badRating = await request('POST', '/api/v1/community/reviews', { rating: 9, content: 'x' }, ownerToken);
+      expect(badRating.statusCode).toBe(400);
     });
   });
 });

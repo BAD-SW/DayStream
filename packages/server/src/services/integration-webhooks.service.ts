@@ -9,7 +9,8 @@ export async function getSubscriptions(tenantId: string) {
     `SELECT * FROM int_webhook_subscriptions WHERE tenant_id = $1 ORDER BY created_at DESC`,
     [tenantId],
   );
-  return rows;
+  // The signing secret is shown when the webhook is created, not again.
+  return rows.map(({ secret, ...rest }: any) => ({ ...rest, secret_hint: secret ? `…${String(secret).slice(-4)}` : null }));
 }
 
 /**
@@ -20,6 +21,7 @@ export async function createSubscription(tenantId: string, input: {
   eventTypes: string[];
   secret?: string;
 }) {
+  assertDeliverableUrl(input.url);
   const secret = input.secret || crypto.randomBytes(32).toString('hex');
   const { rows } = await adminPool.query(
     `INSERT INTO int_webhook_subscriptions (tenant_id, url, secret, event_types)
@@ -86,6 +88,30 @@ export async function deliverWebhook(tenantId: string, eventType: string, data: 
     deliveries.push({ delivery: rows[0], signature });
   }
   return deliveries;
+}
+
+/**
+ * Something happened that subscribers may want to hear about: queue it for every matching
+ * webhook and send it. Never throws and never makes the caller wait for the receivers.
+ * (Deliveries could be queued by code, but nothing ever queued or sent a real event.)
+ */
+export function emitEvent(tenantId: string, eventType: string, data: any): void {
+  deliverWebhook(tenantId, eventType, data)
+    .then((queued) => Promise.all(queued.map((q) => sendDelivery(q.delivery.id).catch(() => undefined))))
+    .catch((err) => console.error('[Webhook] Event not delivered:', err?.message || err));
+}
+
+/** A webhook goes to a public http(s) address, never into the server's own network. */
+export function assertDeliverableUrl(url: string): void {
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { throw Object.assign(new Error('Enter a full address starting with https://'), { code: 'INVALID_WEBHOOK_URL' }); }
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw Object.assign(new Error('A webhook address starts with http:// or https://'), { code: 'INVALID_WEBHOOK_URL' });
+  const host = parsed.hostname.toLowerCase();
+  const linkLocal = /^169\.254\./.test(host) || host === 'metadata.google.internal';
+  const privateNet = host === 'localhost' || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) || host === '::1' || host === '[::1]' || host.endsWith('.internal') || host.endsWith('.local');
+  if (linkLocal || (privateNet && process.env.NODE_ENV === 'production')) {
+    throw Object.assign(new Error('This address is inside a private network and cannot receive webhooks'), { code: 'INVALID_WEBHOOK_URL' });
+  }
 }
 
 /**
@@ -188,7 +214,11 @@ export async function testWebhook(id: string, tenantId: string) {
 /**
  * Get deliveries for a subscription.
  */
-export async function getDeliveries(subscriptionId: string, limit = 50) {
+export async function getDeliveries(subscriptionId: string, limit = 50, tenantId?: string) {
+  if (tenantId) {
+    const { rows: own } = await adminPool.query('SELECT 1 FROM int_webhook_subscriptions WHERE id = $1 AND tenant_id = $2', [subscriptionId, tenantId]);
+    if (own.length === 0) return [];
+  }
   const { rows } = await adminPool.query(
     `SELECT * FROM int_webhook_deliveries WHERE subscription_id = $1 ORDER BY created_at DESC LIMIT $2`,
     [subscriptionId, limit],

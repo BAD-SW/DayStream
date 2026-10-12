@@ -47,6 +47,7 @@ describe('Events & Workshops', () => {
     // Only the events this file creates — never the rest of the tenant's events.
     const mine = `SELECT id FROM evt_events WHERE tenant_id = $1 AND title IN ('Breath & Ice Workshop', 'Secret Draft', 'Tiny Event')`;
     await adminPool.query(`DELETE FROM evt_registrations WHERE event_id IN (${mine})`, [TENANT_ID]);
+    await adminPool.query(`DELETE FROM evt_waitlist WHERE event_id IN (${mine})`, [TENANT_ID]);
     await adminPool.query(`DELETE FROM evt_ticket_tiers WHERE event_id IN (${mine})`, [TENANT_ID]);
     await adminPool.query(`DELETE FROM evt_events WHERE id IN (${mine})`, [TENANT_ID]);
     await adminPool.query(`DELETE FROM evt_types WHERE tenant_id = $1 AND is_system = false AND name = 'Workshop' AND id NOT IN (SELECT event_type_id FROM evt_events WHERE event_type_id IS NOT NULL)`, [TENANT_ID]);
@@ -112,6 +113,10 @@ describe('Events & Workshops', () => {
     });
 
     it('publishes an event', async () => {
+      // An event needs at least one ticket (it can be free) before it is published.
+      const noTicket = await request('PUT', `/api/v1/events/${EVENT_ID}/publish`, undefined, ownerToken);
+      expect(noTicket.statusCode).toBe(400);
+      await request('POST', `/api/v1/events/${EVENT_ID}/tickets`, { name: 'Door', price: 0, quantity_available: 100 }, ownerToken);
       const { statusCode, body } = await request('PUT', `/api/v1/events/${EVENT_ID}/publish`, undefined, ownerToken);
       expect(statusCode).toBe(200);
       expect(body.data.status).toBe('published');
@@ -147,7 +152,7 @@ describe('Events & Workshops', () => {
     it('lists tiers', async () => {
       const { statusCode, body } = await request('GET', `/api/v1/events/${EVENT_ID}/tickets`, undefined, ownerToken);
       expect(statusCode).toBe(200);
-      expect(body.data.length).toBe(2);
+      expect(body.data.length).toBe(3) // the two created above and the door ticket added before publishing;
     });
   });
 
@@ -180,11 +185,10 @@ describe('Events & Workshops', () => {
         event_type_id: EVENT_TYPE_ID, title: 'Tiny Event', capacity: 1,
         start_time: '2026-08-01T10:00:00Z', end_time: '2026-08-01T11:00:00Z',
       }, ownerToken);
-      await request('PUT', `/api/v1/events/${smallEvent.data.id}/publish`, undefined, ownerToken);
-
       const { body: tierBody } = await request('POST', `/api/v1/events/${smallEvent.data.id}/tickets`, {
         name: 'Standard', price: 0, quantity_available: 10,
       }, ownerToken);
+      await request('PUT', `/api/v1/events/${smallEvent.data.id}/publish`, undefined, ownerToken);
 
       // First registration fills capacity
       await request('POST', `/api/v1/events/${smallEvent.data.id}/register`, {
@@ -197,11 +201,12 @@ describe('Events & Workshops', () => {
          VALUES ($1, $2, 'event-test2@example.com', 'Second', 'Person', 'CUST-EVT-002')
          ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Second' RETURNING id`, [BUSINESS_ID, TENANT_ID]);
 
-      // Second should fail (at capacity)
-      const { statusCode } = await request('POST', `/api/v1/events/${smallEvent.data.id}/register`, {
+      // The event is full: the second person goes on the waitlist instead of being registered
+      const { statusCode, body: second } = await request('POST', `/api/v1/events/${smallEvent.data.id}/register`, {
         customer_id: cust2[0].id, ticket_tier_id: tierBody.data.id,
       }, ownerToken);
-      expect(statusCode).toBe(409);
+      expect(statusCode).toBe(202);
+      expect(second.data.waitlisted).toBe(true);
     });
   });
 
