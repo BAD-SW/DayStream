@@ -31,6 +31,11 @@ export default defineConfig(({ mode }) => {
           target: apiTarget,
           changeOrigin: true,
         },
+        // The embeddable booking widget script is served by the API.
+        '/widget': {
+          target: apiTarget,
+          changeOrigin: true,
+        },
       },
     },
   };

@@ -133,7 +133,9 @@ describe('Availability Engine', () => {
       expect(slots[0].duration).toBe(60);
       // Should have available staff
       expect(slots[0].available_staff.length).toBeGreaterThan(0);
-      expect(slots[0].available_staff[0].first_name).toBe('Avail');
+      // Other test files add staff to this tenant while this one runs, so look for ours by name
+      // instead of assuming it is first.
+      expect(slots.some((slot: any) => slot.available_staff.some((st: any) => st.first_name === 'Avail'))).toBe(true);
     });
 
     it('excludes slots blocked by existing bookings', async () => {

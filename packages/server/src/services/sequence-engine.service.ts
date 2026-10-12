@@ -1,4 +1,13 @@
 import { adminPool } from '../db/pool';
+import { canContact, Channel } from './contactability.service';
+
+/** Message steps and the channel each one uses. */
+const SEND_STEP_CHANNELS: Record<string, Channel> = {
+  send_email: 'email', email: 'email',
+  send_sms: 'sms', sms: 'sms',
+  send_whatsapp: 'whatsapp', whatsapp: 'whatsapp',
+  send_push: 'push', push: 'push',
+};
 
 /**
  * Main engine loop: evaluate triggers for active sequences and advance enrollments.
@@ -183,6 +192,23 @@ export async function executeStep(
 
     case 'output': {
       // Output steps: send_email, send_sms, add_tag, etc.
+      // A message step first asks whether this person may be sent marketing on that channel
+      // (Phase 46 R10). If not, the step is skipped with the reason and the person moves on.
+      const channel = SEND_STEP_CHANNELS[step.step_type];
+      if (channel) {
+        const { rows } = await adminPool.query(
+          `SELECT c.business_id, se.sequence_id FROM mkt_sequence_enrollments se
+             JOIN cus_customers c ON c.id = se.customer_id WHERE se.id = $1`,
+          [enrollment.id],
+        );
+        if (rows[0]) {
+          const decision = await canContact(enrollment.customer_id, rows[0].business_id, channel, 'marketing');
+          if (!decision.allowed) {
+            await logStepExecution(rows[0].sequence_id, enrollment.customer_id, step.id, 'skipped', { reason: decision.reason, message: decision.message });
+            return { action: 'advance', reason: `skipped:${decision.reason}` };
+          }
+        }
+      }
       // Placeholder: dispatch to appropriate adapter
       // In production, this calls marketing-adapters.service
       return { action: 'advance' };
@@ -204,6 +230,16 @@ export async function enrollCustomer(
   customerId: string,
   context?: Record<string, any>,
 ) {
+  // A sequence only takes people of its own business (Phase 46 R14).
+  const { rows: scope } = await adminPool.query(
+    `SELECT s.business_id AS sequence_business, c.business_id AS person_business
+       FROM mkt_sequences s, cus_customers c WHERE s.id = $1 AND c.id = $2`,
+    [sequenceId, customerId],
+  );
+  if (scope[0] && scope[0].sequence_business && scope[0].sequence_business !== scope[0].person_business) {
+    throw new Error('This person belongs to another business');
+  }
+
   // Check if already enrolled (unless allow_reentry is true)
   const { rows: existing } = await adminPool.query(
     `SELECT se.id, se.status, s.allow_reentry FROM mkt_sequence_enrollments se

@@ -6,11 +6,17 @@ import { logAudit } from './audit.service';
  */
 export async function getSequences(
   tenantId: string,
-  filters: { status?: string; page?: number; limit?: number } = {},
+  filters: { status?: string; page?: number; limit?: number; businessId?: string } = {},
 ) {
   const conditions = ['tenant_id = $1'];
   const params: any[] = [tenantId];
   let idx = 2;
+
+  // Phase 46 R14: a business sees only its own sequences.
+  if (filters.businessId) {
+    conditions.push(`business_id = $${idx++}`);
+    params.push(filters.businessId);
+  }
 
   if (filters.status) {
     conditions.push(`status = $${idx++}`);
@@ -44,12 +50,12 @@ export async function getSequences(
  */
 export async function createSequence(
   tenantId: string,
-  input: { name: string; description?: string; canvasData?: any },
+  input: { name: string; description?: string; canvasData?: any; businessId?: string },
 ) {
   const { rows } = await adminPool.query(
-    `INSERT INTO mkt_sequences (tenant_id, name, description, canvas_data)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [tenantId, input.name, input.description || null, JSON.stringify(input.canvasData || {})],
+    `INSERT INTO mkt_sequences (tenant_id, name, description, canvas_data, business_id)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [tenantId, input.name, input.description || null, JSON.stringify(input.canvasData || {}), input.businessId || null],
   );
 
   await logAudit({

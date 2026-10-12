@@ -5,10 +5,11 @@ import { logAudit } from './audit.service';
 /**
  * List all lead funnels for a tenant.
  */
-export async function getFunnels(tenantId: string) {
+export async function getFunnels(tenantId: string, businessId?: string) {
+  // Phase 46 R14: a business sees only its own lead forms.
   const { rows } = await adminPool.query(
-    `SELECT * FROM mkt_lead_funnels WHERE tenant_id = $1 ORDER BY created_at DESC`,
-    [tenantId],
+    `SELECT * FROM mkt_lead_funnels WHERE tenant_id = $1 AND ($2::uuid IS NULL OR business_id = $2) ORDER BY created_at DESC`,
+    [tenantId, businessId || null],
   );
   return rows;
 }
@@ -28,11 +29,12 @@ export async function createFunnel(
     ctaText?: string;
     discountCode?: string;
     sequenceId?: string;
+    businessId?: string;
   },
 ) {
   const { rows } = await adminPool.query(
-    `INSERT INTO mkt_lead_funnels (tenant_id, name, slug, headline, description, image_path, form_fields, cta_text, discount_code, sequence_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+    `INSERT INTO mkt_lead_funnels (tenant_id, name, slug, headline, description, image_path, form_fields, cta_text, discount_code, sequence_id, business_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
     [
       tenantId,
       input.name,
@@ -44,6 +46,7 @@ export async function createFunnel(
       input.ctaText || 'Sign Up',
       input.discountCode || null,
       input.sequenceId || null,
+      input.businessId || null,
     ],
   );
 
@@ -61,10 +64,13 @@ export async function createFunnel(
 /**
  * Get a funnel by its slug (public-facing lookup).
  */
-export async function getFunnelBySlug(tenantId: string, slug: string) {
+export async function getFunnelBySlug(tenantId: string, slug: string, businessId?: string) {
+  // The same address may exist in two businesses of a tenant: the public page names its business.
   const { rows } = await adminPool.query(
-    `SELECT * FROM mkt_lead_funnels WHERE tenant_id = $1 AND slug = $2 AND status = 'active'`,
-    [tenantId, slug],
+    `SELECT * FROM mkt_lead_funnels
+      WHERE tenant_id = $1 AND slug = $2 AND status = 'active' AND ($3::uuid IS NULL OR business_id = $3)
+      ORDER BY created_at LIMIT 1`,
+    [tenantId, slug, businessId || null],
   );
   return rows[0] || null;
 }
@@ -94,9 +100,8 @@ export async function submitForm(funnelId: string, formData: Record<string, any>
 
   const tenantId = funnel.tenant_id;
 
-  // Find or create the person (Phase 46). Funnels still belong to a tenant, not a business
-  // (the Marketing module rework moves them), so the lead goes to the funnel's own business when
-  // it has one, otherwise to the tenant's first business.
+  // Find or create the person (Phase 46). The lead goes to the form's own business; a form
+  // created before forms had one falls back to the tenant's first business.
   const email = formData.email;
   const firstName = formData.firstName || formData.first_name || null;
   const lastName = formData.lastName || formData.last_name || null;
@@ -132,7 +137,11 @@ export async function submitForm(funnelId: string, formData: Record<string, any>
 
   // Enroll in sequence if configured
   let enrollmentId: string | null = null;
-  if (funnel.sequence_id) {
+  const { rows: seqRows } = funnel.sequence_id
+    ? await adminPool.query('SELECT business_id FROM mkt_sequences WHERE id = $1', [funnel.sequence_id])
+    : { rows: [] as any[] };
+  const sequenceInBusiness = seqRows[0] && (!seqRows[0].business_id || seqRows[0].business_id === businessId);
+  if (funnel.sequence_id && sequenceInBusiness) {
     const { rows: enrollmentRows } = await adminPool.query(
       `INSERT INTO mkt_sequence_enrollments (sequence_id, customer_id, context)
        VALUES ($1, $2, $3)

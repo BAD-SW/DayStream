@@ -4,13 +4,18 @@ import { logAudit } from './audit.service';
 /**
  * List message templates for a tenant, optionally filtered by channel.
  */
-export async function getTemplates(tenantId: string, channel?: string) {
+export async function getTemplates(tenantId: string, channel?: string, businessId?: string) {
   const conditions = ['tenant_id = $1'];
   const params: any[] = [tenantId];
 
   if (channel) {
-    conditions.push('channel = $2');
     params.push(channel);
+    conditions.push(`channel = $${params.length}`);
+  }
+  // Phase 46 R14: a business sees its own templates plus the system ones.
+  if (businessId) {
+    params.push(businessId);
+    conditions.push(`(business_id = $${params.length} OR is_system = true)`);
   }
 
   const { rows } = await adminPool.query(
@@ -33,11 +38,12 @@ export async function createTemplate(
     textContent?: string;
     blocks?: any[];
     category?: string;
+    businessId?: string;
   },
 ) {
   const { rows } = await adminPool.query(
-    `INSERT INTO mkt_message_templates (tenant_id, name, channel, subject, html_content, text_content, blocks, category)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    `INSERT INTO mkt_message_templates (tenant_id, name, channel, subject, html_content, text_content, blocks, category, business_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
     [
       tenantId,
       input.name,
@@ -47,6 +53,7 @@ export async function createTemplate(
       input.textContent || null,
       JSON.stringify(input.blocks || []),
       input.category || null,
+      input.businessId || null,
     ],
   );
 

@@ -10,7 +10,7 @@ import { TabBar } from '../design-system/components/navigation/TabBar';
 import * as payApi from '../api/payments';
 import { TIMEZONES } from '../utils/timezones';
 
-type SettingsTab = 'system' | 'lifecycle' | 'processes' | 'notifications' | 'payment-methods' | 'integrations' | 'appearance';
+type SettingsTab = 'system' | 'lifecycle' | 'processes' | 'notifications' | 'payment-methods' | 'integrations' | 'booking-widget' | 'appearance';
 
 export function BusinessSettings() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('system');
@@ -22,6 +22,7 @@ export function BusinessSettings() {
     { key: 'notifications', label: 'Notifications' },
     { key: 'payment-methods', label: 'Payment Methods' },
     { key: 'integrations', label: 'Integrations' },
+    { key: 'booking-widget', label: 'Booking Widget' },
     { key: 'appearance', label: 'Appearance' },
   ];
 
@@ -35,6 +36,7 @@ export function BusinessSettings() {
       {activeTab === 'notifications' && <NotificationSettings />}
       {activeTab === 'payment-methods' && <PaymentMethodsSettings />}
       {activeTab === 'integrations' && <IntegrationsSettings />}
+      {activeTab === 'booking-widget' && <BookingWidgetSettings />}
       {activeTab === 'appearance' && <AppearanceSettings />}
     </div>
   );
@@ -782,6 +784,103 @@ const settingInputStyle: React.CSSProperties = {
 // ============================================================
 // Integrations Settings (placeholder)
 // ============================================================
+
+// ============================================================
+// Booking Widget (spec 38 R14 / R19)
+// ============================================================
+
+function BookingWidgetSettings() {
+  const { activeContext } = useContextManager();
+  const businessId = activeContext.businessId;
+  const [enabled, setEnabled] = useState(false);
+  const [requirePayment, setRequirePayment] = useState(true);
+  const [origins, setOrigins] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!businessId) { setLoading(false); return; }
+    setLoading(true);
+    apiClient.get(`/v1/admin/businesses/${businessId}/widget-config`)
+      .then((res) => {
+        const data = res.data.data;
+        setEnabled(!!data.is_enabled);
+        setRequirePayment(!!data.require_payment_before_confirmation);
+        setOrigins((data.allowed_origins || []).join('\n'));
+      })
+      .catch(() => setMessage({ ok: false, text: 'The widget settings could not be loaded.' }))
+      .finally(() => setLoading(false));
+  }, [businessId]);
+
+  const save = async () => {
+    if (!businessId) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      const res = await apiClient.put(`/v1/admin/businesses/${businessId}/widget-config`, {
+        is_enabled: enabled,
+        require_payment_before_confirmation: requirePayment,
+        allowed_origins: origins.split(/[\n,]+/).map((o) => o.trim()).filter(Boolean),
+      });
+      setOrigins((res.data.data.allowed_origins || []).join('\n'));
+      setMessage({ ok: true, text: 'Saved.' });
+    } catch (err: any) {
+      setMessage({ ok: false, text: err.response?.data?.error || 'The widget settings could not be saved.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!businessId) return <div style={styles.section}><p style={styles.muted}>Select a business to configure its booking widget.</p></div>;
+  if (loading) return <div style={styles.section}><p style={styles.muted}>Loading…</p></div>;
+
+  // The script is served by the API (in development through the dev proxy); the booking page it
+  // opens is served by this app.
+  const apiOrigin = import.meta.env.VITE_API_URL || window.location.origin;
+  const snippet = `<script src="${apiOrigin}/widget/daystream-widget.js" data-business-id="${businessId}" data-app-url="${window.location.origin}"></script>`;
+
+  return (
+    <div style={styles.section}>
+      <h2 style={styles.sectionTitle}>Booking Widget</h2>
+      <p style={styles.description}>
+        The booking widget lets visitors book from your own website. While it is off, the widget shows nothing and takes no bookings.
+      </p>
+
+      <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', margin: 'var(--space-md) 0', color: 'var(--color-text)' }}>
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        Booking widget is on
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', margin: 'var(--space-md) 0', color: 'var(--color-text)' }}>
+        <input type="checkbox" checked={requirePayment} onChange={(e) => setRequirePayment(e.target.checked)} />
+        A booking is confirmed only after it is paid
+      </label>
+
+      <div style={{ margin: 'var(--space-md) 0' }}>
+        <label htmlFor="widget-origins" style={{ display: 'block', marginBottom: '4px', color: 'var(--color-text)', fontSize: 'var(--font-size-sm)' }}>
+          Websites allowed to show the widget
+        </label>
+        <textarea
+          id="widget-origins" rows={3} value={origins} onChange={(e) => setOrigins(e.target.value)}
+          placeholder="https://www.example.com"
+          style={{ width: '100%', maxWidth: '520px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' }}
+        />
+        <p style={styles.muted}>One address per line. Leave empty to allow any website.</p>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+        <Button onClick={save} loading={saving}>Save</Button>
+        {message && <span role={message.ok ? 'status' : 'alert'} style={{ fontSize: 'var(--font-size-sm)', color: message.ok ? 'var(--color-text)' : 'var(--color-error, #b42318)' }}>{message.text}</span>}
+      </div>
+
+      <div style={{ marginTop: 'var(--space-lg)' }}>
+        <h3 style={styles.sectionTitle}>Add it to your website</h3>
+        <p style={styles.description}>Paste this line once, near the end of each page. Then copy a button for each service, package or membership from its page in Offerings ("Copy widget snippet").</p>
+        <pre style={{ padding: 'var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 'var(--font-size-xs)', overflowX: 'auto', maxWidth: '100%' }}>{snippet}</pre>
+      </div>
+    </div>
+  );
+}
 
 function IntegrationsSettings() {
   const { activeContext } = useContextManager();

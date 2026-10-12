@@ -7,6 +7,7 @@ import * as payApi from '../api/payments';
 import type { PaymentMethod, MethodType } from '../api/payments';
 import { AddPaymentMethodInline, AddMethodButton } from '../components/AddPaymentMethodInline';
 import * as customersApi from '../api/customers';
+import { MissingDetailsPrompt } from '../components/MissingDetailsPrompt';
 import type { Order, OrderItem } from '../api/checkout';
 import { formatCurrency } from '../utils/currency';
 
@@ -319,6 +320,9 @@ export function Checkout() {
       </div>
 
       {/* Customer selector */}
+      {isOpen && order.customer_id && (
+        <MissingDetailsPrompt customerId={order.customer_id} businessId={businessId} />
+      )}
       {isOpen && (
         <div style={{ marginBottom: 'var(--space-md)', padding: '12px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-background)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

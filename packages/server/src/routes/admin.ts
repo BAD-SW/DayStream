@@ -1579,6 +1579,78 @@ adminRouter.put('/businesses/:id/settings', tenantContext, requirePermission('se
   }
 });
 
+// --- Booking widget settings (spec 38 R14 / R19) ---
+
+/** The caller may manage this business: it is in their tenant and, for a business user, it is their own. */
+async function ownBusiness(req: Request, businessId: string): Promise<boolean> {
+  const authReq = req as AuthenticatedRequest;
+  const { rows } = await adminPool.query(
+    `SELECT b.id, u.business_id AS user_business
+       FROM sys_businesses b LEFT JOIN usr_users u ON u.id = $3
+      WHERE b.id = $1 AND b.tenant_id = $2`,
+    [businessId, authReq.tenantId, authReq.user.sub],
+  );
+  return !!rows[0] && (!rows[0].user_business || rows[0].user_business === businessId);
+}
+
+const WIDGET_DEFAULTS = { is_enabled: false, require_payment_before_confirmation: true, allowed_origins: [] as string[] };
+
+// GET /api/v1/admin/businesses/:id/widget-config — Booking widget settings (defaults when never saved)
+adminRouter.get('/businesses/:id/widget-config', tenantContext, requirePermission('settings:read'), async (req: Request, res: Response) => {
+  try {
+    if (!(await ownBusiness(req, req.params.id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    const { rows } = await adminPool.query(
+      'SELECT is_enabled, require_payment_before_confirmation, allowed_origins FROM wgt_widget_configs WHERE business_id = $1',
+      [req.params.id],
+    );
+    success(res, rows[0] ? { ...rows[0], allowed_origins: rows[0].allowed_origins || [] } : WIDGET_DEFAULTS);
+  } catch (err: any) {
+    error(res, 'Failed to get the widget settings', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/admin/businesses/:id/widget-config — Switch the widget on or off, payment rule, allowed websites
+adminRouter.put('/businesses/:id/widget-config', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    if (!(await ownBusiness(req, req.params.id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+
+    const { is_enabled, require_payment_before_confirmation, allowed_origins } = req.body || {};
+    if (typeof is_enabled !== 'boolean' || typeof require_payment_before_confirmation !== 'boolean' || !Array.isArray(allowed_origins)) {
+      error(res, 'is_enabled, require_payment_before_confirmation and allowed_origins are required', 'VALIDATION_ERROR', 400); return;
+    }
+    // A website is given as its origin: scheme and host, no path (that is what a browser sends).
+    const origins: string[] = [];
+    for (const raw of allowed_origins) {
+      let origin: string;
+      try { origin = new URL(String(raw).trim()).origin; } catch { origin = 'null'; }
+      if (origin === 'null' || !/^https?:\/\//.test(origin)) {
+        error(res, `"${raw}" is not a website address. Use the form https://www.example.com`, 'VALIDATION_ERROR', 400); return;
+      }
+      if (!origins.includes(origin)) origins.push(origin);
+    }
+
+    const { rows } = await adminPool.query(
+      `INSERT INTO wgt_widget_configs (tenant_id, business_id, is_enabled, require_payment_before_confirmation, allowed_origins)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (business_id) DO UPDATE
+         SET is_enabled = EXCLUDED.is_enabled,
+             require_payment_before_confirmation = EXCLUDED.require_payment_before_confirmation,
+             allowed_origins = EXCLUDED.allowed_origins,
+             updated_at = NOW()
+       RETURNING is_enabled, require_payment_before_confirmation, allowed_origins`,
+      [authReq.tenantId, req.params.id, is_enabled, require_payment_before_confirmation, origins.length ? origins : null],
+    );
+    await logAudit({
+      tenantId: authReq.tenantId, userId: authReq.user.sub, action: 'widget.config_updated', resourceType: 'business', resourceId: req.params.id,
+      details: { is_enabled, require_payment_before_confirmation, allowed_origins: origins },
+    });
+    success(res, { ...rows[0], allowed_origins: rows[0].allowed_origins || [] });
+  } catch (err: any) {
+    error(res, 'Failed to save the widget settings', 'INTERNAL_ERROR', 500);
+  }
+});
+
 // GET /api/v1/admin/businesses/:id/appearance — Get per-business theme (ui-guidelines-and-theming.md §7)
 adminRouter.get('/businesses/:id/appearance', tenantContext, requirePermission('settings:read'), async (req: Request, res: Response) => {
   try {

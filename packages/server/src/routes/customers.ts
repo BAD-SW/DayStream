@@ -204,6 +204,9 @@ const bulkSchema = Joi.object({
   }).default({}),
 }).xor('ids', 'filters');
 
+/** Above this many people a bulk action runs in the background. */
+const BULK_BACKGROUND_THRESHOLD = 5000;
+
 function bulkTarget(req: Request) {
   const filters = req.body.filters ? { ...req.body.filters } : undefined;
   if (filters?.owner === 'me') filters.owner = (req as AuthenticatedRequest).user.sub;
@@ -225,8 +228,21 @@ customersRouter.post('/bulk', requirePermission('customers:*'), validate(bulkSch
   try {
     const authReq = req as AuthenticatedRequest;
     if (!req.body.action) { error(res, 'action is required', 'VALIDATION_ERROR', 400); return; }
+    // A very large change (only possible through "everyone matching the filters") is not made to
+    // wait for: it runs in the background and is recorded in the audit log when it finishes.
+    const target = bulkTarget(req);
+    const ids = await customerService.resolveBulkTarget(req.body.business_id, target);
+    if (ids.length > BULK_BACKGROUND_THRESHOLD) {
+      const { business_id, action, payload } = req.body;
+      setImmediate(() => {
+        customerService.runBulkAction(business_id, authReq.tenantId, { ids }, action, payload, authReq.user.sub)
+          .catch((err) => console.error('[customers] Background bulk action failed:', err.message));
+      });
+      success(res, { affected: null, background: true, count: ids.length }, undefined, 202);
+      return;
+    }
     const result = await customerService.runBulkAction(
-      req.body.business_id, authReq.tenantId, bulkTarget(req), req.body.action, req.body.payload, authReq.user.sub,
+      req.body.business_id, authReq.tenantId, { ids }, req.body.action, req.body.payload, authReq.user.sub,
     );
     success(res, result);
   } catch (err: any) {

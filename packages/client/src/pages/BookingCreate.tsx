@@ -5,6 +5,7 @@ import { Alert } from '../design-system/components/feedback/Alert';
 import * as bookingsApi from '../api/bookings';
 import * as servicesApi from '../api/services';
 import * as customersApi from '../api/customers';
+import { MissingDetailsPrompt, hasMissingDetails } from '../components/MissingDetailsPrompt';
 import * as resourcesApi from '../api/resources';
 import type { ServiceVariant } from '../api/services';
 import { apiClient } from '../api/client';
@@ -269,7 +270,9 @@ export function BookingCreate() {
   }, [allCombos, selectedLocation, selectedStaff]);
 
   // Can we book?
-  const canBook = (selectedCustomer || isWalkIn) && selectedService && selectedVariant && selectedTime && filteredCombos.length > 0;
+  // A person without a name or an email completes them first (Phase 46 R2).
+  const detailsMissing = !isWalkIn && hasMissingDetails(selectedCustomer);
+  const canBook = !detailsMissing && (selectedCustomer || isWalkIn) && selectedService && selectedVariant && selectedTime && filteredCombos.length > 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -323,7 +326,7 @@ export function BookingCreate() {
           <div style={styles.searchWrapper}>
             {selectedCustomer ? (
               <div style={styles.selectedCustomer}>
-                <span>{selectedCustomer.first_name} {selectedCustomer.last_name} ({selectedCustomer.email})</span>
+                <span>{`${selectedCustomer.first_name || ''} ${selectedCustomer.last_name || ''}`.trim() || 'No name yet'} ({selectedCustomer.email || selectedCustomer.phone || 'no email'})</span>
                 <button type="button" style={styles.clearBtn} onClick={() => { setSelectedCustomer(null); setCustomerSearch(''); }}>×</button>
               </div>
             ) : (
@@ -351,6 +354,9 @@ export function BookingCreate() {
               </div>
             )}
             {customerSearching && <span style={styles.hint}>Searching...</span>}
+            {selectedCustomer && detailsMissing && (
+              <MissingDetailsPrompt customerId={selectedCustomer.id} businessId={businessId} person={selectedCustomer} onCompleted={setSelectedCustomer} />
+            )}
             {!customerSearching && customerSearch.length >= 2 && customerResults.length === 0 && !selectedCustomer && (
               <span style={styles.hint}>No customers found</span>
             )}

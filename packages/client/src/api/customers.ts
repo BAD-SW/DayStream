@@ -353,9 +353,10 @@ export async function previewBulk(businessId: string, target: BulkTarget): Promi
   return res.data.data.count;
 }
 
-export async function runBulk(businessId: string, target: BulkTarget, action: BulkAction, payload: BulkPayload): Promise<number> {
+/** `background` is true when the change is too large to wait for; `count` is then how many people it covers. */
+export async function runBulk(businessId: string, target: BulkTarget, action: BulkAction, payload: BulkPayload): Promise<{ affected: number | null; background?: boolean; count?: number }> {
   const res = await apiClient.post('/v1/customers/bulk', { ...bulkBody(businessId, target), action, payload });
-  return res.data.data.affected;
+  return res.data.data;
 }
 
 // --- Import ---

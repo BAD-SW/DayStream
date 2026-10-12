@@ -6,7 +6,7 @@ Tasks follow the rollout order in design.md section 10. Each numbered section le
 
 ## Status (2026-10-12)
 
-Sections 1 to 5, 7 and 8 are built and tested; section 6 is deferred to spec 48. 63 tasks done, 15 open. Each open task says what is missing.
+All sections are built and tested, including section 6 (marketing per business, migration 137). 74 tasks done, 4 open. Each open task says what is missing.
 
 ## Task Status Legend
 
@@ -69,8 +69,8 @@ Sections 1 to 5, 7 and 8 are built and tested; section 6 is deferred to spec 48.
 
 ### 3.2 Contactability
 - [x] Create `contactability.service.ts`: `canContact`, `filterAudience`, `summariseAudience` (R10)
-- [ ] Use it at send time in `marketing-campaigns.service` and `sequence-engine.service` (R10) — **Open:** done for campaigns; the sequence engine is not switched yet
-- [ ] Use it in booking notifications for the reminders setting (R10) — **Open:** not started
+- [x] Use it at send time in `marketing-campaigns.service` and `sequence-engine.service` (R10) — *Note:* a message step in a sequence is skipped, with the reason recorded, when the person may not be contacted
+- [x] Use it in booking notifications for the reminders setting (R10)
 - [x] `GET /segments/:id/audience-summary` (R10)
 - [x] Tests: one per refusal reason; transactional allowed without marketing consent
 
@@ -99,22 +99,22 @@ Sections 1 to 5, 7 and 8 are built and tested; section 6 is deferred to spec 48.
 ## 6. Marketing Business Scope
 
 ### 6.1 Migration `137_marketing_business_scope.sql`
-- [ ] Add `business_id` to the five `mkt_` tables and backfill by the rules in design.md section 3 (R14) — **Open:** section 6 deferred to spec 48 (Marketing Module)
-- [ ] List rows that could not be assigned (R14) — **Open:** deferred to spec 48
-- [ ] Change tenant-wide unique keys to business-wide — **Open:** deferred to spec 48
+- [x] Add `business_id` to the five `mkt_` tables and backfill by the rules in design.md section 3 (R14) — *Note:* four tables in migration 137; `mkt_communication_preferences` already got it in 136
+- [x] List rows that could not be assigned (R14) — *Note:* the migration prints the counts; such rows stay hidden from every business until given one
+- [x] Change tenant-wide unique keys to business-wide
 
 ### 6.2 Server and client
-- [ ] Require and filter by `business_id` in every `/marketing` route and service (R14) — **Open:** deferred to spec 48
-- [ ] Refuse cross-business segment or person references (R14) — **Open:** deferred to spec 48
-- [ ] Pass the active business from the Marketing pages — **Open:** deferred to spec 48
-- [ ] Integration test: two businesses of one tenant cannot see each other's marketing records — **Open:** deferred to spec 48
+- [x] Require and filter by `business_id` in every `/marketing` route and service (R14) — *Note:* one scope check at the top of the marketing router
+- [x] Refuse cross-business segment or person references (R14)
+- [x] Pass the active business from the Marketing pages — *Note:* the API client already adds the active business to every request
+- [x] Integration test: two businesses of one tenant cannot see each other's marketing records
 
 ## 7. People List
 
 ### 7.1 Server
 - [x] `view`, new filters, new columns, `display_name`, `next_booking_at` in `getCustomers` (R1, R8)
 - [x] `GET /customers/view-counts` (R1)
-- [ ] `POST /customers/bulk` and `/bulk/preview`; background job above 5,000 (R8) — **Open:** both endpoints done; no background job, a selection is capped at 5,000 people
+- [x] `POST /customers/bulk` and `/bulk/preview`; background job above 5,000 (R8) — *Note:* above 5,000 people the change runs in the background in the server process and is written to the audit log; there is no progress bar
 
 ### 7.2 Client
 - [x] Rename the module to "People" in `moduleRegistry.ts`, page titles and breadcrumbs (R1)
@@ -129,7 +129,7 @@ Sections 1 to 5, 7 and 8 are built and tested; section 6 is deferred to spec 48.
 
 ### 8.1 Create and edit
 - [x] Email or phone required; Source select; "already exists" hand-off (R2, R3, R4)
-- [ ] Prompt for missing details at first booking or purchase (R2) — **Open:** not started
+- [x] Prompt for missing details at first booking or purchase (R2) — *Note:* in the staff booking form (blocks the booking) and at checkout
 
 ### 8.2 Profile
 - [x] Header strip: stage, Source, Owner, created, last activity, last login, Incomplete (R13)

@@ -11,7 +11,7 @@ export async function getCampaign(id: string) { const res = await apiClient.get(
 export async function sendCampaign(id: string) { const res = await apiClient.post(`/v1/marketing/campaigns/${id}/send`); return res.data.data; }
 export async function getCampaignAnalytics(id: string) { const res = await apiClient.get(`/v1/marketing/campaigns/${id}/analytics`); return res.data.data; }
 export async function getCampaignRecipients(id: string) { const res = await apiClient.get(`/v1/marketing/campaigns/${id}/recipients`); return res.data.data; }
-export async function scheduleCampaign(id: string, data: Record<string, any>) { const res = await apiClient.put(`/v1/marketing/campaigns/${id}/schedule`, data); return res.data.data; }
+export async function scheduleCampaign(id: string, data: Record<string, any>) { const res = await apiClient.post(`/v1/marketing/campaigns/${id}/schedule`, data); return res.data.data; }
 export async function testCampaign(id: string, data: Record<string, any>) { const res = await apiClient.post(`/v1/marketing/campaigns/${id}/test`, data); return res.data.data; }
 
 // Sequences

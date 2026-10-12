@@ -3,16 +3,27 @@ import { getMemberIds } from './customer-segments.service';
 import { filterAudience, summarise } from './contactability.service';
 import { logAudit } from './audit.service';
 
+/** A campaign, segment or person of one business used from another (Phase 46 R14). */
+export class CrossBusinessError extends Error {
+  code = 'CROSS_BUSINESS';
+}
+
 /**
  * List campaigns with optional filters and pagination.
  */
 export async function getCampaigns(
   tenantId: string,
-  filters: { channel?: string; status?: string; page?: number; limit?: number } = {},
+  filters: { channel?: string; status?: string; page?: number; limit?: number; businessId?: string } = {},
 ) {
   const conditions = ['tenant_id = $1'];
   const params: any[] = [tenantId];
   let idx = 2;
+
+  // Phase 46 R14: a business sees only its own campaigns.
+  if (filters.businessId) {
+    conditions.push(`business_id = $${idx++}`);
+    params.push(filters.businessId);
+  }
 
   if (filters.channel) {
     conditions.push(`channel = $${idx++}`);
@@ -61,11 +72,24 @@ export async function createCampaign(
     htmlContent?: string;
     templateId?: string;
     createdBy?: string;
+    businessId?: string;
   },
 ) {
+  // The audience must be a segment of the same business (Phase 46 R14).
+  let businessId = input.businessId || null;
+  if (input.segmentId) {
+    const { rows: seg } = await adminPool.query(
+      `SELECT s.business_id FROM cus_segments s JOIN sys_businesses b ON b.id = s.business_id WHERE s.id = $1 AND b.tenant_id = $2`,
+      [input.segmentId, tenantId],
+    );
+    if (!seg[0]) throw new CrossBusinessError('The audience of this campaign was not found');
+    if (businessId && seg[0].business_id !== businessId) throw new CrossBusinessError('The audience belongs to another business');
+    businessId = businessId || seg[0].business_id;
+  }
+
   const { rows } = await adminPool.query(
-    `INSERT INTO mkt_campaigns (tenant_id, name, channel, segment_id, subject, sender_name, sender_email, content, html_content, template_id, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+    `INSERT INTO mkt_campaigns (tenant_id, name, channel, segment_id, subject, sender_name, sender_email, content, html_content, template_id, created_by, business_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
     [
       tenantId,
       input.name,
@@ -78,6 +102,7 @@ export async function createCampaign(
       input.htmlContent || null,
       input.templateId || null,
       input.createdBy || null,
+      businessId,
     ],
   );
 
@@ -122,6 +147,15 @@ export async function updateCampaign(id: string, tenantId: string, updates: Reco
   if (updates.templateId !== undefined) { fields.push(`template_id = $${idx++}`); values.push(updates.templateId); }
 
   if (fields.length === 0) return null;
+
+  if (updates.segmentId) {
+    const { rows: ok } = await adminPool.query(
+      `SELECT 1 FROM mkt_campaigns c JOIN cus_segments s ON s.id = $2
+        WHERE c.id = $1 AND c.tenant_id = $3 AND (c.business_id IS NULL OR c.business_id = s.business_id)`,
+      [id, updates.segmentId, tenantId],
+    );
+    if (!ok[0]) throw new CrossBusinessError('The audience belongs to another business');
+  }
 
   fields.push(`updated_at = NOW()`);
   values.push(id, tenantId);
@@ -178,6 +212,9 @@ export async function sendCampaign(id: string, tenantId: string) {
   );
   if (!segmentRows[0]) throw new Error('The audience of this campaign no longer exists');
   const audienceBusinessId: string = segmentRows[0].business_id;
+  if (campaign.business_id && campaign.business_id !== audienceBusinessId) {
+    throw new CrossBusinessError('The audience of this campaign belongs to another business');
+  }
 
   const memberIds = (await getMemberIds(campaign.segment_id, audienceBusinessId)) || [];
   const audience = await filterAudience(audienceBusinessId, memberIds, campaign.channel, 'marketing');

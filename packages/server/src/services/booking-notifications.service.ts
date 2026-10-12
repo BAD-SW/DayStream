@@ -1,3 +1,4 @@
+import { canContact } from './contactability.service';
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
 
@@ -94,6 +95,16 @@ export async function queueBookingReschedule(booking: any, customerEmail: string
  */
 export async function queueBookingReminder(booking: any, customerEmail: string, hoursBeforeList: number[]): Promise<void> {
   const startTime = new Date(booking.start_time);
+
+  // A reminder is not sent to someone who switched reminders off, has no usable email, or is
+  // archived / merged (Phase 46 R10). Confirmations and cancellations are not affected.
+  if (booking.customer_id && booking.business_id) {
+    const decision = await canContact(booking.customer_id, booking.business_id, 'email', 'transactional', { reminder: true });
+    if (!decision.allowed) {
+      logger.info('Booking reminder not queued', { booking: booking.booking_reference, reason: decision.reason });
+      return;
+    }
+  }
 
   for (const hoursBefore of hoursBeforeList) {
     const scheduledFor = new Date(startTime.getTime() - hoursBefore * 60 * 60 * 1000);

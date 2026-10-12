@@ -246,13 +246,15 @@ export function Customers() {
     if (!bulkAction) return;
     setBulkBusy(true);
     try {
-      const affected = await customersApi.runBulk(businessId, bulkTarget(), bulkAction, bulkPayload());
+      const result = await customersApi.runBulk(businessId, bulkTarget(), bulkAction, bulkPayload());
       const label = BULK_ACTIONS.find((a) => a.id === bulkAction)?.label || 'Change';
       setBulkAction('');
       setBulkValue('');
       await fetchCustomers();
       customersApi.getViewCounts(businessId).then(setViewCounts).catch(() => {});
-      setBulkMessage(`${label}: ${affected} ${affected === 1 ? 'person' : 'people'} changed.`);
+      setBulkMessage(result.background
+        ? `${label}: ${result.count} people are being changed in the background. Reload the list in a minute to see the result.`
+        : `${label}: ${result.affected} ${result.affected === 1 ? 'person' : 'people'} changed.`);
     } catch (err: any) {
       setBulkConfirm(null);
       setBulkMessage(err.response?.data?.error || 'The change could not be applied');
