@@ -6,6 +6,7 @@ import * as checkoutApi from '../api/checkout';
 import * as payApi from '../api/payments';
 import type { PaymentMethod, MethodType } from '../api/payments';
 import { AddPaymentMethodInline, AddMethodButton } from '../components/AddPaymentMethodInline';
+import { StripeOneTimeCardCharge } from '../components/StripeOneTimeCardCharge';
 import * as customersApi from '../api/customers';
 import { MissingDetailsPrompt } from '../components/MissingDetailsPrompt';
 import type { Order, OrderItem } from '../api/checkout';
@@ -46,6 +47,11 @@ export function Checkout() {
   const [payAddingMethod, setPayAddingMethod] = useState(false);
   const [payGiftCode, setPayGiftCode] = useState('');
   const [payCheckNumber, setPayCheckNumber] = useState('');
+  // Walk-in one-time card charge (no customer): optional name + the live Stripe
+  // card-entry session once the staff starts a one-time charge.
+  const [walkInName, setWalkInName] = useState('');
+  const [oneTimeSession, setOneTimeSession] = useState<checkoutApi.OneTimeChargeSession | null>(null);
+  const [startingOneTime, setStartingOneTime] = useState(false);
 
   // Customer search/create
   const [customerSearch, setCustomerSearch] = useState('');
@@ -189,6 +195,42 @@ export function Checkout() {
 
   const isProcessedMethod = (m: string) => m === 'card' || m === 'bank_draw' || m === 'google_pay' || m === 'apple_pay';
 
+  // Walk-in card: begin a one-time PaymentIntent and show the card entry form.
+  const handleStartOneTimeCharge = async () => {
+    if (!order) return;
+    setStartingOneTime(true);
+    try {
+      const session = await checkoutApi.beginOneTimeCharge(order.id, businessId);
+      if (!session.clientSecret || !session.publishableKey) {
+        alert('This business has no active card processor connected for one-time charges.');
+        return;
+      }
+      setOneTimeSession(session);
+    } catch (err: any) {
+      alert(err?.response?.data?.error || 'Could not start the card charge.');
+    } finally {
+      setStartingOneTime(false);
+    }
+  };
+
+  // The browser confirmed the walk-in PaymentIntent; complete the order referencing it.
+  const handleWalkInCardPaid = async (paymentIntentId: string) => {
+    if (!order) return;
+    setCompleting(true);
+    try {
+      const completed = await checkoutApi.completeOrder(order.id, businessId, {
+        payment_method: 'card',
+        one_time_charge_ref: paymentIntentId,
+        walk_in_name: walkInName.trim() || null,
+      });
+      navigate(`/receipt/${completed.id}`);
+    } catch (err: any) {
+      alert(err?.response?.data?.error || 'The card was charged but completing the order failed. Please check the order.');
+    } finally {
+      setCompleting(false);
+    }
+  };
+
   const handleComplete = async () => {
     if (!order) return;
     // Require customer when order contains a membership or package
@@ -201,9 +243,19 @@ export function Checkout() {
     const processed = isProcessedMethod(payMethod);
     const isGift = payMethod === 'gift_card';
 
-    // Processed and gift-card payments move money/stored value and need a customer.
-    if ((processed || isGift) && !order.customer_id) {
-      alert('Select a customer to pay by card, direct debit, or gift card.');
+    // Walk-in card (no customer) goes through the one-time charge card form + its
+    // own completion handler, not this button.
+    if (processed && !order.customer_id) {
+      if (payMethod === 'card') {
+        alert('Enter the card above to charge this walk-in sale.');
+      } else {
+        alert('Select a customer to pay by direct debit or wallet.');
+      }
+      return;
+    }
+    // Gift-card payments need a customer (they draw a business gift-card balance).
+    if (isGift && !order.customer_id) {
+      alert('Select a customer to pay by gift card.');
       return;
     }
     // Resolve the effective stored method for the selected class (bank_draw vs card).
@@ -479,7 +531,33 @@ export function Checkout() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Payment card / method</label>
                 {!order.customer_id ? (
-                  <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning)' }}>Add a customer to pay by card or direct debit.</span>
+                  // Walk-in (no customer): card only, charged once and NOT saved. Direct
+                  // debit / wallets require a customer (they vault), so restrict to card.
+                  payMethod !== 'card' ? (
+                    <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning)' }}>Add a customer to pay by {PAY_METHOD_LABEL[payMethod] || payMethod}. A walk-in can pay by card.</span>
+                  ) : oneTimeSession ? (
+                    <StripeOneTimeCardCharge
+                      clientSecret={oneTimeSession.clientSecret!}
+                      publishableKey={oneTimeSession.publishableKey!}
+                      busyLabel={`Charge ${formatCurrency(order.total_amount)}`}
+                      onPaid={(piId) => handleWalkInCardPaid(piId)}
+                      onCancel={() => setOneTimeSession(null)}
+                    />
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <input
+                        style={paySelectStyle}
+                        value={walkInName}
+                        placeholder="Name (optional, e.g. for the receipt)"
+                        onChange={(e) => setWalkInName(e.target.value)}
+                      />
+                      <AddMethodButton
+                        label={`Enter card to charge ${formatCurrency(order.total_amount)}`}
+                        onClick={handleStartOneTimeCharge}
+                      />
+                      {startingOneTime && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>Preparing secure card entry…</span>}
+                    </div>
+                  )
                 ) : (
                   <>
                     {(() => {

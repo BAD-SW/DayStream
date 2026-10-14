@@ -44,6 +44,22 @@ export interface RefundInput {
   reason?: string;
 }
 
+/** Input to begin a one-time (never-vaulted) card charge the client will confirm. */
+export interface OneTimeIntentInput {
+  account: ConnectedAccount;
+  amount: number;                          // integer cents
+  currency: string;                        // ISO 4217
+  description?: string;
+  metadata?: Record<string, string>;
+}
+
+/** What the browser needs to confirm a one-time charge + the id to finalize it. */
+export interface OneTimeIntentSession {
+  providerReference: string;               // the PaymentIntent id
+  clientSecret?: string;                   // browser confirms against this
+  publishableKey?: string;
+}
+
 /** Input to capture + tokenize a new instrument (card entry, bank mandate, wallet). */
 export interface CaptureInput {
   account: ConnectedAccount;
@@ -108,6 +124,21 @@ export interface PaymentAdapter {
 
   /** Execute a one-off or system-driven recurring charge. Idempotent via idempotencyKey. */
   charge(input: ChargeInput): Promise<AdapterResult>;
+
+  /**
+   * Begin a one-time card charge the CLIENT will confirm (walk-in / card-not-saved).
+   * Creates a PaymentIntent for the amount with NO customer and NO future-use
+   * (the card is never vaulted). Returns the client_secret + publishable key the
+   * browser confirms against, and the intent id to finalize later.
+   */
+  createOneTimeIntent(input: OneTimeIntentInput): Promise<OneTimeIntentSession>;
+
+  /**
+   * Finalize a one-time charge the client already confirmed: retrieve the intent
+   * by id and map its real status. Used server-side after the browser confirms,
+   * so the ledger records the authoritative outcome.
+   */
+  finalizeOneTimeIntent(providerReference: string, account: ConnectedAccount): Promise<AdapterResult>;
 
   /** Full or partial refund of a prior charge. Idempotent via idempotencyKey. */
   refund(input: RefundInput): Promise<AdapterResult>;

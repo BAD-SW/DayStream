@@ -91,6 +91,8 @@ checkoutRouter.get('/orders', requirePermission('bookings:read'), async (req: Re
       customerId: req.query.customer_id as string,
       dateFrom: req.query.date_from as string,
       dateTo: req.query.date_to as string,
+      orderNumber: req.query.order_number as string,
+      product: req.query.product as string,
       page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
     });
@@ -205,6 +207,9 @@ const completeSchema = Joi.object({
   payment_method_id: Joi.string().uuid().allow(null),
   gift_card_code: Joi.string().max(40).allow('', null),
   check_number: Joi.string().max(60).allow('', null),
+  // Walk-in card payment: the client-confirmed one-time PaymentIntent id + optional name.
+  one_time_charge_ref: Joi.string().max(255).allow('', null),
+  walk_in_name: Joi.string().max(120).allow('', null),
 });
 
 // PUT /api/v1/checkout/orders/:id/promo — Apply promo code
@@ -264,6 +269,61 @@ checkoutRouter.put('/orders/:id/customer', requirePermission('bookings:*'), asyn
   }
 });
 
+const refundOrderSchema = Joi.object({
+  reason: Joi.string().min(1).max(500).required(),
+  lines: Joi.array().items(Joi.object({
+    order_item_id: Joi.string().uuid().required(),
+    quantity: Joi.number().integer().min(1).required(),
+  })).min(1).required(),
+});
+
+// POST /api/v1/checkout/orders/:id/refund — partial / line-item refund of an order.
+checkoutRouter.post('/orders/:id/refund', requirePermission('bookings:*'), validate(refundOrderSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { refundOrderLines } = await import('../services/order-refund.service');
+    const result = await refundOrderLines({
+      businessId,
+      tenantId: authReq.tenantId,
+      orderId: req.params.id,
+      lines: req.body.lines.map((l: any) => ({ orderItemId: l.order_item_id, quantity: l.quantity })),
+      reason: req.body.reason,
+      processedBy: authReq.user.sub,
+    });
+    success(res, result);
+  } catch (err: any) {
+    const codes: Record<string, number> = {
+      REASON_REQUIRED: 400, NO_LINES: 400, ORDER_NOT_FOUND: 404, ORDER_NOT_REFUNDABLE: 409,
+      LINE_NOT_FOUND: 404, INVALID_QUANTITY: 400, NOTHING_TO_REFUND: 400, NO_CONNECTION: 409,
+      ITEM_NOT_REFUNDABLE: 409,
+    };
+    if (err?.code && codes[err.code]) { error(res, err.message, err.code, codes[err.code]); return; }
+    console.error('Failed to refund order', err?.message || err);
+    error(res, 'Failed to refund order', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// POST /api/v1/checkout/orders/:id/one-time-charge — begin a walk-in (customerless)
+// one-time card charge: creates the PaymentIntent the browser confirms.
+checkoutRouter.post('/orders/:id/one-time-charge', requirePermission('bookings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { beginOneTimeOrderCharge } = await import('../services/walkin-payment.service');
+    const session = await beginOneTimeOrderCharge(businessId, req.params.id);
+    success(res, session);
+  } catch (err: any) {
+    const codes: Record<string, number> = {
+      ORDER_NOT_FOUND: 404, ORDER_NOT_OPEN: 409, INVALID_AMOUNT: 400, NO_CONNECTION: 409,
+    };
+    if (err?.code && codes[err.code]) { error(res, err.message, err.code, codes[err.code]); return; }
+    console.error('Failed to begin one-time charge', err?.message || err);
+    error(res, 'Failed to begin one-time charge', 'INTERNAL_ERROR', 500);
+  }
+});
+
 // PUT /api/v1/checkout/orders/:id/complete — Complete order (process payment)
 checkoutRouter.put('/orders/:id/complete', requirePermission('bookings:*'), validate(completeSchema), async (req: Request, res: Response) => {
   try {
@@ -277,6 +337,8 @@ checkoutRouter.put('/orders/:id/complete', requirePermission('bookings:*'), vali
       paymentMethodId: req.body.payment_method_id || null,
       giftCardCode: req.body.gift_card_code || null,
       checkNumber: req.body.check_number || null,
+      oneTimeChargeRef: req.body.one_time_charge_ref || null,
+      walkInName: req.body.walk_in_name || null,
       checkedOutBy: authReq.user.sub,
     });
     success(res, order);
@@ -286,6 +348,7 @@ checkoutRouter.put('/orders/:id/complete', requirePermission('bookings:*'), vali
       PAYMENT_DECLINED: 402, CUSTOMER_REQUIRED: 400, INVALID_AMOUNT: 400, INVALID_METHOD: 400, METHOD_REQUIRED: 400,
       CODE_REQUIRED: 400, NO_CONNECTION: 409, METHOD_UNAVAILABLE: 409, GIFT_CARD_NOT_FOUND: 404,
       GIFT_CARD_INACTIVE: 409, GIFT_CARD_EXPIRED: 409, GIFT_CARD_CURRENCY: 409, GIFT_CARD_INSUFFICIENT: 409,
+      AMOUNT_MISMATCH: 400,
     };
     if (err?.code && PAYMENT_STATUS[err.code]) { error(res, err.message, err.code, PAYMENT_STATUS[err.code]); return; }
     if (err.message.includes('not open') || err.message.includes('empty') || err.message === 'Order not found') { error(res, err.message, 'CONFLICT', 409); }

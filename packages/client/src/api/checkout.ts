@@ -22,6 +22,8 @@ export interface OrderItem {
   credited_last_name: string | null;
   booking_id: string | null;
   notes: string | null;
+  refunded_quantity: number;
+  refunded_amount_cents: number;
 }
 
 export interface Order {
@@ -30,9 +32,10 @@ export interface Order {
   customer_id: string | null;
   customer_first_name: string | null;
   customer_last_name: string | null;
+  walk_in_name: string | null;
   booking_id: string | null;
   order_number: string;
-  status: 'open' | 'completed' | 'voided' | 'refunded';
+  status: 'open' | 'completed' | 'voided' | 'refunded' | 'partially_refunded';
   subtotal: number;
   tax_amount: number;
   discount_amount: number;
@@ -59,12 +62,17 @@ export async function createOrderFromBooking(businessId: string, bookingId: stri
   return res.data.data;
 }
 
-export async function getOrders(businessId: string, filters?: { status?: string; customer_id?: string; date_from?: string; date_to?: string; page?: number }) {
+export async function getOrders(businessId: string, filters?: {
+  status?: string; customer_id?: string; date_from?: string; date_to?: string;
+  order_number?: string; product?: string; page?: number;
+}) {
   const params = new URLSearchParams({ business_id: businessId });
   if (filters?.status) params.set('status', filters.status);
   if (filters?.customer_id) params.set('customer_id', filters.customer_id);
   if (filters?.date_from) params.set('date_from', filters.date_from);
   if (filters?.date_to) params.set('date_to', filters.date_to);
+  if (filters?.order_number) params.set('order_number', filters.order_number);
+  if (filters?.product) params.set('product', filters.product);
   if (filters?.page) params.set('page', String(filters.page));
   const res = await apiClient.get(`/v1/checkout/orders?${params}`);
   return res.data;
@@ -108,8 +116,44 @@ export async function removeItem(orderId: string, itemId: string): Promise<Order
 export async function completeOrder(orderId: string, businessId: string, data: {
   payment_method?: string; payment_reference?: string;
   payment_method_id?: string | null; gift_card_code?: string | null; check_number?: string | null;
+  one_time_charge_ref?: string | null; walk_in_name?: string | null;
 }): Promise<Order> {
   const res = await apiClient.put(`/v1/checkout/orders/${orderId}/complete?business_id=${businessId}`, data);
+  return res.data.data;
+}
+
+/** Line types that can be refunded through the order-refund flow (mirrors the server rule). */
+export const REFUNDABLE_ITEM_TYPES: ReadonlySet<string> = new Set(['product', 'no_show_fee']);
+
+export interface OneTimeChargeSession {
+  providerReference: string;
+  clientSecret?: string;
+  publishableKey?: string;
+  amountCents: number;
+  currency: string;
+}
+
+/** Begin a walk-in one-time card charge: creates the PaymentIntent the browser confirms. */
+export async function beginOneTimeCharge(orderId: string, businessId: string): Promise<OneTimeChargeSession> {
+  const res = await apiClient.post(`/v1/checkout/orders/${orderId}/one-time-charge?business_id=${businessId}`, {});
+  return res.data.data;
+}
+
+export interface OrderRefundResult {
+  refundTransactionId: string;
+  referenceNumber: string;
+  status: 'completed' | 'pending' | 'failed';
+  amountCents: number;
+  orderStatus: string;
+  failureReason?: string | null;
+}
+
+/** Partial / line-item refund of an order. */
+export async function refundOrder(
+  orderId: string, businessId: string, reason: string,
+  lines: Array<{ order_item_id: string; quantity: number }>,
+): Promise<OrderRefundResult> {
+  const res = await apiClient.post(`/v1/checkout/orders/${orderId}/refund?business_id=${businessId}`, { reason, lines });
   return res.data.data;
 }
 

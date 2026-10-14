@@ -3,6 +3,7 @@ import {
   PaymentAdapter, ChargeInput, RefundInput, CaptureInput, TokenResult,
   AdapterResult, AdapterTxn, DateRange, ConnectedAccount, ChargeOutcome,
   NormalizedEvent, NormalizedEventType, PaymentProviderName, ConnectionTestResult,
+  OneTimeIntentInput, OneTimeIntentSession,
 } from './adapter';
 
 /**
@@ -55,6 +56,23 @@ export class MockAdapter implements PaymentAdapter {
     this.charges.set(input.idempotencyKey, result);
     this.byReference.set(result.providerReference, result);
     return result;
+  }
+
+  async createOneTimeIntent(input: OneTimeIntentInput): Promise<OneTimeIntentSession> {
+    // Mock: synthesize an intent that "succeeds" when finalized, so dev/local
+    // walk-in card flows work without real Stripe.
+    const ref = `mock_pi_${crypto.randomUUID()}`;
+    this.byReference.set(ref, {
+      providerReference: ref, outcome: 'succeeded', amount: input.amount, currency: input.currency,
+    });
+    return { providerReference: ref, clientSecret: `${ref}_secret` };
+  }
+
+  async finalizeOneTimeIntent(providerReference: string, _account: ConnectedAccount): Promise<AdapterResult> {
+    const existing = this.byReference.get(providerReference);
+    return existing ?? {
+      providerReference, outcome: 'failed', amount: 0, currency: 'EUR', failureReason: 'Unknown intent (mock)',
+    };
   }
 
   async refund(input: RefundInput): Promise<AdapterResult> {

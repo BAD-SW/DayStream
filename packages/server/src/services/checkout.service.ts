@@ -38,6 +38,14 @@ interface CompleteOrderInput {
   giftCardCode?: string | null;
   checkNumber?: string | null;
   checkedOutBy: string;
+  /**
+   * Walk-in (no customer) card payment: the client has already confirmed a
+   * one-time PaymentIntent; this is its id. The server finalizes it (verifies at
+   * the provider) and records a customerless charge against the order.
+   */
+  oneTimeChargeRef?: string | null;
+  /** Optional free-text name a walk-in gave ("Jane"); stored on the order, not as a customer. */
+  walkInName?: string | null;
 }
 
 /**
@@ -270,9 +278,24 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   const openOrder = orderRows[0];
   const method = input.paymentMethod === 'transfer' ? 'bank_transfer' : input.paymentMethod;
   const manual = MANUAL_METHODS.includes(method);
-  if (openOrder.total_amount > 0 && (openOrder.customer_id || !manual)) {
+
+  // Walk-in (no customer) card payment: the client confirmed a one-time
+  // PaymentIntent; finalize it here and record a customerless charge. This is the
+  // ONLY way a processed payment proceeds without a customer.
+  const isWalkinCard = !openOrder.customer_id && !manual && method === 'card' && !!input.oneTimeChargeRef;
+
+  if (openOrder.total_amount > 0 && isWalkinCard) {
+    const { finalizeOneTimeOrderCharge } = await import('./walkin-payment.service');
+    const payment = await finalizeOneTimeOrderCharge({
+      businessId, orderId, providerReference: input.oneTimeChargeRef!, processedBy: input.checkedOutBy,
+    });
+    if (payment.status === 'failed') {
+      throw new OrderPaymentError(payment.failureReason || 'The payment was declined', 'PAYMENT_DECLINED');
+    }
+    if (!input.paymentReference) input.paymentReference = payment.referenceNumber;
+  } else if (openOrder.total_amount > 0 && (openOrder.customer_id || !manual)) {
     if (!openOrder.customer_id) {
-      throw new OrderPaymentError('Select a customer to pay by card, direct debit or gift card', 'CUSTOMER_REQUIRED');
+      throw new OrderPaymentError('Select a customer, or take a one-time card payment, to pay by card, direct debit or gift card', 'CUSTOMER_REQUIRED');
     }
     const { rows: tenantRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
     const { takeOneTimePayment } = await import('./customer-payment.service');
@@ -294,9 +317,9 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
 
   const { rows } = await adminPool.query(
     `UPDATE fin_orders SET status = 'completed', payment_method = $1, payment_reference = $2,
-       checked_out_by = $3, completed_at = NOW(), updated_at = NOW()
+       checked_out_by = $3, walk_in_name = COALESCE($5, walk_in_name), completed_at = NOW(), updated_at = NOW()
      WHERE id = $4 RETURNING *`,
-    [input.paymentMethod, input.paymentReference || null, input.checkedOutBy, orderId],
+    [input.paymentMethod, input.paymentReference || null, input.checkedOutBy, orderId, input.walkInName || null],
   );
 
   if (orderRows[0].booking_id) {
@@ -693,7 +716,8 @@ export async function getOrder(orderId: string) {
  * List orders for a business with filters.
  */
 export async function getOrders(businessId: string, filters?: {
-  status?: string; customerId?: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number;
+  status?: string; customerId?: string; dateFrom?: string; dateTo?: string;
+  orderNumber?: string; product?: string; page?: number; limit?: number;
 }) {
   const conditions = ['o.business_id = $1'];
   const params: any[] = [businessId];
@@ -703,6 +727,13 @@ export async function getOrders(businessId: string, filters?: {
   if (filters?.customerId) { conditions.push(`o.customer_id = $${idx++}`); params.push(filters.customerId); }
   if (filters?.dateFrom) { conditions.push(`o.created_at >= $${idx++}::date`); params.push(filters.dateFrom); }
   if (filters?.dateTo) { conditions.push(`o.created_at < ($${idx++}::date + interval '1 day')`); params.push(filters.dateTo); }
+  // Order-number search (partial match, e.g. "0076" or "ORD-2026-0076").
+  if (filters?.orderNumber?.trim()) { conditions.push(`o.order_number ILIKE $${idx++}`); params.push(`%${filters.orderNumber.trim()}%`); }
+  // Product / line-item search: orders containing a line whose name matches.
+  if (filters?.product?.trim()) {
+    conditions.push(`EXISTS (SELECT 1 FROM fin_order_items oi WHERE oi.order_id = o.id AND oi.item_name ILIKE $${idx++})`);
+    params.push(`%${filters.product.trim()}%`);
+  }
 
   const where = conditions.join(' AND ');
   const limit = Math.min(filters?.limit || 20, 100);

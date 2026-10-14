@@ -3,6 +3,7 @@ import {
   PaymentAdapter, ChargeInput, RefundInput, CaptureInput, TokenResult,
   AdapterResult, AdapterTxn, DateRange, ConnectedAccount, ChargeOutcome,
   NormalizedEvent, NormalizedEventType, PaymentProviderName, ConnectionTestResult, MethodType,
+  OneTimeIntentInput, OneTimeIntentSession,
 } from './adapter';
 import { schemeForCurrency } from './bank-debit-schemes';
 
@@ -112,6 +113,44 @@ export class StripeAdapter implements PaymentAdapter {
       },
       { idempotencyKey: input.idempotencyKey },
     );
+    return {
+      providerReference: pi.id,
+      outcome: this.mapStatus(pi.status),
+      amount: pi.amount,
+      currency: pi.currency.toUpperCase(),
+      failureReason: pi.last_payment_error?.message,
+    };
+  }
+
+  /**
+   * Begin a one-time card charge the client will confirm. Creates a card
+   * PaymentIntent for the amount with NO customer attached and NO future-use set,
+   * so the card is charged once and never vaulted. The browser confirms it with
+   * the card element against the returned client_secret. (publishableKey is added
+   * by the service layer, which holds the non-secret config.)
+   */
+  async createOneTimeIntent(input: OneTimeIntentInput): Promise<OneTimeIntentSession> {
+    // payment_method_types is valid at the API but not in this SDK version's typed
+    // create params; cast narrowly (same approach as charge()/createSetupIntent).
+    const params = {
+      amount: input.amount,
+      currency: input.currency.toLowerCase(),
+      payment_method_types: ['card'],
+      description: input.description,
+      metadata: input.metadata,
+      // No `customer`, no `setup_future_usage` → charged once, not saved.
+    } as Stripe.PaymentIntentCreateParams;
+    const pi = await this.stripe.paymentIntents.create(params);
+    return { providerReference: pi.id, clientSecret: pi.client_secret || undefined };
+  }
+
+  /**
+   * Finalize a one-time charge the client already confirmed: retrieve the intent
+   * and map its status to our outcome. This is the server's authoritative read of
+   * what actually happened (never trust the browser's word for a payment).
+   */
+  async finalizeOneTimeIntent(providerReference: string, _account: ConnectedAccount): Promise<AdapterResult> {
+    const pi = await this.stripe.paymentIntents.retrieve(providerReference);
     return {
       providerReference: pi.id,
       outcome: this.mapStatus(pi.status),
