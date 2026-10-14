@@ -3,6 +3,7 @@ import { apiClient } from '../api/client';
 import { runPayroll, finalizePayroll, getPayrollEntries } from '../api/payroll';
 import { Button } from '../design-system/components/actions/Button';
 import { formatCurrency } from '../utils/currency';
+import { formatDateOnly } from '../utils/date';
 
 interface PayPeriod {
   id: string;
@@ -168,7 +169,7 @@ export function PayrollTab() {
                 <select value={selectedPeriodId} onChange={(e) => setSelectedPeriodId(e.target.value)} style={styles.select}>
                   {unprocessedPeriods.map(p => (
                     <option key={p.id} value={p.id}>
-                      {new Date(p.period_start).toLocaleDateString()} — {new Date(p.period_end).toLocaleDateString()} ({p.status})
+                      {formatDateOnly(p.period_start)} — {formatDateOnly(p.period_end)} ({p.status})
                     </option>
                   ))}
                 </select>
@@ -203,7 +204,7 @@ export function PayrollTab() {
                   <option value="">Select a period...</option>
                   {historyPeriods.map(p => (
                     <option key={p.id} value={p.id}>
-                      {new Date(p.period_start).toLocaleDateString()} — {new Date(p.period_end).toLocaleDateString()}
+                      {formatDateOnly(p.period_start)} — {formatDateOnly(p.period_end)}
                     </option>
                   ))}
                 </select>

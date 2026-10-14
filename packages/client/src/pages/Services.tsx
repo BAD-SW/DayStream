@@ -8,6 +8,7 @@ import { apiClient } from '../api/client';
 import * as servicesApi from '../api/services';
 import type { Service, ServiceCategory } from '../api/services';
 import { formatCurrency } from '../utils/currency';
+import { formatDateOnly } from '../utils/date';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   active: 'success', draft: 'neutral', paused: 'warning', archived: 'error', inactive: 'neutral',
@@ -763,8 +764,8 @@ function PromotionsTab() {
       key: 'date_range', header: 'Active Period', sortable: true,
       render: (_: any, row: any) => {
         if (!row.date_from && !row.date_to) return 'Always';
-        const from = row.date_from ? new Date(row.date_from).toLocaleDateString() : '';
-        const to = row.date_to ? new Date(row.date_to).toLocaleDateString() : '';
+        const from = row.date_from ? formatDateOnly(row.date_from) : '';
+        const to = row.date_to ? formatDateOnly(row.date_to) : '';
         return `${from} – ${to}`;
       },
     },

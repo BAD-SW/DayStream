@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
+import { formatDateOnly } from '../utils/date';
 
 interface BillingInfo {
   currency: string;
@@ -89,15 +90,15 @@ export function TenantBilling() {
           </div>
           <div style={styles.summaryItem}>
             <span style={styles.summaryLabel}>Contract Start</span>
-            <span style={styles.summaryValue}>{billing.contract_start_date ? new Date(billing.contract_start_date).toLocaleDateString() : '—'}</span>
+            <span style={styles.summaryValue}>{billing.contract_start_date ? formatDateOnly(billing.contract_start_date) : '—'}</span>
           </div>
           <div style={styles.summaryItem}>
             <span style={styles.summaryLabel}>Contract Expires</span>
-            <span style={styles.summaryValue}>{billing.contract_expire_date ? new Date(billing.contract_expire_date).toLocaleDateString() : '—'}</span>
+            <span style={styles.summaryValue}>{billing.contract_expire_date ? formatDateOnly(billing.contract_expire_date) : '—'}</span>
           </div>
           <div style={styles.summaryItem}>
             <span style={styles.summaryLabel}>Last Payment</span>
-            <span style={styles.summaryValue}>{billing.last_billing_date ? new Date(billing.last_billing_date).toLocaleDateString() : 'Never'}</span>
+            <span style={styles.summaryValue}>{billing.last_billing_date ? formatDateOnly(billing.last_billing_date) : 'Never'}</span>
           </div>
           <div style={styles.summaryItem}>
             <span style={styles.summaryLabel}>Status</span>

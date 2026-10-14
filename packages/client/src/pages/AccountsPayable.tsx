@@ -5,6 +5,7 @@ import { Tabs } from '../design-system/components/navigation/Tabs';
 import { TableActionButton } from '../design-system/components/actions/TableActionButton';
 import * as apApi from '../api/accounts-payable';
 import { formatCurrency } from '../utils/currency';
+import { formatDateOnly, toISODateOnly } from '../utils/date';
 import { PayrollTab } from './PayrollTab';
 
 const BILL_STATUS: Record<string, 'success' | 'warning' | 'error' | 'neutral'> = { draft: 'neutral', pending: 'neutral', approved: 'info' as any, paid: 'success', overdue: 'error', void: 'error' };
@@ -427,7 +428,7 @@ export function AccountsPayable() {
       if (filteredEntries.length === 0) return;
       const rows: string[] = ['Date,Entry Description,Reference Type,Account Code,Account Name,Debit,Credit'];
       for (const entry of filteredEntries) {
-        const date = new Date(entry.entry_date).toLocaleDateString('sv-SE');
+        const date = toISODateOnly(entry.entry_date);
         for (const line of (entry.lines || [])) {
           rows.push([
             date,
@@ -450,10 +451,10 @@ export function AccountsPayable() {
       URL.revokeObjectURL(url);
     }
 
-    // Group entries by date
+    // Group entries by date (DATE-only value — parse as local to avoid a UTC day-shift)
     const byDate = new Map<string, any[]>();
     for (const entry of filteredEntries) {
-      const dateStr = new Date(entry.entry_date).toLocaleDateString();
+      const dateStr = formatDateOnly(entry.entry_date);
       if (!byDate.has(dateStr)) byDate.set(dateStr, []);
       byDate.get(dateStr)!.push(entry);
     }

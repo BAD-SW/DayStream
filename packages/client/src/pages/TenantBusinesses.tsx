@@ -5,6 +5,7 @@ import { Button } from '../design-system/components/actions/Button';
 import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { apiClient } from '../api/client';
 import { TIMEZONES } from '../utils/timezones';
+import { formatDateOnly } from '../utils/date';
 import { CurrencyInput } from '../components/CurrencyInput';
 import { ThemeEditorFields, ThemeField } from '../design-system/components/forms/ThemeEditorFields';
 import { Tabs } from '../design-system/components/navigation/Tabs';
@@ -258,7 +259,7 @@ export function TenantBusinesses() {
                         <DetailRow label="Currency" value={selectedBiz.currency} />
                         <DetailRow label="Timezone" value={selectedBiz.timezone} />
                         <DetailRow label="Brand Color" value={selectedBiz.primary_color || 'Inherited from tenant'} />
-                        <DetailRow label="Signup Date" value={selectedBiz.signup_date ? new Date(selectedBiz.signup_date).toLocaleDateString() : '—'} />
+                        <DetailRow label="Signup Date" value={selectedBiz.signup_date ? formatDateOnly(selectedBiz.signup_date) : '—'} />
                         <DetailRow label="Created" value={new Date(selectedBiz.created_at).toLocaleString()} />
                       </div>
                       <div style={styles.actions}>

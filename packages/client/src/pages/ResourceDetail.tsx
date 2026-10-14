@@ -5,6 +5,7 @@ import { Badge } from '../design-system/components/data/Badge';
 import { Alert } from '../design-system/components/feedback/Alert';
 import * as resourcesApi from '../api/resources';
 import type { Resource } from '../api/resources';
+import { formatDateOnly } from '../utils/date';
 
 type Tab = 'details' | 'schedule' | 'maintenance';
 
@@ -302,7 +303,7 @@ function ScheduleTab({ resourceId }: { resourceId: string }) {
                   <strong style={{ color: 'var(--color-text)' }}>{s.name}</strong>
                   {(s.effective_from || s.effective_to) && (
                     <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-                      {s.effective_from ? new Date(s.effective_from).toLocaleDateString() : 'Start'} → {s.effective_to ? new Date(s.effective_to).toLocaleDateString() : 'Ongoing'}
+                      {s.effective_from ? formatDateOnly(s.effective_from) : 'Start'} → {s.effective_to ? formatDateOnly(s.effective_to) : 'Ongoing'}
                     </span>
                   )}
                 </div>

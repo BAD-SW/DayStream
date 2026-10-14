@@ -13,6 +13,7 @@ import { CurrencyInput } from '../components/CurrencyInput';
 import * as payApi from '../api/payments';
 import type { PayTransaction, Invoice, PaymentMethod } from '../api/payments';
 import { formatCurrency } from '../utils/currency';
+import { formatDateOnly } from '../utils/date';
 import { lifecycleStageLabel, personSourceLabel } from '@daystream/shared';
 
 const LIFECYCLE_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
@@ -754,7 +755,7 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                   <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>Invoice #{inv.invoice_number}</span>
                   <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                    Due {new Date(inv.due_date).toLocaleDateString()} · {formatCurrency(inv.total_cents, inv.currency)}
+                    Due {formatDateOnly(inv.due_date)} · {formatCurrency(inv.total_cents, inv.currency)}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1302,13 +1303,13 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
                 </span>
               </div>
               <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                Since {new Date(e.start_date).toLocaleDateString()}
+                Since {formatDateOnly(e.start_date)}
                 {e.cancelled_at ? (
-                  <span style={{ color: 'var(--color-error)' }}> · Cancels {new Date(e.current_period_end).toLocaleDateString()}</span>
+                  <span style={{ color: 'var(--color-error)' }}> · Cancels {formatDateOnly(e.current_period_end)}</span>
                 ) : e.status === 'paused' ? (
-                  <span style={{ color: 'var(--color-warning, #E6A817)' }}> · Paused{e.resume_at ? ` · Resumes ${new Date(e.resume_at).toLocaleDateString()}` : ' indefinitely'}</span>
+                  <span style={{ color: 'var(--color-warning, #E6A817)' }}> · Paused{e.resume_at ? ` · Resumes ${formatDateOnly(e.resume_at)}` : ' indefinitely'}</span>
                 ) : (
-                  e.next_billing_date && ` · Next billing: ${new Date(e.next_billing_date).toLocaleDateString()}`
+                  e.next_billing_date && ` · Next billing: ${formatDateOnly(e.next_billing_date)}`
                 )}
               </div>
               <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>

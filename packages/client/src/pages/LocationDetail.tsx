@@ -5,6 +5,7 @@ import { Badge } from '../design-system/components/data/Badge';
 import { apiClient } from '../api/client';
 import * as locationsApi from '../api/locations';
 import type { Location } from '../api/locations';
+import { parseDateOnly } from '../utils/date';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'neutral'> = {
   active: 'success',
@@ -378,7 +379,7 @@ function LocationHourOverridesSection({ locationId }: { locationId: string }) {
           {overrides.map((o) => (
             <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
               <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', minWidth: '50px' }}>
-                {new Date(o.override_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                {parseDateOnly(o.override_date)?.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
               </span>
               {o.label && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', flex: 1 }}>{o.label}</span>}
               {!o.label && <span style={{ flex: 1 }} />}

@@ -5,6 +5,7 @@ import { Badge } from '../design-system/components/data/Badge';
 import { Alert } from '../design-system/components/feedback/Alert';
 import * as staffApi from '../api/staff';
 import * as payrollApi from '../api/payroll';
+import { formatDateOnly } from '../utils/date';
 import type { StaffProfile, Qualification, AvailabilityPattern, AvailabilityOverride } from '../api/staff';
 
 type Tab = 'profile' | 'qualifications' | 'availability' | 'calendar' | 'compensation';
@@ -307,7 +308,7 @@ function QualificationsTab({ staffId }: { staffId: string }) {
                 {q.certification_number && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>#{q.certification_number}</span>}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {q.expiry_date && <Badge variant={new Date(q.expiry_date) < new Date() ? 'error' : 'info'}>{`Exp: ${new Date(q.expiry_date).toLocaleDateString()}`}</Badge>}
+                {q.expiry_date && <Badge variant={new Date(q.expiry_date) < new Date() ? 'error' : 'info'}>{`Exp: ${formatDateOnly(q.expiry_date)}`}</Badge>}
                 <button style={styles.iconBtn} onClick={() => openEdit(q)} title="Edit">✏️</button>
                 <button style={styles.iconBtn} onClick={() => handleDelete(q.id)} title="Delete">🗑️</button>
               </div>
@@ -502,7 +503,7 @@ function AvailabilityTab({ staffId }: { staffId: string }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <strong style={{ color: 'var(--color-text)' }}>{p.name}</strong>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>{new Date(p.effective_from).toLocaleDateString()} → {p.effective_to ? new Date(p.effective_to).toLocaleDateString() : 'Ongoing'}</span>
+                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>{formatDateOnly(p.effective_from)} → {p.effective_to ? formatDateOnly(p.effective_to) : 'Ongoing'}</span>
                 <button style={styles.iconBtn} onClick={() => openEditPattern(p)} title="Edit">✏️</button>
                 <Button variant="ghost" size="sm" onClick={() => handleCopyPattern(p.id)}>Copy</Button>
                 <button style={styles.iconBtn} onClick={() => handleDeletePattern(p.id)} title="Delete">🗑️</button>
@@ -568,7 +569,7 @@ function AvailabilityTab({ staffId }: { staffId: string }) {
             {overrides.map((o) => (
               <div key={o.id} style={styles.listItem}>
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <strong style={{ color: 'var(--color-text)' }}>{new Date(o.override_date).toLocaleDateString()}</strong>
+                  <strong style={{ color: 'var(--color-text)' }}>{formatDateOnly(o.override_date)}</strong>
                   {o.override_type === 'remove' ? <Badge variant="warning">Day Off</Badge> : o.override_type === 'add' ? <Badge variant="success">Extra</Badge> : <Badge variant="info">Modified</Badge>}
                   {o.override_type !== 'remove' && o.start_time && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-success, #2E7D32)' }}>{formatTime(o.start_time)}–{formatTime(o.end_time!)}</span>}
                   {o.reason && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>({o.reason})</span>}
@@ -980,8 +981,8 @@ function CompensationTab({ userId }: { userId: string | null }) {
                   <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: '2px' }}>Applies to: All {refTypeLabel}s</div>
                 )}
                 <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
-                  From {new Date(rule.effective_from).toLocaleDateString()}
-                  {rule.effective_to && ` to ${new Date(rule.effective_to).toLocaleDateString()}`}
+                  From {formatDateOnly(rule.effective_from)}
+                  {rule.effective_to && ` to ${formatDateOnly(rule.effective_to)}`}
                   {rule.rule_type === 'hourly' && (
                     <span style={{ marginLeft: '12px' }}>OT: {rule.overtime_multiplier}x after {rule.overtime_after_hours}h · Holiday: {rule.holiday_multiplier}x</span>
                   )}
