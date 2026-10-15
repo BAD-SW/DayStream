@@ -187,7 +187,7 @@ export const jobRegistry: Record<string, JobHandler> = {
 export function getAvailableJobTypes(): Array<{ type: string; label: string; description: string; defaultFrequency: string }> {
   return [
     { type: 'revenue_recognition', label: 'Revenue Recognition', description: 'Recognize deferred membership revenue daily', defaultFrequency: 'daily' },
-    { type: 'billing_process', label: 'Recurring Charges', description: 'Charge membership renewals due today and auto-resume expired pauses', defaultFrequency: 'daily' },
+    { type: 'billing_process', label: 'Membership Renewals', description: 'Charge membership renewals due today, retry failed renewals, and auto-resume expired pauses', defaultFrequency: 'daily' },
     { type: 'payment_reconciliation', label: 'Payment Reconciliation', description: 'Finalize pending bank-draw payments once they settle at the provider', defaultFrequency: 'every_15min' },
     { type: 'campaign_dispatch', label: 'Campaigns', description: 'Send scheduled marketing campaigns', defaultFrequency: 'every_15min' },
     { type: 'lifecycle_evaluation', label: 'Customer Lifecycle', description: 'Automatically transition inactive customers through lifecycle stages', defaultFrequency: 'daily' },

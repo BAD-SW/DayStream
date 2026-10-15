@@ -1365,3 +1365,27 @@ paymentPlatformRouter.post('/billing-run-now', requirePermission('bookings:*'), 
     success(res, await membershipRenewal.runBusinessBillingNow(req.body.business_id));
   } catch (e: any) { console.error('Failed to run billing', e?.message || e); error(res, 'Failed to run billing', 'INTERNAL_ERROR', 500); }
 });
+
+// --- Membership Renewals retry parameters (C6.4): retry count + interval days ---
+
+paymentPlatformRouter.get('/renewal-retry-params', requirePermission('bookings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { getRetryParams } = await import('../services/dunning-schedule');
+    success(res, await getRetryParams(businessId));
+  } catch (e: any) { console.error('Failed to read retry params', e?.message || e); error(res, 'Failed to read retry params', 'INTERNAL_ERROR', 500); }
+});
+
+const retryParamsSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  count: Joi.number().integer().min(1).max(10).required(),
+  intervalDays: Joi.number().integer().min(1).max(90).required(),
+});
+
+paymentPlatformRouter.put('/renewal-retry-params', requirePermission('bookings:*'), validate(retryParamsSchema), async (req: Request, res: Response) => {
+  try {
+    const { saveRetryParams } = await import('../services/dunning-schedule');
+    success(res, await saveRetryParams(req.body.business_id, { count: req.body.count, intervalDays: req.body.intervalDays }));
+  } catch (e: any) { console.error('Failed to save retry params', e?.message || e); error(res, 'Failed to save retry params', 'INTERNAL_ERROR', 500); }
+});

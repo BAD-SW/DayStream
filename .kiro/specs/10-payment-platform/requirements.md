@@ -43,7 +43,8 @@ Keeping every billing relationship in one specification is intentional: anyone r
 - **Subscription**: A recurring billing relationship between a Customer and a Membership_Plan (Section C). The recurrence lifecycle is owned by DayStream, not the processor.
 - **Invoice**: A formal document detailing charges, taxes, and payment for a customer transaction (Section C). (Distinct from the auto-settled charge records in Sections A and B, which are not receivables.)
 - **Refund**: A reversal of a previous charge (full or partial).
-- **Dunning**: The process of retrying failed payments and communicating about payment issues.
+- **Dunning (card-retry)**: Automatically retrying a failed membership renewal charge against the stored card, on a configurable schedule, and notifying the customer. This is pull-based (a card on file is charged) and is distinct from accounts-receivable collection on an unpaid Invoice (push-based), which is not covered by Requirement C6.
+- **Renewing**: The enrollment status while a failed renewal is being retried — a not-Active state. It returns to Active on a successful retry, or becomes Expired when the retry count is exhausted (Requirement C6).
 - **Gift_Card**: A prepaid monetary value that can be redeemed at checkout (Section C).
 - **Voucher**: A code representing a free or discounted service, non-monetary (Section C).
 
@@ -443,31 +444,41 @@ This section covers charging customers for the services, memberships, and produc
 
 ### Requirement C6: Payment Retry and Dunning
 
-**User Story:** As a business owner, I want failed subscription payments to be retried automatically, so that I don't lose members due to temporary payment issues.
+**User Story:** As a business owner, I want a failed membership renewal to be retried automatically on a schedule I control, so that I don't lose members over a temporary payment issue, while a member whose payment is failing is clearly distinguished from one in good standing.
+
+**Scope note:** This requirement is the card-retry flow for a membership whose stored card is charged automatically (pull-based). It is NOT accounts-receivable collection on an unpaid invoice (push-based); invoice reminders, if introduced, are a separate requirement. The automatic retry is part of the Membership Renewals process (Requirement C6a), not a separate job.
 
 #### Acceptance Criteria
 
-1. THE system SHALL automatically retry failed subscription payments according to a configurable dunning schedule
-2. THE dunning schedule SHALL support configurable retry intervals (e.g., retry at day 1, day 3, day 7 after failure)
-3. THE system SHALL notify the customer on each failed attempt with instructions to update payment method
-4. THE system SHALL send escalating urgency in dunning notifications (friendly → warning → final notice)
-5. IF all retry attempts fail, THE system SHALL transition the membership to Expired (Phase 08)
-6. THE system SHALL pause further charges during the dunning period (no double-charges)
-7. THE system SHALL log all dunning events in the audit trail
-8. THE system SHALL support manual payment retry by staff (e.g., after customer updates card)
+1. WHEN a membership renewal charge fails, THE system SHALL set the enrollment status to Renewing (a not-Active state) and SHALL NOT advance the billing period
+2. WHILE an enrollment is in the Renewing state, THE system SHALL exclude it from the Active Memberships report and from the customer's active membership display
+3. THE system SHALL automatically retry a Renewing enrollment's charge as part of each Membership Renewals run, according to the business's configured retry parameters
+4. THE retry parameters SHALL be configurable per business as a retry count (the maximum number of automatic retries) and an interval in days between retries, set on the Membership Renewals process
+5. WHEN a retry succeeds, THE system SHALL set the enrollment status back to Active, advance the billing period, and record the payment
+6. WHEN the retry count is exhausted without a successful charge, THE system SHALL transition the enrollment to Expired (Phase 08) and stop retrying it
+7. THE system SHALL record each failed renewal and each failed retry as a Failed_Charge in the payment ledger
+8. THE system SHALL send the customer a notification on a successful renewal (with payment details) and on a failed renewal/retry — email delivery itself is handled by the platform notification system and is out of scope for this requirement
+9. THE system SHALL send escalating urgency across the retry notifications (friendly → warning → final notice)
+10. THE system SHALL not double-charge an enrollment that is already in the Renewing/retry cycle (the renewal selection SHALL exclude it)
+11. THE system SHALL log all renewal and retry events in the audit trail
+12. THE system SHALL support a manual retry by staff (e.g., after the customer updates their card), which follows the same success/exhaustion transitions
 
-### Requirement C6a: Business Billing Run Schedule
+### Requirement C6a: Membership Renewals Process (Schedule + Retry Parameters)
 
-**User Story:** As a business owner, I want to set the time of day my recurring customer billing runs, so that subscription renewals and dunning retries happen automatically each day at a time that suits my customers and staff.
+**User Story:** As a business owner, I want to set the time of day my Membership Renewals process runs and how failed renewals are retried, so that renewals and their automatic retries happen each day at a time that suits my customers and staff, under retry rules I control.
+
+**Naming note:** This process is presented to users as "Membership Renewals" (previously labelled "Recurring Charges"). The underlying job identifier is unchanged.
 
 #### Acceptance Criteria
 
-1. THE system SHALL allow a business (owner/manager) to configure a Billing_Run_Time (time of day) for that business's recurring customer billing
+1. THE system SHALL allow a business (owner/manager) to configure a Billing_Run_Time (time of day) for that business's Membership Renewals process
 2. THE system SHALL interpret the Billing_Run_Time in that business's own timezone
-3. THE system SHALL execute each business's recurring billing run automatically every day at that business's configured Billing_Run_Time
-4. THE system SHALL process at that run the business's customer Subscription renewals due that day (Requirement C2) and any due dunning retries (Requirement C6)
-5. THE system SHALL maintain an independent schedule per business, each managed by that business's own owner/manager
-6. THE system SHALL keep the business-level customer-billing schedule independent of the tenant-level (Section B) and platform-level (Section A) schedules
+3. THE system SHALL execute each business's Membership Renewals process automatically every day at that business's configured Billing_Run_Time
+4. THE system SHALL process at that run: the business's membership renewals due that day (Requirement C2), the automatic retries for any Renewing enrollments due that day (Requirement C6), and auto-resume of elapsed pauses
+5. THE system SHALL allow a business (owner/manager) to configure the retry parameters for failed renewals — a retry count and an interval in days between retries — on this process (Requirement C6.4)
+6. WHEN the Membership Renewals process is run manually with a selected date range, THE system SHALL only renew enrollments whose billing date falls within that range; WHEN run on schedule (no range), THE system SHALL renew every enrollment due on or before the run date (catch-up)
+7. THE system SHALL maintain an independent schedule per business, each managed by that business's own owner/manager
+8. THE system SHALL keep the business-level Membership Renewals schedule independent of the tenant-level (Section B) and platform-level (Section A) schedules
 
 ### Requirement C7: Gift Cards
 

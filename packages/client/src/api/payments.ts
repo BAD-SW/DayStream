@@ -990,6 +990,23 @@ export async function runBusinessBillingNow(businessId: string): Promise<any> {
   const res = await apiClient.post('/v1/pay/billing-run-now', { business_id: businessId });
   return res.data.data;
 }
+
+// --- Membership Renewals retry parameters (C6.4) ---
+
+export interface RenewalRetryParams {
+  count: number;         // max automatic retries
+  intervalDays: number;  // days between retries
+}
+
+export async function getRenewalRetryParams(businessId: string): Promise<RenewalRetryParams> {
+  const res = await apiClient.get('/v1/pay/renewal-retry-params', { params: { business_id: businessId } });
+  return res.data.data;
+}
+
+export async function saveRenewalRetryParams(businessId: string, params: RenewalRetryParams): Promise<RenewalRetryParams> {
+  const res = await apiClient.put('/v1/pay/renewal-retry-params', { business_id: businessId, ...params });
+  return res.data.data;
+}
 // --- Customer account credit (unapplied payments) ---
 
 export interface AccountCreditBalance {

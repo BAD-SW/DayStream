@@ -264,9 +264,25 @@ ALTER TABLE mbr_enrollments ADD COLUMN payment_method_id UUID REFERENCES pay_pay
 
 The recurring amount and interval come from the enrollment's `mbr_plans` row (`price`, `billing_frequency`); the Payment Platform owns the charge execution and dunning on top.
 
-### Dunning (Section C)
+### Dunning — card-retry on failed membership renewal (Section C)
 
-Tracks failed enrollment charges and the configurable retry schedule.
+This is the automatic retry of a failed membership renewal charge against the stored card. It is part of the Membership Renewals process (`billing_process` job), not a separate job. It is NOT accounts-receivable collection on an unpaid invoice.
+
+**Enrollment status lifecycle under renewal/retry.** `mbr_enrollments.status` gains a `renewing` value:
+
+```
+active ──(renewal charge fails)──▶ renewing ──(a retry succeeds)──▶ active
+                                      │
+                                      └──(retry count exhausted)──▶ expired
+```
+
+- On a failed renewal, the enrollment moves to `renewing` and the period is NOT advanced. A `renewing` enrollment is excluded from the Active Memberships report and the customer's active-membership display (both filter `status IN ('active','paused') AND cancelled_at IS NULL`).
+- On a successful retry, status returns to `active` and the period advances.
+- When the retry count is exhausted, status becomes `expired`.
+
+**Retry parameters (per business, set on the Membership Renewals process).** Configured as a **retry count** (max automatic retries) and an **interval in days** between retries — e.g. "retry 3 times, 2 days apart." Stored in business configuration (`dunning.retry_count`, `dunning.retry_interval_days`), read by both the renewal path (which opens the first retry on failure) and the retry path. The earlier day-offset array (`dunning.retry_days`) is superseded by this count+interval model; a stored offset array, if present, is honored for backward compatibility.
+
+`pay_dunning_attempts` tracks each scheduled/attempted retry:
 
 ```sql
 CREATE TABLE pay_dunning_attempts (

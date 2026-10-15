@@ -295,6 +295,9 @@ function ProcessesSettings() {
   const [running, setRunning] = useState(false);
   const [scheduleForm, setScheduleForm] = useState<any>(null);
   const [selectedHistory, setSelectedHistory] = useState<{ type: string; entries: any[] } | null>(null);
+  // Membership Renewals retry parameters (C6.4): max retries + days between.
+  const [retryParams, setRetryParams] = useState<payApi.RenewalRetryParams | null>(null);
+  const [savingRetry, setSavingRetry] = useState(false);
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
@@ -311,6 +314,22 @@ function ProcessesSettings() {
       setBusinessTimezone(tz);
     }).catch(() => {}).finally(() => setLoading(false));
   }, [businessId]);
+
+  // Load the renewal retry parameters when the Membership Renewals process is expanded.
+  useEffect(() => {
+    if (expandedProcess !== 'billing_process' || !businessId) return;
+    payApi.getRenewalRetryParams(businessId).then(setRetryParams).catch(() => setRetryParams(null));
+  }, [expandedProcess, businessId]);
+
+  const saveRetryParams = async () => {
+    if (!retryParams || !businessId) return;
+    setSavingRetry(true);
+    try {
+      const saved = await payApi.saveRenewalRetryParams(businessId, retryParams);
+      setRetryParams(saved);
+    } catch { /* surfaced inline; keep the entered values */ }
+    finally { setSavingRetry(false); }
+  };
 
   const getJobForType = (type: string) => jobs.find((j: any) => j.job_type === type);
 
@@ -536,6 +555,31 @@ function ProcessesSettings() {
                     <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 12px', cursor: 'pointer', fontSize: 'var(--font-size-sm)' }} onClick={() => handleScheduleToggle(proc.type)}>
                       Add Schedule
                     </button>
+                  )}
+
+                  {/* Failed-renewal retry parameters (C6.4) — only for Membership Renewals. */}
+                  {proc.type === 'billing_process' && retryParams && (
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed var(--color-border)', display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)' }}>Failed renewal retries</span>
+                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                          When a renewal fails, the membership goes to <em>Renewing</em> and is retried automatically; it expires if all retries fail.
+                        </span>
+                      </div>
+                      <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Retries
+                        <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '70px' }} type="number" min={1} max={10}
+                          value={retryParams.count}
+                          onChange={(e) => setRetryParams({ ...retryParams, count: Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)) })} />
+                      </label>
+                      <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Days between
+                        <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '70px' }} type="number" min={1} max={90}
+                          value={retryParams.intervalDays}
+                          onChange={(e) => setRetryParams({ ...retryParams, intervalDays: Math.max(1, Math.min(90, parseInt(e.target.value, 10) || 1)) })} />
+                      </label>
+                      <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 12px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-primary)' }} onClick={saveRetryParams} disabled={savingRetry}>
+                        {savingRetry ? 'Saving...' : 'Save Retries'}
+                      </button>
+                    </div>
                   )}
                 </div>
               )}

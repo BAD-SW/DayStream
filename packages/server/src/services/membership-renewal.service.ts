@@ -338,7 +338,7 @@ async function recordFailure(
   const scheduledForStr = scheduledFor.toISOString().split('T')[0];
 
   // Open the first dunning attempt only if there isn't already an open one for this
-  // enrollment (avoids piling up attempts across daily runs before 4.4 lands).
+  // enrollment (avoids piling up attempts across daily runs).
   await adminPool.query(
     `INSERT INTO pay_dunning_attempts
        (tenant_id, business_id, enrollment_id, attempt_number, scheduled_for, outcome, transaction_id, failure_reason)
@@ -350,7 +350,18 @@ async function recordFailure(
     [tenantId, businessId, enr.id, scheduledForStr, txn.id, failureReason],
   );
 
-  logger.info(`Enrollment ${enr.id} renewal failed (${failureReason}); dunning attempt opened for ${scheduledForStr}`);
+  // Move the enrollment to the not-Active 'renewing' state (C6.1): it drops off the
+  // Active Memberships report + the customer's active display while retries run, and
+  // is restored to 'active' by advanceEnrollmentPeriod on a successful retry (or set
+  // to 'expired' when the retry count is exhausted). Only transition from 'active' so
+  // a re-run doesn't clobber a concurrently-changed status.
+  await adminPool.query(
+    `UPDATE mbr_enrollments SET status = 'renewing', updated_at = NOW()
+     WHERE id = $1 AND business_id = $2 AND status = 'active'`,
+    [enr.id, businessId],
+  );
+
+  logger.info(`Enrollment ${enr.id} renewal failed (${failureReason}); status→renewing, retry scheduled for ${scheduledForStr}`);
 }
 
 // ============================================================
