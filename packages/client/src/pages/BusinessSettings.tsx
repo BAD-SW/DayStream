@@ -331,7 +331,9 @@ function ProcessesSettings() {
       const body: any = { job_type: runPanel };
       if (runForm.dateFrom) body.date_from = runForm.dateFrom;
       if (runForm.dateTo) body.date_to = runForm.dateTo;
-      if (runForm.postingDate) body.posting_date = runForm.postingDate;
+      // Posting date only applies to revenue recognition — recurring charges post on
+      // the real (current) charge date to reconcile with Stripe (see field above).
+      if (runForm.postingDate && runPanel === 'revenue_recognition') body.posting_date = runForm.postingDate;
       const res = await apiClient.post(`/v1/customers/scheduled-jobs/run?business_id=${businessId}`, body);
       setRunResult(res.data.data);
     } catch (err: any) {
@@ -423,7 +425,11 @@ function ProcessesSettings() {
                     <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>To
                       <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '150px' }} type="date" value={runForm.dateTo} onChange={(e) => setRunForm({ ...runForm, dateTo: e.target.value })} />
                     </label>
-                    {(proc.type === 'revenue_recognition' || proc.type === 'billing_process') && (
+                    {/* Posting Date applies only to revenue recognition. Recurring
+                        charges (billing_process) raise a real card charge "now" — the
+                        payment + its GL entry must carry the actual charge date so they
+                        reconcile with Stripe, so no posting-date override is offered. */}
+                    {proc.type === 'revenue_recognition' && (
                       <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Posting Date
                         <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '150px' }} type="date" value={runForm.postingDate} onChange={(e) => setRunForm({ ...runForm, postingDate: e.target.value })} />
                       </label>

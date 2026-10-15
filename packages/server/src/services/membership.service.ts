@@ -309,13 +309,23 @@ export async function enrollCustomer(input: EnrollInput) {
     throw Object.assign(new Error(`This plan is ${plan.status} and cannot be sold`), { code: 'PLAN_NOT_ACTIVE' });
   }
 
-  // Prevent multiple active/paused memberships for the same customer
+  // A customer MAY hold several memberships at once (a business can offer multiple
+  // concurrent plans), so we do NOT block on "already has a membership". We only
+  // prevent enrolling in the SAME plan twice while an enrollment in it is still live
+  // (active/paused and not cancelled) — that's a duplicate/double-submit, not a
+  // legitimate second membership. cancelled_at is checked so a cancelled enrollment
+  // never blocks re-enrolling in that same plan.
   const { rows: existing } = await adminPool.query(
-    `SELECT id FROM mbr_enrollments WHERE customer_id = $1 AND business_id = $2 AND status IN ('active', 'paused')`,
-    [input.customerId, input.businessId],
+    `SELECT id FROM mbr_enrollments
+     WHERE customer_id = $1 AND business_id = $2 AND plan_id = $3
+       AND status IN ('active', 'paused') AND cancelled_at IS NULL`,
+    [input.customerId, input.businessId, input.planId],
   );
   if (existing.length > 0) {
-    throw new Error('Customer already has an active membership. Cancel or let the existing membership expire before enrolling in a new one.');
+    throw Object.assign(
+      new Error('Customer is already enrolled in this membership plan.'),
+      { code: 'ALREADY_ENROLLED_IN_PLAN' },
+    );
   }
 
   const periodEnd = calculatePeriodEnd(input.startDate, plan.billing_frequency);
@@ -356,10 +366,12 @@ export async function getEnrollments(businessId: string, filters?: { customerId?
 
   const { rows } = await adminPool.query(
     `SELECT e.*, p.name AS plan_name, p.billing_frequency, p.price AS plan_price,
-            c.first_name AS customer_first_name, c.last_name AS customer_last_name, c.email AS customer_email
+            c.first_name AS customer_first_name, c.last_name AS customer_last_name, c.email AS customer_email,
+            pm.method_type AS renewal_method_type, pm.display_brand AS renewal_method_brand, pm.display_last4 AS renewal_method_last4
      FROM mbr_enrollments e
      JOIN mbr_plans p ON p.id = e.plan_id
      JOIN cus_customers c ON c.id = e.customer_id
+     LEFT JOIN pay_payment_methods pm ON pm.id = e.payment_method_id
      WHERE ${where}
      ORDER BY e.created_at DESC`,
     params,
@@ -370,14 +382,53 @@ export async function getEnrollments(businessId: string, filters?: { customerId?
 export async function getEnrollmentById(id: string, businessId: string) {
   const { rows } = await adminPool.query(
     `SELECT e.*, p.name AS plan_name, p.billing_frequency, p.price AS plan_price,
-            c.first_name AS customer_first_name, c.last_name AS customer_last_name, c.email AS customer_email
+            c.first_name AS customer_first_name, c.last_name AS customer_last_name, c.email AS customer_email,
+            pm.method_type AS renewal_method_type, pm.display_brand AS renewal_method_brand, pm.display_last4 AS renewal_method_last4
      FROM mbr_enrollments e
      JOIN mbr_plans p ON p.id = e.plan_id
      JOIN cus_customers c ON c.id = e.customer_id
+     LEFT JOIN pay_payment_methods pm ON pm.id = e.payment_method_id
      WHERE e.id = $1 AND e.business_id = $2`,
     [id, businessId],
   );
   return rows[0] || null;
+}
+
+/**
+ * Set, change, or clear the stored card the recurring renewal charges for this
+ * enrollment. Pass a method id to pin a specific card ("charge card A for the
+ * membership"); pass null to clear the pin (renewal falls back to the customer's
+ * default). Validates the method exists, is active, and belongs to the SAME
+ * customer as the enrollment.
+ */
+export async function setEnrollmentPaymentMethod(
+  enrollmentId: string, businessId: string, paymentMethodId: string | null,
+) {
+  const { rows: enrRows } = await adminPool.query(
+    `SELECT id, customer_id FROM mbr_enrollments WHERE id = $1 AND business_id = $2`,
+    [enrollmentId, businessId],
+  );
+  const enr = enrRows[0];
+  if (!enr) throw Object.assign(new Error('Enrollment not found'), { code: 'ENROLLMENT_NOT_FOUND' });
+
+  if (paymentMethodId) {
+    const { rows: pmRows } = await adminPool.query(
+      `SELECT id, customer_id, owner_level, status FROM pay_payment_methods WHERE id = $1 AND business_id = $2`,
+      [paymentMethodId, businessId],
+    );
+    const pm = pmRows[0];
+    if (!pm || pm.status !== 'active') throw Object.assign(new Error('Payment method not found'), { code: 'METHOD_NOT_FOUND' });
+    if (pm.owner_level !== 'customer' || pm.customer_id !== enr.customer_id) {
+      throw Object.assign(new Error('That payment method does not belong to this customer'), { code: 'METHOD_NOT_CUSTOMER' });
+    }
+  }
+
+  const { rows } = await adminPool.query(
+    `UPDATE mbr_enrollments SET payment_method_id = $1, updated_at = NOW()
+     WHERE id = $2 AND business_id = $3 RETURNING id, payment_method_id`,
+    [paymentMethodId, enrollmentId, businessId],
+  );
+  return rows[0];
 }
 
 export async function pauseEnrollment(id: string, businessId: string, maxPauseDays?: number) {

@@ -337,10 +337,20 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
     // Don't fail the order completion if journaling fails
   }
 
-  // Auto-enroll customer in memberships purchased in this order
+  // Auto-enroll customer in memberships purchased in this order.
+  //
+  // The payment is already captured and the order is already 'completed' at this
+  // point, so a failure here CANNOT be undone by failing the sale. What it must NOT
+  // do is vanish silently (the old behavior only console.error'd — the operator paid
+  // and got no membership with no indication). Instead we collect every failure and
+  // return them as `enrollment_warnings` on the order so the UI can alert staff to
+  // follow up (manually enroll or refund). A customer may hold several memberships,
+  // so each membership line is enrolled independently.
+  const enrollmentWarnings: Array<{ planId: string; planName: string | null; reason: string }> = [];
   try {
     const { rows: membershipItems } = await adminPool.query(
-      `SELECT item_id FROM fin_order_items WHERE order_id = $1 AND item_type = 'membership' AND item_id IS NOT NULL`,
+      `SELECT item_id, item_name FROM fin_order_items
+       WHERE order_id = $1 AND item_type = 'membership' AND item_id IS NOT NULL`,
       [orderId],
     );
     if (membershipItems.length > 0 && orderRows[0].customer_id) {
@@ -355,16 +365,33 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
             startDate: today,
           });
         } catch (enrollErr: any) {
-          console.error(`[Enrollment] Failed to enroll customer in plan ${item.item_id}:`, enrollErr.message);
+          const reason = enrollErr?.message || 'Enrollment failed';
+          console.error(
+            `[Enrollment] Order ${orderId} paid but membership NOT enrolled `
+            + `(plan ${item.item_id}): ${reason}`,
+          );
+          enrollmentWarnings.push({ planId: item.item_id, planName: item.item_name ?? null, reason });
         }
+      }
+    } else if (membershipItems.length > 0 && !orderRows[0].customer_id) {
+      // A membership was sold on a walk-in/no-customer order — it can't be enrolled
+      // against anyone. Surface it rather than dropping it.
+      for (const item of membershipItems) {
+        const reason = 'No customer on the order — membership could not be enrolled.';
+        console.error(`[Enrollment] Order ${orderId} paid but membership NOT enrolled (plan ${item.item_id}): ${reason}`);
+        enrollmentWarnings.push({ planId: item.item_id, planName: item.item_name ?? null, reason });
       }
     }
   } catch (err: any) {
-    console.error('[Enrollment] Failed to process membership enrollments:', err.message);
+    console.error('[Enrollment] Failed to process membership enrollments:', err?.message || err);
+    enrollmentWarnings.push({ planId: '', planName: null, reason: err?.message || 'Failed to process membership enrollments.' });
   }
 
   // A completed purchase counts as activity for the person (Phase 46).
   const order = await getOrder(orderId);
+  if (order && enrollmentWarnings.length > 0) {
+    (order as any).enrollment_warnings = enrollmentWarnings;
+  }
 
   // The code used on this order has now been redeemed once. Neither kind of code was ever
   // counted, so "maximum redemptions" and "maximum uses" never took effect.

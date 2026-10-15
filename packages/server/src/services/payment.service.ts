@@ -151,7 +151,7 @@ const PURPOSE_JOINS = `
   LEFT JOIN fin_orders fo
     ON fo.business_id = t.business_id
    AND fo.payment_reference = t.reference_number
-   AND fo.status = 'completed'
+   AND fo.status IN ('completed', 'partially_refunded', 'refunded')
 `;
 
 const PURPOSE_SELECT = `
@@ -164,7 +164,14 @@ const PURPOSE_SELECT = `
   mm.plan_id              AS purpose_legacy_plan_id,
   orig.reference_number   AS purpose_refund_of_reference,
   fo.id                   AS purpose_order_id,
-  fo.order_number         AS purpose_order_number
+  fo.order_number         AS purpose_order_number,
+  -- Units still refundable on this order across REFUNDABLE line types (product,
+  -- no_show_fee), so the history list can show/hide the Refund button exactly like
+  -- the receipt without fetching each order.
+  (SELECT COALESCE(SUM(oi.quantity - oi.refunded_quantity), 0)
+     FROM fin_order_items oi
+     WHERE oi.order_id = fo.id AND oi.item_type IN ('product', 'no_show_fee')
+  )                        AS purpose_order_refundable_qty
 `;
 
 export type PurposeLinkType = 'invoice' | 'order' | 'booking' | 'membership';
@@ -178,6 +185,11 @@ export interface PurposeLink {
 function withPurpose(row: any): any {
   const label = resolvePurposeLabel(row);
   const link = resolvePurposeLink(row);
+  // Capture the order refund signals BEFORE stripping the scratch columns, so the
+  // history list can offer a line-item (order) refund and hide it when nothing
+  // remains refundable on the order.
+  const resolvedOrderId: string | null = row.purpose_order_id ?? null;
+  const orderRefundableQty: number = Number(row.purpose_order_refundable_qty ?? 0);
   // Strip the raw purpose_* scratch columns from the response; keep the result clean.
   const clean: any = {};
   for (const k of Object.keys(row)) {
@@ -185,6 +197,8 @@ function withPurpose(row: any): any {
   }
   clean.purpose_label = label;
   clean.purpose_link = link;
+  clean.resolved_order_id = resolvedOrderId;
+  clean.order_refundable_qty = orderRefundableQty;
   return clean;
 }
 

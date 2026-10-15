@@ -685,6 +685,14 @@ export interface PayTransaction {
   is_processed: boolean;
   provider_reference: string | null;
   refund_of_id: string | null;
+  /** Linkage columns — drive refundability (membership/account-credit not refundable here). */
+  enrollment_id: string | null;
+  invoice_id: string | null;
+  order_id: string | null;
+  /** The order this charge belongs to, resolved by reference match (may be set when order_id is not). */
+  resolved_order_id: string | null;
+  /** Units still refundable on the linked order (product/no-show lines). 0 = nothing left. */
+  order_refundable_qty: number;
   /** Resolved "what is this payment for" label (e.g. "Invoice #1002", "Payment on account"). */
   purpose_label: string;
   /** Where the label links, if anywhere (invoice -> PDF, booking/membership -> page). */
@@ -692,6 +700,38 @@ export interface PayTransaction {
   customer_first_name?: string;
   customer_last_name?: string;
   created_at: string;
+}
+
+/** The order a charge belongs to, if any (direct FK or resolved by reference). */
+export function orderIdFor(t: PayTransaction): string | null {
+  return t.order_id ?? t.resolved_order_id ?? null;
+}
+
+/** True when this charge is an ORDER sale (refunded via the line-item order flow). */
+export function isOrderCharge(t: PayTransaction): boolean {
+  return !!orderIdFor(t);
+}
+
+/**
+ * Whether a charge can be refunded from the Billing-tab history, and HOW.
+ * Mirrors the server rules. Returns:
+ *   - 'order'       → refund via the line-item order modal (products/no-show only;
+ *                     only when the order still has refundable units left)
+ *   - 'transaction' → the flat per-transaction refund (ad-hoc payments, invoice settles)
+ *   - null          → not refundable (membership renewal, gift card, account credit,
+ *                     non-completed, or fully refunded)
+ */
+export function refundKind(t: PayTransaction, remainingCents: number): 'order' | 'transaction' | null {
+  if (t.type !== 'charge' || t.status !== 'completed') return null;
+  if (t.enrollment_id) return null;                        // membership renewal → cancel instead
+  if (t.payment_method === 'gift_card') return null;       // stored value
+  if (t.payment_method === 'account_credit') return null;  // internal move
+  if (isOrderCharge(t)) {
+    // Order sale: line-item refund, only while refundable units remain.
+    return t.order_refundable_qty > 0 ? 'order' : null;
+  }
+  // Plain charge / invoice settlement: flat refund while a balance remains.
+  return remainingCents > 0 ? 'transaction' : null;
 }
 
 export interface TransactionListParams {

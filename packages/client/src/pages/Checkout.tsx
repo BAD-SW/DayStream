@@ -213,6 +213,20 @@ export function Checkout() {
     }
   };
 
+  // If the paid order came back with membership enrollment failures, the money is in
+  // but the membership isn't — tell the cashier plainly so they can follow up (manual
+  // enroll or refund). Non-blocking: we still proceed to the receipt afterwards.
+  const warnIfEnrollmentFailed = (completed: checkoutApi.Order) => {
+    const warnings = completed.enrollment_warnings;
+    if (!warnings || warnings.length === 0) return;
+    const lines = warnings.map((w) => `• ${w.planName || 'Membership'}: ${w.reason}`).join('\n');
+    alert(
+      'Payment was taken, but the following membership(s) were NOT enrolled:\n\n'
+      + lines
+      + '\n\nPlease enroll the customer manually or refund the membership.',
+    );
+  };
+
   // The browser confirmed the walk-in PaymentIntent; complete the order referencing it.
   const handleWalkInCardPaid = async (paymentIntentId: string) => {
     if (!order) return;
@@ -223,6 +237,7 @@ export function Checkout() {
         one_time_charge_ref: paymentIntentId,
         walk_in_name: walkInName.trim() || null,
       });
+      warnIfEnrollmentFailed(completed);
       navigate(`/receipt/${completed.id}`);
     } catch (err: any) {
       alert(err?.response?.data?.error || 'The card was charged but completing the order failed. Please check the order.');
@@ -285,6 +300,7 @@ export function Checkout() {
         // For a check, the check number is the payment reference.
         payment_reference: payMethod === 'check' && payCheckNumber.trim() ? payCheckNumber.trim() : undefined,
       });
+      warnIfEnrollmentFailed(completed);
       navigate(`/receipt/${completed.id}`);
     } catch (err: any) {
       const code = err?.response?.data?.code;

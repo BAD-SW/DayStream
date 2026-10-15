@@ -336,10 +336,14 @@ customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (
     const [hours, minutes] = time.split(':').map(Number);
     const nextRun = new Date(); nextRun.setHours(hours, minutes, 0, 0);
     if (nextRun <= new Date()) nextRun.setDate(nextRun.getDate() + 1);
+    // These are business-scoped jobs. The uniqueness is a PARTIAL index
+    // (business_id, job_type) WHERE scope_level = 'business' (migration 117), so the
+    // ON CONFLICT must carry that same predicate to match the index.
     const { rows } = await adminPool.query(
-      `INSERT INTO sys_scheduled_jobs (business_id, tenant_id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled, next_run_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       ON CONFLICT (business_id, job_type) DO UPDATE SET schedule_time = $4, schedule_timezone = $5, frequency = $6, day_of_week = $7, day_of_month = $8, enabled = $9, next_run_at = $10, updated_at = NOW() RETURNING *`,
+      `INSERT INTO sys_scheduled_jobs (scope_level, business_id, tenant_id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled, next_run_at)
+       VALUES ('business', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       ON CONFLICT (business_id, job_type) WHERE scope_level = 'business'
+       DO UPDATE SET schedule_time = $4, schedule_timezone = $5, frequency = $6, day_of_week = $7, day_of_month = $8, enabled = $9, next_run_at = $10, updated_at = NOW() RETURNING *`,
       [businessId, authReq.tenantId, job_type, time, schedule_timezone || 'UTC', frequency || 'daily', day_of_week ?? null, day_of_month ?? null, enabled !== false, nextRun.toISOString()],
     );
     success(res, rows[0], undefined, 201);
@@ -393,6 +397,13 @@ customersRouter.post('/scheduled-jobs/run', requirePermission('settings:*'), asy
     if (job_type === 'revenue_recognition' && date_from) {
       const { recognizeRevenue } = await import('../services/revenue-recognition.service');
       result = await recognizeRevenue(businessId, date_from, date_to || date_from, posting_date || undefined);
+    } else if (job_type === 'billing_process' && date_from) {
+      // Manual recurring-charge run with a selected From..To range: honor it — only
+      // enrollments whose billing date falls inside the range are charged, rather
+      // than sweeping everything overdue as the scheduled job does.
+      const { runBusinessBillingNow } = await import('../services/membership-renewal.service');
+      const run = await runBusinessBillingNow(businessId, date_from, date_to || date_from);
+      result = { status: 'processed', auto_resumed: run.autoResumed, renewals: run.renewals, dunning: run.dunning };
     } else {
       result = await handler({ scopeLevel: 'business', businessId, tenantId: authReq.tenantId || '', config: {} });
     }
@@ -1349,10 +1360,12 @@ customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (
     nextRun.setHours(hours, minutes, 0, 0);
     if (nextRun <= now) nextRun.setDate(nextRun.getDate() + 1);
 
+    // Business-scoped jobs: match the PARTIAL unique index (business_id, job_type)
+    // WHERE scope_level = 'business' (migration 117) by repeating its predicate.
     const { rows } = await adminPool.query(
-      `INSERT INTO sys_scheduled_jobs (business_id, tenant_id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled, next_run_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       ON CONFLICT (business_id, job_type)
+      `INSERT INTO sys_scheduled_jobs (scope_level, business_id, tenant_id, job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled, next_run_at)
+       VALUES ('business', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       ON CONFLICT (business_id, job_type) WHERE scope_level = 'business'
        DO UPDATE SET schedule_time = $4, schedule_timezone = $5, frequency = $6, day_of_week = $7, day_of_month = $8, enabled = $9, next_run_at = $10, updated_at = NOW()
        RETURNING *`,
       [businessId, authReq.tenantId, job_type, time, tz, frequency || 'daily', day_of_week ?? null, day_of_month ?? null, enabled !== false, nextRun.toISOString()],

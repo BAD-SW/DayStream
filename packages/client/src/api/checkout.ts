@@ -50,6 +50,13 @@ export interface Order {
   completed_at: string | null;
   created_at: string;
   items: OrderItem[];
+  /**
+   * Present only on the response from completing an order: memberships on the order
+   * whose payment succeeded but whose enrollment did NOT complete (e.g. already
+   * enrolled in that plan, or no customer on the order). The money was taken, so
+   * staff must be told to follow up (manual enroll / refund).
+   */
+  enrollment_warnings?: Array<{ planId: string; planName: string | null; reason: string }>;
 }
 
 export async function createOrder(data: { business_id: string; customer_id?: string; booking_id?: string; notes?: string }): Promise<Order> {

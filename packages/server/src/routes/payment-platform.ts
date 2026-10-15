@@ -835,6 +835,7 @@ paymentPlatformRouter.post('/refunds', requirePermission('bookings:*'), validate
     const map: Record<string, number> = {
       REASON_REQUIRED: 400, INVALID_AMOUNT: 400, EXCEEDS_REFUNDABLE: 400,
       CHARGE_NOT_FOUND: 404, CHARGE_NOT_COMPLETED: 409, ALREADY_REFUNDED: 409, NO_CONNECTION: 409,
+      NOT_REFUNDABLE: 409, REFUND_VIA_ORDER: 409,
     };
     if (e?.code && map[e.code]) { error(res, e.message, e.code, map[e.code]); return; }
     error(res, 'Failed to process refund', 'INTERNAL_ERROR', 500);
@@ -1292,7 +1293,7 @@ paymentPlatformRouter.post('/subscriptions', requirePermission('bookings:*'), va
     }
     success(res, enrollment, undefined, 201);
   } catch (e: any) {
-    if (e?.message?.includes('already has an active membership')) { error(res, e.message, 'ALREADY_ENROLLED', 409); return; }
+    if (e?.code === 'ALREADY_ENROLLED_IN_PLAN') { error(res, e.message, 'ALREADY_ENROLLED_IN_PLAN', 409); return; }
     if (e?.message?.includes('Plan not found')) { error(res, e.message, 'NOT_FOUND', 404); return; }
     error(res, 'Failed to create subscription', 'INTERNAL_ERROR', 500);
   }

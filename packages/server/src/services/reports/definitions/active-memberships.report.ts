@@ -49,11 +49,14 @@ export const activeMembershipsReport: ReportDefinition = {
               e.current_period_end,
               e.next_billing_date AS next_billing,
               p.price::int AS price,
+              -- LTV is per THIS enrollment (recognized revenue for this enrollment),
+              -- not per customer. A customer may now hold several concurrent
+              -- enrollments, each its own report row; summing a customer-wide total on
+              -- every row would multiply the footer total by the row count.
               COALESCE((
                 SELECT SUM(rr.amount_recognized)
                   FROM fin_revenue_recognized rr
-                  JOIN mbr_enrollments e2 ON e2.id = rr.enrollment_id
-                 WHERE e2.customer_id = e.customer_id AND e2.business_id = e.business_id
+                 WHERE rr.enrollment_id = e.id
               ), 0)::int AS ltv
          FROM mbr_enrollments e
          JOIN mbr_plans p ON p.id = e.plan_id

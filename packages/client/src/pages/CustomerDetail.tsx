@@ -8,6 +8,7 @@ import * as customersApi from '../api/customers';
 import type { Customer } from '../api/customers';
 import { PaymentMethods } from '../components/PaymentMethods';
 import { TakePaymentModal } from '../components/TakePaymentModal';
+import { RefundOrderModal } from '../components/RefundOrderModal';
 import { Modal } from '../design-system/components/feedback/Modal';
 import { CurrencyInput } from '../components/CurrencyInput';
 import * as payApi from '../api/payments';
@@ -605,6 +606,8 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
   const [payingId, setPayingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [refundTxn, setRefundTxn] = useState<PayTransaction | null>(null);
+  // Order-linked charges refund through the shared line-item modal (Option B).
+  const [refundOrderId, setRefundOrderId] = useState<string | null>(null);
   const [showIssueInvoice, setShowIssueInvoice] = useState(false);
   const [creditBalance, setCreditBalance] = useState<payApi.AccountCreditBalance | null>(null);
   const [applyingCreditTo, setApplyingCreditTo] = useState<string | null>(null);
@@ -654,7 +657,18 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
     }
   }
   const remainingRefundable = (t: PayTransaction) => t.amount - (refundedByCharge.get(t.id) ?? 0);
-  const isRefundable = (t: PayTransaction) => t.type === 'charge' && t.status === 'completed' && remainingRefundable(t) > 0;
+  // How a charge can be refunded from here, per the business rules:
+  //   'order'       → open the shared line-item order modal (products / no-show fees)
+  //   'transaction' → the flat per-transaction refund (ad-hoc payments, invoice settles)
+  //   null          → not refundable (membership, gift card, account credit, or fully refunded)
+  const refundKindOf = (t: PayTransaction) => payApi.refundKind(t, remainingRefundable(t));
+
+  // Open the right refund flow for a row.
+  const startRefund = (t: PayTransaction) => {
+    const kind = refundKindOf(t);
+    if (kind === 'order') { setRefundOrderId(payApi.orderIdFor(t)); return; }
+    if (kind === 'transaction') { setRefundTxn(t); }
+  };
 
   const outstanding = invoices.filter((i) => i.status === 'issued' || i.status === 'overdue');
 
@@ -845,8 +859,8 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
                   <td style={{ padding: '8px', textAlign: 'right' }}>{formatCurrency(t.amount, t.currency)}</td>
                   <td style={{ padding: '8px' }}><Badge variant={statusVariant(t.status)}>{t.status}</Badge></td>
                   <td style={{ padding: '8px', textAlign: 'right' }}>
-                    {isRefundable(t) && (
-                      <button style={membershipActionStyle} onClick={() => setRefundTxn(t)}>Refund</button>
+                    {refundKindOf(t) && (
+                      <button style={membershipActionStyle} onClick={() => startRefund(t)}>Refund</button>
                     )}
                   </td>
                 </tr>
@@ -863,6 +877,15 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
           remainingCents={remainingRefundable(refundTxn)}
           onClose={() => setRefundTxn(null)}
           onRefunded={() => { setRefundTxn(null); load(); }}
+        />
+      )}
+
+      {refundOrderId && (
+        <RefundOrderModal
+          orderId={refundOrderId}
+          businessId={businessId}
+          onClose={() => setRefundOrderId(null)}
+          onRefunded={() => { setRefundOrderId(null); load(); }}
         />
       )}
 
@@ -1196,16 +1219,45 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
   const [enrolling, setEnrolling] = useState(false);
   const [pausingEnrollmentId, setPausingEnrollmentId] = useState<string | null>(null);
   const [pauseDays, setPauseDays] = useState<number>(15);
+  // Renewal payment-method editing: the enrollment id being edited + the customer's stored cards.
+  const [editingMethodFor, setEditingMethodFor] = useState<string | null>(null);
+  const [storedMethods, setStoredMethods] = useState<PaymentMethod[]>([]);
+  const [savingMethod, setSavingMethod] = useState(false);
 
   const fetchEnrollments = useCallback(async () => {
     try {
       const res = await apiClient.get(`/v1/memberships?business_id=${businessId}&customer_id=${customerId}`);
-      setEnrollments((res.data.data || []).filter((e: any) => e.status === 'active' || e.status === 'paused'));
+      // Show every live membership (a customer may hold several at once). "Live" =
+      // active/paused AND not cancelled — cancellation sets cancelled_at but leaves
+      // status unchanged, so status alone would wrongly show cancelled ones as active
+      // (this now matches the Active Memberships report's filter).
+      setEnrollments(
+        (res.data.data || []).filter(
+          (e: any) => (e.status === 'active' || e.status === 'paused') && !e.cancelled_at,
+        ),
+      );
     } catch { setEnrollments([]); }
     finally { setLoading(false); }
   }, [customerId, businessId]);
 
   useEffect(() => { fetchEnrollments(); }, [fetchEnrollments]);
+
+  // The customer's stored cards, for the renewal-method picker.
+  useEffect(() => {
+    payApi.listPaymentMethods({ owner_level: 'customer', business_id: businessId, customer_id: customerId })
+      .then(setStoredMethods).catch(() => setStoredMethods([]));
+  }, [businessId, customerId]);
+
+  const setRenewalMethod = async (enrollmentId: string, paymentMethodId: string | null) => {
+    setSavingMethod(true);
+    try {
+      await apiClient.put(`/v1/memberships/${enrollmentId}/payment-method?business_id=${businessId}`, { payment_method_id: paymentMethodId });
+      await fetchEnrollments();
+      setEditingMethodFor(null);
+    } catch (err: any) {
+      alert(err?.response?.data?.error || 'Failed to update the renewal card.');
+    } finally { setSavingMethod(false); }
+  };
 
   const loadPlans = async () => {
     if (plans.length === 0) {
@@ -1312,6 +1364,44 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
                   e.next_billing_date && ` · Next billing: ${formatDateOnly(e.next_billing_date)}`
                 )}
               </div>
+
+              {/* Renewal card: the pinned method, or the customer's default as fallback. */}
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+                Renewal card:{' '}
+                {e.payment_method_id
+                  ? <strong style={{ color: 'var(--color-text)' }}>{e.renewal_method_brand || e.renewal_method_type || 'Card'}{e.renewal_method_last4 ? ` ···· ${e.renewal_method_last4}` : ''}</strong>
+                  : <span>Customer default card</span>}
+                {!e.cancelled_at && (
+                  <button style={{ ...membershipActionStyle, marginLeft: '8px', padding: '0 4px' }} onClick={() => setEditingMethodFor(editingMethodFor === e.id ? null : e.id)}>
+                    {editingMethodFor === e.id ? 'Close' : 'Change'}
+                  </button>
+                )}
+              </div>
+              {editingMethodFor === e.id && (
+                <div style={{ marginTop: '6px', padding: '8px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {storedMethods.length === 0 ? (
+                    <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>No stored cards. Add one under Payment Methods on File, then pick it here.</span>
+                  ) : (
+                    <>
+                      <select
+                        style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '6px 10px', fontSize: 'var(--font-size-sm)', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' }}
+                        defaultValue={e.payment_method_id || ''}
+                        disabled={savingMethod}
+                        onChange={(ev) => setRenewalMethod(e.id, ev.target.value || null)}
+                      >
+                        <option value="">Use customer default card</option>
+                        {storedMethods.filter((m) => m.method_type !== 'bank_draw' || true).map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.display_brand || m.method_type}{m.display_last4 ? ` ···· ${m.display_last4}` : ''}{m.is_default ? ' (default)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>Pin a card for this membership, or use the customer's default.</span>
+                    </>
+                  )}
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
                 {e.status === 'active' && !e.cancelled_at && <button style={membershipActionStyle} onClick={() => handlePause(e.id)}>Pause</button>}
                 {e.status === 'paused' && <button style={membershipActionStyle} onClick={() => handleResume(e.id)}>Resume</button>}

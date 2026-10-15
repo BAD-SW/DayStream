@@ -59,7 +59,7 @@ export async function refundTransaction(input: RefundInput): Promise<RefundResul
 
   // Load the original charge (scoped to the business) and compute what's left.
   const { rows: origRows } = await adminPool.query(
-    `SELECT id, business_id, customer_id, booking_id, membership_id, enrollment_id, invoice_id,
+    `SELECT id, business_id, customer_id, booking_id, membership_id, enrollment_id, invoice_id, order_id,
             amount, currency, payment_method, reference_number, is_processed, provider_reference,
             card_last4, card_brand
      FROM pay_transactions
@@ -68,6 +68,28 @@ export async function refundTransaction(input: RefundInput): Promise<RefundResul
   );
   const original = origRows[0];
   if (!original) throw new RefundError('Original charge not found for this business', 'CHARGE_NOT_FOUND');
+
+  // Business rules on what a direct transaction refund may touch (mirrors the UI).
+  // Some charges are deliberately NOT refundable this way:
+  //   - membership/enrollment renewals → cancel the membership instead (service
+  //     runs to end of the billing period; no refund).
+  //   - gift-card purchases/charges → stored value is a liability, not a return.
+  //   - account-credit applications → an internal liability→revenue move, not
+  //     collected money to return.
+  //   - order-linked charges → refund through the ORDER (line-item aware, product/
+  //     no-show only), not as a flat transaction refund.
+  if (original.enrollment_id) {
+    throw new RefundError('A membership renewal cannot be refunded — cancel the membership instead', 'NOT_REFUNDABLE');
+  }
+  if (original.payment_method === 'gift_card') {
+    throw new RefundError('Gift-card charges are not refundable', 'NOT_REFUNDABLE');
+  }
+  if (original.payment_method === 'account_credit') {
+    throw new RefundError('An applied account credit cannot be refunded here', 'NOT_REFUNDABLE');
+  }
+  if (original.order_id) {
+    throw new RefundError('Refund this sale from its order/receipt', 'REFUND_VIA_ORDER');
+  }
 
   // Only completed charges are refundable (a pending/failed charge has no funds to return).
   const { rows: statusRows } = await adminPool.query(

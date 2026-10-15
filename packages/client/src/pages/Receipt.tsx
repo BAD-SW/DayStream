@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
-import { Modal } from '../design-system/components/feedback/Modal';
 import * as checkoutApi from '../api/checkout';
-import type { Order, OrderItem } from '../api/checkout';
+import type { Order } from '../api/checkout';
 import { formatCurrency } from '../utils/currency';
+import { RefundOrderModal } from '../components/RefundOrderModal';
 
 // i18n-ready labels — extract to a translation file later
 const labels = {
@@ -370,107 +370,3 @@ const styles: Record<string, React.CSSProperties> = {
   paymentInfo: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
   footer: { textAlign: 'center' as const, marginTop: '20px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', fontStyle: 'italic' as const },
 };
-
-/**
- * RefundOrderModal — line-item refund. Lists each line with its remaining
- * refundable quantity; staff choose how many of each to return. Submits the
- * selected lines; the server computes the per-line amount, reverses the card,
- * and posts the GL reversal.
- */
-function RefundOrderModal({ order, businessId, onClose, onRefunded }: {
-  order: Order; businessId: string; onClose: () => void; onRefunded: () => void;
-}) {
-  // Only refundable line TYPES with something left to return (services, memberships,
-  // packages and gift cards are not refundable — see REFUNDABLE_ITEM_TYPES).
-  const refundable = order.items.filter(
-    (it) => checkoutApi.REFUNDABLE_ITEM_TYPES.has(it.item_type) && it.quantity - (it.refunded_quantity || 0) > 0,
-  );
-  const [qty, setQty] = useState<Record<string, number>>(
-    Object.fromEntries(refundable.map((it) => [it.id, 0])),
-  );
-  const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const remainingOf = (it: OrderItem) => it.quantity - (it.refunded_quantity || 0);
-  // Per-unit price (incl. tax) from the line's own figures, for the running estimate.
-  const perUnit = (it: OrderItem) => Math.round(it.total_price / it.quantity);
-  const estTotal = refundable.reduce((sum, it) => sum + perUnit(it) * (qty[it.id] || 0), 0);
-  const anySelected = refundable.some((it) => (qty[it.id] || 0) > 0);
-
-  const setLineQty = (id: string, v: number, max: number) =>
-    setQty((prev) => ({ ...prev, [id]: Math.max(0, Math.min(max, v)) }));
-
-  const submit = async () => {
-    if (!reason.trim()) { setError('A reason is required.'); return; }
-    const lines = refundable
-      .filter((it) => (qty[it.id] || 0) > 0)
-      .map((it) => ({ order_item_id: it.id, quantity: qty[it.id] }));
-    if (lines.length === 0) { setError('Select at least one item to refund.'); return; }
-    setBusy(true); setError(null);
-    try {
-      const res = await checkoutApi.refundOrder(order.id, businessId, reason.trim(), lines);
-      if (res.status === 'failed') { setError(res.failureReason || 'The refund was declined.'); return; }
-      onRefunded();
-    } catch (err: any) {
-      setError(err?.response?.data?.error || 'Failed to process the refund.');
-    } finally { setBusy(false); }
-  };
-
-  return (
-    <Modal open onClose={onClose} title={`Refund — Order ${order.order_number}`}
-      footer={<>
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button variant="destructive" loading={busy} onClick={submit}>
-          Refund {estTotal > 0 ? formatCurrency(estTotal) : ''}
-        </Button>
-      </>}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
-          Choose how many of each item to return.
-          {order.payment_method === 'card' ? ' The card will be refunded.' : ' Recorded as refunded (manual payment).'}
-        </p>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {refundable.map((it) => {
-            const rem = remainingOf(it);
-            return (
-              <div key={it.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '8px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{it.item_name}</span>
-                  <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                    {formatCurrency(perUnit(it))} each · {rem} of {it.quantity} refundable
-                  </span>
-                </div>
-                <input
-                  type="number" min={0} max={rem}
-                  value={qty[it.id] || 0}
-                  onChange={(e) => setLineQty(it.id, parseInt(e.target.value, 10) || 0, rem)}
-                  style={{ width: '64px', padding: '8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' }}
-                  aria-label={`Quantity to refund for ${it.item_name}`}
-                />
-              </div>
-            );
-          })}
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Reason <span style={{ color: 'var(--color-error)' }}>*</span></label>
-          <input
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. customer returned product"
-            style={{ padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' }}
-          />
-        </div>
-
-        {anySelected && (
-          <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
-            Estimated refund: <strong>{formatCurrency(estTotal)}</strong> (final amount uses each line's recorded price &amp; tax).
-          </p>
-        )}
-        {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: 0 }}>{error}</p>}
-      </div>
-    </Modal>
-  );
-}

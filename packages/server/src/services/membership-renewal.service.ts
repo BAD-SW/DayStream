@@ -59,6 +59,7 @@ interface DueEnrollment {
  */
 export async function runMembershipRenewals(
   businessId: string, today: Date = new Date(), _executionId: string | null = null,
+  from?: string, to?: string,
 ): Promise<RenewalSummary> {
   const summary: RenewalSummary = { businessId, due: 0, charged: 0, pending: 0, failed: 0, skipped: 0 };
 
@@ -76,10 +77,25 @@ export async function runMembershipRenewals(
 
   const todayStr = today.toISOString().split('T')[0];
 
-  // Due = active enrollments whose billing date has arrived. Paused/cancelled rows
-  // have next_billing_date = NULL, so they're excluded by the predicate. An
-  // enrollment already in an open dunning cycle is excluded too — dunning owns its
-  // retries, so renewals must not also charge it (C6.6: no double-charge).
+  // Which enrollments are "due" depends on how the run was triggered:
+  //
+  //  - Scheduled daily run (no window): catch-up semantics — everything with
+  //    next_billing_date <= today. This way a day the job didn't fire still gets
+  //    swept the next time it runs, so no renewal is stranded.
+  //
+  //  - Manual run with an explicit From..To window: only enrollments whose billing
+  //    date falls INSIDE that window. The operator asked to process a specific
+  //    range, so an enrollment due outside it (even if overdue) is left alone. This
+  //    is what makes the date range meaningful rather than cosmetic.
+  //
+  // Paused/cancelled rows have next_billing_date = NULL, so they're excluded either
+  // way. An enrollment already in an open dunning cycle is excluded too — dunning
+  // owns its retries, so renewals must not also charge it (C6.6: no double-charge).
+  const dueClause = from
+    ? 'e.next_billing_date BETWEEN $2::date AND $3::date'
+    : 'e.next_billing_date <= $2::date';
+  const dueParams = from ? [businessId, from, to ?? from] : [businessId, todayStr];
+
   const { rows: due } = await adminPool.query<DueEnrollment>(
     `SELECT e.id, e.plan_id, e.customer_id, e.payment_method_id,
             e.current_period_start, e.next_billing_date, e.pending_plan_id,
@@ -87,13 +103,13 @@ export async function runMembershipRenewals(
      FROM mbr_enrollments e
      JOIN mbr_plans p ON p.id = e.plan_id
      WHERE e.business_id = $1 AND e.status = 'active'
-       AND e.next_billing_date IS NOT NULL AND e.next_billing_date <= $2::date
+       AND e.next_billing_date IS NOT NULL AND ${dueClause}
        AND NOT EXISTS (
          SELECT 1 FROM pay_dunning_attempts d
          WHERE d.enrollment_id = e.id AND d.outcome = 'pending'
        )
      ORDER BY e.next_billing_date`,
-    [businessId, todayStr],
+    dueParams,
   );
   summary.due = due.length;
 
@@ -114,6 +130,22 @@ export async function runMembershipRenewals(
 }
 
 type RenewalOutcome = 'charged' | 'pending' | 'failed' | 'skipped';
+
+/**
+ * The customer's default stored card for this business, used when an enrollment
+ * hasn't pinned a specific renewal method. Returns null if the customer has no
+ * active stored method.
+ */
+async function customerDefaultMethodId(businessId: string, customerId: string): Promise<string | null> {
+  const { rows } = await adminPool.query(
+    `SELECT id FROM pay_payment_methods
+     WHERE owner_level = 'customer' AND business_id = $1 AND customer_id = $2 AND status = 'active'
+     ORDER BY is_default DESC, created_at DESC
+     LIMIT 1`,
+    [businessId, customerId],
+  );
+  return rows[0]?.id ?? null;
+}
 
 /** Renew a single enrollment. Returns which summary bucket it landed in. */
 async function renewOne(
@@ -137,10 +169,13 @@ async function renewOne(
 
   const reference = generateReference();
 
-  // No stored method on the enrollment → can't charge. Record as skipped; a future
-  // reminder/collection flow (or the UI) prompts the customer to add a method.
-  if (!enr.payment_method_id) {
-    logger.info(`Enrollment ${enr.id} has no stored payment method; skipping renewal charge`);
+  // Which card funds this renewal: the method PINNED to the enrollment if set
+  // (e.g. "charge card A for the membership"), otherwise fall back to the
+  // customer's DEFAULT stored card. Only when neither exists is there nothing to
+  // charge — then skip (a reminder/collection flow prompts the customer).
+  const chargeMethodId = enr.payment_method_id ?? await customerDefaultMethodId(businessId, enr.customer_id);
+  if (!chargeMethodId) {
+    logger.info(`Enrollment ${enr.id} has no pinned method and the customer has no default card; skipping renewal charge`);
     return 'skipped';
   }
 
@@ -164,7 +199,7 @@ async function renewOne(
     owner,
     amountCents,
     currency,
-    paymentMethodId: enr.payment_method_id,
+    paymentMethodId: chargeMethodId,
     // Stable per (enrollment, period) so a provider retry never double-charges.
     idempotencyKey: `enroll:${enr.id}:${enr.next_billing_date}`,
     description: `${enr.plan_name} membership renewal`,
@@ -197,7 +232,7 @@ async function renewOne(
     amountCents, currency, method: 'card', status,
     referenceNumber: reference, description: `${enr.plan_name} membership renewal`,
     processedBy: null, isProcessed: true, providerReference: charge.providerReference ?? null,
-    paymentMethodId: enr.payment_method_id,
+    paymentMethodId: chargeMethodId,
   });
   // Post the GL entry (enrollment-linked → credits Deferred Revenue so the
   // recognition job can move it to Membership Revenue over the period).
@@ -244,6 +279,10 @@ export async function advanceEnrollmentPeriod(params: {
            current_period_start = $3,
            current_period_end = $4,
            next_billing_date = $5,
+           -- A pause credit discounts ONE upcoming cycle; once the period rolls it
+           -- is spent, so reset it. (Leaving it set made it compound every cycle,
+           -- permanently suppressing revenue recognition.)
+           paused_days_credit = 0,
            updated_at = NOW()
        WHERE id = $1`,
       [enrollmentId, effectivePlanId, periodStartDate, newPeriodEnd, newNextBilling],
@@ -375,12 +414,25 @@ export async function saveBusinessBillingSchedule(
   return (await getBusinessBillingSchedule(businessId))!;
 }
 
-/** Run a business's recurring billing now (manual trigger): resume + renew + dun. */
-export async function runBusinessBillingNow(businessId: string): Promise<{ autoResumed: number; renewals: RenewalSummary; dunning: any }> {
+/**
+ * Run a business's recurring billing now (manual trigger): resume + renew + dun.
+ *
+ * When `from`/`to` are given (a manual run with a selected date range), only
+ * enrollments whose next_billing_date falls inside that window are renewed — the
+ * operator's dates are honored. With no dates (the scheduled daily run) it charges
+ * everything past due (catch-up), so a missed run day isn't stranded.
+ *
+ * Auto-resume and dunning always run against "today" regardless of the window:
+ * resume frees pauses elapsed as of now, and dunning only advances already-open
+ * retry cycles (it never starts a new renewal), so neither is scoped by the range.
+ */
+export async function runBusinessBillingNow(
+  businessId: string, from?: string, to?: string,
+): Promise<{ autoResumed: number; renewals: RenewalSummary; dunning: any }> {
   const { autoResumeExpiredPauses } = await import('./membership.service');
   const { processDunning } = await import('./dunning.service');
   const autoResumed = await autoResumeExpiredPauses(businessId);
-  const renewals = await runMembershipRenewals(businessId, new Date(), null);
+  const renewals = await runMembershipRenewals(businessId, new Date(), null, from, to);
   const dunning = await processDunning(businessId, new Date(), null);
   return { autoResumed, renewals, dunning };
 }

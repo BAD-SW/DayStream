@@ -183,8 +183,8 @@ membershipsRouter.post('/', requirePermission('services:*'), validate(createMemb
       error(res, err.message, 'NOT_FOUND', 404);
     } else if (err.code === 'PLAN_NOT_ACTIVE') {
       error(res, err.message, 'PLAN_NOT_ACTIVE', 409);
-    } else if (err.message.includes('already has an active membership')) {
-      error(res, err.message, 'ALREADY_ENROLLED', 409);
+    } else if (err.code === 'ALREADY_ENROLLED_IN_PLAN') {
+      error(res, err.message, 'ALREADY_ENROLLED_IN_PLAN', 409);
     } else { error(res, 'Failed to enroll customer', 'INTERNAL_ERROR', 500); }
   }
 });
@@ -261,6 +261,24 @@ membershipsRouter.put('/:id/cancel', requirePermission('services:*'), async (req
     if (!cancelled) { error(res, 'Enrollment not found', 'NOT_FOUND', 404); return; }
     success(res, { cancelled: true });
   } catch (err: any) { console.error('Failed to cancel enrollment', err?.message || err); error(res, 'Failed to cancel enrollment', 'INTERNAL_ERROR', 500); }
+});
+
+// PUT /api/v1/memberships/:id/payment-method — set/change/clear the card the
+// recurring renewal charges. null clears the pin (falls back to the customer's default).
+membershipsRouter.put('/:id/payment-method', requirePermission('services:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const result = await membershipService.setEnrollmentPaymentMethod(
+      req.params.id, businessId, req.body.payment_method_id ?? null,
+    );
+    success(res, result);
+  } catch (err: any) {
+    const codes: Record<string, number> = { ENROLLMENT_NOT_FOUND: 404, METHOD_NOT_FOUND: 404, METHOD_NOT_CUSTOMER: 409 };
+    if (err?.code && codes[err.code]) { error(res, err.message, err.code, codes[err.code]); return; }
+    console.error('Failed to set enrollment payment method', err?.message || err);
+    error(res, 'Failed to set payment method', 'INTERNAL_ERROR', 500);
+  }
 });
 
 // --- Plan Items ---
