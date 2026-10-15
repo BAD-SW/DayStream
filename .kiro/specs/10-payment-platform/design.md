@@ -535,6 +535,13 @@ A business opts into invoice-based billing. Issued invoices (`pay_invoices`) are
 
 Business-scoped. Gift cards hold an internal balance redeemable only at the issuing business (partial redemption supported). Vouchers apply a discount via the Pricing Engine's `Price_Breakdown`.
 
+**Gift cards are SOLD through checkout (Model B).** A gift card is a `gift_card` line item on an order (`fin_order_items.item_type`), priced at its face value. Taxing the sale is a per-business setting (`gift_card.tax_enabled`, default off — jurisdiction-dependent): off = no tax on the line; on = taxed at the business's default tax category rate. When the order completes, the server creates the funded `pay_gift_cards` row (balance = line total, `funded_by_order_id` set, recipient from the line) — mirroring how a membership line auto-enrolls; a creation failure is surfaced on the order response, never swallowed. A separate administrative issuance (comp, no payment) remains available from the gift-card management screen.
+
+**Gift-card accounting (full double-entry).** Chart of accounts: `2600 Gift Card Liability`, `4400 Gift Card Revenue`.
+- *Purchase* (order line): Debit `1100 Cash` / Credit `2600 Gift Card Liability` — selling stored value is not revenue; it is money we owe back.
+- *Redemption tendered on an order*: the order journal draws down the liability instead of booking cash — Debit `2600 Gift Card Liability` (not `1100 Cash`) / Credit the item's revenue account — so redeeming a gift card never double-books cash.
+- *Redemption on a standalone Section C charge* (no order): Debit `2600 Gift Card Liability` / Credit `4400 Gift Card Revenue`.
+
 ---
 
 ## 8. Net Collections Reconciliation (C → B → A)

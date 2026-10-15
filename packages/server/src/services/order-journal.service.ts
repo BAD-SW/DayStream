@@ -18,6 +18,10 @@ const DEFERRED_REVENUE_CODE = '2400';    // Deferred Revenue (liability)
 const CASH_ACCOUNT_CODE = '1100';        // Cash & Bank
 const TAX_PAYABLE_CODE = '2300';         // Tax Payable
 const DISCOUNTS_ACCOUNT_CODE = '4900';   // Discounts & Adjustments
+const GIFT_CARD_LIABILITY_CODE = '2600'; // Gift Card Liability
+
+// Selling a gift card funds a liability (we owe the value back), NOT revenue.
+const LIABILITY_ITEM_TYPES = ['gift_card'];
 
 /**
  * Generate journal entries for a completed order.
@@ -84,6 +88,7 @@ export async function generateJournalEntries(orderId: string, businessId: string
   // Aggregate revenue by item type and track totals
   const revenueByType = new Map<string, number>(); // code -> amount (net revenue after discount)
   let deferredTotal = 0;
+  let giftCardLiabilityTotal = 0;
   let totalTax = 0;
   let totalDiscounts = 0;
 
@@ -94,7 +99,10 @@ export async function generateJournalEntries(orderId: string, businessId: string
     const netRevenue = discountsAccountId ? grossAmount + surcharge : grossAmount - discount + surcharge;
     const revenueCode = REVENUE_ACCOUNT_CODES[item.item_type] || '4100';
 
-    if (DEFERRED_ITEM_TYPES.includes(item.item_type)) {
+    if (LIABILITY_ITEM_TYPES.includes(item.item_type)) {
+      // Selling a gift card is NOT revenue — it funds a liability we owe back.
+      giftCardLiabilityTotal += netRevenue;
+    } else if (DEFERRED_ITEM_TYPES.includes(item.item_type)) {
       // Packages and memberships go to deferred revenue
       deferredTotal += netRevenue;
     } else {
@@ -105,13 +113,25 @@ export async function generateJournalEntries(orderId: string, businessId: string
     totalDiscounts += discount;
   }
 
-  // Debit: Cash for total amount paid
+  // Debit side for the amount paid. Normally this is Cash received. But when the
+  // order is TENDERED with a gift card, no cash arrives — the customer spends stored
+  // value, so we draw down the Gift Card Liability instead of debiting Cash. This is
+  // the redemption half of gift-card accounting (Dr 2600 Liability / Cr revenue) and
+  // avoids the double-count of booking fictitious cash for a gift-card payment.
   if (order.total_amount > 0) {
-    await adminPool.query(
-      `INSERT INTO fin_journal_entry_lines (journal_entry_id, account_id, debit, credit, description)
-       VALUES ($1, $2, $3, 0, $4)`,
-      [entryId, cashAccountId, order.total_amount, `Payment received - ${order.payment_method}`],
-    );
+    const tenderedByGiftCard = order.payment_method === 'gift_card';
+    const giftCardLiabilityId = accountMap.get(GIFT_CARD_LIABILITY_CODE);
+    const debitAccountId = tenderedByGiftCard ? giftCardLiabilityId : cashAccountId;
+    if (!debitAccountId) {
+      console.error(`[Journal] Missing debit account for order ${order.order_number} (tender=${order.payment_method}); skipping`);
+    } else {
+      await adminPool.query(
+        `INSERT INTO fin_journal_entry_lines (journal_entry_id, account_id, debit, credit, description)
+         VALUES ($1, $2, $3, 0, $4)`,
+        [entryId, debitAccountId, order.total_amount,
+          tenderedByGiftCard ? 'Gift card redeemed (liability drawn down)' : `Payment received - ${order.payment_method}`],
+      );
+    }
   }
 
   // Credit: Revenue accounts
@@ -143,6 +163,17 @@ export async function generateJournalEntries(orderId: string, businessId: string
       `INSERT INTO fin_journal_entry_lines (journal_entry_id, account_id, debit, credit, description)
        VALUES ($1, $2, 0, $3, $4)`,
       [entryId, deferredAccountId, deferredTotal, 'Deferred revenue - packages/memberships'],
+    );
+  }
+
+  // Credit: Gift Card Liability (selling a gift card — we owe this value back; it
+  // becomes revenue only when the card is redeemed).
+  const giftCardLiabilityAcctId = accountMap.get(GIFT_CARD_LIABILITY_CODE);
+  if (giftCardLiabilityTotal > 0 && giftCardLiabilityAcctId) {
+    await adminPool.query(
+      `INSERT INTO fin_journal_entry_lines (journal_entry_id, account_id, debit, credit, description)
+       VALUES ($1, $2, 0, $3, $4)`,
+      [entryId, giftCardLiabilityAcctId, giftCardLiabilityTotal, 'Gift card sold (liability)'],
     );
   }
 

@@ -83,6 +83,7 @@ export const REPORT_CATALOG: ReportCategory[] = [
       { id: 'new-customers', title: 'New Customers', description: 'Customers acquired in the period', icon: '🧑' },
       { id: 'customer-retention', title: 'Retention', description: 'Customer retention and churn by lifecycle stage', icon: '📈' },
       { id: 'customer-lifetime-value', title: 'Lifetime Value', description: 'Recognized revenue to date per customer', icon: '💎' },
+      { id: 'gift-cards', title: 'Gift Cards', description: 'Issued gift cards with balance, redeemed, and status', icon: '🎁', permission: 'bookings:read' },
     ],
   },
   {

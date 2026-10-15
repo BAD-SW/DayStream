@@ -9,6 +9,7 @@ import { AddPaymentMethodInline, AddMethodButton } from '../components/AddPaymen
 import { StripeOneTimeCardCharge } from '../components/StripeOneTimeCardCharge';
 import * as customersApi from '../api/customers';
 import { MissingDetailsPrompt } from '../components/MissingDetailsPrompt';
+import { CurrencyInput } from '../components/CurrencyInput';
 import type { Order, OrderItem } from '../api/checkout';
 import { formatCurrency } from '../utils/currency';
 
@@ -217,13 +218,20 @@ export function Checkout() {
   // but the membership isn't — tell the cashier plainly so they can follow up (manual
   // enroll or refund). Non-blocking: we still proceed to the receipt afterwards.
   const warnIfEnrollmentFailed = (completed: checkoutApi.Order) => {
+    // Show any gift-card codes that were issued, so the cashier can hand them over.
+    const issued = completed.gift_cards_issued;
+    if (issued && issued.length > 0) {
+      const lines = issued.map((g) => `• ${g.code} — ${formatCurrency(g.amountCents)}`).join('\n');
+      alert('Gift card(s) issued:\n\n' + lines + '\n\nGive the code(s) to the purchaser.');
+    }
+
     const warnings = completed.enrollment_warnings;
     if (!warnings || warnings.length === 0) return;
     const lines = warnings.map((w) => `• ${w.planName || 'Membership'}: ${w.reason}`).join('\n');
     alert(
-      'Payment was taken, but the following membership(s) were NOT enrolled:\n\n'
+      'Payment was taken, but the following were NOT fulfilled:\n\n'
       + lines
-      + '\n\nPlease enroll the customer manually or refund the membership.',
+      + '\n\nPlease issue them manually or refund.',
     );
   };
 
@@ -665,13 +673,17 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, onAdded, onC
   onAdded: (order: Order) => void;
   onCancel: () => void;
 }) {
-  const [itemType, setItemType] = useState<'product' | 'membership' | 'package'>('product');
+  const [itemType, setItemType] = useState<'product' | 'membership' | 'package' | 'gift_card'>('product');
   const [selectedId, setSelectedId] = useState('');
   const [variants, setVariants] = useState<any[]>([]);
   const [selectedVariantId, setSelectedVariantId] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [creditedTo, setCreditedTo] = useState('');
   const [saving, setSaving] = useState(false);
+  // Gift-card line fields (free-form; no catalog item).
+  const [giftAmount, setGiftAmount] = useState(0);          // cents
+  const [giftRecipientName, setGiftRecipientName] = useState('');
+  const [giftRecipientEmail, setGiftRecipientEmail] = useState('');
 
   const itemList = itemType === 'product' ? offerings.products
     : itemType === 'membership' ? offerings.memberships
@@ -697,6 +709,26 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, onAdded, onC
   }, [itemType, selectedId]);
 
   const handleAdd = async () => {
+    // Gift card: a free-form stored-value sale (no catalog item). The amount IS the
+    // face value / price; recipient is optional.
+    if (itemType === 'gift_card') {
+      if (giftAmount <= 0) { alert('Enter a gift card amount greater than zero.'); return; }
+      setSaving(true);
+      try {
+        const updated = await checkoutApi.addItem(orderId, {
+          item_type: 'gift_card',
+          item_name: giftRecipientName ? `Gift Card for ${giftRecipientName}` : 'Gift Card',
+          quantity: 1,
+          unit_price: giftAmount,
+          gift_recipient_name: giftRecipientName || null,
+          gift_recipient_email: giftRecipientEmail || null,
+        });
+        onAdded(updated);
+      } catch { alert('Failed to add gift card'); }
+      finally { setSaving(false); }
+      return;
+    }
+
     if (!selectedItem) return;
 
     // Warn if adding a membership and customer already has one
@@ -732,6 +764,35 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, onAdded, onC
     finally { setSaving(false); }
   };
 
+  if (itemType === 'gift_card') {
+    return (
+      <div style={{ ...styles.lineItem, background: 'var(--color-background)', borderRadius: 'var(--radius-md)', padding: '12px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <select style={styles.inlineSelect} value={itemType} onChange={(e) => { setItemType(e.target.value as any); setSelectedId(''); }}>
+            <option value="product">Product</option>
+            <option value="membership">Membership</option>
+            <option value="package">Package</option>
+            <option value="gift_card">Gift Card</option>
+          </select>
+          <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Amount
+            <span style={{ marginLeft: '4px', display: 'inline-block' }}>
+              <CurrencyInput value={giftAmount} onChange={setGiftAmount} />
+            </span>
+          </label>
+          <input style={{ ...styles.inlineSelect, minWidth: '150px' }} placeholder="Recipient name (optional)" value={giftRecipientName} onChange={(e) => setGiftRecipientName(e.target.value)} />
+          <input style={{ ...styles.inlineSelect, minWidth: '180px' }} placeholder="Recipient email (optional)" value={giftRecipientEmail} onChange={(e) => setGiftRecipientEmail(e.target.value)} />
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <Button size="sm" onClick={handleAdd} loading={saving} disabled={giftAmount <= 0}>Add</Button>
+            <Button variant="secondary" size="sm" onClick={onCancel}>✕</Button>
+          </div>
+        </div>
+        <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', margin: '6px 0 0' }}>
+          A gift card is sold for its face value (no tax). The card and its code are created when the order is paid.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div style={{ ...styles.lineItem, background: 'var(--color-background)', borderRadius: 'var(--radius-md)', padding: '12px' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr auto 45px 120px auto', gap: '6px', alignItems: 'center' }}>
@@ -739,6 +800,7 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, onAdded, onC
           <option value="product">Product</option>
           <option value="membership">Membership</option>
           <option value="package">Package</option>
+          <option value="gift_card">Gift Card</option>
         </select>
         <select style={styles.inlineSelect} value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
           <option value="">— Select item —</option>

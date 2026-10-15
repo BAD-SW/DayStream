@@ -629,6 +629,9 @@ function PaymentMethodsSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // Gift-card tax setting (C7): whether selling a gift card is taxed. Default off.
+  const [giftCardTax, setGiftCardTax] = useState(false);
+  const [savingGiftTax, setSavingGiftTax] = useState(false);
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
@@ -639,7 +642,15 @@ function PaymentMethodsSettings() {
         setMethods(METHOD_INFO.map((m) => ({ method: m.method, enabled: !m.integrationOnly })));
       })
       .finally(() => setLoading(false));
+    payApi.getGiftCardTaxEnabled(businessId).then(setGiftCardTax).catch(() => setGiftCardTax(false));
   }, [businessId]);
+
+  const toggleGiftCardTax = async (next: boolean) => {
+    setGiftCardTax(next); setSavingGiftTax(true);
+    try { await payApi.setGiftCardTaxEnabled(businessId, next); }
+    catch { setGiftCardTax(!next); setMessage('Failed to update gift-card tax setting.'); }
+    finally { setSavingGiftTax(false); }
+  };
 
   const toggleMethod = (method: string) => {
     setMethods(methods.map((m) => m.method === method ? { ...m, enabled: !m.enabled } : m));
@@ -678,6 +689,12 @@ function PaymentMethodsSettings() {
                 <span style={{ fontWeight: 600, fontSize: 'var(--font-size-base)', color: 'var(--color-text)' }}>{info.label}</span>
                 {info.integrationOnly && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-xs)', padding: '2px 6px', borderRadius: '4px', background: 'var(--color-warning-bg, #fff3cd)', color: 'var(--color-warning-text, #856404)' }}>Integration</span>}
                 <p style={{ margin: '2px 0 0', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{info.description}</p>
+                {info.method === 'gift_card' && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={giftCardTax} disabled={savingGiftTax} onChange={(e) => toggleGiftCardTax(e.target.checked)} />
+                    Apply tax to gift card sales (at the default tax rate) — depends on your jurisdiction
+                  </label>
+                )}
               </div>
               <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px', cursor: 'pointer' }}>
                 <input type="checkbox" checked={enabled} onChange={() => toggleMethod(info.method)}

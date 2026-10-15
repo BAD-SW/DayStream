@@ -1062,6 +1062,23 @@ paymentPlatformRouter.post('/gift-cards/:id/email', requirePermission('bookings:
   } catch (e: any) { console.error('Failed to email gift card', e?.message || e); error(res, 'Failed to email gift card', 'INTERNAL_ERROR', 500); }
 });
 
+// Whether this business taxes gift-card SALES (C7). Read = bookings:read; set = Manager/Owner.
+paymentPlatformRouter.get('/gift-card-tax-enabled', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, { enabled: await giftCards.isGiftCardTaxEnabled(businessId) });
+  } catch (e: any) { console.error('Failed to read gift-card tax setting', e?.message || e); error(res, 'Failed to read gift-card tax setting', 'INTERNAL_ERROR', 500); }
+});
+
+const giftCardTaxSchema = Joi.object({ business_id: Joi.string().uuid().required(), enabled: Joi.boolean().required() });
+
+paymentPlatformRouter.put('/gift-card-tax-enabled', requirePermission('bookings:*'), validate(giftCardTaxSchema), async (req: Request, res: Response) => {
+  try {
+    success(res, { enabled: await giftCards.setGiftCardTaxEnabled(req.body.business_id, req.body.enabled) });
+  } catch (e: any) { console.error('Failed to save gift-card tax setting', e?.message || e); error(res, 'Failed to save gift-card tax setting', 'INTERNAL_ERROR', 500); }
+});
+
 // ============================================================
 // Section C — Vouchers (task 4.8 / Requirement C8). Create/void = Manager/Owner;
 // read/validate = 'bookings:read'. Redemption is driven by the checkout flow.

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
@@ -35,6 +36,7 @@ interface Transaction {
 }
 
 export function Payments() {
+  const navigate = useNavigate();
   const businessId = localStorage.getItem('business_id') || '';
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -258,7 +260,10 @@ export function Payments() {
     <div style={styles.page}>
       <div style={styles.header}>
         <h1 style={styles.title}>Payments</h1>
-        <Button onClick={() => setShowRecord(true)}>Record Payment</Button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <Button variant="secondary" onClick={() => navigate('/gift-cards')}>Gift Cards</Button>
+          <Button onClick={() => setShowRecord(true)}>Record Payment</Button>
+        </div>
       </div>
 
       {/* Summary cards */}

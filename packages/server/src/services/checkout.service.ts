@@ -14,7 +14,7 @@ interface CreateOrderInput {
 }
 
 interface AddItemInput {
-  itemType: 'service' | 'product' | 'membership' | 'package' | 'no_show_fee';
+  itemType: 'service' | 'product' | 'membership' | 'package' | 'no_show_fee' | 'gift_card';
   itemId?: string;
   itemName: string;
   variantId?: string;
@@ -26,6 +26,9 @@ interface AddItemInput {
   creditedTo?: string;
   bookingId?: string;
   notes?: string;
+  /** Gift-card line only: who the card is for (used to populate the card on completion). */
+  giftRecipientName?: string | null;
+  giftRecipientEmail?: string | null;
 }
 
 type OrderPaymentMethod =
@@ -156,7 +159,23 @@ export async function addItem(orderId: string, input: AddItemInput) {
   let taxAmount = 0;
   let taxCategoryId: string | null = null;
   let taxRate: number | null = null;
-  if (input.taxAmount !== undefined) {
+  // A gift card is the SALE of stored value. Whether that sale is taxed depends on
+  // jurisdiction, so it's a per-business setting (default off). When off, no tax.
+  // When on, tax at the business's DEFAULT tax category rate (a gift card has no
+  // item/category of its own). The as-charged category + rate are persisted.
+  if (input.itemType === 'gift_card') {
+    const { isGiftCardTaxEnabled } = await import('./gift-card.service');
+    const { rows: bizRows } = await adminPool.query('SELECT business_id FROM fin_orders WHERE id = $1', [orderId]);
+    const giftBusinessId = bizRows[0]?.business_id;
+    if (giftBusinessId && await isGiftCardTaxEnabled(giftBusinessId)) {
+      const applied = await applyDefaultTaxCategory(giftBusinessId, netAmount);
+      taxAmount = applied.amount;
+      taxCategoryId = applied.taxCategoryId;
+      taxRate = applied.rate;
+    } else {
+      taxAmount = 0;
+    }
+  } else if (input.taxAmount !== undefined) {
     taxAmount = input.taxAmount;
   } else if (input.itemId) {
     const applied = await calculateTaxOnAmount(input.itemType, input.itemId, netAmount);
@@ -168,11 +187,13 @@ export async function addItem(orderId: string, input: AddItemInput) {
   const totalPrice = netAmount + taxAmount;
 
   const { rows } = await adminPool.query(
-    `INSERT INTO fin_order_items (order_id, item_type, item_id, item_name, variant_id, variant_name, quantity, unit_price, discount_amount, tax_amount, tax_category_id, tax_rate, total_price, credited_to, booking_id, notes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING *`,
+    `INSERT INTO fin_order_items (order_id, item_type, item_id, item_name, variant_id, variant_name, quantity, unit_price, discount_amount, tax_amount, tax_category_id, tax_rate, total_price, credited_to, booking_id, notes, gift_recipient_name, gift_recipient_email)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
     [orderId, input.itemType, input.itemId || null, input.itemName, input.variantId || null, input.variantName || null,
      input.quantity, unitPrice, discount, taxAmount, taxCategoryId, taxRate, totalPrice,
-     input.creditedTo || null, input.bookingId || null, itemNotes],
+     input.creditedTo || null, input.bookingId || null, itemNotes,
+     input.itemType === 'gift_card' ? (input.giftRecipientName || null) : null,
+     input.itemType === 'gift_card' ? (input.giftRecipientEmail || null) : null],
   );
 
   await recalculateOrderTotals(orderId);
@@ -347,6 +368,9 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   // follow up (manually enroll or refund). A customer may hold several memberships,
   // so each membership line is enrolled independently.
   const enrollmentWarnings: Array<{ planId: string; planName: string | null; reason: string }> = [];
+  // Gift cards successfully created from this order, surfaced on the response so the
+  // receipt/UI can show the code(s) to hand to the purchaser.
+  const giftCardsIssued: Array<{ code: string; amountCents: number }> = [];
   try {
     const { rows: membershipItems } = await adminPool.query(
       `SELECT item_id, item_name FROM fin_order_items
@@ -387,10 +411,54 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
     enrollmentWarnings.push({ planId: '', planName: null, reason: err?.message || 'Failed to process membership enrollments.' });
   }
 
+  // Create + fund any gift cards PURCHASED on this order (Model B, C7). Each
+  // gift_card line funds a real card whose balance = the line total; the GL booked
+  // the sale to Gift Card Liability (see order-journal). Mirrors the membership
+  // block: the sale is already paid + completed, so a failure here must be surfaced
+  // (not swallowed) so staff can issue the card manually. Reuses enrollment_warnings
+  // as the "paid-but-not-fulfilled" channel the checkout UI already alerts on.
+  try {
+    const { rows: giftLines } = await adminPool.query(
+      `SELECT id, item_name, total_price, gift_recipient_name, gift_recipient_email
+       FROM fin_order_items WHERE order_id = $1 AND item_type = 'gift_card'`,
+      [orderId],
+    );
+    if (giftLines.length > 0) {
+      const { createGiftCard } = await import('./gift-card.service');
+      const { rows: tRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [businessId]);
+      const tenantId = tRows[0]?.tenant_id;
+      for (const line of giftLines) {
+        try {
+          const card = await createGiftCard({
+            businessId, tenantId,
+            amountCents: line.total_price,
+            recipientName: line.gift_recipient_name ?? null,
+            recipientEmail: line.gift_recipient_email ?? null,
+            purchaserCustomerId: orderRows[0].customer_id ?? null,
+            createdBy: input.checkedOutBy,
+            fundedByOrderId: orderId,
+          });
+          giftCardsIssued.push({ code: card.code, amountCents: line.total_price });
+        } catch (gcErr: any) {
+          const reason = gcErr?.message || 'Gift card could not be created';
+          console.error(`[GiftCard] Order ${orderId} paid but gift card NOT created (line ${line.id}): ${reason}`);
+          enrollmentWarnings.push({ planId: '', planName: 'Gift Card', reason });
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error('[GiftCard] Failed to process gift-card purchases:', err?.message || err);
+    enrollmentWarnings.push({ planId: '', planName: 'Gift Card', reason: err?.message || 'Failed to create purchased gift card(s).' });
+  }
+
   // A completed purchase counts as activity for the person (Phase 46).
   const order = await getOrder(orderId);
   if (order && enrollmentWarnings.length > 0) {
     (order as any).enrollment_warnings = enrollmentWarnings;
+  }
+  // Surface the issued gift-card codes so the UI can show/print them on the receipt.
+  if (order && giftCardsIssued.length > 0) {
+    (order as any).gift_cards_issued = giftCardsIssued;
   }
 
   // The code used on this order has now been redeemed once. Neither kind of code was ever
@@ -795,6 +863,22 @@ interface AppliedTax {
   amount: number;              // cents
   taxCategoryId: string | null;
   rate: number | null;         // basis points (2100 = 21%)
+}
+
+/**
+ * Tax computed from the business's DEFAULT tax category — used for a gift-card sale
+ * when gift-card tax is enabled (a gift card has no item/category of its own).
+ * Returns zero if the business has no default category.
+ */
+async function applyDefaultTaxCategory(businessId: string, netAmount: number): Promise<AppliedTax> {
+  if (netAmount <= 0) return { amount: 0, taxCategoryId: null, rate: null };
+  const { rows } = await adminPool.query(
+    `SELECT id, rate FROM svc_tax_categories WHERE business_id = $1 AND is_default = true LIMIT 1`,
+    [businessId],
+  );
+  if (rows.length === 0) return { amount: 0, taxCategoryId: null, rate: null };
+  const rate = rows[0].rate; // basis points
+  return { amount: Math.round(netAmount * rate / 10000), taxCategoryId: rows[0].id, rate };
 }
 
 async function calculateTaxOnAmount(itemType: string, itemId: string | null, netAmount: number): Promise<AppliedTax> {

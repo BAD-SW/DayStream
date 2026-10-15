@@ -57,6 +57,7 @@ import { MembershipPlans } from './pages/MembershipPlans';
 import { PricingRules } from './pages/PricingRules';
 import { DiscountCodes } from './pages/DiscountCodes';
 import { Payments } from './pages/Payments';
+import { GiftCards } from './pages/GiftCards';
 import { Payroll } from './pages/Payroll';
 import { AccountsPayable } from './pages/AccountsPayable';
 import { Staff } from './pages/Staff';
@@ -164,6 +165,7 @@ export function App() {
 
         {/* Payments */}
         <Route path="/payments" element={<ProtectedRoute><Payments /></ProtectedRoute>} />
+        <Route path="/gift-cards" element={<ProtectedRoute><GiftCards /></ProtectedRoute>} />
 
         {/* Payroll & AP */}
         <Route path="/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />

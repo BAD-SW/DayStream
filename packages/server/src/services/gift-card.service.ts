@@ -39,6 +39,8 @@ export interface CreateGiftCardInput {
   purchaserCustomerId?: string | null;
   expiresAt?: string | null;   // YYYY-MM-DD
   createdBy: string;
+  /** Set when the card was SOLD through checkout — links it to the funding order. */
+  fundedByOrderId?: string | null;
 }
 
 /** Issue a gift card with a unique code. The code is returned so it can be shown/emailed. */
@@ -56,13 +58,15 @@ export async function createGiftCard(input: CreateGiftCardInput): Promise<any> {
       const { rows } = await adminPool.query(
         `INSERT INTO pay_gift_cards
            (tenant_id, business_id, code, currency, initial_amount_cents, balance_cents,
-            recipient_email, recipient_name, purchaser_customer_id, expires_at, status, created_by)
-         VALUES ($1,$2,$3,$4,$5,$5,$6,$7,$8,$9,'active',$10)
+            recipient_email, recipient_name, purchaser_customer_id, expires_at, status, created_by,
+            funded_by_order_id)
+         VALUES ($1,$2,$3,$4,$5,$5,$6,$7,$8,$9,'active',$10,$11)
          RETURNING *`,
         [
           input.tenantId, input.businessId, code, currency, input.amountCents,
           input.recipientEmail ?? null, input.recipientName ?? null,
           input.purchaserCustomerId ?? null, input.expiresAt ?? null, input.createdBy,
+          input.fundedByOrderId ?? null,
         ],
       );
       card = rows[0];
@@ -172,6 +176,30 @@ export async function emailGiftCard(id: string, businessId: string): Promise<boo
     },
   });
   return true;
+}
+
+// --- Gift-card tax setting (C7): per-business, default off ---------------------
+
+const GIFT_CARD_TAX_KEY = 'gift_card.tax_enabled';
+
+/** Whether this business taxes the SALE of a gift card. Default false. */
+export async function isGiftCardTaxEnabled(businessId: string): Promise<boolean> {
+  const { rows } = await adminPool.query(
+    `SELECT value FROM sys_business_configurations WHERE business_id = $1 AND key = $2`,
+    [businessId, GIFT_CARD_TAX_KEY],
+  );
+  return rows[0]?.value === 'true';
+}
+
+/** Set whether this business taxes gift-card sales. */
+export async function setGiftCardTaxEnabled(businessId: string, enabled: boolean): Promise<boolean> {
+  await adminPool.query(
+    `INSERT INTO sys_business_configurations (business_id, key, value)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (business_id, key) DO UPDATE SET value = EXCLUDED.value`,
+    [businessId, GIFT_CARD_TAX_KEY, enabled ? 'true' : 'false'],
+  );
+  return enabled;
 }
 
 export { GiftCardError };

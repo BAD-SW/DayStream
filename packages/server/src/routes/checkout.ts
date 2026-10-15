@@ -114,7 +114,7 @@ checkoutRouter.get('/orders/:id', requirePermission('bookings:read'), async (req
 // ============================================================
 
 const addItemSchema = Joi.object({
-  item_type: Joi.string().valid('service', 'product', 'membership', 'package').required(),
+  item_type: Joi.string().valid('service', 'product', 'membership', 'package', 'gift_card').required(),
   item_id: Joi.string().uuid().allow(null),
   item_name: Joi.string().min(1).max(200).required(),
   variant_id: Joi.string().uuid().allow(null),
@@ -126,6 +126,9 @@ const addItemSchema = Joi.object({
   credited_to: Joi.string().uuid().allow(null),
   booking_id: Joi.string().uuid().allow(null),
   notes: Joi.string().max(200).allow('', null),
+  // Gift-card line only: who the card is for.
+  gift_recipient_name: Joi.string().max(200).allow('', null),
+  gift_recipient_email: Joi.string().email({ tlds: false }).max(255).allow('', null),
 });
 
 // POST /api/v1/checkout/orders/:id/items — Add item to order
@@ -144,6 +147,8 @@ checkoutRouter.post('/orders/:id/items', requirePermission('bookings:*'), valida
       creditedTo: req.body.credited_to,
       bookingId: req.body.booking_id,
       notes: req.body.notes,
+      giftRecipientName: req.body.gift_recipient_name || null,
+      giftRecipientEmail: req.body.gift_recipient_email || null,
     });
     // Return full order with updated totals
     const order = await checkoutService.getOrder(req.params.id);

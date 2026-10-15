@@ -7,7 +7,7 @@ import { apiClient } from './client';
 export interface OrderItem {
   id: string;
   order_id: string;
-  item_type: 'service' | 'product' | 'membership' | 'package';
+  item_type: 'service' | 'product' | 'membership' | 'package' | 'no_show_fee' | 'gift_card';
   item_id: string | null;
   item_name: string;
   variant_id: string | null;
@@ -57,6 +57,8 @@ export interface Order {
    * staff must be told to follow up (manual enroll / refund).
    */
   enrollment_warnings?: Array<{ planId: string; planName: string | null; reason: string }>;
+  /** Present on a completion response: gift cards created from this order (code to hand to the buyer). */
+  gift_cards_issued?: Array<{ code: string; amountCents: number }>;
 }
 
 export async function createOrder(data: { business_id: string; customer_id?: string; booking_id?: string; notes?: string }): Promise<Order> {
@@ -98,6 +100,7 @@ export async function addItem(orderId: string, data: {
   item_type: string; item_id?: string; item_name: string; variant_id?: string; variant_name?: string;
   quantity: number; unit_price: number; discount_amount?: number; tax_amount?: number;
   credited_to?: string; booking_id?: string; notes?: string;
+  gift_recipient_name?: string | null; gift_recipient_email?: string | null;
 }): Promise<Order> {
   const res = await apiClient.post(`/v1/checkout/orders/${orderId}/items`, data);
   return res.data.data;

@@ -18,6 +18,7 @@ import { staffPerformanceReport } from './definitions/staff-performance.report';
 import { commissionsReport } from './definitions/commissions.report';
 import { payrollSummaryReport } from './definitions/payroll-summary.report';
 import { timesheetReport } from './definitions/timesheet.report';
+import { giftCardsReport } from './definitions/gift-cards.report';
 
 /**
  * Central registry of report definitions. Adding a new report is a matter of
@@ -40,6 +41,7 @@ const DEFINITIONS: Record<string, ReportDefinition> = {
   [newCustomersReport.id]: newCustomersReport,
   [customerLifetimeValueReport.id]: customerLifetimeValueReport,
   [customerRetentionReport.id]: customerRetentionReport,
+  [giftCardsReport.id]: giftCardsReport,
   [staffPerformanceReport.id]: staffPerformanceReport,
   [commissionsReport.id]: commissionsReport,
   [payrollSummaryReport.id]: payrollSummaryReport,

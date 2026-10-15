@@ -9,7 +9,7 @@ import { getConfiguredAdapter } from './payments';
 import { METHOD_CATALOG, CatalogMethod } from './payment-catalog.service';
 import { confirmBooking, cancelBooking } from './booking-lifecycle.service';
 import { queueNotification } from './booking-notifications.service';
-import { postPaymentJournalEntry } from './payment-journal.service';
+import { postPaymentJournalEntry, postGiftCardRedemptionJournal } from './payment-journal.service';
 
 /**
  * Section C — One-time customer payments (spec 10-payment-platform, task 4.2).
@@ -368,12 +368,16 @@ async function runGiftCard(
     });
 
     await client.query('COMMIT');
-    // NOTE: gift-card redemption is intentionally NOT journaled as Cash→Revenue.
-    // The cash arrived (and a gift-card liability was created) when the card was
-    // SOLD; redemption moves liability→revenue, not cash→revenue. Journaling it
-    // like a cash charge would double-count cash. Correct gift-card GL (Debit
-    // gift-card liability / Credit revenue, plus the purchase-side entry) is a
-    // follow-up once a gift-card liability account + purchase journaling exist.
+
+    // Gift-card redemption moves LIABILITY → REVENUE (not cash → revenue): the cash
+    // arrived when the card was sold (booked to Gift Card Liability then). For a
+    // redemption tied to an ORDER, the order journal owns the GL (it draws down the
+    // liability there), so we don't post here. For a standalone Section C charge
+    // (no order), post it directly: Debit 2600 Gift Card Liability / Credit 4400
+    // Gift Card Revenue.
+    if (!input.orderId) {
+      await postGiftCardRedemptionJournal(row).catch(() => { /* non-blocking; logged inside */ });
+    }
     return {
       transactionId: row.id, referenceNumber: reference, status: 'completed', amountCents: input.amountCents,
       method: 'gift_card', isProcessed: false, giftCardBalanceCents: newBalance,

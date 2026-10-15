@@ -137,6 +137,7 @@ export function getVisibleModules(
 const EXTRA_MODULE_PATHS: Array<{ path: string; permission: string }> = [
   { path: '/payroll', permission: 'reports:*' },
   { path: '/payments', permission: 'reports:*' },
+  { path: '/gift-cards', permission: 'bookings:*' },
   { path: '/integrations', permission: 'settings:*' },
 ];
 

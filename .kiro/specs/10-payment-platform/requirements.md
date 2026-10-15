@@ -484,16 +484,23 @@ This section covers charging customers for the services, memberships, and produc
 
 **User Story:** As a customer, I want to buy a gift card for someone, so that they can use it to book services.
 
+**Model note:** A gift card is SOLD through checkout as an order line item (like a product), funded by a real payment — not issued administratively without payment. Selling a gift card funds a liability (the business owes that value back); the value becomes revenue only when the card is redeemed.
+
 #### Acceptance Criteria
 
-1. THE system SHALL support purchasing gift cards with custom or preset monetary values
-2. THE system SHALL generate a unique gift card code upon purchase
-3. THE system SHALL support emailing the gift card to a recipient with a personalized message, rendered with the issuing business's branding per Requirement C12
-4. THE system SHALL support redeeming a gift card at checkout (reduces amount due)
-5. THE system SHALL support partial redemption (use part of the balance, remainder stays available)
-6. THE system SHALL track gift card balance and transaction history
-7. THE system SHALL support gift card expiration (configurable per business, with legal compliance for jurisdiction)
-8. THE system SHALL scope each gift card to its issuing business — a gift card SHALL be redeemable ONLY at the business that issued it, and never across businesses or tenants
+1. THE system SHALL support purchasing a gift card for a custom monetary value as a line item on a checkout order, paid for by any accepted tender
+2. THE system SHALL make taxation of a gift-card sale a per-business setting (default OFF, since treatment varies by jurisdiction): WHEN off, the gift-card line carries no tax; WHEN on, it is taxed at the business's default tax category rate. The setting is configurable on Settings → Payment Methods under the Gift Card option
+3. WHEN an order containing a gift-card line is completed, THE system SHALL create a gift card whose balance equals the paid line amount, generate a unique code, and link the card to the funding order
+4. IF a gift card cannot be created after its order is paid, THE system SHALL surface the failure to staff (not silently drop it) so the card can be issued manually
+5. THE system SHALL account for a gift-card sale as a liability: Debit Cash / Credit Gift Card Liability (NOT revenue) at purchase
+6. THE system SHALL account for a gift-card redemption as liability-to-revenue: Debit Gift Card Liability / Credit Gift Card Revenue — and SHALL NOT book cash for an order tendered by gift card (the cash was received at purchase)
+7. THE system SHALL support emailing the gift card to a recipient with a personalized message, rendered with the issuing business's branding per Requirement C12
+8. THE system SHALL support redeeming a gift card at checkout (reduces amount due)
+9. THE system SHALL support partial redemption (use part of the balance, remainder stays available)
+10. THE system SHALL track gift card balance and transaction history
+11. THE system SHALL support gift card expiration (configurable per business, with legal compliance for jurisdiction)
+12. THE system SHALL scope each gift card to its issuing business — a gift card SHALL be redeemable ONLY at the business that issued it, and never across businesses or tenants
+13. THE system SHALL provide a gift-card management screen (list, balance + redemption history, void, resend email) and SHALL allow a direct administrative issuance (comp) separate from the checkout sale
 
 ### Requirement C8: Vouchers
 

@@ -920,6 +920,17 @@ export async function emailGiftCard(id: string, businessId: string): Promise<voi
   await apiClient.post(`/v1/pay/gift-cards/${id}/email`, { business_id: businessId });
 }
 
+/** Whether this business taxes the SALE of a gift card (per-business, default off). */
+export async function getGiftCardTaxEnabled(businessId: string): Promise<boolean> {
+  const res = await apiClient.get('/v1/pay/gift-card-tax-enabled', { params: { business_id: businessId } });
+  return res.data.data.enabled;
+}
+
+export async function setGiftCardTaxEnabled(businessId: string, enabled: boolean): Promise<boolean> {
+  const res = await apiClient.put('/v1/pay/gift-card-tax-enabled', { business_id: businessId, enabled });
+  return res.data.data.enabled;
+}
+
 // --- Vouchers (C8) ---
 
 export interface Voucher {

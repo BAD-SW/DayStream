@@ -99,6 +99,47 @@ function revenueCodeFor(txn: JournalTxn): string {
   return txn.enrollment_id ? DEFERRED_REVENUE_CODE : SERVICE_REVENUE_CODE;
 }
 
+const GIFT_CARD_LIABILITY_CODE = '2600';
+const GIFT_CARD_REVENUE_CODE = '4400';
+
+/**
+ * Post the GL for a gift-card redemption that is NOT tied to an order (a standalone
+ * Section C charge paid by gift card). Redemption moves stored value we already
+ * owe into earned revenue:
+ *   Debit  2600 Gift Card Liability   (draw down what we owed)
+ *   Credit 4400 Gift Card Revenue     (now earned)
+ * Cash is untouched — it arrived when the card was sold. Idempotent + non-throwing.
+ * (Order-tendered redemptions are journaled by order-journal.service instead.)
+ */
+export async function postGiftCardRedemptionJournal(txn: JournalTxn): Promise<void> {
+  try {
+    if (txn.amount <= 0) return;
+    if (await alreadyPosted('payment', txn.id)) return;
+
+    const accounts = await accountIds(txn.business_id, [GIFT_CARD_LIABILITY_CODE, GIFT_CARD_REVENUE_CODE]);
+    const liabilityId = accounts.get(GIFT_CARD_LIABILITY_CODE);
+    const revenueId = accounts.get(GIFT_CARD_REVENUE_CODE);
+    if (!liabilityId || !revenueId) {
+      logger.warn(`Gift-card journal: chart of accounts not seeded for business ${txn.business_id} (need ${GIFT_CARD_LIABILITY_CODE}, ${GIFT_CARD_REVENUE_CODE}); skipping GL post for txn ${txn.id}`);
+      return;
+    }
+    const label = txn.reference_number || txn.id.slice(0, 8);
+    await journal.createEntry({
+      businessId: txn.business_id,
+      entryDate: await postingDate(txn.business_id),
+      description: `Gift card redeemed ${label}`,
+      referenceType: 'payment',
+      referenceId: txn.id,
+      lines: [
+        { account_id: liabilityId, debit: txn.amount, credit: 0, description: 'Gift card redeemed (liability drawn down)' },
+        { account_id: revenueId, debit: 0, credit: txn.amount, description: 'Gift card revenue (earned on redemption)' },
+      ],
+    });
+  } catch (e: any) {
+    logger.warn(`Gift-card journal: failed to post GL entry for txn ${txn.id}: ${e?.message || e}`);
+  }
+}
+
 /**
  * Post the GL entry for a settled customer charge:
  *   Debit  1100 Cash & Bank         (amount collected)
