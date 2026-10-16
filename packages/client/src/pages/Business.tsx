@@ -3,13 +3,14 @@ import { useSearchParams } from 'react-router-dom';
 import { Staff } from './Staff';
 import { Resources } from './Resources';
 import { Locations } from './Locations';
+import { DocumentTemplatesSettings } from './settings/DocumentTemplatesSettings';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { Table } from '../design-system/components/data/Table';
 import { apiClient } from '../api/client';
 import * as servicesApi from '../api/services';
 
-const VALID_TABS = ['staff', 'resources', 'locations', 'categories', 'taxes'] as const;
+const VALID_TABS = ['staff', 'resources', 'locations', 'categories', 'taxes', 'templates'] as const;
 type Tab = typeof VALID_TABS[number];
 
 export function Business() {
@@ -23,9 +24,9 @@ export function Business() {
         <h1 style={styles.title}>Business Setup</h1>
       </div>
       <div style={styles.tabBar}>
-        {(['staff', 'resources', 'locations', 'categories', 'taxes'] as const).map((tab) => {
+        {(['staff', 'resources', 'locations', 'categories', 'taxes', 'templates'] as const).map((tab) => {
           const isActive = activeTab === tab;
-          const labels: Record<string, string> = { staff: 'Staff', resources: 'Resources', locations: 'Locations', categories: 'Categories', taxes: 'Taxes' };
+          const labels: Record<string, string> = { staff: 'Staff', resources: 'Resources', locations: 'Locations', categories: 'Categories', taxes: 'Taxes', templates: 'Templates' };
           return (
             <button key={tab} onClick={() => setActiveTab(tab)}
               style={{
@@ -46,6 +47,7 @@ export function Business() {
       {activeTab === 'locations' && <Locations />}
       {activeTab === 'categories' && <CategoriesTab />}
       {activeTab === 'taxes' && <TaxesTab />}
+      {activeTab === 'templates' && <DocumentTemplatesSettings />}
     </div>
   );
 }

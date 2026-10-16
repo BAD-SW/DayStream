@@ -17,6 +17,7 @@ import * as tenantBilling from '../services/tenant-billing.service';
 import { refundTransaction } from '../services/refund.service';
 import * as invoices from '../services/invoice.service';
 import * as giftCards from '../services/gift-card.service';
+import * as docBranding from '../services/document-branding.service';
 import * as vouchers from '../services/voucher.service';
 import { takeOneTimePayment } from '../services/customer-payment.service';
 import * as accountCredit from '../services/account-credit.service';
@@ -1077,6 +1078,134 @@ paymentPlatformRouter.put('/gift-card-tax-enabled', requirePermission('bookings:
   try {
     success(res, { enabled: await giftCards.setGiftCardTaxEnabled(req.body.business_id, req.body.enabled) });
   } catch (e: any) { console.error('Failed to save gift-card tax setting', e?.message || e); error(res, 'Failed to save gift-card tax setting', 'INTERNAL_ERROR', 500); }
+});
+
+// ============================================================
+// Section C — Document branding templates (task 6.3 / Requirement C12). A business
+// brands its customer-facing documents (invoice, receipt, ...) with named,
+// multi-variant templates. Settings-scoped (Manager/Owner). Business-scoped.
+// ============================================================
+
+const DOC_BRANDING_ERR: Record<string, number> = {
+  UNKNOWN_ARTIFACT_TYPE: 400,
+  INVALID_NAME: 400,
+  NOT_FOUND: 404,
+};
+
+// Artifact-type catalog (with placeholders) that drives the editor dropdown + chips.
+paymentPlatformRouter.get('/document-branding/artifact-types', requirePermission('settings:read'), async (_req: Request, res: Response) => {
+  try {
+    success(res, docBranding.getArtifactCatalog());
+  } catch (e: any) { sendCodedError(res, e, DOC_BRANDING_ERR, 'Failed to load artifact catalog'); }
+});
+
+// List templates for a business, optionally filtered to one artifact type.
+paymentPlatformRouter.get('/document-branding', requirePermission('settings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const artifactType = req.query.artifact_type as string | undefined;
+    success(res, await docBranding.listTemplates(businessId, artifactType));
+  } catch (e: any) { sendCodedError(res, e, DOC_BRANDING_ERR, 'Failed to list templates'); }
+});
+
+const createDocBrandingSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  artifact_type: Joi.string().max(40).required(),
+  name: Joi.string().max(120),
+  language: Joi.string().max(10).allow(null, ''),
+  is_active: Joi.boolean(),
+  selection_rules: Joi.object().unknown(true),
+  logo_url: Joi.string().uri().allow(null, ''),
+  color_primary: Joi.string().max(9).allow(null, ''),
+  color_secondary: Joi.string().max(9).allow(null, ''),
+  sender_name: Joi.string().max(120).allow(null, ''),
+  reply_to: Joi.string().email().allow(null, ''),
+  subject_template: Joi.string().allow(null, ''),
+  body_template: Joi.string().allow(null, ''),
+  footer_text: Joi.string().allow(null, ''),
+  footer_link_text: Joi.string().max(160).allow(null, ''),
+  footer_link_url: Joi.string().uri({ scheme: ['http', 'https'] }).allow(null, ''),
+});
+
+paymentPlatformRouter.post('/document-branding', requirePermission('settings:*'), validate(createDocBrandingSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const b = req.body;
+    const created = await docBranding.createTemplate({
+      tenantId: authReq.tenantId,
+      businessId: b.business_id,
+      artifactType: b.artifact_type,
+      createdBy: authReq.user.sub,
+      name: b.name,
+      language: b.language ?? null,
+      isActive: b.is_active,
+      selectionRules: b.selection_rules,
+      logoUrl: b.logo_url ?? null,
+      colorPrimary: b.color_primary ?? null,
+      colorSecondary: b.color_secondary ?? null,
+      senderName: b.sender_name ?? null,
+      replyTo: b.reply_to ?? null,
+      subjectTemplate: b.subject_template ?? null,
+      bodyTemplate: b.body_template ?? null,
+      footerText: b.footer_text ?? null,
+      footerLinkText: b.footer_link_text ?? null,
+      footerLinkUrl: b.footer_link_url ?? null,
+    });
+    success(res, created, undefined, 201);
+  } catch (e: any) { sendCodedError(res, e, DOC_BRANDING_ERR, 'Failed to create template'); }
+});
+
+const updateDocBrandingSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  name: Joi.string().max(120),
+  language: Joi.string().max(10).allow(null, ''),
+  is_active: Joi.boolean(),
+  selection_rules: Joi.object().unknown(true),
+  logo_url: Joi.string().uri().allow(null, ''),
+  color_primary: Joi.string().max(9).allow(null, ''),
+  color_secondary: Joi.string().max(9).allow(null, ''),
+  sender_name: Joi.string().max(120).allow(null, ''),
+  reply_to: Joi.string().email().allow(null, ''),
+  subject_template: Joi.string().allow(null, ''),
+  body_template: Joi.string().allow(null, ''),
+  footer_text: Joi.string().allow(null, ''),
+  footer_link_text: Joi.string().max(160).allow(null, ''),
+  footer_link_url: Joi.string().uri({ scheme: ['http', 'https'] }).allow(null, ''),
+});
+
+paymentPlatformRouter.put('/document-branding/:id', requirePermission('settings:*'), validate(updateDocBrandingSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const b = req.body;
+    const patch: docBranding.DocumentBrandingInput = {};
+    if (b.name !== undefined) patch.name = b.name;
+    if (b.language !== undefined) patch.language = b.language === '' ? null : b.language;
+    if (b.is_active !== undefined) patch.isActive = b.is_active;
+    if (b.selection_rules !== undefined) patch.selectionRules = b.selection_rules;
+    if (b.logo_url !== undefined) patch.logoUrl = b.logo_url === '' ? null : b.logo_url;
+    if (b.color_primary !== undefined) patch.colorPrimary = b.color_primary === '' ? null : b.color_primary;
+    if (b.color_secondary !== undefined) patch.colorSecondary = b.color_secondary === '' ? null : b.color_secondary;
+    if (b.sender_name !== undefined) patch.senderName = b.sender_name === '' ? null : b.sender_name;
+    if (b.reply_to !== undefined) patch.replyTo = b.reply_to === '' ? null : b.reply_to;
+    if (b.subject_template !== undefined) patch.subjectTemplate = b.subject_template === '' ? null : b.subject_template;
+    if (b.body_template !== undefined) patch.bodyTemplate = b.body_template === '' ? null : b.body_template;
+    if (b.footer_text !== undefined) patch.footerText = b.footer_text === '' ? null : b.footer_text;
+    if (b.footer_link_text !== undefined) patch.footerLinkText = b.footer_link_text === '' ? null : b.footer_link_text;
+    if (b.footer_link_url !== undefined) patch.footerLinkUrl = b.footer_link_url === '' ? null : b.footer_link_url;
+    const updated = await docBranding.updateTemplate(b.business_id, req.params.id, patch, authReq.user.sub, authReq.tenantId);
+    success(res, updated);
+  } catch (e: any) { sendCodedError(res, e, DOC_BRANDING_ERR, 'Failed to update template'); }
+});
+
+const deleteDocBrandingSchema = Joi.object({ business_id: Joi.string().uuid().required() });
+
+paymentPlatformRouter.delete('/document-branding/:id', requirePermission('settings:*'), validate(deleteDocBrandingSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    await docBranding.deleteTemplate(req.body.business_id, req.params.id, authReq.user.sub, authReq.tenantId);
+    success(res, { deleted: true });
+  } catch (e: any) { sendCodedError(res, e, DOC_BRANDING_ERR, 'Failed to delete template'); }
 });
 
 // ============================================================

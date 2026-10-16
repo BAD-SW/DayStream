@@ -39,6 +39,11 @@ export type {
   ApplyThemeDto,
   ApplyThemeResponse,
 } from './types/theme';
+export type {
+  DocumentPlaceholder,
+  DocumentFieldKey,
+  DocumentArtifactType,
+} from './documents/catalog';
 
 // Constants
 export { USER_ROLES, PERSONAS } from './constants/roles';
@@ -53,6 +58,13 @@ export {
   PERSON_SOURCE_LABELS, personSourceLabel, PEOPLE_VIEWS,
 } from './constants/people';
 export type { LifecycleStageValue } from './constants/people';
+
+// Document branding catalog
+export {
+  DOCUMENT_ARTIFACT_TYPES,
+  getArtifactType,
+  isKnownArtifactType,
+} from './documents/catalog';
 
 // Utilities
 export { formatCurrency } from './utils/currency';

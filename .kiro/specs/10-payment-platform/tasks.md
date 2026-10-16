@@ -336,14 +336,21 @@ Businesses collect directly into their own connected accounts.
 
 ## Phase 6 — Customer-Facing Document Customization 📋 Planned
 
-- [ ] 6.1 Migration — `pay_document_branding` (per business, per artifact type)
+- [x] ✅ 6.1 Migration — `pay_document_branding` (per business, per artifact type)
+  - _Done: migration 148 created pay_document_branding; migration 149 reshaped it to support MULTIPLE named templates per artifact type (an enhancement beyond C12's one-per-type wording, per owner decision — a business may keep several templates per type, e.g. default + seasonal + per-language). Columns: artifact_type, name, language, is_active, logo_url, color_primary/secondary, sender_name, reply_to, subject/body/footer templates, and selection_rules JSONB. Deliberately NO uniqueness / "one active" constraint — "which template is used" is resolver logic (6.2), so the schema never limits the resolver; future selection dimensions (date ranges, per-process bindings, priority) live in selection_rules JSONB with no further migration. tenant_id + business_id, app-level isolation (no RLS), per pay_* convention._
   - _Requirements: C12_
 
-- [ ] 6.2 Template/branding layer for all customer-facing artifacts (invoice, receipt, credit note, dunning, confirmations, reminders, gift-card email)
-  - Merge platform default + business branding + i18n; business-scoped; WCAG-compliant; email/PDF parity
+- [ ] 6.2 Template/branding resolver + render layer for all customer-facing artifacts (invoice, receipt, credit note, dunning, confirmations, reminders, gift-card email)
+  - _Execution note: built AFTER 6.3a — the editor must exist to produce the templates the resolver consumes (owner decision)._
+  - Resolver picks the applicable template (artifact_type + language + is_active now; date-range/per-process/priority via selection_rules later). Merge platform default + resolved template + i18n; business-scoped; WCAG-compliant; email/PDF parity
   - _Requirements: C12_
 
-- [ ] 6.3 Branding editor UI + wire into invoicing/notifications/gift-card emails
+- [x] ✅ 6.3a Branding editor UI + CRUD framework ("Templates" tab)
+  - _Done: config-driven "Templates" tab on the /business (Business Setup) page — where a business creates its OWN entries, alongside Staff/Resources/Locations/Categories/Taxes (not /settings, which is for site-standard options). Modelled on the Reports framework. Shared artifact catalog (`packages/shared/src/documents/catalog.ts`) is the single source of truth for brandable document types + their insertable placeholders (shipped proven end-to-end with Invoice `invoice.issued`; other types are catalog entries). Server: `document-branding.service.ts` CRUD over `pay_document_branding` + routes under `/v1/pay/document-branding` (list/create/update/delete + `/artifact-types`), gated `settings:*`, business-scoped. Client: `DocumentTemplatesSettings.tsx` — artifact-type dropdown, multi-template list (Name/Language/Active + Edit/Delete/New), editor form (name/language/active/logo/colors/sender/reply-to/subject/body/footer), and clickable placeholder chips that insert `{{token}}` at the caret of the last-focused Subject/Body/Footer field. Verified: server tsc 0, client tsc 30 (baseline), diagnostics clean, service smoke-tested (multi-template create/list/update/delete + unknown-type rejection)._
+  - _Requirements: C12_
+
+- [ ] 6.3b Wire resolved templates into invoicing/notifications/gift-card email paths
+  - _Follows 6.2: once the resolver exists, replace the hardcoded invoice/receipt/dunning/gift-card rendering with resolved per-business templates._
   - _Requirements: C5, C7, C9, C12_
 
 - [ ] 6.4 Checkpoint — issue each artifact type for two different businesses; confirm correct per-business branding, localization, and no cross-business bleed

@@ -1064,3 +1064,90 @@ export async function applyAccountCredit(
   });
   return res.data.data;
 }
+
+// --- Document branding templates (spec 10, task 6.3 / Requirement C12) ---
+
+import type { DocumentArtifactType } from '@daystream/shared';
+
+export type { DocumentArtifactType, DocumentPlaceholder } from '@daystream/shared';
+
+/** A saved branding template for one artifact type. Mirrors the server shape. */
+export interface DocumentBrandingTemplate {
+  id: string;
+  tenantId: string;
+  businessId: string;
+  artifactType: string;
+  name: string;
+  language: string | null;
+  isActive: boolean;
+  selectionRules: Record<string, unknown>;
+  logoUrl: string | null;
+  colorPrimary: string | null;
+  colorSecondary: string | null;
+  senderName: string | null;
+  replyTo: string | null;
+  subjectTemplate: string | null;
+  bodyTemplate: string | null;
+  footerText: string | null;
+  footerLinkText: string | null;
+  footerLinkUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Fields the editor can send on create/update. */
+export interface DocumentBrandingInput {
+  name?: string;
+  language?: string | null;
+  is_active?: boolean;
+  selection_rules?: Record<string, unknown>;
+  logo_url?: string | null;
+  color_primary?: string | null;
+  color_secondary?: string | null;
+  sender_name?: string | null;
+  reply_to?: string | null;
+  subject_template?: string | null;
+  body_template?: string | null;
+  footer_text?: string | null;
+  footer_link_text?: string | null;
+  footer_link_url?: string | null;
+}
+
+/** The artifact-type catalog (types + placeholders) that drives the editor. */
+export async function getDocumentArtifactTypes(): Promise<DocumentArtifactType[]> {
+  const res = await apiClient.get('/v1/pay/document-branding/artifact-types');
+  return res.data.data;
+}
+
+/** List a business's templates, optionally filtered to one artifact type. */
+export async function listDocumentTemplates(
+  businessId: string, artifactType?: string,
+): Promise<DocumentBrandingTemplate[]> {
+  const res = await apiClient.get('/v1/pay/document-branding', {
+    params: { business_id: businessId, ...(artifactType ? { artifact_type: artifactType } : {}) },
+  });
+  return res.data.data;
+}
+
+export async function createDocumentTemplate(
+  businessId: string, artifactType: string, input: DocumentBrandingInput,
+): Promise<DocumentBrandingTemplate> {
+  const res = await apiClient.post('/v1/pay/document-branding', {
+    business_id: businessId, artifact_type: artifactType, ...input,
+  });
+  return res.data.data;
+}
+
+export async function updateDocumentTemplate(
+  businessId: string, id: string, input: DocumentBrandingInput,
+): Promise<DocumentBrandingTemplate> {
+  const res = await apiClient.put(`/v1/pay/document-branding/${id}`, {
+    business_id: businessId, ...input,
+  });
+  return res.data.data;
+}
+
+export async function deleteDocumentTemplate(businessId: string, id: string): Promise<void> {
+  // DELETE with a body (business scoping) — Axios needs the `data` option.
+  await apiClient.delete(`/v1/pay/document-branding/${id}`, { data: { business_id: businessId } });
+}
