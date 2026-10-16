@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Tabs } from '../design-system/components/navigation/Tabs';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
+import { Dropdown } from '../design-system/components/actions/Dropdown';
+import { IconButton } from '../design-system/components/actions/IconButton';
 import { apiClient } from '../api/client';
 import * as customersApi from '../api/customers';
 import type { Customer } from '../api/customers';
@@ -657,6 +659,19 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
     }
   }
   const remainingRefundable = (t: PayTransaction) => t.amount - (refundedByCharge.get(t.id) ?? 0);
+
+  // The status shown in the history list. The stored status stays 'completed'
+  // (the charge itself succeeded); this is a DISPLAY label that reflects how much
+  // of a completed charge has since been refunded, so a refunded/partially-
+  // refunded charge is visible at a glance without opening the kebab.
+  const displayStatus = (t: PayTransaction): string => {
+    if (t.type === 'charge' && t.status === 'completed') {
+      const refunded = refundedByCharge.get(t.id) ?? 0;
+      if (refunded > 0) return refunded >= t.amount ? 'refunded' : 'partially refunded';
+    }
+    return t.status;
+  };
+
   // How a charge can be refunded from here, per the business rules:
   //   'order'       → open the shared line-item order modal (products / no-show fees)
   //   'transaction' → the flat per-transaction refund (ad-hoc payments, invoice settles)
@@ -674,6 +689,8 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
 
   const statusVariant = (s: string): 'success' | 'warning' | 'error' | 'info' | 'neutral' => {
     if (s === 'completed' || s === 'paid') return 'success';
+    if (s === 'partially refunded') return 'warning';
+    if (s === 'refunded') return 'neutral';
     if (s === 'pending' || s === 'issued') return 'info';
     if (s === 'failed' || s === 'overdue') return 'error';
     if (s === 'void' || s === 'cancelled') return 'neutral';
@@ -701,6 +718,40 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch { setMessage('Failed to open invoice PDF.'); }
   };
+
+  // Email the issued invoice to the customer (Outstanding Invoices card).
+  const emailInvoiceDoc = async (invoiceId: string) => {
+    setMessage(null);
+    try {
+      await payApi.emailInvoice(invoiceId, businessId);
+      setMessage('Invoice emailed to the customer.');
+    } catch (err: any) {
+      setMessage(err?.response?.data?.message || 'Failed to email invoice.');
+    }
+  };
+
+  // Email (re-send) the document that corresponds to a transaction row. The
+  // server derives which document (invoice / receipt / credit note) from the row.
+  const DOC_LABELS: Record<string, string> = {
+    'invoice.issued': 'Invoice', 'payment.receipt': 'Receipt', 'payment.credit_note': 'Credit note',
+  };
+  const emailTxnDoc = async (t: PayTransaction) => {
+    setMessage(null);
+    try {
+      const res = await payApi.emailTransaction(t.id, businessId);
+      const label = DOC_LABELS[res.document] ?? 'Document';
+      setMessage(`${label} emailed to ${res.recipient}.`);
+    } catch (err: any) {
+      const code = err?.response?.data?.code;
+      setMessage(code === 'NO_RECIPIENT'
+        ? 'Customer has no email address on file.'
+        : (err?.response?.data?.message || 'Failed to email document.'));
+    }
+  };
+
+  // Whether a transaction row links to an invoice (so Print opens its PDF).
+  const invoiceIdOf = (t: PayTransaction): string | null =>
+    t.invoice_id || (t.purpose_link?.type === 'invoice' ? t.purpose_link.id : null);
 
   // Open whatever a transaction is "for": invoice -> its PDF, booking -> edit page,
   // membership -> the plan page. No-op if there's no destination.
@@ -775,6 +826,7 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Badge variant={statusVariant(inv.status)}>{inv.status}</Badge>
                   <button style={membershipActionStyle} onClick={() => openPdf(inv.id)}>PDF</button>
+                  <button style={membershipActionStyle} onClick={() => emailInvoiceDoc(inv.id)}>Email</button>
                   {availableCredit > 0 && (
                     <Button size="sm" variant="secondary" loading={applyingCreditTo === inv.id} onClick={() => applyCredit(inv.id)}>
                       Apply Credit
@@ -857,11 +909,16 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
                   <td style={{ padding: '8px' }}>{t.payment_method}</td>
                   <td style={{ padding: '8px' }}>{t.type}</td>
                   <td style={{ padding: '8px', textAlign: 'right' }}>{formatCurrency(t.amount, t.currency)}</td>
-                  <td style={{ padding: '8px' }}><Badge variant={statusVariant(t.status)}>{t.status}</Badge></td>
+                  <td style={{ padding: '8px' }}>{(() => { const ds = displayStatus(t); return <Badge variant={statusVariant(ds)}>{ds}</Badge>; })()}</td>
                   <td style={{ padding: '8px', textAlign: 'right' }}>
-                    {refundKindOf(t) && (
-                      <button style={membershipActionStyle} onClick={() => startRefund(t)}>Refund</button>
-                    )}
+                    <Dropdown
+                      trigger={<IconButton icon={<span style={{ fontSize: '18px', lineHeight: 1 }}>⋮</span>} aria-label="Row actions" size="sm" variant="ghost" />}
+                      items={[
+                        ...(refundKindOf(t) ? [{ id: 'refund', label: 'Refund', icon: '↩', onClick: () => startRefund(t) }] : []),
+                        { id: 'email', label: 'Email', icon: '✉', onClick: () => emailTxnDoc(t) },
+                        ...(invoiceIdOf(t) ? [{ id: 'print', label: 'Print', icon: '🖨', onClick: () => openPdf(invoiceIdOf(t)!) }] : []),
+                      ]}
+                    />
                   </td>
                 </tr>
               ))}

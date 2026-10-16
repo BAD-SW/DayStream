@@ -865,6 +865,18 @@ export async function emailInvoice(id: string, businessId: string): Promise<void
   await apiClient.post(`/v1/pay/invoices/${id}/email`, { business_id: businessId });
 }
 
+/**
+ * Re-send the customer-facing document for a transaction. The server derives which
+ * document (invoice / receipt / credit note) from the row. Returns which document
+ * was queued so the UI can confirm it specifically.
+ */
+export async function emailTransaction(
+  id: string, businessId: string,
+): Promise<{ queued: boolean; document: string; recipient: string }> {
+  const res = await apiClient.post(`/v1/pay/transactions/${id}/email`, { business_id: businessId });
+  return res.data.data;
+}
+
 /** Fetch the invoice PDF as a blob (auth is a Bearer header, so this can't be a plain link). */
 export async function fetchInvoicePdf(id: string, businessId: string): Promise<Blob> {
   const res = await apiClient.get(`/v1/pay/invoices/${id}/pdf`, {

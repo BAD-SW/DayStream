@@ -1,6 +1,9 @@
 import { canContact } from './contactability.service';
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
+import { isKnownArtifactType } from '@daystream/shared';
+import { resolveArtifactKey, resolveAndRender } from './document-branding-resolver.service';
+import { sendEmail as sendEmailTransport } from './email.service';
 
 interface NotificationData {
   businessId: string;
@@ -191,16 +194,56 @@ export async function processNotificationQueue(): Promise<{ sent: number; failed
 }
 
 /**
- * Send an email notification (uses existing email infrastructure).
+ * Send an email notification.
+ *
+ * For BRANDED customer-facing payment artifacts (invoice.issued, payment.receipt,
+ * and the rest of the document-branding catalog — plus aliased types like
+ * invoice.paid), this resolves the business's template, renders a branded HTML
+ * email, and sends it through the real transport. The resolver falls back to a
+ * platform-default render when the business has no template, so mail still goes
+ * out either way.
+ *
+ * Non-branded types (booking.*, etc.) keep the prior log-only behavior — a
+ * dedicated email engine (next planned work) will own those; this change
+ * deliberately does not start sending booking mail that wasn't sent before.
  */
 async function sendEmail(notification: any): Promise<void> {
-  // In production, this would use nodemailer or an email service
-  // For now, just log it
-  logger.info('Email notification dispatched', {
-    type: notification.type,
-    recipient: notification.recipient_email,
-    data: notification.data,
+  const type: string = notification.type;
+  const artifactKey = resolveArtifactKey(type);
+
+  if (!isKnownArtifactType(artifactKey)) {
+    // Not a branded document — preserve existing behavior (log only for now).
+    logger.info('Email notification dispatched (unbranded, not sent)', {
+      type, recipient: notification.recipient_email,
+    });
+    return;
+  }
+
+  const recipient: string | null = notification.recipient_email || null;
+  if (!recipient) {
+    logger.warn('Branded notification has no recipient email; skipping', { type, id: notification.id });
+    return;
+  }
+
+  // `data` is JSON — parsed object (jsonb) or string (text column). Handle both.
+  let data: Record<string, unknown> = {};
+  try {
+    data = typeof notification.data === 'string' ? JSON.parse(notification.data) : (notification.data ?? {});
+  } catch { data = {}; }
+
+  const language = typeof data.language === 'string' ? data.language : null;
+  const rendered = await resolveAndRender(notification.business_id, type, data, language);
+
+  await sendEmailTransport({
+    to: recipient,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
+    ...(rendered.senderName ? { from: rendered.senderName } : {}),
+    ...(rendered.replyTo ? { replyTo: rendered.replyTo } : {}),
   });
+
+  logger.info('Branded document email sent', { type, recipient });
 }
 
 /**

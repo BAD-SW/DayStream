@@ -70,6 +70,14 @@ export interface EmailOptions {
   subject: string;
   text?: string;
   html?: string;
+  /**
+   * Optional sender override. When set, it takes precedence over the EMAIL_FROM
+   * default — used to honor a business's branded `sender_name` on documents.
+   * Pass a display name; the address falls back to the platform default address.
+   */
+  from?: string;
+  /** Optional Reply-To, e.g. a business's branded reply-to address. */
+  replyTo?: string;
 }
 
 /**
@@ -78,7 +86,7 @@ export interface EmailOptions {
 export async function sendEmail(options: EmailOptions): Promise<{ messageId: string; previewUrl?: string }> {
   const transport = await getTransporter();
 
-  const from = process.env.EMAIL_FROM || 'DayStream <noreply@daystream.app>';
+  const from = options.from || process.env.EMAIL_FROM || 'DayStream <noreply@daystream.app>';
 
   const info = await transport.sendMail({
     from,
@@ -86,6 +94,7 @@ export async function sendEmail(options: EmailOptions): Promise<{ messageId: str
     subject: options.subject,
     text: options.text,
     html: options.html,
+    ...(options.replyTo ? { replyTo: options.replyTo } : {}),
   });
 
   const previewUrl = nodemailer.getTestMessageUrl(info) || undefined;

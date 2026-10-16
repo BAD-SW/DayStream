@@ -22,6 +22,7 @@ import * as vouchers from '../services/voucher.service';
 import { takeOneTimePayment } from '../services/customer-payment.service';
 import * as accountCredit from '../services/account-credit.service';
 import * as paymentLedger from '../services/payment.service';
+import { emailTransactionDocument } from '../services/document-send.service';
 import * as membership from '../services/membership.service';
 import * as membershipRenewal from '../services/membership-renewal.service';
 import { queryResourceAudit } from '../services/audit.service';
@@ -1409,6 +1410,23 @@ paymentPlatformRouter.get('/transactions', requirePermission('bookings:read'), a
     });
     success(res, result.transactions, { total: result.total, page: result.page, limit: result.limit });
   } catch (e: any) { console.error('Failed to list transactions', e?.message || e); error(res, 'Failed to list transactions', 'INTERNAL_ERROR', 500); }
+});
+
+// (Re)send the customer-facing document for a transaction — the single "Email"
+// action in the transaction-history kebab. The document (invoice / receipt /
+// credit note) is derived from the row, not chosen by the caller.
+const emailTxnSchema = Joi.object({ business_id: Joi.string().uuid().required() });
+
+paymentPlatformRouter.post('/transactions/:id/email', requirePermission('bookings:*'), validate(emailTxnSchema), async (req: Request, res: Response) => {
+  try {
+    const result = await emailTransactionDocument(req.params.id, req.body.business_id);
+    success(res, { queued: true, document: result.document, recipient: result.recipientEmail });
+  } catch (e: any) {
+    if (e?.code === 'NOT_FOUND') { error(res, e.message, 'NOT_FOUND', 404); return; }
+    if (e?.code === 'NO_RECIPIENT') { error(res, e.message, 'NO_RECIPIENT', 422); return; }
+    console.error('Failed to email transaction document', e?.message || e);
+    error(res, 'Failed to email document', 'INTERNAL_ERROR', 500);
+  }
 });
 
 // --- Subscriptions (membership enrollments) ---
