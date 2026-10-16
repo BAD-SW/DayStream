@@ -188,7 +188,12 @@ export function getAvailableJobTypes(): Array<{ type: string; label: string; des
   return [
     { type: 'revenue_recognition', label: 'Revenue Recognition', description: 'Recognize deferred membership revenue daily', defaultFrequency: 'daily' },
     { type: 'billing_process', label: 'Membership Renewals', description: 'Charge membership renewals due today, retry failed renewals, and auto-resume expired pauses', defaultFrequency: 'daily' },
-    { type: 'payment_reconciliation', label: 'Payment Reconciliation', description: 'Finalize pending bank-draw payments once they settle at the provider', defaultFrequency: 'every_15min' },
+    // NOTE: 'payment_reconciliation' is intentionally NOT listed here. It is platform
+    // plumbing — a background poller (every 15 min) that finalizes pending bank-draw
+    // (SEPA/ACH) charges against the provider as a backstop to the webhook. It runs on
+    // its own platform-scoped schedule and is never Run/Scheduled by a business user,
+    // so it is excluded from the user-facing Processes list. The job handler + schedule
+    // remain active in jobRegistry; only the UI entry is removed.
     { type: 'campaign_dispatch', label: 'Campaigns', description: 'Send scheduled marketing campaigns', defaultFrequency: 'every_15min' },
     { type: 'lifecycle_evaluation', label: 'Customer Lifecycle', description: 'Automatically transition inactive customers through lifecycle stages', defaultFrequency: 'daily' },
     { type: 'report_aggregation', label: 'Reporting', description: 'Aggregate daily metrics for reporting dashboards', defaultFrequency: 'daily' },

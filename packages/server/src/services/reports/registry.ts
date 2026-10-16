@@ -19,6 +19,7 @@ import { commissionsReport } from './definitions/commissions.report';
 import { payrollSummaryReport } from './definitions/payroll-summary.report';
 import { timesheetReport } from './definitions/timesheet.report';
 import { giftCardsReport } from './definitions/gift-cards.report';
+import { reconciliationReport } from './definitions/reconciliation.report';
 
 /**
  * Central registry of report definitions. Adding a new report is a matter of
@@ -28,6 +29,7 @@ import { giftCardsReport } from './definitions/gift-cards.report';
 const DEFINITIONS: Record<string, ReportDefinition> = {
   [revenueReport.id]: revenueReport,
   [paymentsReceivedReport.id]: paymentsReceivedReport,
+  [reconciliationReport.id]: reconciliationReport,
   [taxSummaryReport.id]: taxSummaryReport,
   [salesByItemReport.id]: salesByItemReport,
   [salesByStaffReport.id]: salesByStaffReport,

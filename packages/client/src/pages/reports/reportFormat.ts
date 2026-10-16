@@ -15,6 +15,19 @@ export function formatReportValue(
     case 'currency':
       return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Number(value) / 100);
     case 'date': {
+      // A report date is a bare CALENDAR date already in the business's timezone
+      // (the server runs reports on the business clock). It arrives as a
+      // 'YYYY-MM-DD' string; parse those components directly and render as a local
+      // date WITHOUT any timezone conversion. Using new Date('YYYY-MM-DD') would
+      // parse it as midnight UTC and then shift it a day for viewers behind UTC —
+      // the classic date-only off-by-one. Only fall back to Date parsing for a
+      // value that isn't a plain date string.
+      const s = typeof value === 'string' ? value : '';
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+      if (m) {
+        const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        return d.toLocaleDateString(locale);
+      }
       const d = value instanceof Date ? value : new Date(value);
       return isNaN(d.getTime()) ? String(value) : d.toLocaleDateString(locale);
     }
