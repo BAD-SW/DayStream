@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import type { DocumentDetailsTable } from '@daystream/shared';
 import { queueNotification } from './booking-notifications.service';
 import { getInvoice } from './invoice.service';
 import { resolvePdfBranding, renderTemplateDocumentPdf } from './document-pdf';
@@ -29,10 +30,13 @@ class DocumentSendError extends Error {
 }
 
 /** Which document a transaction row maps to. */
-export type TransactionDocument = 'invoice.issued' | 'payment.receipt' | 'payment.credit_note';
+export type TransactionDocument = 'invoice.issued' | 'payment.receipt' | 'payment.refund_confirmation';
 
-export function documentForTransaction(t: { type: string; invoice_id: string | null }): TransactionDocument {
-  if (t.type === 'refund') return 'payment.credit_note';
+export function documentForTransaction(t: { type: string; invoice_id: string | null; credit_note_id?: string | null; debit_note_id?: string | null }): TransactionDocument {
+  if (t.type === 'refund') return 'payment.refund_confirmation';
+  // A credit or debit note renders through the Adjustment template (same as an invoice).
+  if (t.credit_note_id) return 'invoice.issued';
+  if (t.debit_note_id) return 'invoice.issued';
   if (t.invoice_id) return 'invoice.issued';
   return 'payment.receipt';
 }
@@ -54,7 +58,7 @@ export async function emailTransactionDocument(
   const { rows } = await adminPool.query(
     `SELECT t.id, t.business_id, t.customer_id, t.type, t.amount, t.currency,
             t.payment_method, t.reference_number, t.invoice_id, t.refund_of_id,
-            t.refund_reason, t.created_at,
+            t.credit_note_id, t.debit_note_id, t.refund_reason, t.created_at,
             c.email AS customer_email, c.first_name, c.last_name,
             pi.invoice_number       AS invoice_number,
             orig.reference_number   AS original_reference
@@ -73,6 +77,52 @@ export async function emailTransactionDocument(
 
   const document = documentForTransaction(t);
   const customerName = [t.first_name, t.last_name].filter(Boolean).join(' ').trim();
+
+  // A credit note: queue the Adjustment template with the note's data (number,
+  // total, reason, and its line items as the details table).
+  if (t.credit_note_id) {
+    const { getCreditNote } = await import('./credit-note.service');
+    const cn = await getCreditNote(t.credit_note_id, businessId);
+    if (!cn) throw new DocumentSendError('Linked credit note not found', 'NOT_FOUND');
+    await queueNotification({
+      businessId,
+      type: 'invoice.issued',
+      recipientId: t.customer_id,
+      recipientEmail: t.customer_email,
+      data: {
+        invoice_number: `CN-${cn.credit_note_number}`,
+        total_cents: cn.total_cents,
+        currency: cn.currency,
+        reason: cn.reason,
+        customer_name: customerName,
+        customer_email: t.customer_email,
+      },
+    });
+    return { document, recipientEmail: t.customer_email };
+  }
+
+  // A debit note: queue the Adjustment template with the note's data (number,
+  // total, reason) — the sign-flipped mirror of the credit-note branch above.
+  if (t.debit_note_id) {
+    const { getDebitNote } = await import('./debit-note.service');
+    const dn = await getDebitNote(t.debit_note_id, businessId);
+    if (!dn) throw new DocumentSendError('Linked debit note not found', 'NOT_FOUND');
+    await queueNotification({
+      businessId,
+      type: 'invoice.issued',
+      recipientId: t.customer_id,
+      recipientEmail: t.customer_email,
+      data: {
+        invoice_number: `DN-${dn.debit_note_number}`,
+        total_cents: dn.total_cents,
+        currency: dn.currency,
+        reason: dn.reason,
+        customer_name: customerName,
+        customer_email: t.customer_email,
+      },
+    });
+    return { document, recipientEmail: t.customer_email };
+  }
 
   // The Invoice carries richer data (number, due date, totals) — reuse the
   // invoice's own queuer so the data bag matches the original issue path exactly.
@@ -96,19 +146,21 @@ export async function emailTransactionDocument(
     return { document, recipientEmail: t.customer_email };
   }
 
-  if (document === 'payment.credit_note') {
+  if (document === 'payment.refund_confirmation') {
     await queueNotification({
       businessId,
-      type: 'payment.credit_note',
+      type: 'payment.refund_confirmation',
       recipientId: t.customer_id,
       recipientEmail: t.customer_email,
       data: {
         reference_number: t.reference_number,
-        original_invoice_number: t.invoice_number ?? null,
-        credit_amount_cents: t.amount,
+        original_reference: t.original_reference ?? null,
+        refund_amount_cents: t.amount,
+        amount_cents: t.amount,
         currency: t.currency,
-        credit_note_date: t.created_at,
+        refund_date: t.created_at,
         reason: t.refund_reason ?? null,
+        payment_method: t.payment_method,
         customer_name: customerName,
         customer_email: t.customer_email,
       },
@@ -163,11 +215,13 @@ export async function renderReceiptPdf(transactionId: string, businessId: string
   if (!t) return null;
 
   const customerName = [t.first_name, t.last_name].filter(Boolean).join(' ').trim();
+  const detailsTable = await buildTransactionDetailsTable(t, businessId);
 
   // Pure template: the receipt IS the payment.receipt template (header/subject/
   // body/footer), rendered exactly like the editor preview. All detail the
   // business wants (amount, method, date, reference) comes from {{placeholders}}
-  // in their template body — we feed them here.
+  // in their template body — we feed them here. If the template includes the
+  // {{details_table}} token, `detailsTable` is drawn where it sits.
   const branding = await resolvePdfBranding(businessId, 'payment.receipt', {
     reference_number: t.reference_number,
     receipt_number: t.reference_number,
@@ -177,9 +231,48 @@ export async function renderReceiptPdf(transactionId: string, businessId: string
     payment_date: t.created_at,
     customer_name: customerName,
     customer_email: t.customer_email,
-  });
+  }, detailsTable);
 
   return renderTemplateDocumentPdf(branding);
+}
+
+/**
+ * Build the line-item details table for a transaction's receipt. If the payment
+ * paid a checkout order, use that order's line items; otherwise fall back to a
+ * single row (the transaction's description, or "Payment", at its amount).
+ */
+async function buildTransactionDetailsTable(
+  t: { id: string; amount: number; currency: string; description: string | null },
+  businessId: string,
+): Promise<DocumentDetailsTable> {
+  const { rows: items } = await adminPool.query(
+    `SELECT oi.item_name, oi.variant_name, oi.quantity, oi.total_price
+       FROM fin_order_items oi
+       JOIN pay_transactions t ON t.id = $1
+       JOIN fin_orders o
+         ON o.business_id = $2
+        AND (t.order_id = o.id OR (o.payment_reference IS NOT NULL AND o.payment_reference = t.reference_number))
+      WHERE oi.order_id = o.id
+      ORDER BY oi.created_at`,
+    [t.id, businessId],
+  );
+
+  if (items.length > 0) {
+    const rows = items.map((it: any) => ({
+      description: it.variant_name ? `${it.item_name} — ${it.variant_name}` : it.item_name,
+      qty: it.quantity,
+      amountCents: it.total_price,
+    }));
+    const totalCents = rows.reduce((n: number, r: { amountCents: number }) => n + r.amountCents, 0);
+    return { rows, totalCents, currency: t.currency };
+  }
+
+  // No itemized order — a single row for the payment itself.
+  return {
+    rows: [{ description: t.description || 'Payment', qty: 1, amountCents: t.amount }],
+    totalCents: t.amount,
+    currency: t.currency,
+  };
 }
 
 /**
@@ -227,7 +320,7 @@ export async function resolveOrderReceiptFields(orderId: string, businessId: str
   const txnId = await transactionForOrder(orderId, businessId);
   if (!txnId) return null;
   const { rows } = await adminPool.query(
-    `SELECT t.amount, t.currency, t.payment_method, t.reference_number, t.created_at,
+    `SELECT t.id, t.amount, t.currency, t.payment_method, t.reference_number, t.created_at, t.description,
             c.first_name, c.last_name, c.email AS customer_email
        FROM pay_transactions t
        LEFT JOIN cus_customers c ON c.id = t.customer_id
@@ -237,6 +330,7 @@ export async function resolveOrderReceiptFields(orderId: string, businessId: str
   const t = rows[0];
   if (!t) return null;
   const customerName = [t.first_name, t.last_name].filter(Boolean).join(' ').trim();
+  const detailsTable = await buildTransactionDetailsTable(t, businessId);
   return resolveDocumentFields(businessId, 'payment.receipt', {
     reference_number: t.reference_number,
     receipt_number: t.reference_number,
@@ -246,7 +340,7 @@ export async function resolveOrderReceiptFields(orderId: string, businessId: str
     payment_date: t.created_at,
     customer_name: customerName,
     customer_email: t.customer_email,
-  });
+  }, null, detailsTable);
 }
 
 export { DocumentSendError };

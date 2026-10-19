@@ -43,6 +43,8 @@ export type {
   DocumentPlaceholder,
   DocumentFieldKey,
   DocumentArtifactType,
+  DocumentTableRow,
+  DocumentDetailsTable,
 } from './documents/catalog';
 
 // Constants
@@ -64,6 +66,7 @@ export {
   DOCUMENT_ARTIFACT_TYPES,
   getArtifactType,
   isKnownArtifactType,
+  DETAILS_TABLE_TOKEN,
 } from './documents/catalog';
 
 // Utilities

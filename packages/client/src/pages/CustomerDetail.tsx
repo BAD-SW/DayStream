@@ -733,7 +733,7 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
   // Email (re-send) the document that corresponds to a transaction row. The
   // server derives which document (invoice / receipt / credit note) from the row.
   const DOC_LABELS: Record<string, string> = {
-    'invoice.issued': 'Invoice', 'payment.receipt': 'Receipt', 'payment.credit_note': 'Credit note',
+    'invoice.issued': 'Adjustment', 'payment.receipt': 'Payment Receipt',
   };
   const emailTxnDoc = async (t: PayTransaction) => {
     setMessage(null);
@@ -763,9 +763,32 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
     } catch { setMessage('Failed to open receipt PDF.'); }
   };
 
-  // Which document a charge row prints: an invoice-linked charge prints its
-  // invoice; any other charge prints a receipt. (Refund rows have no PDF yet.)
+  // Open the branded credit-note (Adjustment) PDF for a credit-note row.
+  const printCreditNote = async (creditNoteId: string) => {
+    try {
+      const blob = await payApi.fetchCreditNotePdf(creditNoteId, businessId);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch { setMessage('Failed to open credit note PDF.'); }
+  };
+
+  // Open the branded debit-note (Adjustment) PDF for a debit-note row.
+  const printDebitNote = async (debitNoteId: string) => {
+    try {
+      const blob = await payApi.fetchDebitNotePdf(debitNoteId, businessId);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch { setMessage('Failed to open debit note PDF.'); }
+  };
+
+  // Which document a charge row prints: a credit/debit-note row prints its note;
+  // an invoice-linked charge prints its invoice; any other charge prints a receipt.
+  // (Refund rows have no PDF yet.)
   const printForRow = (t: PayTransaction): (() => void) | null => {
+    if (t.credit_note_id) return () => printCreditNote(t.credit_note_id!);
+    if (t.debit_note_id) return () => printDebitNote(t.debit_note_id!);
     const invId = invoiceIdOf(t);
     if (invId) return () => openPdf(invId);
     if (t.type === 'charge') return () => printReceipt(t);
@@ -776,6 +799,8 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
   // membership -> the plan page. No-op if there's no destination.
   const openPurpose = (link: payApi.PurposeLink) => {
     if (link.type === 'invoice') { openPdf(link.id); return; }
+    if (link.type === 'credit_note') { printCreditNote(link.id); return; }
+    if (link.type === 'debit_note') { printDebitNote(link.id); return; }
     if (link.type === 'order') { navigate(`/receipt/${link.id}`); return; }
     if (link.type === 'booking') { navigate(`/bookings/${link.id}/edit`); return; }
     if (link.type === 'membership') { navigate(`/memberships/${link.id}`); return; }
@@ -827,7 +852,7 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
           <h3 style={{ ...styles.cardTitle, margin: 0 }}>Outstanding Invoices</h3>
           {invoicingEnabled && (
-            <Button size="sm" variant="secondary" onClick={() => setShowIssueInvoice(true)}>Issue Invoice</Button>
+            <Button size="sm" variant="secondary" onClick={() => setShowIssueInvoice(true)}>New Adjustment</Button>
           )}
         </div>
         {outstanding.length === 0 ? (
@@ -909,7 +934,7 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
                         type="button"
                         onClick={() => openPurpose(t.purpose_link!)}
                         style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-accent)', cursor: 'pointer', textAlign: 'left', font: 'inherit', textDecoration: 'underline' }}
-                        title={t.purpose_link.type === 'invoice' ? 'Open invoice PDF' : t.purpose_link.type === 'order' ? 'Open receipt' : 'Open details'}
+                        title={t.purpose_link.type === 'invoice' ? 'Open invoice PDF' : t.purpose_link.type === 'credit_note' ? 'Open credit note PDF' : t.purpose_link.type === 'debit_note' ? 'Open debit note PDF' : t.purpose_link.type === 'order' ? 'Open receipt' : 'Open details'}
                       >
                         {t.purpose_label}
                       </button>
@@ -1041,17 +1066,20 @@ const INVOICE_ITEM_TYPES: { value: payApi.InvoiceItemType; label: string }[] = [
   { value: 'no_show_fee', label: 'No-show fee' },
 ];
 
-// --- Issue-invoice modal: compose line items + due date -> issueInvoice ---
+// --- Adjustment modal: a Debit (invoice) or Credit (credit note). A debit charges
+//     the customer; a credit reverses revenue and grants drawable account credit. ---
 function IssueInvoiceModal({ businessId, customerId, onClose, onIssued }: {
   businessId: string; customerId: string; onClose: () => void; onIssued: () => void;
 }) {
-  const [dueDate, setDueDate] = useState('');
-  const [notes, setNotes] = useState('');
+  const [mode, setMode] = useState<'debit' | 'credit'>('debit');
+  const [reason, setReason] = useState('');
   const [lines, setLines] = useState<InvoiceLineRow[]>([{ description: '', quantity: 1, unitPriceCents: 0, taxCents: 0, itemType: 'service' }]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const total = lines.reduce((n, l) => n + Math.round(l.unitPriceCents * (l.quantity || 1)) + (l.taxCents || 0), 0);
+  // A credit note applies immediately — its date is today, shown read-only.
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   const updateLine = (i: number, patch: Partial<InvoiceLineRow>) =>
     setLines(lines.map((l, idx) => idx === i ? { ...l, ...patch } : l));
@@ -1059,31 +1087,66 @@ function IssueInvoiceModal({ businessId, customerId, onClose, onIssued }: {
   const removeLine = (i: number) => setLines(lines.length > 1 ? lines.filter((_, idx) => idx !== i) : lines);
 
   const submit = async () => {
-    if (!dueDate) { setError('A due date is required.'); return; }
     const valid = lines.filter((l) => l.description.trim() && l.unitPriceCents > 0);
     if (valid.length === 0) { setError('Add at least one line item with a description and price.'); return; }
+    if (!reason.trim()) { setError('A reason is required.'); return; }
+    const lineItems = valid.map((l) => ({ description: l.description.trim(), quantity: l.quantity || 1, unit_price_cents: l.unitPriceCents, tax_cents: l.taxCents || null, item_type: l.itemType }));
     setBusy(true); setError(null);
     try {
-      await payApi.issueInvoice({
-        business_id: businessId, customer_id: customerId, due_date: dueDate, notes: notes || null,
-        line_items: valid.map((l) => ({ description: l.description.trim(), quantity: l.quantity || 1, unit_price_cents: l.unitPriceCents, tax_cents: l.taxCents || null, item_type: l.itemType })),
-      });
+      if (mode === 'credit') {
+        await payApi.issueCreditNote({ business_id: businessId, customer_id: customerId, reason: reason.trim(), line_items: lineItems });
+      } else {
+        await payApi.issueDebitNote({ business_id: businessId, customer_id: customerId, reason: reason.trim(), line_items: lineItems });
+      }
       onIssued();
     } catch (err: any) {
-      setError(err?.response?.data?.error || 'Failed to issue the invoice.');
+      setError(err?.response?.data?.message || err?.response?.data?.error || `Failed to issue the ${mode === 'credit' ? 'credit note' : 'debit note'}.`);
     } finally { setBusy(false); }
   };
 
+  const isCredit = mode === 'credit';
+
   return (
-    <Modal open onClose={onClose} title="Issue Invoice" size="lg"
+    <Modal open onClose={onClose} title="New Adjustment" size="lg"
       footer={<>
         <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" loading={busy} onClick={submit}>Issue invoice ({formatCurrency(total, 'USD')})</Button>
+        <Button variant="primary" loading={busy} onClick={submit}>
+          {isCredit ? `Issue credit note (${formatCurrency(total, 'USD')})` : `Issue debit note (${formatCurrency(total, 'USD')})`}
+        </Button>
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+        {/* Debit note vs Credit note — a debit is a credit with the opposite sign. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Adjustment type</label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button type="button" onClick={() => { setMode('debit'); setError(null); }}
+              style={{ ...membershipActionStyle, padding: '6px 14px', background: !isCredit ? 'var(--color-primary)' : 'transparent', color: !isCredit ? '#fff' : 'var(--color-text-secondary)' }}>
+              Debit (Debit Note)
+            </button>
+            <button type="button" onClick={() => { setMode('credit'); setError(null); }}
+              style={{ ...membershipActionStyle, padding: '6px 14px', background: isCredit ? 'var(--color-primary)' : 'transparent', color: isCredit ? '#fff' : 'var(--color-text-secondary)' }}>
+              Credit (Credit Note)
+            </button>
+          </div>
+          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+            {isCredit
+              ? 'A credit note reverses revenue and grants the customer drawable account credit. No cash is returned.'
+              : 'A debit note re-recognises revenue and draws the customer\u2019s account balance down (the mirror of a credit note). No cash is collected.'}
+          </span>
+        </div>
+
+        {/* Apply date — same position, read-only for both: a debit note and a
+            credit note both take effect immediately (today). */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxWidth: '220px' }}>
-          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Due date <span style={{ color: 'var(--color-error)' }}>*</span></label>
-          <input type="date" style={refundInputStyle} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Apply date</label>
+          <input type="date" style={{ ...refundInputStyle, opacity: 0.7 }} value={todayStr} readOnly aria-readonly="true" />
+        </div>
+
+        {/* Reason — required for both, same position. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Reason <span style={{ color: 'var(--color-error)' }}>*</span></label>
+          <input style={refundInputStyle} value={reason} onChange={(e) => setReason(e.target.value)}
+            placeholder={isCredit ? 'e.g. goodwill credit for cancelled class' : 'e.g. correction of over-credited amount'} />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1111,10 +1174,6 @@ function IssueInvoiceModal({ businessId, customerId, onClose, onIssued }: {
           <button type="button" style={{ ...membershipActionStyle, alignSelf: 'flex-start' }} onClick={addLine}>+ Add line</button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>Notes (optional)</label>
-          <input style={refundInputStyle} value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </div>
         {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: 0 }}>{error}</p>}
       </div>
     </Modal>

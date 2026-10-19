@@ -666,7 +666,7 @@ export async function takeCharge(input: TakeChargeInput): Promise<ChargeResult> 
 
 // --- Transactions (ledger list) ---
 
-export type PurposeLinkType = 'invoice' | 'order' | 'booking' | 'membership';
+export type PurposeLinkType = 'invoice' | 'order' | 'booking' | 'membership' | 'credit_note' | 'debit_note';
 
 export interface PurposeLink {
   type: PurposeLinkType;
@@ -675,7 +675,7 @@ export interface PurposeLink {
 
 export interface PayTransaction {
   id: string;
-  type: 'charge' | 'refund' | 'credit';
+  type: 'charge' | 'refund' | 'credit' | 'debit';
   status: string;
   amount: number;
   currency: string;
@@ -688,6 +688,8 @@ export interface PayTransaction {
   /** Linkage columns — drive refundability (membership/account-credit not refundable here). */
   enrollment_id: string | null;
   invoice_id: string | null;
+  credit_note_id: string | null;
+  debit_note_id: string | null;
   order_id: string | null;
   /** The order this charge belongs to, resolved by reference match (may be set when order_id is not). */
   resolved_order_id: string | null;
@@ -857,6 +859,41 @@ export async function settleInvoice(id: string, businessId: string, paymentMetho
   return res.data.data;
 }
 
+/** Issue a credit note (the "credit" side of an Adjustment): reverses revenue and
+ *  grants the customer drawable account credit. Returns the created credit note. */
+export async function issueCreditNote(input: {
+  business_id: string; customer_id: string; reason: string; line_items: InvoiceLineItemInput[];
+}): Promise<any> {
+  const res = await apiClient.post('/v1/pay/credit-notes', input);
+  return res.data.data;
+}
+
+/** Fetch the credit-note PDF (Adjustment template) as a blob. */
+export async function fetchCreditNotePdf(id: string, businessId: string): Promise<Blob> {
+  const res = await apiClient.get(`/v1/pay/credit-notes/${id}/pdf`, {
+    params: { business_id: businessId }, responseType: 'blob',
+  });
+  return res.data;
+}
+
+/** Issue a debit note (the "debit" side of an Adjustment): the sign-flipped mirror
+ *  of a credit note — re-recognises revenue and draws the customer's account
+ *  balance down (can go negative). No cash changes hands. Returns the debit note. */
+export async function issueDebitNote(input: {
+  business_id: string; customer_id: string; reason: string; line_items: InvoiceLineItemInput[];
+}): Promise<any> {
+  const res = await apiClient.post('/v1/pay/debit-notes', input);
+  return res.data.data;
+}
+
+/** Fetch the debit-note PDF (Adjustment template) as a blob. */
+export async function fetchDebitNotePdf(id: string, businessId: string): Promise<Blob> {
+  const res = await apiClient.get(`/v1/pay/debit-notes/${id}/pdf`, {
+    params: { business_id: businessId }, responseType: 'blob',
+  });
+  return res.data;
+}
+
 export async function voidInvoice(id: string, businessId: string): Promise<void> {
   await apiClient.post(`/v1/pay/invoices/${id}/void`, { business_id: businessId });
 }
@@ -909,6 +946,11 @@ export async function fetchOrderReceiptPdf(orderId: string, businessId: string):
   return res.data;
 }
 
+/** A line-item row in a document's details table. */
+export interface ReceiptTableRow { description: string; qty: number; amountCents: number; }
+/** The details table drawn where {{details_table}} sits. */
+export interface ReceiptDetailsTable { rows: ReceiptTableRow[]; totalCents: number; currency: string; }
+
 /** The resolved, placeholder-filled branded-receipt fields for on-screen display. */
 export interface ReceiptDocumentFields {
   primaryColor: string;
@@ -920,6 +962,7 @@ export interface ReceiptDocumentFields {
   footerText: string;
   footerLinkText: string;
   footerLinkUrl: string;
+  detailsTable: ReceiptDetailsTable | null;
 }
 
 /** Fetch the branded-receipt fields for an order (so the page renders the template). */

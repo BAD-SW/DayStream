@@ -29,6 +29,28 @@ export interface DocumentPlaceholder {
 /** Which template fields a placeholder chip can be inserted into. */
 export type DocumentFieldKey = 'subject' | 'body' | 'footer';
 
+/**
+ * The `{{details_table}}` token. Unlike scalar placeholders (which substitute a
+ * string), this is a PLACEMENT MARKER: each renderer (on-screen, PDF) replaces it
+ * with a natively-drawn line-item table at the position the user placed it.
+ */
+export const DETAILS_TABLE_TOKEN = 'details_table';
+
+/** One row of a document's line-item (details) table. */
+export interface DocumentTableRow {
+  description: string;
+  qty: number;
+  /** Amount in minor units (cents). */
+  amountCents: number;
+}
+
+/** The structured details table a renderer draws where `{{details_table}}` sits. */
+export interface DocumentDetailsTable {
+  rows: DocumentTableRow[];
+  totalCents: number;
+  currency: string;
+}
+
 /** A brandable customer-facing document type. */
 export interface DocumentArtifactType {
   /**
@@ -102,20 +124,20 @@ const COMMON_PLACEHOLDERS: DocumentPlaceholder[] = [
 export const DOCUMENT_ARTIFACT_TYPES: DocumentArtifactType[] = [
   {
     key: 'invoice.issued',
-    label: 'Invoice',
-    description: 'Sent when an invoice is issued to a customer.',
+    label: 'Adjustment',
+    description: 'A customer adjustment — an invoice (debit) or a credit note (credit).',
     placeholders: [
       ...COMMON_PLACEHOLDERS,
       {
-        token: 'invoice_number',
-        label: 'Invoice Number',
-        description: 'The invoice reference number.',
-        sample: 'INV-2026-00042',
+        token: 'adjustment_number',
+        label: 'Adjustment Number',
+        description: 'The adjustment reference number (e.g. credit note CN-1001 or debit note DN-1001).',
+        sample: 'CN-1001',
       },
       {
-        token: 'invoice_date',
-        label: 'Invoice Date',
-        description: 'The date the invoice was issued.',
+        token: 'adjustment_date',
+        label: 'Adjustment Date',
+        description: 'The date the adjustment was issued.',
         sample: '15 Oct 2026',
       },
       {
@@ -136,11 +158,17 @@ export const DOCUMENT_ARTIFACT_TYPES: DocumentArtifactType[] = [
         description: "URL where the customer can pay the invoice.",
         sample: 'https://pay.daystream.app/i/INV-2026-00042',
       },
+      {
+        token: 'details_table',
+        label: 'Details Table',
+        description: 'A line-item table (Description, Qty, Amount) with a total. Expands where you place it.',
+        sample: '[line-item table]',
+      },
     ],
   },
   {
     key: 'payment.receipt',
-    label: 'Receipt',
+    label: 'Payment Receipt',
     description: 'Sent after a payment is successfully taken.',
     placeholders: [
       ...COMMON_PLACEHOLDERS,
@@ -168,75 +196,11 @@ export const DOCUMENT_ARTIFACT_TYPES: DocumentArtifactType[] = [
         description: 'How the payment was made (e.g. card ending 4242).',
         sample: 'Visa ending 4242',
       },
-    ],
-  },
-  {
-    key: 'payment.confirmation',
-    label: 'Payment Confirmation',
-    description: 'Confirms to the customer that a payment went through.',
-    placeholders: [
-      ...COMMON_PLACEHOLDERS,
       {
-        token: 'amount_paid',
-        label: 'Amount Paid',
-        description: 'The amount paid, formatted in the business currency.',
-        sample: '€120.00',
-      },
-      {
-        token: 'payment_date',
-        label: 'Payment Date',
-        description: 'The date the payment was taken.',
-        sample: '15 Oct 2026',
-      },
-      {
-        token: 'payment_method',
-        label: 'Payment Method',
-        description: 'How the payment was made (e.g. card ending 4242).',
-        sample: 'Visa ending 4242',
-      },
-      {
-        token: 'reference_number',
-        label: 'Reference Number',
-        description: 'The transaction reference number.',
-        sample: 'TXN-2026-00984',
-      },
-    ],
-  },
-  {
-    key: 'payment.credit_note',
-    label: 'Credit Note',
-    description: 'Issued when a credit is applied to a customer account.',
-    placeholders: [
-      ...COMMON_PLACEHOLDERS,
-      {
-        token: 'credit_note_number',
-        label: 'Credit Note Number',
-        description: 'The credit note reference number.',
-        sample: 'CN-2026-00031',
-      },
-      {
-        token: 'credit_note_date',
-        label: 'Credit Note Date',
-        description: 'The date the credit note was issued.',
-        sample: '15 Oct 2026',
-      },
-      {
-        token: 'credit_amount',
-        label: 'Credit Amount',
-        description: 'The credited amount, formatted in the business currency.',
-        sample: '€40.00',
-      },
-      {
-        token: 'original_invoice_number',
-        label: 'Original Invoice Number',
-        description: 'The invoice this credit note relates to.',
-        sample: 'INV-2026-00042',
-      },
-      {
-        token: 'reason',
-        label: 'Reason',
-        description: 'Why the credit was issued.',
-        sample: 'Partial refund — class cancelled',
+        token: 'details_table',
+        label: 'Details Table',
+        description: 'A line-item table (Description, Qty, Amount) with a total. Expands where you place it.',
+        sample: '[line-item table]',
       },
     ],
   },

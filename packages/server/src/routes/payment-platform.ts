@@ -16,6 +16,8 @@ import * as platformBilling from '../services/platform-billing.service';
 import * as tenantBilling from '../services/tenant-billing.service';
 import { refundTransaction } from '../services/refund.service';
 import * as invoices from '../services/invoice.service';
+import * as creditNotes from '../services/credit-note.service';
+import * as debitNotes from '../services/debit-note.service';
 import * as giftCards from '../services/gift-card.service';
 import * as docBranding from '../services/document-branding.service';
 import * as vouchers from '../services/voucher.service';
@@ -979,6 +981,156 @@ paymentPlatformRouter.get('/invoices/:id/pdf', requirePermission('bookings:read'
     res.setHeader('Content-Disposition', `attachment; filename="invoice-${req.params.id}.pdf"`);
     res.send(pdf);
   } catch (e: any) { console.error('Failed to render invoice PDF', e?.message || e); error(res, 'Failed to render invoice PDF', 'INTERNAL_ERROR', 500); }
+});
+
+// ============================================================
+// Section C — Credit notes (Adjustment — credit side). Issue reverses revenue
+// and grants drawable account credit (no cash). bookings:* to write, read for GET.
+// ============================================================
+
+const CREDIT_NOTE_ERR: Record<string, number> = {
+  REASON_REQUIRED: 400, NO_LINE_ITEMS: 400, INVALID_TOTAL: 400, NOT_FOUND: 404,
+};
+function sendCreditNoteError(res: Response, e: any, fallback: string): void {
+  if (e?.code && CREDIT_NOTE_ERR[e.code]) { error(res, e.message, e.code, CREDIT_NOTE_ERR[e.code]); return; }
+  error(res, fallback, 'INTERNAL_ERROR', 500);
+}
+
+paymentPlatformRouter.get('/credit-notes', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, await creditNotes.listCreditNotes(businessId, req.query.customer_id as string | undefined));
+  } catch (e: any) { sendCreditNoteError(res, e, 'Failed to list credit notes'); }
+});
+
+const issueCreditNoteSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  customer_id: Joi.string().uuid().required(),
+  reason: Joi.string().min(1).max(1000).required(),
+  line_items: Joi.array().items(Joi.object({
+    description: Joi.string().min(1).max(200).required(),
+    quantity: Joi.number().positive().default(1),
+    unit_price_cents: Joi.number().integer().min(0).required(),
+    tax_cents: Joi.number().integer().min(0).allow(null),
+    item_type: Joi.string().valid('service', 'product', 'membership', 'package', 'no_show_fee').allow(null),
+  })).min(1).required(),
+});
+
+paymentPlatformRouter.post('/credit-notes', requirePermission('bookings:*'), validate(issueCreditNoteSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const cn = await creditNotes.issueCreditNote({
+      businessId: req.body.business_id,
+      tenantId: authReq.tenantId,
+      customerId: req.body.customer_id,
+      reason: req.body.reason,
+      createdBy: authReq.user.sub,
+      lineItems: (req.body.line_items as any[]).map((li) => ({
+        description: li.description, quantity: li.quantity,
+        unitPriceCents: li.unit_price_cents, taxCents: li.tax_cents ?? 0,
+        itemType: li.item_type ?? 'service',
+      })),
+    });
+    success(res, cn, undefined, 201);
+  } catch (e: any) { sendCreditNoteError(res, e, 'Failed to issue credit note'); }
+});
+
+paymentPlatformRouter.get('/credit-notes/:id', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const cn = await creditNotes.getCreditNote(req.params.id, businessId);
+    if (!cn) { error(res, 'Credit note not found', 'NOT_FOUND', 404); return; }
+    success(res, cn);
+  } catch (e: any) { sendCreditNoteError(res, e, 'Failed to read credit note'); }
+});
+
+paymentPlatformRouter.get('/credit-notes/:id/pdf', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const pdf = await creditNotes.renderCreditNotePdf(req.params.id, businessId);
+    if (!pdf) { error(res, 'Credit note not found', 'NOT_FOUND', 404); return; }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="credit-note-${req.params.id}.pdf"`);
+    res.send(pdf);
+  } catch (e: any) { console.error('Failed to render credit note PDF', e?.message || e); error(res, 'Failed to render credit note PDF', 'INTERNAL_ERROR', 500); }
+});
+
+// ------------------------------------------------------------
+// Debit notes — the "debit" side of an Adjustment (sign-flipped mirror of a
+// credit note). Same permissions, schema, and error shape; the service draws the
+// customer's account balance down instead of granting credit.
+// ------------------------------------------------------------
+const DEBIT_NOTE_ERR: Record<string, number> = {
+  REASON_REQUIRED: 400, NO_LINE_ITEMS: 400, INVALID_TOTAL: 400, NOT_FOUND: 404,
+};
+function sendDebitNoteError(res: Response, e: any, fallback: string): void {
+  if (e?.code && DEBIT_NOTE_ERR[e.code]) { error(res, e.message, e.code, DEBIT_NOTE_ERR[e.code]); return; }
+  error(res, fallback, 'INTERNAL_ERROR', 500);
+}
+
+paymentPlatformRouter.get('/debit-notes', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, await debitNotes.listDebitNotes(businessId, req.query.customer_id as string | undefined));
+  } catch (e: any) { sendDebitNoteError(res, e, 'Failed to list debit notes'); }
+});
+
+const issueDebitNoteSchema = Joi.object({
+  business_id: Joi.string().uuid().required(),
+  customer_id: Joi.string().uuid().required(),
+  reason: Joi.string().min(1).max(1000).required(),
+  line_items: Joi.array().items(Joi.object({
+    description: Joi.string().min(1).max(200).required(),
+    quantity: Joi.number().positive().default(1),
+    unit_price_cents: Joi.number().integer().min(0).required(),
+    tax_cents: Joi.number().integer().min(0).allow(null),
+    item_type: Joi.string().valid('service', 'product', 'membership', 'package', 'no_show_fee').allow(null),
+  })).min(1).required(),
+});
+
+paymentPlatformRouter.post('/debit-notes', requirePermission('bookings:*'), validate(issueDebitNoteSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const dn = await debitNotes.issueDebitNote({
+      businessId: req.body.business_id,
+      tenantId: authReq.tenantId,
+      customerId: req.body.customer_id,
+      reason: req.body.reason,
+      createdBy: authReq.user.sub,
+      lineItems: (req.body.line_items as any[]).map((li) => ({
+        description: li.description, quantity: li.quantity,
+        unitPriceCents: li.unit_price_cents, taxCents: li.tax_cents ?? 0,
+        itemType: li.item_type ?? 'service',
+      })),
+    });
+    success(res, dn, undefined, 201);
+  } catch (e: any) { sendDebitNoteError(res, e, 'Failed to issue debit note'); }
+});
+
+paymentPlatformRouter.get('/debit-notes/:id', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const dn = await debitNotes.getDebitNote(req.params.id, businessId);
+    if (!dn) { error(res, 'Debit note not found', 'NOT_FOUND', 404); return; }
+    success(res, dn);
+  } catch (e: any) { sendDebitNoteError(res, e, 'Failed to read debit note'); }
+});
+
+paymentPlatformRouter.get('/debit-notes/:id/pdf', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const pdf = await debitNotes.renderDebitNotePdf(req.params.id, businessId);
+    if (!pdf) { error(res, 'Debit note not found', 'NOT_FOUND', 404); return; }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="debit-note-${req.params.id}.pdf"`);
+    res.send(pdf);
+  } catch (e: any) { console.error('Failed to render debit note PDF', e?.message || e); error(res, 'Failed to render debit note PDF', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================

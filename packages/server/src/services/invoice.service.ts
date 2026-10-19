@@ -352,6 +352,18 @@ export async function renderInvoicePdf(invoiceId: string, businessId: string): P
   const invoice = await getInvoice(invoiceId, businessId);
   if (!invoice) return null;
 
+  // Build the line-item table from the invoice's own lines, for the
+  // {{details_table}} token. Total is the invoice total (includes tax).
+  const detailsTable = {
+    rows: (invoice.line_items as any[]).map((li) => ({
+      description: li.description,
+      qty: li.quantity,
+      amountCents: li.amount_cents,
+    })),
+    totalCents: invoice.total_cents,
+    currency: invoice.currency as string,
+  };
+
   const branding = await resolvePdfBranding(businessId, 'invoice.issued', {
     invoice_number: invoice.invoice_number,
     total_cents: invoice.total_cents,
@@ -361,7 +373,7 @@ export async function renderInvoicePdf(invoiceId: string, businessId: string): P
     due_date: invoice.due_date,
     customer_name: [invoice.customer_first_name, invoice.customer_last_name].filter(Boolean).join(' ').trim(),
     customer_email: invoice.customer_email,
-  });
+  }, detailsTable);
 
   return renderTemplateDocumentPdf(branding);
 }

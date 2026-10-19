@@ -1,4 +1,6 @@
 import sharp from 'sharp';
+import { formatCurrency, DETAILS_TABLE_TOKEN } from '@daystream/shared';
+import type { DocumentDetailsTable } from '@daystream/shared';
 import { selectTemplate, buildTokensForBusiness, substitute } from './document-branding-resolver.service';
 
 /** pdfkit's document instance type (the default export is the constructor value). */
@@ -72,23 +74,31 @@ export interface ResolvedPdfBranding {
   businessName: string;
   /** Subject line with placeholders substituted (rendered as the document heading). */
   subjectText: string;
-  /** Body with placeholders substituted, flattened to text (the document message). */
+  /**
+   * Body with placeholders substituted, flattened to text (the document message).
+   * May contain the literal `{{details_table}}` marker; the renderer splits on it
+   * and draws `detailsTable` at that position.
+   */
   introText: string;
   footerText: string;
   footerLinkText: string;
   footerLinkUrl: string;
+  /** Line-item table to draw where `{{details_table}}` sits (null = none). */
+  detailsTable: DocumentDetailsTable | null;
 }
 
 /**
  * Resolve the branding template for an artifact + business and prepare everything
  * a PDF renderer needs: colors (with defaults), the fetched logo, the business
  * name, and the subject / body / footer text with `{{placeholders}}` already
- * substituted from `data`.
+ * substituted from `data`. `detailsTable` is drawn where the `{{details_table}}`
+ * token appears in the body.
  */
 export async function resolvePdfBranding(
   businessId: string,
   artifactType: string,
   data: Record<string, unknown>,
+  detailsTable: DocumentDetailsTable | null = null,
 ): Promise<ResolvedPdfBranding> {
   const template = await selectTemplate(businessId, artifactType, null);
   const tokens = await buildTokensForBusiness(businessId, data);
@@ -103,6 +113,7 @@ export async function resolvePdfBranding(
     footerText: substitute(template?.footerText, tokens),
     footerLinkText: substitute(template?.footerLinkText, tokens),
     footerLinkUrl: substitute(template?.footerLinkUrl, tokens),
+    detailsTable,
   };
 }
 
@@ -117,7 +128,7 @@ export async function resolvePdfBranding(
  * template to BE the document rather than branding wrapped around structured data).
  */
 export function renderTemplateDocumentPdf(branding: ResolvedPdfBranding): Promise<Buffer> {
-  const { primary, secondary, logo, businessName, subjectText, introText, footerText, footerLinkText, footerLinkUrl } = branding;
+  const { primary, secondary, logo, businessName, subjectText, introText, footerText, footerLinkText, footerLinkUrl, detailsTable } = branding;
 
   // Lazy import keeps pdfkit out of modules that only resolve branding.
   const PDFDocument = require('pdfkit') as typeof import('pdfkit');
@@ -153,9 +164,21 @@ export function renderTemplateDocumentPdf(branding: ResolvedPdfBranding): Promis
       y = doc.y + 14;
     }
 
-    if (introText) {
-      doc.fontSize(11).fillColor('#1a1a1a').text(introText, pad, y, { width: contentWidth, lineGap: 3 });
-      y = doc.y;
+    // The body may contain the {{details_table}} marker. Split on it and draw the
+    // body text around a natively-drawn line-item table at that position.
+    const marker = `{{${DETAILS_TABLE_TOKEN}}}`;
+    const segments = introText ? introText.split(marker) : [''];
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i].trim();
+      if (seg) {
+        doc.fontSize(11).fillColor('#1a1a1a').text(seg, pad, y, { width: contentWidth, lineGap: 3 });
+        y = doc.y;
+      }
+      // A table goes between segments (i.e. wherever the marker appeared).
+      if (i < segments.length - 1 && detailsTable) {
+        y += 12;
+        y = drawDetailsTable(doc, detailsTable, pad, y, contentWidth, primary, secondary);
+      }
     }
 
     // --- Footer (secondary-color rule + text + link) ---
@@ -173,6 +196,49 @@ export function renderTemplateDocumentPdf(branding: ResolvedPdfBranding): Promis
 
     doc.end();
   });
+}
+
+/** Draw a Description/Qty/Amount table (+ Total) at `y`; returns the new `y`. */
+function drawDetailsTable(
+  doc: PdfDoc, table: DocumentDetailsTable, pad: number, startY: number, width: number,
+  primary: string, secondary: string,
+): number {
+  const left = pad;
+  const qtyX = pad + width - 180;
+  const amtX = pad + width - 90;
+  let y = startY;
+
+  const money = (cents: number) => formatCurrency(cents, table.currency, 'en-US');
+
+  // Header row (primary color) + rule.
+  doc.fontSize(9).fillColor(primary);
+  doc.text('DESCRIPTION', left, y, { width: qtyX - left - 8 });
+  doc.text('QTY', qtyX, y, { width: 50, align: 'right' });
+  doc.text('AMOUNT', amtX, y, { width: 90, align: 'right' });
+  doc.fillColor('#000');
+  y += 14;
+  doc.moveTo(left, y).lineTo(pad + width, y).lineWidth(1).strokeColor(primary).stroke().strokeColor('#000');
+  y += 6;
+
+  // Rows.
+  doc.fontSize(10).fillColor('#1a1a1a');
+  for (const row of table.rows) {
+    const rowTop = y;
+    doc.text(row.description || '—', left, rowTop, { width: qtyX - left - 8 });
+    const descBottom = doc.y;
+    doc.text(String(row.qty), qtyX, rowTop, { width: 50, align: 'right' });
+    doc.text(money(row.amountCents), amtX, rowTop, { width: 90, align: 'right' });
+    y = Math.max(descBottom, rowTop + 12) + 4;
+  }
+
+  // Total (secondary-color rule).
+  y += 4;
+  doc.moveTo(qtyX, y).lineTo(pad + width, y).lineWidth(2).strokeColor(secondary).stroke().strokeColor('#000');
+  y += 8;
+  doc.fontSize(11).fillColor('#1a1a1a');
+  doc.text('Total', qtyX, y, { width: 50, align: 'right' });
+  doc.text(money(table.totalCents), amtX, y, { width: 90, align: 'right' });
+  return y + 18;
 }
 
 /**

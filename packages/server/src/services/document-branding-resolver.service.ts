@@ -1,6 +1,7 @@
 import { adminPool } from '../db/pool';
-import { formatCurrency } from '@daystream/shared';
+import { formatCurrency, DETAILS_TABLE_TOKEN } from '@daystream/shared';
 import { getArtifactType, isKnownArtifactType } from '@daystream/shared';
+import type { DocumentDetailsTable } from '@daystream/shared';
 import { listTemplates, DocumentBrandingTemplate } from './document-branding.service';
 
 /**
@@ -157,12 +158,18 @@ export function buildTokenMap(
     refund_amount: money(data.refund_amount_cents ?? data.amount_cents),
     renewal_amount: money(data.renewal_amount_cents ?? data.amount_cents),
     gift_card_amount: money(data.gift_card_amount_cents ?? data.amount_cents),
-    invoice_number: str(data.invoice_number),
+    // The Adjustment template's number/date. The current tokens are
+    // `adjustment_number`/`adjustment_date`; `invoice_number`/`invoice_date` are
+    // kept as legacy aliases so templates saved before the rename still resolve
+    // (they'd otherwise render blank). Both read the same data-bag keys.
+    adjustment_number: str(data.adjustment_number ?? data.invoice_number),
+    invoice_number: str(data.adjustment_number ?? data.invoice_number),
+    adjustment_date: fmtDate(data.adjustment_date ?? data.invoice_date ?? data.issue_date, locale),
+    invoice_date: fmtDate(data.adjustment_date ?? data.invoice_date ?? data.issue_date, locale),
     receipt_number: str(data.receipt_number ?? data.reference_number),
     credit_note_number: str(data.credit_note_number),
     reference_number: str(data.reference_number),
     original_invoice_number: str(data.original_invoice_number),
-    invoice_date: fmtDate(data.invoice_date ?? data.issue_date, locale),
     credit_note_date: fmtDate(data.credit_note_date, locale),
     due_date: fmtDate(data.due_date, locale),
     payment_date: fmtDate(data.payment_date, locale),
@@ -203,9 +210,12 @@ export async function buildTokensForBusiness(
 /** The established {{token}} substitution (tolerates inner whitespace). */
 export function substitute(text: string | null | undefined, tokens: Record<string, string>): string {
   if (!text) return '';
-  return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, key: string) =>
-    Object.prototype.hasOwnProperty.call(tokens, key) ? tokens[key] : '',
-  );
+  return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, key: string) => {
+    // The details-table token is a placement marker, not a text value — leave it
+    // literal so the renderers can split the body on it and draw the table there.
+    if (key === DETAILS_TABLE_TOKEN) return `{{${DETAILS_TABLE_TOKEN}}}`;
+    return Object.prototype.hasOwnProperty.call(tokens, key) ? tokens[key] : '';
+  });
 }
 
 /** Escape a string for safe interpolation into HTML text/attribute context. */
@@ -247,22 +257,31 @@ export interface ResolvedDocumentFields {
   logoUrl: string | null;
   businessName: string;
   subject: string;
-  /** Sanitized body HTML with placeholders filled. */
+  /**
+   * Sanitized body HTML with scalar placeholders filled. The `{{details_table}}`
+   * token is left as a literal marker in place; renderers split the body on it and
+   * draw `detailsTable` natively at that position.
+   */
   bodyHtml: string;
   footerText: string;
   footerLinkText: string;
   footerLinkUrl: string;
+  /** The line-item table to draw where `{{details_table}}` appears (null = none). */
+  detailsTable: DocumentDetailsTable | null;
 }
 
 /**
  * Resolve the applicable template for an artifact + business and fill its
  * placeholders from `data`, returning structured fields for on-screen display.
+ * `detailsTable` is passed through untouched for the renderers to draw where the
+ * `{{details_table}}` token sits.
  */
 export async function resolveDocumentFields(
   businessId: string,
   notificationType: string,
   data: Record<string, unknown>,
   language?: string | null,
+  detailsTable: DocumentDetailsTable | null = null,
 ): Promise<ResolvedDocumentFields> {
   const identity = await getBusinessIdentity(businessId);
   const tokens = buildTokenMap(data, identity);
@@ -277,6 +296,7 @@ export async function resolveDocumentFields(
     footerText: substitute(template?.footerText, tokens),
     footerLinkText: substitute(template?.footerLinkText, tokens),
     footerLinkUrl: safeUrl(substitute(template?.footerLinkUrl, tokens)),
+    detailsTable,
   };
 }
 

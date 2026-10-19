@@ -223,18 +223,18 @@ export async function refundTransaction(input: RefundInput): Promise<RefundResul
     },
   }).catch(() => { /* audit must never block the refund */ });
 
-  // Emit a credit note / refund receipt to the customer (C4.8). Non-blocking.
+  // Emit a refund confirmation to the customer (C4.8). Non-blocking.
   if (status !== 'failed') {
-    issueCreditNote(input, original, result, currency).catch((e) =>
-      logger.warn(`Refund ${reference}: credit-note enqueue failed: ${e?.message || e}`),
+    issueRefundConfirmation(input, original, result, currency).catch((e) =>
+      logger.warn(`Refund ${reference}: refund-confirmation enqueue failed: ${e?.message || e}`),
     );
   }
 
   return result;
 }
 
-/** Queue a credit note / refund receipt for the customer. */
-async function issueCreditNote(
+/** Queue a refund confirmation for the customer. */
+async function issueRefundConfirmation(
   input: RefundInput, original: any, result: RefundResult, currency: string,
 ): Promise<void> {
   const { rows } = await adminPool.query(
@@ -244,15 +244,17 @@ async function issueCreditNote(
   const cust = rows[0];
   await queueNotification({
     businessId: input.businessId,
-    type: 'payment.credit_note',
+    type: 'payment.refund_confirmation',
     recipientId: original.customer_id,
     recipientEmail: cust?.email || undefined,
     data: {
       reference_number: result.referenceNumber,
       original_reference: original.reference_number ?? null,
+      refund_amount_cents: result.amountCents,
       amount_cents: result.amountCents,
       currency,
       reason: input.reason,
+      payment_method: original.payment_method,
       method: original.payment_method,
       is_processed: result.isProcessed,
       customer_name: cust ? [cust.first_name, cust.last_name].filter(Boolean).join(' ').trim() : null,

@@ -3,6 +3,7 @@ import { Button } from '../../design-system/components/actions/Button';
 import { Modal } from '../../design-system/components/feedback/Modal';
 import { RichTextEditor, RichTextEditorHandle, sanitizeRichText } from '../../design-system/components/forms/RichTextEditor';
 import { BrandedDocumentView } from '../../components/BrandedDocumentView';
+import { DETAILS_TABLE_TOKEN } from '@daystream/shared';
 import { useContextManager } from '../../context/ContextManager';
 import * as payApi from '../../api/payments';
 import type {
@@ -114,11 +115,23 @@ const COLOR_PRESETS = ['#1A1A1A', '#4A90A4', '#C9A96E', '#2E7D32', '#D32F2F', '#
 
 /** Replace every {{token}} with its catalog sample value, for the preview. */
 function fillSamples(text: string, placeholders: DocumentPlaceholder[]): string {
-  const map = new Map(placeholders.map((p) => [p.token, p.sample]));
+  // The details-table token is a placement marker, not a text value — leave it
+  // literal so the preview can draw a sample table where the user placed it.
+  const map = new Map(placeholders.filter((p) => p.token !== DETAILS_TABLE_TOKEN).map((p) => [p.token, p.sample]));
   return text.replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi, (_m, token) =>
     map.has(token) ? (map.get(token) as string) : `{{${token}}}`,
   );
 }
+
+/** Sample rows so {{details_table}} shows a realistic table in the editor preview. */
+const SAMPLE_DETAILS_TABLE = {
+  rows: [
+    { description: 'Infrared Sauna — 60 min', qty: 1, amountCents: 4500 },
+    { description: 'Cold Plunge', qty: 2, amountCents: 3000 },
+  ],
+  totalCents: 10500,
+  currency: 'EUR',
+};
 
 export function DocumentTemplatesSettings() {
   const businessId = useContextManager().activeContext.businessId || '';
@@ -445,10 +458,13 @@ export function DocumentTemplatesSettings() {
             logoUrl: form.logo_url || null,
             businessName: fillSamples('{{business_name}}', selectedType.placeholders),
             subject: fillSamples(form.subject_template, selectedType.placeholders),
+            // Keep the {{details_table}} marker literal in the body so the preview
+            // can draw a sample table where the user placed it.
             bodyHtml: form.body_template ? sanitizeRichText(fillSamples(form.body_template, selectedType.placeholders)) : '',
             footerText: fillSamples(form.footer_text, selectedType.placeholders),
             footerLinkText: fillSamples(form.footer_link_text, selectedType.placeholders),
             footerLinkUrl: fillSamples(form.footer_link_url, selectedType.placeholders),
+            detailsTable: SAMPLE_DETAILS_TABLE,
           }} />
         </Modal>
       )}

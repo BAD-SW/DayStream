@@ -148,6 +148,8 @@ const PURPOSE_JOINS = `
   LEFT JOIN mem_memberships mm ON mm.id = t.membership_id
   LEFT JOIN mem_plans mmp ON mmp.id = mm.plan_id
   LEFT JOIN pay_transactions orig ON orig.id = t.refund_of_id
+  LEFT JOIN pay_credit_notes cn ON cn.id = t.credit_note_id
+  LEFT JOIN pay_debit_notes dn ON dn.id = t.debit_note_id
   LEFT JOIN fin_orders fo
     ON fo.business_id = t.business_id
    AND fo.payment_reference = t.reference_number
@@ -163,6 +165,8 @@ const PURPOSE_SELECT = `
   mmp.name                AS purpose_legacy_plan_name,
   mm.plan_id              AS purpose_legacy_plan_id,
   orig.reference_number   AS purpose_refund_of_reference,
+  cn.credit_note_number   AS purpose_credit_note_number,
+  dn.debit_note_number    AS purpose_debit_note_number,
   fo.id                   AS purpose_order_id,
   fo.order_number         AS purpose_order_number,
   -- Units still refundable on this order across REFUNDABLE line types (product,
@@ -174,7 +178,7 @@ const PURPOSE_SELECT = `
   )                        AS purpose_order_refundable_qty
 `;
 
-export type PurposeLinkType = 'invoice' | 'order' | 'booking' | 'membership';
+export type PurposeLinkType = 'invoice' | 'order' | 'booking' | 'membership' | 'credit_note' | 'debit_note';
 
 export interface PurposeLink {
   type: PurposeLinkType;
@@ -210,6 +214,8 @@ function resolvePurposeLabel(row: any): string {
       ? `Refund of ${row.purpose_refund_of_reference}`
       : 'Refund';
   }
+  if (row.purpose_credit_note_number != null) return `Credit note #${row.purpose_credit_note_number}`;
+  if (row.purpose_debit_note_number != null) return `Debit note #${row.purpose_debit_note_number}`;
   if (row.purpose_invoice_number != null) return `Invoice #${row.purpose_invoice_number}`;
   if (row.purpose_order_number) return `Order ${row.purpose_order_number}`;
   if (row.payment_method === 'account_credit') return 'Account credit applied';
@@ -228,6 +234,8 @@ function resolvePurposeLabel(row: any): string {
 
 function resolvePurposeLink(row: any): PurposeLink | null {
   if (row.type === 'refund') return null;         // original charge isn't a navigable page
+  if (row.purpose_credit_note_number != null && row.credit_note_id) return { type: 'credit_note', id: row.credit_note_id };
+  if (row.purpose_debit_note_number != null && row.debit_note_id) return { type: 'debit_note', id: row.debit_note_id };
   if (row.purpose_invoice_number != null && row.invoice_id) return { type: 'invoice', id: row.invoice_id };
   if (row.purpose_order_id) return { type: 'order', id: row.purpose_order_id };
   if (row.purpose_service_name && row.booking_id) return { type: 'booking', id: row.booking_id };
