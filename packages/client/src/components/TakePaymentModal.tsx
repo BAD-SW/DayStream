@@ -53,6 +53,10 @@ export function TakePaymentModal({
 
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  // The settled transaction (set on success) — enables the receipt Email/Print/Both choice.
+  const [paidTxnId, setPaidTxnId] = useState<string | null>(null);
+  const [receiptNote, setReceiptNote] = useState<string | null>(null);
+  const [receiptBusy, setReceiptBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,6 +81,7 @@ export function TakePaymentModal({
     if (open) {
       setMethod(''); setStoredMethodId(''); setGiftCardCode(''); setGiftBalance(null);
       setCheckNumber(''); setMessage(null); setAmount(amountCents ?? 0); setAddingMethod(false);
+      setPaidTxnId(null); setReceiptNote(null); setReceiptBusy(false);
       load();
     }
   }, [open, amountCents, load]);
@@ -155,6 +160,7 @@ export function TakePaymentModal({
         const pending = result.status === 'pending' ? ' (pending — bank debits settle in a few days)' : '';
         const bal = result.giftCardBalanceCents != null ? ` Gift card balance: ${(result.giftCardBalanceCents / 100).toFixed(2)}.` : '';
         setMessage({ ok: true, text: `Payment recorded — ref ${result.referenceNumber}${pending}.${bal}` });
+        setPaidTxnId(result.transactionId);
         onPaid?.(result);
       }
     } catch (err: any) {
@@ -163,6 +169,33 @@ export function TakePaymentModal({
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // Receipt actions offered after a successful manual payment (Email / Print / Both).
+  async function emailReceipt(): Promise<boolean> {
+    if (!paidTxnId) return false;
+    try { await payApi.emailTransaction(paidTxnId, businessId); return true; }
+    catch { return false; }
+  }
+  async function printReceipt(): Promise<boolean> {
+    if (!paidTxnId) return false;
+    try {
+      const blob = await payApi.fetchReceiptPdf(paidTxnId, businessId);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      return true;
+    } catch { return false; }
+  }
+  async function handleReceipt(mode: 'email' | 'print' | 'both') {
+    setReceiptBusy(true); setReceiptNote(null);
+    const emailed = mode !== 'print' ? await emailReceipt() : null;
+    const printed = mode !== 'email' ? await printReceipt() : null;
+    const parts: string[] = [];
+    if (emailed === true) parts.push('emailed');
+    if (printed === true) parts.push('opened for printing');
+    setReceiptNote(parts.length ? `Receipt ${parts.join(' and ')}.` : 'Could not produce the receipt.');
+    setReceiptBusy(false);
   }
 
   const processedAvailable = availableMethods.filter((m) => PROCESSED_LABEL[m]);
@@ -291,6 +324,19 @@ export function TakePaymentModal({
           {message && (
             <p style={{ ...styles.msg, color: message.ok ? 'var(--color-success)' : 'var(--color-error)' }}>{message.text}</p>
           )}
+
+          {/* Receipt choice — offered once a manual payment has settled. */}
+          {succeeded && paidTxnId && (
+            <div style={styles.receiptBox}>
+              <span style={styles.label}>Receipt</span>
+              <div style={styles.row}>
+                <Button variant="outline" size="sm" loading={receiptBusy} onClick={() => handleReceipt('email')}>Email</Button>
+                <Button variant="outline" size="sm" loading={receiptBusy} onClick={() => handleReceipt('print')}>Print</Button>
+                <Button variant="outline" size="sm" loading={receiptBusy} onClick={() => handleReceipt('both')}>Both</Button>
+              </div>
+              {receiptNote && <span style={styles.muted}>{receiptNote}</span>}
+            </div>
+          )}
         </div>
       )}
     </Modal>
@@ -307,4 +353,5 @@ const styles: Record<string, React.CSSProperties> = {
   muted: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
   warn: { fontSize: 'var(--font-size-sm)', color: 'var(--color-warning)' },
   msg: { fontSize: 'var(--font-size-sm)', margin: 0 },
+  receiptBox: { display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)', padding: 'var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)' },
 };

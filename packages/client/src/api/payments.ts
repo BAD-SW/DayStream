@@ -885,6 +885,30 @@ export async function fetchInvoicePdf(id: string, businessId: string): Promise<B
   return res.data;
 }
 
+/** Fetch the branded receipt PDF for a transaction as a blob. */
+export async function fetchReceiptPdf(transactionId: string, businessId: string): Promise<Blob> {
+  const res = await apiClient.get(`/v1/pay/transactions/${transactionId}/receipt-pdf`, {
+    params: { business_id: businessId }, responseType: 'blob',
+  });
+  return res.data;
+}
+
+/** Email the branded receipt for an order's payment (checkout). */
+export async function emailOrderReceipt(
+  orderId: string, businessId: string,
+): Promise<{ queued: boolean; document: string; recipient: string }> {
+  const res = await apiClient.post(`/v1/pay/orders/${orderId}/receipt-email`, { business_id: businessId });
+  return res.data.data;
+}
+
+/** Fetch the branded receipt PDF for an order's payment (checkout) as a blob. */
+export async function fetchOrderReceiptPdf(orderId: string, businessId: string): Promise<Blob> {
+  const res = await apiClient.get(`/v1/pay/orders/${orderId}/receipt-pdf`, {
+    params: { business_id: businessId }, responseType: 'blob',
+  });
+  return res.data;
+}
+
 // --- Gift cards (C7) ---
 
 export interface GiftCard {

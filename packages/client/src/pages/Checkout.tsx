@@ -39,6 +39,9 @@ export function Checkout() {
   const [showAddItem, setShowAddItem] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
+  // Branded receipt actions shown once the order is paid.
+  const [receiptBusy, setReceiptBusy] = useState(false);
+  const [receiptNote, setReceiptNote] = useState<string | null>(null);
 
   // Payment method selection (replaces the old hardcoded cash completion).
   const [acceptedMethods, setAcceptedMethods] = useState<string[]>([]);
@@ -331,6 +334,35 @@ export function Checkout() {
       await checkoutApi.voidOrder(order.id, businessId);
       navigate('/bookings');
     } catch { alert('Failed to void order'); }
+  };
+
+  // Branded receipt for the paid order (Email / Print / Both). Resolves the order's
+  // payment transaction server-side. Walk-in orders with no email report that for Email.
+  const handleReceipt = async (mode: 'email' | 'print' | 'both') => {
+    if (!order) return;
+    setReceiptBusy(true); setReceiptNote(null);
+    const parts: string[] = [];
+    try {
+      if (mode !== 'print') {
+        try { await payApi.emailOrderReceipt(order.id, businessId); parts.push('emailed'); }
+        catch (err: any) {
+          if (err?.response?.data?.code === 'NO_RECIPIENT') { setReceiptNote('No customer email on file — use Print instead.'); setReceiptBusy(false); return; }
+          throw err;
+        }
+      }
+      if (mode !== 'email') {
+        const blob = await payApi.fetchOrderReceiptPdf(order.id, businessId);
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        parts.push('opened for printing');
+      }
+      setReceiptNote(parts.length ? `Receipt ${parts.join(' and ')}.` : null);
+    } catch {
+      setReceiptNote('Could not produce the receipt.');
+    } finally {
+      setReceiptBusy(false);
+    }
   };
 
   if (loading) return <div style={styles.page}><p style={styles.loading}>Loading checkout...</p></div>;
@@ -650,10 +682,13 @@ export function Checkout() {
           <p style={{ color: 'var(--color-text)', margin: '0 0 12px' }}>
             Payment completed via <strong>{order.payment_method}</strong> on {new Date(order.completed_at!).toLocaleString()}
           </p>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Button size="sm" onClick={() => navigate(`/receipt/${order.id}`)}>View Receipt</Button>
-            <Button variant="secondary" size="sm" onClick={() => window.open(`/receipt/${order.id}`, '_blank')}>Print Receipt</Button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Receipt:</span>
+            <Button size="sm" variant="secondary" loading={receiptBusy} onClick={() => handleReceipt('email')}>Email</Button>
+            <Button size="sm" variant="secondary" loading={receiptBusy} onClick={() => handleReceipt('print')}>Print</Button>
+            <Button size="sm" variant="secondary" loading={receiptBusy} onClick={() => handleReceipt('both')}>Both</Button>
           </div>
+          {receiptNote && <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>{receiptNote}</p>}
         </div>
       )}
 

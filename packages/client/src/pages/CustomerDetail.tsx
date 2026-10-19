@@ -753,6 +753,25 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
   const invoiceIdOf = (t: PayTransaction): string | null =>
     t.invoice_id || (t.purpose_link?.type === 'invoice' ? t.purpose_link.id : null);
 
+  // Open the branded receipt PDF for a charge row (Print).
+  const printReceipt = async (t: PayTransaction) => {
+    try {
+      const blob = await payApi.fetchReceiptPdf(t.id, businessId);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch { setMessage('Failed to open receipt PDF.'); }
+  };
+
+  // Which document a charge row prints: an invoice-linked charge prints its
+  // invoice; any other charge prints a receipt. (Refund rows have no PDF yet.)
+  const printForRow = (t: PayTransaction): (() => void) | null => {
+    const invId = invoiceIdOf(t);
+    if (invId) return () => openPdf(invId);
+    if (t.type === 'charge') return () => printReceipt(t);
+    return null;
+  };
+
   // Open whatever a transaction is "for": invoice -> its PDF, booking -> edit page,
   // membership -> the plan page. No-op if there's no destination.
   const openPurpose = (link: payApi.PurposeLink) => {
@@ -913,11 +932,14 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
                   <td style={{ padding: '8px', textAlign: 'right' }}>
                     <Dropdown
                       trigger={<IconButton icon={<span style={{ fontSize: '18px', lineHeight: 1 }}>⋮</span>} aria-label="Row actions" size="sm" variant="ghost" />}
-                      items={[
-                        ...(refundKindOf(t) ? [{ id: 'refund', label: 'Refund', icon: '↩', onClick: () => startRefund(t) }] : []),
-                        { id: 'email', label: 'Email', icon: '✉', onClick: () => emailTxnDoc(t) },
-                        ...(invoiceIdOf(t) ? [{ id: 'print', label: 'Print', icon: '🖨', onClick: () => openPdf(invoiceIdOf(t)!) }] : []),
-                      ]}
+                      items={(() => {
+                        const print = printForRow(t);
+                        return [
+                          ...(refundKindOf(t) ? [{ id: 'refund', label: 'Refund', icon: '↩', onClick: () => startRefund(t) }] : []),
+                          { id: 'email', label: 'Email', icon: '✉', onClick: () => emailTxnDoc(t) },
+                          ...(print ? [{ id: 'print', label: 'Print', icon: '🖨', onClick: print }] : []),
+                        ];
+                      })()}
                     />
                   </td>
                 </tr>

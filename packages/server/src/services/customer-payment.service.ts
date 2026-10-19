@@ -8,7 +8,6 @@ import { getDecryptedSecrets } from './processor-config.service';
 import { getConfiguredAdapter } from './payments';
 import { METHOD_CATALOG, CatalogMethod } from './payment-catalog.service';
 import { confirmBooking, cancelBooking } from './booking-lifecycle.service';
-import { queueNotification } from './booking-notifications.service';
 import { postPaymentJournalEntry, postGiftCardRedemptionJournal } from './payment-journal.service';
 
 /**
@@ -241,11 +240,10 @@ export async function takeOneTimePayment(input: OneTimePaymentInput): Promise<On
     }
   }
 
-  if (result.status !== 'failed') {
-    await issueReceipt(input, result, currency).catch((e) =>
-      logger.warn(`Payment ${reference}: receipt enqueue failed: ${e?.message || e}`),
-    );
-  }
+  // NOTE: no automatic receipt here. takeOneTimePayment is the MANUAL/staff path
+  // (take-payment flow + checkout); per the C12 send policy a manual payment does
+  // NOT auto-email — staff choose Email / Print / Both at the point of payment.
+  // System-raised payments (e.g. membership renewals) queue their own receipt.
 
   return result;
 }
@@ -388,37 +386,6 @@ async function runGiftCard(
   } finally {
     client.release();
   }
-}
-
-/**
- * Queue a payment receipt for the customer. Modeled on the booking-notification
- * queue; delivery is handled by the notification worker. Never blocks or fails
- * the payment itself (caller swallows errors).
- */
-async function issueReceipt(
-  input: OneTimePaymentInput, result: OneTimePaymentResult, currency: string,
-): Promise<void> {
-  const { rows } = await adminPool.query(
-    'SELECT email, first_name, last_name FROM cus_customers WHERE id = $1',
-    [input.customerId],
-  );
-  const cust = rows[0];
-  await queueNotification({
-    businessId: input.businessId,
-    type: 'payment.receipt',
-    recipientId: input.customerId,
-    recipientEmail: cust?.email || undefined,
-    data: {
-      reference_number: result.referenceNumber,
-      amount_cents: result.amountCents,
-      currency,
-      method: result.method,
-      status: result.status,
-      is_processed: result.isProcessed,
-      booking_id: input.bookingId || null,
-      customer_name: cust ? [cust.first_name, cust.last_name].filter(Boolean).join(' ').trim() : null,
-    },
-  });
 }
 
 export { PaymentError };

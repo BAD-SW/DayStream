@@ -1,5 +1,7 @@
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
+import { queueNotification } from './booking-notifications.service';
+import { computeNextRunUtc } from '../jobs/schedule-time';
 import {
   chargeStoredMethod, insertChargeRow, resolveBusinessCurrency, generateReference,
 } from './customer-payment.service';
@@ -238,11 +240,53 @@ async function renewOne(
   // recognition job can move it to Membership Revenue over the period).
   if (status === 'completed') await postPaymentJournalEntry(renewalRow);
 
+  // System-raised payment → auto-send a branded receipt (C12 send policy: any
+  // process that automatically raises a payment also sends a receipt). Only on a
+  // settled charge; a still-pending bank debit sends its receipt when it finalizes.
+  // Never blocks or fails the renewal (best-effort).
+  if (status === 'completed') {
+    await queueRenewalReceipt(enr, businessId, currency, amountCents, reference).catch((e) =>
+      logger.warn(`Renewal ${reference}: receipt enqueue failed: ${e?.message || e}`),
+    );
+  }
+
   await advanceEnrollmentPeriod({
     enrollmentId: enr.id, currentPlanId: enr.plan_id, effectivePlanId,
     periodStartDate: enr.next_billing_date, frequency,
   });
   return status === 'pending' ? 'pending' : 'charged';
+}
+
+/**
+ * Queue the branded receipt for a successful renewal charge. Looks up the
+ * customer's email + name and emits a `payment.receipt` with the renewal context,
+ * which the branding resolver renders and the dispatch sends.
+ */
+async function queueRenewalReceipt(
+  enr: any, businessId: string, currency: string, amountCents: number, reference: string,
+): Promise<void> {
+  const { rows } = await adminPool.query(
+    'SELECT email, first_name, last_name FROM cus_customers WHERE id = $1',
+    [enr.customer_id],
+  );
+  const cust = rows[0];
+  if (!cust?.email) return; // nothing to send to
+  await queueNotification({
+    businessId,
+    type: 'payment.receipt',
+    recipientId: enr.customer_id,
+    recipientEmail: cust.email,
+    data: {
+      reference_number: reference,
+      amount_cents: amountCents,
+      currency,
+      payment_method: 'card',
+      payment_date: new Date().toISOString(),
+      membership_name: enr.plan_name ?? null,
+      customer_name: [cust.first_name, cust.last_name].filter(Boolean).join(' ').trim(),
+      customer_email: cust.email,
+    },
+  });
 }
 
 /**
@@ -407,11 +451,8 @@ export async function getBusinessBillingSchedule(businessId: string): Promise<Bu
 export async function saveBusinessBillingSchedule(
   businessId: string, tenantId: string, scheduleTime: string, scheduleTimezone: string, enabled: boolean,
 ): Promise<BusinessScheduleView> {
-  const [h, m] = scheduleTime.split(':').map(Number);
-  const now = new Date();
-  const next = new Date(now);
-  next.setHours(h, m, 0, 0);
-  if (next <= now) next.setDate(next.getDate() + 1);
+  // Timezone-correct initial next_run_at (HH:MM in scheduleTimezone, not server-local).
+  const next = computeNextRunUtc({ scheduleTime, timezone: scheduleTimezone, frequency: 'daily' });
 
   await adminPool.query(
     `INSERT INTO sys_scheduled_jobs
@@ -420,7 +461,7 @@ export async function saveBusinessBillingSchedule(
      ON CONFLICT (business_id, job_type) WHERE scope_level = 'business'
      DO UPDATE SET schedule_time = $3, schedule_timezone = $4, enabled = $5,
                    next_run_at = $6, updated_at = NOW()`,
-    [businessId, tenantId, scheduleTime, scheduleTimezone, enabled, next.toISOString()],
+    [businessId, tenantId, scheduleTime, scheduleTimezone, enabled, next],
   );
   return (await getBusinessBillingSchedule(businessId))!;
 }

@@ -22,7 +22,7 @@ import * as vouchers from '../services/voucher.service';
 import { takeOneTimePayment } from '../services/customer-payment.service';
 import * as accountCredit from '../services/account-credit.service';
 import * as paymentLedger from '../services/payment.service';
-import { emailTransactionDocument } from '../services/document-send.service';
+import { emailTransactionDocument, renderReceiptPdf, emailOrderReceipt, renderOrderReceiptPdf } from '../services/document-send.service';
 import * as membership from '../services/membership.service';
 import * as membershipRenewal from '../services/membership-renewal.service';
 import { queryResourceAudit } from '../services/audit.service';
@@ -1427,6 +1427,46 @@ paymentPlatformRouter.post('/transactions/:id/email', requirePermission('booking
     console.error('Failed to email transaction document', e?.message || e);
     error(res, 'Failed to email document', 'INTERNAL_ERROR', 500);
   }
+});
+
+// Branded receipt PDF for a transaction (the kebab's "Print" and the point-of-
+// payment "Print" option). business_id as a query param, like the invoice PDF.
+paymentPlatformRouter.get('/transactions/:id/receipt-pdf', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const pdf = await renderReceiptPdf(req.params.id, businessId);
+    if (!pdf) { error(res, 'Transaction not found', 'NOT_FOUND', 404); return; }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="receipt-${req.params.id}.pdf"`);
+    res.send(pdf);
+  } catch (e: any) { console.error('Failed to render receipt PDF', e?.message || e); error(res, 'Failed to render receipt PDF', 'INTERNAL_ERROR', 500); }
+});
+
+// Order-keyed branded receipt — the checkout completed-state Email/Print. Resolves
+// the order's payment transaction server-side, then reuses the transaction receipt.
+paymentPlatformRouter.post('/orders/:id/receipt-email', requirePermission('bookings:*'), validate(emailTxnSchema), async (req: Request, res: Response) => {
+  try {
+    const result = await emailOrderReceipt(req.params.id, req.body.business_id);
+    success(res, { queued: true, document: result.document, recipient: result.recipientEmail });
+  } catch (e: any) {
+    if (e?.code === 'NOT_FOUND') { error(res, e.message, 'NOT_FOUND', 404); return; }
+    if (e?.code === 'NO_RECIPIENT') { error(res, e.message, 'NO_RECIPIENT', 422); return; }
+    console.error('Failed to email order receipt', e?.message || e);
+    error(res, 'Failed to email receipt', 'INTERNAL_ERROR', 500);
+  }
+});
+
+paymentPlatformRouter.get('/orders/:id/receipt-pdf', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const pdf = await renderOrderReceiptPdf(req.params.id, businessId);
+    if (!pdf) { error(res, 'No payment found for this order', 'NOT_FOUND', 404); return; }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="receipt-order-${req.params.id}.pdf"`);
+    res.send(pdf);
+  } catch (e: any) { console.error('Failed to render order receipt PDF', e?.message || e); error(res, 'Failed to render order receipt PDF', 'INTERNAL_ERROR', 500); }
 });
 
 // --- Subscriptions (membership enrollments) ---

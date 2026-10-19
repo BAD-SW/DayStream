@@ -1,5 +1,4 @@
 import PDFDocument from 'pdfkit';
-import sharp from 'sharp';
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
 import {
@@ -9,7 +8,7 @@ import { logAudit } from './audit.service';
 import { queueNotification } from './booking-notifications.service';
 import type { MethodOwner } from './payment-methods.service';
 import type { SaleItemType } from './revenue-mapping.service';
-import { selectTemplate, buildTokensForBusiness, substitute } from './document-branding-resolver.service';
+import { resolvePdfBranding, drawBrandedHeader, drawBrandedFooter } from './document-pdf';
 
 /**
  * Section C — Invoicing (spec 10-payment-platform, task 4.7 / Requirement C5).
@@ -353,55 +352,6 @@ function fmtMoney(cents: number, currency: string): string {
 }
 
 /**
- * Fetch a remote logo and normalize it to a PNG buffer pdfkit can embed. http(s)
- * only, size-capped, with a short timeout. CDNs often content-negotiate to WebP
- * even for a ".png" URL (pdfkit supports only PNG/JPEG), so we run whatever comes
- * back through sharp → PNG. Any failure returns null and the renderer falls back
- * to the business-name text — a bad/missing logo never breaks (or slows) the PDF.
- */
-async function fetchLogo(url: string | null | undefined): Promise<Buffer | null> {
-  if (!url || !/^https?:\/\//i.test(url)) return null;
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4000);
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (!res.ok) return null;
-    const type = res.headers.get('content-type') || '';
-    if (!/^image\//i.test(type)) return null;
-    const raw = Buffer.from(await res.arrayBuffer());
-    if (raw.length > 5_000_000) return null; // cap the download at ~5MB
-    // Normalize any image format (webp/png/jpeg/…) to PNG, bounded so a huge
-    // source can't bloat the PDF.
-    return await sharp(raw).resize({ width: 600, height: 240, fit: 'inside', withoutEnlargement: true }).png().toBuffer();
-  } catch {
-    return null;
-  }
-}
-
-/** Flatten the sanitized HTML body to plain text for a pdfkit intro block. */
-function htmlToPlainText(html: string): string {
-  return html
-    .replace(/<\/(p|div|h3|h4|li)>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<li[^>]*>/gi, '• ')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-/** A hex color that's safe to hand pdfkit; falls back when blank/invalid. */
-function safeColor(hex: string | null | undefined, fallback: string): string {
-  return hex && /^#[0-9A-Fa-f]{6}$/.test(hex) ? hex : fallback;
-}
-
-/**
  * Render an invoice to a PDF buffer (C5.5). Platform-default layout — full
  * per-business branding is Phase 6 (Requirement C12).
  */
@@ -410,22 +360,11 @@ export async function renderInvoicePdf(invoiceId: string, businessId: string): P
   if (!invoice) return null;
   const currency: string = invoice.currency;
 
-  // Resolve the business's Invoice branding template (same selection the email
-  // uses). When there's none, `template` is null and the PDF renders exactly as
-  // before — no regression for businesses that haven't branded.
-  // Language-agnostic selection for now; customer language matching can refine later.
-  const template = await selectTemplate(businessId, 'invoice.issued', null);
-
-  // Branding chrome from the template (with safe defaults). The STRUCTURED invoice
-  // content (line items, totals) stays data-driven; the template supplies logo,
-  // colors, an optional intro note (from the body), and a footer.
-  const primary = safeColor(template?.colorPrimary, '#1A1A1A');
-  const secondary = safeColor(template?.colorSecondary, '#999999');
-  const logo = await fetchLogo(template?.logoUrl);
-
-  // Token map for substituting {{placeholders}} in the intro/footer — same bag the
-  // email queues, so both media fill placeholders identically.
-  const tokens = await buildTokensForBusiness(businessId, {
+  // Resolve the business's Invoice branding (same selection the email uses). When
+  // there's none, the template is null and the PDF renders with platform defaults —
+  // no regression for businesses that haven't branded. Shared helpers keep invoice
+  // and receipt PDFs branding identically.
+  const branding = await resolvePdfBranding(businessId, 'invoice.issued', {
     invoice_number: invoice.invoice_number,
     total_cents: invoice.total_cents,
     currency,
@@ -433,11 +372,7 @@ export async function renderInvoicePdf(invoiceId: string, businessId: string): P
     customer_name: [invoice.customer_first_name, invoice.customer_last_name].filter(Boolean).join(' ').trim(),
     customer_email: invoice.customer_email,
   });
-
-  const introText = template?.bodyTemplate ? htmlToPlainText(substitute(template.bodyTemplate, tokens)) : '';
-  const footerText = substitute(template?.footerText, tokens);
-  const footerLinkText = substitute(template?.footerLinkText, tokens);
-  const footerLinkUrl = substitute(template?.footerLinkUrl, tokens);
+  const { primary, secondary, introText } = branding;
 
   return new Promise<Buffer>((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
@@ -448,21 +383,14 @@ export async function renderInvoicePdf(invoiceId: string, businessId: string): P
 
     const startX = 50;
 
-    // Header — branded logo if available, else the business name. A primary-color
-    // rule under the header ties the identity to the brand.
-    if (logo) {
-      try { doc.image(logo, startX, doc.y, { fit: [180, 56] }); doc.moveDown(); doc.y = Math.max(doc.y, 56 + 50); }
-      catch { doc.fontSize(20).fillColor(primary).text(invoice.business_name || 'Invoice').fillColor('#000'); }
-    } else {
-      doc.fontSize(20).fillColor(primary).text(invoice.business_name || 'Invoice').fillColor('#000');
-    }
-    doc.moveDown(0.2);
-    doc.fontSize(9).fillColor('#555');
-    if (invoice.business_address) doc.text(invoice.business_address, startX);
-    if (invoice.business_email) doc.text(invoice.business_email, startX);
-    if (invoice.business_phone) doc.text(invoice.business_phone, startX);
-    if (invoice.business_tax_id) doc.text(`Tax ID: ${invoice.business_tax_id}`, startX);
-    doc.fillColor('#000');
+    // Branded header (logo or business name + identity lines).
+    drawBrandedHeader(doc, branding, {
+      name: invoice.business_name || 'Invoice',
+      address: invoice.business_address,
+      email: invoice.business_email,
+      phone: invoice.business_phone,
+      taxId: invoice.business_tax_id,
+    }, startX);
 
     // Invoice meta — "Invoice #" heading in the brand's primary color.
     doc.moveDown(1);
@@ -525,17 +453,7 @@ export async function renderInvoicePdf(invoiceId: string, businessId: string): P
     }
 
     // Branded footer — secondary-color divider, footer text, and a clickable link.
-    if (footerText || (footerLinkText && footerLinkUrl)) {
-      doc.moveDown(2);
-      const fy = doc.y;
-      doc.moveTo(startX, fy).lineTo(545, fy).strokeColor(secondary).stroke().strokeColor('#000');
-      doc.moveDown(0.5).fontSize(9).fillColor('#666');
-      if (footerText) doc.text(footerText, startX, undefined, { width: 495 });
-      if (footerLinkText && footerLinkUrl && /^https?:\/\//i.test(footerLinkUrl)) {
-        doc.fillColor(primary).text(footerLinkText, startX, undefined, { width: 495, link: footerLinkUrl, underline: true });
-      }
-      doc.fillColor('#000');
-    }
+    drawBrandedFooter(doc, branding, startX);
 
     doc.end();
   });
