@@ -482,7 +482,7 @@ function ProcessesSettings() {
                   {selectedHistory.entries.length === 0 ? <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>No execution history</p> : (
                     selectedHistory.entries.slice(0, 10).map((e: any) => (
                       <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-size-sm)', padding: '4px 0', borderBottom: '1px solid var(--color-border)' }}>
-                        <span>{new Date(e.started_at).toLocaleString()}</span>
+                        <span>{new Date(e.started_at).toLocaleString(undefined, { timeZone: businessTimezone })} ({businessTimezone})</span>
                         <span style={{ color: e.status === 'success' ? 'var(--color-success)' : 'var(--color-error)' }}>{e.status} {e.duration_ms ? `(${e.duration_ms}ms)` : ''}</span>
                       </div>
                     ))
@@ -504,7 +504,7 @@ function ProcessesSettings() {
                       </button>
                       <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 10px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', color: 'var(--color-error)' }} onClick={() => handleDeleteSchedule(proc.type)}>Remove Schedule</button>
                       {job.last_run_at && (
-                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>Last: {new Date(job.last_run_at).toLocaleString()} ({job.last_run_status})</span>
+                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>Last: {new Date(job.last_run_at).toLocaleString(undefined, { timeZone: businessTimezone })} ({job.last_run_status})</span>
                       )}
                     </div>
                   ) : scheduleForm?.type === proc.type ? (

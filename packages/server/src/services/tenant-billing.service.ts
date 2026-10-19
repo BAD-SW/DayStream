@@ -1,5 +1,6 @@
 import { recordManualRun } from './platform-billing.service';
 import { adminPool } from '../db/pool';
+import { computeNextRunUtc } from '../jobs/schedule-time';
 import { getConfiguredAdapter } from './payments';
 import { resolveConnectedAccount, getProviderToken, getCustomerRef } from './payment-methods.service';
 import { getDecryptedSecrets } from './processor-config.service';
@@ -750,11 +751,8 @@ export async function getTenantSchedule(tenantId: string): Promise<TenantSchedul
 export async function saveTenantSchedule(
   tenantId: string, scheduleTime: string, scheduleTimezone: string, enabled: boolean,
 ): Promise<TenantScheduleView> {
-  const [h, m] = scheduleTime.split(':').map(Number);
-  const now = new Date();
-  const next = new Date(now);
-  next.setHours(h, m, 0, 0);
-  if (next <= now) next.setDate(next.getDate() + 1);
+  // Timezone-correct initial next_run_at (HH:MM in scheduleTimezone, not server-local).
+  const next = computeNextRunUtc({ scheduleTime, timezone: scheduleTimezone, frequency: 'daily' });
 
   await adminPool.query(
     `INSERT INTO sys_scheduled_jobs
@@ -763,7 +761,7 @@ export async function saveTenantSchedule(
      ON CONFLICT (tenant_id, job_type) WHERE scope_level = 'tenant'
      DO UPDATE SET schedule_time = $2, schedule_timezone = $3, enabled = $4,
                    next_run_at = $5, updated_at = NOW()`,
-    [tenantId, scheduleTime, scheduleTimezone, enabled, next.toISOString()],
+    [tenantId, scheduleTime, scheduleTimezone, enabled, next],
   );
   return (await getTenantSchedule(tenantId))!;
 }

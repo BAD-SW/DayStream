@@ -1,6 +1,7 @@
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
 import { jobRegistry } from './job-registry';
+import { computeNextRunUtc } from './schedule-time';
 
 const POLL_INTERVAL_MS = 60_000; // Check every 60 seconds
 const BATCH_SIZE = 5; // Pick up max 5 jobs per poll cycle
@@ -169,78 +170,18 @@ async function executeJob(job: any): Promise<void> {
 
 
 /**
- * Calculate the next run time based on the job's schedule and timezone.
- * Handles timezone-aware scheduling so "2 AM" means 2 AM in the business's timezone.
+ * Calculate the next run time (UTC) from the job's schedule + timezone. Delegates
+ * to the shared, timezone-correct helper so "02:00" means 02:00 in the job's own
+ * timezone regardless of where the server runs.
  */
 function calculateNextRun(job: any): string {
-  const tz = job.schedule_timezone || 'UTC';
-  const time = job.schedule_time || '02:00';
-  const frequency = job.frequency || 'daily';
-  const [hours, minutes] = time.split(':').map(Number);
-
-  const now = new Date();
-
-  // Get current time in the business's timezone
-  const nowInTz = new Date(now.toLocaleString('en-US', { timeZone: tz }));
-  
-  let nextRun: Date;
-
-  if (frequency === 'every_15min') {
-    // Next 15-minute mark
-    nextRun = new Date(now.getTime() + 15 * 60 * 1000);
-  } else if (frequency === 'hourly') {
-    // Next hour at the specified minutes
-    nextRun = new Date(nowInTz);
-    nextRun.setMinutes(minutes, 0, 0);
-    if (nextRun <= nowInTz) nextRun.setHours(nextRun.getHours() + 1);
-  } else if (frequency === 'daily') {
-    // Tomorrow at the specified time
-    nextRun = new Date(nowInTz);
-    nextRun.setHours(hours, minutes, 0, 0);
-    if (nextRun <= nowInTz) nextRun.setDate(nextRun.getDate() + 1);
-  } else if (frequency === 'weekly') {
-    // Next occurrence of any of the specified days
-    nextRun = new Date(nowInTz);
-    nextRun.setHours(hours, minutes, 0, 0);
-    const targetDays: number[] = Array.isArray(job.day_of_week) ? job.day_of_week : [job.day_of_week ?? 1];
-    // Find the smallest positive offset to a target day
-    let minOffset = 8;
-    for (const targetDay of targetDays) {
-      let offset = (targetDay - nextRun.getDay() + 7) % 7;
-      if (offset === 0 && nextRun <= nowInTz) offset = 7;
-      if (offset < minOffset) minOffset = offset;
-    }
-    if (minOffset === 0 && nextRun > nowInTz) { /* today, still in the future */ }
-    else nextRun.setDate(nextRun.getDate() + (minOffset || 1));
-  } else if (frequency === 'monthly') {
-    // Next occurrence of the specified day of month (-1 = last day)
-    nextRun = new Date(nowInTz);
-    nextRun.setHours(hours, minutes, 0, 0);
-    const targetDay = job.day_of_month ?? 1;
-    if (targetDay === -1) {
-      // Last day of current month
-      nextRun.setMonth(nextRun.getMonth() + 1, 0); // day 0 = last day of previous month
-      if (nextRun <= nowInTz) {
-        // Move to last day of next month
-        nextRun.setMonth(nextRun.getMonth() + 2, 0);
-      }
-    } else {
-      nextRun.setDate(targetDay);
-      if (nextRun <= nowInTz) nextRun.setMonth(nextRun.getMonth() + 1);
-    }
-  } else {
-    // Fallback: tomorrow
-    nextRun = new Date(nowInTz);
-    nextRun.setDate(nextRun.getDate() + 1);
-    nextRun.setHours(hours, minutes, 0, 0);
-  }
-
-  // Convert back to UTC for storage
-  // Calculate offset between local and timezone
-  const utcOffset = now.getTime() - nowInTz.getTime();
-  const nextRunUtc = new Date(nextRun.getTime() + utcOffset);
-
-  return nextRunUtc.toISOString();
+  return computeNextRunUtc({
+    scheduleTime: job.schedule_time || '02:00',
+    timezone: job.schedule_timezone || 'UTC',
+    frequency: job.frequency || 'daily',
+    dayOfWeek: job.day_of_week,
+    dayOfMonth: job.day_of_month,
+  });
 }
 
 function sleep(ms: number): Promise<void> {

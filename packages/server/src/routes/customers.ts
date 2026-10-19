@@ -270,6 +270,7 @@ customersRouter.get('/lifecycle-summary', requirePermission('customers:read'), a
 
 // --- Lifecycle Config & Scheduled Jobs (must be before /:id) ---
 import { getAvailableJobTypes } from '../jobs/job-registry';
+import { computeNextRunUtc } from '../jobs/schedule-time';
 
 customersRouter.get('/lifecycle-config', requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
@@ -333,9 +334,12 @@ customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (
     const { job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled } = req.body;
     if (!job_type) { error(res, 'job_type required', 'VALIDATION_ERROR', 400); return; }
     const time = schedule_time || '02:00';
-    const [hours, minutes] = time.split(':').map(Number);
-    const nextRun = new Date(); nextRun.setHours(hours, minutes, 0, 0);
-    if (nextRun <= new Date()) nextRun.setDate(nextRun.getDate() + 1);
+    // Timezone-correct next run: "HH:MM" means that wall clock in schedule_timezone,
+    // not the server's local zone. (Was: new Date().setHours — server-zone bug.)
+    const nextRun = computeNextRunUtc({
+      scheduleTime: time, timezone: schedule_timezone || 'UTC',
+      frequency: frequency || 'daily', dayOfWeek: day_of_week ?? null, dayOfMonth: day_of_month ?? null,
+    });
     // These are business-scoped jobs. The uniqueness is a PARTIAL index
     // (business_id, job_type) WHERE scope_level = 'business' (migration 117), so the
     // ON CONFLICT must carry that same predicate to match the index.
@@ -344,7 +348,7 @@ customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (
        VALUES ('business', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (business_id, job_type) WHERE scope_level = 'business'
        DO UPDATE SET schedule_time = $4, schedule_timezone = $5, frequency = $6, day_of_week = $7, day_of_month = $8, enabled = $9, next_run_at = $10, updated_at = NOW() RETURNING *`,
-      [businessId, authReq.tenantId, job_type, time, schedule_timezone || 'UTC', frequency || 'daily', day_of_week ?? null, day_of_month ?? null, enabled !== false, nextRun.toISOString()],
+      [businessId, authReq.tenantId, job_type, time, schedule_timezone || 'UTC', frequency || 'daily', day_of_week ?? null, day_of_month ?? null, enabled !== false, nextRun],
     );
     success(res, rows[0], undefined, 201);
   } catch (err: any) { console.error('Failed to create scheduled job', err?.message || err); error(res, 'Failed to create scheduled job', 'INTERNAL_ERROR', 500); }
@@ -1351,14 +1355,13 @@ customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (
     const { job_type, schedule_time, schedule_timezone, frequency, day_of_week, day_of_month, enabled } = req.body;
     if (!job_type) { error(res, 'job_type required', 'VALIDATION_ERROR', 400); return; }
 
-    // Calculate initial next_run_at
+    // Calculate initial next_run_at — timezone-correct (HH:MM in schedule_timezone).
     const tz = schedule_timezone || 'UTC';
     const time = schedule_time || '02:00';
-    const [hours, minutes] = time.split(':').map(Number);
-    const now = new Date();
-    const nextRun = new Date();
-    nextRun.setHours(hours, minutes, 0, 0);
-    if (nextRun <= now) nextRun.setDate(nextRun.getDate() + 1);
+    const nextRun = computeNextRunUtc({
+      scheduleTime: time, timezone: tz,
+      frequency: frequency || 'daily', dayOfWeek: day_of_week ?? null, dayOfMonth: day_of_month ?? null,
+    });
 
     // Business-scoped jobs: match the PARTIAL unique index (business_id, job_type)
     // WHERE scope_level = 'business' (migration 117) by repeating its predicate.
@@ -1368,7 +1371,7 @@ customersRouter.post('/scheduled-jobs', requirePermission('settings:*'), async (
        ON CONFLICT (business_id, job_type) WHERE scope_level = 'business'
        DO UPDATE SET schedule_time = $4, schedule_timezone = $5, frequency = $6, day_of_week = $7, day_of_month = $8, enabled = $9, next_run_at = $10, updated_at = NOW()
        RETURNING *`,
-      [businessId, authReq.tenantId, job_type, time, tz, frequency || 'daily', day_of_week ?? null, day_of_month ?? null, enabled !== false, nextRun.toISOString()],
+      [businessId, authReq.tenantId, job_type, time, tz, frequency || 'daily', day_of_week ?? null, day_of_month ?? null, enabled !== false, nextRun],
     );
     success(res, rows[0], undefined, 201);
   } catch (err: any) {

@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { computeNextRunUtc } from '../jobs/schedule-time';
 import { getConfiguredAdapter } from './payments';
 import { resolveConnectedAccount, getProviderToken, getCustomerRef } from './payment-methods.service';
 import { getDecryptedSecrets } from './processor-config.service';
@@ -731,12 +732,8 @@ export async function getPlatformSchedule(): Promise<PlatformScheduleView | null
 export async function savePlatformSchedule(
   scheduleTime: string, scheduleTimezone: string, enabled: boolean,
 ): Promise<PlatformScheduleView> {
-  // Initial next_run_at: today at the time if still future, else tomorrow.
-  const [h, m] = scheduleTime.split(':').map(Number);
-  const now = new Date();
-  const next = new Date(now);
-  next.setHours(h, m, 0, 0);
-  if (next <= now) next.setDate(next.getDate() + 1);
+  // Initial next_run_at: timezone-correct (HH:MM in scheduleTimezone, not server-local).
+  const next = computeNextRunUtc({ scheduleTime, timezone: scheduleTimezone, frequency: 'daily' });
 
   await adminPool.query(
     `INSERT INTO sys_scheduled_jobs
@@ -745,7 +742,7 @@ export async function savePlatformSchedule(
      ON CONFLICT (job_type) WHERE scope_level = 'platform'
      DO UPDATE SET schedule_time = $1, schedule_timezone = $2, enabled = $3,
                    next_run_at = $4, updated_at = NOW()`,
-    [scheduleTime, scheduleTimezone, enabled, next.toISOString()],
+    [scheduleTime, scheduleTimezone, enabled, next],
   );
   return (await getPlatformSchedule())!;
 }
