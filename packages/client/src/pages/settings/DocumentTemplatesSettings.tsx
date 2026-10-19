@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '../../design-system/components/actions/Button';
 import { Modal } from '../../design-system/components/feedback/Modal';
 import { RichTextEditor, RichTextEditorHandle, sanitizeRichText } from '../../design-system/components/forms/RichTextEditor';
+import { BrandedDocumentView } from '../../components/BrandedDocumentView';
 import { useContextManager } from '../../context/ContextManager';
 import * as payApi from '../../api/payments';
 import type {
@@ -438,46 +439,17 @@ export function DocumentTemplatesSettings() {
           <div style={s.previewNote}>
             Placeholders are shown filled with example values. Actual documents use real customer data.
           </div>
-          <div style={s.previewDoc}>
-            <div style={{ ...s.previewHeader, background: primary }}>
-              {form.logo_url
-                ? <img src={form.logo_url} alt="Logo" style={s.previewLogo} />
-                : <span style={s.previewLogoText}>{fillSamples('{{business_name}}', selectedType.placeholders)}</span>}
-            </div>
-            <div style={s.previewBodyWrap}>
-              {form.subject_template && (
-                <div style={{ ...s.previewSubject, color: primary }}>
-                  {fillSamples(form.subject_template, selectedType.placeholders)}
-                </div>
-              )}
-              <div
-                style={s.previewBody}
-                // Preview-only render of the sanitized, sample-filled body HTML.
-                dangerouslySetInnerHTML={{
-                  __html: form.body_template
-                    ? sanitizeRichText(fillSamples(form.body_template, selectedType.placeholders))
-                    : '<p style="color:#999">(No body content)</p>',
-                }}
-              />
-              {(form.footer_text || form.footer_link_text) && (
-                <div style={{ ...s.previewFooter, borderTopColor: secondary }}>
-                  {form.footer_text && <span>{fillSamples(form.footer_text, selectedType.placeholders)}</span>}
-                  {form.footer_link_text && form.footer_link_url && (
-                    <>
-                      {form.footer_text ? ' ' : null}
-                      <a
-                        href={fillSamples(form.footer_link_url, selectedType.placeholders)}
-                        onClick={(e) => e.preventDefault()}
-                        style={{ ...s.previewLink, color: secondary }}
-                      >
-                        {fillSamples(form.footer_link_text, selectedType.placeholders)}
-                      </a>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          <BrandedDocumentView fields={{
+            primaryColor: primary,
+            secondaryColor: secondary,
+            logoUrl: form.logo_url || null,
+            businessName: fillSamples('{{business_name}}', selectedType.placeholders),
+            subject: fillSamples(form.subject_template, selectedType.placeholders),
+            bodyHtml: form.body_template ? sanitizeRichText(fillSamples(form.body_template, selectedType.placeholders)) : '',
+            footerText: fillSamples(form.footer_text, selectedType.placeholders),
+            footerLinkText: fillSamples(form.footer_link_text, selectedType.placeholders),
+            footerLinkUrl: fillSamples(form.footer_link_url, selectedType.placeholders),
+          }} />
         </Modal>
       )}
     </div>
@@ -556,15 +528,6 @@ const s: Record<string, React.CSSProperties> = {
   chips: { display: 'flex', flexWrap: 'wrap' as const, gap: '6px', marginTop: '8px' },
   chip: { padding: '4px 10px', fontSize: 'var(--font-size-xs)', borderRadius: 'var(--radius-full, 9999px)', border: '1px solid var(--color-accent)', background: 'transparent', color: 'var(--color-accent)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
   actions: { display: 'flex', gap: '12px', marginTop: 'var(--space-lg)', flexWrap: 'wrap' as const },
-  // Preview
+  // Preview — the document itself renders via the shared BrandedDocumentView.
   previewNote: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-md)' },
-  previewDoc: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md, 8px)', overflow: 'hidden', background: '#ffffff', color: '#1a1a1a' },
-  previewHeader: { padding: '20px 24px', display: 'flex', alignItems: 'center', minHeight: '64px' },
-  previewLogo: { maxHeight: '48px', maxWidth: '220px', objectFit: 'contain' as const },
-  previewLogoText: { color: '#ffffff', fontSize: '1.25rem', fontWeight: 600 },
-  previewBodyWrap: { padding: '24px' },
-  previewSubject: { fontSize: '1.125rem', fontWeight: 600, marginBottom: '16px' },
-  previewBody: { fontSize: '0.95rem', lineHeight: 1.6, color: '#1a1a1a' },
-  previewFooter: { marginTop: '24px', paddingTop: '12px', borderTop: '2px solid', fontSize: '0.8rem', color: '#666666' },
-  previewLink: { textDecoration: 'underline', fontWeight: 600 },
 };

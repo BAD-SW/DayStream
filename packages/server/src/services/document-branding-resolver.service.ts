@@ -236,6 +236,51 @@ export interface RenderedDocument {
 }
 
 /**
+ * The resolved, placeholder-filled document FIELDS for on-screen rendering
+ * (the order receipt page and, by the same contract, the editor preview). Lets
+ * the client render the identical branded document without re-implementing the
+ * resolver — one source of truth for how a document looks.
+ */
+export interface ResolvedDocumentFields {
+  primaryColor: string;
+  secondaryColor: string;
+  logoUrl: string | null;
+  businessName: string;
+  subject: string;
+  /** Sanitized body HTML with placeholders filled. */
+  bodyHtml: string;
+  footerText: string;
+  footerLinkText: string;
+  footerLinkUrl: string;
+}
+
+/**
+ * Resolve the applicable template for an artifact + business and fill its
+ * placeholders from `data`, returning structured fields for on-screen display.
+ */
+export async function resolveDocumentFields(
+  businessId: string,
+  notificationType: string,
+  data: Record<string, unknown>,
+  language?: string | null,
+): Promise<ResolvedDocumentFields> {
+  const identity = await getBusinessIdentity(businessId);
+  const tokens = buildTokenMap(data, identity);
+  const template = await selectTemplate(businessId, notificationType, language);
+  return {
+    primaryColor: template?.colorPrimary || '#1A1A1A',
+    secondaryColor: template?.colorSecondary || '#C9A96E',
+    logoUrl: safeUrl(template?.logoUrl || '') || null,
+    businessName: tokens.business_name || identity.name,
+    subject: substitute(template?.subjectTemplate, tokens),
+    bodyHtml: substitute(template?.bodyTemplate, tokens),
+    footerText: substitute(template?.footerText, tokens),
+    footerLinkText: substitute(template?.footerLinkText, tokens),
+    footerLinkUrl: safeUrl(substitute(template?.footerLinkUrl, tokens)),
+  };
+}
+
+/**
  * Render a resolved template (or a platform default when template is null) into
  * a branded HTML email for a given data bag.
  */

@@ -1,4 +1,3 @@
-import PDFDocument from 'pdfkit';
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
 import {
@@ -8,7 +7,7 @@ import { logAudit } from './audit.service';
 import { queueNotification } from './booking-notifications.service';
 import type { MethodOwner } from './payment-methods.service';
 import type { SaleItemType } from './revenue-mapping.service';
-import { resolvePdfBranding, drawBrandedHeader, drawBrandedFooter } from './document-pdf';
+import { resolvePdfBranding, renderTemplateDocumentPdf } from './document-pdf';
 
 /**
  * Section C — Invoicing (spec 10-payment-platform, task 4.7 / Requirement C5).
@@ -342,121 +341,29 @@ export async function emailInvoice(invoiceId: string, businessId: string): Promi
   return true;
 }
 
-/** Human currency formatting for the PDF. */
-function fmtMoney(cents: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100);
-  } catch {
-    return `${(cents / 100).toFixed(2)} ${currency}`;
-  }
-}
-
 /**
- * Render an invoice to a PDF buffer (C5.5). Platform-default layout — full
- * per-business branding is Phase 6 (Requirement C12).
+ * Render an invoice to a PDF buffer (C5.5 / C12). PURE TEMPLATE: the invoice IS
+ * the business's `invoice.issued` template — header band, subject, body, footer —
+ * rendered exactly like the editor preview. No injected identity block, meta, or
+ * line-item table; everything the business wants shown comes from {{placeholders}}
+ * in their template body. Matches the receipt's model.
  */
 export async function renderInvoicePdf(invoiceId: string, businessId: string): Promise<Buffer | null> {
   const invoice = await getInvoice(invoiceId, businessId);
   if (!invoice) return null;
-  const currency: string = invoice.currency;
 
-  // Resolve the business's Invoice branding (same selection the email uses). When
-  // there's none, the template is null and the PDF renders with platform defaults —
-  // no regression for businesses that haven't branded. Shared helpers keep invoice
-  // and receipt PDFs branding identically.
   const branding = await resolvePdfBranding(businessId, 'invoice.issued', {
     invoice_number: invoice.invoice_number,
     total_cents: invoice.total_cents,
-    currency,
+    amount_due_cents: invoice.total_cents - (invoice.amount_paid_cents || 0),
+    currency: invoice.currency,
+    invoice_date: invoice.issue_date,
     due_date: invoice.due_date,
     customer_name: [invoice.customer_first_name, invoice.customer_last_name].filter(Boolean).join(' ').trim(),
     customer_email: invoice.customer_email,
   });
-  const { primary, secondary, introText } = branding;
 
-  return new Promise<Buffer>((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
-    const chunks: Buffer[] = [];
-    doc.on('data', (c) => chunks.push(c as Buffer));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-
-    const startX = 50;
-
-    // Branded header (logo or business name + identity lines).
-    drawBrandedHeader(doc, branding, {
-      name: invoice.business_name || 'Invoice',
-      address: invoice.business_address,
-      email: invoice.business_email,
-      phone: invoice.business_phone,
-      taxId: invoice.business_tax_id,
-    }, startX);
-
-    // Invoice meta — "Invoice #" heading in the brand's primary color.
-    doc.moveDown(1);
-    doc.fontSize(16).fillColor(primary).text(`Invoice #${invoice.invoice_number}`, startX).fillColor('#000');
-    doc.fontSize(10).fillColor('#555')
-      .text(`Issued: ${new Date(invoice.issue_date).toLocaleDateString()}`)
-      .text(`Due: ${new Date(invoice.due_date).toLocaleDateString()}`)
-      .text(`Status: ${String(invoice.status).toUpperCase()}`)
-      .fillColor('#000');
-
-    // Bill-to.
-    doc.moveDown(1);
-    const customerName = [invoice.customer_first_name, invoice.customer_last_name].filter(Boolean).join(' ').trim();
-    doc.fontSize(11).text('Bill To:', { underline: true });
-    doc.fontSize(10).text(customerName || 'Customer');
-    if (invoice.customer_email) doc.text(invoice.customer_email);
-
-    // Optional intro note from the template body (placeholders substituted).
-    if (introText) {
-      doc.moveDown(0.8).fontSize(10).fillColor('#333').text(introText, startX, undefined, { width: 495 }).fillColor('#000');
-    }
-
-    // Line items table — header row in the brand's primary color.
-    doc.moveDown(1);
-    let y = doc.y;
-    doc.fontSize(10).fillColor(primary);
-    doc.text('Description', startX, y);
-    doc.text('Qty', 330, y, { width: 40, align: 'right' });
-    doc.text('Unit', 380, y, { width: 70, align: 'right' });
-    doc.text('Amount', 460, y, { width: 90, align: 'right' });
-    doc.fillColor('#000');
-    y += 16;
-    doc.moveTo(startX, y).lineTo(545, y).strokeColor(primary).stroke().strokeColor('#000');
-    y += 6;
-
-    for (const li of invoice.line_items as any[]) {
-      doc.fontSize(10).text(li.description, startX, y, { width: 270 });
-      doc.text(String(li.quantity), 330, y, { width: 40, align: 'right' });
-      doc.text(fmtMoney(li.unit_price_cents, currency), 380, y, { width: 70, align: 'right' });
-      doc.text(fmtMoney(li.amount_cents, currency), 460, y, { width: 90, align: 'right' });
-      y = doc.y + 4;
-    }
-
-    // Totals — rule in the brand's secondary color.
-    y += 8;
-    doc.moveTo(330, y).lineTo(545, y).strokeColor(secondary).stroke().strokeColor('#000');
-    y += 8;
-    const totalRow = (label: string, value: string, bold = false) => {
-      doc.fontSize(bold ? 12 : 10).text(label, 380, y, { width: 70, align: 'right' });
-      doc.text(value, 460, y, { width: 90, align: 'right' });
-      y = doc.y + 4;
-    };
-    totalRow('Subtotal', fmtMoney(invoice.subtotal_cents, currency));
-    if (invoice.tax_cents > 0) totalRow('Tax', fmtMoney(invoice.tax_cents, currency));
-    totalRow('Total', fmtMoney(invoice.total_cents, currency), true);
-    if (invoice.amount_paid_cents > 0) totalRow('Paid', fmtMoney(invoice.amount_paid_cents, currency));
-
-    if (invoice.notes) {
-      doc.moveDown(2).fontSize(9).fillColor('#555').text(invoice.notes, startX, undefined, { width: 495 }).fillColor('#000');
-    }
-
-    // Branded footer — secondary-color divider, footer text, and a clickable link.
-    drawBrandedFooter(doc, branding, startX);
-
-    doc.end();
-  });
+  return renderTemplateDocumentPdf(branding);
 }
 
 export { InvoiceError };

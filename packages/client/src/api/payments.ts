@@ -909,6 +909,27 @@ export async function fetchOrderReceiptPdf(orderId: string, businessId: string):
   return res.data;
 }
 
+/** The resolved, placeholder-filled branded-receipt fields for on-screen display. */
+export interface ReceiptDocumentFields {
+  primaryColor: string;
+  secondaryColor: string;
+  logoUrl: string | null;
+  businessName: string;
+  subject: string;
+  bodyHtml: string;
+  footerText: string;
+  footerLinkText: string;
+  footerLinkUrl: string;
+}
+
+/** Fetch the branded-receipt fields for an order (so the page renders the template). */
+export async function fetchOrderReceiptFields(orderId: string, businessId: string): Promise<ReceiptDocumentFields> {
+  const res = await apiClient.get(`/v1/pay/orders/${orderId}/receipt-fields`, {
+    params: { business_id: businessId },
+  });
+  return res.data.data;
+}
+
 // --- Gift cards (C7) ---
 
 export interface GiftCard {

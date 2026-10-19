@@ -22,7 +22,7 @@ import * as vouchers from '../services/voucher.service';
 import { takeOneTimePayment } from '../services/customer-payment.service';
 import * as accountCredit from '../services/account-credit.service';
 import * as paymentLedger from '../services/payment.service';
-import { emailTransactionDocument, renderReceiptPdf, emailOrderReceipt, renderOrderReceiptPdf } from '../services/document-send.service';
+import { emailTransactionDocument, renderReceiptPdf, emailOrderReceipt, renderOrderReceiptPdf, resolveOrderReceiptFields } from '../services/document-send.service';
 import * as membership from '../services/membership.service';
 import * as membershipRenewal from '../services/membership-renewal.service';
 import { queryResourceAudit } from '../services/audit.service';
@@ -1467,6 +1467,18 @@ paymentPlatformRouter.get('/orders/:id/receipt-pdf', requirePermission('bookings
     res.setHeader('Content-Disposition', `attachment; filename="receipt-order-${req.params.id}.pdf"`);
     res.send(pdf);
   } catch (e: any) { console.error('Failed to render order receipt PDF', e?.message || e); error(res, 'Failed to render order receipt PDF', 'INTERNAL_ERROR', 500); }
+});
+
+// Resolved, placeholder-filled branded-receipt FIELDS for an order — so the order
+// receipt page renders the same template the customer's document uses, on screen.
+paymentPlatformRouter.get('/orders/:id/receipt-fields', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const fields = await resolveOrderReceiptFields(req.params.id, businessId);
+    if (!fields) { error(res, 'No payment found for this order', 'NOT_FOUND', 404); return; }
+    success(res, fields);
+  } catch (e: any) { console.error('Failed to resolve order receipt fields', e?.message || e); error(res, 'Failed to resolve receipt', 'INTERNAL_ERROR', 500); }
 });
 
 // --- Subscriptions (membership enrollments) ---
