@@ -64,7 +64,7 @@ export async function reconcileBusinessPayments(businessId: string): Promise<Rec
   }
 
   const { rows } = await adminPool.query(
-    `SELECT id, provider_reference, reference_number
+    `SELECT id, type, provider_reference, reference_number
      FROM pay_transactions
      WHERE business_id = $1
        AND status = 'pending'
@@ -79,7 +79,12 @@ export async function reconcileBusinessPayments(businessId: string): Promise<Rec
   for (const row of rows) {
     summary.checked++;
     try {
-      const outcome = await adapter.getStatus(row.provider_reference, account);
+      // A refund's provider_reference is a refund id (re_...), not a payment
+      // intent — resolve it through the refund-aware status lookup so an async
+      // bank-debit refund finalizes (and fires its confirmation) when it settles.
+      const outcome = row.type === 'refund'
+        ? await adapter.getRefundStatus(row.provider_reference, account)
+        : await adapter.getStatus(row.provider_reference, account);
       if (outcome === 'pending') { summary.stillPending++; continue; }
 
       const res = await finalizePendingTransaction(row.id, outcome);

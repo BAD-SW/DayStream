@@ -152,6 +152,14 @@ export interface PaymentAdapter {
   /** Current status of a prior charge by its provider reference. */
   getStatus(providerReference: string, account: ConnectedAccount): Promise<ChargeOutcome>;
 
+  /**
+   * Current status of a prior REFUND by its provider reference (a refund id, e.g.
+   * Stripe `re_...`). Separate from getStatus because a refund is not a charge:
+   * retrieving it as a PaymentIntent would fail. Used to finalize an async
+   * (bank-debit) refund that settled days after it was accepted as 'pending'.
+   */
+  getRefundStatus(providerReference: string, account: ConnectedAccount): Promise<ChargeOutcome>;
+
   /** List transactions for a connected account within a date range (reconciliation). */
   listTransactions(account: ConnectedAccount, range: DateRange): Promise<AdapterTxn[]>;
 

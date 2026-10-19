@@ -223,9 +223,13 @@ export async function refundTransaction(input: RefundInput): Promise<RefundResul
     },
   }).catch(() => { /* audit must never block the refund */ });
 
-  // Emit a refund confirmation to the customer (C4.8). Non-blocking.
-  if (status !== 'failed') {
-    issueRefundConfirmation(input, original, result, currency).catch((e) =>
+  // Emit a refund confirmation to the customer (C4.8) — ONLY when the refund is
+  // actually settled. A 'pending' bank-debit refund can still fail at the
+  // provider; confirming it now would be a false promise. Its confirmation is
+  // sent from the finalizer when the debit settles (queueRefundConfirmation).
+  // Non-blocking.
+  if (status === 'completed') {
+    queueRefundConfirmation(input.businessId, refundId).catch((e) =>
       logger.warn(`Refund ${reference}: refund-confirmation enqueue failed: ${e?.message || e}`),
     );
   }
@@ -233,31 +237,48 @@ export async function refundTransaction(input: RefundInput): Promise<RefundResul
   return result;
 }
 
-/** Queue a refund confirmation for the customer. */
-async function issueRefundConfirmation(
-  input: RefundInput, original: any, result: RefundResult, currency: string,
-): Promise<void> {
+/**
+ * Queue the branded refund confirmation for a SETTLED refund transaction.
+ *
+ * Keyed off the refund row id so both the synchronous path (card refund that
+ * returns 'completed') and the async settlement path (the finalizer, when a
+ * pending bank-debit refund later settles) build the identical data bag. Loads
+ * the refund row + its original charge + the customer, scoped to the business.
+ * Safe to call once per settled refund.
+ */
+export async function queueRefundConfirmation(businessId: string, refundTxnId: string): Promise<void> {
   const { rows } = await adminPool.query(
-    'SELECT email, first_name, last_name FROM cus_customers WHERE id = $1',
-    [original.customer_id],
+    `SELECT r.amount, r.currency, r.payment_method, r.reference_number, r.refund_reason,
+            r.is_processed, r.settled_at, r.created_at, r.customer_id,
+            orig.reference_number AS original_reference, orig.created_at AS original_created_at,
+            c.email, c.first_name, c.last_name
+       FROM pay_transactions r
+       LEFT JOIN pay_transactions orig ON orig.id = r.refund_of_id
+       LEFT JOIN cus_customers c ON c.id = r.customer_id
+      WHERE r.id = $1 AND r.business_id = $2 AND r.type = 'refund'`,
+    [refundTxnId, businessId],
   );
-  const cust = rows[0];
+  const r = rows[0];
+  if (!r) return;
   await queueNotification({
-    businessId: input.businessId,
+    businessId,
     type: 'payment.refund_confirmation',
-    recipientId: original.customer_id,
-    recipientEmail: cust?.email || undefined,
+    recipientId: r.customer_id,
+    recipientEmail: r.email || undefined,
     data: {
-      reference_number: result.referenceNumber,
-      original_reference: original.reference_number ?? null,
-      refund_amount_cents: result.amountCents,
-      amount_cents: result.amountCents,
-      currency,
-      reason: input.reason,
-      payment_method: original.payment_method,
-      method: original.payment_method,
-      is_processed: result.isProcessed,
-      customer_name: cust ? [cust.first_name, cust.last_name].filter(Boolean).join(' ').trim() : null,
+      reference_number: r.reference_number,
+      original_reference: r.original_reference ?? null,
+      refund_amount_cents: r.amount,
+      amount_cents: r.amount,
+      currency: r.currency,
+      reason: r.refund_reason ?? null,
+      payment_method: r.payment_method,
+      method: r.payment_method,
+      is_processed: r.is_processed,
+      refund_date: r.settled_at ?? r.created_at,
+      original_payment_date: r.original_created_at ?? null,
+      customer_name: [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || null,
+      customer_email: r.email || null,
     },
   });
 }

@@ -236,6 +236,15 @@ export class StripeAdapter implements PaymentAdapter {
     return this.mapStatus(pi.status);
   }
 
+  async getRefundStatus(providerReference: string, _account: ConnectedAccount): Promise<ChargeOutcome> {
+    const refund = await this.stripe.refunds.retrieve(providerReference);
+    // Stripe refund statuses: 'pending' | 'succeeded' | 'failed' | 'canceled' |
+    // 'requires_action'. Map to our charge-outcome vocabulary.
+    if (refund.status === 'succeeded') return 'succeeded';
+    if (refund.status === 'pending' || refund.status === 'requires_action') return 'pending';
+    return 'failed';  // 'failed' | 'canceled'
+  }
+
   async listTransactions(_account: ConnectedAccount, range: DateRange): Promise<AdapterTxn[]> {
     const created = { gte: Math.floor(new Date(range.start).getTime() / 1000), lte: Math.floor(new Date(range.end).getTime() / 1000) };
     const pis = await this.stripe.paymentIntents.list({ created, limit: 100 });

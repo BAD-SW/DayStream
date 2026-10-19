@@ -78,6 +78,16 @@ paymentPlatformRouter.post('/webhooks/:provider', async (req: Request, res: Resp
       await reconcileSectionCCharge(event.providerReference, event.type).catch(() => { /* poller is the backstop */ });
     }
 
+    // Async REFUND settlement (best-effort; the reconciliation poller is the
+    // authoritative Section C path). A 'charge.refunded' event's object is the
+    // CHARGE, so we resolve the pending refund row via the charge's payment_intent
+    // → the original charge row → its pending refund. On success this posts the
+    // reversing GL and fires the refund confirmation (that was withheld while the
+    // refund was 'pending'). Safe no-op if nothing matches.
+    if (event.type === 'refund.succeeded') {
+      await reconcileSectionCRefund(event).catch(() => { /* poller is the backstop */ });
+    }
+
     success(res, { received: true, type: event.type, reference: event.providerReference ?? null });
   } catch (err: any) { console.error('Webhook processing failed', err?.message || err); error(res, 'Webhook processing failed', 'INTERNAL_ERROR', 500); }
 });
@@ -91,6 +101,31 @@ async function reconcileSectionCCharge(providerReference: string, type: 'charge.
   if (rows.length === 0) return;   // not a pending Section C charge
   const { finalizePendingTransaction } = await import('../services/payment-finalization.service');
   await finalizePendingTransaction(rows[0].id, type === 'charge.succeeded' ? 'succeeded' : 'failed');
+}
+
+/**
+ * Best-effort finalize of a pending Section C refund from a 'charge.refunded'
+ * webhook. The event object is the charge; its `payment_intent` is the original
+ * charge's provider_reference, from which we find the pending refund row via
+ * refund_of_id. (The poller resolves refunds by refund id directly and is the
+ * authoritative path; this just settles earlier when the event verifies here.)
+ */
+async function reconcileSectionCRefund(event: { raw?: unknown }): Promise<void> {
+  const obj = (event.raw as any)?.data?.object;
+  const paymentIntent: string | undefined = obj?.payment_intent;
+  if (!paymentIntent) return;
+  const { rows } = await adminPool.query(
+    `SELECT r.id
+       FROM pay_transactions r
+       JOIN pay_transactions orig ON orig.id = r.refund_of_id
+      WHERE orig.provider_reference = $1
+        AND r.type = 'refund' AND r.status = 'pending' AND r.is_processed = true
+      LIMIT 1`,
+    [paymentIntent],
+  );
+  if (rows.length === 0) return;   // not a pending Section C refund
+  const { finalizePendingTransaction } = await import('../services/payment-finalization.service');
+  await finalizePendingTransaction(rows[0].id, 'succeeded');
 }
 
 /** Flip a pending platform billing charge to settled/failed when Stripe reports it. */

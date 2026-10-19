@@ -300,6 +300,12 @@ export async function settleInvoice(
       tenantId, userId, action: 'invoice.paid', resourceType: 'invoice', resourceId: invoiceId,
       details: { invoice_number: invoice.invoice_number, amount_cents: outstanding, reference },
     }).catch(() => {});
+  }
+
+  if (status === 'completed') {
+    // Receipt ONLY on a settled payment. A still-pending bank debit can fail at
+    // the provider; emailing a paid-receipt now would be a false confirmation.
+    // Its receipt is sent from the finalizer when the debit settles.
     issueInvoiceReceipt(invoice, businessId, reference, outstanding).catch((e) =>
       logger.warn(`Invoice ${invoice.invoice_number}: receipt enqueue failed: ${e?.message || e}`),
     );

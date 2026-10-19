@@ -117,6 +117,11 @@ export class MockAdapter implements PaymentAdapter {
     return this.byReference.get(providerReference)?.outcome ?? 'failed';
   }
 
+  async getRefundStatus(providerReference: string, account: ConnectedAccount): Promise<ChargeOutcome> {
+    // The mock tracks refunds in the same reference map; reuse the charge lookup.
+    return this.getStatus(providerReference, account);
+  }
+
   async listTransactions(_account: ConnectedAccount, _range: DateRange): Promise<AdapterTxn[]> {
     return Array.from(this.byReference.values()).map((r) => ({
       providerReference: r.providerReference,

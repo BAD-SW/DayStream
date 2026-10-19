@@ -249,6 +249,16 @@ export async function refundOrderLines(args: {
       logger.warn(`Order refund ${reference}: GL reversal failed: ${e?.message || e}`),
     );
 
+    // Refund confirmation to the customer — ONLY when the refund is actually
+    // settled. A 'pending' bank-debit refund sends its confirmation from the
+    // finalizer when it settles; confirming a pending refund now could be false.
+    if (status === 'completed' && charge?.customer_id) {
+      const { queueRefundConfirmation } = await import('./refund.service');
+      await queueRefundConfirmation(businessId, refundTxnId).catch((e) =>
+        logger.warn(`Order refund ${reference}: refund-confirmation enqueue failed: ${e?.message || e}`),
+      );
+    }
+
     await logAudit({
       tenantId, userId: processedBy, action: 'order.refunded', resourceType: 'order', resourceId: orderId,
       details: { order_number: order.order_number, amount_cents: totalRefund, lines: computed.map((c) => ({ item: c.item.item_name, qty: c.qty, amount: c.amountCents })), reason },

@@ -56,7 +56,11 @@ export async function finalizePendingTransaction(
   if (!row) return { transactionId: txnId, changed: false };   // already finalized by someone else
 
   try {
-    if (newStatus === 'completed') {
+    if (row.type === 'refund') {
+      // A pending refund (async bank-debit return) that just settled or failed.
+      if (newStatus === 'completed') await onRefundSettled(row);
+      else await onRefundFailed(row);
+    } else if (newStatus === 'completed') {
       await onSettled(row);
     } else {
       await onFailed(row);
@@ -108,6 +112,108 @@ async function onSettled(row: any): Promise<void> {
       logger.info(`Finalize ${row.reference_number}: booking not transitioned to confirmed: ${conf.error}`);
     }
   }
+
+  // Receipt at SETTLEMENT (the deferred half of the C12 send policy). A
+  // system-raised payment auto-sends a receipt, but only once settled — a bank
+  // debit that was 'pending' at creation sends its receipt here. A manual/staff
+  // payment (takeOneTimePayment / checkout: no invoice_id and no enrollment_id)
+  // never auto-sends; staff choose Email/Print at the point of payment. So we
+  // only auto-receipt the two system-raised contexts: invoice settlement and
+  // membership renewal. (Both receipt queuers are idempotent enough for one send.)
+  await sendSettledChargeReceipt(row).catch((e) =>
+    logger.warn(`Finalize ${row.reference_number}: settled-charge receipt enqueue failed: ${e?.message || e}`),
+  );
+}
+
+/**
+ * Queue the branded receipt for a just-SETTLED system-raised charge. Mirrors the
+ * synchronous receipt each raiser sends on an immediately-completed charge:
+ *   - invoice settlement (invoice_id) → 'invoice.paid' receipt
+ *   - membership renewal (enrollment_id) → 'payment.receipt' with renewal context
+ * A manual/staff charge (neither linkage) sends nothing — staff-driven send policy.
+ */
+async function sendSettledChargeReceipt(row: any): Promise<void> {
+  const { queueNotification } = await import('./booking-notifications.service');
+
+  if (row.invoice_id) {
+    const { rows } = await adminPool.query(
+      `SELECT pi.invoice_number, pi.currency, c.email, c.id AS customer_id
+         FROM pay_invoices pi
+         LEFT JOIN cus_customers c ON c.id = pi.customer_id
+        WHERE pi.id = $1`,
+      [row.invoice_id],
+    );
+    const inv = rows[0];
+    if (!inv?.email) return;
+    await queueNotification({
+      businessId: row.business_id,
+      type: 'invoice.paid',
+      recipientId: inv.customer_id,
+      recipientEmail: inv.email,
+      data: {
+        invoice_number: inv.invoice_number,
+        amount_cents: row.amount,
+        currency: inv.currency ?? row.currency,
+        reference_number: row.reference_number,
+        payment_date: row.settled_at ?? new Date().toISOString(),
+      },
+    });
+    return;
+  }
+
+  if (row.enrollment_id) {
+    const { rows } = await adminPool.query(
+      `SELECT c.id AS customer_id, c.email, c.first_name, c.last_name, mp.name AS plan_name
+         FROM mbr_enrollments me
+         LEFT JOIN cus_customers c ON c.id = me.customer_id
+         LEFT JOIN mbr_plans mp ON mp.id = me.plan_id
+        WHERE me.id = $1`,
+      [row.enrollment_id],
+    );
+    const enr = rows[0];
+    if (!enr?.email) return;
+    await queueNotification({
+      businessId: row.business_id,
+      type: 'payment.receipt',
+      recipientId: enr.customer_id,
+      recipientEmail: enr.email,
+      data: {
+        reference_number: row.reference_number,
+        amount_cents: row.amount,
+        currency: row.currency,
+        payment_method: row.payment_method ?? 'card',
+        payment_date: row.settled_at ?? new Date().toISOString(),
+        membership_name: enr.plan_name ?? null,
+        customer_name: [enr.first_name, enr.last_name].filter(Boolean).join(' ').trim(),
+        customer_email: enr.email,
+      },
+    });
+  }
+}
+
+/** A pending refund settled: post the reversing GL (idempotent) + confirm to the customer. */
+async function onRefundSettled(row: any): Promise<void> {
+  const { postRefundJournalEntry } = await import('./payment-journal.service');
+  await postRefundJournalEntry({
+    id: row.id,
+    business_id: row.business_id,
+    amount: row.amount,
+    payment_method: row.payment_method,
+    reference_number: row.reference_number,
+    booking_id: row.booking_id,
+    enrollment_id: row.enrollment_id,
+    invoice_id: row.invoice_id,
+  });
+
+  const { queueRefundConfirmation } = await import('./refund.service');
+  await queueRefundConfirmation(row.business_id, row.id).catch((e) =>
+    logger.warn(`Finalize ${row.reference_number}: refund-confirmation enqueue failed: ${e?.message || e}`),
+  );
+}
+
+/** A pending refund failed at the provider: the money never went back. Send nothing. */
+async function onRefundFailed(row: any): Promise<void> {
+  logger.info(`Finalize ${row.reference_number}: refund ${row.id} failed to settle; no confirmation sent`);
 }
 
 /** Failed: release a held booking (the debit bounced, so the hold is void). */
