@@ -6,8 +6,9 @@ import {
   chargeStoredMethod, insertChargeRow, resolveBusinessCurrency, generateReference,
 } from './customer-payment.service';
 import { calculatePeriodEnd, calculateNextBillingDate, getPlanItems } from './membership.service';
-import { getRetrySchedule } from './dunning-schedule';
+import { getRetrySchedule, getReminderDaysBefore } from './dunning-schedule';
 import { postPaymentJournalEntry } from './payment-journal.service';
+import { canContact } from './contactability.service';
 import type { MethodOwner } from './payment-methods.service';
 
 /**
@@ -409,6 +410,117 @@ async function recordFailure(
 }
 
 // ============================================================
+// Renewal reminders (membership.renewal_reminder) — a heads-up email sent a
+// configurable number of days BEFORE a membership renews, so the customer isn't
+// surprised by the charge. Part of the daily billing_process run, alongside
+// renewals + dunning. Separate from the renewal CHARGE: this only informs.
+// ============================================================
+
+export interface ReminderSummary {
+  businessId: string;
+  due: number;        // enrollments in the reminder window
+  queued: number;     // reminders actually queued
+  skipped: number;    // already reminded this period, or not contactable
+}
+
+/**
+ * Queue renewal reminders for enrollments renewing exactly `days_before` days from
+ * `today` (per the business's `renewal_reminder.days_before` config; 0 disables).
+ *
+ * Idempotent per renewal period: a reminder is skipped if one is already queued for
+ * this enrollment + next_billing_date (keyed in the notification data), so repeated
+ * daily runs don't double-send. Respects the customer's reminder consent via
+ * canContact. The `manage_link` token is left empty for now — the customer-facing
+ * membership self-service URL builder does not exist yet (tracked follow-up).
+ */
+export async function scheduleRenewalReminders(
+  businessId: string, today: Date = new Date(),
+): Promise<ReminderSummary> {
+  const summary: ReminderSummary = { businessId, due: 0, queued: 0, skipped: 0 };
+
+  const daysBefore = await getReminderDaysBefore(businessId);
+  if (daysBefore <= 0) return summary;   // reminders disabled for this business
+
+  const currency = await resolveBusinessCurrency(businessId);
+
+  // The target renewal date is exactly `daysBefore` days from today.
+  const target = new Date(today);
+  target.setDate(target.getDate() + daysBefore);
+  const targetStr = target.toISOString().split('T')[0];
+
+  // Active enrollments renewing on the target date. Skip any already in a dunning
+  // cycle (their renewal is being retried, not freshly renewing). Pull the method
+  // display for the "what we'll charge" line.
+  const { rows: dueRows } = await adminPool.query(
+    `SELECT e.id, e.customer_id, e.next_billing_date, e.payment_method_id,
+            p.price, p.name AS plan_name,
+            pm.display_brand AS method_brand, pm.display_last4 AS method_last4,
+            c.first_name, c.last_name, c.email
+       FROM mbr_enrollments e
+       JOIN mbr_plans p ON p.id = e.plan_id
+       JOIN cus_customers c ON c.id = e.customer_id
+       LEFT JOIN pay_payment_methods pm ON pm.id = e.payment_method_id
+      WHERE e.business_id = $1 AND e.status = 'active'
+        AND e.next_billing_date = $2::date
+        AND NOT EXISTS (
+          SELECT 1 FROM pay_dunning_attempts d
+          WHERE d.enrollment_id = e.id AND d.outcome = 'pending'
+        )`,
+    [businessId, targetStr],
+  );
+  summary.due = dueRows.length;
+
+  for (const enr of dueRows) {
+    try {
+      // Idempotent: one reminder per (enrollment, renewal date).
+      const { rows: existing } = await adminPool.query(
+        `SELECT 1 FROM apt_notification_queue
+          WHERE business_id = $1 AND type = 'membership.renewal_reminder'
+            AND recipient_id = $2
+            AND data->>'enrollment_id' = $3
+            AND data->>'renewal_date' = $4
+          LIMIT 1`,
+        [businessId, enr.customer_id, enr.id, enr.next_billing_date],
+      );
+      if (existing.length > 0) { summary.skipped += 1; continue; }
+
+      // Respect the customer's reminder-consent for email.
+      const decision = await canContact(enr.customer_id, businessId, 'email', 'transactional', { reminder: true });
+      if (!decision.allowed) { summary.skipped += 1; continue; }
+
+      const methodDisplay = enr.method_brand
+        ? `${enr.method_brand}${enr.method_last4 ? ` ending ${enr.method_last4}` : ''}`
+        : null;
+
+      await queueNotification({
+        businessId,
+        type: 'membership.renewal_reminder',
+        recipientId: enr.customer_id,
+        recipientEmail: decision.address || enr.email || undefined,
+        data: {
+          enrollment_id: enr.id,                 // for the idempotency check (not a token)
+          membership_name: enr.plan_name,
+          renewal_date: enr.next_billing_date,   // → renewal_date
+          renewal_amount_cents: enr.price,       // → renewal_amount
+          currency,
+          payment_method: methodDisplay,         // → payment_method ("Visa ending 4242")
+          manage_link: null,                     // no self-service URL builder yet (follow-up)
+          customer_name: [enr.first_name, enr.last_name].filter(Boolean).join(' ').trim(),
+          customer_email: decision.address || enr.email || null,
+        },
+      });
+      summary.queued += 1;
+    } catch (e: any) {
+      summary.skipped += 1;
+      logger.warn(`Renewal reminder skipped for enrollment ${enr.id}: ${e?.message || e}`);
+    }
+  }
+
+  if (summary.due > 0) logger.info(`Renewal reminders (business ${businessId}): ${JSON.stringify(summary)}`);
+  return summary;
+}
+
+// ============================================================
 // Business billing-run schedule (Requirement C6a) — one per-business daily run.
 // One sys_scheduled_jobs row at scope_level='business', job_type='billing_process'
 // (which runs auto-resume + renewals + dunning). Mirrors the tenant-level schedule.
@@ -480,11 +592,14 @@ export async function saveBusinessBillingSchedule(
  */
 export async function runBusinessBillingNow(
   businessId: string, from?: string, to?: string,
-): Promise<{ autoResumed: number; renewals: RenewalSummary; dunning: any }> {
+): Promise<{ autoResumed: number; renewals: RenewalSummary; dunning: any; reminders: ReminderSummary }> {
   const { autoResumeExpiredPauses } = await import('./membership.service');
   const { processDunning } = await import('./dunning.service');
   const autoResumed = await autoResumeExpiredPauses(businessId);
   const renewals = await runMembershipRenewals(businessId, new Date(), null, from, to);
   const dunning = await processDunning(businessId, new Date(), null);
-  return { autoResumed, renewals, dunning };
+  // Reminders run against "today" regardless of the window (same as dunning): they
+  // look ahead to renewals due `days_before` out, not at the operator's range.
+  const reminders = await scheduleRenewalReminders(businessId, new Date());
+  return { autoResumed, renewals, dunning, reminders };
 }

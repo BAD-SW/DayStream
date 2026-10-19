@@ -26,6 +26,14 @@ export const DEFAULT_RETRY_INTERVAL_DAYS = 3;
 /** Legacy default offset array, kept so older callers/tests still resolve a schedule. */
 export const DEFAULT_RETRY_DAYS = [1, 3, 7];
 
+/**
+ * Renewal-reminder lead time: how many days BEFORE next_billing_date a membership
+ * renewal reminder is sent (per business). 0 disables the reminder. Stored under
+ * `renewal_reminder.days_before`.
+ */
+export const DEFAULT_REMINDER_DAYS_BEFORE = 5;
+export const MAX_REMINDER_DAYS_BEFORE = 90;
+
 export interface RetryParams {
   count: number;            // max automatic retries
   intervalDays: number;     // days between retries
@@ -120,4 +128,28 @@ export async function getRetrySchedule(businessId: string): Promise<number[]> {
 
   const { count, intervalDays } = await getRetryParams(businessId);
   return Array.from({ length: count }, (_, i) => intervalDays * (i + 1));
+}
+
+/**
+ * The business's configured renewal-reminder lead time (days before the renewal
+ * date). Falls back to the platform default. A value of 0 means the reminder is
+ * disabled for that business.
+ */
+export async function getReminderDaysBefore(businessId: string): Promise<number> {
+  const raw = await getConfig(businessId, 'renewal_reminder.days_before');
+  const n = parseInt(String(raw), 10);
+  if (Number.isFinite(n) && n >= 0) return Math.min(MAX_REMINDER_DAYS_BEFORE, n);
+  return DEFAULT_REMINDER_DAYS_BEFORE;
+}
+
+/** Persist the renewal-reminder lead time (0..90; 0 disables). Returns the clamped value. */
+export async function saveReminderDaysBefore(businessId: string, daysBefore: number): Promise<number> {
+  const clamped = Math.max(0, Math.min(MAX_REMINDER_DAYS_BEFORE, Math.floor(daysBefore)));
+  await adminPool.query(
+    `INSERT INTO sys_business_configurations (business_id, key, value)
+     VALUES ($1, 'renewal_reminder.days_before', $2)
+     ON CONFLICT (business_id, key) DO UPDATE SET value = EXCLUDED.value`,
+    [businessId, String(clamped)],
+  );
+  return clamped;
 }

@@ -1107,6 +1107,7 @@ export async function runBusinessBillingNow(businessId: string): Promise<any> {
 export interface RenewalRetryParams {
   count: number;         // max automatic retries
   intervalDays: number;  // days between retries
+  reminderDaysBefore?: number; // days before renewal to send the reminder (0 = off)
 }
 
 export async function getRenewalRetryParams(businessId: string): Promise<RenewalRetryParams> {

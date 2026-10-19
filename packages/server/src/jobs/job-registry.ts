@@ -107,7 +107,7 @@ export const jobRegistry: Record<string, JobHandler> = {
   'billing_process': async (ctx) => {
     const businessId = ctx.businessId!;   // business-scoped job: businessId is always present
     const { autoResumeExpiredPauses } = await import('../services/membership.service');
-    const { runMembershipRenewals } = await import('../services/membership-renewal.service');
+    const { runMembershipRenewals, scheduleRenewalReminders } = await import('../services/membership-renewal.service');
     const { processDunning } = await import('../services/dunning.service');
 
     // Resume first so a just-resumed enrollment with a due date is picked up.
@@ -116,9 +116,13 @@ export const jobRegistry: Record<string, JobHandler> = {
     // dunning retries that are due today.
     const renewals = await runMembershipRenewals(businessId, new Date(), ctx.executionId ?? null);
     const dunning = await processDunning(businessId, new Date(), ctx.executionId ?? null);
+    // Heads-up reminders for memberships renewing in `renewal_reminder.days_before`
+    // days (informational; does not charge). Safe to run every day — idempotent per
+    // enrollment + renewal date.
+    const reminders = await scheduleRenewalReminders(businessId, new Date());
 
-    logger.info(`Recurring charges (business ${businessId}): ${resumed} auto-resumed, renewals ${JSON.stringify(renewals)}, dunning ${JSON.stringify(dunning)}`);
-    return { status: 'processed', auto_resumed: resumed, renewals, dunning };
+    logger.info(`Recurring charges (business ${businessId}): ${resumed} auto-resumed, renewals ${JSON.stringify(renewals)}, dunning ${JSON.stringify(dunning)}, reminders ${JSON.stringify(reminders)}`);
+    return { status: 'processed', auto_resumed: resumed, renewals, dunning, reminders };
   },
 
   // Payment reconciliation (Section C) — re-checks PENDING processed charges

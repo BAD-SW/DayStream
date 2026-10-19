@@ -1775,8 +1775,12 @@ paymentPlatformRouter.get('/renewal-retry-params', requirePermission('bookings:*
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
-    const { getRetryParams } = await import('../services/dunning-schedule');
-    success(res, await getRetryParams(businessId));
+    const { getRetryParams, getReminderDaysBefore } = await import('../services/dunning-schedule');
+    const [retry, reminderDaysBefore] = await Promise.all([
+      getRetryParams(businessId),
+      getReminderDaysBefore(businessId),
+    ]);
+    success(res, { ...retry, reminderDaysBefore });
   } catch (e: any) { console.error('Failed to read retry params', e?.message || e); error(res, 'Failed to read retry params', 'INTERNAL_ERROR', 500); }
 });
 
@@ -1784,11 +1788,18 @@ const retryParamsSchema = Joi.object({
   business_id: Joi.string().uuid().required(),
   count: Joi.number().integer().min(1).max(10).required(),
   intervalDays: Joi.number().integer().min(1).max(90).required(),
+  // Renewal-reminder lead time (days before renewal). Optional for backward compat;
+  // 0 disables the reminder.
+  reminderDaysBefore: Joi.number().integer().min(0).max(90),
 });
 
 paymentPlatformRouter.put('/renewal-retry-params', requirePermission('bookings:*'), validate(retryParamsSchema), async (req: Request, res: Response) => {
   try {
-    const { saveRetryParams } = await import('../services/dunning-schedule');
-    success(res, await saveRetryParams(req.body.business_id, { count: req.body.count, intervalDays: req.body.intervalDays }));
+    const { saveRetryParams, saveReminderDaysBefore, getReminderDaysBefore } = await import('../services/dunning-schedule');
+    const retry = await saveRetryParams(req.body.business_id, { count: req.body.count, intervalDays: req.body.intervalDays });
+    const reminderDaysBefore = req.body.reminderDaysBefore != null
+      ? await saveReminderDaysBefore(req.body.business_id, req.body.reminderDaysBefore)
+      : await getReminderDaysBefore(req.body.business_id);
+    success(res, { ...retry, reminderDaysBefore });
   } catch (e: any) { console.error('Failed to save retry params', e?.message || e); error(res, 'Failed to save retry params', 'INTERNAL_ERROR', 500); }
 });

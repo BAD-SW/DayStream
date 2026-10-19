@@ -576,8 +576,19 @@ function ProcessesSettings() {
                           value={retryParams.intervalDays}
                           onChange={(e) => setRetryParams({ ...retryParams, intervalDays: Math.max(1, Math.min(90, parseInt(e.target.value, 10) || 1)) })} />
                       </label>
+                      <div style={{ display: 'flex', flexDirection: 'column', width: '100%', paddingTop: '8px' }}>
+                        <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)' }}>Renewal reminder</span>
+                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                          Email the customer this many days before a membership renews. Set to 0 to turn the reminder off.
+                        </span>
+                      </div>
+                      <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Remind (days before)
+                        <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '70px' }} type="number" min={0} max={90}
+                          value={retryParams.reminderDaysBefore ?? 0}
+                          onChange={(e) => setRetryParams({ ...retryParams, reminderDaysBefore: Math.max(0, Math.min(90, parseInt(e.target.value, 10) || 0)) })} />
+                      </label>
                       <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 12px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-primary)' }} onClick={saveRetryParams} disabled={savingRetry}>
-                        {savingRetry ? 'Saving...' : 'Save Retries'}
+                        {savingRetry ? 'Saving...' : 'Save'}
                       </button>
                     </div>
                   )}
