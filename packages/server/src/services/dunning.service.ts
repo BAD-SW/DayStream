@@ -119,7 +119,7 @@ async function processOne(
   }
   if (!attempt.payment_method_id) {
     // No method to retry — escalate straight to the next scheduled step or expire.
-    return failAndSchedule(attempt, businessId, tenantId, schedule, today, null, 'No payment method on file');
+    return failAndSchedule(attempt, businessId, tenantId, schedule, today, null, 'No payment method on file', attempt.price, currency);
   }
 
   const effectivePlanId = attempt.pending_plan_id || attempt.plan_id;
@@ -191,7 +191,7 @@ async function processOne(
     processedBy: null, isProcessed: true, providerReference: null,
     paymentMethodId: attempt.payment_method_id,
   });
-  return failAndSchedule(attempt, businessId, tenantId, schedule, today, failTxn.id, charge.failureReason ?? 'Declined');
+  return failAndSchedule(attempt, businessId, tenantId, schedule, today, failTxn.id, charge.failureReason ?? 'Declined', amountCents, currency);
 }
 
 /**
@@ -201,7 +201,7 @@ async function processOne(
  */
 async function failAndSchedule(
   attempt: DunningRow, businessId: string, tenantId: string, schedule: number[], today: Date,
-  transactionId: string | null, failureReason: string,
+  transactionId: string | null, failureReason: string, amountCents: number, currency: string,
 ): Promise<DunningOutcome> {
   const totalAttempts = schedule.length;              // schedule entries = number of retries
   await closeAttempt(attempt.id, 'failed', transactionId, failureReason);
@@ -224,7 +224,7 @@ async function failAndSchedule(
       [tenantId, businessId, attempt.enrollment_id, nextAttemptNumber, scheduledForStr, failureReason],
     );
 
-    await notify(attempt, businessId, noticeTierForAttempt(nextAttemptNumber, totalAttempts), scheduledForStr);
+    await notify(attempt, businessId, noticeTierForAttempt(nextAttemptNumber, totalAttempts), scheduledForStr, amountCents, currency, failureReason);
     await audit(tenantId, attempt, 'dunning.retry_failed', {
       attempt: attempt.attempt_number, next_attempt: nextAttemptNumber, next_retry: scheduledForStr, reason: failureReason,
     });
@@ -236,7 +236,7 @@ async function failAndSchedule(
     `UPDATE mbr_enrollments SET status = 'expired', next_billing_date = NULL, updated_at = NOW() WHERE id = $1`,
     [attempt.enrollment_id],
   );
-  await notify(attempt, businessId, 'final', null);
+  await notify(attempt, businessId, 'final', null, amountCents, currency, failureReason);
   await audit(tenantId, attempt, 'dunning.exhausted', { attempts: attempt.attempt_number, reason: failureReason });
   return 'expired';
 }
@@ -255,9 +255,21 @@ async function closeAttempt(
   );
 }
 
-/** Queue the escalating dunning notice to the customer. Non-blocking. */
+/**
+ * Queue the escalating dunning notice to the customer. Non-blocking.
+ *
+ * The data bag uses the keys the `payment.dunning` branding template resolves
+ * (see buildTokenMap): `amount_due` (from amount_cents), `failure_reason`,
+ * `retry_date`, `update_payment_link`. `tier`/`plan_name`/`attempt_number` are
+ * extra context a template may reference.
+ *
+ * NOTE: update_payment_link is left null — there is no customer-facing
+ * update-payment-method URL builder yet. The template's link renders empty until
+ * that portal link exists (tracked follow-up); better empty than a dead link.
+ */
 async function notify(
   attempt: DunningRow, businessId: string, tier: NoticeTier, nextRetryDate: string | null,
+  amountCents: number, currency: string, failureReason: string | null,
 ): Promise<void> {
   try {
     const { rows } = await adminPool.query(
@@ -271,12 +283,19 @@ async function notify(
       recipientId: attempt.customer_id,
       recipientEmail: cust?.email || undefined,
       data: {
+        // Resolver-mapped tokens for the branded Dunning Notice.
+        amount_cents: amountCents,              // → amount_due
+        currency,
+        failure_reason: failureReason,          // → failure_reason
+        retry_date: nextRetryDate,              // → retry_date (null when expired/final)
+        update_payment_link: null,              // no portal URL yet (follow-up)
+        // Extra context a template may use.
         tier,                                   // friendly | warning | final
+        membership_name: attempt.plan_name,
         plan_name: attempt.plan_name,
         attempt_number: attempt.attempt_number,
-        next_retry_date: nextRetryDate,         // null when expired (final notice)
-        update_payment_method: true,
         customer_name: cust ? [cust.first_name, cust.last_name].filter(Boolean).join(' ').trim() : null,
+        customer_email: cust?.email || null,
       },
     });
   } catch (e: any) {

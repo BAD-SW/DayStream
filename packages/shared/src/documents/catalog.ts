@@ -244,7 +244,7 @@ export const DOCUMENT_ARTIFACT_TYPES: DocumentArtifactType[] = [
   },
   {
     key: 'payment.dunning',
-    label: 'Dunning Notice',
+    label: 'Failed Payment',
     description: 'Sent when an automatic payment fails and will be retried.',
     placeholders: [
       ...COMMON_PLACEHOLDERS,
