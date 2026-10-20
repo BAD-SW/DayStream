@@ -1,8 +1,8 @@
 # DayStream — End-to-End Test Book
 
 **Owner:** Claude (maintained in every working session) · **Created:** 2026-10-12
-**Synced through commit:** `417c0e6` (feat(payments): accounting hardening, bank-draw reconciliation, and billing UX)
-**Script count:** 298 across 18 suites · **Verified by execution:** 227 · **Failing:** 0 · **Blocked:** 32 (specs 47–48 not built, sequence builder, API keys) · **Draft (not yet run, or only partly):** 39: run 20261012-6 covered suites 00 and 02 to 16; the journeys (suite 01) were not run as sequences, and the remaining drafts are mostly on-screen checks
+**Synced through commit:** `d5c57bf` (fix(email): populate Appointment template customer + appointment tokens): accounting hardening, bank-draw reconciliation, and billing UX)
+**Script count:** 306 across 18 suites · **Verified by execution:** 227 · **Failing:** 0 · **Blocked:** 32 (specs 47–48 not built, sequence builder, API keys) · **Draft (not yet run, or only partly):** 39: run 20261012-6 covered suites 00 and 02 to 16; the journeys (suite 01) were not run as sequences, and the remaining drafts are mostly on-screen checks
 
 This is the living end-to-end (E2E) regression book for DayStream. It exists for two goals:
 
@@ -34,16 +34,16 @@ Every run ends with a report in chat and a new entry in [RUN-LOG.md](./RUN-LOG.m
 | 00 | [Preflight & smoke](./suites/00-preflight-smoke.md) | PRE, SMK | 20 | 00, 03 |
 | 01 | [Cross-module journeys](./suites/01-journeys.md) | JNY | 16 | all |
 | 02 | [Auth, access & isolation](./suites/02-auth-access.md) | AUTH | 21 | 02, 03, 29 |
-| 03 | [System admin](./suites/03-system-admin.md) | SYS | 17 | 03, 24, 31, 37 |
+| 03 | [System admin](./suites/03-system-admin.md) | SYS | 18 | 03, 24, 31, 37 |
 | 04 | [Tenant admin](./suites/04-tenant-admin.md) | TEN | 12 | 03, 31, 35-reporting |
 | 05 | [Billing layers A & B](./suites/05-billing-layers.md) | BILL | 16 | 10 (0, A, B) |
 | 06 | [Business setup, schedule & time clock](./suites/06-business-setup.md) | SET | 16 | 12, 13 |
 | 07 | [Offerings & pricing](./suites/07-offerings.md) | OFF | 15 | 06, 08, 09, 28 |
 | 08 | [People (CRM)](./suites/08-customers.md) | CUS | 28 | 05, 46 |
 | 09 | [Bookings, calendar & check-in](./suites/09-bookings-calendar.md) | BKG, CHK | 25 | 07, 15, 32, 33, 34 |
-| 10 | [Checkout & customer payments](./suites/10-checkout-payments.md) | PAY | 18 | 10 (C), 26, 28 |
+| 10 | [Checkout & customer payments](./suites/10-checkout-payments.md) | PAY | 24 | 10 (C), 26, 28 |
 | 11 | [Accounting & payroll](./suites/11-accounting-payroll.md) | ACC | 14 | 11 |
-| 12 | [Reports](./suites/12-reports.md) | REP | 8 | 17, 35-reporting |
+| 12 | [Reports](./suites/12-reports.md) | REP | 9 | 17, 35-reporting |
 | 13 | [Marketing & leads](./suites/13-marketing.md) | MKT | 20 | 16, 48 |
 | 14 | [Website, CMS & booking widget](./suites/14-website-widget.md) | WEB | 13 | 18, 38 |
 | 15 | [Events, community & integrations](./suites/15-events-community-integrations.md) | EVT, COM, INT | 12 | 14, 20, 22 |
@@ -157,7 +157,7 @@ How scripts are driven: UI steps through the browser, as the named persona; `Cro
 | 07 booking-engine | 09, 01 | |
 | 08 membership-engine | 07, 10, 01 | |
 | 09 pricing-engine | 07, 10 | |
-| 10 payment-platform | 05, 10, 01 | Phases 1–4 built; Phase 5 (net-collections feed, payment reports), 6 (document branding), 7 (hardening) not built: see section 8 |
+| 10 payment-platform | 05, 10, 12, 01 | Phases 1–4 built; Phase 6 (document templates, branded receipts, credit and debit notes) built by Bill up to `d5c57bf` (PAY-19 to PAY-23); Phase 5 (net-collections feed) and 7 (hardening) not built: see section 8 |
 | 11 accounts-payable | 11, 01 | Includes payroll |
 | 12 staff-management | 06, 01 | |
 | 13 resource-management | 06, 09 | |
@@ -258,6 +258,7 @@ When in doubt, run more: any change to shared layout, auth, or migrations trigge
 | KI-13 | Spec 46 (People Foundation) is built except for the items marked **Open** in `.kiro/specs/46-people-foundation/tasks.md`: contactability in the sequence engine and booking reminders, the prompt for missing details at first booking, a background job for bulk actions above 5,000 people, and section 6 (business scope for campaigns, sequences, funnels, templates), which is deferred to spec 48. Specs 47 (Inbox) and 48 (Marketing Module) are drafts, not built | INB-01 to INB-15 and INB-99, MKT-09 to MKT-20 and JNY-15 are `Blocked`. CUS-17 to CUS-28 are unblocked (`Draft`, CUS-18 `Verified`) |
 | KI-14 | Fixed by the spec 46 work (2026-10-12): **D-14** lead form submissions now create a lead in a business; **D-15** merging moves everything that points at the person and keeps the second record as `merged`; **D-16** consent has one store with a history. Also fixed: sending a campaign made every active person of the whole tenant a recipient, ignoring segment and consent (it now needs a segment and respects consent); customer reference numbers failed once a `CUS-…` style reference existed. Found by the browser check (run 20261012-4) and fixed: **D-17** a refused "add person" (already exists) silently filled in the existing person's details; **D-18** after a merge the profile form showed stale values as unsaved changes, so Save would have wiped merged details; **D-19** date of birth never showed in the profile form and moved back a day on each save when the server is not in UTC; **D-20** the consent reason was asked through a browser pop-up (now an inline field). Fixed in run 20261012-5: **D-21** the profile's Financial Summary showed fixed "$0.00 / Good" placeholders; it now shows balance due, lifetime value and account credit in the business currency. **D-22** a campaign could not be given an audience from the screen (the form had no segment picker, and sending needs one); the form now has an audience picker with a "who will receive it" line | CUS-13, CUS-18, CUS-21, CUS-23 and MKT-07 exercise these. Merge behaviour to expect: the second record is kept with status `merged` and old links redirect; staff switching marketing consent on must give a reason; a campaign needs a segment |
 | KI-15 | `packages/shared` is consumed by the server from its built `dist/`, which is not in git | After every pull that touches `packages/shared`, run `npm run build -w packages/shared` before starting the app or the tests |
+| KI-17 | Found in run 20261020-1 and left open for a decision: **D-44** most sales reports (sales by item, sales by staff, tax summary, revenue, discounts, staff performance, commissions, recognised revenue, and Bill's work-in-progress reconciliation) count only orders still `completed`, so a sale disappears from them entirely once any line is refunded (status `partially_refunded` / `refunded`). **D-45** customers cannot list events: the Events module is offered to the customer persona (behind `feature.events`) and customers may register, but their role has no `events:read`, so the page they reach is the staff screen, empty | REP-04 covers the dashboard and Payments Received only (fixed as D-43). EVT scripts run as staff |
 | KI-16 | People created before migration 136 have no international phone number stored, so they cannot be matched by phone | Run `npx tsx scripts/backfill-phone-e164.ts` in `packages/server` once per database (done locally on 2026-10-12; still to do on Render) |
 
 Gaps in the test approach itself:
@@ -282,3 +283,4 @@ Gaps in the test approach itself:
 | 2026-10-12 | `37aad94` + local | Spec 46 People Foundation built (migration 136). Run 20261012-4: People list, add person, profile, consent, duplicate banner and merge checked in the browser; D-17 to D-20 found and fixed, D-21 logged. CUS-17 to CUS-26 unblocked (CUS-18 verified); CUS-27 and CUS-28 stay blocked on their screens. KI-13, KI-14 rewritten, KI-15 added. Registration test no longer leaves people in the seed business. Unit tests: server 945, client 186 |
 | 2026-10-12 | `5d7937d` + local | Remaining spec 46 screens built: column chooser, bulk actions, segment editing and fixed lists, campaign audience picker with summary, real Financial Summary. Run 20261012-5 checked them in the browser. CUS-27 and CUS-28 unblocked; D-21 and D-22 fixed; KI-13 rewritten, KI-16 added; spec 46 `tasks.md` ticked (63 done, 15 open). Unit tests: server 946, client 186 |
 | 2026-10-12 | `2a62bc8` to `bf50439` | Full run 20261012-6 started: suites 00, 02, 03, 04, 05, 06 executed. Defects D-23 to D-42 found and fixed (three critical access defects among them), migrations 137 to 140. Statuses set from the run |
+| 2026-10-20 | `58f824f` to `d5c57bf` | Pulled Bill's 23 commits (migrations 144–155): walk-in card payments and order refunds, multiple memberships, renewal retries and reminder, gift cards through checkout, document templates and branded receipts, credit and debit notes, queue-driven email engine with SMTP in the database, reconciliation report (WIP). Added PAY-19 to PAY-24, SYS-18, REP-09; PAY-08 rewritten (refunds from the order, line by line). Run 20261020-1: all suites; D-43 (money totals ignored partial refunds), D-46 and D-47 (payroll entries and challenge leaderboards readable across organisations) fixed; D-44 and D-45 open (KI-17) |

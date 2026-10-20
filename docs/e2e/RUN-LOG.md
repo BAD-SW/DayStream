@@ -31,6 +31,54 @@ What was not cleaned up, if anything.
 
 ## Runs
 
+## Run 20261020-1 — full run after pulling Bill's work (step B of the B, A, B plan)
+- Commit at start: `d5c57bf` · Migrations at: 155 (applied locally and on Neon) · Processor mode: mock for the E2E tenant, Stripe test for the seed business
+- Method: the API runners of run 20261012-6 (scratchpad `r00` … `r15`, `sweep`) plus a new runner `rbill` for Bill's features; the browser for the screen tours. Data in tenant `E2E 20261020-1 SysTenant B`, business `E2E 20261020-1 Biz B`
+- Unit tests: server 966 of 966, client 186 of 186, shared 12 of 12 (after updating one membership test to Bill's rule). Type check: server 0, client 30 (unchanged baseline)
+- Result: every executed script passes after the corrections and fixes below
+
+### Progress
+| Suite | Result |
+|---|---|
+| 00 Preflight | 7 of 7 |
+| 02 Auth, access, isolation | all pass (AUTH-04 first hit the login rate limit: environment) |
+| 03 System, 04 Tenant | 24 of 24, plus SYS-18 |
+| 05 Billing layers | 16 of 16 |
+| 06 Business setup | 16 of 16 after moving the runner's fixed test week (it had become today and the past; bookings are allowed at most 30 days ahead) |
+| 07 Offerings | 14 of 14 |
+| 08 People | 26 of 26 |
+| 09 Bookings | 22 of 22 |
+| 10 Checkout & payments | 18 of 18 after PAY-08 was rewritten for refunds from the order; new PAY-19 to PAY-24 pass |
+| 11 Accounting & payroll | 14 of 14 |
+| 12 Reports | 8 of 8 after D-43 and a REP-05 correction; REP-09 passes |
+| 13 Marketing, 14 Website, 15 Events/community | 8, 13, 12: all pass |
+| Cross-organisation sweep | 13,205 calls, 0 leaks after D-46 and D-47 |
+| 16 Browser tours | 56 business screens as owner, 13 as platform admin, 10 as tenant owner, 7 addresses as customer: no failed request, no console error, no crash; above-level addresses bounce to the dashboard. One finding: D-45 |
+| 01 Journeys | not run as sequences; their steps are covered by suites 05 to 15 |
+| 17 Inbox | Blocked (spec 47 not built) |
+
+### Defects
+| Id | Severity | Summary | State |
+|---|---|---|---|
+| D-43 | High | The dashboard's month revenue and the Payments Received report ignored orders that were partially refunded (and, in the report, refunded orders and their refunds), so they understated the money taken once refunds from the order (Bill's line refunds) were used | Fixed |
+| D-44 | Medium | Sales reports count only orders still `completed`: a sale disappears from them once any line is refunded | Open: needs a decision on how refunded lines show |
+| D-45 | Medium | Customers cannot list events: the page they reach is the staff Events screen, and their role cannot read events | Open: product gap |
+| D-46 | Critical | Another organisation's owner could read a business's payroll lines (pay, deductions) given the pay period id | Fixed: the business is required and checked |
+| D-47 | High | Another organisation could read a challenge's participants (names, progress) given the challenge id | Fixed: scoped to the tenant |
+
+### Script corrections made after this run
+| Script | What changed and why |
+|---|---|
+| PAY-08 | Rewritten: since Bill's `764002c` a sale is refunded from its order, line by line; services are not refundable, memberships and packs are cancelled |
+| REP-04 | "Money taken" now includes partially refunded and refunded sales, less every refund |
+| REP-05 | The payroll check compares with the database instead of a fixed amount from the previous run |
+| SET-* (runner) | The fixed test week moved from 19–24 October to 9–14 November |
+| Runners | Logins wait and retry on the rate limit (429); the run id comes from `RUN` |
+| Unit test | `memberships.test.ts`: a second membership in the same plan is refused (`ALREADY_ENROLLED_IN_PLAN`); other plans are allowed |
+
+### Leftover test data
+The `E2E 20261020-1 …` tenant and business, and an unused `E2E 20261020-1 …` set from the first attempt of suite 06.
+
 ## Run 20261012-6 — full run (suites 00, 02 to 16)
 - Commit at start: `2a62bc8` · Migrations at end so far: 143 · Processor mode: Stripe test (platform, seed tenant, seed business); mock for the E2E tenant
 - Method: each script is driven through the API by a repeatable script (kept in the session scratchpad: `r00`, `r02`, `r02b`, `r03`, `r05`, `r06`, `r07`, `r08`, `r09`, `r10`, `r11`, `r12`, `r13`, `r14`, `r15`, and `sweep` for the cross-organisation check), with the browser used for screens, menus and typed addresses. Data is created in a dedicated tenant `E2E 20261012-6 SysTenant` and its business `E2E 20261012-6 Biz` (time zone Europe/Madrid)

@@ -219,7 +219,9 @@ payrollRouter.put('/periods/:id/finalize', requirePermission('staff:*'), async (
 // GET /api/v1/payroll/periods/:id/entries
 payrollRouter.get('/periods/:id/entries', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
-    const entries = await payrollService.getPayrollEntries(req.params.id);
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const entries = await payrollService.getPayrollEntries(req.params.id, businessId);
     success(res, entries);
   } catch (err: any) { console.error('Failed to get entries', err?.message || err); error(res, 'Failed to get entries', 'INTERNAL_ERROR', 500); }
 });

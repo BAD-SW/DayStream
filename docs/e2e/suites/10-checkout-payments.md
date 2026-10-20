@@ -48,11 +48,13 @@ Method classes to keep in mind: **processed** (card, bank draw, wallets: charged
 1. Customer detail → **Record Payment**: 25.00 cash, with a note. Try 0.00 and a negative amount.
 **Expect:** the payment is recorded and appears in the Billing tab; invalid amounts are refused. Reception (Staff, `bookings:update`) is allowed to take payments.
 
-### PAY-08 · Refunds: full, partial, limits, permissions
-`P0` `guarded` · Spec 10 C4 · As: manager, reception · Status: Verified
-1. As reception, attempt a refund. 2. As manager: partial refund without a reason; partial with a reason; refund of more than the remainder; full refund of another payment (amount left blank).
-**Expect:** reception is refused (403); a reason is required; over-refund is refused; processed charges are returned through the processor, manual ones are recorded only.
-**Cross-check:** refund rows link to the original payment; the journal has reversals; a credit-note notification is queued; the audit log names the manager. JNY-07 covers the report side.
+### PAY-08 · Refunds: from the order, line by line
+`P0` `guarded` · Spec 10 C4 (rewritten 2026-10-20 for Bill's `764002c`) · As: owner, Staff · Status: Verified
+1. Try to refund a sale from its payment (Billing tab, transaction row) instead of from its order.
+2. From the order / receipt (**Refund**): as Staff; without a reason; the service line; one unit of a product line; the remaining units; one more unit.
+3. Sell one product by card and refund it from its order.
+**Expect:** a sale's payment cannot be refunded directly (`REFUND_VIA_ORDER`); Staff is refused (403); a reason is required; a service line is not refundable ("issue a discount instead"; memberships and packs are cancelled, gift cards are never refunded); the product units are refunded and a further unit is refused (`INVALID_QUANTITY`); the order becomes **partially refunded** / **refunded**; the card refund goes through the processor.
+**Cross-check:** refund rows link to the original payment and add up to the refunded lines; the journal takes cash out (1100 credit); the audit log has the refunds. REP-04 checks the dashboard and the Payments Received report net them.
 
 ### PAY-09 · Invoices: enable, issue, number, PDF
 `P0` `regression` · Spec 10 C5 · As: owner, manager · Status: Verified
@@ -112,3 +114,38 @@ Method classes to keep in mind: **processed** (card, bank draw, wallets: charged
 1. As Staff: issue an invoice, void an invoice, create a gift card, create a voucher, change accepted methods, change the billing schedule.
 2. As customer: list transactions, list gift cards, charge another customer's method.
 **Expect:** every call refused (403), except that a customer listing payments or invoices gets only their own. Staff can still take a payment and read invoices (`bookings:update` / `bookings:read`).
+
+### PAY-19 · Credit note (Adjustment, credit side)
+`P0` `guarded` · Spec 10 C4/C5 (Bill `24e89e1`) · As: owner, Staff, another organisation · Status: Verified
+1. Customer → Billing → **New Adjustment** → Credit: as Staff; without a reason; with no lines; then as owner, one 20.00 line with 4.20 tax.
+2. Open its PDF; list the customer's credit notes; open it as another organisation's owner.
+**Expect:** Staff refused (403); reason and at least one line required (400); the credit note gets a number and the customer's account credit rises by 24.20; the PDF opens; another organisation is refused.
+**Cross-check:** journal 4100 debit 20.00, 2300 debit 4.20, 2500 credit 24.20 (posted at issue).
+
+### PAY-20 · Debit note (Adjustment, debit side)
+`P0` `guarded` · Spec 10 (Bill `24e89e1`) · As: owner, Staff · Status: Verified
+1. **New Adjustment** → Debit: 10.00. 2. Open its PDF. 3. As Staff, try to issue one. 4. Open the customer's transaction history.
+**Expect:** account credit falls by 10.00 (it may go negative); the PDF opens; Staff refused; both notes are in the transaction history.
+**Cross-check:** journal 2500 debit 10.00, 4100 credit 10.00 (mirror of the credit note).
+
+### PAY-21 · Gift card sold through checkout
+`P0` `guarded` · Spec 10 C7 (Bill `9fbd978`, `147` tax setting) · As: owner, Staff · Status: Verified
+1. Settings: read the gift-card tax setting; as Staff, try to change it. 2. Checkout: add a 50.00 gift card for a recipient (`.test` email), pay cash. 3. Look the card up by its code. 4. Run the Gift Cards report.
+**Expect:** gift-card tax is off by default and only the owner may change it; no tax on the line; one card issued with a code and 50.00 balance, shown after payment; the lookup shows 50.00 active; the report lists the code.
+**Cross-check:** the order's journal books the 50.00 as a liability (2600), not revenue.
+
+### PAY-22 · Receipts: PDF and email
+`P1` `regression` · Spec 10 Phase 6 (Bill `ceb942d`, `2605119`) · As: owner, Staff, another organisation · Status: Verified
+1. Open the receipt PDF from the order and from the payment; load its fields. 2. Email the receipt. 3. Open it as another organisation.
+**Expect:** both PDFs open and use the business's receipt template; the email is queued to the customer's (`.test`) address; another organisation is refused (403).
+
+### PAY-23 · Document templates (branding)
+`P1` `regression` · Spec 10 Phase 6 task 6.3a (Bill `1de7993`, `b81e763`) · As: owner, Staff, another organisation · Status: Verified
+1. Business Setup → **Templates**: the document types list. 2. Create a Payment Receipt template (colour, footer text, footer link); as Staff, try to create one; try a `javascript:` footer link. 3. Edit its footer; list templates; edit it as another organisation. 4. Open a receipt PDF. 5. Delete the template.
+**Expect:** the types include Appointment, Adjustment, Payment Receipt, Refund Confirmation, Failed Payment, Renewal Reminder and Gift Card; the owner can create, edit and delete; Staff refused; a non-web link refused (400); another organisation refused; receipts still render.
+
+### PAY-24 · Membership renewal retries and reminder
+`P1` `regression` · Spec 10 (Bill `3526e98`, `3d69af7`) · As: owner, Staff · Status: Verified
+1. Settings → Membership Renewals: read the retry settings. 2. Save count 0, then interval 200 days, then count 4 / every 2 days / reminder 5 days before. 3. As Staff, read them.
+**Expect:** out-of-range values refused (count 1–10, interval 1–90 days); the valid values are saved; Staff refused.
+**Not yet scripted:** a renewal that fails and is retried on the saved schedule (the "renewing" status), and the reminder email lead time: they need the renewal job to run on a future date.

@@ -47,3 +47,8 @@ Method: for each figure, take a reading before the run's data is created (or use
 `P0` `negative` · Spec 02 R4, R5 · As: reception, manager, biz-thin · Status: Verified
 1. As reception: open `/reports`, call `GET /api/v1/reports/revenue`. 2. As manager (`reports:read`): open reports. 3. As biz-thin: run the revenue report for today.
 **Expect:** reception refused; manager can read; the other business's report contains none of the demo business's revenue.
+
+### REP-09 · Reconciliation report and sales tax
+`P2` `regression` · Bill `cdca3f2` (reconciliation is work in progress) · Status: Verified
+1. Run Reconciliation for the month. 2. Run Sales by Item.
+**Expect:** reconciliation runs with no NaN, undefined or error; Sales by Item has a tax column. Totals are not asserted while the report is work in progress.

@@ -79,7 +79,7 @@ export function PayrollTab() {
   const loadEntries = async (periodId: string) => {
     setEntriesLoading(true);
     try {
-      const data = await getPayrollEntries(periodId);
+      const data = await getPayrollEntries(periodId, businessId);
       setEntries(data || []);
     } catch { setEntries([]); }
     finally { setEntriesLoading(false); }
@@ -124,7 +124,7 @@ export function PayrollTab() {
   useEffect(() => {
     if (!selectedHistoryId) { setHistoryEntries([]); return; }
     setHistoryEntriesLoading(true);
-    getPayrollEntries(selectedHistoryId).then(setHistoryEntries).catch(() => setHistoryEntries([])).finally(() => setHistoryEntriesLoading(false));
+    getPayrollEntries(selectedHistoryId, businessId).then(setHistoryEntries).catch(() => setHistoryEntries([])).finally(() => setHistoryEntriesLoading(false));
   }, [selectedHistoryId]);
 
   // Tax profiles

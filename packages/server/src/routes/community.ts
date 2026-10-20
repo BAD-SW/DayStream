@@ -62,7 +62,7 @@ communityRouter.post('/challenges/:id/join', async (req: Request, res: Response)
   try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { error(res, 'No customer profile for this login', 'NO_CUSTOMER_PROFILE', 403); return; } const p = await challengeService.joinChallenge(req.params.id, customerId, req.body.goal_target || 10); success(res, p, undefined, 201); } catch (e: any) { if (e?.code === '23505') { error(res, 'You have already joined this challenge', 'ALREADY_JOINED', 409); return; } console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.get('/challenges/:id/leaderboard', async (req: Request, res: Response) => {
-  try { success(res, await challengeService.getChallengeLeaderboard(req.params.id)); } catch (e: any) { console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const a = req as AuthenticatedRequest; success(res, await challengeService.getChallengeLeaderboard(a.tenantId, req.params.id)); } catch (e: any) { console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.get('/challenges/my', async (req: Request, res: Response) => {
   try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { success(res, []); return; } success(res, await challengeService.getMyActiveChallenges(a.tenantId, customerId)); } catch (e: any) { console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }

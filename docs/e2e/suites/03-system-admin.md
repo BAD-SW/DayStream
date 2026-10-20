@@ -105,3 +105,9 @@ Persona: `system@daystream.test`. Covers specs 03 (tenants, configuration, featu
 1. `GET /api/v1/themes`; apply a different theme through the UI if a theme gallery exists (otherwise through the system-theme setting in Configuration); reload; restore.
 2. Try to delete a built-in theme.
 **Expect:** the applied theme changes the UI tokens after reload and is restored; built-in themes cannot be deleted.
+
+### SYS-18 · Platform email settings (SMTP in the database)
+`P1` `regression` · Bill `70390ca` (queue-driven email engine) · As: system, owner · Status: Verified
+1. Configuration → Email: open the settings. 2. As a business owner, call the same settings. 3. **Test connection** without a host.
+**Expect:** the settings load for the platform admin without showing the password; the business owner is refused; a test without a host is refused with a clear message. A saved change applies without restarting the server.
+**Not scripted:** a real send (local SMTP is Ethereal; no real address is ever used).

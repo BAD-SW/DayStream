@@ -85,14 +85,16 @@ export async function updateProgress(challengeId: string, customerId: string, in
 /**
  * Get leaderboard for a challenge (ordered by progress descending).
  */
-export async function getChallengeLeaderboard(challengeId: string) {
+export async function getChallengeLeaderboard(tenantId: string, challengeId: string) {
+  // Scoped to the tenant: a challenge id alone must not expose another tenant's participants.
   const { rows } = await adminPool.query(
     `SELECT cp.*, c.first_name, c.last_name
      FROM eng_challenge_participants cp
+     JOIN eng_challenges ch ON ch.id = cp.challenge_id
      JOIN cus_customers c ON c.id = cp.customer_id
-     WHERE cp.challenge_id = $1
+     WHERE cp.challenge_id = $1 AND ch.tenant_id = $2
      ORDER BY cp.progress DESC, cp.joined_at ASC`,
-    [challengeId],
+    [challengeId, tenantId],
   );
   return rows;
 }
