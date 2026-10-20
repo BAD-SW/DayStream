@@ -127,7 +127,7 @@ communityRouter.post('/reviews', async (req: Request, res: Response) => {
   try { const a = req as AuthenticatedRequest; const customerId = await customerIdFor(a); if (!customerId) { error(res, 'No customer profile for this login', 'NO_CUSTOMER_PROFILE', 403); return; } const r = await reviewsService.submitReview(a.tenantId, { ...req.body, customerId }); success(res, r, undefined, 201); } catch (e: any) { if (e?.code === 'INVALID_REVIEW') { error(res, e.message, 'VALIDATION_ERROR', 400); return; } console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.get('/reviews/service/:sid', async (req: Request, res: Response) => {
-  try { success(res, await reviewsService.getServiceReviews(req.params.sid, req.query.status as string)); } catch (e: any) { console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
+  try { const a = req as AuthenticatedRequest; success(res, (await reviewsService.getServiceReviews(req.params.sid, req.query.status as string)).filter((r: any) => r.tenant_id === a.tenantId)); } catch (e: any) { console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
 });
 communityRouter.put('/reviews/:id/respond', requirePermission('community:*'), async (req: Request, res: Response) => {
   try { const a = req as AuthenticatedRequest; const r = await reviewsService.respondToReview(req.params.id, a.tenantId, req.body.response); success(res, r); } catch (e: any) { console.error('Failed', e?.message || e); error(res, 'Failed', 'INTERNAL_ERROR', 500); }
