@@ -109,7 +109,7 @@ export const paymentsReceivedReport: ReportDefinition = {
       WHERE t.business_id = $1
         AND t.status = 'completed'
         AND t.order_id IS NULL
-        AND t.payment_method <> 'account_credit'
+        AND t.payment_method NOT IN ('account_credit', 'account_debit') -- credit and debit notes move the account balance, not money (D-52)
         AND t.created_at::date BETWEEN $2::date AND $3::date
 
       ORDER BY sort_ts DESC

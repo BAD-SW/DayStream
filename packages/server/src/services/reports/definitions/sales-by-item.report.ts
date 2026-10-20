@@ -23,6 +23,12 @@ import { ReportDefinition } from '../types';
  * total and to the Reconciliation report's tax-inclusive Sales. The separate Tax
  * column lets an owner derive the pre-tax figure (Net − Tax) if they want it.
  *
+ * Refunds (David, D-44): a sale stays on its own date at full value, also after
+ * a refund; each refunded line is its own negative row (Entry "Refund") on the
+ * day of the refund, from pay_order_refund_lines:
+ *   Refunds = −revenue refunded, Tax = −tax refunded, Net = −amount refunded.
+ * So Gross is what was sold, Refunds what was given back, Net what was kept.
+ *
  * Uses adminPool scoped by business_id, matching the other financial reports.
  */
 export const salesByItemReport: ReportDefinition = {
@@ -33,10 +39,12 @@ export const salesByItemReport: ReportDefinition = {
     { key: 'order_number', header: 'Order', type: 'text', filterable: true, link: { to: 'order', idKey: 'order_id' } },
     { key: 'item', header: 'Item', type: 'text', filterable: true, groupable: true },
     { key: 'item_type', header: 'Type', type: 'text', filterable: true, groupable: true },
+    { key: 'entry', header: 'Entry', type: 'text', filterable: true, groupable: true },
     { key: 'quantity', header: 'Qty', type: 'number', total: true },
     { key: 'gross', header: 'Gross', type: 'currency', total: true },
     { key: 'discount', header: 'Discount', type: 'currency', total: true },
     { key: 'tax', header: 'Tax', type: 'currency', total: true },
+    { key: 'refunds', header: 'Refunds', type: 'currency', total: true },
     { key: 'net', header: 'Net', type: 'currency', total: true },
   ],
   run: async (ctx) => {
@@ -50,17 +58,45 @@ export const salesByItemReport: ReportDefinition = {
                 ELSE oi.item_name
               END AS item,
               INITCAP(oi.item_type) AS item_type,
+              'Sale' AS entry,
               oi.quantity,
               (oi.unit_price * oi.quantity)::int AS gross,
               oi.discount_amount::int AS discount,
               oi.tax_amount::int AS tax,
+              0 AS refunds,
               (oi.unit_price * oi.quantity - oi.discount_amount + oi.tax_amount)::int AS net,
               o.completed_at AS sort_ts
          FROM fin_order_items oi
          JOIN fin_orders o ON o.id = oi.order_id
         WHERE o.business_id = $1
-          AND o.status = 'completed'
+          AND o.status IN ('completed', 'partially_refunded', 'refunded')
           AND o.completed_at::date BETWEEN $2::date AND $3::date
+
+        UNION ALL
+
+        -- Refunded lines, on the day of the refund.
+        SELECT rl.created_at::date AS entry_date,
+               o.order_number,
+               o.id AS order_id,
+               CASE
+                 WHEN oi.variant_name IS NOT NULL AND oi.variant_name <> ''
+                   THEN oi.item_name || ' — ' || oi.variant_name
+                 ELSE oi.item_name
+               END AS item,
+               INITCAP(oi.item_type) AS item_type,
+               'Refund' AS entry,
+               -rl.quantity AS quantity,
+               0 AS gross,
+               0 AS discount,
+               -rl.tax_cents AS tax,
+               -rl.revenue_cents AS refunds,
+               -rl.amount_cents AS net,
+               rl.created_at AS sort_ts
+          FROM pay_order_refund_lines rl
+          JOIN fin_order_items oi ON oi.id = rl.order_item_id
+          JOIN fin_orders o ON o.id = rl.order_id
+         WHERE rl.business_id = $1
+           AND rl.created_at::date BETWEEN $2::date AND $3::date
 
         UNION ALL
 
@@ -73,10 +109,12 @@ export const salesByItemReport: ReportDefinition = {
                NULL::uuid AS order_id,
                COALESCE(NULLIF(t.description, ''), 'Membership renewal') AS item,
                'Membership' AS item_type,
+               'Sale' AS entry,
                1 AS quantity,
                t.amount::int AS gross,
                0 AS discount,
                0 AS tax,
+               0 AS refunds,
                t.amount::int AS net,
                t.created_at AS sort_ts
           FROM pay_transactions t

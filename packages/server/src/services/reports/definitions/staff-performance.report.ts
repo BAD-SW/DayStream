@@ -70,21 +70,29 @@ export const staffPerformanceReport: ReportDefinition = {
        sales AS (
          SELECT oi.credited_to AS staff_id,
                 COALESCE(SUM(
-                  CASE WHEN oi.item_type IN ('service', 'product')
-                       THEN oi.unit_price * oi.quantity - oi.discount_amount
-                       ELSE 0 END
+                  CASE WHEN oi.item_type IN ('service', 'product') THEN oi.amount ELSE 0 END
                 ), 0)::int AS product_revenue,
                 COALESCE(SUM(
-                  CASE WHEN oi.item_type = 'no_show_fee'
-                       THEN oi.unit_price * oi.quantity - oi.discount_amount
-                       ELSE 0 END
+                  CASE WHEN oi.item_type = 'no_show_fee' THEN oi.amount ELSE 0 END
                 ), 0)::int AS no_show_fees
-           FROM fin_order_items oi
-           JOIN fin_orders o ON o.id = oi.order_id
-          WHERE o.business_id = $1
-            AND o.status = 'completed'
-            AND oi.credited_to IS NOT NULL
-            AND o.completed_at::date BETWEEN $2::date AND $3::date
+           FROM (
+             -- Sold lines on the day of the sale, at full value (also when refunded later)...
+             SELECT oi.credited_to, oi.item_type,
+                    oi.unit_price * oi.quantity - oi.discount_amount AS amount
+               FROM fin_order_items oi
+               JOIN fin_orders o ON o.id = oi.order_id
+              WHERE o.business_id = $1
+                AND o.status IN ('completed', 'partially_refunded', 'refunded')
+                AND o.completed_at::date BETWEEN $2::date AND $3::date
+             UNION ALL
+             -- ...less the refunded lines (pre-tax) on the day of the refund (D-44).
+             SELECT oi.credited_to, oi.item_type, -rl.revenue_cents
+               FROM pay_order_refund_lines rl
+               JOIN fin_order_items oi ON oi.id = rl.order_item_id
+              WHERE rl.business_id = $1
+                AND rl.created_at::date BETWEEN $2::date AND $3::date
+           ) oi
+          WHERE oi.credited_to IS NOT NULL
           GROUP BY oi.credited_to
        )
        SELECT TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS staff,

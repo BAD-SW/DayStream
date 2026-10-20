@@ -31,6 +31,27 @@ What was not cleaned up, if anything.
 
 ## Runs
 
+## Run 20261020-3 — refunds in the sales reports (D-44, option A) and the Timeline Messages filter
+- Commit at start: `0572811` · Migrations at: 156 (local only) · Processor mode: mock for the E2E tenant
+- Scope: suites 08 (`rprof`, CUS-29 to CUS-38), 10 (`r10`), 12 (`r12` and the new runner `rrefund`, REP-10) and Bill's checks (`rbill`), on the data of run 20261020-2
+- Unit tests: server 975 of 975 (1 new: the Timeline Messages filter). Type check: server 0, client 30 (unchanged baseline)
+- Result: every executed script passes after the fix and the correction below. The report screens were not opened in the browser in this run (the API results were checked); the sign-in form did not take typed text in the automation browser
+
+### Defects
+| ID | Severity | What | Fix |
+|---|---|---|---|
+| D-44 | Medium | (run 20261020-1) Sales reports dropped a sale entirely once any line was refunded | Option A: the sale stays on its own day at full value; each refunded line is a negative row on the day of the refund (Sales by Item, Sales by Staff, Tax Summary, Revenue, Reconciliation, Discounts & Promotions, Staff Performance). Commissions still open (KI-17) |
+| D-52 | Medium | Payments Received and Reconciliation counted a debit note (method `account_debit`) as a negative payment with no type; credit notes were already left out | Debit notes are left out like credit notes: they move the account balance, not money |
+
+### Script corrections made after this run
+| Script | What changed and why |
+|---|---|
+| REP-04 | "Payments outside a sale" counted every non-charge row as money given back, so a debit note made by Bill's checks turned it €10 short; it now counts only payments and refunds |
+| CUS-31 | Messages is no longer empty: it is compared with the sent rows of `apt_notification_queue` and `mkt_campaign_recipients`, one line per kind, channel and day |
+
+### Leftover test data
+Four REP-10 orders (ORD-2026-0021, 0022, 0034 and 0036, one unit refunded each) in the E2E business of run 20261020-2.
+
 ## Run 20261020-2 — full run after the customer profile (step B again, of the B, A, B plan)
 - Commit at start: `88b8835` (profile, THE-16) · Migrations at: 156 (local only; not yet on Neon) · Processor mode: mock for the E2E tenant, Stripe test for the seed business
 - Method: as run 20261020-1, plus the runner `rprof` (CUS-29 to CUS-38). Fresh data in tenant `E2E 20261020-2 SysTenant B`

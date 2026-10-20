@@ -68,12 +68,19 @@ export const reconciliationReport: ReportDefinition = {
       -- SALES: order line items (excluding gift-card lines) + membership renewals.
       sales AS (
         SELECT d, SUM(amount)::int AS amount FROM (
-          -- (a) ALL completed-order lines (no exclusions), tax-inclusive
+          -- (a) ALL sold order lines (no exclusions), tax-inclusive; a sale stays on
+          --     its own day after a refund (D-44)...
           SELECT o.completed_at::date AS d, oi.total_price AS amount
             FROM fin_order_items oi
             JOIN fin_orders o ON o.id = oi.order_id
-           WHERE o.business_id = $1 AND o.status = 'completed'
+           WHERE o.business_id = $1 AND o.status IN ('completed', 'partially_refunded', 'refunded')
              AND o.completed_at::date BETWEEN $2::date AND $3::date
+          UNION ALL
+          -- ...and each refunded line is taken off on the day of the refund
+          SELECT rl.created_at::date AS d, -rl.amount_cents AS amount
+            FROM pay_order_refund_lines rl
+           WHERE rl.business_id = $1
+             AND rl.created_at::date BETWEEN $2::date AND $3::date
           UNION ALL
           -- (b) membership renewal charges (enrollment-linked, order-less)
           SELECT t.created_at::date AS d, t.amount AS amount
@@ -84,15 +91,23 @@ export const reconciliationReport: ReportDefinition = {
         ) s GROUP BY d
       ),
       -- PAYMENTS: order payments + non-order ledger payments, net of refunds,
-      -- excluding gift_card / other / account_credit methods.
+      -- excluding gift_card / other / account_credit / account_debit methods (credit and debit notes are no payment, D-52).
       payments AS (
         SELECT d, SUM(amount)::int AS amount FROM (
           -- (a) completed order payments (one row per order), excluded methods out
           SELECT o.completed_at::date AS d, o.total_amount AS amount
             FROM fin_orders o
-           WHERE o.business_id = $1 AND o.status = 'completed'
+           WHERE o.business_id = $1 AND o.status IN ('completed', 'partially_refunded', 'refunded')
              AND o.payment_method NOT IN ('gift_card', 'other', 'account_credit')
              AND o.completed_at::date BETWEEN $2::date AND $3::date
+          UNION ALL
+          -- refunds of order payments, on the day of the refund
+          SELECT t.created_at::date AS d, -t.amount AS amount
+            FROM pay_transactions t
+           WHERE t.business_id = $1 AND t.status = 'completed' AND t.type = 'refund'
+             AND t.order_id IS NOT NULL
+             AND t.payment_method NOT IN ('gift_card', 'other', 'account_credit', 'account_debit')
+             AND t.created_at::date BETWEEN $2::date AND $3::date
           UNION ALL
           -- (b) completed non-order ledger entries (charges +, refunds −)
           SELECT t.created_at::date AS d,
@@ -100,7 +115,7 @@ export const reconciliationReport: ReportDefinition = {
             FROM pay_transactions t
            WHERE t.business_id = $1 AND t.status = 'completed'
              AND t.order_id IS NULL
-             AND t.payment_method NOT IN ('gift_card', 'other', 'account_credit')
+             AND t.payment_method NOT IN ('gift_card', 'other', 'account_credit', 'account_debit')
              AND t.created_at::date BETWEEN $2::date AND $3::date
         ) p GROUP BY d
       ),
@@ -121,7 +136,7 @@ export const reconciliationReport: ReportDefinition = {
       activity_dates AS (
         SELECT o.completed_at::date AS d
           FROM fin_orders o
-         WHERE o.business_id = $1 AND o.status = 'completed'
+         WHERE o.business_id = $1 AND o.status IN ('completed', 'partially_refunded', 'refunded')
            AND o.completed_at::date BETWEEN $2::date AND $3::date
         UNION
         SELECT t.created_at::date AS d

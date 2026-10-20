@@ -51,4 +51,11 @@ Method: for each figure, take a reading before the run's data is created (or use
 ### REP-09 · Reconciliation report and sales tax
 `P2` `regression` · Bill `cdca3f2` (reconciliation is work in progress) · Status: Verified
 1. Run Reconciliation for the month. 2. Run Sales by Item.
-**Expect:** reconciliation runs with no NaN, undefined or error; Sales by Item has a tax column. Totals are not asserted while the report is work in progress.
+**Expect:** reconciliation runs with no NaN, undefined or error; Sales by Item has a tax column. Totals are not asserted while the report is work in progress, except that Sales equals the Sales by Item Net total (REP-10) and Payments leaves out credit and debit notes (D-52).
+
+### REP-10 · Refunds in the sales reports
+`P0` `regression` · D-44, option A (David, 2026-10-20) · As: owner · Status: Verified
+1. Sell two units of a product with a discount and tax, paid in cash. 2. From the order, refund one unit. 3. Run, for today: Sales by Item, Sales by Staff, Tax Summary, Revenue, Reconciliation, Discounts & Promotions, Staff Performance.
+**Expect:** the sale stays on its own day at full value (Entry "Sale", quantity 2) although the order is now partly refunded; the refund is its own row (Entry "Refund") on the day of the refund: quantity −1, Refunds = −the revenue refunded, Tax = −the tax refunded, Net = −the amount refunded. Sales by Staff takes the refund (pre-tax) off the staff member credited with the sale; Tax Summary has the tax given back as a negative row; Revenue has the refunded service or product line as a negative row; Reconciliation's Sales still equals the Sales by Item Net total; Discounts still lists the discounted line of the refunded sale; Staff Performance's product revenue is sales less refunds.
+**Cross-check:** refund rows and totals agree with `pay_order_refund_lines` for the day.
+**Not covered:** the Commissions report (and the commission paid through payroll) still leaves out refunded sales; how a refund affects commission is to be decided.
