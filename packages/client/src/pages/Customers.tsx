@@ -28,7 +28,7 @@ const OPTIONAL_COLUMNS: Array<{ key: string; label: string }> = [
   { key: 'phone', label: 'Phone' },
   { key: 'lifecycle_stage', label: 'Stage' },
   { key: 'source', label: 'Source' },
-  { key: 'owner_name', label: 'Owner' },
+  { key: 'owner_name', label: 'Staff member' },
   { key: 'last_activity_at', label: 'Last activity' },
   { key: 'created_at', label: 'Added' },
 ];
@@ -36,7 +36,7 @@ const OPTIONAL_COLUMNS: Array<{ key: string; label: string }> = [
 const BULK_ACTIONS: Array<{ id: customersApi.BulkAction; label: string }> = [
   { id: 'add_tag', label: 'Add a tag' },
   { id: 'remove_tag', label: 'Remove a tag' },
-  { id: 'assign_owner', label: 'Assign an owner' },
+  { id: 'assign_owner', label: 'Assign a staff member' },
   { id: 'change_stage', label: 'Change stage' },
   { id: 'add_to_list', label: 'Add to a fixed list' },
   { id: 'archive', label: 'Archive' },
@@ -316,7 +316,7 @@ export function Customers() {
       key: 'source', header: 'Source', sortable: true,
       render: (val: string, row: Customer) => <span title={personSourceLabel(val, row.source_detail)}>{personSourceLabel(val)}</span>,
     },
-    { key: 'owner_name', header: 'Owner', sortable: true, render: (val: string | null) => val || '—' },
+    { key: 'owner_name', header: 'Staff member', sortable: true, render: (val: string | null) => val || '—' },
     {
       key: 'last_activity_at', header: 'Last activity', sortable: true,
       render: (val: string | null) => <span title={val ? new Date(val).toLocaleString() : undefined}>{relativeDay(val)}</span>,
@@ -357,7 +357,7 @@ export function Customers() {
       </select>
     ),
     owner_name: (
-      <select style={styles.filterInput} aria-label="Filter by owner" value={ownerFilter} onChange={(e) => { setOwnerFilter(e.target.value); setPage(1); }}>
+      <select style={styles.filterInput} aria-label="Filter by staff member" value={ownerFilter} onChange={(e) => { setOwnerFilter(e.target.value); setPage(1); }}>
         <option value="">Anyone</option>
         <option value="me">Mine</option>
         <option value="none">Unassigned</option>
@@ -475,8 +475,8 @@ export function Customers() {
                 </select>
               )}
               {bulkAction === 'assign_owner' && (
-                <select style={styles.bulkSelect} aria-label="Owner" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
-                  <option value="">Choose an owner…</option>
+                <select style={styles.bulkSelect} aria-label="Staff member" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
+                  <option value="">Choose a staff member…</option>
                   <option value="none">Unassigned</option>
                   {owners.map((o) => <option key={o.id} value={o.id}>{o.first_name} {o.last_name}</option>)}
                 </select>

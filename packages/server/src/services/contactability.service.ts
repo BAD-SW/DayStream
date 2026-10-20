@@ -10,7 +10,7 @@ export type Channel = 'email' | 'sms' | 'whatsapp' | 'in_app' | 'push';
 export type Purpose = 'marketing' | 'transactional';
 export type RefusalReason =
   | 'no_consent' | 'no_contact_point' | 'archived' | 'merged' | 'anonymized'
-  | 'undeliverable' | 'reminders_off' | 'not_found';
+  | 'undeliverable' | 'reminders_off' | 'transactional_off' | 'not_found';
 
 export const REFUSAL_LABELS: Record<RefusalReason, string> = {
   no_consent: 'Has not agreed to marketing on this channel',
@@ -20,6 +20,7 @@ export const REFUSAL_LABELS: Record<RefusalReason, string> = {
   anonymized: 'Anonymised',
   undeliverable: 'Address marked as undeliverable',
   reminders_off: 'Reminders switched off',
+  transactional_off: 'Transactional emails switched off',
   not_found: 'Person not found',
 };
 
@@ -54,6 +55,7 @@ const DECISION_SQL = `
            WHEN $2::text IN ('sms', 'whatsapp') AND c.phone_deliverability <> 'ok' THEN 'undeliverable'
            WHEN $3::text = 'marketing' AND COALESCE(m.opted_in, false) = false THEN 'no_consent'
            WHEN $3::text = 'reminders' AND COALESCE(r.opted_in, true) = false THEN 'reminders_off'
+           WHEN $3::text = 'transactional' AND $2::text = 'email' AND COALESCE(t.opted_in, true) = false THEN 'transactional_off'
            ELSE NULL
          END AS reason
     FROM cus_customers c
@@ -61,12 +63,14 @@ const DECISION_SQL = `
            ON m.customer_id = c.id AND m.channel = $2::text AND m.category = 'marketing'
     LEFT JOIN mkt_communication_preferences r
            ON r.customer_id = c.id AND r.channel = $2::text AND r.category = 'reminders'
+    LEFT JOIN mkt_communication_preferences t
+           ON t.customer_id = c.id AND t.channel = $2::text AND t.category = 'transactional'
    WHERE c.business_id = $1`;
 
 /**
- * `purpose` 'transactional' is always allowed by consent (a booking confirmation, a reply to
- * the person's own message). Pass `reminder: true` for booking reminders, which the person
- * can switch off.
+ * `purpose` 'transactional' (a booking confirmation, a cancellation, a receipt) is allowed unless
+ * the person switched transactional emails off; that switch applies to email only. Pass
+ * `reminder: true` for booking reminders, which have their own switch.
  */
 function consentMode(purpose: Purpose, reminder?: boolean): string {
   if (purpose === 'marketing') return 'marketing';

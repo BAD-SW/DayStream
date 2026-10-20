@@ -5,6 +5,7 @@ import { AdminLayout } from './components/AdminLayout';
 import { Login } from './pages/Login';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
+import { PersonalDataDownload } from './pages/PersonalDataDownload';
 import { Profile } from './pages/Profile';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { Tenants } from './pages/Tenants';
@@ -103,6 +104,7 @@ export function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/personal-data" element={<PersonalDataDownload />} />
 
         {/* Embeddable booking widget (spec 38) — standalone, no admin chrome, no auth gate */}
         <Route path="/booking-widget" element={<BookingWidget />} />

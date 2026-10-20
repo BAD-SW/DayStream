@@ -2,7 +2,7 @@
 
 **Owner:** Claude (maintained in every working session) · **Created:** 2026-10-12
 **Synced through commit:** `d5c57bf` (fix(email): populate Appointment template customer + appointment tokens): accounting hardening, bank-draw reconciliation, and billing UX)
-**Script count:** 306 across 18 suites · **Verified by execution:** 227 · **Failing:** 0 · **Blocked:** 32 (specs 47–48 not built, sequence builder, API keys) · **Draft (not yet run, or only partly):** 39: run 20261012-6 covered suites 00 and 02 to 16; the journeys (suite 01) were not run as sequences, and the remaining drafts are mostly on-screen checks
+**Script count:** 316 across 18 suites · **Verified by execution:** 227 · **Failing:** 0 · **Blocked:** 32 (specs 47–48 not built, sequence builder, API keys) · **Draft (not yet run, or only partly):** 39: run 20261012-6 covered suites 00 and 02 to 16; the journeys (suite 01) were not run as sequences, and the remaining drafts are mostly on-screen checks
 
 This is the living end-to-end (E2E) regression book for DayStream. It exists for two goals:
 
@@ -39,7 +39,7 @@ Every run ends with a report in chat and a new entry in [RUN-LOG.md](./RUN-LOG.m
 | 05 | [Billing layers A & B](./suites/05-billing-layers.md) | BILL | 16 | 10 (0, A, B) |
 | 06 | [Business setup, schedule & time clock](./suites/06-business-setup.md) | SET | 16 | 12, 13 |
 | 07 | [Offerings & pricing](./suites/07-offerings.md) | OFF | 15 | 06, 08, 09, 28 |
-| 08 | [People (CRM)](./suites/08-customers.md) | CUS | 28 | 05, 46 |
+| 08 | [People (CRM)](./suites/08-customers.md) | CUS | 38 | 05, 46 |
 | 09 | [Bookings, calendar & check-in](./suites/09-bookings-calendar.md) | BKG, CHK | 25 | 07, 15, 32, 33, 34 |
 | 10 | [Checkout & customer payments](./suites/10-checkout-payments.md) | PAY | 24 | 10 (C), 26, 28 |
 | 11 | [Accounting & payroll](./suites/11-accounting-payroll.md) | ACC | 14 | 11 |
@@ -185,6 +185,7 @@ How scripts are driven: UI steps through the browser, as the named persona; `Cro
 | 37 theme-setup | 03 | Themes API exists (`/v1/themes`); one script, to grow |
 | 38 embeddable-booking-widget | 14 | |
 | 39–45 | — | Placeholders ("to be defined"). Scripts are added when requirements land |
+| THE-16 customer profile (Linear; no spec folder) | 08, 16 | Header and facts, tab order, Timeline, tasks, documents, photo, password reset, personal data, transactional emails switch: CUS-09, CUS-10, CUS-25, CUS-29 to CUS-38 |
 | 46 people-foundation | 08, 01 | Requirements, design and tasks written 2026-10-12; not built. CUS-17 to CUS-28, JNY-15 |
 | 47 inbox | 17, 01 | Draft spec; not built. INB-01 to INB-15 run on the mock message adapter. Adds the Front Desk role (INB-13) |
 | 48 marketing-module | 13, 01 | Draft spec; not built. MKT-09 to MKT-20 |
@@ -221,7 +222,7 @@ The change is not done until the scripts that cover it are added or updated, and
 | `platform-billing*`, `tenant-billing*`, `payments/*` adapters, `processor-config*`, `payment-methods*`, `jobs/*` | 05, 10, JNY-09, JNY-10 |
 | `routes/staff.ts`, `resources.ts`, `locations.ts`, `schedule.ts`, `clock.ts` and their pages | 06, 09 |
 | `routes/services.ts`, `merchandise.ts`, `packages.ts`, `promotions.ts`, `memberships.ts`, `pricing.ts` and their pages | 07, 09, 10 |
-| `routes/customers.ts`, `segments.ts`, `customer-portal.ts`, `pages/Customer*`, `person-identity*`, `contactability*`, `consent*`, `customer-duplicates*` | 08, 10, 13, 17, JNY-15 |
+| `routes/customers.ts`, `customer-profile.ts`, `segments.ts`, `customer-portal.ts`, `pages/Customer*`, `CustomerProfileParts`, `PersonalDataDownload`, `person-identity*`, `contactability*`, `consent*`, `customer-duplicates*` | 08, 10, 13, 17, JNY-15 |
 | role seeds (`seed.ts`, `seed-config.sql`, `tenant.service.ts` roles, role migrations) | 02, 17 (INB-13), and the role table in section 4 |
 | `routes/inbox.ts`, `message.service*`, `conversation*`, channel adapters, `pages/Inbox`, `components/inbox/*` | 17, 08, 13, JNY-15 |
 | `routes/leads.ts`, `lead.service*`, `audience*`, `marketing-funnels*`, `pages/marketing/*` | 13, 08, JNY-15 |

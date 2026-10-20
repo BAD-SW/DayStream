@@ -18,6 +18,10 @@ import type { PayTransaction, Invoice, PaymentMethod } from '../api/payments';
 import { formatCurrency } from '../utils/currency';
 import { formatDateOnly } from '../utils/date';
 import { lifecycleStageLabel, personSourceLabel } from '@daystream/shared';
+import {
+  ProfilePhoto, VisitsCreditsCard, CommunicationCard, ReferralsCard, ReviewsCard,
+  MessagesTab, TasksTab, DocumentsTab, AssignStaffDialog, PasswordResetDialog, PersonalDataDialog,
+} from './CustomerProfileParts';
 
 const LIFECYCLE_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   lead: 'neutral', trial: 'info', active: 'success', at_risk: 'warning', churned: 'error', winback: 'info',
@@ -30,6 +34,11 @@ function formatWhen(value?: string | null): string {
   return value ? new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 }
 
+/** The day only, so the facts fit on one line; the time is in the tooltip. */
+function formatDay(value?: string | null): string {
+  return value ? new Date(value).toLocaleDateString(undefined, { dateStyle: 'medium' }) : '—';
+}
+
 export function CustomerDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -39,21 +48,27 @@ export function CustomerDetail() {
   const [mergeCount, setMergeCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState<any[]>([]);
-  const [activities, setActivities] = useState<any[]>([]);
   const [preferences, setPreferences] = useState<any>(null);
   const [tags, setTags] = useState<any[]>([]);
+  // Staff members who can look after a person or be given a task.
+  const [staff, setStaff] = useState<Array<{ id: string; first_name: string; last_name: string }>>([]);
+  const [tab, setTab] = useState('overview');
+  const [dialog, setDialog] = useState<'payment' | 'assign' | 'reset' | 'data' | null>(null);
+  // Bumped by the header's Add task button (opens the form) and after changes (reloads the Timeline).
+  const [addTaskSignal, setAddTaskSignal] = useState(0);
+  const [timelineVersion, setTimelineVersion] = useState(0);
 
   const businessId = localStorage.getItem('business_id') || '';
 
   useEffect(() => {
     if (!id || !businessId) return;
     setLoading(true);
+    setTab('overview');
     Promise.all([
       customersApi.getCustomer(id, businessId),
       customersApi.getNotes(id, businessId).catch(() => []),
-      customersApi.getActivities(id, businessId).then((r) => r.data).catch(() => []),
       customersApi.getPreferences(id, businessId).catch(() => null),
-    ]).then(([cust, n, acts, prefs]) => {
+    ]).then(([cust, n, prefs]) => {
       // An old link to a record that was merged: go to the person it was merged into.
       if (cust?.status === 'merged' && cust.merged_into_id) {
         navigate(`/customers/${cust.merged_into_id}`, { replace: true });
@@ -61,11 +76,15 @@ export function CustomerDetail() {
       }
       setCustomer(cust);
       setNotes(n);
-      setActivities(acts);
       setPreferences(prefs);
       setTags((cust as any)?.tags || []);
     }).catch(() => setCustomer(null)).finally(() => setLoading(false));
   }, [id, businessId]);
+
+  useEffect(() => {
+    if (!businessId) return;
+    customersApi.getOwners(businessId).then(setStaff).catch(() => setStaff([]));
+  }, [businessId]);
 
   if (loading) return <div style={styles.loading}>Loading...</div>;
   if (!customer) return <div style={styles.loading}>Customer not found</div>;
@@ -84,57 +103,131 @@ export function CustomerDetail() {
   };
 
   const displayName = customer.display_name || `${customer.first_name} ${customer.last_name}`.trim() || customer.email || customer.phone || 'Unknown';
+  const initials = `${(customer.first_name || displayName)[0]?.toUpperCase() || ''}${customer.last_name?.[0]?.toUpperCase() || ''}`;
+  // Reload the person (and the Timeline) after an action changed something on them.
+  const refresh = () => {
+    customersApi.getCustomer(customer.id, businessId).then(setCustomer).catch(() => {});
+    setTimelineVersion((n) => n + 1);
+  };
+
+  const handleArchive = async () => {
+    if (!confirm('Archive this customer? They will be hidden from active lists.')) return;
+    try { setCustomer(await customersApi.updateCustomer(customer.id, businessId, { status: 'archived' })); setTimelineVersion((n) => n + 1); }
+    catch { alert('Failed to archive'); }
+  };
+  const handleReactivate = async () => {
+    try { setCustomer(await customersApi.updateCustomer(customer.id, businessId, { status: 'active' })); setTimelineVersion((n) => n + 1); }
+    catch { alert('Failed to reactivate'); }
+  };
+  const handleAnonymize = async () => {
+    const confirmed = confirm(
+      '⚠️ GDPR Data Anonymization\n\n' +
+      'This will PERMANENTLY and IRREVERSIBLY anonymize all personal data for this customer including:\n' +
+      '• Name, email, phone, date of birth\n' +
+      '• Notes and activity history\n' +
+      '• All identifiable information\n\n' +
+      'This action cannot be undone. Are you sure you want to proceed?'
+    );
+    if (!confirmed) return;
+    const doubleConfirm = confirm(
+      'Final confirmation: Type OK to permanently anonymize this customer\'s data.\n\n' +
+      'Customer: ' + customer.first_name + ' ' + customer.last_name + '\n' +
+      'This is IRREVERSIBLE.'
+    );
+    if (!doubleConfirm) return;
+    try {
+      await customersApi.anonymizeCustomer(customer.id, businessId);
+      alert('Customer data has been anonymized successfully.');
+      window.location.reload();
+    } catch {
+      alert('Failed to anonymize customer data.');
+    }
+  };
+
+  // Header actions: Contact opens Messages, Add task opens the task form; the rest are in More.
+  const moreItems = [
+    { id: 'order', label: 'New order', onClick: () => navigate(`/checkout?new=true&customer=${customer.id}`) },
+    { id: 'payment', label: 'Record payment', onClick: () => setDialog('payment') },
+    { id: 'd1', label: '', divider: true },
+    { id: 'assign', label: 'Assign staff member', onClick: () => setDialog('assign') },
+    { id: 'reset', label: 'Request password reset', disabled: !customer.has_account, onClick: () => setDialog('reset') },
+    { id: 'data', label: 'Send personal data (GDPR)', disabled: !customer.email, onClick: () => setDialog('data') },
+    { id: 'd2', label: '', divider: true },
+    customer.status === 'archived'
+      ? { id: 'reactivate', label: 'Reactivate', onClick: handleReactivate }
+      : { id: 'archive', label: 'Archive', danger: true, disabled: customer.status !== 'active', onClick: handleArchive },
+    { id: 'anonymize', label: 'GDPR anonymise', danger: true, onClick: handleAnonymize },
+  ];
+
+  const facts: Array<[string, string, string?]> = [
+    ['Source', personSourceLabel(customer.source, customer.source_detail)],
+    ['Staff member', customer.owner_name || 'Unassigned'],
+    ['Home location', customer.home_location_name || '—'],
+    ['Last activity', formatDay(customer.last_activity_at), formatWhen(customer.last_activity_at)],
+    ['Last visit', formatDay(customer.last_visit_at), formatWhen(customer.last_visit_at)],
+    ['Last login', customer.has_account ? formatDay(customer.last_login_at) : 'No account', customer.has_account ? formatWhen(customer.last_login_at) : undefined],
+    ['Known since', formatDay(customer.created_at), formatWhen(customer.created_at)],
+  ];
 
   return (
     <div style={styles.page}>
+      <TakePaymentModal open={dialog === 'payment'} onClose={() => { setDialog(null); setTimelineVersion((n) => n + 1); }} businessId={businessId} customerId={customer.id} />
+      <AssignStaffDialog open={dialog === 'assign'} onClose={() => setDialog(null)} customer={customer} businessId={businessId} staff={staff} onSaved={(c) => { setCustomer(c); setTimelineVersion((n) => n + 1); }} />
+      <PasswordResetDialog open={dialog === 'reset'} onClose={() => setDialog(null)} customer={customer} businessId={businessId} onSent={() => setTimelineVersion((n) => n + 1)} />
+      <PersonalDataDialog open={dialog === 'data'} onClose={() => setDialog(null)} customer={customer} businessId={businessId} onSent={() => setTimelineVersion((n) => n + 1)} />
+
       {/* Back button */}
       <button style={styles.back} onClick={() => navigate('/customers')}>← Back to People</button>
 
-      {/* Profile Header */}
+      {/* Profile header: who, the actions, and the facts on one line (THE-16) */}
       <div style={styles.profileHeader}>
-        <div style={styles.avatar}>
-          {(customer.first_name || displayName)[0]?.toUpperCase()}{customer.last_name?.[0]?.toUpperCase()}
-        </div>
-        <div style={styles.profileInfo}>
-          <h1 style={styles.name}>{displayName}</h1>
-          <span style={styles.refNum}>{customer.reference_number}</span>
-          <div style={styles.headerBadges}>
-            <Badge variant={LIFECYCLE_VARIANTS[customer.lifecycle_stage] || 'neutral'}>
-              {formatStage(customer.lifecycle_stage)}
-            </Badge>
-            {customer.incomplete && <Badge variant="warning">Incomplete</Badge>}
+        <div style={styles.headerTop}>
+          <ProfilePhoto customer={customer} businessId={businessId} initials={initials} onChanged={refresh} />
+          <div style={styles.profileInfo}>
+            <h1 style={styles.name}>{displayName}</h1>
+            <div style={styles.headerBadges}>
+              <span style={styles.refNum}>{customer.reference_number}</span>
+              <Badge variant={LIFECYCLE_VARIANTS[customer.lifecycle_stage] || 'neutral'}>
+                {formatStage(customer.lifecycle_stage)}
+              </Badge>
+              {/* The record's own status only when it is not the usual "active". */}
+              {customer.status !== 'active' && <Badge variant="neutral">{customer.status === 'anonymized' ? 'Anonymised' : customer.status === 'archived' ? 'Archived' : customer.status}</Badge>}
+              {customer.incomplete && <Badge variant="warning">Incomplete</Badge>}
+              <span style={styles.refNum}>In this stage since {formatDay(customer.lifecycle_changed_at)}</span>
+            </div>
+          </div>
+          <div style={styles.headerActions}>
+            <Button size="sm" onClick={() => setTab('messages')}>Contact</Button>
+            <Button size="sm" variant="secondary" onClick={() => { setTab('tasks'); setAddTaskSignal((n) => n + 1); }}>Add task</Button>
+            <Dropdown trigger={<Button size="sm" variant="secondary">More ▾</Button>} items={moreItems} />
           </div>
         </div>
-        <div style={styles.headerActions}>
-          <Badge variant={customer.status === 'active' ? 'success' : 'neutral'}>{customer.status}</Badge>
-          <span style={styles.joinedDate}>Known since {new Date(customer.created_at).toLocaleDateString()}</span>
-        </div>
+        <dl style={styles.factStrip}>
+          {facts.map(([label, value, title]) => (
+            <div key={label} style={styles.fact}><dt style={styles.factLabel}>{label}</dt><dd style={styles.factValue} title={title}>{value}</dd></div>
+          ))}
+        </dl>
       </div>
-
-      {/* Who this person is, at a glance (Phase 46) */}
-      <dl style={styles.factStrip}>
-        <div style={styles.fact}><dt style={styles.factLabel}>Source</dt><dd style={styles.factValue}>{personSourceLabel(customer.source, customer.source_detail)}</dd></div>
-        <div style={styles.fact}><dt style={styles.factLabel}>Owner</dt><dd style={styles.factValue}>{customer.owner_name || 'Unassigned'}</dd></div>
-        <div style={styles.fact}><dt style={styles.factLabel}>Last activity</dt><dd style={styles.factValue}>{formatWhen(customer.last_activity_at)}</dd></div>
-        <div style={styles.fact}><dt style={styles.factLabel}>Last visit</dt><dd style={styles.factValue}>{formatWhen(customer.last_visit_at)}</dd></div>
-        <div style={styles.fact}><dt style={styles.factLabel}>Last login</dt><dd style={styles.factValue}>{customer.has_account ? formatWhen(customer.last_login_at) : 'No account'}</dd></div>
-        <div style={styles.fact}><dt style={styles.factLabel}>In this stage since</dt><dd style={styles.factValue}>{customer.lifecycle_changed_at ? new Date(customer.lifecycle_changed_at).toLocaleDateString() : '—'}</dd></div>
-      </dl>
 
       <DuplicateBanner customer={customer} businessId={businessId} onMerged={(c) => {
         setCustomer(c);
         setMergeCount((n) => n + 1);
-        customersApi.getActivities(c.id, businessId).then((r) => setActivities(r.data)).catch(() => {});
+        setTimelineVersion((n) => n + 1);
       }} />
 
-      {/* Tabs */}
+      {/* Tabs (order agreed on THE-16) */}
       <Tabs
+        activeTab={tab}
+        onTabChange={setTab}
         items={[
-          { id: 'overview', label: 'Overview', content: <OverviewTab key={mergeCount} customer={customer} tags={tags} onUpdate={setCustomer} /> },
-          { id: 'notes', label: 'Notes', content: <NotesTab notes={notes} customerId={customer.id} businessId={businessId} onRefresh={(n) => setNotes(n)} /> },
+          { id: 'overview', label: 'Overview', content: <OverviewTab key={mergeCount} customer={customer} tags={tags} preferences={preferences} staff={staff} onUpdate={(c) => { setCustomer(c); setTimelineVersion((n) => n + 1); }} onOpenConsent={() => setTab('preferences')} /> },
+          { id: 'messages', label: 'Messages', content: <MessagesTab customer={customer} /> },
+          { id: 'timeline', label: 'Timeline', content: <TimelineTab key={timelineVersion} customerId={customer.id} businessId={businessId} /> },
           { id: 'billing', label: 'Billing', content: <BillingTab customerId={customer.id} businessId={businessId} /> },
+          { id: 'notes', label: 'Notes', content: <NotesTab notes={notes} customerId={customer.id} businessId={businessId} onRefresh={(n) => setNotes(n)} /> },
+          { id: 'tasks', label: 'Tasks', content: <TasksTab customer={customer} businessId={businessId} staff={staff} addSignal={addTaskSignal} /> },
+          { id: 'documents', label: 'Documents', content: <DocumentsTab customerId={customer.id} businessId={businessId} /> },
           { id: 'preferences', label: 'Consent', content: <PreferencesTab preferences={preferences} onChange={handlePreferenceChange} customerId={customer.id} businessId={businessId} /> },
-          { id: 'timeline', label: 'Timeline', content: <TimelineTab activities={activities} customerId={customer.id} businessId={businessId} /> },
         ]}
       />
     </div>
@@ -196,9 +289,12 @@ function dateOnly(value?: string | null): string {
   return Number.isNaN(t) ? '' : new Date(t + 12 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: any[]; onUpdate: (c: Customer) => void }) {
+function OverviewTab({ customer, tags, preferences, staff, onUpdate, onOpenConsent }: {
+  customer: Customer; tags: any[]; preferences: any; staff: Array<{ id: string; first_name: string; last_name: string }>;
+  onUpdate: (c: Customer) => void; onOpenConsent: () => void;
+}) {
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
+  const fromCustomer = () => ({
     first_name: customer.first_name,
     last_name: customer.last_name,
     email: customer.email || '',
@@ -209,30 +305,28 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
     country: customer.country || '',
     lifecycle_stage: customer.lifecycle_stage || 'lead',
     owner_user_id: customer.owner_user_id || '',
+    home_location_id: customer.home_location_id || '',
+    address_line: customer.address_line || '',
+    city: customer.city || '',
+    postal_code: customer.postal_code || '',
+    region: customer.region || '',
   });
-  const [owners, setOwners] = useState<Array<{ id: string; first_name: string; last_name: string }>>([]);
-  const [statusChanging, setStatusChanging] = useState(false);
-  const [anonymizing, setAnonymizing] = useState(false);
-  const [showPayment, setShowPayment] = useState(false);
+  const [form, setForm] = useState(fromCustomer);
+  const [locations, setLocations] = useState<Array<{ id: string; name: string }>>([]);
 
   const businessId = localStorage.getItem('business_id') || '';
 
+  // The home location is one of the business's own active locations.
   useEffect(() => {
     if (!businessId) return;
-    customersApi.getOwners(businessId).then(setOwners).catch(() => setOwners([]));
+    apiClient.get(`/v1/locations?business_id=${businessId}&status=active`)
+      .then((r) => setLocations((r.data.data || []).filter((l: any) => l.status === 'active' || !l.status)))
+      .catch(() => setLocations([]));
   }, [businessId]);
 
   // Detect if form has unsaved changes
-  const isDirty = form.first_name !== customer.first_name ||
-    form.last_name !== customer.last_name ||
-    form.email !== (customer.email || '') ||
-    form.owner_user_id !== (customer.owner_user_id || '') ||
-    form.phone !== (customer.phone || '') ||
-    form.date_of_birth !== dateOnly(customer.date_of_birth) ||
-    form.gender !== (customer.gender || '') ||
-    form.preferred_language !== (customer.preferred_language || 'en') ||
-    form.country !== (customer.country || '') ||
-    form.lifecycle_stage !== (customer.lifecycle_stage || 'lead');
+  const saved = fromCustomer();
+  const isDirty = (Object.keys(form) as Array<keyof typeof form>).some((k) => form[k] !== saved[k]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -243,89 +337,13 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
     finally { setSaving(false); }
   };
 
-  const handleDiscard = () => {
-    setForm({
-      first_name: customer.first_name,
-      last_name: customer.last_name,
-      email: customer.email || '',
-      phone: customer.phone || '',
-      date_of_birth: dateOnly(customer.date_of_birth),
-      gender: customer.gender || '',
-      preferred_language: customer.preferred_language || 'en',
-      country: customer.country || '',
-      lifecycle_stage: customer.lifecycle_stage || 'lead',
-      owner_user_id: customer.owner_user_id || '',
-    });
-  };
-
-  const handleArchive = async () => {
-    if (!confirm('Archive this customer? They will be hidden from active lists.')) return;
-    setStatusChanging(true);
-    try {
-      const updated = await customersApi.updateCustomer(customer.id, businessId, { status: 'archived' });
-      onUpdate(updated);
-      setStatusChanging(false);
-    } catch { alert('Failed to archive'); setStatusChanging(false); }
-  };
-
-  const handleReactivate = async () => {
-    setStatusChanging(true);
-    try {
-      const updated = await customersApi.updateCustomer(customer.id, businessId, { status: 'active' });
-      onUpdate(updated);
-      setStatusChanging(false);
-    } catch { alert('Failed to reactivate'); setStatusChanging(false); }
-  };
-
-  const handleAnonymize = async () => {
-    const confirmed = confirm(
-      '⚠️ GDPR Data Anonymization\n\n' +
-      'This will PERMANENTLY and IRREVERSIBLY anonymize all personal data for this customer including:\n' +
-      '• Name, email, phone, date of birth\n' +
-      '• Notes and activity history\n' +
-      '• All identifiable information\n\n' +
-      'This action cannot be undone. Are you sure you want to proceed?'
-    );
-    if (!confirmed) return;
-    const doubleConfirm = confirm(
-      'Final confirmation: Type OK to permanently anonymize this customer\'s data.\n\n' +
-      'Customer: ' + customer.first_name + ' ' + customer.last_name + '\n' +
-      'This is IRREVERSIBLE.'
-    );
-    if (!doubleConfirm) return;
-    setAnonymizing(true);
-    try {
-      await customersApi.anonymizeCustomer(customer.id, businessId);
-      alert('Customer data has been anonymized successfully.');
-      window.location.reload();
-    } catch {
-      alert('Failed to anonymize customer data.');
-    } finally {
-      setAnonymizing(false);
-    }
-  };
+  const handleDiscard = () => setForm(fromCustomer());
+  const text = (key: keyof typeof form, label: string, extra: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
+    <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor={`f-${key}`}>{label}</label><input id={`f-${key}`} style={styles.fieldInput} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} {...extra} /></div>
+  );
 
   return (
     <div style={styles.tabContent}>
-      <TakePaymentModal
-        open={showPayment}
-        onClose={() => setShowPayment(false)}
-        businessId={businessId}
-        customerId={customer.id}
-      />
-      {/* Quick Actions Bar */}
-      <div style={styles.quickActionsBar}>
-        <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
-          <Button size="sm" variant="secondary" onClick={() => setShowPayment(true)}>Record Payment</Button>
-          <Button size="sm" variant="secondary" onClick={() => { /* TODO: open order flow pre-filled with customer */ }}>Place Order</Button>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          {customer.status === 'active' && <Button variant="destructive" size="sm" onClick={handleArchive} loading={statusChanging}>Archive</Button>}
-          {customer.status === 'archived' && <Button variant="primary" size="sm" onClick={handleReactivate} loading={statusChanging}>Reactivate</Button>}
-          <Button variant="destructive" size="sm" onClick={handleAnonymize} loading={anonymizing}>GDPR Anonymize</Button>
-        </div>
-      </div>
-
       {/* Unsaved changes bar */}
       {isDirty && (
         <div style={styles.saveBar}>
@@ -343,24 +361,24 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
         <div style={{ ...styles.card, gridColumn: '1 / -1' }}>
           <h3 style={styles.cardTitle}>Contact Information</h3>
           <div style={styles.contactGrid}>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>First Name</label><input style={styles.fieldInput} value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} /></div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Last Name</label><input style={styles.fieldInput} value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} /></div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Email</label><input style={styles.fieldInput} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Phone</label><input style={styles.fieldInput} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Date of Birth</label><input style={styles.fieldInput} type="date" value={form.date_of_birth} onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })} /></div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Gender</label>
-              <select style={styles.fieldInput} value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+            {text('first_name', 'First Name')}
+            {text('last_name', 'Last Name')}
+            {text('email', 'Email', { type: 'email' })}
+            {text('phone', 'Phone')}
+            {text('date_of_birth', 'Date of Birth', { type: 'date' })}
+            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-gender">Gender</label>
+              <select id="f-gender" style={styles.fieldInput} value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
                 <option value="">Not specified</option><option value="male">Male</option><option value="female">Female</option><option value="non-binary">Non-binary</option><option value="other">Other</option>
               </select>
             </div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Language</label>
-              <select style={styles.fieldInput} value={form.preferred_language} onChange={(e) => setForm({ ...form, preferred_language: e.target.value })}>
+            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-lang">Language</label>
+              <select id="f-lang" style={styles.fieldInput} value={form.preferred_language} onChange={(e) => setForm({ ...form, preferred_language: e.target.value })}>
                 <option value="en">English</option><option value="es">Spanish</option>
               </select>
             </div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Country</label><input style={styles.fieldInput} value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} /></div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Lifecycle Stage</label>
-              <select style={styles.fieldInput} value={form.lifecycle_stage} onChange={(e) => setForm({ ...form, lifecycle_stage: e.target.value })}>
+            {text('country', 'Country')}
+            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-stage">Lifecycle Stage</label>
+              <select id="f-stage" style={styles.fieldInput} value={form.lifecycle_stage} onChange={(e) => setForm({ ...form, lifecycle_stage: e.target.value })}>
                 <option value="lead">Lead</option>
                 <option value="trial">New customer</option>
                 <option value="active">Active</option>
@@ -369,20 +387,33 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
                 <option value="winback">Won back</option>
               </select>
             </div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Owner</label>
-              <select style={styles.fieldInput} value={form.owner_user_id} onChange={(e) => setForm({ ...form, owner_user_id: e.target.value })}>
+            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-staff">Staff member</label>
+              <select id="f-staff" style={styles.fieldInput} value={form.owner_user_id} onChange={(e) => setForm({ ...form, owner_user_id: e.target.value })}>
                 <option value="">Unassigned</option>
-                {owners.map((o) => <option key={o.id} value={o.id}>{o.first_name} {o.last_name}</option>)}
+                {staff.map((o) => <option key={o.id} value={o.id}>{o.first_name} {o.last_name}</option>)}
+              </select>
+            </div>
+            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-home">Home location</label>
+              <select id="f-home" style={styles.fieldInput} value={form.home_location_id} onChange={(e) => setForm({ ...form, home_location_id: e.target.value })}>
+                <option value="">Not set</option>
+                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {form.home_location_id && !locations.some((l) => l.id === form.home_location_id) && <option value={form.home_location_id}>{customer.home_location_name || 'Current location'}</option>}
               </select>
             </div>
           </div>
+          <h4 style={styles.subTitle}>Address</h4>
+          <div style={styles.contactGrid}>
+            <div style={{ gridColumn: 'span 2' }}>{text('address_line', 'Street address')}</div>
+            {text('city', 'City')}
+            {text('postal_code', 'Postal code')}
+            {text('region', 'Province / region')}
+          </div>
         </div>
 
-        {/* Financial Summary Card */}
         <FinancialSummaryCard customerId={customer.id} businessId={businessId} />
-
-        {/* Membership Card */}
         <MembershipCard customerId={customer.id} businessId={businessId} />
+        <VisitsCreditsCard customerId={customer.id} businessId={businessId} />
+        <CommunicationCard preferences={preferences} onOpenConsent={onOpenConsent} />
 
         {/* Payment Methods on File — the customer's stored, tokenized methods
             (used for one-time charges and membership renewals). The reusable
@@ -396,16 +427,18 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
         </div>
 
         {/* Tags Card */}
-        {tags.length > 0 && (
-          <div style={styles.card}>
-            <h3 style={styles.cardTitle}>Tags</h3>
-            <div style={styles.tagsList}>
-              {tags.map((tag: any) => (
-                <span key={tag.id} style={{ ...styles.tag, borderColor: tag.color }}>{tag.name}</span>
-              ))}
-            </div>
+        <div style={styles.card}>
+          <h3 style={styles.cardTitle}>Tags</h3>
+          {tags.length === 0 && <p style={styles.cardMuted}>No tags.</p>}
+          <div style={styles.tagsList}>
+            {tags.map((tag: any) => (
+              <span key={tag.id} style={{ ...styles.tag, borderColor: tag.color }}>{tag.name}</span>
+            ))}
           </div>
-        )}
+        </div>
+
+        <ReferralsCard customerId={customer.id} businessId={businessId} />
+        <ReviewsCard customer={customer} businessId={businessId} />
       </div>
     </div>
   );
@@ -539,46 +572,82 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
   );
 }
 
-function TimelineTab({ activities, customerId, businessId }: { activities: any[]; customerId: string; businessId: string }) {
-  const [filter, setFilter] = useState('');
-  const [items, setItems] = useState(activities);
+const TIMELINE_FILTERS: Array<[customersApi.TimelineFilter, string]> = [
+  ['all', 'All'], ['booking', 'Bookings'], ['membership', 'Membership'], ['pack', 'Packs'], ['payment', 'Payments'],
+  ['lifecycle', 'Lifecycle'], ['profile_change', 'Profile changes'], ['message', 'Messages'],
+];
+const TIMELINE_KIND_LABELS: Record<string, string> = {
+  booking: 'Booking', membership: 'Membership', pack: 'Pack', payment: 'Payment', lifecycle: 'Lifecycle',
+  profile_change: 'Profile change', message: 'Message', event: 'Event', campaign: 'Campaign', note: 'Note',
+  tag: 'Tag', document: 'Document', widget_registration: 'Sign-up', identity_match: 'Matched',
+};
 
-  useEffect(() => { setItems(activities); }, [activities]);
+/**
+ * Every interaction of the person with the business in one place (THE-16): newest first,
+ * with what is still to come (future bookings, the next renewal) highlighted. A payment is
+ * one line; its receipt or invoice opens from the Billing tab or the link on the line.
+ */
+function TimelineTab({ customerId, businessId }: { customerId: string; businessId: string }) {
+  const navigate = useNavigate();
+  const [filter, setFilter] = useState<customersApi.TimelineFilter>('all');
+  const [items, setItems] = useState<customersApi.TimelineItem[] | null>(null);
+  const [failed, setFailed] = useState(false);
 
-  const handleFilter = async (type: string) => {
-    setFilter(type);
-    const result = await customersApi.getActivities(customerId, businessId, { activity_type: type || undefined });
-    setItems(result.data);
+  useEffect(() => {
+    setItems(null); setFailed(false);
+    customersApi.getTimeline(customerId, businessId, filter).then(setItems).catch(() => setFailed(true));
+  }, [customerId, businessId, filter]);
+
+  const openLink = async (link: NonNullable<customersApi.TimelineItem['link']>) => {
+    if (link.type === 'order') { navigate(`/receipt/${link.id}`); return; }
+    try {
+      const blob = await payApi.fetchReceiptPdf(link.id, businessId);
+      window.open(URL.createObjectURL(blob), '_blank');
+    } catch { alert('The receipt could not be opened.'); }
   };
 
   return (
     <div style={styles.tabContent}>
       <div style={styles.filterRow}>
-        {['', 'booking', 'payment', 'membership', 'lifecycle', 'profile_change'].map((t) => (
-          <button
-            key={t}
-            onClick={() => handleFilter(t)}
-            style={{ ...styles.filterBtn, ...(filter === t ? styles.filterBtnActive : {}) }}
-          >
-            {t || 'All'}
+        {TIMELINE_FILTERS.map(([key, label]) => (
+          <button key={key} type="button" aria-pressed={filter === key} onClick={() => setFilter(key)}
+            style={{ ...styles.filterBtn, textTransform: 'none', ...(filter === key ? styles.filterBtnActive : {}) }}>
+            {label}
           </button>
         ))}
       </div>
-      {items.length === 0 && <p style={styles.empty}>No activities</p>}
-      {items.length > 0 && (
+      <p style={{ ...styles.cardMuted, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 'var(--space-sm)' }}>
+        <span aria-hidden="true" style={{ width: '12px', height: '12px', borderRadius: '3px', background: 'var(--color-info-bg)', border: '1px solid var(--color-info)' }} />
+        Highlighted lines are still to come.
+      </p>
+      {failed && <p style={styles.empty}>The timeline could not be loaded.</p>}
+      {!failed && items === null && <p style={styles.empty}>Loading…</p>}
+      {filter === 'message' && items !== null && items.length === 0 && (
+        <p style={styles.empty}>Messages will be listed here once it is decided which ones belong in the Timeline. The conversation itself is in the Messages tab.</p>
+      )}
+      {filter !== 'message' && items !== null && items.length === 0 && <p style={styles.empty}>Nothing here yet.</p>}
+      {items !== null && items.length > 0 && (
         <div style={styles.timelineGrid}>
           <span style={styles.timelineHeaderCell}>Type</span>
           <span style={styles.timelineHeaderCell}>Description</span>
           <span style={styles.timelineHeaderCell}>By</span>
           <span style={styles.timelineHeaderCell}>Date</span>
-          {items.map((act: any) => (
-            <div key={act.id} style={styles.timelineRow}>
-              <span style={styles.timelineCell}><Badge variant="neutral">{act.activity_type}</Badge></span>
-              <span style={styles.timelineDesc}>{act.description}</span>
-              <span style={styles.timelineActor}>{act.actor_name || 'System'}</span>
-              <span style={styles.timelineDate}>{new Date(act.created_at).toLocaleString()}</span>
-            </div>
-          ))}
+          {items.map((it) => {
+            const tint = it.upcoming ? { background: 'var(--color-info-bg)' } : {};
+            return (
+              <div key={it.id} style={styles.timelineRow}>
+                <span style={{ ...styles.timelineCell, ...tint, whiteSpace: 'nowrap' }}><Badge variant="neutral">{TIMELINE_KIND_LABELS[it.kind] || it.kind}</Badge></span>
+                <span style={{ ...styles.timelineDesc, ...tint, gap: '8px', flexWrap: 'wrap' }}>
+                  {it.description}
+                  {it.link && <button type="button" onClick={() => openLink(it.link!)} style={styles.inlineLink}>Receipt</button>}
+                </span>
+                <span style={{ ...styles.timelineActor, ...tint }}>{it.actor_name}</span>
+                <span style={{ ...styles.timelineDate, ...tint, ...(it.upcoming ? { color: 'var(--color-info-dark)', fontWeight: 700 } : {}) }}>
+                  {it.upcoming ? 'Upcoming · ' : ''}{new Date(it.at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -1273,7 +1342,7 @@ function PreferencesTab({ preferences, onChange, customerId, businessId }: {
   const [evidence, setEvidence] = useState('');
 
   const toggle = (key: string, checked: boolean) => {
-    if (checked && key !== 'booking_reminders') { setPendingKey(key); setEvidence(''); return; }
+    if (checked && key !== 'booking_reminders' && key !== 'transactional_emails') { setPendingKey(key); setEvidence(''); return; }
     setPendingKey(null);
     onChange(key, checked);
   };
@@ -1316,12 +1385,13 @@ function PreferencesTab({ preferences, onChange, customerId, businessId }: {
   return (
     <div style={styles.tabContent}>
       <p style={styles.empty}>
-        Marketing needs the person's own agreement, channel by channel. Booking confirmations and replies to their messages are always allowed.
+        Marketing needs the person's own agreement, channel by channel. Transactional emails (confirmations, cancellations, receipts and purchases) are on unless the person asks to stop them; when off, none are sent.
       </p>
       {channelRow('email_marketing', 'Email Marketing')}
       {channelRow('sms_marketing', 'SMS Marketing')}
       {channelRow('push_notifications', 'Push Notifications')}
       {channelRow('booking_reminders', 'Booking Reminders')}
+      {channelRow('transactional_emails', 'Transactional Emails')}
 
       <h3 style={styles.cardTitle}>Consent history</h3>
       {history === null && <p style={styles.empty}>Loading…</p>}
@@ -1332,7 +1402,7 @@ function PreferencesTab({ preferences, onChange, customerId, businessId }: {
             <li key={e.id} style={styles.consentHistoryRow}>
               <span>
                 <strong>{CONSENT_CHANNEL_LABELS[e.channel] || e.channel}</strong>{' '}
-                {e.category === 'reminders' ? 'reminders' : 'marketing'}: {e.new_state ? 'given' : 'withdrawn'}
+                {e.category === 'reminders' ? 'reminders' : e.category === 'transactional' ? 'transactional emails' : 'marketing'}: {e.new_state ? 'given' : 'withdrawn'}
                 {' · '}{CONSENT_METHOD_LABELS[e.method] || e.method}{e.actor_name ? ` by ${e.actor_name}` : ''}
                 {e.evidence ? ` · "${e.evidence}"` : ''}
               </span>
@@ -1602,24 +1672,25 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
 const membershipActionStyle: React.CSSProperties = { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' };
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { padding: 'var(--space-lg)', maxWidth: '900px', margin: '0 auto' },
+  // Full width of the content area (THE-16), so the facts fit on one line.
+  page: { padding: 'var(--space-lg)' },
   loading: { padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-text-secondary)' },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, marginBottom: 'var(--space-md)', fontFamily: 'var(--font-family)' },
-  profileHeader: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-xl)', padding: 'var(--space-lg)', background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)' },
+  profileHeader: { display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-md)', marginBottom: 'var(--space-lg)', padding: 'var(--space-lg)', background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)' },
+  headerTop: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', flexWrap: 'wrap' as const },
   avatar: { width: '56px', height: '56px', borderRadius: 'var(--radius-full)', background: 'var(--color-primary)', color: 'var(--color-primary-contrast)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-bold)' as any, flexShrink: 0 },
-  profileInfo: { display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-xs)', flex: 1 },
+  profileInfo: { display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-xs)', flex: 1, minWidth: '240px' },
   name: { margin: 0, fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)' },
   refNum: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
-  headerActions: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: 'var(--space-xs)' },
+  headerActions: { display: 'flex', gap: 'var(--space-xs)', alignItems: 'center', alignSelf: 'flex-start' },
   joinedDate: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   factStrip: {
-    display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 'var(--space-md)',
-    margin: '0 0 var(--space-lg)', padding: 'var(--space-md) var(--space-lg)',
-    background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)',
+    display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 'var(--space-md)',
+    margin: 0, padding: 'var(--space-md) 0 0', borderTop: '1px solid var(--color-divider)',
   },
   fact: { display: 'flex', flexDirection: 'column' as const, gap: '2px', minWidth: 0 },
   factLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
-  factValue: { margin: 0, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', overflowWrap: 'anywhere' as const },
+  factValue: { margin: 0, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
   duplicateBanner: {
     display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)',
     margin: '0 0 var(--space-lg)', padding: 'var(--space-md) var(--space-lg)',
@@ -1654,6 +1725,8 @@ const styles: Record<string, React.CSSProperties> = {
   fieldInput: { backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--color-text)', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)' },
   formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
   tagsSection: { marginTop: 'var(--space-lg)' },
+  subTitle: { margin: 'var(--space-lg) 0 var(--space-sm)', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)' },
+  inlineLink: { background: 'none', border: 'none', padding: 0, color: 'var(--color-accent)', cursor: 'pointer', font: 'inherit', fontSize: 'var(--font-size-xs)', fontWeight: 700 },
   sectionTitle: { fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-semibold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-sm)' },
   tagsList: { display: 'flex', gap: 'var(--space-xs)', flexWrap: 'wrap' as const },
   tag: { padding: '2px 8px', borderRadius: 'var(--radius-full)', border: '1px solid', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
@@ -1668,12 +1741,12 @@ const styles: Record<string, React.CSSProperties> = {
   empty: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', textAlign: 'center', padding: 'var(--space-lg)' },
   filterRow: { display: 'flex', gap: 'var(--space-xs)', marginBottom: 'var(--space-md)', flexWrap: 'wrap' as const },
   filterBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 10px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', textTransform: 'capitalize' as const },
-  filterBtnActive: { borderColor: 'var(--color-primary)', color: 'var(--color-primary)', background: 'var(--color-surface-hover)' },
+  filterBtnActive: { border: '1px solid var(--color-primary)', color: 'var(--color-primary)', background: 'var(--color-surface-hover)' },
   activityItem: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) 0', borderBottom: '1px solid var(--color-border)' },
   activityDesc: { flex: 1, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
   activityActor: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' as const, fontStyle: 'italic' as const },
   activityDate: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' as const },
-  timelineGrid: { display: 'grid', gridTemplateColumns: '120px 1fr 130px 170px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
+  timelineGrid: { display: 'grid', gridTemplateColumns: 'max-content 1fr 150px 190px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
   timelineHeaderCell: { fontSize: 'var(--font-size-xs)', fontWeight: 'var(--font-weight-semibold)' as any, color: 'var(--color-text-secondary)', padding: 'var(--space-sm) var(--space-sm)', borderBottom: '2px solid var(--color-border)', background: 'var(--color-surface-hover)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
   timelineRow: { display: 'contents' },
   timelineCell: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', padding: 'var(--space-sm) var(--space-sm)', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center' },

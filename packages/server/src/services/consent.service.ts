@@ -17,8 +17,11 @@ export const CONSENT_METHODS = [
 ] as const;
 export type ConsentMethod = typeof CONSENT_METHODS[number];
 
-/** 'marketing' (promotional) and 'reminders' (booking reminders) are the categories the product uses. */
-export type ConsentCategory = 'marketing' | 'reminders' | string;
+/**
+ * 'marketing' (promotional), 'reminders' (booking reminders) and 'transactional' (confirmations,
+ * cancellations, receipts and purchases; email only) are the categories the product uses.
+ */
+export type ConsentCategory = 'marketing' | 'reminders' | 'transactional' | string;
 
 export class ConsentEvidenceRequiredError extends Error {
   code = 'CONSENT_EVIDENCE_REQUIRED';
@@ -26,7 +29,7 @@ export class ConsentEvidenceRequiredError extends Error {
 }
 
 export function defaultState(category: ConsentCategory): boolean {
-  return category === 'reminders';
+  return category === 'reminders' || category === 'transactional';
 }
 
 interface PersonRef { id: string; tenant_id: string; business_id: string }
@@ -167,6 +170,8 @@ export interface LegacyPreferences {
   sms_marketing: boolean;
   push_notifications: boolean;
   booking_reminders: boolean;
+  /** Confirmations, cancellations, receipts and purchases by email. Off means none are sent. */
+  transactional_emails: boolean;
   updated_at: Date | null;
 }
 
@@ -187,13 +192,14 @@ export async function getLegacyPreferences(customerId: string): Promise<LegacyPr
     push_notifications: state('push', 'marketing'),
     // Reminders are one switch on screen; off on either channel shows as off.
     booking_reminders: state('email', 'reminders') && state('sms', 'reminders'),
+    transactional_emails: state('email', 'transactional'),
     updated_at: updated,
   };
 }
 
 export async function setLegacyPreferences(
   customerId: string,
-  changes: Partial<Record<'email_marketing' | 'sms_marketing' | 'push_notifications' | 'booking_reminders', boolean>>,
+  changes: Partial<Record<'email_marketing' | 'sms_marketing' | 'push_notifications' | 'booking_reminders' | 'transactional_emails', boolean>>,
   ctx: { method: ConsentMethod; evidence?: string | null; actorUserId?: string | null; ipAddress?: string | null },
 ): Promise<LegacyPreferences> {
   const base = { customerId, method: ctx.method, evidence: ctx.evidence, actorUserId: ctx.actorUserId, ipAddress: ctx.ipAddress };
@@ -203,6 +209,9 @@ export async function setLegacyPreferences(
   if (changes.booking_reminders !== undefined) {
     await setConsent({ ...base, channel: 'email', category: 'reminders', given: changes.booking_reminders });
     await setConsent({ ...base, channel: 'sms', category: 'reminders', given: changes.booking_reminders });
+  }
+  if (changes.transactional_emails !== undefined) {
+    await setConsent({ ...base, channel: 'email', category: 'transactional', given: changes.transactional_emails });
   }
   return getLegacyPreferences(customerId);
 }

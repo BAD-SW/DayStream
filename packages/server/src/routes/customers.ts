@@ -50,6 +50,11 @@ const updateCustomerSchema = Joi.object({
   avatar_url: Joi.string().uri().allow('', null),
   status: Joi.string().valid('active', 'archived'),
   lifecycle_stage: Joi.string().valid('lead', 'trial', 'active', 'at_risk', 'churned', 'winback'),
+  address_line: Joi.string().max(255).allow('', null),
+  city: Joi.string().max(100).allow('', null),
+  postal_code: Joi.string().max(20).allow('', null),
+  region: Joi.string().max(100).allow('', null),
+  home_location_id: Joi.string().uuid().allow('', null),
 }).min(1);
 
 // --- Routes ---
@@ -589,6 +594,7 @@ customersRouter.put('/:id', requirePermission('customers:*'), validate(updateCus
       return;
     }
     if (/Owner must be/.test(err?.message || '')) { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
+    if (err?.code === 'INVALID_LOCATION') { error(res, err.message, err.code, 400); return; }
     error(res, 'Failed to update customer', 'INTERNAL_ERROR', 500);
   }
 });
@@ -1099,9 +1105,10 @@ const updatePreferencesSchema = Joi.object({
   sms_marketing: Joi.boolean(),
   push_notifications: Joi.boolean(),
   booking_reminders: Joi.boolean(),
+  transactional_emails: Joi.boolean(),
   // How the consent was obtained. Needed when staff switch a marketing channel ON.
   evidence: Joi.string().max(500).allow('', null),
-}).or('email_marketing', 'sms_marketing', 'push_notifications', 'booking_reminders');
+}).or('email_marketing', 'sms_marketing', 'push_notifications', 'booking_reminders', 'transactional_emails');
 
 const setConsentSchema = Joi.object({
   channel: Joi.string().valid('email', 'sms', 'whatsapp', 'in_app', 'push').required(),

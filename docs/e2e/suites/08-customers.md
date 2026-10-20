@@ -48,15 +48,16 @@ Persona: owner or manager unless stated. Covers spec 05. Customers are the hub t
 **Expect:** the customer moves to the stage the configuration prescribes (trial or active); the job history records the run and how many customers changed.
 
 ### CUS-09 · Customer 360 overview
-`P0` `regression` · Spec 05 R12 · Status: Draft
+`P0` `regression` · Spec 05 R12, Linear THE-16 · Status: Draft
 **Pre:** `E2E {RUN} Walker` after JNY-03 and JNY-05.
-1. Open the customer detail page and visit every tab.
-**Expect:** Overview shows upcoming and past bookings, membership, stored payment methods (masked), lifetime spend; the Billing tab shows transactions and outstanding invoices; figures agree with the bookings list, memberships list and payments list for this customer.
+1. Open the profile. Read the header and visit every tab, in the order Overview, Messages, Timeline, Billing, Notes, Tasks, Documents, Consent.
+**Expect:** the header shows photo (or initials), name, reference, the lifecycle stage and "In this stage since"; the record status only when it is not active; and one line of facts: Source, Staff member, Home location, Last activity, Last visit, Last login, Known since (dates only; the time on hover). There is no button bar above Contact Information. Overview has Contact Information (with Home location and Address), Financial Summary, Membership, Visits & Credits, Communication, Payment Methods, Tags, Referrals and Reviews. Each tab opens with no failed request and no console error.
+**Cross-check:** Visits & Credits and Financial Summary agree with the bookings list, memberships list and payments list for this customer (CUS-30).
 
-### CUS-10 · Quick actions from the profile
-`P1` `regression` · Spec 05 R13 · Status: Draft
-1. From the profile start: a new booking, **Record Payment**, add note.
-**Expect:** each opens with this customer pre-selected and returns to the profile afterwards with the Timeline updated.
+### CUS-10 · Actions from the profile header
+`P1` `regression` · Spec 05 R13, Linear THE-16 · Status: Draft
+1. **Contact**. 2. **Add task**. 3. **More**: read the menu; **New order**; back, **Record payment**; **Assign staff member**; on a person without an account, look at **Request password reset**; **Archive**, then **Reactivate**.
+**Expect:** Contact opens the Messages tab inside the profile; Add task opens the Tasks tab with the form open; More lists New order, Record payment, Assign staff member, Request password reset, Send personal data (GDPR), Archive (or Reactivate) and GDPR anonymise, each on one line, the last two in red; New order opens the checkout with this person already chosen; Request password reset is disabled without an account; each change shows on the Timeline.
 
 ### CUS-11 · Import customers from CSV
 `P1` `regression` · Spec 05 R8, R14 · Status: Verified
@@ -151,8 +152,9 @@ Written from the spec on 2026-10-12, before the feature exists. All are `Blocked
 **Expect:** sources are walk-in, import, booking widget and lead form (with the form name); the walk-in person keeps "Walk-in" after step 2; people created before spec 46 show "Unknown".
 **Cross-check:** filtering the list by each source returns exactly those people.
 
-### CUS-25 · Owner assignment
-`P1` `regression` · Spec 46 R5 · As: manager · Status: Verified
+### CUS-25 · Staff member assignment (was "Owner")
+`P1` `regression` · Spec 46 R5, Linear THE-16 · As: manager · Status: Verified
+The field is labelled **Staff member** everywhere (profile facts, Contact Information, More → Assign staff member, the People list column, filter and bulk action); it is the same field as before.
 1. Assign an E2E person to `E2E Therapist` from the profile. 2. Assign three more in bulk. 3. Filter by "Mine", "Unassigned" and the named owner.
 **Expect:** each change is on the Timeline; filters return the right people; only staff of this business are offered as owners.
 
@@ -173,3 +175,57 @@ Written from the spec on 2026-10-12, before the feature exists. All are `Blocked
 1. Edit the rules of the CUS-06 segment. 2. Create a static list and add three people from the list page. 3. Open the starter segments. 4. Try to delete a segment used by a scheduled campaign.
 **Expect:** the edit changes the membership at once; the static list holds exactly the three people and is labelled as a fixed list; Leads, New customers, Active, At risk, Former, New this month, No visit in 30 days and Birthday this month exist; step 4 is refused, naming the campaign.
 **Cross-check:** every segment is offered both as a People view and as a campaign audience (MKT-19).
+
+### CUS-29 · Address and home location
+`P1` `regression` · Linear THE-16 · As: owner · Status: Verified
+1. Contact Information: fill Street address, City, Postal code, Province / region; choose a Home location; save. 2. Through the API, set a location of another business.
+**Expect:** saved and shown on reload; Home location shows in the header facts; only the business's own active locations are offered; another business's location is refused (`INVALID_LOCATION`).
+
+### CUS-30 · Visits & Credits
+`P1` `regression` · Linear THE-16 · Status: Verified
+1. Open the Overview of a person with attended bookings, events and a pack.
+**Expect:** Visits = Appointments + Events; Appointments counts bookings checked in or completed; Session credits are the sessions left in active packs.
+**Cross-check:** `GET /customers/:id/figures` agrees with `apt_bookings`, `evt_registrations` and `pkg_redemptions`.
+
+### CUS-31 · Timeline: everything in one place
+`P0` `regression` · Linear THE-16 · As: owner, another organisation · Status: Verified
+1. Open the Timeline and use each filter: All, Bookings, Membership, Packs, Payments, Lifecycle, Profile changes, Messages. 2. Change the person's language. 3. Click **Receipt** on a payment line.
+**Expect:** newest first, no separate Upcoming / History; future bookings and the next membership renewal are highlighted and marked "Upcoming"; one line per payment, refund, credit and debit with a Receipt link (order receipt, or the payment's receipt PDF); the language change shows under Profile changes; Messages is empty with a note (which messages belong here is to be decided); an unknown filter is refused; another organisation is refused (403).
+**Cross-check:** the Payments filter has exactly the completed rows of `pay_transactions` for the person.
+
+### CUS-32 · Tasks
+`P1` `regression` · Linear THE-16 · As: owner, Staff, another organisation · Status: Verified
+1. **Add task** with no staff; as a customer login's user; as Staff. 2. As owner: title, description, due date, two staff members, Send reminder on. 3. Mark it done; reopen; delete.
+**Expect:** at least one staff member is required and only staff can be assigned; Staff (`customers:read`) cannot create tasks; the task lists both staff; the reminder email to the customer is queued at once (when the task is created) and the row says "Sent"; done tasks move to Done; another organisation cannot list them.
+
+### CUS-33 · Transactional emails switch
+`P0` `regression` · Linear THE-16 (David: off means no confirmations, cancellations or receipts at all) · Status: Verified
+1. Consent → switch **Transactional Emails** off. 2. Create a task with a reminder. 3. Queue a payment receipt and a booking reminder for the person. 4. Read the consent history; switch it back on.
+**Expect:** no evidence is asked when switching it off or on; the task reminder is not sent and shows why; the queued receipt is not sent (status `cancelled`, "Transactional emails switched off"); the booking reminder (its own switch) is sent; the history lists the change; the Overview's Communication card shows the state.
+**Not covered by the switch (to be confirmed):** invoices issued, failed-payment notices, waitlist offers.
+
+### CUS-34 · Documents
+`P0` `regression` · Linear THE-16 · As: owner, Staff, another organisation · Status: Verified
+1. Upload a PDF; a file renamed to .pdf that is not a PDF; an .exe; as Staff. 2. Download it as owner and as Staff; as another organisation; through `/storage/<path>`. 3. Delete it and download again.
+**Expect:** only real PDF, JPG and PNG files up to 10 MB are accepted; Staff can read but not upload; the download is the same file; another organisation and the public storage address are refused (403); a deleted document leaves the list and cannot be downloaded. Each upload and deletion is on the Timeline.
+
+### CUS-35 · Profile photo
+`P1` `regression` · Linear THE-16 · As: owner, another organisation · Status: Verified
+1. Click the camera on the avatar and choose a PNG; try a PDF renamed to .png. 2. Open the photo as another organisation. 3. Remove it (API).
+**Expect:** the photo replaces the initials; a non-image is refused; it is served only to signed-in users of the business; removing it brings back the initials.
+
+### CUS-36 · Request password reset
+`P1` `regression` · Linear THE-16 · As: owner, Staff · Status: Verified
+1. More → Request password reset on a person without an account, then on one with an account. 2. As Staff.
+**Expect:** without an account the action is disabled (API: `NO_ACCOUNT`, 409); with an account a reset link (15 minutes) goes to the account's email and the Timeline records it; Staff is refused.
+
+### CUS-37 · Send personal data (GDPR)
+`P0` `guarded` · Linear THE-16 (link valid 24 h; password shown to the sender to pass on) · As: owner, Staff · Status: Verified
+1. More → Send personal data → Send. 2. Copy the password. 3. Open the emailed link (`/personal-data?token=…`) without signing in; download; open the PDF with the password. 4. Try a wrong link; let the link expire; open the file through `/storage/<path>`. 5. As Staff, try to send.
+**Expect:** the email goes to the person's address; the dialog shows a one-time password with Copy and says it is not shown again; the file is a password-protected PDF with the person's details, address, bookings, payments, memberships, documents and tasks; a wrong or expired link is refused (410) with a clear message; the public storage address is refused; Staff is refused.
+**Cross-check:** the audit log has `customer.personal_data_sent`; the Timeline has "Personal data sent"; the database keeps only a hash of the link and never the password.
+
+### CUS-38 · Referrals and reviews
+`P2` `regression` · Linear THE-16 · As: owner, another organisation · Status: Verified
+1. Open the Overview of a person with a referral code, a referred person and a review.
+**Expect:** the Referrals card shows the code, who referred them and the people they referred with their stage; the Reviews card shows the reviews they wrote with stars and service; another organisation is refused.

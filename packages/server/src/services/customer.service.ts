@@ -208,6 +208,8 @@ const PERSON_EXTRAS = `
   NULLIF(BTRIM(COALESCE(ou.first_name, '') || ' ' || COALESCE(ou.last_name, '')), '') AS owner_name,
   lu.last_login_at,
   (c.user_id IS NOT NULL) AS has_account,
+  (c.photo_path IS NOT NULL) AS has_photo,
+  (SELECT l.name FROM sys_locations l WHERE l.id = c.home_location_id) AS home_location_name,
   (c.email IS NULL OR BTRIM(c.first_name) = '' OR BTRIM(c.last_name) = '') AS incomplete,
   (SELECT MIN(b.start_time) FROM apt_bookings b
     WHERE b.customer_id = c.id AND b.start_time > NOW() AND b.status NOT IN ('cancelled', 'no_show')) AS next_booking_at,
@@ -392,14 +394,23 @@ export async function updateCustomer(id: string, businessId: string, updates: Re
   const customer = await getCustomerById(id, businessId);
   if (!customer) return null;
 
-  const allowedFields = ['email', 'first_name', 'last_name', 'phone', 'date_of_birth', 'gender', 'preferred_language', 'country', 'avatar_url', 'status', 'lifecycle_stage', 'owner_user_id', 'source_detail'];
+  const allowedFields = ['email', 'first_name', 'last_name', 'phone', 'date_of_birth', 'gender', 'preferred_language', 'country', 'avatar_url', 'status', 'lifecycle_stage', 'owner_user_id', 'source_detail',
+    'address_line', 'city', 'postal_code', 'region', 'home_location_id'];
   const fields: string[] = [];
   const values: any[] = [];
   let idx = 1;
 
   // An email or phone cleared on screen arrives as '': store that as "none".
-  for (const key of ['email', 'phone', 'owner_user_id']) {
+  for (const key of ['email', 'phone', 'owner_user_id', 'home_location_id', 'address_line', 'city', 'postal_code', 'region']) {
     if (updates[key] === '') updates[key] = null;
+  }
+  // The home location is one of the business's own active locations.
+  if (updates.home_location_id) {
+    const { rows: loc } = await adminPool.query(
+      `SELECT id FROM sys_locations WHERE id = $1 AND business_id = $2 AND status = 'active'`,
+      [updates.home_location_id, businessId],
+    );
+    if (!loc[0]) throw Object.assign(new Error('The home location must be one of this business\'s active locations'), { code: 'INVALID_LOCATION' });
   }
   if (typeof updates.email === 'string') updates.email = updates.email.trim().toLowerCase();
 
