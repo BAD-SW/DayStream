@@ -114,9 +114,27 @@ async function transitionStatus(
 
 /**
  * Confirm a pending booking.
+ *
+ * Fires the appointment-confirmation email on a successful pending→confirmed
+ * transition (desk/checkout payment, async bank-debit settlement, staff confirm
+ * button, widget-paid). The born-confirmed paths notify from checkAndSaveBooking
+ * instead, so between the two every confirmation path is covered exactly once.
+ * Hydrated via getBookingById so service/staff names populate; skipped when the
+ * customer has no email. Non-blocking.
  */
 export async function confirmBooking(bookingId: string, businessId: string, userId: string, tenantId: string): Promise<TransitionResult> {
-  return transitionStatus(bookingId, businessId, 'confirmed', userId, tenantId);
+  const result = await transitionStatus(bookingId, businessId, 'confirmed', userId, tenantId);
+  if (result.success) {
+    try {
+      const { getBookingById } = await import('./booking.service');
+      const { queueBookingConfirmation } = await import('./booking-notifications.service');
+      const full = await getBookingById(bookingId, businessId);
+      if (full?.customer_email) await queueBookingConfirmation(full, full.customer_email);
+    } catch (e: any) {
+      logger.warn(`Confirm booking ${bookingId}: confirmation enqueue failed: ${e?.message || e}`);
+    }
+  }
+  return result;
 }
 
 /**
@@ -178,6 +196,22 @@ export async function cancelBooking(
       await promoteNext(booking.service_id, new Date(booking.start_time).toISOString());
     } catch (err: any) {
       logger.error('Waitlist not processed after cancellation', { bookingId, error: err.message });
+    }
+
+    // Appointment cancellation email — ONLY for genuine customer/staff cancellations.
+    // Internal payment-release cancels (a declined desk charge / a bounced bank debit)
+    // pass a system reason; a cheerful "your booking was cancelled" there would be
+    // wrong, so suppress those. Hydrate for service name; skip when no customer email.
+    const SYSTEM_CANCEL_REASONS = ['Payment failed', 'Bank debit failed to settle'];
+    if (!reason || !SYSTEM_CANCEL_REASONS.includes(reason)) {
+      try {
+        const { getBookingById } = await import('./booking.service');
+        const { queueBookingCancellation } = await import('./booking-notifications.service');
+        const full = await getBookingById(bookingId, businessId);
+        if (full?.customer_email) await queueBookingCancellation(full, full.customer_email, reason);
+      } catch (e: any) {
+        logger.warn(`Cancel booking ${bookingId}: cancellation notice enqueue failed: ${e?.message || e}`);
+      }
     }
   }
   return { ...result, cancellation_fee: cancellationFee };
@@ -345,6 +379,18 @@ export async function rescheduleBooking(
   }
 
   const { rows: updated } = await adminPool.query('SELECT * FROM apt_bookings WHERE id = $1', [bookingId]);
+
+  // Appointment reschedule email (old → new time). Hydrate for service/staff names;
+  // skip when the customer has no email. Non-blocking.
+  try {
+    const { getBookingById } = await import('./booking.service');
+    const { queueBookingReschedule } = await import('./booking-notifications.service');
+    const full = await getBookingById(bookingId, businessId);
+    if (full?.customer_email) await queueBookingReschedule(full, full.customer_email, booking.start_time);
+  } catch (e: any) {
+    logger.warn(`Reschedule booking ${bookingId}: reschedule notice enqueue failed: ${e?.message || e}`);
+  }
+
   return { success: true, booking: updated[0] };
 }
 

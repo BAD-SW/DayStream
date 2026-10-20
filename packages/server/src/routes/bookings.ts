@@ -692,6 +692,15 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
         metadata: { booking_id: saved.id, old_start: existing.start_time, new_start: saved.start_time },
         createdBy: authReq.user.sub,
       }).catch(() => undefined);
+
+      // Appointment reschedule email — this edit path moves the time without going
+      // through rescheduleBooking, so fire the notice here too (old → new time).
+      // Hydrate for service/staff names; skip when no customer email. Non-blocking.
+      bookingService.getBookingById(saved.id, businessId)
+        .then((full) => {
+          if (full?.customer_email) return notificationsServiceForward.queueBookingReschedule(full, full.customer_email, existing.start_time);
+        })
+        .catch(() => undefined);
     }
     success(res, saved);
   } catch (err: any) {

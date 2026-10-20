@@ -306,6 +306,11 @@ export async function createWidgetBooking(dto: CreateWidgetBookingDto, user: Aut
       tenantId: bizRows[0].tenant_id,
       initialStatus,
       source: 'widget',
+      // The widget queues its own confirmation (below / after payment) using the
+      // authenticated customer's email, so suppress createBooking's own send to
+      // avoid a double. A pending (payment-first) booking confirms later via
+      // confirmBooking in payForBooking.
+      suppressConfirmation: true,
     });
   } catch (err: any) {
     logger.warn('Widget booking attempt failed', { ...attemptMeta, outcome: 'failed', reason: err.message });
@@ -354,17 +359,12 @@ export async function payForBooking(bookingId: string, businessId: string, user:
     [bizRows[0].tenant_id, businessId, bookingId, booking.customer_id, booking.price],
   );
 
-  await adminPool.query(
-    `UPDATE apt_bookings SET status = 'confirmed', updated_at = NOW() WHERE id = $1`,
-    [bookingId],
-  );
-  await adminPool.query(
-    `INSERT INTO apt_booking_status_history (booking_id, from_status, to_status, changed_by) VALUES ($1, 'pending', 'confirmed', $2)`,
-    [bookingId, user.sub],
-  );
-
-  const confirmedBooking = await getBookingById(bookingId, businessId);
-  await queueBookingConfirmation(confirmedBooking, email);
+  // Confirm through the lifecycle so the status transition, history, audit, and the
+  // appointment-confirmation email all happen in one place (confirmBooking fires the
+  // confirmation). Replaces the previous raw UPDATE + manual queue, so there is
+  // exactly one confirmation per path.
+  const { confirmBooking } = await import('./booking-lifecycle.service');
+  await confirmBooking(bookingId, businessId, user.sub, bizRows[0].tenant_id);
 
   return { status: 'confirmed', transaction_id: txRows[0].id };
 }

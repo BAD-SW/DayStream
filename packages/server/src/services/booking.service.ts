@@ -8,6 +8,7 @@ import { logger } from '../middleware/logger';
 import { localSlotMinutes } from '../utils/business-time';
 import { requiredResourceAlternatives, loadMaintenance, underMaintenance } from './required-resources.service';
 import { touchActivity } from './person-identity.service';
+import { queueBookingConfirmation } from './booking-notifications.service';
 
 interface CreateBookingInput {
   businessId: string;
@@ -28,6 +29,12 @@ interface CreateBookingInput {
   dryRun?: boolean;          // run every check and return what would be saved, without saving
   initialStatus?: 'pending' | 'confirmed'; // default 'confirmed' — widget bookings awaiting payment use 'pending'
   source?: 'admin' | 'widget'; // default 'admin' (spec 38)
+  // Suppress the appointment-confirmation email for this creation. Set by callers
+  // where a confirmation would be noise/spam: walk-ins (customer is at the desk)
+  // and recurring-series generation (bulk — avoid a mail storm). The widget passes
+  // its own email flow, so born-confirmed widget bookings also suppress here and
+  // the widget queues once itself.
+  suppressConfirmation?: boolean;
 }
 
 interface BookingFilters {
@@ -504,6 +511,19 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
   );
 
   logger.info('Booking created', { bookingId: booking.id, reference: bookingReference });
+
+  // Appointment confirmation (born-confirmed paths: admin/staff create). Only when
+  // the booking is actually confirmed on creation, has a customer with an email,
+  // and the caller didn't suppress it (walk-ins, recurring series, widget's own
+  // flow). pending bookings confirm later via confirmBooking, which fires there.
+  // Hydrate via getBookingById so service/staff names populate. Non-blocking.
+  if (status === 'confirmed' && booking.customer_id && !input.suppressConfirmation) {
+    getBookingById(booking.id, input.businessId)
+      .then((full) => {
+        if (full?.customer_email) return queueBookingConfirmation(full, full.customer_email);
+      })
+      .catch((e) => logger.warn(`Booking ${bookingReference}: confirmation enqueue failed: ${e?.message || e}`));
+  }
 
   return booking;
 }

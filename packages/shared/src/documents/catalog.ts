@@ -123,6 +123,62 @@ const COMMON_PLACEHOLDERS: DocumentPlaceholder[] = [
  */
 export const DOCUMENT_ARTIFACT_TYPES: DocumentArtifactType[] = [
   {
+    key: 'booking.confirmation',
+    label: 'Appointment',
+    description: 'Sent when a customer books an appointment (self-service or in person).',
+    placeholders: [
+      ...COMMON_PLACEHOLDERS,
+      {
+        token: 'service_name',
+        label: 'Service',
+        description: 'The booked service (and variant, if any).',
+        sample: 'Infrared Sauna — 60 min',
+      },
+      {
+        token: 'appointment_date',
+        label: 'Appointment Date',
+        description: 'The date of the appointment.',
+        sample: '24 Oct 2026',
+      },
+      {
+        token: 'appointment_time',
+        label: 'Appointment Time',
+        description: 'The start time of the appointment.',
+        sample: '2:30 PM',
+      },
+      {
+        token: 'staff_name',
+        label: 'Staff / Practitioner',
+        description: 'Who the appointment is with (if assigned).',
+        sample: 'Javier Ruiz',
+      },
+      {
+        token: 'booking_reference',
+        label: 'Booking Reference',
+        description: 'The appointment reference code.',
+        sample: 'BK-7K4M9Q',
+      },
+      {
+        token: 'calendar_links',
+        label: 'Add to Calendar',
+        // Contract (implemented with the Appointment/email-engine build): placing this
+        // chip is the single opt-in for calendar delivery. When {{calendar_links}} is
+        // present in the body, the send path (1) renders the add-to-calendar links
+        // (Google / Outlook / Apple-.ics) here AND (2) attaches the generated invite.ics
+        // to the email. If the chip is absent, neither the links nor the attachment are
+        // included.
+        description: 'Add this to include "Add to calendar" links (Google, Outlook, Apple) in the email AND attach a calendar invite (.ics). Leave it out to send neither.',
+        sample: 'Add to calendar: Google · Outlook · Apple',
+      },
+      {
+        token: 'manage_link',
+        label: 'Manage Link',
+        description: 'URL where the customer can view, reschedule, or cancel the appointment.',
+        sample: 'https://pay.daystream.app/appointments/BK-7K4M9Q',
+      },
+    ],
+  },
+  {
     key: 'invoice.issued',
     label: 'Adjustment',
     description: 'A customer adjustment — an invoice (debit) or a credit note (credit).',

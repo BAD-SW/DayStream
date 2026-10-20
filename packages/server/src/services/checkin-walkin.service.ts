@@ -63,6 +63,8 @@ export async function walkInCheckIn(tenantId: string, input: WalkInInput) {
       notes: 'Walk-in',
       createdBy: input.userId,
       skipLeadTime: true,
+      // The customer is physically at the desk — a "booking confirmed" email is noise.
+      suppressConfirmation: true,
     });
   } catch (err: any) {
     if (err?.severity || /^(TypeError|ReferenceError|RangeError|SyntaxError)$/.test(err?.name || '')) throw err;

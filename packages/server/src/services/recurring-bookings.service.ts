@@ -96,6 +96,8 @@ export async function generateInstances(series: any, tenantId: string, weeksAhea
         // Only the minimum notice is waived. Opening hours, the provider's availability,
         // resources and capacity apply to every occurrence like to any other booking.
         skipLeadTime: true,
+        // Bulk series generation — don't blast one confirmation email per occurrence.
+        suppressConfirmation: true,
       });
 
       // Link to series
