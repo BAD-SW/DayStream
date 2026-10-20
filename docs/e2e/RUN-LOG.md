@@ -31,6 +31,43 @@ What was not cleaned up, if anything.
 
 ## Runs
 
+## Run 20261020-2 — full run after the customer profile (step B again, of the B, A, B plan)
+- Commit at start:  (profile, THE-16) · Migrations at: 156 (local only; not yet on Neon) · Processor mode: mock for the E2E tenant, Stripe test for the seed business
+- Method: as run 20261020-1, plus the runner  (CUS-29 to CUS-38). Fresh data in tenant - Unit tests: server 974 of 974 (8 new in ), client 186 of 186, shared 12 of 12. Type check: server 0, client 30 (unchanged baseline)
+- Result: every executed script passes after the fixes and corrections below
+
+### Progress
+| Suite | Result |
+|---|---|
+| 00, 03 to 15 | all pass (7, 24, 16, 16, 14, 26, 22, 18, 14, 8, 8, 13, 12) |
+| 02 Auth | all pass after two runner corrections (AUTH-04, AUTH-17) |
+| Bill's features (PAY-19 to PAY-24, SYS-18, REP-09) | 8 of 8 |
+| Customer profile (CUS-29 to CUS-38) | 10 of 10 |
+| Cross-organisation sweep | 13,622 calls: 4 leaks found (D-48 to D-51), fixed, 0 after |
+| 16 Browser tours | 57 business screens as owner (including two profiles, every profile tab and Timeline filter, and New order), 12 as platform admin, 10 as tenant owner: no failed request, no console error, no crash |
+| 01 Journeys | not run as sequences; covered by suites 05 to 15 |
+| 17 Inbox | Blocked (spec 47 not built) |
+
+### Defects
+| Id | Severity | Summary | State |
+|---|---|---|---|
+| D-48 | High | Another organisation could read a staff member's availability patterns given the staff id | Fixed |
+| D-49 | High | … the staff member's service assignments | Fixed |
+| D-50 | High | … the staff member's location assignments | Fixed |
+| D-51 | Medium | Another organisation could read a service's reviews (names, ratings, text) given the service id | Fixed |
+
+The sweep reads one record per table, so fresh data reached records earlier runs did not; all four predate this work.
+
+### Script corrections made after this run
+| Script | What changed and why |
+|---|---|
+| AUTH-04 | The refresh checks wait and retry when the login limiter answers 429 (it ran inside the same minute as other logins) |
+| AUTH-17 | The 11 attempts are sent directly: the shared login helper (changed in run 20261020-1 to retry on 429) hid the limiter's answer |
+
+### Leftover test data
+The  tenant and business; an empty open order for James Wilson in the seed business  (created by the New order check in the browser tour).
+
+
 ## Run 20261020-1 — full run after pulling Bill's work (step B of the B, A, B plan)
 - Commit at start: `d5c57bf` · Migrations at: 155 (applied locally and on Neon) · Processor mode: mock for the E2E tenant, Stripe test for the seed business
 - Method: the API runners of run 20261012-6 (scratchpad `r00` … `r15`, `sweep`) plus a new runner `rbill` for Bill's features; the browser for the screen tours. Data in tenant `E2E 20261020-1 SysTenant B`, business `E2E 20261020-1 Biz B`
