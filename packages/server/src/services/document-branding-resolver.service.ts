@@ -119,6 +119,14 @@ function fmtDate(value: unknown, locale: string): string {
   return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+/** Format the time-of-day from an ISO timestamp (for appointment_time). */
+function fmtTime(value: unknown, locale: string): string {
+  if (value == null || value === '') return '';
+  const d = new Date(String(value));
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' });
+}
+
 /**
  * Build the flat token→string map the renderer substitutes. This is the single
  * place that knows how raw queued `data` (with *_cents integers and ISO dates)
@@ -185,11 +193,21 @@ export function buildTokenMap(
     gift_card_code: str(data.gift_card_code),
     recipient_name: str(data.recipient_name),
     sender_name: str(data.sender_name),
+    // Appointment template (booking.confirmation). Date/time derive from
+    // start_time; service/staff/reference pass through from the booking data bag.
+    service_name: str(data.service_name),
+    staff_name: str(data.staff_name),
+    booking_reference: str(data.booking_reference),
+    appointment_date: fmtDate(data.appointment_date ?? data.start_time, locale),
+    appointment_time: fmtTime(data.appointment_time ?? data.start_time, locale),
     // Links (pass through; validated at save time).
     payment_link: str(data.payment_link),
     update_payment_link: str(data.update_payment_link),
     manage_link: str(data.manage_link),
     redeem_link: str(data.redeem_link),
+    // Add-to-calendar block (links + .ics attachment) — not generated yet;
+    // resolves empty until the calendar/portal work lands.
+    calendar_links: str(data.calendar_links),
   };
   return map;
 }

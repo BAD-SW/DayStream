@@ -51,8 +51,13 @@ export async function queueBookingConfirmation(booking: any, customerEmail: stri
       variant_name: booking.variant_name || '',
       start_time: booking.start_time,
       end_time: booking.end_time,
-      staff_name: booking.staff_first_name ? `${booking.staff_first_name} ${booking.staff_last_name}` : null,
+      staff_name: booking.staff_first_name ? `${booking.staff_first_name} ${booking.staff_last_name}`.trim() : null,
       price: booking.price,
+      // Recipient identity + the Appointment template's tokens. The resolver maps
+      // appointment_date/appointment_time from start_time; customer fields come
+      // from the hydrated booking (getBookingById joins the customer).
+      customer_name: [booking.customer_first_name, booking.customer_last_name].filter(Boolean).join(' ').trim() || null,
+      customer_email: booking.customer_email || customerEmail || null,
     },
   });
 }
