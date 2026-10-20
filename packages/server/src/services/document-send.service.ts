@@ -343,4 +343,112 @@ export async function resolveOrderReceiptFields(orderId: string, businessId: str
   }, null, detailsTable);
 }
 
+/**
+ * Build the {{details_table}} line-item table for a QUEUED notification, from its
+ * data bag, so the email renderer can draw it. Returns null for types that have
+ * no table.
+ *
+ *  - payment.receipt / invoice.paid → the paid order's line items, matched by the
+ *    reference_number in the data bag (falls back to a single row at the amount).
+ *  - invoice.issued (adjustment / credit note / debit note) → the note's or
+ *    invoice's own line items, keyed by the *_number carried in the data bag.
+ *
+ * Decoupled from the resolver: the resolver stays generic (takes a table); this is
+ * where "how to build the table for this notification" lives.
+ */
+export async function buildDetailsTableForNotification(
+  businessId: string,
+  type: string,
+  data: Record<string, unknown>,
+): Promise<DocumentDetailsTable | null> {
+  const currency = typeof data.currency === 'string' ? data.currency : 'EUR';
+
+  if (type === 'payment.receipt' || type === 'invoice.paid') {
+    const reference = (data.reference_number ?? data.receipt_number) as string | undefined;
+    if (reference) {
+      const { rows: items } = await adminPool.query(
+        `SELECT oi.item_name, oi.variant_name, oi.quantity, oi.total_price
+           FROM fin_order_items oi
+           JOIN fin_orders o ON o.id = oi.order_id
+          WHERE o.business_id = $1 AND o.payment_reference = $2
+          ORDER BY oi.created_at`,
+        [businessId, reference],
+      );
+      if (items.length > 0) {
+        const rows = items.map((it: any) => ({
+          description: it.variant_name ? `${it.item_name} — ${it.variant_name}` : it.item_name,
+          qty: Number(it.quantity),
+          amountCents: it.total_price,
+        }));
+        return { rows, totalCents: rows.reduce((n, r) => n + r.amountCents, 0), currency };
+      }
+    }
+    // Single-row fallback: the payment itself.
+    const amount = typeof data.amount_cents === 'number' ? data.amount_cents : 0;
+    if (amount > 0) {
+      return { rows: [{ description: 'Payment', qty: 1, amountCents: amount }], totalCents: amount, currency };
+    }
+    return null;
+  }
+
+  if (type === 'invoice.issued') {
+    // Adjustment family: the number carried in the bag is invoice/CN/DN (e.g. the
+    // credit/debit branches queue invoice_number = `CN-1001` / `DN-1001`). Resolve
+    // the matching note's or invoice's line items.
+    const numberStr = String(data.invoice_number ?? data.adjustment_number ?? '');
+    if (numberStr.startsWith('CN-')) {
+      return await creditNoteDetailsTable(businessId, Number(numberStr.slice(3)), currency);
+    }
+    if (numberStr.startsWith('DN-')) {
+      return await debitNoteDetailsTable(businessId, Number(numberStr.slice(3)), currency);
+    }
+    const invNum = Number(numberStr);
+    if (Number.isFinite(invNum) && invNum > 0) {
+      return await invoiceDetailsTable(businessId, invNum, currency);
+    }
+    return null;
+  }
+
+  return null;
+}
+
+async function invoiceDetailsTable(businessId: string, invoiceNumber: number, currency: string): Promise<DocumentDetailsTable | null> {
+  const { rows } = await adminPool.query(
+    `SELECT li.description, li.quantity, li.amount_cents, li.tax_cents, pi.total_cents
+       FROM pay_invoices pi JOIN pay_invoice_line_items li ON li.invoice_id = pi.id
+      WHERE pi.business_id = $1 AND pi.invoice_number = $2
+      ORDER BY li.display_order, li.created_at`,
+    [businessId, invoiceNumber],
+  );
+  if (rows.length === 0) return null;
+  const items = rows.map((r: any) => ({ description: r.description, qty: Number(r.quantity), amountCents: r.amount_cents }));
+  return { rows: items, totalCents: Number(rows[0].total_cents), currency };
+}
+
+async function creditNoteDetailsTable(businessId: string, number: number, currency: string): Promise<DocumentDetailsTable | null> {
+  const { rows } = await adminPool.query(
+    `SELECT li.description, li.quantity, li.amount_cents, cn.total_cents
+       FROM pay_credit_notes cn JOIN pay_credit_note_line_items li ON li.credit_note_id = cn.id
+      WHERE cn.business_id = $1 AND cn.credit_note_number = $2
+      ORDER BY li.display_order, li.created_at`,
+    [businessId, number],
+  );
+  if (rows.length === 0) return null;
+  const items = rows.map((r: any) => ({ description: r.description, qty: Number(r.quantity), amountCents: r.amount_cents }));
+  return { rows: items, totalCents: Number(rows[0].total_cents), currency };
+}
+
+async function debitNoteDetailsTable(businessId: string, number: number, currency: string): Promise<DocumentDetailsTable | null> {
+  const { rows } = await adminPool.query(
+    `SELECT li.description, li.quantity, li.amount_cents, dn.total_cents
+       FROM pay_debit_notes dn JOIN pay_debit_note_line_items li ON li.debit_note_id = dn.id
+      WHERE dn.business_id = $1 AND dn.debit_note_number = $2
+      ORDER BY li.display_order, li.created_at`,
+    [businessId, number],
+  );
+  if (rows.length === 0) return null;
+  const items = rows.map((r: any) => ({ description: r.description, qty: Number(r.quantity), amountCents: r.amount_cents }));
+  return { rows: items, totalCents: Number(rows[0].total_cents), currency };
+}
+
 export { DocumentSendError };

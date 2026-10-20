@@ -310,6 +310,7 @@ export async function renderDocument(
   data: Record<string, unknown>,
   template: DocumentBrandingTemplate | null,
   language?: string | null,
+  detailsTable: DocumentDetailsTable | null = null,
 ): Promise<RenderedDocument> {
   const identity = await getBusinessIdentity(businessId);
   const tokens = buildTokenMap(data, identity);
@@ -326,9 +327,16 @@ export async function renderDocument(
     : defaultSubject;
 
   // Body: branded HTML (already a sanitized subset), else a minimal default.
-  const bodyHtml = template?.bodyTemplate
+  const bodyWithMarker = template?.bodyTemplate
     ? substitute(template.bodyTemplate, tokens)
     : `<p>Hi ${escapeHtml(tokens.customer_first_name || 'there')},</p>`;
+
+  // The {{details_table}} token is a placement MARKER left literal by substitute.
+  // Draw the native line-item table where it sits (or remove the marker cleanly
+  // when there's no table), matching the on-screen/PDF renderers.
+  const detailsMarker = `{{${DETAILS_TABLE_TOKEN}}}`;
+  const tableHtml = detailsTable ? renderDetailsTableHtml(detailsTable, secondary, identity) : '';
+  const bodyHtml = bodyWithMarker.split(detailsMarker).join(tableHtml);
 
   // Footer text + optional safe clickable link.
   const footerText = substitute(template?.footerText, tokens);
@@ -365,8 +373,12 @@ export async function renderDocument(
 </html>`;
 
   // Plain-text fallback: strip tags from the body, keep footer text + link URL.
+  // Plain-text body: strip tags from the marker-preserving body, then swap the
+  // marker for a text rendering of the table (so the table survives stripTags).
+  const tableText = detailsTable ? renderDetailsTableText(detailsTable, identity.locale) : '';
+  const bodyText = stripTags(bodyWithMarker).split(detailsMarker).join(tableText);
   const text = [
-    stripTags(bodyHtml),
+    bodyText,
     footerText,
     footerLinkText && footerLinkUrl ? `${footerLinkText}: ${footerLinkUrl}` : '',
   ].filter(Boolean).join('\n\n');
@@ -383,7 +395,7 @@ export async function renderDocument(
 /** Crude tag strip for the plain-text fallback (body is a constrained subset). */
 function stripTags(html: string): string {
   return html
-    .replace(/<\/(p|div|h3|h4|li)>/gi, '\n')
+    .replace(/<\/(p|div|h3|h4|li|tr|table)>/gi, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/g, ' ')
@@ -395,6 +407,44 @@ function stripTags(html: string): string {
 }
 
 /**
+ * Render the line-item details table as an HTML table (Description / Qty / Amount
+ * + Total), drawn where {{details_table}} sits. Mirrors the on-screen/PDF table.
+ * The table's own currency wins; locale comes from the business identity.
+ */
+function renderDetailsTableHtml(
+  table: DocumentDetailsTable, accent: string, identity: BusinessIdentity,
+): string {
+  const money = (cents: number) => formatCurrency(cents, table.currency || identity.currency, identity.locale);
+  const header = `
+    <tr>
+      <th align="left" style="padding:6px 8px;border-bottom:2px solid ${escapeHtml(accent)};font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#666;">Description</th>
+      <th align="right" style="padding:6px 8px;border-bottom:2px solid ${escapeHtml(accent)};font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#666;">Qty</th>
+      <th align="right" style="padding:6px 8px;border-bottom:2px solid ${escapeHtml(accent)};font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#666;">Amount</th>
+    </tr>`;
+  const body = (table.rows || []).map((r) => `
+    <tr>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;">${escapeHtml(r.description)}</td>
+      <td align="right" style="padding:6px 8px;border-bottom:1px solid #eee;">${escapeHtml(String(r.qty))}</td>
+      <td align="right" style="padding:6px 8px;border-bottom:1px solid #eee;">${escapeHtml(money(r.amountCents))}</td>
+    </tr>`).join('');
+  const total = `
+    <tr>
+      <td></td>
+      <td align="right" style="padding:8px;font-weight:700;">Total</td>
+      <td align="right" style="padding:8px;font-weight:700;">${escapeHtml(money(table.totalCents))}</td>
+    </tr>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:16px 0;font-size:14px;color:#1a1a1a;">${header}${body}${total}</table>`;
+}
+
+/** Plain-text rendering of the details table for the text/plain fallback. */
+function renderDetailsTableText(table: DocumentDetailsTable, currencyLocale = 'en-US'): string {
+  const money = (cents: number) => formatCurrency(cents, table.currency || 'EUR', currencyLocale);
+  const lines = (table.rows || []).map((r) => `  ${r.description}  x${r.qty}  ${money(r.amountCents)}`);
+  lines.push(`  Total: ${money(table.totalCents)}`);
+  return lines.join('\n');
+}
+
+/**
  * One-shot convenience: select the applicable template and render it. Used by the
  * notification dispatch seam.
  */
@@ -403,7 +453,8 @@ export async function resolveAndRender(
   notificationType: string,
   data: Record<string, unknown>,
   language?: string | null,
+  detailsTable: DocumentDetailsTable | null = null,
 ): Promise<RenderedDocument> {
   const template = await selectTemplate(businessId, notificationType, language);
-  return renderDocument(businessId, notificationType, data, template, language);
+  return renderDocument(businessId, notificationType, data, template, language, detailsTable);
 }

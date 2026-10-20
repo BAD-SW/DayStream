@@ -279,8 +279,12 @@ async function sendEmail(notification: any): Promise<void> {
 
   if (isKnownArtifactType(artifactKey)) {
     // Branded catalog document — resolve the business's template and render it.
+    // Build the {{details_table}} line-item table from the queued data so the
+    // email draws it where the marker sits (receipt/invoice/adjustment).
     const language = typeof data.language === 'string' ? data.language : null;
-    const rendered = await resolveAndRender(notification.business_id, type, data, language);
+    const { buildDetailsTableForNotification } = await import('./document-send.service');
+    const detailsTable = await buildDetailsTableForNotification(notification.business_id, type, data).catch(() => null);
+    const rendered = await resolveAndRender(notification.business_id, type, data, language, detailsTable);
     await sendEmailTransport({
       to: recipient,
       subject: rendered.subject,
