@@ -3,6 +3,7 @@ import { config } from './config';
 import { pool } from './db/pool';
 import { logger } from './middleware/logger';
 import { startJobScheduler } from './jobs/job-scheduler';
+import { startEmailQueueScheduler } from './jobs/email-queue-scheduler';
 
 const start = async () => {
   // Test database connection
@@ -15,8 +16,11 @@ const start = async () => {
     process.exit(1);
   }
 
-  // Start job scheduler
+  // Start job scheduler (calendar-scheduled daily jobs)
   startJobScheduler();
+
+  // Start the system-email queue drainer (transactional mail dispatch)
+  startEmailQueueScheduler();
 
   // Start server
   app.listen(config.port, () => {

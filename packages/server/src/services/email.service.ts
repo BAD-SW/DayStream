@@ -1,67 +1,125 @@
 import nodemailer from 'nodemailer';
 import { logger } from '../middleware/logger';
-
-let transporter: nodemailer.Transporter | null = null;
+import { adminPool } from '../db/pool';
 
 /**
- * Initialize the email transporter.
- * In development, uses Ethereal (fake SMTP) so emails can be previewed
- * without sending real mail. In production, uses real SMTP credentials.
+ * System (transactional) email transport.
  *
- * Ethereal: https://ethereal.email
- *   - Emails are captured and viewable at the URL logged after each send.
- *   - No real emails are delivered.
+ * Config precedence for the SMTP relay:
+ *   1. DB — the Email Server (SMTP) config saved via the system-persona UI
+ *      (sys_system_configurations, category 'email'). Source of truth for a
+ *      deployed install, so an operator can change the relay from the UI.
+ *   2. Env (SMTP_HOST/SMTP_PORT/SMTP_SECURE/SMTP_USER/SMTP_PASS) — for deploys
+ *      that prefer env config.
+ *   3. Ethereal dev auto-account — when neither is set (local dev), a fake SMTP
+ *      account is created so mail is captured and previewable, never delivered.
+ *
+ * The transporter is cached and rebuilt lazily; `invalidateTransport()` clears the
+ * cache so saving new config in the UI takes effect without a restart.
+ *
+ * Transport seam: system mail goes through nodemailer SMTP (a hosted relay, or
+ * SES-SMTP later); swapping relays is a config change. Marketing email
+ * (SendGrid/Listrak) is a separate pipeline, out of scope here.
  */
-async function getTransporter(): Promise<nodemailer.Transporter> {
-  if (transporter) return transporter;
 
-  const nodeEnv = process.env.NODE_ENV || 'development';
+interface ResolvedSmtpConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user?: string;
+  pass?: string;
+  fromAddress?: string;
+  fromName?: string;
+  /** Platform-wide send ceiling (emails/hour); 0/undefined = unlimited. */
+  rateLimitPerHour?: number;
+}
 
-  if (nodeEnv === 'production' || nodeEnv === 'staging') {
-    // Production: use configured SMTP
-    transporter = nodemailer.createTransport({
+let transporter: nodemailer.Transporter | null = null;
+let cachedFrom: string | null = null;
+
+/** The saved Email Server config from the DB (null when unconfigured). */
+async function loadDbEmailConfig(): Promise<Record<string, any> | null> {
+  try {
+    const { rows } = await adminPool.query(
+      `SELECT config_data FROM sys_system_configurations WHERE category = 'email'`,
+    );
+    return rows[0]?.config_data || null;
+  } catch {
+    return null;  // table/connection not ready — fall through to env/Ethereal
+  }
+}
+
+/** Resolve the effective SMTP config from DB -> env -> (caller handles Ethereal). */
+async function resolveSmtpConfig(): Promise<ResolvedSmtpConfig | null> {
+  const db = await loadDbEmailConfig();
+  if (db?.smtp_host && db?.smtp_user) {
+    return {
+      host: String(db.smtp_host),
+      port: parseInt(String(db.smtp_port || 587), 10),
+      secure: db.use_ssl === true || String(db.smtp_port) === '465',
+      user: db.smtp_user ? String(db.smtp_user) : undefined,
+      pass: db.smtp_password ? String(db.smtp_password) : undefined,
+      fromAddress: db.from_email ? String(db.from_email) : undefined,
+      fromName: db.from_name ? String(db.from_name) : undefined,
+      rateLimitPerHour: db.rate_limit != null ? parseInt(String(db.rate_limit), 10) : undefined,
+    };
+  }
+  if (process.env.SMTP_HOST && process.env.SMTP_USER) {
+    return {
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT || '587', 10),
       secure: process.env.SMTP_SECURE === 'true',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  } else {
-    // Development: use Ethereal
-    if (process.env.SMTP_HOST && process.env.SMTP_USER) {
-      // Use pre-configured Ethereal credentials from .env
-      transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT || '587', 10),
-        secure: false,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-    } else {
-      // Auto-create Ethereal account on first use
-      const testAccount = await nodemailer.createTestAccount();
-      logger.info('Ethereal test account created', {
-        user: testAccount.user,
-        pass: testAccount.pass,
-        web: 'https://ethereal.email',
-      });
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+      fromAddress: process.env.EMAIL_FROM,
+    };
+  }
+  return null;
+}
 
-      transporter = nodemailer.createTransport({
-        host: 'smtp.ethereal.email',
-        port: 587,
-        secure: false,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass,
-        },
-      });
-    }
+/** Build a nodemailer transporter from a resolved SMTP config. */
+export function buildTransport(cfg: ResolvedSmtpConfig): nodemailer.Transporter {
+  return nodemailer.createTransport({
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.secure,
+    ...(cfg.user ? { auth: { user: cfg.user, pass: cfg.pass } } : {}),
+  });
+}
+
+/** Clear the cached transporter so the next send rebuilds from current config. */
+export function invalidateTransport(): void {
+  transporter = null;
+  cachedFrom = null;
+}
+
+/** The resolved platform-wide send ceiling (emails/hour); 0 = unlimited. */
+export async function getRateLimitPerHour(): Promise<number> {
+  const cfg = await resolveSmtpConfig();
+  return cfg?.rateLimitPerHour && cfg.rateLimitPerHour > 0 ? cfg.rateLimitPerHour : 0;
+}
+
+async function getTransporter(): Promise<nodemailer.Transporter> {
+  if (transporter) return transporter;
+
+  const cfg = await resolveSmtpConfig();
+  if (cfg) {
+    transporter = buildTransport(cfg);
+    cachedFrom = cfg.fromAddress
+      ? (cfg.fromName ? `${cfg.fromName} <${cfg.fromAddress}>` : cfg.fromAddress)
+      : null;
+    return transporter;
   }
 
+  // No DB/env config — dev fallback: a captured-only Ethereal account.
+  const testAccount = await nodemailer.createTestAccount();
+  logger.info('Ethereal test account created', {
+    user: testAccount.user, pass: testAccount.pass, web: 'https://ethereal.email',
+  });
+  transporter = nodemailer.createTransport({
+    host: 'smtp.ethereal.email', port: 587, secure: false,
+    auth: { user: testAccount.user, pass: testAccount.pass },
+  });
   return transporter;
 }
 
@@ -86,7 +144,22 @@ export interface EmailOptions {
 export async function sendEmail(options: EmailOptions): Promise<{ messageId: string; previewUrl?: string }> {
   const transport = await getTransporter();
 
-  const from = options.from || process.env.EMAIL_FROM || 'DayStream <noreply@daystream.app>';
+  // From precedence: per-message override (a business's branded sender_name) → the
+  // configured Email Server From (from_name/from_email) → env → platform default.
+  // A branded override is usually a display NAME only (no address); pair it with
+  // the configured/default address so nodemailer gets a valid From.
+  const baseFrom = cachedFrom || process.env.EMAIL_FROM || 'DayStream <noreply@daystream.app>';
+  let from = baseFrom;
+  if (options.from) {
+    if (options.from.includes('<') || options.from.includes('@')) {
+      from = options.from;  // already a full address or "Name <addr>"
+    } else {
+      // Display-name-only override: keep the configured address, swap the name.
+      const addrMatch = baseFrom.match(/<([^>]+)>/);
+      const addr = addrMatch ? addrMatch[1] : baseFrom;
+      from = `${options.from} <${addr}>`;
+    }
+  }
 
   const info = await transport.sendMail({
     from,

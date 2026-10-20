@@ -153,41 +153,95 @@ export async function queueWaitlistPromotion(entry: any, customerEmail: string, 
 /**
  * Process pending notifications that are due for delivery.
  */
+const MAX_ATTEMPTS = 4;
+const STALE_CLAIM_MS = 5 * 60 * 1000;   // reclaim a crashed worker's rows after 5 min
+const WORKER_ID = `mail-${process.pid}`;
+
+/**
+ * Drain the notification queue (the single system-email dispatch path).
+ *
+ * Multi-instance safe: due rows are claimed atomically by flipping to 'processing'
+ * with FOR UPDATE SKIP LOCKED, so parallel workers never grab the same row. Stale
+ * 'processing' rows (a crashed worker) are reclaimed after STALE_CLAIM_MS.
+ *
+ * Rate-limited: honours the platform-wide per-hour ceiling from the Email Server
+ * config. The batch size for this run is min(remaining-this-hour, hard cap), so a
+ * burst drains steadily and never exceeds the relay's ceiling. 0 = unlimited.
+ *
+ * Retry with backoff: a failed send goes back to 'pending' with next_attempt_at
+ * pushed out (exponential), up to MAX_ATTEMPTS, then 'failed'.
+ */
 export async function processNotificationQueue(): Promise<{ sent: number; failed: number }> {
-  const { rows } = await adminPool.query(
-    `SELECT * FROM apt_notification_queue
-     WHERE status = 'pending' AND scheduled_for <= NOW()
-     ORDER BY scheduled_for
-     LIMIT 50`,
+  const { getRateLimitPerHour } = await import('./email.service');
+  const limit = await getRateLimitPerHour();
+
+  // How many we may still send this rolling hour (when a limit is set).
+  let batchCap = 50;   // hard per-cycle cap regardless of rate limit
+  if (limit > 0) {
+    const { rows: sentRows } = await adminPool.query(
+      `SELECT COUNT(*)::int AS n FROM apt_notification_queue
+        WHERE status = 'sent' AND sent_at > NOW() - INTERVAL '1 hour'`,
+    );
+    const remaining = Math.max(0, limit - sentRows[0].n);
+    if (remaining === 0) {
+      logger.info('Notification queue: hourly rate limit reached; deferring', { limit });
+      return { sent: 0, failed: 0 };
+    }
+    batchCap = Math.min(batchCap, remaining);
+  }
+
+  // Claim a batch atomically: pending + due (or retry-due) rows → 'processing'.
+  // Also reclaim rows stuck in 'processing' past the stale window.
+  const { rows: claimed } = await adminPool.query(
+    `UPDATE apt_notification_queue
+     SET status = 'processing', claimed_at = NOW(), claimed_by = $1
+     WHERE id IN (
+       SELECT id FROM apt_notification_queue
+       WHERE (
+         (status = 'pending' AND scheduled_for <= NOW()
+           AND (next_attempt_at IS NULL OR next_attempt_at <= NOW()))
+         OR (status = 'processing' AND claimed_at < NOW() - INTERVAL '${STALE_CLAIM_MS} milliseconds')
+       )
+       ORDER BY scheduled_for
+       LIMIT ${batchCap}
+       FOR UPDATE SKIP LOCKED
+     )
+     RETURNING *`,
+    [WORKER_ID],
   );
 
   let sent = 0;
   let failed = 0;
 
-  for (const notification of rows) {
+  for (const notification of claimed) {
     try {
-      // Dispatch based on channel
       if (notification.channel === 'email') {
         await sendEmail(notification);
       }
-      // Mark as sent
       await adminPool.query(
-        "UPDATE apt_notification_queue SET status = 'sent', sent_at = NOW() WHERE id = $1",
+        `UPDATE apt_notification_queue
+         SET status = 'sent', sent_at = NOW(), claimed_at = NULL, claimed_by = NULL WHERE id = $1`,
         [notification.id],
       );
       sent++;
     } catch (err: any) {
-      // Mark as failed, increment attempts
+      const attempts = (notification.attempts ?? 0) + 1;
+      const backoffMin = Math.min(60, 2 ** attempts);   // 2,4,8,16… minutes, capped
       await adminPool.query(
-        "UPDATE apt_notification_queue SET status = CASE WHEN attempts >= 3 THEN 'failed' ELSE 'pending' END, attempts = attempts + 1, error = $2 WHERE id = $1",
-        [notification.id, err.message],
+        `UPDATE apt_notification_queue
+         SET status = CASE WHEN $2 >= ${MAX_ATTEMPTS} THEN 'failed' ELSE 'pending' END,
+             attempts = $2, error = $3,
+             next_attempt_at = NOW() + INTERVAL '${1} minute' * $4,
+             claimed_at = NULL, claimed_by = NULL
+         WHERE id = $1`,
+        [notification.id, attempts, String(err?.message || err), backoffMin],
       );
       failed++;
     }
   }
 
   if (sent > 0 || failed > 0) {
-    logger.info('Notification queue processed', { sent, failed });
+    logger.info('Notification queue processed', { sent, failed, claimed: claimed.length });
   }
 
   return { sent, failed };
@@ -211,17 +265,9 @@ async function sendEmail(notification: any): Promise<void> {
   const type: string = notification.type;
   const artifactKey = resolveArtifactKey(type);
 
-  if (!isKnownArtifactType(artifactKey)) {
-    // Not a branded document — preserve existing behavior (log only for now).
-    logger.info('Email notification dispatched (unbranded, not sent)', {
-      type, recipient: notification.recipient_email,
-    });
-    return;
-  }
-
   const recipient: string | null = notification.recipient_email || null;
   if (!recipient) {
-    logger.warn('Branded notification has no recipient email; skipping', { type, id: notification.id });
+    logger.warn('Notification has no recipient email; skipping', { type, id: notification.id });
     return;
   }
 
@@ -231,19 +277,55 @@ async function sendEmail(notification: any): Promise<void> {
     data = typeof notification.data === 'string' ? JSON.parse(notification.data) : (notification.data ?? {});
   } catch { data = {}; }
 
-  const language = typeof data.language === 'string' ? data.language : null;
-  const rendered = await resolveAndRender(notification.business_id, type, data, language);
+  if (isKnownArtifactType(artifactKey)) {
+    // Branded catalog document — resolve the business's template and render it.
+    const language = typeof data.language === 'string' ? data.language : null;
+    const rendered = await resolveAndRender(notification.business_id, type, data, language);
+    await sendEmailTransport({
+      to: recipient,
+      subject: rendered.subject,
+      html: rendered.html,
+      text: rendered.text,
+      ...(rendered.senderName ? { from: rendered.senderName } : {}),
+      ...(rendered.replyTo ? { replyTo: rendered.replyTo } : {}),
+    });
+    logger.info('Branded document email sent', { type, recipient });
+    return;
+  }
 
-  await sendEmailTransport({
-    to: recipient,
-    subject: rendered.subject,
-    html: rendered.html,
-    text: rendered.text,
-    ...(rendered.senderName ? { from: rendered.senderName } : {}),
-    ...(rendered.replyTo ? { replyTo: rendered.replyTo } : {}),
-  });
+  // Non-catalog type (e.g. booking.reminder/.reschedule/.cancellation) — send a
+  // clean default email so it is actually delivered rather than only logged.
+  // (A branded template for these can be added to the catalog later.)
+  const rendered = renderDefaultEmail(type, data);
+  await sendEmailTransport({ to: recipient, subject: rendered.subject, html: rendered.html, text: rendered.text });
+  logger.info('Default email sent', { type, recipient });
+}
 
-  logger.info('Branded document email sent', { type, recipient });
+/**
+ * Minimal, safe default email for notification types that don't (yet) have a
+ * branded catalog template. Produces a plain, readable message from the queued
+ * data so transactional mail still goes out. HTML-escaped throughout.
+ */
+function renderDefaultEmail(type: string, data: Record<string, unknown>): { subject: string; html: string; text: string } {
+  const esc = (s: unknown): string => String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const titles: Record<string, string> = {
+    'booking.confirmation': 'Your appointment is confirmed',
+    'booking.reschedule': 'Your appointment has been rescheduled',
+    'booking.cancellation': 'Your appointment has been cancelled',
+    'booking.reminder': 'Appointment reminder',
+  };
+  const subject = titles[type] || 'Notification';
+  const name = esc((data.customer_name as string) || '').split(' ')[0] || 'there';
+  const service = esc(data.service_name);
+  const when = data.start_time ? new Date(String(data.start_time)).toLocaleString() : '';
+  const lines: string[] = [`<p>Hi ${name},</p>`, `<p>${esc(subject)}.</p>`];
+  if (service) lines.push(`<p>Service: ${service}</p>`);
+  if (when) lines.push(`<p>When: ${esc(when)}</p>`);
+  if (data.booking_reference) lines.push(`<p>Reference: ${esc(data.booking_reference)}</p>`);
+  const html = lines.join('\n');
+  const text = lines.map((l) => l.replace(/<[^>]+>/g, '')).join('\n');
+  return { subject, html, text };
 }
 
 /**

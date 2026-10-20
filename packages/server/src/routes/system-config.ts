@@ -51,6 +51,10 @@ systemConfigRouter.put('/email', requirePermission('*:*'), async (req: Request, 
   try {
     const authReq = req as AuthenticatedRequest;
     await upsertSystemConfig('email', req.body, authReq.user.sub);
+    // Drop the cached SMTP transporter so the new config takes effect on the next
+    // send without a server restart.
+    const { invalidateTransport } = await import('../services/email.service');
+    invalidateTransport();
     await logAudit({
       tenantId: 'system',
       userId: authReq.user.sub,
@@ -67,29 +71,41 @@ systemConfigRouter.put('/email', requirePermission('*:*'), async (req: Request, 
 
 systemConfigRouter.post('/email/test', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
-    const config = req.body;
-    if (!config || !config.smtp_host) {
+    const config = req.body || {};
+    if (!config.smtp_host) {
       error(res, 'SMTP host is required.', 'VALIDATION_ERROR', 400);
       return;
     }
-    if (!config.smtp_user || !config.smtp_password) {
-      error(res, 'SMTP credentials are incomplete. Username and password required.', 'VALIDATION_ERROR', 400);
+    if (!config.smtp_user) {
+      error(res, 'SMTP credentials are incomplete. Username is required.', 'VALIDATION_ERROR', 400);
       return;
     }
-    const net = await import('net');
-    const host = config.smtp_host;
-    const port = config.smtp_port || 587;
 
-    await new Promise<void>((resolve, reject) => {
-      const socket = net.createConnection({ host, port, timeout: 5000 }, () => {
-        socket.destroy();
-        resolve();
-      });
-      socket.on('error', (err) => { socket.destroy(); reject(err); });
-      socket.on('timeout', () => { socket.destroy(); reject(new Error('Connection timed out')); });
+    // The password field may be masked in the UI and not re-sent on test — fall
+    // back to the saved password so a test reuses the stored credential.
+    let password = config.smtp_password;
+    if (!password) {
+      const saved = await getSystemConfig('email');
+      password = saved?.smtp_password;
+    }
+    if (!password) {
+      error(res, 'SMTP password is required (none submitted and none saved).', 'VALIDATION_ERROR', 400);
+      return;
+    }
+
+    const port = parseInt(String(config.smtp_port || 587), 10);
+    const secure = config.use_ssl === true || port === 465;
+
+    // Real SMTP handshake + auth (not just a TCP probe): build a transporter and
+    // verify it against the relay. Surfaces bad host/port/credentials accurately.
+    const { buildTransport } = await import('../services/email.service');
+    const transport = buildTransport({
+      host: String(config.smtp_host), port, secure,
+      user: String(config.smtp_user), pass: String(password),
     });
+    await transport.verify();
 
-    success(res, { message: `SMTP connection to ${host}:${port} successful.` });
+    success(res, { message: `SMTP connection to ${config.smtp_host}:${port} verified.` });
   } catch (err: any) {
     error(res, `SMTP connection failed: ${err.message}`, 'TEST_FAILED', 400);
   }
