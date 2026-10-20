@@ -83,14 +83,34 @@ export async function createGiftCard(input: CreateGiftCardInput): Promise<any> {
     details: { code: card.code, amount_cents: input.amountCents, currency },
   }).catch(() => {});
 
-  // Email the recipient (C7.3). Full branding is Phase 6 (C12).
+  // Email the recipient (C7.3) with the branded Gift Card template. The data bag
+  // uses the keys the gift_card.issued template resolves (buildTokenMap):
+  // gift_card_code, gift_card_amount (from *_cents), recipient_name, sender_name,
+  // expiry_date, redeem_link. sender_name is the purchaser's name when the card was
+  // bought by a known customer. redeem_link is left empty — no customer-facing
+  // gift-card redemption URL builder exists yet (tracked follow-up).
   if (card.recipient_email) {
+    let senderName: string | null = null;
+    if (input.purchaserCustomerId) {
+      const { rows } = await adminPool.query(
+        'SELECT first_name, last_name FROM cus_customers WHERE id = $1',
+        [input.purchaserCustomerId],
+      );
+      if (rows[0]) senderName = [rows[0].first_name, rows[0].last_name].filter(Boolean).join(' ').trim() || null;
+    }
     queueNotification({
       businessId: input.businessId, type: 'gift_card.issued',
       recipientId: input.purchaserCustomerId || card.id, recipientEmail: card.recipient_email,
       data: {
-        code: card.code, amount_cents: input.amountCents, currency,
-        recipient_name: card.recipient_name, expires_at: card.expires_at,
+        gift_card_code: card.code,
+        gift_card_amount_cents: input.amountCents,
+        currency,
+        recipient_name: card.recipient_name,
+        sender_name: senderName,
+        expiry_date: card.expires_at,
+        redeem_link: null,
+        customer_name: card.recipient_name,
+        customer_email: card.recipient_email,
       },
     }).catch(() => {});
   }
