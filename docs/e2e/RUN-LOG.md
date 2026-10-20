@@ -32,8 +32,9 @@ What was not cleaned up, if anything.
 ## Runs
 
 ## Run 20261020-2 — full run after the customer profile (step B again, of the B, A, B plan)
-- Commit at start:  (profile, THE-16) · Migrations at: 156 (local only; not yet on Neon) · Processor mode: mock for the E2E tenant, Stripe test for the seed business
-- Method: as run 20261020-1, plus the runner  (CUS-29 to CUS-38). Fresh data in tenant - Unit tests: server 974 of 974 (8 new in ), client 186 of 186, shared 12 of 12. Type check: server 0, client 30 (unchanged baseline)
+- Commit at start: `88b8835` (profile, THE-16) · Migrations at: 156 (local only; not yet on Neon) · Processor mode: mock for the E2E tenant, Stripe test for the seed business
+- Method: as run 20261020-1, plus the runner `rprof` (CUS-29 to CUS-38). Fresh data in tenant `E2E 20261020-2 SysTenant B`
+- Unit tests: server 974 of 974 (8 new in `customer-profile.test.ts`), client 186 of 186, shared 12 of 12. Type check: server 0, client 30 (unchanged baseline)
 - Result: every executed script passes after the fixes and corrections below
 
 ### Progress
@@ -65,7 +66,7 @@ The sweep reads one record per table, so fresh data reached records earlier runs
 | AUTH-17 | The 11 attempts are sent directly: the shared login helper (changed in run 20261020-1 to retry on 429) hid the limiter's answer |
 
 ### Leftover test data
-The  tenant and business; an empty open order for James Wilson in the seed business  (created by the New order check in the browser tour).
+The `E2E 20261020-2 …` tenant and business; an empty open order for James Wilson in the seed business `…0002` (created by the New order check in the browser tour).
 
 
 ## Run 20261020-1 — full run after pulling Bill's work (step B of the B, A, B plan)
