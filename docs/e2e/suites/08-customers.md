@@ -190,8 +190,8 @@ The field is labelled **Staff member** everywhere (profile facts, Contact Inform
 ### CUS-31 · Timeline: everything in one place
 `P0` `regression` · Linear THE-16 · As: owner, another organisation · Status: Verified
 1. Open the Timeline and use each filter: All, Bookings, Membership, Packs, Payments, Lifecycle, Profile changes, Messages. 2. Change the person's language. 3. Click **Receipt** on a payment line.
-**Expect:** newest first, no separate Upcoming / History; future bookings and the next membership renewal are highlighted and marked "Upcoming"; one line per payment, refund, credit and debit with a Receipt link (order receipt, or the payment's receipt PDF); the language change shows under Profile changes; Messages is empty with a note (which messages belong here is to be decided); an unknown filter is refused; another organisation is refused (403).
-**Cross-check:** the Payments filter has exactly the completed rows of `pay_transactions` for the person.
+**Expect:** newest first, no separate Upcoming / History; future bookings and the next membership renewal are highlighted and marked "Upcoming"; one line per payment, refund, credit and debit with a Receipt link (order receipt, or the payment's receipt PDF); the language change shows under Profile changes; Messages lists only messages sent to the person (emails and campaigns), those of the same kind on the same day (business time) on one line, e.g. "2 emails sent: Booking confirmation"; failed or cancelled ones are not listed; messages received stay in the Messages tab; an unknown filter is refused; another organisation is refused (403).
+**Cross-check:** the Payments filter has exactly the completed rows of `pay_transactions` for the person; the Messages filter has one line per kind, channel and day of the sent rows of `apt_notification_queue` and `mkt_campaign_recipients`.
 
 ### CUS-32 · Tasks
 `P1` `regression` · Linear THE-16 · As: owner, Staff, another organisation · Status: Verified
@@ -202,7 +202,7 @@ The field is labelled **Staff member** everywhere (profile facts, Contact Inform
 `P0` `regression` · Linear THE-16 (David: off means no confirmations, cancellations or receipts at all) · Status: Verified
 1. Consent → switch **Transactional Emails** off. 2. Create a task with a reminder. 3. Queue a payment receipt and a booking reminder for the person. 4. Read the consent history; switch it back on.
 **Expect:** no evidence is asked when switching it off or on; the task reminder is not sent and shows why; the queued receipt is not sent (status `cancelled`, "Transactional emails switched off"); the booking reminder (its own switch) is sent; the history lists the change; the Overview's Communication card shows the state.
-**Not covered by the switch (to be confirmed):** invoices issued, failed-payment notices, waitlist offers.
+**Not covered by the switch (David, 2026-10-20):** invoices issued, failed-payment notices and waitlist offers are still sent.
 
 ### CUS-34 · Documents
 `P0` `regression` · Linear THE-16 · As: owner, Staff, another organisation · Status: Verified

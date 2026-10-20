@@ -119,6 +119,27 @@ describe('Customer profile (THE-16)', () => {
     expect(bad.statusCode).toBe(400);
   });
 
+  it('lists sent messages on the Timeline, those of the same kind on the same day on one line', async () => {
+    const queue = (type: string, status: string, at: string) => adminPool.query(
+      `INSERT INTO apt_notification_queue (business_id, type, channel, recipient_id, data, status, sent_at, scheduled_for)
+       VALUES ($1, $2, 'email', $3, '{}', $4, $5, $5)`,
+      [BUSINESS_ID, type, CUSTOMER_ID, status, at],
+    );
+    await queue('booking.confirmation', 'sent', '2026-03-02T09:00:00Z');
+    await queue('booking.confirmation', 'sent', '2026-03-02T15:00:00Z');
+    await queue('payment.receipt', 'sent', '2026-03-02T15:05:00Z');
+    await queue('booking.confirmation', 'sent', '2026-03-03T10:00:00Z');
+    await queue('booking.confirmation', 'cancelled', '2026-03-04T10:00:00Z');
+
+    const { body } = await request('GET', `${url('/timeline')}&kind=message`, undefined, readerToken);
+    expect(body.data.map((i: any) => i.description)).toEqual([
+      'Email sent: Booking confirmation',
+      'Email sent: Payment receipt',
+      '2 emails sent: Booking confirmation',
+    ]);
+    await adminPool.query('DELETE FROM apt_notification_queue WHERE recipient_id = $1', [CUSTOMER_ID]);
+  });
+
   it('returns figures for the person', async () => {
     const { statusCode, body } = await request('GET', url('/figures'), undefined, readerToken);
     expect(statusCode).toBe(200);

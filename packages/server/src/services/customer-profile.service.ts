@@ -79,6 +79,17 @@ const METHOD_LABELS: Record<string, string> = {
   gift_card: 'Gift card', account_credit: 'Account credit', google_pay: 'Google Pay', apple_pay: 'Apple Pay', other: 'Other',
 };
 
+const CHANNEL_LABELS: Record<string, string> = { email: 'Email', sms: 'SMS', push: 'Notification', whatsapp: 'WhatsApp' };
+
+const MESSAGE_LABELS: Record<string, string> = {
+  'booking.confirmation': 'Booking confirmation', 'booking.cancellation': 'Booking cancellation',
+  'booking.reschedule': 'Booking change', 'booking.reminder': 'Booking reminder',
+  'payment.receipt': 'Payment receipt', 'charge.succeeded': 'Payment receipt', 'payment.refund_confirmation': 'Refund confirmation',
+  'payment.credit_note': 'Credit note', 'invoice.issued': 'Invoice', 'invoice.paid': 'Invoice paid',
+  'membership.payment_failed': 'Failed membership payment', 'gift_card.issued': 'Gift card',
+  'customer.task_reminder': 'Task reminder', 'waitlist.offer': 'Waitlist offer',
+};
+
 function money(cents: number, currency: string) {
   try { return new Intl.NumberFormat('en-GB', { style: 'currency', currency: currency || 'EUR' }).format(cents / 100); }
   catch { return `${(cents / 100).toFixed(2)} ${currency}`; }
@@ -88,7 +99,7 @@ function money(cents: number, currency: string) {
  * The Timeline for one person, newest first; items still to come (future bookings, the
  * next membership renewal) are marked `upcoming`. Payments come from the payment ledger
  * (one line each), packs from pack purchases and sessions used; the rest from the
- * activity log. Messages are not recorded yet: which messages belong here is to be decided.
+ * activity log, messages from the emails and campaigns sent to the person.
  */
 export async function getTimeline(customerId: string, businessId: string, kind?: string, limit = 100): Promise<TimelineItem[]> {
   await person(customerId, businessId);
@@ -199,6 +210,39 @@ export async function getTimeline(customerId: string, businessId: string, kind?:
         description: `${verb} ${money(Math.abs(Number(r.amount)), r.currency)} · ${method}${card}${what ? ` · ${what}` : ''}`,
         actor_name: r.actor_name, at: r.created_at.toISOString(), upcoming: false,
         link: r.order_id ? { type: 'order', id: r.order_id } : { type: 'transaction', id: r.id },
+      });
+    }
+  }
+
+  if (want('message')) {
+    // Messages sent to the person (David, THE-16): sent ones only, those of the same kind on
+    // the same day (business local time) on one line. Received messages stay in the Messages tab.
+    const { rows } = await adminPool.query(
+      `WITH sent AS (
+         SELECT q.type AS kind, q.channel, COALESCE(q.sent_at, q.created_at) AS at, NULL::text AS name
+           FROM apt_notification_queue q
+          WHERE q.recipient_id = $1 AND q.business_id = $2 AND q.status = 'sent'
+         UNION ALL
+         SELECT 'campaign', COALESCE(c.channel, 'email'), cr.sent_at, c.name
+           FROM mkt_campaign_recipients cr JOIN mkt_campaigns c ON c.id = cr.campaign_id
+          WHERE cr.customer_id = $1 AND c.business_id = $2 AND cr.sent_at IS NOT NULL
+            AND cr.status IN ('sent', 'delivered', 'opened', 'clicked')
+       )
+       SELECT s.kind, s.channel, (s.at AT TIME ZONE COALESCE(b.timezone, 'UTC'))::date::text AS day,
+              MAX(s.at) AS at, COUNT(*)::int AS n, ARRAY_REMOVE(ARRAY_AGG(DISTINCT s.name), NULL) AS names
+         FROM sent s CROSS JOIN sys_businesses b WHERE b.id = $2
+        GROUP BY s.kind, s.channel, day ORDER BY MAX(s.at) DESC LIMIT $3`,
+      [customerId, businessId, cap],
+    );
+    for (const r of rows) {
+      const channel = CHANNEL_LABELS[r.channel] || r.channel;
+      const what = r.kind === 'campaign'
+        ? `Campaign${r.names.length ? `: ${r.names.join(', ')}` : ''}`
+        : MESSAGE_LABELS[r.kind] || r.kind;
+      items.push({
+        id: `msg-${r.kind}-${r.channel}-${r.day}`, kind: 'message',
+        description: r.n === 1 ? `${channel} sent: ${what}` : `${r.n} ${channel.toLowerCase()}s sent: ${what}`,
+        actor_name: 'System', at: r.at.toISOString(), upcoming: false,
       });
     }
   }

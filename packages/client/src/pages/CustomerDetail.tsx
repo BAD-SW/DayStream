@@ -623,7 +623,7 @@ function TimelineTab({ customerId, businessId }: { customerId: string; businessI
       {failed && <p style={styles.empty}>The timeline could not be loaded.</p>}
       {!failed && items === null && <p style={styles.empty}>Loading…</p>}
       {filter === 'message' && items !== null && items.length === 0 && (
-        <p style={styles.empty}>Messages will be listed here once it is decided which ones belong in the Timeline. The conversation itself is in the Messages tab.</p>
+        <p style={styles.empty}>No messages sent yet. Messages received are in the Messages tab.</p>
       )}
       {filter !== 'message' && items !== null && items.length === 0 && <p style={styles.empty}>Nothing here yet.</p>}
       {items !== null && items.length > 0 && (
