@@ -559,37 +559,51 @@ function ProcessesSettings() {
 
                   {/* Failed-renewal retry parameters (C6.4) — only for Membership Renewals. */}
                   {proc.type === 'billing_process' && retryParams && (
-                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed var(--color-border)', display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)' }}>Failed renewal retries</span>
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed var(--color-border)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      {/* Failed renewal retries — inputs inline to the right of the explanation. */}
+                      <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: '240px' }}>
+                          <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)' }}>Failed renewal retries</span>
+                          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                            When a renewal fails, the membership goes to <em>Renewing</em> and is retried automatically; it expires if all retries fail.
+                          </span>
+                        </div>
+                        <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Retries
+                          <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '70px' }} type="number" min={1} max={10}
+                            value={retryParams.count}
+                            onChange={(e) => setRetryParams({ ...retryParams, count: Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)) })} />
+                        </label>
+                        <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Days between
+                          <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '70px' }} type="number" min={1} max={90}
+                            value={retryParams.intervalDays}
+                            onChange={(e) => setRetryParams({ ...retryParams, intervalDays: Math.max(1, Math.min(90, parseInt(e.target.value, 10) || 1)) })} />
+                        </label>
+                      </div>
+
+                      {/* Renewal reminder — same inline layout. */}
+                      <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: '240px' }}>
+                          <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)' }}>Renewal reminder</span>
+                          <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                            Email the customer this many days before a membership renews. Set to 0 to turn the reminder off.
+                          </span>
+                        </div>
+                        <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Remind (days before)
+                          <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '70px' }} type="number" min={0} max={90}
+                            value={retryParams.reminderDaysBefore ?? 0}
+                            onChange={(e) => setRetryParams({ ...retryParams, reminderDaysBefore: Math.max(0, Math.min(90, parseInt(e.target.value, 10) || 0)) })} />
+                        </label>
+                      </div>
+
+                      {/* Single Save applies to both sets of parameters above. */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingTop: '4px', borderTop: '1px dashed var(--color-border)' }}>
+                        <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 16px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-primary)' }} onClick={saveRetryParams} disabled={savingRetry}>
+                          {savingRetry ? 'Saving...' : 'Save renewal settings'}
+                        </button>
                         <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                          When a renewal fails, the membership goes to <em>Renewing</em> and is retried automatically; it expires if all retries fail.
+                          Saves both the retry and reminder settings.
                         </span>
                       </div>
-                      <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Retries
-                        <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '70px' }} type="number" min={1} max={10}
-                          value={retryParams.count}
-                          onChange={(e) => setRetryParams({ ...retryParams, count: Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)) })} />
-                      </label>
-                      <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Days between
-                        <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '70px' }} type="number" min={1} max={90}
-                          value={retryParams.intervalDays}
-                          onChange={(e) => setRetryParams({ ...retryParams, intervalDays: Math.max(1, Math.min(90, parseInt(e.target.value, 10) || 1)) })} />
-                      </label>
-                      <div style={{ display: 'flex', flexDirection: 'column', width: '100%', paddingTop: '8px' }}>
-                        <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)' }}>Renewal reminder</span>
-                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                          Email the customer this many days before a membership renews. Set to 0 to turn the reminder off.
-                        </span>
-                      </div>
-                      <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Remind (days before)
-                        <input style={{ ...styles.input, marginLeft: '4px', maxWidth: '70px' }} type="number" min={0} max={90}
-                          value={retryParams.reminderDaysBefore ?? 0}
-                          onChange={(e) => setRetryParams({ ...retryParams, reminderDaysBefore: Math.max(0, Math.min(90, parseInt(e.target.value, 10) || 0)) })} />
-                      </label>
-                      <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 12px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-primary)' }} onClick={saveRetryParams} disabled={savingRetry}>
-                        {savingRetry ? 'Saving...' : 'Save'}
-                      </button>
                     </div>
                   )}
                 </div>
