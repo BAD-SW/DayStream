@@ -5,6 +5,25 @@ import { isKnownArtifactType } from '@daystream/shared';
 import { resolveArtifactKey, resolveAndRender } from './document-branding-resolver.service';
 import { sendEmail as sendEmailTransport } from './email.service';
 
+/**
+ * Build the From value for a branded document email.
+ *
+ * A business's template carries a display name (`sender_name`) and a Reply-To
+ * address (`reply_to`). To keep the platform identity out of the From line, the
+ * Reply-To address doubles as the From address:
+ *   - name + address → "Transcend Payments <payments@transcend.eu>"
+ *   - address only   → "payments@transcend.eu"
+ *   - name only      → the display name (email.service pairs it with the platform
+ *                       address — the pre-existing fallback behavior)
+ *   - neither        → null (sendEmail uses the platform default From)
+ */
+function buildBrandedFrom(senderName: string | null, replyTo: string | null): string | undefined {
+  const name = senderName?.trim() || '';
+  const addr = replyTo?.trim() || '';
+  if (addr) return name ? `${name} <${addr}>` : addr;
+  return name || undefined;
+}
+
 interface NotificationData {
   businessId: string;
   type: string;
@@ -290,12 +309,21 @@ async function sendEmail(notification: any): Promise<void> {
     const { buildDetailsTableForNotification } = await import('./document-send.service');
     const detailsTable = await buildDetailsTableForNotification(notification.business_id, type, data).catch(() => null);
     const rendered = await resolveAndRender(notification.business_id, type, data, language, detailsTable);
+    // Branded From: the template's Reply-To address doubles as the From address so
+    // the business identifies itself (e.g. "Transcend Payments <payments@transcend.eu>")
+    // instead of exposing the shared platform sender (noreply@daystream.app). We pass
+    // a full "Name <addr>" From when the template has a reply-to address; with only a
+    // sender name we fall back to a display-name-only override (platform address).
+    // Reply-To is still set explicitly so replies route to the branded address.
+    // NOTE: deliverability in production requires the reply-to domain to authorize
+    // the platform's sending infrastructure (SPF/DKIM) — tracked follow-up.
+    const brandedFrom = buildBrandedFrom(rendered.senderName, rendered.replyTo);
     await sendEmailTransport({
       to: recipient,
       subject: rendered.subject,
       html: rendered.html,
       text: rendered.text,
-      ...(rendered.senderName ? { from: rendered.senderName } : {}),
+      ...(brandedFrom ? { from: brandedFrom } : {}),
       ...(rendered.replyTo ? { replyTo: rendered.replyTo } : {}),
     });
     logger.info('Branded document email sent', { type, recipient });
