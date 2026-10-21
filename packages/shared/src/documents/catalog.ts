@@ -197,22 +197,10 @@ export const DOCUMENT_ARTIFACT_TYPES: DocumentArtifactType[] = [
         sample: '15 Oct 2026',
       },
       {
-        token: 'due_date',
-        label: 'Due Date',
-        description: 'The date payment is due.',
-        sample: '29 Oct 2026',
-      },
-      {
         token: 'amount_due',
         label: 'Amount Due',
         description: 'The total amount payable, formatted in the business currency.',
         sample: '€120.00',
-      },
-      {
-        token: 'payment_link',
-        label: 'Payment Link',
-        description: "URL where the customer can pay the invoice.",
-        sample: 'https://pay.daystream.app/i/INV-2026-00042',
       },
       {
         token: 'details_table',
@@ -411,6 +399,25 @@ export const DOCUMENT_ARTIFACT_TYPES: DocumentArtifactType[] = [
         sample: 'https://pay.daystream.app/gift/GC-7K4M-9QP2',
       },
     ],
+  },
+  // ---- Planned document types (shown in the dropdown; "Coming Soon" in the label) ----
+  {
+    key: 'booking.cancellation',
+    label: 'Cancellation (Coming Soon)',
+    description: 'Sent when an appointment is cancelled.',
+    placeholders: [...COMMON_PLACEHOLDERS],
+  },
+  {
+    key: 'customer.document',
+    label: 'Customer Document (Coming Soon)',
+    description: 'A general customer-facing document.',
+    placeholders: [...COMMON_PLACEHOLDERS],
+  },
+  {
+    key: 'marketing.email',
+    label: 'Marketing Email (Coming Soon)',
+    description: 'A marketing message to customers (delivered through the marketing pipeline).',
+    placeholders: [...COMMON_PLACEHOLDERS],
   },
 ];
 
