@@ -9,6 +9,7 @@ import { calculatePeriodEnd, calculateNextBillingDate, getPlanItems } from './me
 import { getRetrySchedule, getReminderDaysBefore } from './dunning-schedule';
 import { postPaymentJournalEntry } from './payment-journal.service';
 import { canContact } from './contactability.service';
+import { createActivity } from './customer-activity.service';
 import type { MethodOwner } from './payment-methods.service';
 
 /**
@@ -172,21 +173,9 @@ async function renewOne(
 
   const reference = generateReference();
 
-  // Which card funds this renewal: the method PINNED to the enrollment if set
-  // (e.g. "charge card A for the membership"), otherwise fall back to the
-  // customer's DEFAULT stored card. Only when neither exists is there nothing to
-  // charge — then skip (a reminder/collection flow prompts the customer).
-  const chargeMethodId = enr.payment_method_id ?? await customerDefaultMethodId(businessId, enr.customer_id);
-  if (!chargeMethodId) {
-    logger.info(`Enrollment ${enr.id} has no pinned method and the customer has no default card; skipping renewal charge`);
-    return 'skipped';
-  }
-
-  const owner: MethodOwner = {
-    ownerLevel: 'customer', businessId, tenantId, customerId: enr.customer_id,
-  };
-
-  // Zero-price plan (free membership): no charge, just advance the period.
+  // Zero-price plan (free membership): no charge needed, just advance the period.
+  // Checked BEFORE the payment-method guard so a free membership (which legitimately
+  // has no card) advances rather than being treated as a failed renewal.
   if (amountCents <= 0) {
     await advanceEnrollmentPeriod({
       enrollmentId: enr.id, currentPlanId: enr.plan_id, effectivePlanId,
@@ -194,6 +183,24 @@ async function renewOne(
     });
     return 'charged';
   }
+
+  // Which card funds this renewal: the method PINNED to the enrollment if set
+  // (e.g. "charge card A for the membership"), otherwise the customer's DEFAULT
+  // stored card. No pinned method AND no default card for a PAID renewal is a
+  // FAILED renewal — we can't collect — not a silent skip. Route it into the
+  // standard dunning flow (fail → notice → retry next cycle) so the customer is
+  // told and can add a valid card, which the next retry/cycle then charges
+  // automatically. (Previously this returned 'skipped', leaving the membership
+  // active + unpaid with no one aware.)
+  const chargeMethodId = enr.payment_method_id ?? await customerDefaultMethodId(businessId, enr.customer_id);
+  if (!chargeMethodId) {
+    await recordFailure(enr, businessId, tenantId, currency, amountCents, reference, 'No payment method on file');
+    return 'failed';
+  }
+
+  const owner: MethodOwner = {
+    ownerLevel: 'customer', businessId, tenantId, customerId: enr.customer_id,
+  };
 
   // The card on file was removed since the last renewal: that is a failed renewal like a
   // declined card (retries, notices, and in the end expiry). It used to be skipped quietly on
@@ -406,6 +413,14 @@ async function recordFailure(
     [enr.id, businessId],
   );
 
+  // Customer timeline: a failed renewal is a membership event staff should see on
+  // the customer (the audit log alone isn't shown there). Non-blocking.
+  await createActivity({
+    customerId: enr.customer_id, businessId, activityType: 'membership',
+    description: `${enr.plan_name} renewal failed (${failureReason}) — past due, retrying ${scheduledForStr}`,
+    metadata: { enrollment_id: enr.id, reason: failureReason, next_retry: scheduledForStr },
+  }).catch(() => undefined);
+
   logger.info(`Enrollment ${enr.id} renewal failed (${failureReason}); status→renewing, retry scheduled for ${scheduledForStr}`);
 }
 
@@ -586,20 +601,29 @@ export async function saveBusinessBillingSchedule(
  * operator's dates are honored. With no dates (the scheduled daily run) it charges
  * everything past due (catch-up), so a missed run day isn't stranded.
  *
- * Auto-resume and dunning always run against "today" regardless of the window:
- * resume frees pauses elapsed as of now, and dunning only advances already-open
- * retry cycles (it never starts a new renewal), so neither is scoped by the range.
+ * The window's end date (`to`) also becomes the effective "today" for dunning and
+ * reminders. This lets a manual run advance an already-open retry cycle up through
+ * the selected date — so an operator testing (or catching up) a dunning sequence
+ * sees the attempts due on/before `to` process, instead of only those due as of the
+ * real calendar today. With no window it stays pinned to the real `new Date()`.
+ *
+ * Auto-resume always runs against the real "today" (it frees pauses elapsed as of
+ * now and has no meaningful relationship to the billing window).
  */
 export async function runBusinessBillingNow(
   businessId: string, from?: string, to?: string,
 ): Promise<{ autoResumed: number; renewals: RenewalSummary; dunning: any; reminders: ReminderSummary }> {
   const { autoResumeExpiredPauses } = await import('./membership.service');
   const { processDunning } = await import('./dunning.service');
+  // Effective "today" for dunning/reminders: the end of the operator's window when
+  // one was given, else the real now. Anchored at local noon so a bare YYYY-MM-DD
+  // isn't shifted a day by UTC-midnight parsing.
+  const effectiveToday = to ? new Date(`${to}T12:00:00`) : new Date();
   const autoResumed = await autoResumeExpiredPauses(businessId);
   const renewals = await runMembershipRenewals(businessId, new Date(), null, from, to);
-  const dunning = await processDunning(businessId, new Date(), null);
-  // Reminders run against "today" regardless of the window (same as dunning): they
-  // look ahead to renewals due `days_before` out, not at the operator's range.
-  const reminders = await scheduleRenewalReminders(businessId, new Date());
+  const dunning = await processDunning(businessId, effectiveToday, null);
+  // Reminders look ahead to renewals due `days_before` out; anchoring them to the
+  // window end keeps a manual run's reminders consistent with its dunning pass.
+  const reminders = await scheduleRenewalReminders(businessId, effectiveToday);
   return { autoResumed, renewals, dunning, reminders };
 }

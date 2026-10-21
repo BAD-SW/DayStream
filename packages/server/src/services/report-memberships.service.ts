@@ -35,6 +35,19 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
     [tenantId, startDate, endDate],
   );
 
+  // Expired in period (memberships that lapsed after failed renewals — win-back
+  // candidates). Expiry has no dedicated timestamp; it sets updated_at, so count
+  // 'expired' enrollments updated within the window.
+  const { rows: expiredRows } = await adminPool.query(
+    `SELECT COUNT(*)::int AS expired_count
+     FROM mbr_enrollments
+     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1${bizAnd('id')})
+       AND status = 'expired'
+       AND updated_at >= $2::date
+       AND updated_at < ($3::date + INTERVAL '1 day')`,
+    [tenantId, startDate, endDate],
+  );
+
   // Active at start of period (for churn calculation)
   const { rows: startRows } = await adminPool.query(
     `SELECT COUNT(*)::int AS start_count
@@ -49,6 +62,7 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
   const activeCount = activeRows[0].active_count;
   const newCount = newRows[0].new_count;
   const cancelledCount = cancelledRows[0].cancelled_count;
+  const expiredCount = expiredRows[0].expired_count;
   const startCount = startRows[0].start_count;
 
   const churnRate = startCount > 0
@@ -68,6 +82,7 @@ export async function getMembershipsReport(tenantId: string, startDate: string, 
   return {
     activeCount,
     newCount,
+    expiredCount,
     cancelledCount,
     churnRate,
     mrr: parseFloat(mrrRows[0].mrr),

@@ -1369,9 +1369,13 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
       // active/paused AND not cancelled — cancellation sets cancelled_at but leaves
       // status unchanged, so status alone would wrongly show cancelled ones as active
       // (this now matches the Active Memberships report's filter).
+      // Show every membership that still matters to staff: active/paused, plus
+      // renewing (in dunning — PAST DUE) and expired (a win-back candidate). Only
+      // truly cancelled ones are hidden. Previously renewing/expired were dropped,
+      // so a membership in dunning looked like it had vanished.
       setEnrollments(
         (res.data.data || []).filter(
-          (e: any) => (e.status === 'active' || e.status === 'paused') && !e.cancelled_at,
+          (e: any) => ['active', 'paused', 'renewing', 'expired'].includes(e.status) && !e.cancelled_at,
         ),
       );
     } catch { setEnrollments([]); }
@@ -1479,7 +1483,7 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
       </div>
 
       {loading && <p style={styles.cardMuted}>Loading...</p>}
-      {!loading && enrollments.length === 0 && !showEnroll && <p style={styles.cardMuted}>No active membership</p>}
+      {!loading && enrollments.length === 0 && !showEnroll && <p style={styles.cardMuted}>No membership</p>}
 
       {enrollments.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1487,7 +1491,10 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
             <div key={e.id} style={{ padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <strong>{e.plan_name}</strong>
-                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                  {/* Past-due (dunning) and expired need to stand out so staff can act / re-cultivate. */}
+                  {e.status === 'renewing' && <Badge variant="warning">Past due</Badge>}
+                  {e.status === 'expired' && <Badge variant="error">Expired</Badge>}
                   {e.billing_frequency}
                   {e.pending_plan_id && <span style={{ color: 'var(--color-info, #4A90A4)', marginLeft: '8px' }}>↓ Downgrade pending</span>}
                 </span>
@@ -1496,6 +1503,10 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
                 Since {formatDateOnly(e.start_date)}
                 {e.cancelled_at ? (
                   <span style={{ color: 'var(--color-error)' }}> · Cancels {formatDateOnly(e.current_period_end)}</span>
+                ) : e.status === 'renewing' ? (
+                  <span style={{ color: 'var(--color-warning, #E6A817)' }}> · Payment failed — retrying</span>
+                ) : e.status === 'expired' ? (
+                  <span style={{ color: 'var(--color-error)' }}> · Expired after failed renewals</span>
                 ) : e.status === 'paused' ? (
                   <span style={{ color: 'var(--color-warning, #E6A817)' }}> · Paused{e.resume_at ? ` · Resumes ${formatDateOnly(e.resume_at)}` : ' indefinitely'}</span>
                 ) : (

@@ -8,6 +8,7 @@ import { getRetrySchedule } from './dunning-schedule';
 import { postPaymentJournalEntry } from './payment-journal.service';
 import { logAudit } from './audit.service';
 import { queueNotification } from './booking-notifications.service';
+import { createActivity } from './customer-activity.service';
 import type { MethodOwner } from './payment-methods.service';
 
 /**
@@ -180,6 +181,11 @@ async function processOne(
       periodStartDate: attempt.next_billing_date || today.toISOString().split('T')[0], frequency,
     });
     await audit(tenantId, attempt, 'dunning.recovered', { amount_cents: amountCents, reference });
+    await createActivity({
+      customerId: attempt.customer_id, businessId, activityType: 'membership',
+      description: `${attempt.plan_name} renewal recovered on retry — membership active`,
+      metadata: { enrollment_id: attempt.enrollment_id, attempt: attempt.attempt_number, reference },
+    }).catch(() => undefined);
     return 'recovered';
   }
 
@@ -238,6 +244,11 @@ async function failAndSchedule(
   );
   await notify(attempt, businessId, 'final', null, amountCents, currency, failureReason);
   await audit(tenantId, attempt, 'dunning.exhausted', { attempts: attempt.attempt_number, reason: failureReason });
+  await createActivity({
+    customerId: attempt.customer_id, businessId, activityType: 'membership',
+    description: `${attempt.plan_name} membership expired after ${attempt.attempt_number} failed renewal attempt(s)`,
+    metadata: { enrollment_id: attempt.enrollment_id, attempts: attempt.attempt_number, reason: failureReason },
+  }).catch(() => undefined);
   return 'expired';
 }
 
