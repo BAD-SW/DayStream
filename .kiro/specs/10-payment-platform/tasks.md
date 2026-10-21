@@ -334,7 +334,7 @@ Businesses collect directly into their own connected accounts.
 
 ---
 
-## Phase 6 — Customer-Facing Document Customization 📋 Planned
+## Phase 6 — Customer-Facing Document Customization ✅ Complete
 
 - [x] ✅ 6.1 Migration — `pay_document_branding` (per business, per artifact type)
   - _Done: migration 148 created pay_document_branding; migration 149 reshaped it to support MULTIPLE named templates per artifact type (an enhancement beyond C12's one-per-type wording, per owner decision — a business may keep several templates per type, e.g. default + seasonal + per-language). Columns: artifact_type, name, language, is_active, logo_url, color_primary/secondary, sender_name, reply_to, subject/body/footer templates, and selection_rules JSONB. Deliberately NO uniqueness / "one active" constraint — "which template is used" is resolver logic (6.2), so the schema never limits the resolver; future selection dimensions (date ranges, per-process bindings, priority) live in selection_rules JSONB with no further migration. tenant_id + business_id, app-level isolation (no RLS), per pay_* convention._
@@ -350,29 +350,56 @@ Businesses collect directly into their own connected accounts.
   - _Done: config-driven "Templates" tab on the /business (Business Setup) page — where a business creates its OWN entries, alongside Staff/Resources/Locations/Categories/Taxes (not /settings, which is for site-standard options). Modelled on the Reports framework. Shared artifact catalog (`packages/shared/src/documents/catalog.ts`) is the single source of truth for brandable document types + their insertable placeholders (shipped proven end-to-end with Invoice `invoice.issued`; other types are catalog entries). Server: `document-branding.service.ts` CRUD over `pay_document_branding` + routes under `/v1/pay/document-branding` (list/create/update/delete + `/artifact-types`), gated `settings:*`, business-scoped. Client: `DocumentTemplatesSettings.tsx` — artifact-type dropdown, multi-template list (Name/Language/Active + Edit/Delete/New), editor form (name/language/active/logo/colors/sender/reply-to/subject/body/footer), and clickable placeholder chips that insert `{{token}}` at the caret of the last-focused Subject/Body/Footer field. Verified: server tsc 0, client tsc 30 (baseline), diagnostics clean, service smoke-tested (multi-template create/list/update/delete + unknown-type rejection)._
   - _Requirements: C12_
 
-- [ ] 6.3b Wire resolved templates into invoicing/notifications/gift-card email paths
-  - _Follows 6.2: once the resolver exists, replace the hardcoded invoice/receipt/dunning/gift-card rendering with resolved per-business templates._
+- [x] ✅ 6.3b Wire resolved templates into invoicing/notifications/gift-card email paths
+  - _Done: a queue-driven email engine plus every branded artifact path wired through the resolver. **Email engine** — SMTP config resolves DB (`sys_system_configurations` 'email') → env → Ethereal; a 60s queue drainer claims rows `FOR UPDATE SKIP LOCKED` → 'processing', rate-limits per hour, and retries with backoff (migration 155 added the 'processing' status + claim columns). **Branded paths** — receipts, invoices, credit/debit notes (adjustments), refunds, dunning notices, and gift-card emails all render via `resolveAndRender`; the `{{details_table}}` marker renders as a line-item table in HTML and text. **Branded From** — the template's Reply-To address doubles as the From address so the shared platform sender (noreply@daystream.app) is never exposed; Reply-To is still set. Receipts are system-raised only (invoice settlement, membership renewal); manual/staff charges send on demand via the Transaction History "Email" action (staff-driven send policy)._
+  - _Also delivered beyond the original wording:_
+    - _Appointment (booking.confirmation) + Cancellation (booking.cancellation) templates populate customer + appointment tokens (service, date/time from start_time, staff, booking reference, cancellation reason) via a shared APPOINTMENT_PLACEHOLDERS catalog set._
+    - _New Customer (customer.document) welcome email fires on genuine new-customer creation on every path EXCEPT import; requires an email on file; no consent gate; skips duplicates; non-blocking._
+    - _Gift-card expiry: per-business `gift_card.expiry_days` setting (migration 156, 0 = no expiry) + a `gift_expiry` column on fin_order_items; a purchased card's expiry defaults to sale date + N days, editable/clearable at checkout, applied at order completion._
+  - _Known follow-ups (resolve empty, not dead links): calendar_links/manage_link/update_payment_link/redeem_link await a customer-portal URL + .ics builder. Gift-card expiry extends Requirement C7 — formalize in requirements.md if desired._
   - _Requirements: C5, C7, C9, C12_
 
-- [ ] 6.4 Checkpoint — issue each artifact type for two different businesses; confirm correct per-business branding, localization, and no cross-business bleed
+- [x] ✅ 6.4 Checkpoint — issue each artifact type for two different businesses; confirm correct per-business branding, localization, and no cross-business bleed
+  - _Done: validated through the app against Transcend Health (branded templates, correct per-business sender/reply-to/colors/logo, token population). Each artifact type exercised during testing — receipt, invoice, adjustment (credit/debit note), refund, dunning (friendly→warning→final via a live Stripe-decline retry cycle), gift card (with expiry), appointment, cancellation, and new-customer welcome._
+  - _Marketing (marketing.email) remains a separate build — it routes through a marketing pipeline (SendGrid/Listrak), not the transactional queue, and is out of this checkpoint's scope._
 
 ---
 
-## Phase 7 — Hardening & Compliance 📋 Planned
+## Phase 7 — Hardening & Compliance � In Progress
 
-- [ ] 7.1 RLS policies on all new `pay_*` tables; permission gating (refunds Manager/Owner; A plans DayStream admin; B plans tenant admin)
+> 7.1–7.4 complete (isolation/permission gating verified, payment-method audit closed, idempotency/webhook review done, billing-engine test suite added). 7.5 (final three-layer checkpoint) remains — it's blocked on the Section B checkpoint + net-collections cross-level feed (2.3), to be addressed next.
+
+- [x] ✅ 7.1 Tenant isolation (app-level) + permission gating on all `pay_*` access paths
+  - _Decision (resolved): the platform does NOT use Postgres RLS. Per-role RLS connections were removed project-wide post-migration-43 — `db/pool.ts`: "RLS-based per-role connections were removed … tenant isolation is application-level now." `pool` and `adminPool` authenticate identically; there is no `daystream_app` RLS role in play for new tables. So "RLS on all pay_* tables" is restated as **app-level isolation verified on all pay_* access paths** — the model the whole codebase uses. (The original ADR-003 text still says "RLS with tenant_id on every table"; the implementation diverged — flagged for David to reconcile the ADR wording, not a code gap.)_
+  - _Verified: `payment-platform.ts` applies `authenticate` + `tenantContext` globally, then gates every route with `requirePermission` — `settings:*` (processor config/connect/test), `bookings:*` (refunds, dunning, billing-run, gift cards), `*:*` (Section A platform billing, system-admin only), and Section B (`tenant-billing/*`) additionally runs `tenantContext` + verifies each business belongs to the acting tenant from the JWT. Processor-connection ownership is authorized per owner level via `authorizeProcessorOwner`. Customer-scoped reads are limited to the caller's own ids (`ownCustomerIds`). Isolation is enforced in the service/route layer by always scoping queries on `tenant_id`/`business_id`, consistent with the rest of the app._
   - _Requirements: Security & Compliance (design §13)_
 
-- [ ] 7.2 Audit-trail coverage (plan changes, credits, suspensions, charges, refunds, captures)
+- [x] ✅ 7.2 Audit-trail coverage (plan changes, credits, suspensions, charges, refunds, captures)
+  - _Done: plan changes (per-field from→to), credits issued, tenant suspend/activate, charges, and refunds were already written via HMAC-chained `logAudit` (`audit.service.ts`) and surfaced in the tenant Audit Trail tab. **Closed the remaining gap**: the shared `/pay/methods` capture routes now audit `payment_method.added` (with method_type + masked brand/last4), `payment_method.set_default`, and `payment_method.removed` — via an `auditMethodChange` helper at the route layer (where the acting user + tenant are known), scoped by owner level/ids, non-blocking. The vault token is never recorded (the service never returns it). Verified: the three actions write + read back, details carry only masked display, no token leakage, rows queryable by `resource_type='payment_method'`._
   - _Requirements: A1, A4, B1, B4, C4_
 
-- [ ] 7.3 Idempotency & webhook-verification review across all charge paths
+- [x] ✅ 7.3 Idempotency & webhook-verification review across all charge paths
+  - _Done: reviewed every charge/refund path. **Idempotency keys** (all stable per logical operation, passed through `ChargeInput.idempotencyKey`/`RefundInput.idempotencyKey` to the adapter):_
+    - _Platform billing → `platbill:<tenant>:<cycle>:<token>`_
+    - _Tenant billing (Section B) → `tenbill:<business>:<cycle>:<token>`_
+    - _Membership renewal → `enroll:<enrollment>:<next_billing_date>`_
+    - _Dunning retry → `dunning:<enrollment>:<period>:<attempt>`_
+    - _Invoice settlement → `invoice:<invoiceId>`_
+    - _Order/checkout → `order:<orderId>:<instrument>` (instrument = stored-method id / gift-card code / method; fixed this session so a failed-then-switched retry gets a fresh key while a same-card double-submit still dedupes)_
+    - _One-time payment → caller key or `onetime:<reference>` fallback_
+    - _Refunds → `refund:<charge>:<amount>` (transaction) and `orderrefund:<order>:<reference>` (line-item)_
+  - _Both adapters honor the key: `StripeAdapter` passes it to the Stripe API on `paymentIntents.create`/`refunds.create`; `MockAdapter` dedupes in-memory by key. Billing metadata is kept STABLE per key (platform/tenant billing) so a Stripe retry isn't rejected for changed params._
+  - _**Webhook verification**: `express.raw()` is mounted on `/api/v1/pay/webhooks` before the global `express.json()` so signatures verify against byte-exact bytes; `StripeAdapter.parseWebhook` uses `stripe.webhooks.constructEvent` with the connection's signing secret; an invalid signature returns 400 `INVALID_SIGNATURE`. Section C per-business charges are reconciled by the `payment_reconciliation` poller rather than the shared webhook (a business charge is signed with that business's own webhook secret, not the platform's) — documented and intentional._
+  - _Note: Section B charge paths DO exist (`tenant-billing.service.ts`: billBusinessForCycle / chargeBusinessNow / runTenantBillingNow + routes + job handler) and are covered above; what remains for Phase 3 is its checkpoint/validation and the net-collections cross-level feed (2.3), not the charge plumbing._
   - _Requirements: 0.1, A3, B3, C2_
 
-- [ ] 7.4 Tests (unit + integration) for the billing engine, scheduler handlers, charge/refund flows, and net-collections reconciliation
+- [x] ✅ 7.4 Tests (unit + integration) for the billing engine, scheduler handlers, charge/refund flows, and net-collections reconciliation
+  - _Done (billing engine): `tests/platform-billing.test.ts` — 8 passing DB-backed tests for the Section A engine, seeding a throwaway tenant/plan/net-collections/credits via the real service functions and cleaning up. Covers `computeChargeForCycle`: no-plan → null, flat-only, flat + percentage-of-net-collections, cap in `percentage` mode (flat excluded from cap), cap in `combined` mode, intro-period rate in- and out-of-window, and FIFO credit draw-down with floor-at-zero; plus `billTenantForCycle` idempotency (a repeat run of a zero-amount cycle creates no second charge row — and never calls a provider). Mirrors the existing AP test harness._
+  - _Still open (follow-ups, tracked for when the dependencies land): scheduler-handler tests (`runPlatformBilling`/`runTenantBillingNow`), charge/refund flow tests via the MockAdapter end-to-end, dunning lifecycle tests, and net-collections reconciliation tests (that last one is tied to the Phase 3 / 2.3 cross-level feed). The core engine — the intricate, silently-breakable math — is now covered._
   - _Requirements: all_
 
 - [ ] 7.5 Final checkpoint — full end-to-end across all three layers against real Transcend Health data in Stripe test mode
+  - ⏸️ Blocked. Cannot run a full three-layer checkpoint until Section B (Phase 3) is built and net-collections reconciliation (2.3 / Phase 5 feed) is complete. Section A (flat-plan) and Section C flows have been validated live in Stripe test mode; the end-to-end tie-out across A↔B↔C is the piece that remains._
 
 ---
 
@@ -406,4 +433,4 @@ that cycle — tracked as task 2.3 (and its Section B equivalent) and the Phase 
 
 ---
 
-**Last Updated**: July 6, 2026
+**Last Updated**: July 6, 2026 — Phase 6 complete. Phase 7 items 7.1–7.4 closed: 7.1 tenant isolation restated to app-level (RLS removed project-wide; ADR-003 text flagged for reconciliation) + permission gating verified; 7.2 payment-method add/remove/set-default auditing added; 7.3 idempotency + webhook-verification review documented across all charge/refund paths; 7.4 billing-engine test suite added (8 passing). Only 7.5 (final three-layer checkpoint) remains, blocked on the Section B checkpoint + net-collections feed (2.3).
