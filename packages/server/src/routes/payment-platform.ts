@@ -27,7 +27,7 @@ import * as paymentLedger from '../services/payment.service';
 import { emailTransactionDocument, renderReceiptPdf, emailOrderReceipt, renderOrderReceiptPdf, resolveOrderReceiptFields } from '../services/document-send.service';
 import * as membership from '../services/membership.service';
 import * as membershipRenewal from '../services/membership-renewal.service';
-import { queryResourceAudit } from '../services/audit.service';
+import { queryResourceAudit, logAudit } from '../services/audit.service';
 import type { MethodType, PaymentProviderName } from '../services/payments';
 
 /**
@@ -814,11 +814,37 @@ const storeMethodSchema = Joi.object({
   capture_payload: Joi.object().unknown(true).default({}),
 });
 
+// Audit a payment-method change (7.2). The owner level + ids scope the event;
+// masked display (brand/last4) is safe to record — the vault token never is, and
+// the service never returns it anyway. Non-blocking: auditing must not fail the op.
+function auditMethodChange(
+  req: Request, owner: MethodOwner, action: string, methodId: string | null, extra: Record<string, unknown> = {},
+): void {
+  const authReq = req as AuthenticatedRequest;
+  void logAudit({
+    tenantId: authReq.tenantId || owner.tenantId || '',
+    userId: authReq.user?.sub,
+    action,
+    resourceType: 'payment_method',
+    resourceId: methodId || undefined,
+    details: {
+      owner_level: owner.ownerLevel,
+      tenant_id: owner.tenantId ?? null,
+      business_id: owner.businessId ?? null,
+      customer_id: owner.customerId ?? null,
+      ...extra,
+    },
+  }).catch(() => { /* auditing must never block a payment-method change */ });
+}
+
 paymentPlatformRouter.post('/methods', validate(storeMethodSchema), async (req: Request, res: Response) => {
   try {
     const owner = await methodOwnerOrRefuse(req, res);
     if (!owner) return;
     const stored = await methods.storePaymentMethod(owner, req.body.method_type as MethodType, req.body.capture_payload || {});
+    auditMethodChange(req, owner, 'payment_method.added', stored.id, {
+      method_type: stored.method_type, brand: stored.display_brand ?? null, last4: stored.display_last4 ?? null,
+    });
     success(res, stored, undefined, 201);
   } catch (e: any) {
     if (e.code === 'NO_CONNECTION') { error(res, e.message, 'NO_CONNECTION', 409); return; }
@@ -832,6 +858,7 @@ paymentPlatformRouter.put('/methods/:id/default', async (req: Request, res: Resp
     if (!owner) return;
     const ok = await methods.setDefaultPaymentMethod(req.params.id, owner);
     if (!ok) { error(res, 'Payment method not found', 'NOT_FOUND', 404); return; }
+    auditMethodChange(req, owner, 'payment_method.set_default', req.params.id);
     success(res, { updated: true });
   } catch (err: any) { console.error('Failed to set default', err?.message || err); error(res, 'Failed to set default', 'INTERNAL_ERROR', 500); }
 });
@@ -842,6 +869,7 @@ paymentPlatformRouter.delete('/methods/:id', async (req: Request, res: Response)
     if (!owner) return;
     const ok = await methods.removePaymentMethod(req.params.id, owner);
     if (!ok) { error(res, 'Payment method not found', 'NOT_FOUND', 404); return; }
+    auditMethodChange(req, owner, 'payment_method.removed', req.params.id);
     success(res, { removed: true });
   } catch (err: any) { console.error('Failed to remove payment method', err?.message || err); error(res, 'Failed to remove payment method', 'INTERNAL_ERROR', 500); }
 });
