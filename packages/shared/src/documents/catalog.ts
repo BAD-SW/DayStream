@@ -427,8 +427,8 @@ export const DOCUMENT_ARTIFACT_TYPES: DocumentArtifactType[] = [
   },
   {
     key: 'customer.document',
-    label: 'Customer Document (Coming Soon)',
-    description: 'A general customer-facing document.',
+    label: 'New Customer',
+    description: 'Sent to new customers that have an email address.',
     placeholders: [...COMMON_PLACEHOLDERS],
   },
   {
