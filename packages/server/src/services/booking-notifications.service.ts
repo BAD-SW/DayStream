@@ -90,13 +90,47 @@ export async function queueBookingCancellation(booking: any, customerEmail: stri
     type: 'booking.cancellation',
     recipientId: booking.customer_id,
     recipientEmail: customerEmail,
-    data: {
-      booking_reference: booking.booking_reference,
-      service_name: booking.service_name || '',
-      start_time: booking.start_time,
-      reason: reason || 'Cancelled',
-    },
+    data: buildAppointmentData(booking, customerEmail, { reason: reason || 'Cancelled' }),
   });
+}
+
+/**
+ * Build the token data bag for an appointment notification (confirmation,
+ * cancellation, reschedule). Populates the recipient, staff, service, and
+ * appointment-time tokens the branding resolver maps (buildTokenMap):
+ *   customer_name / customer_first_name / customer_email, staff_name,
+ *   service_name, appointment_date + appointment_time (derived from start_time),
+ *   booking_reference.
+ *
+ * The booking object is expected to come from getBookingById, which already joins
+ * the customer and staff names.
+ *
+ * manage_link / calendar_links are included as null: there is no customer-facing
+ * appointment-management URL builder or .ics/calendar-link generator yet (tracked
+ * follow-up, same as the other portal links). The tokens resolve empty rather than
+ * to a dead link until that work lands.
+ */
+function buildAppointmentData(
+  booking: any, customerEmail: string, extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const customerName = [booking.customer_first_name, booking.customer_last_name]
+    .filter(Boolean).join(' ').trim();
+  const staffName = [booking.staff_first_name, booking.staff_last_name]
+    .filter(Boolean).join(' ').trim();
+  return {
+    booking_reference: booking.booking_reference,
+    service_name: booking.service_name || '',
+    start_time: booking.start_time,
+    // start_time also drives appointment_date / appointment_time in the resolver.
+    staff_name: staffName || null,
+    customer_name: customerName || null,
+    customer_first_name: booking.customer_first_name || null,
+    customer_email: booking.customer_email || customerEmail || null,
+    // No URL builders yet — resolve empty rather than a dead link (follow-up).
+    manage_link: null,
+    calendar_links: null,
+    ...extra,
+  };
 }
 
 /**

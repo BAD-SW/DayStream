@@ -117,6 +117,62 @@ const COMMON_PLACEHOLDERS: DocumentPlaceholder[] = [
 ];
 
 /**
+ * Appointment-specific placeholders, shared by every artifact about a booking
+ * (confirmation, cancellation, reschedule). Kept in one place so the chips and
+ * the resolver stay in lockstep across those templates.
+ */
+const APPOINTMENT_PLACEHOLDERS: DocumentPlaceholder[] = [
+  {
+    token: 'service_name',
+    label: 'Service',
+    description: 'The booked service (and variant, if any).',
+    sample: 'Infrared Sauna — 60 min',
+  },
+  {
+    token: 'appointment_date',
+    label: 'Appointment Date',
+    description: 'The date of the appointment.',
+    sample: '24 Oct 2026',
+  },
+  {
+    token: 'appointment_time',
+    label: 'Appointment Time',
+    description: 'The start time of the appointment.',
+    sample: '2:30 PM',
+  },
+  {
+    token: 'staff_name',
+    label: 'Staff / Practitioner',
+    description: 'Who the appointment is with (if assigned).',
+    sample: 'Javier Ruiz',
+  },
+  {
+    token: 'booking_reference',
+    label: 'Booking Reference',
+    description: 'The appointment reference code.',
+    sample: 'BK-7K4M9Q',
+  },
+  {
+    token: 'calendar_links',
+    label: 'Add to Calendar',
+    // Contract (implemented with the Appointment/email-engine build): placing this
+    // chip is the single opt-in for calendar delivery. When {{calendar_links}} is
+    // present in the body, the send path (1) renders the add-to-calendar links
+    // (Google / Outlook / Apple-.ics) here AND (2) attaches the generated invite.ics
+    // to the email. If the chip is absent, neither the links nor the attachment are
+    // included.
+    description: 'Add this to include "Add to calendar" links (Google, Outlook, Apple) in the email AND attach a calendar invite (.ics). Leave it out to send neither.',
+    sample: 'Add to calendar: Google · Outlook · Apple',
+  },
+  {
+    token: 'manage_link',
+    label: 'Manage Link',
+    description: 'URL where the customer can view, reschedule, or cancel the appointment.',
+    sample: 'https://pay.daystream.app/appointments/BK-7K4M9Q',
+  },
+];
+
+/**
  * The brandable artifact types. We ship the framework proven end-to-end with
  * Invoice; the remaining types are registered here so adding them later is a
  * catalog edit, not a code change.
@@ -128,54 +184,7 @@ export const DOCUMENT_ARTIFACT_TYPES: DocumentArtifactType[] = [
     description: 'Sent when a customer books an appointment (self-service or in person).',
     placeholders: [
       ...COMMON_PLACEHOLDERS,
-      {
-        token: 'service_name',
-        label: 'Service',
-        description: 'The booked service (and variant, if any).',
-        sample: 'Infrared Sauna — 60 min',
-      },
-      {
-        token: 'appointment_date',
-        label: 'Appointment Date',
-        description: 'The date of the appointment.',
-        sample: '24 Oct 2026',
-      },
-      {
-        token: 'appointment_time',
-        label: 'Appointment Time',
-        description: 'The start time of the appointment.',
-        sample: '2:30 PM',
-      },
-      {
-        token: 'staff_name',
-        label: 'Staff / Practitioner',
-        description: 'Who the appointment is with (if assigned).',
-        sample: 'Javier Ruiz',
-      },
-      {
-        token: 'booking_reference',
-        label: 'Booking Reference',
-        description: 'The appointment reference code.',
-        sample: 'BK-7K4M9Q',
-      },
-      {
-        token: 'calendar_links',
-        label: 'Add to Calendar',
-        // Contract (implemented with the Appointment/email-engine build): placing this
-        // chip is the single opt-in for calendar delivery. When {{calendar_links}} is
-        // present in the body, the send path (1) renders the add-to-calendar links
-        // (Google / Outlook / Apple-.ics) here AND (2) attaches the generated invite.ics
-        // to the email. If the chip is absent, neither the links nor the attachment are
-        // included.
-        description: 'Add this to include "Add to calendar" links (Google, Outlook, Apple) in the email AND attach a calendar invite (.ics). Leave it out to send neither.',
-        sample: 'Add to calendar: Google · Outlook · Apple',
-      },
-      {
-        token: 'manage_link',
-        label: 'Manage Link',
-        description: 'URL where the customer can view, reschedule, or cancel the appointment.',
-        sample: 'https://pay.daystream.app/appointments/BK-7K4M9Q',
-      },
+      ...APPOINTMENT_PLACEHOLDERS,
     ],
   },
   {
@@ -403,9 +412,18 @@ export const DOCUMENT_ARTIFACT_TYPES: DocumentArtifactType[] = [
   // ---- Planned document types (shown in the dropdown; "Coming Soon" in the label) ----
   {
     key: 'booking.cancellation',
-    label: 'Cancellation (Coming Soon)',
+    label: 'Cancellation',
     description: 'Sent when an appointment is cancelled.',
-    placeholders: [...COMMON_PLACEHOLDERS],
+    placeholders: [
+      ...COMMON_PLACEHOLDERS,
+      ...APPOINTMENT_PLACEHOLDERS,
+      {
+        token: 'reason',
+        label: 'Cancellation Reason',
+        description: 'Why the appointment was cancelled.',
+        sample: 'Cancelled by customer',
+      },
+    ],
   },
   {
     key: 'customer.document',
