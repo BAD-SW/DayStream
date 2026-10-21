@@ -29,6 +29,12 @@ interface AddItemInput {
   /** Gift-card line only: who the card is for (used to populate the card on completion). */
   giftRecipientName?: string | null;
   giftRecipientEmail?: string | null;
+  /**
+   * Gift-card line only: the expiry date (YYYY-MM-DD) to set on the created card.
+   * Omitted → the business's default (sale date + gift_card.expiry_days) is applied
+   * at add time; null → explicitly no expiry. Read at completion.
+   */
+  giftExpiry?: string | null;
 }
 
 type OrderPaymentMethod =
@@ -159,12 +165,16 @@ export async function addItem(orderId: string, input: AddItemInput) {
   let taxAmount = 0;
   let taxCategoryId: string | null = null;
   let taxRate: number | null = null;
+  // The gift-card line's expiry: a staff-provided value wins; otherwise the
+  // business default (sale date + gift_card.expiry_days) is computed here. null =
+  // no expiry. Only set for gift_card lines.
+  let giftExpiry: string | null = null;
   // A gift card is the SALE of stored value. Whether that sale is taxed depends on
   // jurisdiction, so it's a per-business setting (default off). When off, no tax.
   // When on, tax at the business's DEFAULT tax category rate (a gift card has no
   // item/category of its own). The as-charged category + rate are persisted.
   if (input.itemType === 'gift_card') {
-    const { isGiftCardTaxEnabled } = await import('./gift-card.service');
+    const { isGiftCardTaxEnabled, computeGiftCardExpiry } = await import('./gift-card.service');
     const { rows: bizRows } = await adminPool.query('SELECT business_id FROM fin_orders WHERE id = $1', [orderId]);
     const giftBusinessId = bizRows[0]?.business_id;
     if (giftBusinessId && await isGiftCardTaxEnabled(giftBusinessId)) {
@@ -175,6 +185,11 @@ export async function addItem(orderId: string, input: AddItemInput) {
     } else {
       taxAmount = 0;
     }
+    // Resolve the expiry: honor an explicit value from the caller (including an
+    // explicit null = no expiry), else fall back to the business default.
+    giftExpiry = input.giftExpiry !== undefined
+      ? (input.giftExpiry || null)
+      : (giftBusinessId ? await computeGiftCardExpiry(giftBusinessId) : null);
   } else if (input.taxAmount !== undefined) {
     taxAmount = input.taxAmount;
   } else if (input.itemId) {
@@ -187,13 +202,14 @@ export async function addItem(orderId: string, input: AddItemInput) {
   const totalPrice = netAmount + taxAmount;
 
   const { rows } = await adminPool.query(
-    `INSERT INTO fin_order_items (order_id, item_type, item_id, item_name, variant_id, variant_name, quantity, unit_price, discount_amount, tax_amount, tax_category_id, tax_rate, total_price, credited_to, booking_id, notes, gift_recipient_name, gift_recipient_email)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
+    `INSERT INTO fin_order_items (order_id, item_type, item_id, item_name, variant_id, variant_name, quantity, unit_price, discount_amount, tax_amount, tax_category_id, tax_rate, total_price, credited_to, booking_id, notes, gift_recipient_name, gift_recipient_email, gift_expiry)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING *`,
     [orderId, input.itemType, input.itemId || null, input.itemName, input.variantId || null, input.variantName || null,
      input.quantity, unitPrice, discount, taxAmount, taxCategoryId, taxRate, totalPrice,
      input.creditedTo || null, input.bookingId || null, itemNotes,
      input.itemType === 'gift_card' ? (input.giftRecipientName || null) : null,
-     input.itemType === 'gift_card' ? (input.giftRecipientEmail || null) : null],
+     input.itemType === 'gift_card' ? (input.giftRecipientEmail || null) : null,
+     input.itemType === 'gift_card' ? giftExpiry : null],
   );
 
   await recalculateOrderTotals(orderId);
@@ -281,6 +297,22 @@ export async function completeOrder(orderId: string, businessId: string, input: 
   return withBookingLock(`order:${orderId}`, () => payAndCompleteOrder(orderId, businessId, input));
 }
 
+/**
+ * Idempotency key for an order payment.
+ *
+ * Keyed on the order AND the specific instrument being charged (stored method id
+ * or gift-card code), not the order alone. A plain `order:<id>` key locks the key
+ * to the first attempt's parameters, so when a first charge fails and the customer
+ * retries with a DIFFERENT card the provider rejects the retry ("keys for
+ * idempotent requests can only be used with the same parameters"). Including the
+ * instrument gives a failed-then-switched retry a fresh key, while a genuine
+ * double-submit on the SAME instrument is still deduped to one charge.
+ */
+function orderIdempotencyKey(orderId: string, method: string, input: CompleteOrderInput): string {
+  const instrument = input.paymentMethodId || input.giftCardCode || method;
+  return `order:${orderId}:${instrument}`;
+}
+
 async function payAndCompleteOrder(orderId: string, businessId: string, input: CompleteOrderInput) {
   const { rows: orderRows } = await adminPool.query(
     'SELECT * FROM fin_orders WHERE id = $1 AND business_id = $2', [orderId, businessId],
@@ -326,7 +358,7 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
       paymentMethodId: input.paymentMethodId || null, giftCardCode: input.giftCardCode || null,
       checkNumber: method === 'check' ? (input.checkNumber || input.paymentReference || null) : null,
       bookingId: openOrder.booking_id || null, description: `Order ${openOrder.order_number}`,
-      processedBy: input.checkedOutBy, orderId, idempotencyKey: `order:${orderId}`,
+      processedBy: input.checkedOutBy, orderId, idempotencyKey: orderIdempotencyKey(orderId, method, input),
     });
     if (payment.status === 'failed') {
       throw new OrderPaymentError(payment.failureReason || 'The payment was declined', 'PAYMENT_DECLINED');
@@ -419,7 +451,8 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   // as the "paid-but-not-fulfilled" channel the checkout UI already alerts on.
   try {
     const { rows: giftLines } = await adminPool.query(
-      `SELECT id, item_name, total_price, gift_recipient_name, gift_recipient_email
+      `SELECT id, item_name, total_price, gift_recipient_name, gift_recipient_email,
+              to_char(gift_expiry, 'YYYY-MM-DD') AS gift_expiry
        FROM fin_order_items WHERE order_id = $1 AND item_type = 'gift_card'`,
       [orderId],
     );
@@ -435,6 +468,7 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
             recipientName: line.gift_recipient_name ?? null,
             recipientEmail: line.gift_recipient_email ?? null,
             purchaserCustomerId: orderRows[0].customer_id ?? null,
+            expiresAt: line.gift_expiry ?? null,
             createdBy: input.checkedOutBy,
             fundedByOrderId: orderId,
           });

@@ -1268,6 +1268,23 @@ paymentPlatformRouter.put('/gift-card-tax-enabled', requirePermission('bookings:
   } catch (e: any) { console.error('Failed to save gift-card tax setting', e?.message || e); error(res, 'Failed to save gift-card tax setting', 'INTERNAL_ERROR', 500); }
 });
 
+// How many days a purchased gift card is valid for (0 = no expiry) (C7). Read = bookings:read; set = Manager/Owner.
+paymentPlatformRouter.get('/gift-card-expiry-days', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, { days: await giftCards.getGiftCardExpiryDays(businessId) });
+  } catch (e: any) { console.error('Failed to read gift-card expiry setting', e?.message || e); error(res, 'Failed to read gift-card expiry setting', 'INTERNAL_ERROR', 500); }
+});
+
+const giftCardExpirySchema = Joi.object({ business_id: Joi.string().uuid().required(), days: Joi.number().integer().min(0).max(36500).required() });
+
+paymentPlatformRouter.put('/gift-card-expiry-days', requirePermission('bookings:*'), validate(giftCardExpirySchema), async (req: Request, res: Response) => {
+  try {
+    success(res, { days: await giftCards.setGiftCardExpiryDays(req.body.business_id, req.body.days) });
+  } catch (e: any) { console.error('Failed to save gift-card expiry setting', e?.message || e); error(res, 'Failed to save gift-card expiry setting', 'INTERNAL_ERROR', 500); }
+});
+
 // ============================================================
 // Section C — Document branding templates (task 6.3 / Requirement C12). A business
 // brands its customer-facing documents (invoice, receipt, ...) with named,

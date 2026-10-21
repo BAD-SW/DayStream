@@ -129,6 +129,9 @@ const addItemSchema = Joi.object({
   // Gift-card line only: who the card is for.
   gift_recipient_name: Joi.string().max(200).allow('', null),
   gift_recipient_email: Joi.string().email({ tlds: false }).max(255).allow('', null),
+  // Gift-card line only: the expiry date to set on the card (YYYY-MM-DD). Omit to
+  // use the business default; send null for no expiry.
+  gift_expiry: Joi.string().isoDate().allow(null),
 });
 
 // POST /api/v1/checkout/orders/:id/items — Add item to order
@@ -149,6 +152,11 @@ checkoutRouter.post('/orders/:id/items', requirePermission('bookings:*'), valida
       notes: req.body.notes,
       giftRecipientName: req.body.gift_recipient_name || null,
       giftRecipientEmail: req.body.gift_recipient_email || null,
+      // Only forward when the client sent the field, so the service can tell
+      // "use the business default" (undefined) from "no expiry" (null).
+      ...(Object.prototype.hasOwnProperty.call(req.body, 'gift_expiry')
+        ? { giftExpiry: req.body.gift_expiry ? String(req.body.gift_expiry).slice(0, 10) : null }
+        : {}),
     });
     // Return full order with updated totals
     const order = await checkoutService.getOrder(req.params.id);

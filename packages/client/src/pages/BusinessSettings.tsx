@@ -657,6 +657,10 @@ function PaymentMethodsSettings() {
   // Gift-card tax setting (C7): whether selling a gift card is taxed. Default off.
   const [giftCardTax, setGiftCardTax] = useState(false);
   const [savingGiftTax, setSavingGiftTax] = useState(false);
+  // Gift-card expiry setting (C7): how many days a purchased card is valid for.
+  // 0 = no expiry. Held as a string for the input; parsed on save.
+  const [giftExpiryDays, setGiftExpiryDays] = useState('0');
+  const [savingGiftExpiry, setSavingGiftExpiry] = useState(false);
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
@@ -668,6 +672,7 @@ function PaymentMethodsSettings() {
       })
       .finally(() => setLoading(false));
     payApi.getGiftCardTaxEnabled(businessId).then(setGiftCardTax).catch(() => setGiftCardTax(false));
+    payApi.getGiftCardExpiryDays(businessId).then((d) => setGiftExpiryDays(String(d))).catch(() => setGiftExpiryDays('0'));
   }, [businessId]);
 
   const toggleGiftCardTax = async (next: boolean) => {
@@ -675,6 +680,20 @@ function PaymentMethodsSettings() {
     try { await payApi.setGiftCardTaxEnabled(businessId, next); }
     catch { setGiftCardTax(!next); setMessage('Failed to update gift-card tax setting.'); }
     finally { setSavingGiftTax(false); }
+  };
+
+  const saveGiftExpiry = async () => {
+    const parsed = Math.max(0, Math.floor(Number(giftExpiryDays) || 0));
+    setSavingGiftExpiry(true);
+    try {
+      const saved = await payApi.setGiftCardExpiryDays(businessId, parsed);
+      setGiftExpiryDays(String(saved));
+      setMessage('Gift-card expiry updated.');
+    } catch {
+      setMessage('Failed to update gift-card expiry setting.');
+    } finally {
+      setSavingGiftExpiry(false);
+    }
   };
 
   const toggleMethod = (method: string) => {
@@ -715,10 +734,26 @@ function PaymentMethodsSettings() {
                 {info.integrationOnly && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-xs)', padding: '2px 6px', borderRadius: '4px', background: 'var(--color-warning-bg, #fff3cd)', color: 'var(--color-warning-text, #856404)' }}>Integration</span>}
                 <p style={{ margin: '2px 0 0', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{info.description}</p>
                 {info.method === 'gift_card' && (
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={giftCardTax} disabled={savingGiftTax} onChange={(e) => toggleGiftCardTax(e.target.checked)} />
-                    Apply tax to gift card sales (at the default tax rate) — depends on your jurisdiction
-                  </label>
+                  <>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={giftCardTax} disabled={savingGiftTax} onChange={(e) => toggleGiftCardTax(e.target.checked)} />
+                      Apply tax to gift card sales (at the default tax rate) — depends on your jurisdiction
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', flexWrap: 'wrap' }}>
+                      <label htmlFor="gift-expiry-days">Gift cards expire after</label>
+                      <input
+                        id="gift-expiry-days"
+                        type="number"
+                        min={0}
+                        value={giftExpiryDays}
+                        disabled={savingGiftExpiry}
+                        onChange={(e) => setGiftExpiryDays(e.target.value)}
+                        onBlur={saveGiftExpiry}
+                        style={{ width: '72px', padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm, 4px)', background: 'var(--color-background)', color: 'var(--color-text)' }}
+                      />
+                      <span>days from purchase (0 = no expiry) — depends on your jurisdiction</span>
+                    </div>
+                  </>
                 )}
               </div>
               <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px', cursor: 'pointer' }}>
