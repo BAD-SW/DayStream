@@ -326,6 +326,35 @@ export async function hostCustomerId(hostId: string, customerId: string, userId:
   return made.person.id;
 }
 
+/**
+ * One person, one place per event (David, 2026-10-22): a person who already holds a place
+ * (confirmed, or held for payment) or a waitlist place for the event cannot register again,
+ * by themselves or through staff. To bring others, they choose more people when registering.
+ * A person is matched across their customer records of the organisation by login or email.
+ */
+export async function assertNotAlreadyRegistered(eventId: string, customerId: string) {
+  const { rows } = await adminPool.query(
+    `WITH me AS (SELECT tenant_id, user_id, LOWER(NULLIF(email, '')) AS email FROM cus_customers WHERE id = $2),
+          person AS (
+            SELECT c.id FROM cus_customers c, me
+             WHERE c.tenant_id = me.tenant_id
+               AND (c.id = $2 OR (me.user_id IS NOT NULL AND c.user_id = me.user_id) OR (me.email IS NOT NULL AND LOWER(c.email) = me.email))
+          )
+     SELECT 'registered' AS what FROM evt_registrations r
+      WHERE r.event_id = $1 AND r.customer_id IN (SELECT id FROM person) AND ${HOLDS_PLACE}
+     UNION ALL
+     SELECT 'waitlisted' FROM evt_waitlist w
+      WHERE w.event_id = $1 AND w.customer_id IN (SELECT id FROM person) AND w.status IN ('waiting', 'notified')
+     LIMIT 1`,
+    [eventId, customerId],
+  );
+  if (rows[0]) {
+    throw new CustomerEventError(rows[0].what === 'registered'
+      ? 'Already registered for this event. To bring others, cancel and register again choosing more people, or contact the business.'
+      : 'Already on the waitlist for this event', 409, 'ALREADY_REGISTERED');
+  }
+}
+
 /** Check a customer may choose this ticket for this event (open, eligible, on sale). */
 export async function assertCustomerMayRegister(eventId: string, tierId: string | undefined, customerIds: string[]) {
   const { rows } = await adminPool.query(`SELECT start_time, status FROM evt_events WHERE id = $1`, [eventId]);

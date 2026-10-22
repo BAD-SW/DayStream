@@ -575,6 +575,7 @@ eventsRouter.post('/:id/register', async (req: Request, res: Response) => {
     if (!['online', 'reception'].includes(payAt)) { error(res, "pay_at must be 'online' or 'reception'", 'VALIDATION_ERROR', 400); return; }
     const byCustomer = !canManageEvents(req);
     try {
+      await customerEvents.assertNotAlreadyRegistered(req.params.id, customerId);
       // A customer may choose only a ticket that is on sale and that they are eligible for
       // (members-only tickets need an active membership at the hosting business).
       let tier: any = null;

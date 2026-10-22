@@ -79,6 +79,11 @@ Covers spec 14 (events and workshops), spec 22 (community), spec 20 (integration
 1. Register for a free event; pay a ticket online; reserve a place to pay at reception and have reception take the payment; cancel a paid registration; leave an online payment unfinished.
 **Expect:** a transactional email is queued for: registration confirmed (free, paid online, paid at reception), place reserved to pay at reception (with the amount to pay), registration cancelled (with the refund: to the card or as account credit); none for an unfinished online payment. Dates and times are written in the hosting business's time zone. The "transactional emails" switch (CUS-33) covers them; the customer's Timeline lists them under Messages.
 
+### EVT-15 · One place per person
+`P0` `regression` · David, 2026-10-22 · As: customer, reception · Status: Verified
+1. A customer registered for an event registers again, as themselves and through reception. 2. A customer on an event's waitlist registers again.
+**Expect:** both are refused ("already registered" / "already on the waitlist"): a person holds at most one place or waitlist place per event, matched across their customer records by login or email; to bring others they choose more people when registering. Once the place is cancelled, they can register again.
+
 ---
 
 ## Community

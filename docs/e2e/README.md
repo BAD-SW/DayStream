@@ -2,7 +2,7 @@
 
 **Owner:** Claude (maintained in every working session) · **Created:** 2026-10-12
 **Synced through commit:** `d5c57bf` (fix(email): populate Appointment template customer + appointment tokens): accounting hardening, bank-draw reconciliation, and billing UX)
-**Script count:** 328 across 18 suites · **Verified by execution:** 239 · **Failing:** 0 · **Blocked:** 32 (specs 47–48 not built, sequence builder, API keys) · **Draft (not yet run, or only partly):** 39: run 20261012-6 covered suites 00 and 02 to 16; the journeys (suite 01) were not run as sequences, and the remaining drafts are mostly on-screen checks
+**Script count:** 329 across 18 suites · **Verified by execution:** 240 · **Failing:** 0 · **Blocked:** 32 (specs 47–48 not built, sequence builder, API keys) · **Draft (not yet run, or only partly):** 39: run 20261012-6 covered suites 00 and 02 to 16; the journeys (suite 01) were not run as sequences, and the remaining drafts are mostly on-screen checks
 
 This is the living end-to-end (E2E) regression book for DayStream. It exists for two goals:
 
@@ -46,7 +46,7 @@ Every run ends with a report in chat and a new entry in [RUN-LOG.md](./RUN-LOG.m
 | 12 | [Reports](./suites/12-reports.md) | REP | 11 | 17, 35-reporting |
 | 13 | [Marketing & leads](./suites/13-marketing.md) | MKT | 20 | 16, 48 |
 | 14 | [Website, CMS & booking widget](./suites/14-website-widget.md) | WEB | 13 | 18, 38 |
-| 15 | [Events, community & integrations](./suites/15-events-community-integrations.md) | EVT, COM, INT | 21 | 14, 20, 22 |
+| 15 | [Events, community & integrations](./suites/15-events-community-integrations.md) | EVT, COM, INT | 22 | 14, 20, 22 |
 | 16 | [UI cross-cutting](./suites/16-ui-crosscutting.md) | UIX | 11 | 04, 30 |
 | 17 | [Inbox](./suites/17-inbox.md) | INB | 16 | 47 |
 
@@ -290,3 +290,4 @@ Gaps in the test approach itself:
 | 2026-10-20 | after `0572811` | Refunds in the sales reports (D-44, option A): REP-10 added, REP-09 tightened. D-52 (debit notes counted as negative payments) fixed. REP-04 script corrected (a debit note is no money taken). KI-17 updated: Commissions and D-45 still open. Run 20261020-3 logged |
 | 2026-10-22 | after `90909b6` | Customer events and self-cancellation (Linear THE-20, migration 157) and commission after a refund (THE-21, migration 158): EVT-06 to EVT-13, BKG-21 and REP-11 added; EVT-02 and REP-10 updated. Run 20261022-1 (fresh organisation): all suites pass; D-53 to D-56 fixed; OFF-06, REP-10 and EVT-10 runner corrections. KI-17 resolved |
 | 2026-10-22 | after `fc0defe` | First-time-customer tickets offered (David); "custom" never offered; event emails (EVT-14); the "From" price is the lowest ticket open to the customer (approved canvas). EVT-06, EVT-07, EVT-13 updated. Runner: EVT-13's second business is archived after use. Run 20261022-1 addendum |
+| 2026-10-22 | after `61690c8` | One place per person per event (David): EVT-15 added; `rcev` passes (12 scripts), suite 15 and unit tests (983) pass |
