@@ -8,6 +8,8 @@ import { TabBar } from '../design-system/components/navigation/TabBar';
 import * as eventsApi from '../api/events';
 import type { Event } from '../api/events';
 import { formatCurrency } from '../utils/currency';
+import { getLocations } from '../api/locations';
+import { getTaxCategories } from '../api/services';
 import './Events.css';
 import './EventDetail.css';
 
@@ -71,6 +73,7 @@ function DetailsTab({ event }: { event: Event }) {
         <div><dt>Start</dt><dd>{new Date(event.start_time).toLocaleString()}</dd></div>
         <div><dt>End</dt><dd>{new Date(event.end_time).toLocaleString()}</dd></div>
         <div><dt>Location</dt><dd>{event.location_name || '—'}</dd></div>
+        <HostAndTax event={event} />
         <div><dt>Capacity</dt><dd>{event.registrations_count} / {event.capacity}</dd></div>
         {event.tags?.length > 0 && <div><dt>Tags</dt><dd>{event.tags.join(', ')}</dd></div>}
       </dl>
@@ -79,6 +82,46 @@ function DetailsTab({ event }: { event: Event }) {
         <p>{event.description || 'No description'}</p>
       </div>
     </div>
+  );
+}
+
+// Where the event is held decides which business sells its tickets; the tax is one of that
+// business's tax categories, or its default tax (THE-20).
+function HostAndTax({ event }: { event: Event }) {
+  const businessId = localStorage.getItem('business_id') || '';
+  const [locations, setLocations] = useState<any[]>([]);
+  const [taxes, setTaxes] = useState<any[]>([]);
+  const [locationId, setLocationId] = useState((event as any).location_id || '');
+  const [taxId, setTaxId] = useState((event as any).tax_category_id || '');
+  const [saved, setSaved] = useState('');
+  useEffect(() => {
+    if (!businessId) return;
+    getLocations(businessId).then(setLocations).catch(() => {});
+    getTaxCategories(businessId).then(setTaxes).catch(() => {});
+  }, [businessId]);
+  const save = async (changes: Record<string, any>) => {
+    setSaved('');
+    try { await eventsApi.updateEvent(event.id, changes); setSaved('Saved'); }
+    catch (e: any) { setSaved(e?.response?.data?.error || 'Not saved'); }
+  };
+  return (
+    <>
+      <div><dt>Hosted at</dt><dd>
+        <select className="ev-select" aria-label="Hosted at" value={locationId}
+          onChange={(e) => { setLocationId(e.target.value); save({ location_id: e.target.value || null }); }}>
+          <option value="">{locationId && !locations.some((l) => l.id === locationId) ? 'A location of another business' : '— None —'}</option>
+          {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+        </select>
+      </dd></div>
+      <div><dt>Ticket tax</dt><dd>
+        <select className="ev-select" aria-label="Ticket tax" value={taxId}
+          onChange={(e) => { setTaxId(e.target.value); save({ tax_category_id: e.target.value }); }}>
+          <option value="">Business default tax</option>
+          {taxes.map((t) => <option key={t.id} value={t.id}>{t.name} ({(t.rate / 100).toLocaleString()}%)</option>)}
+        </select>
+        {saved && <span className="evd-label" style={{ marginLeft: 8 }}>{saved}</span>}
+      </dd></div>
+    </>
   );
 }
 
@@ -103,6 +146,26 @@ function TicketsTab({ eventId }: { eventId: string }) {
     setEditing(null);
   };
 
+  // A new ticket type (THE-20): who may buy it is everyone, or members only (customers
+  // with an active membership at the hosting business).
+  const [newName, setNewName] = useState('');
+  const [newPrice, setNewPrice] = useState('');
+  const [newQty, setNewQty] = useState('');
+  const [newWho, setNewWho] = useState<'all' | 'members_only'>('all');
+  const [addError, setAddError] = useState('');
+  const handleAdd = async () => {
+    setAddError('');
+    if (!newName.trim()) { setAddError('Give the ticket a name'); return; }
+    try {
+      const created = await eventsApi.createTier(eventId, {
+        name: newName.trim(), price: Math.round((parseFloat(newPrice) || 0) * 100),
+        quantity_available: newQty ? Number(newQty) : null, eligibility_type: newWho,
+      });
+      setTiers([...tiers, { ...created, sold_count: 0 }]);
+      setNewName(''); setNewPrice(''); setNewQty(''); setNewWho('all');
+    } catch (e: any) { setAddError(e?.response?.data?.error || 'The ticket could not be added'); }
+  };
+
   return (
     <div>
       <h3 className="ev-section-title">Ticket Tiers</h3>
@@ -123,16 +186,29 @@ function TicketsTab({ eventId }: { eventId: string }) {
               <Button size="sm" variant="destructive" onClick={() => handleDelete(t.id)}>Delete</Button>
             </>}>
               <ListRowTitle>{t.name}</ListRowTitle>
-              <span>— {formatCurrency(t.price)}</span>
+              <span>— {t.price > 0 ? formatCurrency(t.price) : 'Free'}</span>
+              {t.eligibility_type === 'members_only' && <Badge variant="info">Members only</Badge>}
             </ListRow>
           ))}
         </ListRows>
       )}
+      <div className="ev-add-row" style={{ marginTop: 'var(--space-md)', flexWrap: 'wrap' }}>
+        <input className="ev-input" aria-label="New ticket name" placeholder="Ticket name (e.g. Standard)" value={newName} onChange={(e) => setNewName(e.target.value)} />
+        <input className="ev-input evd-price" aria-label="New ticket price" placeholder="Price (0 = free)" type="number" step="0.01" min="0" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} />
+        <input className="ev-input evd-price" aria-label="How many" placeholder="How many (blank = no limit)" type="number" min="1" value={newQty} onChange={(e) => setNewQty(e.target.value)} />
+        <select className="ev-select" aria-label="Who can buy it" value={newWho} onChange={(e) => setNewWho(e.target.value as 'all' | 'members_only')}>
+          <option value="all">Everyone</option>
+          <option value="members_only">Members only</option>
+        </select>
+        <Button size="sm" onClick={handleAdd}>Add ticket</Button>
+      </div>
+      {addError && <p className="evd-label" style={{ color: 'var(--color-error)' }}>{addError}</p>}
     </div>
   );
 }
 
 function RegistrationsTab({ eventId }: { eventId: string }) {
+  const navigate = useNavigate();
   const [regs, setRegs] = useState<any[]>([]);
   const [transferTarget, setTransferTarget] = useState<string | null>(null);
   const [transferEmail, setTransferEmail] = useState('');
@@ -151,6 +227,13 @@ function RegistrationsTab({ eventId }: { eventId: string }) {
     if (!confirm('Cancel this registration?')) return;
     const updated = await eventsApi.cancelRegistration(regId);
     setRegs(regs.map((r) => r.id === regId ? { ...r, status: updated.status || 'cancelled' } : r));
+  };
+
+  const handleTakePayment = async (regId: string) => {
+    try {
+      const { order_id } = await eventsApi.openRegistrationCheckout(regId);
+      navigate(`/checkout?order=${order_id}`);
+    } catch (e: any) { alert(e?.response?.data?.error || 'The payment could not be opened'); }
   };
 
   const handleCheckIn = async (regId: string) => {
@@ -188,9 +271,18 @@ function RegistrationsTab({ eventId }: { eventId: string }) {
                     <Button size="sm" variant="destructive" onClick={() => handleCancel(r.id)}>Cancel</Button>
                   </>
                 )}
+                {/* A place held until it is paid (THE-20): reception takes the payment through
+                    checkout, which confirms the place, or cancels it. */}
+                {r.status === 'pending' && (
+                  <>
+                    <Badge variant="warning">{r.pay_at === 'online' ? 'Paying online' : 'Pay at reception'}</Badge>
+                    {r.pay_at !== 'online' && <Button size="sm" onClick={() => handleTakePayment(r.id)}>Take payment</Button>}
+                    <Button size="sm" variant="destructive" onClick={() => handleCancel(r.id)}>Cancel</Button>
+                  </>
+                )}
               </>}>
                 <ListRowTitle>{r.first_name} {r.last_name}</ListRowTitle>
-                <ListRowMeta>{r.reference_number}</ListRowMeta>
+                <ListRowMeta>{r.reference_number}{r.tier_name ? ` · ${r.tier_name}` : ''}{r.group_size > 1 ? ` × ${r.group_size}` : ''}</ListRowMeta>
               </ListRow>
               {transferTarget === r.id && (
                 <div className="evd-inline-form">

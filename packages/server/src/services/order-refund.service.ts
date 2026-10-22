@@ -30,7 +30,7 @@ import * as journal from './journal.service';
  */
 
 const REVENUE_ACCOUNT_CODES: Record<string, string> = {
-  service: '4100', product: '4300', membership: '4200', package: '4500', no_show_fee: '4600',
+  service: '4100', product: '4300', membership: '4200', package: '4500', no_show_fee: '4600', event: '4700',
 };
 const DEFERRED_ITEM_TYPES = ['membership', 'package'];
 
@@ -38,6 +38,7 @@ const DEFERRED_ITEM_TYPES = ['membership', 'package'];
  * Which line types can be refunded through the order-refund flow.
  *   - product     : a returnable good.
  *   - no_show_fee : a penalty that may be waived for extenuating circumstances.
+ *   - event       : an event ticket, refunded when the registration is cancelled (THE-20).
  * Everything else is deliberately NOT refundable here:
  *   - service     : once delivered it's not returned — dissatisfaction is handled
  *                   with a discount, not a refund.
@@ -45,9 +46,10 @@ const DEFERRED_ITEM_TYPES = ['membership', 'package'];
  *                   (service runs to end of the billing period), never refunded.
  *   - gift_card   : stored value — a sold gift card is a liability, not a return.
  */
-export const REFUNDABLE_ITEM_TYPES: ReadonlySet<string> = new Set(['product', 'no_show_fee']);
+export const REFUNDABLE_ITEM_TYPES: ReadonlySet<string> = new Set(['product', 'no_show_fee', 'event']);
 const DEFERRED_REVENUE_CODE = '2400';
 const CASH_CODE = '1100';
+const CUSTOMER_DEPOSITS_CODE = '2500';
 const TAX_PAYABLE_CODE = '2300';
 
 export class OrderRefundError extends Error {
@@ -80,8 +82,18 @@ export async function refundOrderLines(args: {
   lines: RefundLineRequest[];
   reason: string;
   processedBy: string;
+  /**
+   * Where the money goes: back to the original payment (default), or to the customer's
+   * account credit, drawable later (a business setting for cancellations, THE-20). Credit
+   * moves no money: nothing is reversed at the provider, and the GL credits 2500 Customer
+   * Deposits instead of Cash.
+   */
+  refundTo?: 'original' | 'account_credit';
+  /** A paid appointment cancelled before the visit: its service line may be refunded. */
+  allowServiceLines?: boolean;
 }): Promise<OrderRefundResult> {
   const { businessId, tenantId, orderId, lines, reason, processedBy } = args;
+  const toCredit = args.refundTo === 'account_credit';
   if (!reason || !reason.trim()) throw new OrderRefundError('A reason is required to refund', 'REASON_REQUIRED');
   if (!lines || lines.length === 0) throw new OrderRefundError('Select at least one item to refund', 'NO_LINES');
 
@@ -128,7 +140,7 @@ export async function refundOrderLines(args: {
     for (const req of lines) {
       const item = itemById.get(req.orderItemId);
       if (!item) throw new OrderRefundError(`Line item ${req.orderItemId} not found on this order`, 'LINE_NOT_FOUND');
-      if (!REFUNDABLE_ITEM_TYPES.has(item.item_type)) {
+      if (!REFUNDABLE_ITEM_TYPES.has(item.item_type) && !(args.allowServiceLines && item.item_type === 'service')) {
         throw new OrderRefundError(
           `${item.item_type === 'service' ? 'Services are not refundable (issue a discount instead)'
             : item.item_type === 'membership' || item.item_type === 'package' ? `A ${item.item_type} cannot be refunded — cancel it instead`
@@ -162,6 +174,7 @@ export async function refundOrderLines(args: {
     }
 
     if (totalRefund <= 0) throw new OrderRefundError('Nothing to refund', 'NOTHING_TO_REFUND');
+    if (toCredit && !order.customer_id) throw new OrderRefundError('Account credit needs a customer on the order', 'CUSTOMER_REQUIRED');
 
     // Reverse at the provider for a processed charge; manual charges are recorded only.
     let status: 'completed' | 'pending' | 'failed' = 'completed';
@@ -170,7 +183,7 @@ export async function refundOrderLines(args: {
     const reference = generateReference();
     const currency = charge?.currency || 'USD';
 
-    if (charge && charge.is_processed && charge.provider_reference) {
+    if (!toCredit && charge && charge.is_processed && charge.provider_reference) {
       const account = await resolveConnectedAccount({ ownerLevel: 'customer', businessId });
       if (!account) throw new OrderRefundError('Business has no active payment processor connection', 'NO_CONNECTION');
       const secrets = await getDecryptedSecrets({ ownerLevel: 'business', businessId });
@@ -208,13 +221,24 @@ export async function refundOrderLines(args: {
        VALUES ($1,$2,'refund',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING id`,
       [
-        businessId, charge?.customer_id ?? null, status, totalRefund, currency,
-        order.payment_method || 'card', reference, `Refund of order ${order.order_number}`,
+        businessId, toCredit ? order.customer_id : (charge?.customer_id ?? null), status, totalRefund, currency,
+        toCredit ? 'account_credit' : (order.payment_method || 'card'), reference,
+        toCredit ? `Account credit for order ${order.order_number}` : `Refund of order ${order.order_number}`,
         charge?.id ?? null, reason, processedBy,
-        charge?.is_processed ?? false, refundProviderRef, orderId,
+        toCredit ? false : (charge?.is_processed ?? false), refundProviderRef, orderId,
       ],
     );
     const refundTxnId = refundRows[0].id;
+
+    // Credit instead of money back: the customer can spend it later (pay_account_credits).
+    if (toCredit) {
+      await client.query(
+        `INSERT INTO pay_account_credits
+           (tenant_id, business_id, customer_id, source_transaction_id, currency, original_cents, remaining_cents, status, note)
+         VALUES ($1,$2,$3,$4,$5,$6,$6,'available',$7)`,
+        [tenantId, businessId, order.customer_id, refundTxnId, currency, totalRefund, `Order ${order.order_number}: ${reason}`],
+      );
+    }
 
     // Draw down each line + record the refund-line breakdown.
     for (const c of computed) {
@@ -245,14 +269,14 @@ export async function refundOrderLines(args: {
     await client.query('COMMIT');
 
     // Post the per-line GL reversal after commit (non-blocking).
-    await postOrderRefundJournal(businessId, orderId, refundTxnId, computed, order.order_number).catch((e) =>
+    await postOrderRefundJournal(businessId, orderId, refundTxnId, computed, order.order_number, toCredit).catch((e) =>
       logger.warn(`Order refund ${reference}: GL reversal failed: ${e?.message || e}`),
     );
 
     // Refund confirmation to the customer — ONLY when the refund is actually
     // settled. A 'pending' bank-debit refund sends its confirmation from the
     // finalizer when it settles; confirming a pending refund now could be false.
-    if (status === 'completed' && charge?.customer_id) {
+    if (status === 'completed' && charge?.customer_id && !toCredit) {
       const { queueRefundConfirmation } = await import('./refund.service');
       await queueRefundConfirmation(businessId, refundTxnId).catch((e) =>
         logger.warn(`Order refund ${reference}: refund-confirmation enqueue failed: ${e?.message || e}`),
@@ -291,6 +315,7 @@ async function postOrderRefundJournal(
   businessId: string, orderId: string, refundTxnId: string,
   computed: Array<{ item: any; qty: number; revenueCents: number; taxCents: number; amountCents: number }>,
   orderNumber: string,
+  toCredit = false,
 ): Promise<void> {
   const { rows: existing } = await adminPool.query(
     `SELECT 1 FROM fin_journal_entries WHERE reference_type = 'order_refund' AND reference_id = $1 AND is_void = false LIMIT 1`,
@@ -312,15 +337,16 @@ async function postOrderRefundJournal(
   }
   if (totalCash <= 0) return;
 
-  const codes = [CASH_CODE, TAX_PAYABLE_CODE, ...revenueByCode.keys()];
+  const payoutCode = toCredit ? CUSTOMER_DEPOSITS_CODE : CASH_CODE;
+  const codes = [payoutCode, TAX_PAYABLE_CODE, ...revenueByCode.keys()];
   const { rows: acctRows } = await adminPool.query(
     `SELECT id, code FROM fin_chart_of_accounts WHERE business_id = $1 AND code = ANY($2)`,
     [businessId, Array.from(new Set(codes))],
   );
   const accounts = new Map(acctRows.map((r) => [r.code, r.id]));
-  const cashId = accounts.get(CASH_CODE);
+  const cashId = accounts.get(payoutCode);
   if (!cashId) {
-    logger.warn(`Order refund journal: Cash (${CASH_CODE}) not seeded for business ${businessId}; skipping GL for refund ${refundTxnId}`);
+    logger.warn(`Order refund journal: account ${payoutCode} not seeded for business ${businessId}; skipping GL for refund ${refundTxnId}`);
     return;
   }
 
@@ -338,7 +364,7 @@ async function postOrderRefundJournal(
   if (totalTax > 0 && taxId) {
     linesOut.push({ account_id: taxId, debit: totalTax, credit: 0, description: 'Refund — reverse tax collected' });
   }
-  linesOut.push({ account_id: cashId, debit: 0, credit: totalCash, description: 'Refund paid' });
+  linesOut.push({ account_id: cashId, debit: 0, credit: totalCash, description: toCredit ? 'Customer credit granted (drawable)' : 'Refund paid' });
 
   await journal.createEntry({
     businessId,

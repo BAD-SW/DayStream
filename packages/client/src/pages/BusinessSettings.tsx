@@ -8,6 +8,7 @@ import { ProcessorConfigForm } from '../components/ProcessorConfigForm';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
 import { TabBar } from '../design-system/components/navigation/TabBar';
 import * as payApi from '../api/payments';
+import * as bookingsApi from '../api/bookings';
 import { TIMEZONES } from '../utils/timezones';
 
 type SettingsTab = 'system' | 'lifecycle' | 'processes' | 'notifications' | 'payment-methods' | 'integrations' | 'booking-widget' | 'appearance';
@@ -104,8 +105,97 @@ function SystemSettings() {
         </label>
       </div>
     </div>
+    <CustomerCancellationSettings />
     <PayrollFrequencySettings />
+    <CommissionRefundSetting />
     </>
+  );
+}
+
+// Customer cancellations (THE-20): may customers cancel, up to how long before the start,
+// and where the money of a paid cancellation goes. Set separately for events and appointments.
+function CustomerCancellationSettings() {
+  const businessId = localStorage.getItem('business_id') || '';
+  const [settings, setSettings] = useState<{ events: bookingsApi.CancelSettings; appointments: bookingsApi.CancelSettings } | null>(null);
+
+  useEffect(() => {
+    if (!businessId) return;
+    bookingsApi.getCancellationSettings(businessId).then((s) => setSettings({ events: s.events, appointments: s.appointments })).catch(() => {});
+  }, [businessId]);
+
+  if (!settings) return null;
+  return (
+    <div style={settingStyles.section}>
+      <h3 style={settingStyles.sectionTitle}>Customer cancellations</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+        <CancellationBlock kind="appointments" label="Appointments" initial={settings.appointments} businessId={businessId} />
+        <CancellationBlock kind="events" label="Events" initial={settings.events} businessId={businessId} />
+      </div>
+    </div>
+  );
+}
+
+function CancellationBlock({ kind, label, initial, businessId }: { kind: 'events' | 'appointments'; label: string; initial: bookingsApi.CancelSettings; businessId: string }) {
+  const startsInDays = initial.customer_cancel_hours > 0 && initial.customer_cancel_hours % 24 === 0;
+  const [enabled, setEnabled] = useState(initial.customer_cancel_enabled);
+  const [amount, setAmount] = useState(startsInDays ? initial.customer_cancel_hours / 24 : initial.customer_cancel_hours);
+  const [unit, setUnit] = useState<'hours' | 'days'>(startsInDays ? 'days' : 'hours');
+  const [refundTo, setRefundTo] = useState(initial.cancel_refund_to);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const noun = kind === 'events' ? 'event' : 'appointment';
+
+  const save = async () => {
+    setSaving(true); setMessage(null);
+    try {
+      await bookingsApi.saveCancellationSettings(businessId, kind, {
+        customer_cancel_enabled: enabled,
+        customer_cancel_hours: Math.round(Number(amount) || 0) * (unit === 'days' ? 24 : 1),
+        cancel_refund_to: refundTo,
+      });
+      setMessage('Saved.');
+    } catch (e: any) { setMessage(e?.response?.data?.error || 'Failed to save.'); }
+    finally { setSaving(false); }
+  };
+
+  const field = { padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', background: 'var(--color-surface)', color: 'var(--color-text)' };
+  return (
+    <div style={{ ...settingStyles.settingRow, flexDirection: 'column' as const, gap: '12px' }} data-testid={`cancel-settings-${kind}`}>
+      <div style={settingStyles.settingInfo}>
+        <label style={settingStyles.settingLabel}>{label}</label>
+        <p style={settingStyles.settingDesc}>Whether customers can cancel {kind === 'events' ? 'their own event registrations' : 'their own appointments'} online, and until when. Staff can always cancel.</p>
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} style={{ width: '18px', height: '18px' }} />
+        Customers can cancel
+      </label>
+      {enabled && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' as const, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+            Up to
+            <input type="number" min={0} max={unit === 'days' ? 90 : 2160} value={amount} onChange={(e) => setAmount(Number(e.target.value))} style={{ ...field, width: '80px' }} aria-label="How long before" />
+            <select value={unit} onChange={(e) => setUnit(e.target.value as 'hours' | 'days')} style={field} aria-label="Unit">
+              <option value="hours">hours</option>
+              <option value="days">days</option>
+            </select>
+            before the {noun} starts
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+            <span style={{ color: 'var(--color-text-secondary)' }}>When a paid {noun} is cancelled in time, the money goes:</span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input type="radio" name={`refund-${kind}`} checked={refundTo === 'card'} onChange={() => setRefundTo('card')} /> Back to the customer's card (refund)
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input type="radio" name={`refund-${kind}`} checked={refundTo === 'credit'} onChange={() => setRefundTo('credit')} /> To the customer's account credit, to use later
+            </label>
+          </div>
+        </>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <Button onClick={save} loading={saving} size="sm">Save</Button>
+        {message && <span style={{ fontSize: 'var(--font-size-sm)', color: message === 'Saved.' ? 'var(--color-success)' : 'var(--color-error)' }}>{message}</span>}
+      </div>
+    </div>
   );
 }
 
@@ -167,6 +257,56 @@ function PayrollFrequencySettings() {
           </div>
           <Button onClick={handleSave} loading={saving} size="sm">Save</Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Commission after a refund (THE-21): take the commission on the refunded part back in the
+// pay period of the refund (default), or keep it. Finalized pay periods never change.
+function CommissionRefundSetting() {
+  const businessId = localStorage.getItem('business_id') || '';
+  const [takeBack, setTakeBack] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!businessId) return;
+    apiClient.get(`/v1/payroll/settings/commission-refunds?business_id=${businessId}`)
+      .then((res) => setTakeBack(!!res.data.data?.take_back))
+      .catch(() => {});
+  }, [businessId]);
+
+  const choose = async (next: boolean) => {
+    const before = takeBack;
+    setTakeBack(next); setSaving(true); setMessage(null);
+    try {
+      await apiClient.put(`/v1/payroll/settings/commission-refunds?business_id=${businessId}`, { take_back: next });
+      setMessage('Saved.');
+    } catch { setTakeBack(before); setMessage('Failed to save.'); }
+    finally { setSaving(false); }
+  };
+
+  if (takeBack === null) return null;
+  return (
+    <div style={settingStyles.section} data-testid="commission-refund-setting">
+      <div style={{ ...settingStyles.settingRow, flexDirection: 'column' as const, gap: '10px' }}>
+        <div style={settingStyles.settingInfo}>
+          <label style={settingStyles.settingLabel}>Commission after a refund</label>
+          <p style={settingStyles.settingDesc}>
+            When a sale is refunded, what happens to the commission the staff member earned on it. Taken back commission
+            comes off the pay period in which the refund happens; pay periods already finalized never change.
+          </p>
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+          <input type="radio" name="commission-refunds" checked={takeBack} disabled={saving} onChange={() => choose(true)} />
+          Take the commission back
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+          <input type="radio" name="commission-refunds" checked={!takeBack} disabled={saving} onChange={() => choose(false)} />
+          Keep the commission
+        </label>
+        {message && <span style={{ fontSize: 'var(--font-size-sm)', color: message === 'Saved.' ? 'var(--color-success)' : 'var(--color-error)' }}>{message}</span>}
       </div>
     </div>
   );

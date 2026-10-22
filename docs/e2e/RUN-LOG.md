@@ -31,6 +31,31 @@ What was not cleaned up, if anything.
 
 ## Runs
 
+## Run 20261022-1 — full, on a fresh organisation, after customer events (THE-20) and commission after a refund (THE-21)
+- Commit at start: `90909b6` plus the THE-20 and THE-21 changes (committed after this run) · Migrations at: 158 (local only) · Processor mode: mock for the E2E organisation
+- Scope: every runner (suites 00 and 02 to 16, Bill's checks, CUS-29 to CUS-38, REP-10) and the new runner `rcev` (EVT-06 to EVT-13, BKG-21, REP-11)
+- Unit tests: server 983 of 983 (8 new). Type check: server 0, client 30 (unchanged baseline)
+- Result: all scripts pass. A first pass re-ran the setup suites on the data of run 20261020-2; suites 06, 08, 10, 11 and 12 then failed because the earlier run had already changed passwords, roles and bookings (environment, not product). The fresh run passes
+- On screen (automation browser, signed in through the API because the sign-in form does not take typed text there): the customer's Events list, event page, online payment with the test processor, My events and My Bookings; the owner's Settings (Customer cancellations, Commission after a refund); the staff event page (Hosted at, Ticket tax, Add ticket)
+
+### Defects
+| ID | Severity | What | Fix |
+|---|---|---|---|
+| D-53 | Medium | An event's capacity counted a group registration as one place, and an expired payment hold kept its place | Places are counted by group size; a hold that ran out takes no place |
+| D-54 | Low | My Bookings showed a customer's appointment times in UTC | Shown in the business's time zone |
+| D-55 | Medium | Found in this run's first pass, before commit: Payments Received counted a refund given as account credit as money paid out | Refunds as account credit are left out, like credit notes |
+| D-56 | Medium | Staff could not add ticket types to an event on screen, so an event made on screen could not be published | Tickets tab: Add ticket (name, price, how many, everyone or members only) |
+
+### Script corrections made after this run
+| Script | What changed and why |
+|---|---|
+| OFF-06 | The "late" booking was tomorrow at 13:00, which is more than 24 hours away when the run happens before 13:00; it is now moved to start 12 hours ahead |
+| REP-10 | The Revenue cross-check now includes event-ticket lines, which the Revenue report shows as Event Revenue |
+| EVT-10 | The account-credit check now looks for the refund row of that order in Payments Received |
+
+### Leftover test data
+The E2E organisation of run 20261022-1 (with a second business "Host B" made for EVT-13). In the organisation of run 20261020-2: the CEV events and registrations of the first passes.
+
 ## Run 20261020-3 — refunds in the sales reports (D-44, option A) and the Timeline Messages filter
 - Commit at start: `0572811` · Migrations at: 156 (local only) · Processor mode: mock for the E2E tenant
 - Scope: suites 08 (`rprof`, CUS-29 to CUS-38), 10 (`r10`), 12 (`r12` and the new runner `rrefund`, REP-10) and Bill's checks (`rbill`), on the data of run 20261020-2

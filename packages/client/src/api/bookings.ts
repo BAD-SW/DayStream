@@ -251,3 +251,28 @@ export async function confirmWaitlistEntry(entryId: string, businessId: string) 
   const res = await apiClient.put(`/v1/bookings/waitlist/${entryId}/confirm?business_id=${businessId}`);
   return res.data.data;
 }
+
+// ── Customer cancellation (THE-20) ───────────────────────────────────────────
+
+export interface CancelSettings {
+  customer_cancel_enabled: boolean;
+  customer_cancel_hours: number;
+  cancel_refund_to: 'card' | 'credit';
+}
+
+/** The business's customer cancellation settings for events and appointments, and its time zone. */
+export async function getCancellationSettings(businessId: string) {
+  const res = await apiClient.get('/v1/cancellation-settings', { params: { business_id: businessId } });
+  return res.data.data as { events: CancelSettings; appointments: CancelSettings; timezone: string };
+}
+
+export async function saveCancellationSettings(businessId: string, kind: 'events' | 'appointments', values: Partial<CancelSettings>) {
+  const res = await apiClient.put('/v1/cancellation-settings', { business_id: businessId, kind, ...values });
+  return res.data.data as CancelSettings;
+}
+
+/** A customer cancels their own appointment, within the business's settings. */
+export async function customerCancelBooking(id: string, businessId: string) {
+  const res = await apiClient.put(`/v1/bookings/${id}/customer-cancel?business_id=${businessId}`);
+  return res.data.data as Booking & { refund: { amount: number; to: 'card' | 'credit'; status: string } | null };
+}

@@ -14,7 +14,7 @@ interface CreateOrderInput {
 }
 
 interface AddItemInput {
-  itemType: 'service' | 'product' | 'membership' | 'package' | 'no_show_fee' | 'gift_card';
+  itemType: 'service' | 'product' | 'membership' | 'package' | 'no_show_fee' | 'gift_card' | 'event';
   itemId?: string;
   itemName: string;
   variantId?: string;
@@ -177,6 +177,17 @@ export async function addItem(orderId: string, input: AddItemInput) {
     }
   } else if (input.taxAmount !== undefined) {
     taxAmount = input.taxAmount;
+  } else if (input.itemType === 'event' && input.itemId) {
+    // An event ticket is taxed at the event's tax category, or at the selling business's
+    // default tax when the event has none (THE-20).
+    const { rows: evtRows } = await adminPool.query('SELECT tax_category_id FROM evt_events WHERE id = $1', [input.itemId]);
+    const { rows: bizRows } = await adminPool.query('SELECT business_id FROM fin_orders WHERE id = $1', [orderId]);
+    const applied = evtRows[0]?.tax_category_id
+      ? await calculateTaxOnCategory(evtRows[0].tax_category_id, netAmount)
+      : await applyDefaultTaxCategory(bizRows[0].business_id, netAmount);
+    taxAmount = applied.amount;
+    taxCategoryId = applied.taxCategoryId;
+    taxRate = applied.rate;
   } else if (input.itemId) {
     const applied = await calculateTaxOnAmount(input.itemType, input.itemId, netAmount);
     taxAmount = applied.amount;
@@ -300,10 +311,11 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   const method = input.paymentMethod === 'transfer' ? 'bank_transfer' : input.paymentMethod;
   const manual = MANUAL_METHODS.includes(method);
 
-  // Walk-in (no customer) card payment: the client confirmed a one-time
-  // PaymentIntent; finalize it here and record a customerless charge. This is the
-  // ONLY way a processed payment proceeds without a customer.
-  const isWalkinCard = !openOrder.customer_id && !manual && method === 'card' && !!input.oneTimeChargeRef;
+  // One-time card payment: the client confirmed a one-time PaymentIntent; finalize it
+  // here and record the charge. A walk-in (no customer) pays this way, and so does a
+  // customer paying an event ticket online with a card that is not saved (THE-20).
+  // This is the ONLY way a processed payment proceeds without a customer.
+  const isWalkinCard = !manual && method === 'card' && !!input.oneTimeChargeRef;
 
   if (openOrder.total_amount > 0 && isWalkinCard) {
     const { finalizeOneTimeOrderCharge } = await import('./walkin-payment.service');
@@ -349,6 +361,14 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
       [orderRows[0].booking_id],
     );
   }
+
+  // An event ticket paid on this order (online, or at reception through checkout)
+  // confirms the place it was holding (THE-20).
+  await adminPool.query(
+    `UPDATE evt_registrations SET status = 'confirmed', hold_expires_at = NULL, amount_paid = $2
+      WHERE order_id = $1 AND status = 'pending'`,
+    [orderId, rows[0].total_amount],
+  );
 
   // Auto-generate journal entries for accounting
   try {
@@ -901,7 +921,11 @@ async function calculateTaxOnAmount(itemType: string, itemId: string | null, net
   }
 
   if (!taxCategoryId) return { amount: 0, taxCategoryId: null, rate: null };
+  return calculateTaxOnCategory(taxCategoryId, netAmount);
+}
 
+async function calculateTaxOnCategory(taxCategoryId: string, netAmount: number): Promise<AppliedTax> {
+  if (netAmount <= 0) return { amount: 0, taxCategoryId: null, rate: null };
   const { rows: taxRows } = await adminPool.query('SELECT rate FROM svc_tax_categories WHERE id = $1', [taxCategoryId]);
   if (taxRows.length === 0) return { amount: 0, taxCategoryId: null, rate: null };
 

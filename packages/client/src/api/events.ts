@@ -148,3 +148,64 @@ export async function deleteEventType(id: string) {
 export async function confirmWaitlist(waitlistId: string) {
   const res = await apiClient.put(`/v1/events/waitlist/${waitlistId}/confirm`); return res.data.data;
 }
+
+// ── Events for customers (THE-20) ────────────────────────────────────────────
+
+export interface CustomerTier {
+  id: string; name: string; description: string | null; price: number; eligibility: string;
+  places_left: number | null; available: boolean; unavailable_reason: string | null;
+}
+export interface CustomerEventSummary {
+  id: string; slug: string; title: string; description: string | null;
+  start_time: string; end_time: string; location_name: string | null; event_type_name: string | null;
+  host_business_id: string | null; host_business_name: string | null; timezone: string; currency: string;
+  capacity: number; places_left: number; from_price: number | null; tiers: CustomerTier[];
+  my_status?: 'registered' | 'awaiting_payment' | 'waitlisted' | null;
+}
+export interface CustomerRegistration {
+  id: string; status: string; pay_at: 'online' | 'reception' | null; group_size: number; tier_name: string | null;
+  reference_number: string; order_number: string | null; paid: boolean; amount: number;
+  awaiting_payment: 'online' | 'reception' | null; hold_expires_at: string | null;
+  can_cancel: boolean; cancel_until: string | null; cancel_blocked_reason: string | null; refund_to: 'card' | 'credit' | null;
+}
+export interface CustomerEventDetail extends CustomerEventSummary {
+  status: string; open_for_registration: boolean; is_member: boolean; tax_rate: number;
+  pay_options: { online: boolean; reception: boolean };
+  cancellation: { allowed: boolean; hours_before: number | null; refund_to: 'card' | 'credit' };
+  my_registrations: CustomerRegistration[];
+  my_waitlist: { id: string; status: string; position: number; expires_at: string | null }[];
+}
+export interface MyEventRow extends Partial<CustomerRegistration> {
+  kind: 'registration' | 'waitlist'; id: string; status: string; event_id: string; title: string;
+  start_time: string; end_time: string; location_name: string | null; host_business_name: string | null;
+  timezone: string; currency: string; event_status: string; upcoming: boolean; position?: number;
+}
+export interface OnlinePayment {
+  order_id: string; provider_reference: string; client_secret: string | null; publishable_key?: string; amount: number; currency: string;
+}
+
+export async function getCustomerEvents() {
+  const res = await apiClient.get('/v1/events/customer/events'); return res.data.data as CustomerEventSummary[];
+}
+export async function getCustomerEvent(id: string) {
+  const res = await apiClient.get(`/v1/events/customer/events/${id}`); return res.data.data as CustomerEventDetail;
+}
+export async function getMyEvents() {
+  const res = await apiClient.get('/v1/events/customer/my-events'); return res.data.data as MyEventRow[];
+}
+export async function payRegistration(registrationId: string, providerReference: string) {
+  const res = await apiClient.post(`/v1/events/customer/registrations/${registrationId}/pay`, { provider_reference: providerReference });
+  return res.data.data;
+}
+export async function cancelMyRegistration(registrationId: string) {
+  const res = await apiClient.put(`/v1/events/customer/registrations/${registrationId}/cancel`);
+  return res.data.data as { refund: { amount: number; to: 'card' | 'credit'; status: string } | null };
+}
+export async function leaveWaitlist(waitlistId: string) {
+  const res = await apiClient.delete(`/v1/events/customer/waitlist/${waitlistId}`); return res.data.data;
+}
+/** Reception: open the ticket's order so it can be paid through checkout. */
+export async function openRegistrationCheckout(registrationId: string) {
+  const res = await apiClient.post(`/v1/events/registrations/${registrationId}/checkout`);
+  return res.data.data as { order_id: string; business_id: string };
+}

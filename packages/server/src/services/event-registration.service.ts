@@ -8,7 +8,16 @@ interface RegisterInput {
   ticketTierId?: string;
   attendeeInfo?: Record<string, any>;
   groupSize?: number;
+  /**
+   * How a paid ticket is paid (THE-20): 'online' holds the place for a few minutes while the
+   * card is confirmed; 'reception' holds it until the event starts. Default 'reception'.
+   */
+  payAt?: 'online' | 'reception';
 }
+
+/** A registration that takes a place: confirmed, or pending and still held. */
+const HOLDS_PLACE = `(status = 'confirmed' OR (status = 'pending' AND (hold_expires_at IS NULL OR hold_expires_at > NOW())))`;
+const ONLINE_HOLD_MS = 10 * 60 * 1000;
 
 interface RegistrationFilters {
   status?: string;
@@ -27,8 +36,9 @@ export function generateReferenceNumber(): string {
 }
 
 /**
- * Register for an event. Creates with status='pending' and a 10-minute hold.
- * For free events (price=0 or no tier), immediately confirms.
+ * Register for an event. A free ticket is confirmed at once. A paid ticket is 'pending'
+ * until it is paid: paying online holds the place for 10 minutes, paying at reception
+ * holds it until the event starts. Places are counted by group size.
  */
 export async function registerForEvent(
   eventId: string,
@@ -48,10 +58,11 @@ export async function registerForEvent(
     const event = eventRows[0];
     const groupSize = input.groupSize || 1;
 
-    // Check current registration count
+    // Places taken: a group of 3 takes 3 places (it used to count as 1), and a payment
+    // hold that ran out no longer takes one.
     const { rows: countRows } = await client.query(
-      `SELECT COUNT(*)::int AS count FROM evt_registrations
-       WHERE event_id = $1 AND status IN ('confirmed','pending')`,
+      `SELECT COALESCE(SUM(group_size), 0)::int AS count FROM evt_registrations
+       WHERE event_id = $1 AND ${HOLDS_PLACE}`,
       [eventId],
     );
     if (countRows[0].count + groupSize > event.capacity) {
@@ -76,7 +87,7 @@ export async function registerForEvent(
 
       const { rows: soldRows } = await client.query(
         `SELECT COALESCE(SUM(group_size), 0)::int AS sold FROM evt_registrations
-         WHERE ticket_tier_id = $1 AND status IN ('confirmed','pending')`,
+         WHERE ticket_tier_id = $1 AND ${HOLDS_PLACE}`,
         [input.ticketTierId],
       );
       if (tier.quantity_available && soldRows[0].sold + groupSize > tier.quantity_available) {
@@ -87,13 +98,16 @@ export async function registerForEvent(
 
     const referenceNumber = generateReferenceNumber();
     const status = isFree ? 'confirmed' : 'pending';
-    const holdExpiresAt = isFree ? null : new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const payAt = isFree ? null : (input.payAt || 'reception');
+    const holdExpiresAt = isFree ? null
+      : payAt === 'online' ? new Date(Date.now() + ONLINE_HOLD_MS).toISOString()
+      : new Date(event.start_time).toISOString();
 
     const { rows } = await client.query(
       `INSERT INTO evt_registrations (
          event_id, customer_id, ticket_tier_id, reference_number,
-         status, group_size, attendee_info, hold_expires_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         status, group_size, attendee_info, hold_expires_at, pay_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        RETURNING *`,
       [
         eventId,
@@ -104,6 +118,7 @@ export async function registerForEvent(
         groupSize,
         input.attendeeInfo ? JSON.stringify(input.attendeeInfo) : null,
         holdExpiresAt,
+        payAt,
       ],
     );
 

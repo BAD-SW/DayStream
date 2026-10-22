@@ -17,6 +17,7 @@ import * as waitlistService from '../services/event-waitlist.service';
 import * as checkinService from '../services/event-checkin.service';
 import * as commsService from '../services/event-communications.service';
 import * as reportsService from '../services/event-reports.service';
+import * as customerEvents from '../services/customer-events.service';
 
 export const eventsRouter = Router();
 
@@ -92,6 +93,128 @@ eventsRouter.param('wid', inOwnTenant('SELECT e.tenant_id FROM evt_waitlist w JO
 
 const canManageEvents = (req: Request): boolean =>
   ((req as AuthenticatedRequest).user.permissions || []).some((p: string) => p === 'events:*' || p === '*:*');
+
+function customerEventError(res: Response, err: any, fallback: string): void {
+  if (err instanceof customerEvents.CustomerEventError) { error(res, err.message, err.code, err.status); return; }
+  console.error(fallback, err?.message || err);
+  error(res, err?.message || fallback, 'INTERNAL_ERROR', 500);
+}
+
+// ============================================================
+// Events for customers (THE-20): the organisation's events, their own registrations,
+// paying online, cancelling within the hosting business's limits. A customer has no
+// events permission; what they may see and do is decided by their own customer records.
+// ============================================================
+
+eventsRouter.get('/customer/events', async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    success(res, await customerEvents.listForCustomer(authReq.tenantId, await ownCustomerIds(req)));
+  } catch (err: any) { customerEventError(res, err, 'Failed to load events'); }
+});
+
+eventsRouter.get('/customer/my-events', async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    success(res, await customerEvents.myEvents(authReq.tenantId, await ownCustomerIds(req)));
+  } catch (err: any) { customerEventError(res, err, 'Failed to load your events'); }
+});
+
+eventsRouter.get('/customer/events/:id', async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    success(res, await customerEvents.eventForCustomer(authReq.tenantId, req.params.id, await ownCustomerIds(req)));
+  } catch (err: any) { customerEventError(res, err, 'Failed to load event'); }
+});
+
+/** The registration is one of the caller's own (or the caller manages events). */
+async function ownRegistration(req: Request, rid: string) {
+  const { rows } = await adminPool.query('SELECT id, customer_id, event_id, order_id, status FROM evt_registrations WHERE id = $1', [rid]);
+  const own = await ownCustomerIds(req);
+  if (!rows[0] || (!canManageEvents(req) && !own.includes(rows[0].customer_id))) return null;
+  return rows[0];
+}
+
+// Finish an online payment: the card was confirmed in the browser; the server verifies it at
+// the provider, completes the order and confirms the place.
+eventsRouter.post('/customer/registrations/:rid/pay', async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const reg = await ownRegistration(req, req.params.rid);
+    if (!reg) { error(res, 'Registration not found', 'NOT_FOUND', 404); return; }
+    const ref = req.body.provider_reference as string;
+    if (!ref) { error(res, 'provider_reference required', 'VALIDATION_ERROR', 400); return; }
+    if (!reg.order_id) { error(res, 'This registration has no online payment', 'CONFLICT', 409); return; }
+    const { rows: o } = await adminPool.query('SELECT business_id, status FROM fin_orders WHERE id = $1', [reg.order_id]);
+    const checkout = await import('../services/checkout.service');
+    // A place released while the card was being confirmed: the order is open again so the
+    // money taken is recorded, then the place is given back if one is free, or refunded.
+    const released = reg.status === 'cancelled';
+    if (o[0]?.status === 'voided' && released) await adminPool.query(`UPDATE fin_orders SET status = 'open' WHERE id = $1`, [reg.order_id]);
+    if (o[0]?.status !== 'completed') {
+      try {
+        await checkout.completeOrder(reg.order_id, o[0].business_id, { paymentMethod: 'card', oneTimeChargeRef: ref, checkedOutBy: authReq.user.sub });
+      } catch (e: any) { error(res, e.message || 'The payment was not completed', e.code || 'PAYMENT_DECLINED', 402); return; }
+    }
+    if (released) {
+      const { rows: ev } = await adminPool.query(
+        `SELECT e.capacity, (SELECT COALESCE(SUM(r.group_size), 0)::int FROM evt_registrations r WHERE r.event_id = e.id AND ${customerEvents.HOLDS_PLACE}) AS taken,
+                (SELECT group_size FROM evt_registrations WHERE id = $2) AS size
+           FROM evt_events e WHERE e.id = $1`, [reg.event_id, reg.id]);
+      if (ev[0] && ev[0].taken + ev[0].size <= ev[0].capacity) {
+        await adminPool.query(`UPDATE evt_registrations SET status = 'confirmed', cancelled_at = NULL, hold_expires_at = NULL WHERE id = $1`, [reg.id]);
+      } else {
+        await adminPool.query(`UPDATE evt_registrations SET status = 'pending' WHERE id = $1`, [reg.id]);
+        const out = await customerEvents.cancelOwnRegistration({ registrationId: reg.id, tenantId: authReq.tenantId, userId: authReq.user.sub, byCustomer: false });
+        error(res, 'The place was released before the payment finished and the event is now full; the payment was refunded', 'PLACE_RELEASED', 409);
+        void out; return;
+      }
+    }
+    success(res, await customerEvents.markRegistrationPaid(reg.id));
+  } catch (err: any) { customerEventError(res, err, 'Failed to finish the payment'); }
+});
+
+eventsRouter.put('/customer/registrations/:rid/cancel', async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const reg = await ownRegistration(req, req.params.rid);
+    if (!reg) { error(res, 'Registration not found', 'NOT_FOUND', 404); return; }
+    const out = await customerEvents.cancelOwnRegistration({ registrationId: reg.id, tenantId: authReq.tenantId, userId: authReq.user.sub, byCustomer: true });
+    const { rows: info } = await adminPool.query('SELECT c.business_id, e.title FROM cus_customers c, evt_events e WHERE c.id = $1 AND e.id = $2', [reg.customer_id, reg.event_id]);
+    if (info[0]) {
+      await createActivity({
+        customerId: reg.customer_id, businessId: info[0].business_id, activityType: 'event',
+        description: `Cancelled the registration for the event: ${info[0].title}`,
+        metadata: { event_id: reg.event_id, registration_id: reg.id }, createdBy: authReq.user.sub,
+      }).catch(() => undefined);
+    }
+    success(res, out);
+  } catch (err: any) { customerEventError(res, err, 'Failed to cancel'); }
+});
+
+eventsRouter.delete('/customer/waitlist/:wid', async (req: Request, res: Response) => {
+  try {
+    const { rows } = await adminPool.query('SELECT customer_id FROM evt_waitlist WHERE id = $1', [req.params.wid]);
+    const own = await ownCustomerIds(req);
+    if (!rows[0] || (!canManageEvents(req) && !own.includes(rows[0].customer_id))) { error(res, 'Waitlist entry not found', 'NOT_FOUND', 404); return; }
+    const { rows: done } = await adminPool.query(
+      `UPDATE evt_waitlist SET status = 'cancelled' WHERE id = $1 AND status IN ('waiting', 'notified') RETURNING *`, [req.params.wid]);
+    if (!done[0]) { error(res, 'You are no longer on this waitlist', 'CONFLICT', 409); return; }
+    success(res, done[0]);
+  } catch (err: any) { customerEventError(res, err, 'Failed to leave the waitlist'); }
+});
+
+// Reception takes the payment of a place held for payment at reception: the ticket's order
+// is opened in the hosting business and paid through checkout, which confirms the place.
+eventsRouter.post('/registrations/:rid/checkout', requirePermission('events:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { rows } = await adminPool.query('SELECT status, ticket_tier_id FROM evt_registrations WHERE id = $1', [req.params.rid]);
+    if (rows[0]?.status !== 'pending') { error(res, 'Only a place waiting for payment can be paid', 'CONFLICT', 409); return; }
+    const { orderId, hostId } = await customerEvents.createTicketOrder(req.params.rid, authReq.user.sub);
+    success(res, { order_id: orderId, business_id: hostId });
+  } catch (err: any) { customerEventError(res, err, 'Failed to open the payment'); }
+});
 
 // ============================================================
 // Event Types (before /:id)
@@ -288,9 +411,21 @@ eventsRouter.get('/', requirePermission('events:read'), async (req: Request, res
   } catch (err: any) { console.error('Failed to list events', err?.message || err); error(res, 'Failed to list events', 'INTERNAL_ERROR', 500); }
 });
 
+// An event's tax category must be one of a business of the organisation (THE-20).
+async function taxCategoryProblem(req: Request): Promise<string | null> {
+  const id = req.body.tax_category_id;
+  if (id === undefined || id === null || id === '') return null;
+  const { rows } = UUID.test(id) ? await adminPool.query(
+    `SELECT 1 FROM svc_tax_categories tc JOIN sys_businesses b ON b.id = tc.business_id WHERE tc.id = $1 AND b.tenant_id = $2`,
+    [id, (req as AuthenticatedRequest).tenantId]) : { rows: [] as any[] };
+  return rows.length ? null : 'Tax category not found';
+}
+
 eventsRouter.post('/', requirePermission('events:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
+    const taxProblem = await taxCategoryProblem(req);
+    if (taxProblem) { error(res, taxProblem, 'VALIDATION_ERROR', 400); return; }
     const event = await eventService.createEvent({
       tenantId: authReq.tenantId, eventTypeId: req.body.event_type_id,
       title: req.body.title, description: req.body.description,
@@ -300,6 +435,7 @@ eventsRouter.post('/', requirePermission('events:*'), async (req: Request, res: 
       tags: req.body.tags, customFields: req.body.custom_fields,
       cancellationPolicy: req.body.cancellation_policy,
       coverImagePath: req.body.cover_image_path, createdBy: authReq.user.sub,
+      taxCategoryId: req.body.tax_category_id || null,
     });
     success(res, event, undefined, 201);
   } catch (err: any) { console.error('Failed to create event', err?.message || err); error(res, 'Failed to create event', 'INTERNAL_ERROR', 500); }
@@ -317,7 +453,10 @@ eventsRouter.get('/:id', requirePermission('events:read'), async (req: Request, 
 eventsRouter.put('/:id', requirePermission('events:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const event = await eventService.updateEvent(req.params.id, authReq.tenantId, req.body, authReq.user.sub);
+    const taxProblem = await taxCategoryProblem(req);
+    if (taxProblem) { error(res, taxProblem, 'VALIDATION_ERROR', 400); return; }
+    const updates = req.body.tax_category_id === '' ? { ...req.body, tax_category_id: null } : req.body;
+    const event = await eventService.updateEvent(req.params.id, authReq.tenantId, updates, authReq.user.sub);
     if (!event) { error(res, 'Event not found', 'NOT_FOUND', 404); return; }
     success(res, event);
   } catch (err: any) { console.error('Failed to update event', err?.message || err); error(res, 'Failed to update event', 'INTERNAL_ERROR', 500); }
@@ -374,8 +513,13 @@ eventsRouter.get('/:id/tickets', requirePermission('events:read'), async (req: R
   } catch (err: any) { console.error('Failed to list tiers', err?.message || err); error(res, 'Failed to list tiers', 'INTERNAL_ERROR', 500); }
 });
 
+const ELIGIBILITY = ['all', 'members_only', 'first_time', 'custom'];
+
 eventsRouter.post('/:id/tickets', requirePermission('events:*'), async (req: Request, res: Response) => {
   try {
+    if (req.body.eligibility_type !== undefined && !ELIGIBILITY.includes(req.body.eligibility_type)) {
+      error(res, `eligibility_type must be one of ${ELIGIBILITY.join(', ')}`, 'VALIDATION_ERROR', 400); return;
+    }
     const tier = await ticketsService.createTier(req.params.id, {
       name: req.body.name, description: req.body.description,
       price: req.body.price, quantityAvailable: req.body.quantity_available,
@@ -423,11 +567,44 @@ eventsRouter.post('/:id/register', async (req: Request, res: Response) => {
     if (person.length === 0) { error(res, 'Customer not found', 'NOT_FOUND', 404); return; }
     const groupSize = req.body.group_size === undefined ? 1 : req.body.group_size;
     if (!Number.isInteger(groupSize) || groupSize < 1 || groupSize > 20) { error(res, 'group_size must be between 1 and 20', 'VALIDATION_ERROR', 400); return; }
+    const payAt = req.body.pay_at === undefined ? 'reception' : req.body.pay_at;
+    if (!['online', 'reception'].includes(payAt)) { error(res, "pay_at must be 'online' or 'reception'", 'VALIDATION_ERROR', 400); return; }
+    const byCustomer = !canManageEvents(req);
     try {
+      // A customer may choose only a ticket that is on sale and that they are eligible for
+      // (members-only tickets need an active membership at the hosting business).
+      let tier: any = null;
+      if (byCustomer) tier = await customerEvents.assertCustomerMayRegister(req.params.id, req.body.ticket_tier_id, own);
+      else if (req.body.ticket_tier_id) {
+        const { rows: t } = await adminPool.query('SELECT price FROM evt_ticket_tiers WHERE id = $1 AND event_id = $2', [req.body.ticket_tier_id, req.params.id]);
+        tier = t[0] || null;
+      }
+      const paid = !!tier && tier.price > 0;
+      const hostId = paid ? await customerEvents.hostBusinessId(req.params.id) : null;
+      if (paid && payAt === 'online' && !(await customerEvents.canPayOnline(hostId))) {
+        error(res, 'Paying online is not available for this event; choose to pay at reception', 'VALIDATION_ERROR', 400); return;
+      }
+      // A paid ticket is sold by the hosting business, to the person's record there.
+      const registrant = paid && hostId ? await customerEvents.hostCustomerId(hostId, customerId, authReq.user.sub) : customerId;
       const reg = await registrationService.registerForEvent(req.params.id, {
-        customerId, ticketTierId: req.body.ticket_tier_id,
-        attendeeInfo: req.body.attendee_info, groupSize,
+        customerId: registrant, ticketTierId: req.body.ticket_tier_id,
+        attendeeInfo: req.body.attendee_info, groupSize, payAt,
       });
+      let payment: any = null;
+      if (paid && payAt === 'online') {
+        try {
+          const { orderId } = await customerEvents.createTicketOrder(reg.id, authReq.user.sub);
+          const { beginOneTimeOrderCharge } = await import('../services/walkin-payment.service');
+          const session = await beginOneTimeOrderCharge(hostId!, orderId);
+          payment = {
+            order_id: orderId, provider_reference: session.providerReference, client_secret: session.clientSecret,
+            publishable_key: session.publishableKey, amount: session.amountCents, currency: session.currency,
+          };
+        } catch (e: any) {
+          await customerEvents.cancelOwnRegistration({ registrationId: reg.id, tenantId: authReq.tenantId, userId: authReq.user.sub, byCustomer: false }).catch(() => undefined);
+          throw new customerEvents.CustomerEventError(e?.message || 'The online payment could not be started', 502, 'PAYMENT_UNAVAILABLE');
+        }
+      }
       // On the person's timeline, like a booking.
       const { rows: info } = await adminPool.query(
         'SELECT c.business_id, e.title FROM cus_customers c, evt_events e WHERE c.id = $1 AND e.id = $2', [customerId, req.params.id]);
@@ -438,7 +615,7 @@ eventsRouter.post('/:id/register', async (req: Request, res: Response) => {
           metadata: { event_id: req.params.id, registration_id: reg.id }, createdBy: authReq.user.sub,
         }).catch(() => undefined);
       }
-      success(res, reg, undefined, 201);
+      success(res, { ...reg, payment }, undefined, 201);
     } catch (err: any) {
       // Full: the person goes on the waitlist instead of being turned away.
       if (!err.message?.includes('at capacity')) throw err;
@@ -446,7 +623,8 @@ eventsRouter.post('/:id/register', async (req: Request, res: Response) => {
       success(res, { waitlisted: true, ...entry }, undefined, 202);
     }
   } catch (err: any) {
-    if (err.message?.includes('capacity') || err.message?.includes('sold out')) error(res, err.message, 'CONFLICT', 409);
+    if (err instanceof customerEvents.CustomerEventError) error(res, err.message, err.code, err.status);
+    else if (err.message?.includes('capacity') || err.message?.includes('sold out')) error(res, err.message, 'CONFLICT', 409);
     else error(res, err.message || 'Failed to register', 'VALIDATION_ERROR', 400);
   }
 });

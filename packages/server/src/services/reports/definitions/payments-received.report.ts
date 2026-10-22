@@ -82,6 +82,8 @@ export const paymentsReceivedReport: ReportDefinition = {
       WHERE t.business_id = $1
         AND t.type = 'refund'
         AND t.status = 'completed'
+        -- a refund given as account credit pays no money out (THE-20)
+        AND t.payment_method NOT IN ('account_credit', 'account_debit')
         AND t.created_at::date BETWEEN $2::date AND $3::date
 
       UNION ALL

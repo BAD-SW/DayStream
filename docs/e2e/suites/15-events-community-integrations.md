@@ -16,7 +16,7 @@ Covers spec 14 (events and workshops), spec 22 (community), spec 20 (integration
 ### EVT-02 · Registration, capacity and waitlist
 `P0` `regression` · Spec 14 R5, R6 · As: reception, customer · Status: Verified
 1. Register three E2E customers (one as the customer themself). Try to give two of them the Early bird tier. 2. Register a fourth. 3. Cancel one registration; confirm the waitlist entry.
-**Expect:** the limited tier sells once only; a paid ticket is "pending" until staff confirm it (`PUT /api/v1/events/registrations/{id}/confirm`), a free one is confirmed at once; the fourth is answered 202 and put on the waitlist; cancelling a registration offers the place to the first person waiting, and confirming the offer registers them; a customer login can register itself only.
+**Expect:** the limited tier sells once only; a paid ticket is "pending" until it is paid (online, or at reception through checkout: EVT-08, EVT-09) or staff confirm it (`PUT /api/v1/events/registrations/{id}/confirm`), a free one is confirmed at once; places are counted by group size; the fourth is answered 202 and put on the waitlist; cancelling a registration offers the place to the first person waiting, and confirming the offer registers them; a customer login can register itself only.
 **Cross-check:** registrations appear on each customer's Timeline; ticket revenue appears in the events report.
 
 ### EVT-03 · Event check-in and attendee export
@@ -33,6 +33,46 @@ Covers spec 14 (events and workshops), spec 22 (community), spec 20 (integration
 `P2` `regression` · Spec 14 R2, R3 · As: owner · Status: Verified
 1. Create a weekly recurring event for 3 occurrences and generate them. Create a series (program) containing two events. Cancel the recurrence.
 **Expect:** with "end after 3" exactly three dated events are generated, once (generating again adds none); cancelling the recurrence leaves existing occurrences intact.
+
+### EVT-06 · Customers see the organisation's events
+`P0` `regression` · THE-20 R1–R3 (David, 2026-10-22) · As: owner, customer · Status: Verified
+1. As the owner, create an event "Hosted at" a location of the business, ticket tax 10%, capacity 6, with three tickets: Standard 25.00, Members 20.00 ("Members only"), First timers 15.00 (`first_time`); publish it. 2. As the customer, open Events (Upcoming events) and the event page.
+**Expect:** the list shows the event with its date block, type, time and location in the business's time zone, "From €20.00" and "6 spots left"; the event page offers Standard, shows Members as "Members only" (not selectable), and does not show "First time" tickets (not defined yet); the Register panel shows Tickets, Tax (10%) and Total, both ways to pay, and the cancellation policy as the hosting business set it; the staff event list (`GET /api/v1/events`) stays closed to a customer; a tax category of no business of the organisation is refused.
+
+### EVT-07 · Members-only tickets
+`P0` `regression` · THE-20 R11–R12 · As: customer · Status: Verified
+1. Without a membership, choose the Members ticket; try a First timers ticket. 2. With an active membership at the hosting business, choose the Members ticket, paying at reception.
+**Expect:** without a membership the Members ticket is refused ("members only"); First timers is not offered; with an active membership it is accepted, held until the event starts, takes a place and shows as "Awaiting payment".
+
+### EVT-08 · Pay a ticket online
+`P0` `regression` · THE-20 R5, R7–R10 · As: customer · Status: Verified (test processor; the Stripe card form is not exercised by the runner)
+1. Choose Standard for 2 people, "Pay online now by card", Continue to payment. 2. Pay.
+**Expect:** the places are held for 10 minutes and an open order is made in the hosting business (one Event ticket line, quantity 2, ticket tax); after paying, the registration is confirmed, the card charge is on the customer with a processor reference, the sale posts to 4700 Event Revenue (and tax to 2300), and it shows in Sales by Item and as Event Revenue in the Revenue report; nobody else can finish the payment.
+
+### EVT-09 · Pay a ticket at reception
+`P0` `regression` · THE-20 R6 · As: reception · Status: Verified
+1. On the event's Registrations tab, a place shows "Pay at reception": Take payment. 2. Pay in checkout (cash).
+**Expect:** the ticket opens as an order of the hosting business with one Event ticket line and the ticket tax; paying it confirms the place and records the amount paid; a paid place cannot be paid again; reception can still cancel an unpaid place.
+
+### EVT-10 · Customers cancel within the business's settings
+`P0` `regression` · THE-20 R13–R16 · As: owner, customer · Status: Verified
+1. With cancelling off (the default), cancel as the customer. 2. Settings → System → Customer cancellations → Events: customers can cancel, up to 24 hours, money back to the card; cancel a ticket paid online. 3. Switch to account credit; pay another ticket online and cancel it. 4. Set 100 hours; cancel a ticket of an event 3 days away.
+**Expect:** while off, the customer is told to contact the business; only the business changes the settings; in time, the whole ticket is refunded to the card through the processor and the places are freed; with account credit, the money becomes credit the customer can use later and no money goes back through the processor (no row in Payments Received); after the limit, cancelling online is refused with the reason.
+
+### EVT-11 · An unfinished online payment releases the place
+`P1` `regression` · THE-20 R6 · As: customer · Status: Verified
+1. Start paying online and do not finish within 10 minutes.
+**Expect:** the place is released, the open order is voided, and the next person on the waitlist is offered the place.
+
+### EVT-12 · Full events and the waitlist
+`P1` `regression` · THE-20 R4, R16 · As: customer · Status: Verified
+1. A free event with one place, already taken: register as the customer. 2. Open My events. 3. Leave the waitlist.
+**Expect:** the event shows as Free and "Full · waitlist open"; the customer joins the waitlist, sees "Waitlist #n" in My events and can leave it (once).
+
+### EVT-13 · An event of another business of the organisation
+`P0` `regression` · THE-20 R2; hosting business (David, 2026-10-22) · As: customer, reception · Status: Verified
+1. An event held at a location of a second business of the organisation, with a paid ticket. 2. As a customer of the first business, open it and register, paying at reception. 3. Reception takes the payment.
+**Expect:** the customer sees it (with "Hosted by"); paying online is offered only when the hosting business has a payment processor; the registration belongs to a customer record in the hosting business, found or made by email, and the ticket is sold there.
 
 ---
 

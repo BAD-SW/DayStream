@@ -144,17 +144,18 @@ export async function finalizeOneTimeOrderCharge(args: {
     throw new WalkinPaymentError('Payment amount does not match the order total', 'AMOUNT_MISMATCH');
   }
 
-  // Customerless charge row linked to the order. No payment-journal post: the
-  // order's generateJournalEntries books revenue/tax per line.
+  // Charge row linked to the order, with the order's customer (none for a walk-in). No
+  // payment-journal post: the order's generateJournalEntries books revenue/tax per line.
   const { rows } = await adminPool.query(
     `INSERT INTO pay_transactions
        (business_id, customer_id, type, status, amount, currency, payment_method,
         reference_number, description, processed_by, is_processed, provider_reference, order_id)
-     VALUES ($1, NULL, 'charge', $2, $3, $4, 'card', $5, $6, $7, true, $8, $9)
+     VALUES ($1, $10, 'charge', $2, $3, $4, 'card', $5, $6, $7, true, $8, $9)
      RETURNING id`,
     [
       businessId, status, order.total_amount, currency, reference,
-      'Walk-in card payment', processedBy, providerReference, orderId,
+      order.customer_id ? 'Card payment' : 'Walk-in card payment', processedBy, providerReference, orderId,
+      order.customer_id ?? null,
     ],
   );
 

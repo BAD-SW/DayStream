@@ -30,6 +30,10 @@ export function Bookings() {
   const [staffList, setStaffList] = useState<any[]>([]);
   const [serviceList, setServiceList] = useState<any[]>([]);
   const [pendingNoShow, setPendingNoShow] = useState<Booking | null>(null);
+  // Customers: the business's appointment cancellation settings (THE-20).
+  const [cancelSettings, setCancelSettings] = useState<bookingsApi.CancelSettings | null>(null);
+  const [toCancel, setToCancel] = useState<Booking | null>(null);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -44,6 +48,31 @@ export function Bookings() {
       setServiceList(f.services || []);
     }).catch(() => {});
   }, [businessId, isCustomer]);
+
+  useEffect(() => {
+    if (!businessId || !isCustomer) return;
+    bookingsApi.getCancellationSettings(businessId).then((s) => {
+      setCancelSettings(s.appointments);
+      setBusinessTimezone(s.timezone);
+    }).catch(() => {});
+  }, [businessId, isCustomer]);
+
+  const cancelUntil = (b: Booking) => cancelSettings?.customer_cancel_enabled
+    ? new Date(new Date(b.start_time).getTime() - cancelSettings.customer_cancel_hours * 3600 * 1000) : null;
+  const customerMayCancel = (b: Booking) => {
+    const until = cancelUntil(b);
+    return (b.status === 'pending' || b.status === 'confirmed') && !!until && Date.now() <= until.getTime();
+  };
+  const customerCancel = async (b: Booking) => {
+    setNotice(null);
+    try {
+      const out = await bookingsApi.customerCancelBooking(b.id, businessId);
+      setNotice({ ok: true, text: out.refund
+        ? `Appointment cancelled. ${formatCurrency(out.refund.amount)} ${out.refund.to === 'credit' ? 'was added to your account credit' : 'will be refunded to your card'}.`
+        : 'Appointment cancelled.' });
+      fetchBookings();
+    } catch (e: any) { setNotice({ ok: false, text: e?.response?.data?.error || 'The appointment could not be cancelled.' }); }
+  };
 
   const fetchBookings = useCallback(async () => {
     if (!businessId) { setLoading(false); return; }
@@ -111,7 +140,15 @@ export function Bookings() {
       ),
     },
   ];
-  const columns = isCustomer ? allColumns.filter((c) => c.key !== 'customer_first_name' && c.key !== 'actions') : allColumns;
+  const customerActions = {
+    key: 'actions', header: '',
+    render: (_: any, row: Booking) => customerMayCancel(row)
+      ? <ActionBtn label="Cancel" onClick={() => setToCancel(row)} />
+      : null,
+  };
+  const columns = isCustomer
+    ? [...allColumns.filter((c) => c.key !== 'customer_first_name' && c.key !== 'actions'), customerActions]
+    : allColumns;
 
   return (
     <div style={styles.page}>
@@ -157,6 +194,15 @@ export function Bookings() {
         )}
       </div>
 
+      {isCustomer && cancelSettings && (
+        <p style={styles.policy}>
+          {cancelSettings.customer_cancel_enabled
+            ? `You can cancel an appointment here up to ${cancelSettings.customer_cancel_hours} hours before it starts. A visit you paid in advance is returned ${cancelSettings.cancel_refund_to === 'credit' ? 'as account credit' : 'to your card'}.`
+            : 'To cancel an appointment, please contact the business.'}
+        </p>
+      )}
+      {notice && <p style={{ ...styles.policy, color: notice.ok ? 'var(--color-success)' : 'var(--color-error)' }} role="status">{notice.text}</p>}
+
       <Table columns={columns} data={bookings} loading={loading} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No bookings found" mobileCardMode clientSort onRowClick={isCustomer ? undefined : (row) => navigate(`/bookings/${row.id}/edit`)} />
 
       <ConfirmDialog
@@ -171,6 +217,17 @@ export function Bookings() {
         variant="destructive"
         onClose={() => setPendingNoShow(null)}
         onConfirm={() => { if (pendingNoShow) handleAction('no-show', pendingNoShow); }}
+      />
+
+      <ConfirmDialog
+        open={!!toCancel}
+        title="Cancel this appointment?"
+        message={toCancel ? `${toCancel.service_name}, ${new Date(toCancel.start_time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: businessTimezone })}.` : ''}
+        confirmLabel="Cancel appointment"
+        cancelLabel="Keep it"
+        variant="destructive"
+        onClose={() => setToCancel(null)}
+        onConfirm={() => { if (toCancel) customerCancel(toCancel); }}
       />
 
     </div>
@@ -189,6 +246,7 @@ const styles: Record<string, React.CSSProperties> = {
   select: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
   navBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '8px 16px', color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', minHeight: 'var(--button-height-sm)' },
   actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', minHeight: 'var(--button-height-sm)' },
+  policy: { margin: '0 0 var(--space-md)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
   empty: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', textAlign: 'center', padding: 'var(--space-lg)' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-lg)', maxWidth: '600px', width: '90%', maxHeight: '80vh', overflow: 'auto', border: '1px solid var(--color-border)' },

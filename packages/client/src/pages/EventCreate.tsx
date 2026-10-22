@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Alert } from '../design-system/components/feedback/Alert';
 import * as eventsApi from '../api/events';
+import { getLocations } from '../api/locations';
+import { getTaxCategories } from '../api/services';
 
 export function EventCreate() {
   const navigate = useNavigate();
@@ -16,11 +18,20 @@ export function EventCreate() {
     start_time: '',
     end_time: '',
     location_name: '',
+    location_id: '',
+    tax_category_id: '',
     capacity: 50,
   });
+  const [locations, setLocations] = useState<any[]>([]);
+  const [taxes, setTaxes] = useState<any[]>([]);
 
   useEffect(() => {
     eventsApi.getEventTypes().then(setEventTypes).catch(() => {});
+    const businessId = localStorage.getItem('business_id') || '';
+    if (businessId) {
+      getLocations(businessId).then(setLocations).catch(() => {});
+      getTaxCategories(businessId).then(setTaxes).catch(() => {});
+    }
   }, []);
 
   const handleChange = (field: string, value: any) => {
@@ -32,7 +43,7 @@ export function EventCreate() {
     setLoading(true);
     setError('');
     try {
-      const event = await eventsApi.createEvent(form);
+      const event = await eventsApi.createEvent({ ...form, location_id: form.location_id || null, tax_category_id: form.tax_category_id || null });
       navigate(`/events/${event.id}`);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create event');
@@ -78,9 +89,29 @@ export function EventCreate() {
             <input style={styles.input} type="datetime-local" value={form.end_time} onChange={(e) => handleChange('end_time', e.target.value)} required />
           </div>
         </div>
+        <div style={styles.row}>
+          <div style={styles.fieldWrapper}>
+            <label style={styles.label}>Hosted at</label>
+            <select style={styles.input} value={form.location_id} onChange={(e) => {
+              const loc = locations.find((l) => l.id === e.target.value);
+              setForm({ ...form, location_id: e.target.value, location_name: form.location_name || loc?.name || '' });
+            }}>
+              <option value="">— Select —</option>
+              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+            <span style={styles.help}>The business of this location sells the tickets.</span>
+          </div>
+          <div style={styles.fieldWrapper}>
+            <label style={styles.label}>Location (shown to customers)</label>
+            <input style={styles.input} value={form.location_name} onChange={(e) => handleChange('location_name', e.target.value)} />
+          </div>
+        </div>
         <div style={styles.fieldWrapper}>
-          <label style={styles.label}>Location</label>
-          <input style={styles.input} value={form.location_name} onChange={(e) => handleChange('location_name', e.target.value)} />
+          <label style={styles.label}>Ticket tax</label>
+          <select style={styles.input} value={form.tax_category_id} onChange={(e) => handleChange('tax_category_id', e.target.value)}>
+            <option value="">Business default tax</option>
+            {taxes.map((t) => <option key={t.id} value={t.id}>{t.name} ({(t.rate / 100).toLocaleString()}%)</option>)}
+          </select>
         </div>
         <div style={styles.actions}>
           <Button type="button" onClick={() => navigate('/events')}>Cancel</Button>
@@ -100,5 +131,6 @@ const styles: Record<string, React.CSSProperties> = {
   fieldWrapper: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
   label: { fontSize: 'var(--font-size-xs)', fontWeight: 'var(--font-weight-medium)' as any, color: 'var(--color-text-secondary)' },
   input: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
+  help: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   actions: { display: 'flex', gap: 'var(--space-md)', justifyContent: 'flex-end', marginTop: 'var(--space-md)' },
 };

@@ -25,6 +25,8 @@ interface CreateEventInput {
   cancellationPolicy?: string;
   coverImagePath?: string;
   createdBy: string;
+  /** A tax category of the hosting business; none = that business's default tax (THE-20). */
+  taxCategoryId?: string | null;
 }
 
 interface EventFilters {
@@ -48,8 +50,8 @@ export async function createEvent(input: CreateEventInput) {
        tenant_id, event_type_id, title, slug, description,
        start_time, end_time, location_id, location_name,
        capacity, min_attendees, tags, custom_fields,
-       cancellation_policy, cover_image_path, created_by, status
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'draft')
+       cancellation_policy, cover_image_path, created_by, status, tax_category_id
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'draft',$17)
      RETURNING *`,
     [
       input.tenantId,
@@ -68,6 +70,7 @@ export async function createEvent(input: CreateEventInput) {
       input.cancellationPolicy || null,
       input.coverImagePath || null,
       input.createdBy,
+      input.taxCategoryId || null,
     ],
   );
 
@@ -173,7 +176,7 @@ export async function updateEvent(
   const allowedFields = [
     'title', 'description', 'start_time', 'end_time', 'location_id',
     'location_name', 'capacity', 'min_attendees', 'tags', 'custom_fields',
-    'cancellation_policy', 'cover_image_path', 'event_type_id',
+    'cancellation_policy', 'cover_image_path', 'event_type_id', 'tax_category_id',
   ];
 
   for (const key of allowedFields) {

@@ -8,7 +8,7 @@ interface CreateTierInput {
   quantityAvailable: number;
   availabilityStart?: string;
   availabilityEnd?: string;
-  eligibilityType?: string; // 'all' | 'members' | 'vip' | 'custom'
+  eligibilityType?: string; // 'all' | 'members_only' | 'first_time' | 'custom' (the table's CHECK)
   eligibilityConfig?: Record<string, any>;
   displayOrder?: number;
 }
@@ -20,7 +20,7 @@ export async function getTiers(eventId: string) {
   const { rows } = await adminPool.query(
     `SELECT tt.*,
             (SELECT COALESCE(SUM(group_size), 0)::int FROM evt_registrations
-             WHERE ticket_tier_id = tt.id AND status IN ('confirmed','pending')) AS sold_count
+             WHERE ticket_tier_id = tt.id AND (status = 'confirmed' OR (status = 'pending' AND (hold_expires_at IS NULL OR hold_expires_at > NOW())))) AS sold_count
      FROM evt_ticket_tiers tt
      WHERE tt.event_id = $1
      ORDER BY tt.display_order ASC, tt.created_at ASC`,
@@ -115,7 +115,7 @@ export async function checkTierAvailability(tierId: string) {
   const { rows } = await adminPool.query(
     `SELECT tt.*,
             (SELECT COALESCE(SUM(group_size), 0)::int FROM evt_registrations
-             WHERE ticket_tier_id = tt.id AND status IN ('confirmed','pending')) AS sold_count
+             WHERE ticket_tier_id = tt.id AND (status = 'confirmed' OR (status = 'pending' AND (hold_expires_at IS NULL OR hold_expires_at > NOW())))) AS sold_count
      FROM evt_ticket_tiers tt
      WHERE tt.id = $1`,
     [tierId],

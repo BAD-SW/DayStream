@@ -170,11 +170,11 @@ const PURPOSE_SELECT = `
   fo.id                   AS purpose_order_id,
   fo.order_number         AS purpose_order_number,
   -- Units still refundable on this order across REFUNDABLE line types (product,
-  -- no_show_fee), so the history list can show/hide the Refund button exactly like
+  -- no_show_fee, event), so the history list can show/hide the Refund button exactly like
   -- the receipt without fetching each order.
   (SELECT COALESCE(SUM(oi.quantity - oi.refunded_quantity), 0)
      FROM fin_order_items oi
-     WHERE oi.order_id = fo.id AND oi.item_type IN ('product', 'no_show_fee')
+     WHERE oi.order_id = fo.id AND oi.item_type IN ('product', 'no_show_fee', 'event')
   )                        AS purpose_order_refundable_qty
 `;
 

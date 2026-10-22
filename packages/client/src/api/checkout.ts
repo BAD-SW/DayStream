@@ -7,7 +7,7 @@ import { apiClient } from './client';
 export interface OrderItem {
   id: string;
   order_id: string;
-  item_type: 'service' | 'product' | 'membership' | 'package' | 'no_show_fee' | 'gift_card';
+  item_type: 'service' | 'product' | 'membership' | 'package' | 'no_show_fee' | 'gift_card' | 'event';
   item_id: string | null;
   item_name: string;
   variant_id: string | null;
@@ -133,7 +133,7 @@ export async function completeOrder(orderId: string, businessId: string, data: {
 }
 
 /** Line types that can be refunded through the order-refund flow (mirrors the server rule). */
-export const REFUNDABLE_ITEM_TYPES: ReadonlySet<string> = new Set(['product', 'no_show_fee']);
+export const REFUNDABLE_ITEM_TYPES: ReadonlySet<string> = new Set(['product', 'no_show_fee', 'event']);
 
 export interface OneTimeChargeSession {
   providerReference: string;
