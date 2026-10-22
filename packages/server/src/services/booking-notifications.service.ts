@@ -185,6 +185,7 @@ const TRANSACTIONAL_TYPES: ReadonlySet<string> = new Set([
   'booking.confirmation', 'booking.cancellation', 'booking.reschedule',
   'payment.receipt', 'charge.succeeded', 'invoice.paid', 'payment.refund_confirmation',
   'customer.task_reminder',
+  'event.registration_confirmed', 'event.registration_reserved', 'event.registration_cancelled',
 ]);
 
 export async function processNotificationQueue(): Promise<{ sent: number; failed: number }> {
@@ -348,6 +349,9 @@ function renderDefaultEmail(type: string, data: Record<string, unknown>): { subj
     'booking.cancellation': 'Your appointment has been cancelled',
     'booking.reminder': 'Appointment reminder',
     'customer.task_reminder': 'A reminder from us',
+    'event.registration_confirmed': 'You are registered for the event',
+    'event.registration_reserved': 'Your place is reserved',
+    'event.registration_cancelled': 'Your event registration has been cancelled',
   };
   const subject = titles[type] || 'Notification';
   const name = esc((data.customer_name as string) || '').split(' ')[0] || 'there';
@@ -360,6 +364,13 @@ function renderDefaultEmail(type: string, data: Record<string, unknown>): { subj
   if (data.task_title) lines.push(`<p>${esc(data.task_title)}</p>`);
   if (data.task_description) lines.push(`<p>${esc(data.task_description)}</p>`);
   if (data.due_at) lines.push(`<p>Date: ${esc(new Date(String(data.due_at)).toLocaleString())}</p>`);
+  // Events (THE-20): already written in the hosting business's time zone.
+  if (data.event_title) lines.push(`<p>Event: ${esc(data.event_title)}</p>`);
+  if (data.when_text) lines.push(`<p>When: ${esc(data.when_text)}</p>`);
+  if (data.location) lines.push(`<p>Where: ${esc(data.location)}</p>`);
+  if (data.ticket_text) lines.push(`<p>Ticket: ${esc(data.ticket_text)}</p>`);
+  if (data.amount_text) lines.push(`<p>${esc(data.amount_text)}</p>`);
+  if (data.refund_text) lines.push(`<p>${esc(data.refund_text)}</p>`);
   const html = lines.join('\n');
   const text = lines.map((l) => l.replace(/<[^>]+>/g, '')).join('\n');
   return { subject, html, text };

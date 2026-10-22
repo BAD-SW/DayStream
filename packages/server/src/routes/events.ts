@@ -170,7 +170,9 @@ eventsRouter.post('/customer/registrations/:rid/pay', async (req: Request, res: 
         void out; return;
       }
     }
-    success(res, await customerEvents.markRegistrationPaid(reg.id));
+    const paidReg = await customerEvents.markRegistrationPaid(reg.id);
+    await customerEvents.queueEventEmail(reg.id, 'confirmed');
+    success(res, paidReg);
   } catch (err: any) { customerEventError(res, err, 'Failed to finish the payment'); }
 });
 
@@ -353,6 +355,7 @@ eventsRouter.put('/registrations/:rid/cancel', requirePermission('events:*'), as
   try {
     const authReq = req as AuthenticatedRequest;
     const reg = await registrationService.cancelRegistration(req.params.rid, authReq.tenantId);
+    await customerEvents.queueEventEmail(reg.id, 'cancelled');
     success(res, reg);
   } catch (err: any) { error(res, err.message || 'Failed to cancel', 'NOT_FOUND', 404); }
 });
@@ -387,6 +390,7 @@ eventsRouter.put('/waitlist/:wid/confirm', async (req: Request, res: Response) =
     const entry = await waitlistService.confirmWaitlistSpot(req.params.wid);
     // Taking the place means being registered (confirming used to change the entry only).
     const registration = await registrationService.registerForEvent(w[0].event_id, { customerId: w[0].customer_id, ticketTierId: w[0].ticket_tier_id || undefined, groupSize: 1 } as any);
+    await customerEvents.queueEventEmail(registration.id, registration.status === 'confirmed' ? 'confirmed' : 'reserved');
     success(res, { ...entry, registration });
   } catch (err: any) { error(res, err.message || 'Failed to confirm', 'NOT_FOUND', 404); }
 });
@@ -615,6 +619,8 @@ eventsRouter.post('/:id/register', async (req: Request, res: Response) => {
           metadata: { event_id: req.params.id, registration_id: reg.id }, createdBy: authReq.user.sub,
         }).catch(() => undefined);
       }
+      if (reg.status === 'confirmed') await customerEvents.queueEventEmail(reg.id, 'confirmed');
+      else if (payAt === 'reception') await customerEvents.queueEventEmail(reg.id, 'reserved');
       success(res, { ...reg, payment }, undefined, 201);
     } catch (err: any) {
       // Full: the person goes on the waitlist instead of being turned away.

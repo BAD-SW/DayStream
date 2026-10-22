@@ -205,7 +205,7 @@ export function CustomerEventDetail() {
                   <label key={t.id} className={`cev-tier${t.id === tierId ? ' cev-tier--on' : ''}${t.available ? '' : ' cev-tier--off'}`}>
                     <input type="radio" name="tier" checked={t.id === tierId} disabled={!t.available} onChange={() => setTierId(t.id)} />
                     <span className="cev-tier__name">{t.name}
-                      <span className="cev-tier__note">{t.available ? (t.eligibility === 'members_only' ? 'With an active membership' : (t.description || 'Anyone')) : t.unavailable_reason}</span>
+                      <span className="cev-tier__note">{t.available ? (t.eligibility === 'members_only' ? 'With an active membership' : t.eligibility === 'first_time' ? 'For first-time customers' : (t.description || 'Anyone')) : t.unavailable_reason}</span>
                     </span>
                     <span>{t.price > 0 ? formatCurrency(t.price, ev.currency) : 'Free'}</span>
                   </label>

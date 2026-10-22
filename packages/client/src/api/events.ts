@@ -169,7 +169,7 @@ export interface CustomerRegistration {
   can_cancel: boolean; cancel_until: string | null; cancel_blocked_reason: string | null; refund_to: 'card' | 'credit' | null;
 }
 export interface CustomerEventDetail extends CustomerEventSummary {
-  status: string; open_for_registration: boolean; is_member: boolean; tax_rate: number;
+  status: string; open_for_registration: boolean; is_member: boolean; is_first_time: boolean; tax_rate: number;
   pay_options: { online: boolean; reception: boolean };
   cancellation: { allowed: boolean; hours_before: number | null; refund_to: 'card' | 'credit' };
   my_registrations: CustomerRegistration[];

@@ -146,12 +146,14 @@ function TicketsTab({ eventId }: { eventId: string }) {
     setEditing(null);
   };
 
-  // A new ticket type (THE-20): who may buy it is everyone, or members only (customers
-  // with an active membership at the hosting business).
+  // A new ticket type (THE-20): who may buy it is everyone, members only (an active
+  // membership at the hosting business) or first-time customers only (no earlier visit or
+  // purchase there). "Custom" is not defined, so it is not offered.
+  type Who = 'all' | 'members_only' | 'first_time';
   const [newName, setNewName] = useState('');
   const [newPrice, setNewPrice] = useState('');
   const [newQty, setNewQty] = useState('');
-  const [newWho, setNewWho] = useState<'all' | 'members_only'>('all');
+  const [newWho, setNewWho] = useState<Who>('all');
   const [addError, setAddError] = useState('');
   const handleAdd = async () => {
     setAddError('');
@@ -188,6 +190,7 @@ function TicketsTab({ eventId }: { eventId: string }) {
               <ListRowTitle>{t.name}</ListRowTitle>
               <span>— {t.price > 0 ? formatCurrency(t.price) : 'Free'}</span>
               {t.eligibility_type === 'members_only' && <Badge variant="info">Members only</Badge>}
+              {t.eligibility_type === 'first_time' && <Badge variant="info">First-time customers only</Badge>}
             </ListRow>
           ))}
         </ListRows>
@@ -196,9 +199,10 @@ function TicketsTab({ eventId }: { eventId: string }) {
         <input className="ev-input" aria-label="New ticket name" placeholder="Ticket name (e.g. Standard)" value={newName} onChange={(e) => setNewName(e.target.value)} />
         <input className="ev-input evd-price" aria-label="New ticket price" placeholder="Price (0 = free)" type="number" step="0.01" min="0" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} />
         <input className="ev-input evd-price" aria-label="How many" placeholder="How many (blank = no limit)" type="number" min="1" value={newQty} onChange={(e) => setNewQty(e.target.value)} />
-        <select className="ev-select" aria-label="Who can buy it" value={newWho} onChange={(e) => setNewWho(e.target.value as 'all' | 'members_only')}>
+        <select className="ev-select" aria-label="Who can buy it" value={newWho} onChange={(e) => setNewWho(e.target.value as Who)}>
           <option value="all">Everyone</option>
           <option value="members_only">Members only</option>
+          <option value="first_time">First-time customers only</option>
         </select>
         <Button size="sm" onClick={handleAdd}>Add ticket</Button>
       </div>

@@ -31,6 +31,12 @@ What was not cleaned up, if anything.
 
 ## Runs
 
+## Run 20261022-1 addendum — first-time tickets and event emails
+- Scope: `rcev` (EVT-06 to EVT-14, BKG-21, REP-11), then suites 10, 12, 15, Bill's checks, CUS-29 to CUS-38 and REP-10 again. Unit tests: server 983 of 983. Type check: server 0, client 30
+- Result: all pass. Two failures on the way were test data, not the product:
+  - REP-07: EVT-13 had added a second business to the E2E organisation, and a business owner may manage organisation-wide reports only in a single-business organisation. The runner now archives that business after EVT-13; the earlier ones were archived
+  - CUS-33: its queued email waited behind about 40 emails of the suites run just before (the sender takes 50 a minute; the script waits 60 seconds); passed when run again
+
 ## Run 20261022-1 — full, on a fresh organisation, after customer events (THE-20) and commission after a refund (THE-21)
 - Commit at start: `90909b6` plus the THE-20 and THE-21 changes (committed after this run) · Migrations at: 158 (local only) · Processor mode: mock for the E2E organisation
 - Scope: every runner (suites 00 and 02 to 16, Bill's checks, CUS-29 to CUS-38, REP-10) and the new runner `rcev` (EVT-06 to EVT-13, BKG-21, REP-11)

@@ -83,19 +83,44 @@ async function hasActiveMembership(customerIds: string[], businessId: string | n
 }
 
 /**
- * Ticket types offered to customers: everyone, or members only. "First time" and "custom"
- * are not defined yet, so customers are not offered them.
+ * First-time customers (David, 2026-10-22): no earlier completed visit (appointment) and no
+ * earlier purchase (completed order) at the hosting business.
  */
-const OFFERED_ELIGIBILITY = ['all', 'members_only'];
+async function isFirstTimeCustomer(customerIds: string[], businessId: string | null): Promise<boolean> {
+  if (!businessId) return false;
+  if (customerIds.length === 0) return true;
+  const { rows } = await adminPool.query(
+    `SELECT 1 FROM apt_bookings WHERE business_id = $1 AND customer_id = ANY($2) AND status = 'completed'
+     UNION ALL
+     SELECT 1 FROM fin_orders WHERE business_id = $1 AND customer_id = ANY($2) AND status IN ('completed', 'partially_refunded', 'refunded')
+     LIMIT 1`,
+    [businessId, customerIds],
+  );
+  return rows.length === 0;
+}
 
-function tierState(t: any, isMember: boolean, now = new Date()) {
+/** What the customer qualifies for at the hosting business. */
+interface Standing { member: boolean; firstTime: boolean }
+
+async function standingAt(customerIds: string[], businessId: string | null): Promise<Standing> {
+  return { member: await hasActiveMembership(customerIds, businessId), firstTime: await isFirstTimeCustomer(customerIds, businessId) };
+}
+
+/**
+ * Ticket types offered to customers: everyone, members only, first-time customers only.
+ * "Custom" is not defined, so customers are not offered it (David, 2026-10-22).
+ */
+const OFFERED_ELIGIBILITY = ['all', 'members_only', 'first_time'];
+
+function tierState(t: any, who: Standing, now = new Date()) {
   const eligibility = t.eligibility_type || 'all';
   const left = t.quantity_available ? Math.max(t.quantity_available - Number(t.taken || 0), 0) : null;
   let unavailable: string | null = null;
   if (t.availability_start && new Date(t.availability_start) > now) unavailable = 'Not on sale yet';
   else if (t.availability_end && new Date(t.availability_end) < now) unavailable = 'No longer on sale';
   else if (left === 0) unavailable = 'Sold out';
-  else if (eligibility === 'members_only' && !isMember) unavailable = 'Members only';
+  else if (eligibility === 'members_only' && !who.member) unavailable = 'Members only';
+  else if (eligibility === 'first_time' && !who.firstTime) unavailable = 'First-time customers only';
   return {
     id: t.id, name: t.name, description: t.description, price: t.price,
     eligibility, places_left: left, available: !unavailable, unavailable_reason: unavailable,
@@ -156,9 +181,12 @@ async function myRegistrations(customerIds: string[], eventIds?: string[]) {
   return { regs, waits };
 }
 
-function summary(e: any, tiers: any[], isMember: boolean) {
-  const own = tiers.filter((t) => t.event_id === e.id).map((t) => tierState(t, isMember));
-  const prices = own.map((t) => t.price);
+function summary(e: any, tiers: any[], who: Standing) {
+  const own = tiers.filter((t) => t.event_id === e.id).map((t) => tierState(t, who));
+  // "From" is the lowest ticket this customer can choose (as in the approved canvas); when
+  // none is open to them, the lowest ticket of the event.
+  const open = own.filter((t) => t.available);
+  const prices = (open.length ? open : own).map((t) => t.price);
   return {
     id: e.id, slug: e.slug, title: e.title, description: e.description,
     start_time: e.start_time, end_time: e.end_time, location_name: e.location_name,
@@ -193,15 +221,15 @@ export async function listForCustomer(tenantId: string, customerIds: string[]) {
   const events = await eventRows(`e.tenant_id = $1 AND e.status = 'published' AND e.start_time > NOW()`, [tenantId]);
   const tiers = await tiersOf(events.map((e) => e.id));
   const { regs, waits } = await myRegistrations(customerIds, events.map((e) => e.id));
-  const memberAt = new Map<string, boolean>();
+  const standing = new Map<string, Standing>();
   for (const hostId of new Set(events.map((e) => e.host_business_id).filter(Boolean))) {
-    memberAt.set(hostId, await hasActiveMembership(customerIds, hostId));
+    standing.set(hostId, await standingAt(customerIds, hostId));
   }
   return events.map((e) => {
     const mine = regs.find((r) => r.event_id === e.id && (r.status === 'confirmed' || r.status === 'pending'));
     const wait = waits.find((w) => w.event_id === e.id);
     return {
-      ...summary(e, tiers, memberAt.get(e.host_business_id) || false),
+      ...summary(e, tiers, standing.get(e.host_business_id) || { member: false, firstTime: false }),
       my_status: mine ? (mine.status === 'pending' ? 'awaiting_payment' : 'registered') : wait ? 'waitlisted' : null,
     };
   });
@@ -213,16 +241,17 @@ export async function eventForCustomer(tenantId: string, eventId: string, custom
   const [e] = await eventRows(`e.tenant_id = $1 AND e.id = $2 AND e.status IN ('published', 'completed', 'cancelled')`, [tenantId, eventId]);
   if (!e) throw new CustomerEventError('Event not found', 404, 'NOT_FOUND');
   const tiers = await tiersOf([e.id]);
-  const isMember = await hasActiveMembership(customerIds, e.host_business_id);
+  const who = await standingAt(customerIds, e.host_business_id);
   const settings = await getCancelSettings(e.host_business_id, 'events');
   const { regs, waits } = await myRegistrations(customerIds, [e.id]);
   const taxRate = await hostTaxRate(e.id, e.host_business_id);
   const online = await canPayOnline(e.host_business_id);
   return {
-    ...summary(e, tiers, isMember),
+    ...summary(e, tiers, who),
     status: e.status,
     open_for_registration: e.status === 'published' && new Date(e.start_time) > new Date(),
-    is_member: isMember,
+    is_member: who.member,
+    is_first_time: who.firstTime,
     tax_rate: taxRate,
     pay_options: { online, reception: true },
     cancellation: {
@@ -313,6 +342,9 @@ export async function assertCustomerMayRegister(eventId: string, tierId: string 
   if (eligibility === 'members_only' && !(await hasActiveMembership(customerIds, await hostBusinessId(eventId)))) {
     throw new CustomerEventError('This ticket is for members only: it needs an active membership', 403, 'MEMBERS_ONLY');
   }
+  if (eligibility === 'first_time' && !(await isFirstTimeCustomer(customerIds, await hostBusinessId(eventId)))) {
+    throw new CustomerEventError('This ticket is for first-time customers only', 403, 'FIRST_TIME_ONLY');
+  }
   return t[0];
 }
 
@@ -343,6 +375,63 @@ export async function createTicketOrder(registrationId: string, checkedOutBy: st
   });
   await adminPool.query(`UPDATE evt_registrations SET order_id = $2 WHERE id = $1`, [registrationId, order.id]);
   return { orderId: order.id as string, hostId };
+}
+
+export type EventEmailKind = 'confirmed' | 'reserved' | 'cancelled';
+
+/**
+ * Event emails to the customer (David, 2026-10-22): registration confirmed, place reserved to
+ * be paid at reception, registration cancelled. Transactional: queued like a booking
+ * confirmation and covered by the "transactional emails" switch. Dates and times are
+ * written in the hosting business's time zone. Never fails the action that sends it.
+ */
+export async function queueEventEmail(registrationId: string, kind: EventEmailKind, refund?: { amount: number; to: 'card' | 'credit' } | null) {
+  try {
+    const { rows } = await adminPool.query(
+      `SELECT r.id, r.reference_number, r.group_size, r.customer_id, r.event_id, tt.name AS tier_name, tt.price,
+              o.total_amount, o.status AS order_status,
+              e.title, e.start_time, e.end_time, e.location_name,
+              c.business_id, c.email, c.first_name, c.last_name
+         FROM evt_registrations r
+         JOIN evt_events e ON e.id = r.event_id
+         JOIN cus_customers c ON c.id = r.customer_id
+         LEFT JOIN evt_ticket_tiers tt ON tt.id = r.ticket_tier_id
+         LEFT JOIN fin_orders o ON o.id = r.order_id
+        WHERE r.id = $1`,
+      [registrationId],
+    );
+    const r = rows[0];
+    if (!r || !r.email) return;
+    const hostId = (await hostBusinessId(r.event_id)) || r.business_id;
+    const { rows: biz } = await adminPool.query('SELECT timezone, currency FROM sys_businesses WHERE id = $1', [hostId]);
+    const tz = biz[0]?.timezone || 'UTC';
+    const currency = biz[0]?.currency || 'EUR';
+    const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, ...o }).format(d);
+    const start = new Date(r.start_time);
+    const money = (c: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(c / 100);
+    const toPay = r.total_amount ?? (r.price || 0) * r.group_size;
+    const { queueNotification } = await import('./booking-notifications.service');
+    await queueNotification({
+      businessId: r.business_id,
+      type: `event.registration_${kind}`,
+      recipientId: r.customer_id,
+      recipientEmail: r.email,
+      data: {
+        customer_name: [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || null,
+        event_title: r.title,
+        when_text: `${fmt(start, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, ${fmt(start, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}–${fmt(new Date(r.end_time), { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`,
+        location: r.location_name || null,
+        ticket_text: `${r.tier_name || 'Ticket'}${r.group_size > 1 ? ` × ${r.group_size}` : ''}`,
+        booking_reference: r.reference_number,
+        amount_text: kind === 'reserved' && toPay > 0 ? `To pay at reception: ${money(toPay)}` : null,
+        refund_text: kind === 'cancelled' && refund && refund.amount > 0
+          ? `${money(refund.amount)} ${refund.to === 'credit' ? 'has been added to your account credit' : 'will be refunded to your card'}`
+          : null,
+      },
+    });
+  } catch (e: any) {
+    logger.warn(`Event email ${kind} for registration ${registrationId} not queued: ${e?.message || e}`);
+  }
 }
 
 /** Once the ticket's order is paid: the registration is confirmed and records what was paid. */
@@ -407,6 +496,7 @@ export async function cancelOwnRegistration(args: { registrationId: string; tena
     [r.id, refund?.amountCents ?? 0],
   );
   await promoteFromWaitlist(r.event_id).catch((e) => logger.warn(`Waitlist not promoted after cancelling ${r.id}: ${e?.message || e}`));
+  await queueEventEmail(r.id, 'cancelled', refund ? { amount: refund.amountCents, to: settings.cancel_refund_to } : null);
   return {
     ...done[0],
     refund: refund ? { amount: refund.amountCents, to: settings.cancel_refund_to, status: refund.status, reference: refund.referenceNumber } : null,

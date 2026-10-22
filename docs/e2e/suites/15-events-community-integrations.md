@@ -37,12 +37,12 @@ Covers spec 14 (events and workshops), spec 22 (community), spec 20 (integration
 ### EVT-06 · Customers see the organisation's events
 `P0` `regression` · THE-20 R1–R3 (David, 2026-10-22) · As: owner, customer · Status: Verified
 1. As the owner, create an event "Hosted at" a location of the business, ticket tax 10%, capacity 6, with three tickets: Standard 25.00, Members 20.00 ("Members only"), First timers 15.00 (`first_time`); publish it. 2. As the customer, open Events (Upcoming events) and the event page.
-**Expect:** the list shows the event with its date block, type, time and location in the business's time zone, "From €20.00" and "6 spots left"; the event page offers Standard, shows Members as "Members only" (not selectable), and does not show "First time" tickets (not defined yet); the Register panel shows Tickets, Tax (10%) and Total, both ways to pay, and the cancellation policy as the hosting business set it; the staff event list (`GET /api/v1/events`) stays closed to a customer; a tax category of no business of the organisation is refused.
+**Expect:** the list shows the event with its date block, type, time and location in the business's time zone, "From €25.00" (the lowest ticket open to this customer, as in the approved canvas) and "6 spots left"; the event page offers Standard and shows Members as "Members only" and First timers as "First-time customers only" (not selectable) for a customer who has had a visit or purchase at the business; "custom" tickets are never offered to customers (David, 2026-10-22); the Register panel shows Tickets, Tax (10%) and Total, both ways to pay, and the cancellation policy as the hosting business set it; the staff event list (`GET /api/v1/events`) stays closed to a customer; a tax category of no business of the organisation is refused.
 
 ### EVT-07 · Members-only tickets
 `P0` `regression` · THE-20 R11–R12 · As: customer · Status: Verified
-1. Without a membership, choose the Members ticket; try a First timers ticket. 2. With an active membership at the hosting business, choose the Members ticket, paying at reception.
-**Expect:** without a membership the Members ticket is refused ("members only"); First timers is not offered; with an active membership it is accepted, held until the event starts, takes a place and shows as "Awaiting payment".
+1. Without a membership, choose the Members ticket; as a customer who has been before, try a First timers ticket. 2. With an active membership at the hosting business, choose the Members ticket, paying at reception.
+**Expect:** without a membership the Members ticket is refused ("members only"); the First timers ticket is refused ("first-time customers only": a first-time customer has no earlier completed visit and no earlier purchase at the hosting business); with an active membership it is accepted, held until the event starts, takes a place and shows as "Awaiting payment".
 
 ### EVT-08 · Pay a ticket online
 `P0` `regression` · THE-20 R5, R7–R10 · As: customer · Status: Verified (test processor; the Stripe card form is not exercised by the runner)
@@ -72,7 +72,12 @@ Covers spec 14 (events and workshops), spec 22 (community), spec 20 (integration
 ### EVT-13 · An event of another business of the organisation
 `P0` `regression` · THE-20 R2; hosting business (David, 2026-10-22) · As: customer, reception · Status: Verified
 1. An event held at a location of a second business of the organisation, with a paid ticket. 2. As a customer of the first business, open it and register, paying at reception. 3. Reception takes the payment.
-**Expect:** the customer sees it (with "Hosted by"); paying online is offered only when the hosting business has a payment processor; the registration belongs to a customer record in the hosting business, found or made by email, and the ticket is sold there.
+**Expect:** the customer sees it (with "Hosted by"); paying online is offered only when the hosting business has a payment processor; the registration belongs to a customer record in the hosting business, found or made by email, and the ticket is sold there; being new to that business, the customer may take its First timers ticket, and after a purchase there it is no longer offered.
+
+### EVT-14 · Event emails
+`P1` `regression` · THE-20 (David, 2026-10-22) · As: customer, reception · Status: Verified
+1. Register for a free event; pay a ticket online; reserve a place to pay at reception and have reception take the payment; cancel a paid registration; leave an online payment unfinished.
+**Expect:** a transactional email is queued for: registration confirmed (free, paid online, paid at reception), place reserved to pay at reception (with the amount to pay), registration cancelled (with the refund: to the card or as account credit); none for an unfinished online payment. Dates and times are written in the hosting business's time zone. The "transactional emails" switch (CUS-33) covers them; the customer's Timeline lists them under Messages.
 
 ---
 

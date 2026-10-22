@@ -88,6 +88,8 @@ const MESSAGE_LABELS: Record<string, string> = {
   'payment.credit_note': 'Credit note', 'invoice.issued': 'Invoice', 'invoice.paid': 'Invoice paid',
   'membership.payment_failed': 'Failed membership payment', 'gift_card.issued': 'Gift card',
   'customer.task_reminder': 'Task reminder', 'waitlist.offer': 'Waitlist offer',
+  'event.registration_confirmed': 'Event registration', 'event.registration_reserved': 'Event place reserved',
+  'event.registration_cancelled': 'Event registration cancelled',
 };
 
 function money(cents: number, currency: string) {

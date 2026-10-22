@@ -364,11 +364,17 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
 
   // An event ticket paid on this order (online, or at reception through checkout)
   // confirms the place it was holding (THE-20).
-  await adminPool.query(
+  const { rows: paidPlaces } = await adminPool.query(
     `UPDATE evt_registrations SET status = 'confirmed', hold_expires_at = NULL, amount_paid = $2
-      WHERE order_id = $1 AND status = 'pending'`,
+      WHERE order_id = $1 AND status = 'pending' RETURNING id, pay_at`,
     [orderId, rows[0].total_amount],
   );
+  // Paid at reception: the customer is told the place is confirmed. (Online payments send it
+  // when the payment is finished, see the events route.)
+  if (paidPlaces.some((r: any) => r.pay_at !== 'online')) {
+    const { queueEventEmail } = await import('./customer-events.service');
+    for (const r of paidPlaces) if (r.pay_at !== 'online') await queueEventEmail(r.id, 'confirmed');
+  }
 
   // Auto-generate journal entries for accounting
   try {
