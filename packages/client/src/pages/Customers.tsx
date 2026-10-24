@@ -378,7 +378,6 @@ export function Customers() {
         <h1 style={styles.title}>People</h1>
         <div style={styles.headerActions}>
           <Button variant="outline" onClick={() => navigate('/customers/segments')}>Segments</Button>
-          <Button variant="outline" onClick={() => navigate('/customers/import')}>Import CSV</Button>
           <Button variant="outline" onClick={async () => {
             try {
               const url = customersApi.getExportUrl(businessId, {

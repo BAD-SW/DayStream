@@ -31,7 +31,6 @@ import { Customers } from './pages/Customers';
 import { CustomerCreate } from './pages/CustomerCreate';
 import { CustomerDetail } from './pages/CustomerDetail';
 import { Segments } from './pages/Segments';
-import { CustomerImport } from './pages/CustomerImport';
 import { Services } from './pages/Services';
 import { ServiceDetail } from './pages/ServiceDetail';
 import { MerchandiseDetail } from './pages/MerchandiseDetail';
@@ -116,7 +115,8 @@ export function App() {
         {/* Customers */}
         <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
         <Route path="/customers/new" element={<ProtectedRoute><CustomerCreate /></ProtectedRoute>} />
-        <Route path="/customers/import" element={<ProtectedRoute><CustomerImport /></ProtectedRoute>} />
+        {/* Data migration moved under Business Setup (spec 50). Keep the old path working. */}
+        <Route path="/customers/import" element={<Navigate to="/business?tab=migration" replace />} />
         <Route path="/customers/segments" element={<ProtectedRoute><Segments /></ProtectedRoute>} />
         <Route path="/customers/:id" element={<ProtectedRoute><CustomerDetail /></ProtectedRoute>} />
 
