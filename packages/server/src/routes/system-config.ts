@@ -394,3 +394,64 @@ systemConfigRouter.put('/prospects', requirePermission('*:*'), async (req: Reque
     success(res, { saved: true });
   } catch (err: any) { console.error('Failed to save prospect settings', err?.message || err); error(res, 'Failed to save prospect settings', 'INTERNAL_ERROR', 500); }
 });
+
+
+// ============================================================
+// Google Cloud (usage monitoring — KEYLESS, via ADC)
+// ============================================================
+// Authentication uses Application Default Credentials (ADC), NOT a downloaded
+// service-account key (the org policy forbids keys, and keys are a security risk).
+// There is therefore no secret to store — only the non-sensitive project id, an
+// optional service-account to impersonate (production), and the free threshold.
+// Whether ADC is actually available is a RUNTIME fact surfaced by GET /prospects/usage.
+
+systemConfigRouter.get('/google-cloud', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const data = await getSystemConfig('google_cloud');
+    success(res, {
+      configured: !!data?.project_id,
+      project_id: data?.project_id || '',
+      free_threshold: typeof data?.free_threshold === 'number' ? data.free_threshold : null,
+      impersonate_service_account: data?.impersonate_service_account || '',
+    });
+  } catch (err: any) { console.error('Failed to get Google Cloud config', err?.message || err); error(res, 'Failed to get Google Cloud config', 'INTERNAL_ERROR', 500); }
+});
+
+systemConfigRouter.put('/google-cloud', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const existing = (await getSystemConfig('google_cloud')) || {};
+    const updated: Record<string, any> = { ...existing };
+
+    if (typeof req.body?.project_id === 'string') {
+      const v = req.body.project_id.trim();
+      if (v) updated.project_id = v; else delete updated.project_id;
+    }
+    if (typeof req.body?.impersonate_service_account === 'string') {
+      const v = req.body.impersonate_service_account.trim();
+      if (v) updated.impersonate_service_account = v; else delete updated.impersonate_service_account;
+    }
+    if (req.body?.free_threshold !== undefined && req.body?.free_threshold !== '' && req.body?.free_threshold !== null) {
+      const n = Number(req.body.free_threshold);
+      if (Number.isFinite(n) && n >= 0) updated.free_threshold = Math.floor(n);
+    }
+
+    await upsertSystemConfig('google_cloud', updated, authReq.user.sub);
+
+    // Config changed — drop the cached usage reading so the next load is fresh.
+    try {
+      const { invalidateUsageCache } = await import('../services/google-cloud-usage.service');
+      invalidateUsageCache();
+    } catch { /* non-fatal */ }
+
+    await logAudit({
+      tenantId: 'system',
+      userId: authReq.user.sub,
+      action: 'system_config.google_cloud.update',
+      resourceType: 'system_configuration',
+      details: { project_id: updated.project_id, impersonation: !!updated.impersonate_service_account },
+    });
+
+    success(res, { saved: true });
+  } catch (err: any) { console.error('Failed to save Google Cloud config', err?.message || err); error(res, 'Failed to save Google Cloud config', 'INTERNAL_ERROR', 500); }
+});

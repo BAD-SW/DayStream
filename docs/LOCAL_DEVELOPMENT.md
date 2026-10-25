@@ -73,3 +73,44 @@ Three stages of testing:
 - OpenAPI/Swagger documentation from the start
 - Auto-generated from API code/decorators
 - Serves as the contract between frontend and backend
+
+
+## Google Cloud Usage Monitoring (Places API call counter)
+
+The admin Territory/Prospects screen shows the authoritative Places API call count for
+the current billing month, read from Google Cloud Monitoring. Authentication is
+**keyless** via Application Default Credentials (ADC) — there is no service-account key
+file (the org policy forbids downloadable keys, and ADC is the secure alternative).
+
+### One-time Google Cloud setup
+
+1. Grant the **Monitoring Viewer** role (`roles/monitoring.viewer`) to the identity that
+   will read usage:
+   - **Local:** your own Google user account (the one you log in with below).
+   - **Production:** the workload identity attached to the server, or a dedicated service
+     account that the server impersonates.
+2. Ensure the **Cloud Monitoring API** is enabled on the project.
+
+### Local development
+
+Authenticate ADC once per machine:
+
+```
+gcloud auth application-default login
+```
+
+This caches a user credential that the server picks up automatically — no key file, nothing
+in `.env`. Then, in DayStream: **Configuration → API Keys → Google Cloud Usage Monitoring**,
+enter the **Project ID** (e.g. `project-5afa9873-8c78-4f12-b0c`) and save. The usage table
+will populate on the next load.
+
+If ADC is not set up, the usage table degrades gracefully to "not configured" — nothing
+breaks.
+
+### Production
+
+Do **not** use a key file. Attach a workload identity (or run on a GCP identity) and grant
+it Monitoring Viewer, or set the **Impersonate service account** field to a dedicated SA
+that holds Monitoring Viewer (the ambient identity then needs the Service Account Token
+Creator role on that SA). The optional `GOOGLE_CLOUD_PROJECT` env var can supply the
+project id if it isn't set in the admin UI.
