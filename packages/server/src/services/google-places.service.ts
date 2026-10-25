@@ -3,6 +3,43 @@ import { logger } from '../middleware/logger';
 import { adminPool } from '../db/pool';
 
 // ============================================================
+// Outbound-call reliability for Google Places.
+// - Every fetch has a hard timeout (a stalled socket must fail, never hang the run).
+// - Google's next_page_token is not valid immediately; instead of a flat 2s wait we
+//   poll with short backoff until it activates (or give up), which is far faster for
+//   the common case while still handling the token-not-ready INVALID_REQUEST.
+// ============================================================
+
+/** Hard timeout for any single Google HTTP call. */
+const GOOGLE_FETCH_TIMEOUT_MS = 10000;
+/** Backoff steps (ms) when a next_page_token isn't active yet. */
+const PAGE_TOKEN_BACKOFF_MS = [400, 800, 1500];
+
+/**
+ * fetch() + JSON body read under ONE AbortController timeout. The timer is cleared only
+ * AFTER the body has been read, so a stalled/partial body can't hang forever (the earlier
+ * bug: clearing the timer right after fetch() resolved left `response.json()` unbounded,
+ * which froze a concurrent worker and deadlocked the whole run). Returns the parsed JSON.
+ * Throws on timeout (name 'AbortError'), network error, or non-OK HTTP (with .status set).
+ */
+async function timedFetchJson(url: string, timeoutMs = GOOGLE_FETCH_TIMEOUT_MS): Promise<any> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: ctrl.signal });
+    if (!response.ok) {
+      const e: any = new Error(`HTTP ${response.status}`);
+      e.httpStatus = response.status;
+      throw e;
+    }
+    // Body read is still covered by the same abort signal.
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ============================================================
 // Polite Nominatim (OpenStreetMap) client — the public service rate-limits to
 // ~1 req/sec and returns HTTP 429 when exceeded. We SERIALIZE requests ≥1.1s
 // apart and retry on 429 with backoff, so territory boundary lookups don't
@@ -203,6 +240,7 @@ export async function searchByKeywordDetailed(
   let nextPageToken: string | undefined;
   let apiCalls = 0;
   let saturated = false;
+  let rawResultCount = 0; // total results Google returned BEFORE exclusion filtering
   // IMPORTANT: localization comes ONLY from the lat/lng + radius below, NOT from a
   // text location phrase. Previously the query was `${keyword} in ${locationName}`,
   // where locationName was the territory label (e.g. "County A + County B"); Google
@@ -222,16 +260,31 @@ export async function searchByKeywordDetailed(
     url.searchParams.set('radius', String(radiusMeters));
     if (nextPageToken) url.searchParams.set('pagetoken', nextPageToken);
 
-    const response = await fetch(url.toString());
-    apiCalls++;
-    if (!response.ok) break;
-    const data = await response.json() as any;
+    let data: any;
+    try {
+      data = await timedFetchJson(url.toString());
+      apiCalls++;
+    } catch (err: any) {
+      // Timeout / network error / non-OK on one cell must not hang or kill the whole run.
+      apiCalls++;
+      const why = err.name === 'AbortError' ? 'timed out' : err.httpStatus ? `HTTP ${err.httpStatus}` : 'failed';
+      logger.warn(`[GooglePlaces] TextSearch ${why} (${err.message}) — stopping this cell`);
+      break;
+    }
+
     if (data.status === 'ZERO_RESULTS') break;
+    if (data.status === 'INVALID_REQUEST' && nextPageToken) {
+      // Page token not active yet — retry the SAME token with short backoff.
+      const waited = await waitForPageToken(page);
+      if (waited) continue;
+      break; // token never activated within backoff budget
+    }
     if (data.status !== 'OK') {
       logger.error(`[GooglePlaces] TextSearch error: ${data.status} - ${data.error_message || ''}`);
       break;
     }
 
+    rawResultCount += (data.results || []).length;
     for (const place of (data.results || [])) {
       const placeTypes: string[] = place.types || [];
       if (exclusionTypes.length > 0 && exclusionTypes.some((ex) => placeTypes.includes(ex))) continue;
@@ -251,13 +304,22 @@ export async function searchByKeywordDetailed(
 
     nextPageToken = data.next_page_token;
     if (!nextPageToken) break;
-    // A next-page token after the final (3rd) page means Google has still more
-    // results than the 60-cap exposes → this center is saturated.
+    // A next-page token after the final (3rd) page means Google still has MORE than the
+    // 60-result cap exposes → this cell is saturated and must be drilled to capture the rest.
     if (page === 2) saturated = true;
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Give the token a brief moment to activate (replaces the old flat 2s wait).
+    await new Promise((resolve) => setTimeout(resolve, PAGE_TOKEN_BACKOFF_MS[0]));
   }
+  void rawResultCount; // (kept for potential diagnostics; saturation is token-based)
 
   return { results, saturated, apiCalls };
+}
+
+/** Wait progressively longer for a next_page_token to activate; returns false once out of steps. */
+async function waitForPageToken(attempt: number): Promise<boolean> {
+  if (attempt >= PAGE_TOKEN_BACKOFF_MS.length) return false;
+  await new Promise((resolve) => setTimeout(resolve, PAGE_TOKEN_BACKOFF_MS[attempt]));
+  return true;
 }
 
 // Approximate H3 hexagon edge length (meters) per resolution, for sizing the
@@ -271,8 +333,14 @@ function radiusForResolution(res: number): number {
   return Math.round(edge * 1.3); // slight overlap so cell corners aren't missed
 }
 
-/** The finest resolution we'll drill to. Res 9 ≈ 0.17km edge — fine enough that a
- *  single cell rarely exceeds Google's 60-result cap even downtown. */
+/**
+ * The finest resolution we'll drill to. Res 9 ≈ 0.17km edge — fine enough that a single
+ * cell essentially never exceeds Google's 60-result cap, so a dense metro is enumerated
+ * COMPLETELY. Completeness is the product's value (a tenant's prospect list must not miss
+ * businesses), so we do NOT truncate depth to save time. Only SATURATED cells drill, so
+ * cost scales with real density; speed comes from parallelizing the drill (bounded
+ * concurrency) and the per-run budget is a runaway safety net, not an accuracy limiter.
+ */
 const MAX_DRILL_RESOLUTION = 9;
 
 export interface DrillSearchResult {
@@ -294,29 +362,82 @@ export interface DrillSearchResult {
  * Accuracy-first: cost scales with density (only saturated cells are split), which
  * is the intended trade-off — an accurate opportunity list matters more than calls.
  */
+export interface DrillAccumulator {
+  byId: Map<string, PlaceResult>;
+  apiCalls: number;
+  cellsSearched: number;
+  cellsSaturatedAtMaxRes: number;
+  /** Optional per-run ceiling on total Google calls. When reached, drilling stops. */
+  maxApiCalls?: number;
+  /** Set true when the run stopped early because the budget was hit (results are partial). */
+  budgetHit?: boolean;
+}
+
+/** Total Google calls allowed IN FLIGHT at once across the whole drill (one shared pool). */
+const DRILL_CONCURRENCY = 6;
+
+/**
+ * Drill one starting cell to completion using a SINGLE shared work-queue with ONE global
+ * concurrency cap and a STRICT budget that is reserved BEFORE each Google call.
+ *
+ * Why not the old recursive per-node pools: that spawned a fresh pool of 6 at every node,
+ * and because the recursion is 5 levels deep with 7× fan-out, thousands of calls ended up
+ * in flight simultaneously. The budget check only gated *scheduling*, so by the time the
+ * counter crossed the ceiling, thousands of already-launched calls still landed — a dense
+ * territory (Honolulu) blew ~3× past the 8,000 cap. This model fixes that: at most
+ * DRILL_CONCURRENCY calls run at once total, and each worker RESERVES its calls against the
+ * budget up front, so the hard ceiling cannot be exceeded regardless of fan-out.
+ */
 export async function searchCellRecursive(
   cellHex: string, keyword: string, exclusionTypes: string[], locationName: string | undefined,
-  acc: { byId: Map<string, PlaceResult>; apiCalls: number; cellsSearched: number; cellsSaturatedAtMaxRes: number },
+  acc: DrillAccumulator,
 ): Promise<void> {
-  const res = h3.getResolution(cellHex);
-  const [lat, lng] = h3.cellToLatLng(cellHex);
-  const radius = radiusForResolution(res);
+  const queue: string[] = [cellHex];
+  const budget = acc.maxApiCalls ?? Infinity;
+  let activeWorkers = 0; // workers currently mid-search (may still push children)
 
-  const { results, saturated, apiCalls } = await searchByKeywordDetailed(lat, lng, radius, keyword, exclusionTypes, locationName);
-  acc.apiCalls += apiCalls;
-  acc.cellsSearched += 1;
-  for (const p of results) if (!acc.byId.has(p.place_id)) acc.byId.set(p.place_id, p);
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      if (acc.apiCalls >= budget) { acc.budgetHit = true; return; }
 
-  if (!saturated) return;                       // got everything in this cell
-  if (res >= MAX_DRILL_RESOLUTION) {            // can't drill finer — note it and stop
-    acc.cellsSaturatedAtMaxRes += 1;
-    return;
-  }
-  // Saturated: split into finer children and recurse each.
-  const children = h3.cellToChildren(cellHex, res + 1);
-  for (const child of children) {
-    await searchCellRecursive(child, keyword, exclusionTypes, locationName, acc);
-  }
+      const hex = queue.shift();
+      if (hex === undefined) {
+        // Queue is momentarily empty. If other workers are still searching they may push
+        // more children, so wait for them rather than exiting (exiting early would drop
+        // sub-cells and UNDER-capture). Only finish when the queue is empty AND no worker
+        // is active — i.e. the drill is genuinely complete.
+        if (activeWorkers === 0) return;
+        await new Promise((r) => setTimeout(r, 25));
+        continue;
+      }
+
+      const res = h3.getResolution(hex);
+      // Each cell costs up to 3 calls (3 pages). RESERVE the worst case before calling so
+      // concurrent workers can't collectively overshoot the ceiling.
+      if (acc.apiCalls + 3 > budget) { acc.budgetHit = true; queue.length = 0; return; }
+
+      activeWorkers++;
+      try {
+        const [lat, lng] = h3.cellToLatLng(hex);
+        const { results, saturated, apiCalls } = await searchByKeywordDetailed(
+          lat, lng, radiusForResolution(res), keyword, exclusionTypes, locationName,
+        );
+        acc.apiCalls += apiCalls;
+        acc.cellsSearched += 1;
+        for (const p of results) if (!acc.byId.has(p.place_id)) acc.byId.set(p.place_id, p);
+
+        if (saturated) {
+          if (res >= MAX_DRILL_RESOLUTION) acc.cellsSaturatedAtMaxRes += 1;
+          else for (const child of h3.cellToChildren(hex, res + 1)) queue.push(child);
+        }
+      } finally {
+        activeWorkers--;
+      }
+    }
+  };
+
+  // One shared pool of workers all pulling from the SAME queue → true global concurrency.
+  await Promise.all(Array.from({ length: DRILL_CONCURRENCY }, () => worker()));
 }
 
 /**
@@ -339,10 +460,13 @@ export async function searchHexArea(lat: number, lng: number, radiusMeters: numb
       url.searchParams.set('pagetoken', nextPageToken);
     }
 
-    const response = await fetch(url.toString());
-    if (!response.ok) break;
-
-    const data = await response.json() as any;
+    let data: any;
+    try {
+      data = await timedFetchJson(url.toString());
+    } catch (err: any) {
+      logger.warn(`[GooglePlaces] Nearby ${err.name === 'AbortError' ? 'timed out' : err.httpStatus ? `HTTP ${err.httpStatus}` : 'failed'} (${err.message})`);
+      break;
+    }
     if (data.status === 'ZERO_RESULTS') break;
     if (data.status !== 'OK') {
       logger.error(`[GooglePlaces] Nearby error: ${data.status} - ${data.error_message || ''}`);
@@ -397,13 +521,13 @@ export async function searchByText(location: string, type: string): Promise<Plac
       url.searchParams.set('pagetoken', nextPageToken);
     }
 
-    const response = await fetch(url.toString());
-    if (!response.ok) {
-      logger.error(`[GooglePlaces] HTTP ${response.status}: ${response.statusText}`);
+    let data: any;
+    try {
+      data = await timedFetchJson(url.toString());
+    } catch (err: any) {
+      logger.error(`[GooglePlaces] TextSearch(byText) ${err.name === 'AbortError' ? 'timed out' : err.httpStatus ? `HTTP ${err.httpStatus}` : 'failed'}: ${err.message}`);
       break;
     }
-
-    const data = await response.json() as any;
     if (data.status === 'ZERO_RESULTS') break;
     if (data.status !== 'OK') {
       logger.error(`[GooglePlaces] API error: ${data.status} - ${data.error_message || ''}`);
