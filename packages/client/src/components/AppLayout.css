@@ -232,7 +232,8 @@
 
 .app-content {
   flex: 1;
-  padding: var(--space-xl) var(--space-2xl) var(--space-2xl);
+  /* Little space under the top bar: page titles sit close to it (David, 2026-10-28). */
+  padding: var(--space-sm) var(--space-2xl) var(--space-2xl);
   min-width: 0;
 }
 

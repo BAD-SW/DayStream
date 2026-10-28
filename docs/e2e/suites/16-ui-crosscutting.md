@@ -61,3 +61,8 @@ Staff pages are excluded from visual-consistency checks until they are migrated 
 `P2` `regression` · Spec 05 R1 · Status: Draft
 1. Create a customer named with 120 characters, accents and an apostrophe (`E2E {RUN} María-José O'Neill …`), and a service with a 500-character description and a `<b>tag</b>` in its name.
 **Expect:** text wraps or truncates with a tooltip, never breaks the layout; markup is shown as text, not rendered (no script or HTML injection) on lists, detail pages, the calendar, receipts and the widget.
+
+### UIX-12 · Settings: one Save, unsaved changes marked, leaving asks first
+`P1` `regression` · David 2026-10-28 · As: owner · Status: Verified
+1. Settings, System tab: tick "Customers can cancel" under Appointments. 2. Scroll down. 3. Open Payment Methods, then System again. 4. Click Dashboard in the menu; choose Stay. 5. Click Save changes. 6. Reload.
+**Expect:** after step 1 the System tab shows a dot and a highlight, the block is outlined with "Unsaved changes", and the title row says which section is unsaved; Save changes is enabled only while something is unsaved; in step 2 the title, Save changes and the tabs stay in view under the top bar; in step 3 the change is still there; step 4 asks "Leave without saving?" with Leave / Stay and Stay keeps the page; step 5 says "All changes saved." and the marks go away; step 6 shows the saved value. Closing or reloading the browser tab with unsaved changes gets the browser's own warning. Actions (Run, Run Now, lead stages, schedules, payment processor, themes) keep their own buttons.

@@ -2,7 +2,7 @@
 
 **Owner:** Claude (maintained in every working session) · **Created:** 2026-10-12
 **Synced through commit:** `619bef3` (Bill, 2026-10-28: data migration Wave 1, gift-card expiry, renewals without a card, New Customer email, prospects background generation), merged locally as `bf80267`
-**Script count:** 340 across 18 suites · **Verified by execution:** 251 · **Failing:** 0 · **Retired:** 1 (CUS-11) · **Blocked:** 29 (specs 47–48 not built, sequence builder, API keys) · **Draft (not yet run, or only partly):** 39: run 20261012-6 covered suites 00 and 02 to 16; the journeys (suite 01) were not run as sequences, and the remaining drafts are mostly on-screen checks
+**Script count:** 341 across 18 suites · **Verified by execution:** 252 · **Failing:** 0 · **Retired:** 1 (CUS-11) · **Blocked:** 29 (specs 47–48 not built, sequence builder, API keys) · **Draft (not yet run, or only partly):** 39: run 20261012-6 covered suites 00 and 02 to 16; the journeys (suite 01) were not run as sequences, and the remaining drafts are mostly on-screen checks
 
 This is the living end-to-end (E2E) regression book for DayStream. It exists for two goals:
 
@@ -47,7 +47,7 @@ Every run ends with a report in chat and a new entry in [RUN-LOG.md](./RUN-LOG.m
 | 13 | [Marketing & leads](./suites/13-marketing.md) | MKT | 22 | 16, 48, THE-17 |
 | 14 | [Website, CMS & booking widget](./suites/14-website-widget.md) | WEB | 13 | 18, 38 |
 | 15 | [Events, community & integrations](./suites/15-events-community-integrations.md) | EVT, COM, INT | 22 | 14, 20, 22 |
-| 16 | [UI cross-cutting](./suites/16-ui-crosscutting.md) | UIX | 11 | 04, 30 |
+| 16 | [UI cross-cutting](./suites/16-ui-crosscutting.md) | UIX | 12 | 04, 30 |
 | 17 | [Inbox](./suites/17-inbox.md) | INB | 16 | 47 |
 
 Suite 01 is the heart of goal A. Suites 02–17 go deep per feature. Suite 00 is the fast gate for goal B.
@@ -299,3 +299,4 @@ Gaps in the test approach itself:
 | 2026-10-28 | after `29a63e8` | D-57 fixed (header row recognised by known column names); SET-18 Verified; `rbill3` passes without setting the header by hand |
 | 2026-10-28 | local | THE-17 Leads built (Marketing → Leads, Settings → Leads, migration 159): MKT-09 to MKT-11 rewritten from the decisions and `Verified`; MKT-21 (lead stages) and MKT-22 (delete and restore) added, `Verified`. Runner `rleads` added to the full run; it passes (5 scripts) |
 | 2026-10-28 | local | D-58 fixed (event without a type: 400 "Choose an event type" instead of 500; field marked required). EVT-01 expectation and `r15` check added; `r15` 12/12 and `rcev` pass |
+| 2026-10-28 | local | Settings: one Save for all tabs, tabs and sections with unsaved changes marked, "Leave without saving?" (Leave / Stay), title row and tabs stay in view; less space under the top bar on every page (David's remarks on THE-20 step 1). UIX-12 added, checked in the browser |

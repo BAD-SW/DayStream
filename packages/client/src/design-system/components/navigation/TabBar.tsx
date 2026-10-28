@@ -3,6 +3,8 @@ import { KeyboardEvent, useRef } from 'react';
 interface TabBarItem<T extends string> {
   key: T;
   label: string;
+  /** The section behind this tab has unsaved changes: the tab is marked. */
+  changed?: boolean;
 }
 
 interface TabBarProps<T extends string> {
@@ -45,9 +47,10 @@ export function TabBar<T extends string>({ tabs, active, onChange, 'aria-label':
             tabIndex={isActive ? 0 : -1}
             onClick={() => onChange(tab.key)}
             onKeyDown={(e) => handleKeyDown(e, index)}
-            style={{ ...styles.tab, ...(isActive ? styles.tabActive : {}) }}
+            style={{ ...styles.tab, ...(isActive ? styles.tabActive : {}), ...(tab.changed ? styles.tabChanged : {}) }}
           >
             {tab.label}
+            {tab.changed && <span aria-label="unsaved changes" title="Unsaved changes" style={styles.changedDot} />}
           </button>
         );
       })}
@@ -75,6 +78,8 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--color-text-secondary)',
     cursor: 'pointer',
   },
+  tabChanged: { background: 'var(--color-warning-bg)', borderTopLeftRadius: 'var(--radius-md)', borderTopRightRadius: 'var(--radius-md)' },
+  changedDot: { display: 'inline-block', width: '8px', height: '8px', marginLeft: '6px', borderRadius: '50%', background: 'var(--color-warning)', verticalAlign: 'middle' },
   tabActive: {
     color: 'var(--color-primary)',
     // Full shorthand, not borderBottomColor: React drops a removed longhand, which would
