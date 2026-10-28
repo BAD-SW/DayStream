@@ -68,8 +68,8 @@ export function EventCreate() {
         </div>
         <div style={styles.row}>
           <div style={styles.fieldWrapper}>
-            <label style={styles.label}>Event Type</label>
-            <select style={styles.input} value={form.event_type_id} onChange={(e) => handleChange('event_type_id', e.target.value)}>
+            <label style={styles.label}>Event Type *</label>
+            <select style={styles.input} required value={form.event_type_id} onChange={(e) => handleChange('event_type_id', e.target.value)}>
               <option value="">— Select —</option>
               {eventTypes.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>

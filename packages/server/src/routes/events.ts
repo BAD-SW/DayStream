@@ -428,6 +428,8 @@ async function taxCategoryProblem(req: Request): Promise<string | null> {
 eventsRouter.post('/', requirePermission('events:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
+    // Every event has a type (evt_events.event_type_id is required).
+    if (!req.body.event_type_id || !UUID.test(String(req.body.event_type_id))) { error(res, 'Choose an event type', 'VALIDATION_ERROR', 400); return; }
     const taxProblem = await taxCategoryProblem(req);
     if (taxProblem) { error(res, taxProblem, 'VALIDATION_ERROR', 400); return; }
     const event = await eventService.createEvent({
