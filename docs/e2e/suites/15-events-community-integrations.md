@@ -11,7 +11,7 @@ Covers spec 14 (events and workshops), spec 22 (community), spec 20 (integration
 ### EVT-01 · Create, ticket and publish an event
 `P0` `regression` · Spec 14 R1, R4 · As: owner · Status: Verified
 1. `/events/new`: event `E2E {RUN} Workshop` next week, capacity 3, location, a facilitator. Add ticket tiers: Standard 40.00, Early bird 30.00 (limited to 1). 2. Publish.
-**Expect:** Event Type is required (marked *); saving without one is refused with "Choose an event type", never a server error (D-58); a draft event is not public; after publishing it appears in the public event calendar (`GET /api/v1/events/calendar`) with its tiers; an event cannot be published without a date or a ticket tier.
+**Expect:** the start suggests 9:00; opening a time field lists quarter hours (scrolled to the current time) and any other minute can be typed (e.g. 14:20); setting the start date fills the end from the duration (default 1 hour), changing the duration moves the end and changing the end changes the duration (hours or days); an end not after the start is refused ("The end must be after the start"); Event Type is required (marked *); saving without one is refused with "Choose an event type", never a server error (D-58); a draft event is not public; after publishing it appears in the public event calendar (`GET /api/v1/events/calendar`) with its tiers; an event cannot be published without a date or a ticket tier.
 
 ### EVT-02 · Registration, capacity and waitlist
 `P0` `regression` · Spec 14 R5, R6 · As: reception, customer · Status: Verified
