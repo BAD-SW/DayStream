@@ -53,6 +53,25 @@ describe('detectHeaderRow', () => {
     const r = detectHeaderRow(grid);
     expect(r.hasHeader).toBe(false);
   });
+
+  it('detects a header over mostly free-text columns when its cells are known column names (D-57)', () => {
+    const grid = [
+      ['Customer ID', 'First Name', 'Surname', 'Email', 'Mobile', 'Tags', 'Notes', 'Customer Since'],
+      ['L-1', 'Ana', 'Migrada', 'ana@example.com', '+34600111222', 'VIP;Imported', 'Likes mornings', '2019-03-15'],
+      ['L-2', 'José', 'Núñez', 'jose@example.com', '', '', '', ''],
+      ['L-3', 'Bad', 'Email', 'not-an-email', '', '', '', ''],
+    ];
+    expect(detectHeaderRow(grid).hasHeader).toBe(false); // value shapes alone are not enough here
+    expect(detectHeaderRow(grid, CUSTOMER_FIELDS).hasHeader).toBe(true);
+  });
+
+  it('still detects NO header for data rows when the field names are given', () => {
+    const grid = [
+      ['Alex', 'alex@example.com', '+15551234567'],
+      ['Sam', 'sam@example.com', '+15559876543'],
+    ];
+    expect(detectHeaderRow(grid, CUSTOMER_FIELDS).hasHeader).toBe(false);
+  });
 });
 
 describe('detectColumns', () => {
