@@ -13,6 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import { BusinessBillingTab } from '../components/BusinessBillingTab';
 import { BusinessChargeHistory } from '../components/BusinessChargeHistory';
 import { BusinessAuditTrail } from '../components/BusinessAuditTrail';
+import { DataMigration } from './settings/DataMigration';
 
 const THEME_TO_FORM_FIELD: Record<ThemeField, 'base_theme' | 'primary_color' | 'secondary_color' | 'title_color' | 'font_family' | 'base_font_size' | 'favicon_url'> = {
   baseTheme: 'base_theme',
@@ -295,6 +296,13 @@ export function TenantBusinesses() {
                   label: 'Audit Trail',
                   content: (
                     <BusinessAuditTrail businessId={selectedBiz.id} />
+                  ),
+                },
+                {
+                  id: 'data-migration',
+                  label: 'Data Migration',
+                  content: (
+                    <DataMigration businessId={selectedBiz.id} />
                   ),
                 },
               ]}

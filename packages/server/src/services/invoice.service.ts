@@ -156,6 +156,107 @@ export async function issueInvoice(input: IssueInvoiceInput): Promise<any> {
   }
 }
 
+export interface IssueImportedInvoiceInput extends IssueInvoiceInput {
+  /** The invoice's ORIGINAL issue date in the legacy system (YYYY-MM-DD). */
+  issueDate: string;
+  /** How much of the invoice was already paid in the legacy system (cents). */
+  amountPaidCents?: number;
+}
+
+/**
+ * Issue an invoice imported from a legacy system (spec 50, data migration).
+ *
+ * Differs from `issueInvoice` in exactly two ways the import needs and the stock
+ * call can't express: it preserves the ORIGINAL issue date (the stock call forces
+ * CURRENT_DATE) and an already-paid amount (so a partially-paid legacy invoice
+ * carries the correct outstanding balance). Status is derived: 'paid' when fully
+ * covered, else 'issued'. No GL/revenue side effects beyond the invoice row —
+ * this records the carried-forward receivable, not a new sale.
+ */
+export async function issueImportedInvoice(input: IssueImportedInvoiceInput): Promise<any> {
+  if (!(await isInvoicingEnabled(input.businessId))) {
+    throw new InvoiceError('Invoicing is not enabled for this business', 'INVOICING_DISABLED');
+  }
+  if (!input.lineItems || input.lineItems.length === 0) {
+    throw new InvoiceError('An invoice needs at least one line item', 'NO_LINE_ITEMS');
+  }
+  if (!input.issueDate) throw new InvoiceError('An issue date is required', 'ISSUE_DATE_REQUIRED');
+  if (!input.dueDate) throw new InvoiceError('A due date is required', 'DUE_DATE_REQUIRED');
+
+  const currency = await resolveBusinessCurrency(input.businessId);
+
+  const lines = input.lineItems.map((li, idx) => {
+    const quantity = li.quantity && li.quantity > 0 ? li.quantity : 1;
+    const amountCents = Math.round(li.unitPriceCents * quantity);
+    const taxCents = li.taxCents && li.taxCents > 0 ? li.taxCents : 0;
+    const itemType: SaleItemType = li.itemType ?? 'service';
+    return { ...li, quantity, amountCents, taxCents, itemType, displayOrder: idx };
+  });
+  const subtotalCents = lines.reduce((n, l) => n + l.amountCents, 0);
+  const taxCents = lines.reduce((n, l) => n + l.taxCents, 0);
+  const totalCents = subtotalCents + taxCents;
+  if (totalCents <= 0) throw new InvoiceError('Invoice total must be greater than zero', 'INVALID_TOTAL');
+
+  const amountPaid = Math.max(0, Math.min(input.amountPaidCents ?? 0, totalCents));
+  const status = amountPaid >= totalCents ? 'paid' : 'issued';
+
+  const client = await adminPool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO pay_invoice_number_seq (business_id, next_number)
+       VALUES ($1, 1000) ON CONFLICT (business_id) DO NOTHING`,
+      [input.businessId],
+    );
+    const { rows: seqRows } = await client.query(
+      `SELECT next_number FROM pay_invoice_number_seq WHERE business_id = $1 FOR UPDATE`,
+      [input.businessId],
+    );
+    const invoiceNumber: number = Number(seqRows[0].next_number);
+    await client.query(
+      `UPDATE pay_invoice_number_seq SET next_number = next_number + 1 WHERE business_id = $1`,
+      [input.businessId],
+    );
+
+    const { rows: invRows } = await client.query(
+      `INSERT INTO pay_invoices
+         (tenant_id, business_id, customer_id, invoice_number, issue_date, due_date, currency,
+          subtotal_cents, tax_cents, total_cents, amount_paid_cents, status, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       RETURNING *`,
+      [
+        input.tenantId, input.businessId, input.customerId, invoiceNumber, input.issueDate, input.dueDate, currency,
+        subtotalCents, taxCents, totalCents, amountPaid, status, input.notes ?? null, input.createdBy,
+      ],
+    );
+    const invoice = invRows[0];
+
+    for (const l of lines) {
+      await client.query(
+        `INSERT INTO pay_invoice_line_items
+           (invoice_id, description, quantity, unit_price_cents, amount_cents, tax_cents, item_type, display_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [invoice.id, l.description, l.quantity, l.unitPriceCents, l.amountCents, l.taxCents, l.itemType, l.displayOrder],
+      );
+    }
+
+    await client.query('COMMIT');
+
+    await logAudit({
+      tenantId: input.tenantId, userId: input.createdBy, action: 'invoice.imported',
+      resourceType: 'invoice', resourceId: invoice.id,
+      details: { invoice_number: invoiceNumber, total_cents: totalCents, amount_paid_cents: amountPaid, currency, customer_id: input.customerId },
+    }).catch(() => {});
+
+    return invoice;
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 export interface InvoiceFilters {
   customerId?: string;
   status?: string;

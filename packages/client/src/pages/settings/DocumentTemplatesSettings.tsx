@@ -194,6 +194,14 @@ export function DocumentTemplatesSettings() {
     setEditingId(t.id);
   };
 
+  // Duplicate: open the editor pre-filled from an existing template as a NEW one
+  // (name suffixed "(Copy)"), so a business can tweak seasonal details and save a
+  // fresh variant without re-entering everything. Saving creates a new template.
+  const openDuplicate = (t: DocumentBrandingTemplate) => {
+    setForm({ ...toForm(t), name: `${t.name} (Copy)` });
+    setEditingId('new');
+  };
+
   const closeEditor = () => {
     setEditingId(null);
     setForm(EMPTY_FORM);
@@ -309,6 +317,7 @@ export function DocumentTemplatesSettings() {
               </div>
               <div style={s.listActions}>
                 <Button size="sm" variant="secondary" onClick={() => openEdit(t)}>Edit</Button>
+                <Button size="sm" variant="ghost" onClick={() => openDuplicate(t)}>Duplicate</Button>
                 <Button size="sm" variant="ghost" onClick={() => handleDelete(t)}>Delete</Button>
               </div>
             </div>

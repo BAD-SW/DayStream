@@ -1031,6 +1031,17 @@ export async function setGiftCardTaxEnabled(businessId: string, enabled: boolean
   return res.data.data.enabled;
 }
 
+/** Days a purchased gift card is valid for (per-business). 0 = no expiry. */
+export async function getGiftCardExpiryDays(businessId: string): Promise<number> {
+  const res = await apiClient.get('/v1/pay/gift-card-expiry-days', { params: { business_id: businessId } });
+  return res.data.data.days;
+}
+
+export async function setGiftCardExpiryDays(businessId: string, days: number): Promise<number> {
+  const res = await apiClient.put('/v1/pay/gift-card-expiry-days', { business_id: businessId, days });
+  return res.data.data.days;
+}
+
 // --- Vouchers (C8) ---
 
 export interface Voucher {

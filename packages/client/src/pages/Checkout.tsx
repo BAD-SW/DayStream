@@ -721,6 +721,32 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, onAdded, onC
   const [giftAmount, setGiftAmount] = useState(0);          // cents
   const [giftRecipientName, setGiftRecipientName] = useState('');
   const [giftRecipientEmail, setGiftRecipientEmail] = useState('');
+  // Expiry date for the card (YYYY-MM-DD). Pre-filled from the business's expiry
+  // setting (purchase date + expiry_days); staff can override or clear it. Empty
+  // string = no expiry.
+  const [giftExpiry, setGiftExpiry] = useState('');
+
+  // When the gift-card line opens, compute the default expiry from the business
+  // setting: today + expiry_days. 0 days (or failure) → no default (blank).
+  useEffect(() => {
+    if (itemType !== 'gift_card') return;
+    const bizId = localStorage.getItem('business_id') || '';
+    if (!bizId) return;
+    let cancelled = false;
+    import('../api/payments').then((payApi) => {
+      payApi.getGiftCardExpiryDays(bizId).then((days) => {
+        if (cancelled) return;
+        if (days > 0) {
+          const d = new Date();
+          d.setDate(d.getDate() + days);
+          setGiftExpiry(d.toISOString().slice(0, 10));
+        } else {
+          setGiftExpiry('');
+        }
+      }).catch(() => { if (!cancelled) setGiftExpiry(''); });
+    });
+    return () => { cancelled = true; };
+  }, [itemType]);
 
   const itemList = itemType === 'product' ? offerings.products
     : itemType === 'membership' ? offerings.memberships
@@ -759,6 +785,8 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, onAdded, onC
           unit_price: giftAmount,
           gift_recipient_name: giftRecipientName || null,
           gift_recipient_email: giftRecipientEmail || null,
+          // Explicit: the shown date, or null when staff cleared it (no expiry).
+          gift_expiry: giftExpiry || null,
         });
         onAdded(updated);
       } catch { alert('Failed to add gift card'); }
@@ -818,6 +846,10 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, onAdded, onC
           </label>
           <input style={{ ...styles.inlineSelect, minWidth: '150px' }} placeholder="Recipient name (optional)" value={giftRecipientName} onChange={(e) => setGiftRecipientName(e.target.value)} />
           <input style={{ ...styles.inlineSelect, minWidth: '180px' }} placeholder="Recipient email (optional)" value={giftRecipientEmail} onChange={(e) => setGiftRecipientEmail(e.target.value)} />
+          <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            Expires
+            <input type="date" style={{ ...styles.inlineSelect, minWidth: '150px' }} value={giftExpiry} onChange={(e) => setGiftExpiry(e.target.value)} />
+          </label>
           <div style={{ display: 'flex', gap: '4px' }}>
             <Button size="sm" onClick={handleAdd} loading={saving} disabled={giftAmount <= 0}>Add</Button>
             <Button variant="secondary" size="sm" onClick={onCancel}>✕</Button>
@@ -825,6 +857,7 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, onAdded, onC
         </div>
         <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', margin: '6px 0 0' }}>
           A gift card is sold for its face value (no tax). The card and its code are created when the order is paid.
+          {' '}The expiry is prefilled from your gift-card setting; clear it for no expiry.
         </p>
       </div>
     );

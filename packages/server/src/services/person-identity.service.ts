@@ -198,7 +198,42 @@ export async function findOrCreatePerson(input: PersonInput): Promise<PersonResu
   });
 
   logger.info('Person created', { personId: person.id, businessId: input.businessId, source: input.source });
+
+  // Welcome email (New Customer template, artifact 'customer.document'). Sent for a
+  // genuinely NEW customer on every creation path EXCEPT import (a bulk import must
+  // not blast a welcome to every row). Requires an email on file; no consent gate —
+  // this is a transactional welcome for an account that was just created. Non-blocking:
+  // a mail failure must never fail customer creation.
+  await sendWelcomeEmail(person, input.source).catch((e: any) =>
+    logger.warn(`Welcome email enqueue failed for customer ${person.id}: ${e?.message || e}`),
+  );
+
   return { person, created: true, matchedBy: null, duplicateFlagIds };
+}
+
+/**
+ * Queue the New Customer welcome email for a just-created person. No-ops for the
+ * import source and for people with no email address.
+ */
+async function sendWelcomeEmail(person: any, source: PersonSource): Promise<void> {
+  if (source === 'import') return;
+  const email = (person.email || '').trim();
+  if (!email) return;
+
+  const customerName = [person.first_name, person.last_name].filter(Boolean).join(' ').trim();
+  const { queueNotification } = await import('./booking-notifications.service');
+  await queueNotification({
+    businessId: person.business_id,
+    type: 'customer.document',
+    recipientId: person.id,
+    recipientEmail: email,
+    data: {
+      // business_name fills from the business identity in the resolver.
+      customer_name: customerName || null,
+      customer_first_name: person.first_name || null,
+      customer_email: email,
+    },
+  });
 }
 
 async function insertPerson(input: PersonInput, email: string | null, phoneRaw: string | null, e164: string | null) {

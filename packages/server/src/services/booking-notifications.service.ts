@@ -5,6 +5,25 @@ import { isKnownArtifactType } from '@daystream/shared';
 import { resolveArtifactKey, resolveAndRender } from './document-branding-resolver.service';
 import { sendEmail as sendEmailTransport } from './email.service';
 
+/**
+ * Build the From value for a branded document email.
+ *
+ * A business's template carries a display name (`sender_name`) and a Reply-To
+ * address (`reply_to`). To keep the platform identity out of the From line, the
+ * Reply-To address doubles as the From address:
+ *   - name + address → "Transcend Payments <payments@transcend.eu>"
+ *   - address only   → "payments@transcend.eu"
+ *   - name only      → the display name (email.service pairs it with the platform
+ *                       address — the pre-existing fallback behavior)
+ *   - neither        → null (sendEmail uses the platform default From)
+ */
+function buildBrandedFrom(senderName: string | null, replyTo: string | null): string | undefined {
+  const name = senderName?.trim() || '';
+  const addr = replyTo?.trim() || '';
+  if (addr) return name ? `${name} <${addr}>` : addr;
+  return name || undefined;
+}
+
 interface NotificationData {
   businessId: string;
   type: string;
@@ -71,13 +90,47 @@ export async function queueBookingCancellation(booking: any, customerEmail: stri
     type: 'booking.cancellation',
     recipientId: booking.customer_id,
     recipientEmail: customerEmail,
-    data: {
-      booking_reference: booking.booking_reference,
-      service_name: booking.service_name || '',
-      start_time: booking.start_time,
-      reason: reason || 'Cancelled',
-    },
+    data: buildAppointmentData(booking, customerEmail, { reason: reason || 'Cancelled' }),
   });
+}
+
+/**
+ * Build the token data bag for an appointment notification (confirmation,
+ * cancellation, reschedule). Populates the recipient, staff, service, and
+ * appointment-time tokens the branding resolver maps (buildTokenMap):
+ *   customer_name / customer_first_name / customer_email, staff_name,
+ *   service_name, appointment_date + appointment_time (derived from start_time),
+ *   booking_reference.
+ *
+ * The booking object is expected to come from getBookingById, which already joins
+ * the customer and staff names.
+ *
+ * manage_link / calendar_links are included as null: there is no customer-facing
+ * appointment-management URL builder or .ics/calendar-link generator yet (tracked
+ * follow-up, same as the other portal links). The tokens resolve empty rather than
+ * to a dead link until that work lands.
+ */
+function buildAppointmentData(
+  booking: any, customerEmail: string, extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const customerName = [booking.customer_first_name, booking.customer_last_name]
+    .filter(Boolean).join(' ').trim();
+  const staffName = [booking.staff_first_name, booking.staff_last_name]
+    .filter(Boolean).join(' ').trim();
+  return {
+    booking_reference: booking.booking_reference,
+    service_name: booking.service_name || '',
+    start_time: booking.start_time,
+    // start_time also drives appointment_date / appointment_time in the resolver.
+    staff_name: staffName || null,
+    customer_name: customerName || null,
+    customer_first_name: booking.customer_first_name || null,
+    customer_email: booking.customer_email || customerEmail || null,
+    // No URL builders yet — resolve empty rather than a dead link (follow-up).
+    manage_link: null,
+    calendar_links: null,
+    ...extra,
+  };
 }
 
 /**
@@ -315,12 +368,21 @@ async function sendEmail(notification: any): Promise<void> {
     const { buildDetailsTableForNotification } = await import('./document-send.service');
     const detailsTable = await buildDetailsTableForNotification(notification.business_id, type, data).catch(() => null);
     const rendered = await resolveAndRender(notification.business_id, type, data, language, detailsTable);
+    // Branded From: the template's Reply-To address doubles as the From address so
+    // the business identifies itself (e.g. "Transcend Payments <payments@transcend.eu>")
+    // instead of exposing the shared platform sender (noreply@daystream.app). We pass
+    // a full "Name <addr>" From when the template has a reply-to address; with only a
+    // sender name we fall back to a display-name-only override (platform address).
+    // Reply-To is still set explicitly so replies route to the branded address.
+    // NOTE: deliverability in production requires the reply-to domain to authorize
+    // the platform's sending infrastructure (SPF/DKIM) — tracked follow-up.
+    const brandedFrom = buildBrandedFrom(rendered.senderName, rendered.replyTo);
     await sendEmailTransport({
       to: recipient,
       subject: rendered.subject,
       html: rendered.html,
       text: rendered.text,
-      ...(rendered.senderName ? { from: rendered.senderName } : {}),
+      ...(brandedFrom ? { from: brandedFrom } : {}),
       ...(rendered.replyTo ? { replyTo: rendered.replyTo } : {}),
     });
     logger.info('Branded document email sent', { type, recipient });

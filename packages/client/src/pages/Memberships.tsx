@@ -9,8 +9,11 @@ import type { Membership, MembershipPlan } from '../api/memberships';
 import { formatCurrency } from '../utils/currency';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
-  active: 'success', paused: 'warning', frozen: 'info', cancelled: 'error', expired: 'error', pending: 'neutral',
+  active: 'success', paused: 'warning', renewing: 'warning', frozen: 'info', cancelled: 'error', expired: 'error', pending: 'neutral',
 };
+
+/** Human label for a status (renewing reads as "Past due" for staff clarity). */
+const STATUS_LABELS: Record<string, string> = { renewing: 'Past due' };
 
 export function Memberships() {
   const navigate = useNavigate();
@@ -66,7 +69,7 @@ export function Memberships() {
     { key: 'plan_name', header: 'Plan' },
     // The list carries the plan's billing frequency (there is no plan_type: reading it crashed the screen).
     { key: 'billing_frequency', header: 'Billing', render: (v: string) => (v ? v.replace(/_/g, ' ') : '—') },
-    { key: 'status', header: 'Status', render: (v: string) => <Badge variant={STATUS_VARIANTS[v] || 'neutral'}>{v}</Badge> },
+    { key: 'status', header: 'Status', render: (v: string) => <Badge variant={STATUS_VARIANTS[v] || 'neutral'}>{STATUS_LABELS[v] || v}</Badge> },
     { key: 'credit_balance', header: 'Credits', render: (v: any) => (v === undefined || v === null ? '—' : v) },
     { key: 'next_billing_date', header: 'Next Billing', render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' },
     {
@@ -103,6 +106,7 @@ export function Memberships() {
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
           <option value="">All</option>
           <option value="active">Active</option>
+          <option value="renewing">Past due</option>
           <option value="paused">Paused</option>
           <option value="cancelled">Cancelled</option>
           <option value="expired">Expired</option>

@@ -39,6 +39,7 @@ import { prospectsRouter } from './prospects';
 import { themesRouter } from './themes';
 import { widgetRouter } from './widget';
 import { cancellationSettingsRouter } from './cancellation-settings';
+import { importRouter } from './import';
 import { authLimiter } from '../middleware/rate-limit';
 
 export const router = Router();
@@ -84,6 +85,7 @@ router.use('/v1/pay', paymentPlatformRouter);
 router.use('/v1/checkout', checkoutRouter);
 router.use('/v1/prospects', prospectsRouter);
 router.use('/v1/themes', themesRouter);
+router.use('/v1/import', importRouter);
 router.use('/v1/widget', widgetRouter);
 router.use('/v1/cancellation-settings', cancellationSettingsRouter);
 

@@ -93,6 +93,7 @@ export async function emailTransactionDocument(
         invoice_number: `CN-${cn.credit_note_number}`,
         total_cents: cn.total_cents,
         currency: cn.currency,
+        invoice_date: cn.issue_date,   // → adjustment_date (matches the on-screen render)
         reason: cn.reason,
         customer_name: customerName,
         customer_email: t.customer_email,
@@ -116,6 +117,7 @@ export async function emailTransactionDocument(
         invoice_number: `DN-${dn.debit_note_number}`,
         total_cents: dn.total_cents,
         currency: dn.currency,
+        invoice_date: dn.issue_date,   // → adjustment_date (matches the on-screen render)
         reason: dn.reason,
         customer_name: customerName,
         customer_email: t.customer_email,

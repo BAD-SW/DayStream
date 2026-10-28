@@ -222,4 +222,46 @@ export async function setGiftCardTaxEnabled(businessId: string, enabled: boolean
   return enabled;
 }
 
+// --- Gift-card expiry setting (C7): per-business, in days, default 0 (no expiry) --
+
+const GIFT_CARD_EXPIRY_KEY = 'gift_card.expiry_days';
+
+/**
+ * How many days a purchased gift card is valid for. 0 means no expiry.
+ * Negative/invalid stored values are treated as 0 (no expiry).
+ */
+export async function getGiftCardExpiryDays(businessId: string): Promise<number> {
+  const { rows } = await adminPool.query(
+    `SELECT value FROM sys_business_configurations WHERE business_id = $1 AND key = $2`,
+    [businessId, GIFT_CARD_EXPIRY_KEY],
+  );
+  const days = parseInt(String(rows[0]?.value ?? '0'), 10);
+  return Number.isFinite(days) && days > 0 ? days : 0;
+}
+
+/** Set the per-business gift-card validity period in days (0 = no expiry). */
+export async function setGiftCardExpiryDays(businessId: string, days: number): Promise<number> {
+  const safe = Number.isFinite(days) && days > 0 ? Math.floor(days) : 0;
+  await adminPool.query(
+    `INSERT INTO sys_business_configurations (business_id, key, value)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (business_id, key) DO UPDATE SET value = EXCLUDED.value`,
+    [businessId, GIFT_CARD_EXPIRY_KEY, String(safe)],
+  );
+  return safe;
+}
+
+/**
+ * Compute the default expiry date (YYYY-MM-DD) for a gift card purchased today,
+ * from the business's expiry_days setting. Returns null when the business has no
+ * expiry configured (0 days).
+ */
+export async function computeGiftCardExpiry(businessId: string, from: Date = new Date()): Promise<string | null> {
+  const days = await getGiftCardExpiryDays(businessId);
+  if (days <= 0) return null;
+  const d = new Date(from);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export { GiftCardError };

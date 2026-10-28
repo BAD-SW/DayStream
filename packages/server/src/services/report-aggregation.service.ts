@@ -87,9 +87,19 @@ export async function aggregateMemberships(tenantId: string, date: string) {
     [tenantId, date],
   );
 
+  // Expired on this date (lapsed after failed renewals — win-back pool). Expiry
+  // has no dedicated timestamp; it sets updated_at, so key off that.
+  const { rows: expiredRows } = await adminPool.query(
+    `SELECT COUNT(*)::int AS cnt FROM mbr_enrollments
+     WHERE business_id IN (SELECT id FROM sys_businesses WHERE tenant_id = $1)
+       AND status = 'expired' AND updated_at::date = $2::date`,
+    [tenantId, date],
+  );
+
   await adminPool.query(UPSERT_METRIC, [tenantId, date, 'memberships', 'active', activeRows[0].cnt, '{}']);
   await adminPool.query(UPSERT_METRIC, [tenantId, date, 'memberships', 'new', newRows[0].cnt, '{}']);
   await adminPool.query(UPSERT_METRIC, [tenantId, date, 'memberships', 'cancelled', cancelledRows[0].cnt, '{}']);
+  await adminPool.query(UPSERT_METRIC, [tenantId, date, 'memberships', 'expired', expiredRows[0].cnt, '{}']);
 }
 
 /**

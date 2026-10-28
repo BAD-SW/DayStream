@@ -101,6 +101,7 @@ export async function addItem(orderId: string, data: {
   quantity: number; unit_price: number; discount_amount?: number; tax_amount?: number;
   credited_to?: string; booking_id?: string; notes?: string;
   gift_recipient_name?: string | null; gift_recipient_email?: string | null;
+  gift_expiry?: string | null;
 }): Promise<Order> {
   const res = await apiClient.post(`/v1/checkout/orders/${orderId}/items`, data);
   return res.data.data;

@@ -293,11 +293,24 @@ const EMPTY_EMAIL: EmailConfig = {
   from_email: '', from_name: '', rate_limit_per_hour: 100,
 };
 
+interface GoogleCloudInfo {
+  configured: boolean;
+  project_id: string;
+  free_threshold: number | null;
+  impersonate_service_account: string;
+}
+
 function ApiKeysPanel() {
   const [keys, setKeys] = useState<Record<string, string>>({ google_places: '' });
   const [masked, setMasked] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Google Cloud usage monitoring (keyless — ADC). We store only the project id,
+  // an optional impersonation target, and the free threshold. No secret.
+  const [gc, setGc] = useState<GoogleCloudInfo>({ configured: false, project_id: '', free_threshold: null, impersonate_service_account: '' });
+  const [gcForm, setGcForm] = useState<{ project_id: string; impersonate_service_account: string; free_threshold: string }>({ project_id: '', impersonate_service_account: '', free_threshold: '' });
+  const [gcSaving, setGcSaving] = useState(false);
 
   useEffect(() => {
     apiClient.get('/v1/admin/system-config/api-keys')
@@ -307,7 +320,44 @@ function ApiKeysPanel() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+    apiClient.get('/v1/admin/system-config/google-cloud')
+      .then((res) => {
+        const d = res.data.data as GoogleCloudInfo;
+        if (d) {
+          setGc(d);
+          setGcForm({
+            project_id: d.project_id || '',
+            impersonate_service_account: d.impersonate_service_account || '',
+            free_threshold: d.free_threshold != null ? String(d.free_threshold) : '',
+          });
+        }
+      })
+      .catch(() => {});
   }, []);
+
+  const handleSaveGoogleCloud = async () => {
+    setGcSaving(true);
+    try {
+      const body: Record<string, unknown> = {
+        project_id: gcForm.project_id.trim(),
+        impersonate_service_account: gcForm.impersonate_service_account.trim(),
+      };
+      if (gcForm.free_threshold.trim()) body.free_threshold = gcForm.free_threshold.trim();
+      await apiClient.put('/v1/admin/system-config/google-cloud', body);
+      alert('Google Cloud settings saved');
+      const res = await apiClient.get('/v1/admin/system-config/google-cloud');
+      const d = res.data.data as GoogleCloudInfo;
+      if (d) {
+        setGc(d);
+        setGcForm({
+          project_id: d.project_id || '',
+          impersonate_service_account: d.impersonate_service_account || '',
+          free_threshold: d.free_threshold != null ? String(d.free_threshold) : '',
+        });
+      }
+    } catch (err: any) { alert(err.response?.data?.error || 'Failed to save Google Cloud settings'); }
+    finally { setGcSaving(false); }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -356,6 +406,66 @@ function ApiKeysPanel() {
         >
           {saving ? 'Saving...' : 'Save API Keys'}
         </button>
+      </div>
+
+      {/* Google Cloud usage monitoring — KEYLESS (Application Default Credentials). Reads
+          authoritative Places API call counts for the month. No key file is stored: the org
+          policy forbids service-account keys, and ADC is the secure, recommended alternative. */}
+      <div style={{ borderTop: '1px solid var(--color-border)', marginTop: 'var(--space-xl)', paddingTop: 'var(--space-lg)' }}>
+        <h3 style={{ fontSize: 'var(--font-size-md)', fontWeight: 600, color: 'var(--color-text)', margin: '0 0 4px' }}>Google Cloud Usage Monitoring</h3>
+        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: '12px', maxWidth: '680px' }}>
+          Reads the authoritative Places API call count for the billing month via <strong>Application Default Credentials</strong> (no key file).
+          Grant the <strong>Monitoring Viewer</strong> role to the identity, then: locally run <code style={{ fontFamily: 'monospace' }}>gcloud auth application-default login</code>;
+          in production attach a workload identity. Enter the project ID below.
+          {' '}
+          <span style={{ color: gc.configured ? 'var(--color-success, #17794A)' : 'var(--color-text-secondary)' }}>
+            {gc.configured ? 'Project configured.' : 'Not configured.'}
+          </span>
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '640px' }}>
+          <div>
+            <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>Project ID</label>
+            <input
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', background: 'var(--color-background)', fontFamily: 'monospace' }}
+              type="text"
+              placeholder="project-5afa9873-8c78-4f12-b0c"
+              value={gcForm.project_id}
+              onChange={(e) => setGcForm({ ...gcForm, project_id: e.target.value })}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>Impersonate service account <span style={{ fontWeight: 400, color: 'var(--color-text-secondary)' }}>(optional — production)</span></label>
+            <input
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', background: 'var(--color-background)', fontFamily: 'monospace' }}
+              type="text"
+              placeholder="daystream@project-....iam.gserviceaccount.com"
+              value={gcForm.impersonate_service_account}
+              onChange={(e) => setGcForm({ ...gcForm, impersonate_service_account: e.target.value })}
+            />
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: '2px', display: 'block' }}>Leave blank to use the ambient ADC identity directly. If set, the ADC principal needs the Token Creator role on it.</span>
+          </div>
+          <div>
+            <label style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', display: 'block', marginBottom: '4px' }}>Free monthly call threshold</label>
+            <input
+              style={{ width: '220px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', background: 'var(--color-background)' }}
+              type="number"
+              min={0}
+              placeholder="10000"
+              value={gcForm.free_threshold}
+              onChange={(e) => setGcForm({ ...gcForm, free_threshold: e.target.value })}
+            />
+            <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginLeft: '8px' }}>Defaults to 10,000 (varies by billing tier).</span>
+          </div>
+        </div>
+        <div style={{ marginTop: '16px' }}>
+          <button
+            onClick={handleSaveGoogleCloud}
+            disabled={gcSaving}
+            style={{ padding: '8px 20px', background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 600 }}
+          >
+            {gcSaving ? 'Saving...' : 'Save Google Cloud Settings'}
+          </button>
+        </div>
       </div>
     </div>
   );

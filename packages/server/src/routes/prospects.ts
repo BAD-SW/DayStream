@@ -356,6 +356,23 @@ prospectsRouter.get('/maps-key', requirePermission('*:*'), async (_req: Request,
   } catch (err: any) { console.error('Failed to get maps key', err?.message || err); error(res, 'Failed to get maps key', 'INTERNAL_ERROR', 500); }
 });
 
+// GET /api/v1/prospects/usage — Authoritative Google Places/Maps API usage for the
+// current billing month, read from Google Cloud Monitoring (system-admin only).
+// Degrades gracefully: returns { status: 'not_configured' | 'error' } rather than
+// failing when the Google Cloud service-account credential is absent or unreadable.
+prospectsRouter.get('/usage', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const { getPlacesUsage } = await import('../services/google-cloud-usage.service');
+    const force = req.query.refresh === 'true';
+    const usage = await getPlacesUsage(force);
+    success(res, usage);
+  } catch (err: any) {
+    console.error('Failed to get Places usage', err?.message || err);
+    // Still return a graceful shape so the UI can show a degraded state rather than crash.
+    success(res, { status: 'error', message: 'Could not read usage.' });
+  }
+});
+
 // GET /api/v1/prospects/territory-info — Get current tenant's territory info
 prospectsRouter.get('/territory-info', requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
@@ -491,17 +508,32 @@ prospectsRouter.get('/:tenantId/generate/preview', requirePermission('*:*'), asy
 });
 
 // POST /api/v1/prospects/:tenantId/generate — Generate/refresh a tenant's prospect list.
+// Starts the run in the BACKGROUND and returns 202 immediately — the Google crawl can
+// take a while on dense territories, so the HTTP request must not hold the connection
+// open (that was the old "never returns" hang). The client polls .../generate/status.
 prospectsRouter.post('/:tenantId/generate', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
     const categoryIds = req.body?.category_ids || null;
-    const { generateProspectsForTenant } = await import('../services/prospect-generation.service');
-    const result = await generateProspectsForTenant(req.params.tenantId, categoryIds);
-    success(res, result);
+    const maxApiCalls = Number.isFinite(Number(req.body?.max_api_calls)) && Number(req.body?.max_api_calls) > 0
+      ? Math.floor(Number(req.body.max_api_calls)) : undefined;
+    const { startProspectGeneration } = await import('../services/prospect-generation.service');
+    const status = await startProspectGeneration(req.params.tenantId, categoryIds, maxApiCalls ? { maxApiCalls } : {});
+    // 202 Accepted — work continues in the background; poll the status endpoint.
+    success(res, { started: true, state: status.state, started_at: status.startedAt }, undefined, 202);
   } catch (err: any) {
     if (err?.name === 'NoTerritoryError' || err?.name === 'NoCategoriesError') { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
     if (err.message?.includes('GOOGLE_PLACES_API_KEY')) { error(res, 'Google Places API key not configured.', 'CONFIGURATION_ERROR', 500); return; }
-    error(res, `Failed to generate prospects: ${err.message}`, 'INTERNAL_ERROR', 500);
+    error(res, `Failed to start generation: ${err.message}`, 'INTERNAL_ERROR', 500);
   }
+});
+
+// GET /api/v1/prospects/:tenantId/generate/status — poll the background run's progress.
+prospectsRouter.get('/:tenantId/generate/status', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const { getGenerationStatus } = await import('../services/prospect-generation.service');
+    const status = getGenerationStatus(req.params.tenantId);
+    success(res, status || { state: 'idle' });
+  } catch (err: any) { console.error('Failed to get generation status', err?.message || err); error(res, 'Failed to get generation status', 'INTERNAL_ERROR', 500); }
 });
 
 // (Legacy tenant-scoped generate/preview routes were removed — generation is now
