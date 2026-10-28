@@ -53,27 +53,26 @@ Persona: owner (Marketing needs `settings:*`). Covers spec 16: templates, campai
 
 ---
 
-## Leads and audiences (spec 48)
+## Leads and audiences (spec 48, THE-17)
 
-Written from the draft spec on 2026-10-12, before the feature exists. All are `Blocked` until the spec 48 task named on each script is done (KI-13); the spec itself is still a draft, so these scripts are revised when its requirements are confirmed. Persona: owner unless stated. When spec 48 ships, MKT-07 is replaced by MKT-13.
+MKT-09 to MKT-11, MKT-21 and MKT-22 cover Leads as decided by David on 28 October 2026 (Linear THE-17) and built that day: Leads is the first section of Marketing, the same people data as People, with stages defined by each business under Settings → Leads. The other scripts of this section were written from the draft spec 48 on 2026-10-12 and stay `Blocked` until their part is decided and built (KI-13). Persona: owner unless stated. Runner: `rleads`.
 
-### MKT-09 · Leads tab shows the same leads as People
-`P0` `regression` · Spec 48 R1, R11 · Status: Blocked (spec 48 task 3)
-**Pre:** three E2E leads and one E2E active customer.
-1. Open Marketing. 2. Read the tabs. 3. Open Leads; use the New, Contacted, Mine and Unassigned filters; search by phone.
-**Expect:** tabs are Leads, Campaigns, Sequences, Forms, Templates, with Leads first; the three leads are listed with status, source, owner, created date and next follow-up; the active customer is not listed.
-**Cross-check:** People → Leads view (CUS-17) lists the same people for the same filters; opening a lead opens the same profile as from People.
+### MKT-09 · Leads list: the six fields, filters, same people as People
+`P0` `regression` · THE-17 · Status: Verified
+**Pre:** E2E leads from MKT-10 and one E2E customer (not a lead).
+1. Open Marketing. 2. Read the tabs. 3. On Leads, use the stage, source and assigned staff filters and the search. 4. Make one lead a customer (a booking, or stage changed in the database) and reload.
+**Expect:** tabs are Leads, Campaigns, Sequences, with Leads first and open by default; each lead shows assigned staff, created at (business local time, e.g. "Oct 28, 2026"), source, messages sent, lead stage and tags ("No tags assigned" when none); the customer is not listed; messages sent counts every sent message on every channel, automatic ones included (a failed one does not count); after step 4 that person has left the list. Clicking a row opens the person's profile.
+**Cross-check:** `GET /v1/leads?business_id=` total equals People → Leads (`GET /v1/customers?view=leads`) total.
 
 ### MKT-10 · Add a lead by hand
-`P0` `regression` · Spec 48 R5 · As: manager · Status: Blocked (spec 48 task 3)
-1. "Add lead": first name `E2E {RUN} Lead`, phone only, source "Walk-in", a note. 2. Add again with the same phone. 3. Add one with the consent box ticked and a reason.
-**Expect:** a lead is created at status New in seconds, with no email required; step 2 opens the existing person; step 3 records email consent with method "staff entry" and the reason.
+`P0` `regression` · THE-17 · Status: Verified
+1. "Add lead": first name `E2E {RUN} Lead`, phone only, lead source "Missed call", assigned staff, a tag. 2. Add one with no email and no phone. 3. Add one with an unknown source (API). 4. Add a second lead with an email, then the same email again.
+**Expect:** step 1 creates the lead in the first stage (New) with that source, staff and tag; steps 2 and 3 are refused ("An email address or a phone number is required"); step 4's repeat is refused and names the existing person.
 
-### MKT-11 · Lead status: contacted, lost, reopened
-`P1` `regression` · Spec 48 R2 · Status: Blocked (spec 48 task 2)
-1. Send a message to a New lead from the row action. 2. Close another lead as Lost without a reason. 3. Close it with reason "Price". 4. Reopen it.
-**Expect:** the first lead becomes Contacted with the date; step 2 is refused; after step 3 the lead leaves the open list and appears under Lost with the reason; after step 4 it is Contacted again; there is no way to add a custom status.
-**Cross-check:** every change is on the person's Timeline; the lead stays at stage "lead" in People while Lost.
+### MKT-11 · Change stage and assigned staff in the row
+`P0` `regression` · THE-17 · Status: Verified
+1. In the lead's row, change the lead stage to Contacted and the assigned staff to Unassigned. 2. As a provider (no right to edit people), try the same through the API. 3. Open the lead's Timeline, filter Lifecycle.
+**Expect:** both changes save at once from the row; step 2 is refused (403); the Timeline shows "Lead stage: New → Contacted" with who made it. Tags are added and removed in the row in the same way.
 
 ### MKT-12 · Follow-up due
 `P1` `regression` · Spec 48 R4 · As: manager · Status: Blocked (spec 48 task 3)
@@ -128,3 +127,14 @@ Written from the draft spec on 2026-10-12, before the feature exists. All are `B
 1. Open the lead report for today. 2. Break down by source. 3. Export.
 **Expect:** new, converted, conversion rate, open and lost-by-reason match a hand count of this run's E2E leads; the funnel reads created → contacted → converted; revenue is shown as currency.
 **Cross-check:** the converted lead's revenue equals their payments in `/payments`.
+
+### MKT-21 · Lead stages under Settings
+`P0` `regression` · THE-17 · Status: Verified
+1. From Marketing → Leads follow "Lead stages (Settings)". 2. Read the stages of a new business. 3. Add `E2E {RUN} Qualified`, add it again in lower case, rename it, move it up. 4. As a provider, try to add a stage (API). 5. Put a lead in the new stage and delete the stage. 6. Delete stages until one is left.
+**Expect:** step 1 opens Settings on the Leads tab; a business starts with New, Contacted, Interested, Trial booked, Lost; the duplicate name is refused; rename and order are saved; step 4 is refused (403); step 5 asks which stage its leads move to and moves them there; the last stage cannot be deleted.
+**Cross-check:** each lead moved in step 5 has a Timeline line naming the deleted stage.
+
+### MKT-22 · Delete lead and restore it
+`P0` `regression` · THE-17 · Status: Verified
+1. In a lead's row click "Delete lead"; confirm. 2. Tick "Show deleted leads". 3. Click "Restore"; untick.
+**Expect:** a confirmation is asked first; the lead leaves the list and is listed under deleted leads; after Restore it is back with its stage and source unchanged. Delete lead archives the person (`PUT /v1/customers/:id/archive`); nothing is erased.

@@ -39,6 +39,7 @@ import { prospectsRouter } from './prospects';
 import { themesRouter } from './themes';
 import { widgetRouter } from './widget';
 import { cancellationSettingsRouter } from './cancellation-settings';
+import { leadsRouter } from './leads';
 import { importRouter } from './import';
 import { authLimiter } from '../middleware/rate-limit';
 
@@ -88,6 +89,7 @@ router.use('/v1/themes', themesRouter);
 router.use('/v1/import', importRouter);
 router.use('/v1/widget', widgetRouter);
 router.use('/v1/cancellation-settings', cancellationSettingsRouter);
+router.use('/v1/leads', leadsRouter);
 
 // Query Editor (authentication and authorization handled within the router)
 router.use('/v1/query-editor', queryEditorRouter);

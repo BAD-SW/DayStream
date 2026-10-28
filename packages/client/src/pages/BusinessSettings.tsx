@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
 import { useBusinessSettings } from '../context/BusinessSettingsContext';
 import { useContextManager } from '../context/ContextManager';
 import { ThemeGallery } from './settings/ThemeGallery';
+import { LeadStagesSettings } from './settings/LeadStagesSettings';
 import { ProcessorConfigForm } from '../components/ProcessorConfigForm';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
 import { TabBar } from '../design-system/components/navigation/TabBar';
@@ -11,14 +13,18 @@ import * as payApi from '../api/payments';
 import * as bookingsApi from '../api/bookings';
 import { TIMEZONES } from '../utils/timezones';
 
-type SettingsTab = 'system' | 'lifecycle' | 'processes' | 'notifications' | 'payment-methods' | 'integrations' | 'booking-widget' | 'appearance';
+type SettingsTab = 'system' | 'lifecycle' | 'leads' | 'processes' | 'notifications' | 'payment-methods' | 'integrations' | 'booking-widget' | 'appearance';
 
 export function BusinessSettings() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('system');
+  // The section can be opened by address (e.g. /settings?tab=leads from Marketing → Leads).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTabState] = useState<SettingsTab>(() => (searchParams.get('tab') as SettingsTab) || 'system');
+  const setActiveTab = (tab: SettingsTab) => { setActiveTabState(tab); setSearchParams(tab === 'system' ? {} : { tab }, { replace: true }); };
 
   const tabs: { key: SettingsTab; label: string }[] = [
     { key: 'system', label: 'System' },
     { key: 'lifecycle', label: 'Customer Lifecycle' },
+    { key: 'leads', label: 'Leads' },
     { key: 'processes', label: 'Processes' },
     { key: 'notifications', label: 'Notifications' },
     { key: 'payment-methods', label: 'Payment Methods' },
@@ -33,6 +39,7 @@ export function BusinessSettings() {
       <TabBar aria-label="Settings sections" tabs={tabs} active={activeTab} onChange={setActiveTab} />
       {activeTab === 'system' && <SystemSettings />}
       {activeTab === 'lifecycle' && <LifecycleSettings />}
+      {activeTab === 'leads' && <LeadStagesSettings />}
       {activeTab === 'processes' && <ProcessesSettings />}
       {activeTab === 'notifications' && <NotificationSettings />}
       {activeTab === 'payment-methods' && <PaymentMethodsSettings />}

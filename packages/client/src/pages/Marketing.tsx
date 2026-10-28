@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
 import { TabBar } from '../design-system/components/navigation/TabBar';
 import { ListRow, ListRows, ListRowTitle, ListRowMeta, ListEmpty } from '../design-system/components/data/ListRow';
 import * as marketingApi from '../api/marketing';
+import { Leads } from './Leads';
 import './Marketing.css';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
@@ -13,11 +14,17 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
   active: 'success', paused: 'warning', archived: 'neutral',
 };
 
+type MarketingTab = 'leads' | 'campaigns' | 'sequences';
+
 export function Marketing() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [sequences, setSequences] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'campaigns' | 'sequences'>('campaigns');
+  // Leads is the first section of Marketing (THE-17); the tab is kept in the address.
+  const tabParam = searchParams.get('tab');
+  const activeTab: MarketingTab = tabParam === 'campaigns' || tabParam === 'sequences' ? tabParam : 'leads';
+  const setActiveTab = (tab: MarketingTab) => setSearchParams(tab === 'leads' ? {} : { tab }, { replace: true });
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null);
   const [recipients, setRecipients] = useState<any[]>([]);
   const [selectedSequence, setSelectedSequence] = useState<string | null>(null);
@@ -62,7 +69,9 @@ export function Marketing() {
     } catch { alert('Could not load enrollments'); }
   };
 
-  const tabs = [{ key: 'campaigns' as const, label: 'Campaigns' }, { key: 'sequences' as const, label: 'Sequences' }];
+  const tabs: { key: MarketingTab; label: string }[] = [
+    { key: 'leads', label: 'Leads' }, { key: 'campaigns', label: 'Campaigns' }, { key: 'sequences', label: 'Sequences' },
+  ];
 
   return (
     <div className="mk-page">
@@ -74,6 +83,8 @@ export function Marketing() {
         </>}
       />
       <TabBar aria-label="Marketing sections" tabs={tabs} active={activeTab} onChange={setActiveTab} />
+
+      {activeTab === 'leads' && <Leads />}
 
       {activeTab === 'campaigns' && (
         <ListRows>
