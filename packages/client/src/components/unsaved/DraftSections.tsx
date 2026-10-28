@@ -86,6 +86,10 @@ export function useDraft<T>(id: string, label: string, initial: T, persist: (val
   latest.current = { value, persist };
 
   const load = useCallback((v: T) => { setValue(v); setSaved(v); }, []);
+  /** After a save that went only part of the way: what is stored now, and what is still on screen. */
+  const rebase = useCallback((storedNow: T, onScreen: T) => { setSaved(storedNow); setValue(onScreen); }, []);
+  /** Whether one part of the value differs from what is stored (to mark that field). */
+  const changed = (pick: (v: T) => unknown) => JSON.stringify(pick(value)) !== JSON.stringify(pick(saved));
   const save = useCallback(async () => {
     const out = await latest.current.persist(latest.current.value);
     const stored = (out === undefined ? latest.current.value : out) as T;
@@ -98,7 +102,22 @@ export function useDraft<T>(id: string, label: string, initial: T, persist: (val
   }, [ctx, id, tab, label, dirty, save]);
   useEffect(() => () => ctx?.unregister(id), [ctx, id]);
 
-  return { value, setValue, dirty, load };
+  return { value, setValue, dirty, load, rebase, changed, saved, save };
+}
+
+/** Mark on a changed text field, number, date, time or select. */
+export function fieldMark(changed: boolean): React.CSSProperties {
+  return changed ? { outline: '2px solid var(--color-warning)', outlineOffset: '1px', background: 'var(--color-warning-bg)' } : {};
+}
+
+/** Mark on a changed checkbox or radio button (on a radio group: the newly chosen one). */
+export function checkMark(changed: boolean): React.CSSProperties {
+  return changed ? { outline: '2px solid var(--color-warning)', outlineOffset: '2px' } : {};
+}
+
+/** Mark on the track of a changed on/off switch. */
+export function toggleMark(changed: boolean): React.CSSProperties {
+  return changed ? { boxShadow: '0 0 0 3px var(--color-warning)' } : {};
 }
 
 /** Highlight for a section with unsaved changes. */

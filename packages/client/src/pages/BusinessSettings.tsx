@@ -10,7 +10,7 @@ import { ProcessorConfigForm } from '../components/ProcessorConfigForm';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
 import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
 import { TabBar } from '../design-system/components/navigation/TabBar';
-import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, draftBox, UnsavedTag } from '../components/unsaved/DraftSections';
+import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, draftBox, UnsavedTag, fieldMark, checkMark, toggleMark } from '../components/unsaved/DraftSections';
 import { LeaveGuard } from '../components/unsaved/LeaveGuard';
 import * as payApi from '../api/payments';
 import * as bookingsApi from '../api/bookings';
@@ -18,15 +18,17 @@ import { TIMEZONES } from '../utils/timezones';
 
 type SettingsTab = 'system' | 'lifecycle' | 'leads' | 'processes' | 'notifications' | 'payment-methods' | 'integrations' | 'booking-widget' | 'appearance';
 
-const TABS: { key: SettingsTab; label: string }[] = [
+const TABS: { key: SettingsTab; label: string; separatorBefore?: boolean }[] = [
   { key: 'system', label: 'System' },
   { key: 'lifecycle', label: 'Customer Lifecycle' },
   { key: 'leads', label: 'Leads' },
-  { key: 'processes', label: 'Processes' },
   { key: 'notifications', label: 'Notifications' },
   { key: 'payment-methods', label: 'Payment Methods' },
   { key: 'integrations', label: 'Integrations' },
   { key: 'booking-widget', label: 'Booking Widget' },
+  // Processes and Appearance act straight away with their own buttons (David, 2026-10-28):
+  // they sit apart, after a separator, and are not part of Save changes.
+  { key: 'processes', label: 'Processes', separatorBefore: true },
   { key: 'appearance', label: 'Appearance' },
 ];
 
@@ -61,7 +63,7 @@ function SettingsPage() {
   };
 
   const status = dirty
-    ? <span style={{ color: 'var(--color-warning-dark)' }}>Unsaved changes in {dirtySections.map((s) => s.label).join(', ')}. They are kept only when you press Save changes.</span>
+    ? <span style={{ color: 'var(--color-warning-dark)' }}>You have unsaved changes.</span>
     : result ? <span role={result.ok ? 'status' : 'alert'} style={{ color: result.ok ? 'var(--color-success)' : 'var(--color-error)' }}>{result.text}</span> : null;
 
   return (
@@ -70,8 +72,7 @@ function SettingsPage() {
       <StickyPageTop>
         <PageHeader
           title="Settings"
-          subtitle={status}
-          actions={<Button onClick={save} loading={saving} disabled={!dirty}>Save changes</Button>}
+          actions={<>{status && <span style={{ fontSize: 'var(--font-size-sm)' }}>{status}</span>}<Button onClick={save} loading={saving} disabled={!dirty}>Save changes</Button></>}
         />
         <TabBar aria-label="Settings sections" tabs={TABS.map((t) => ({ ...t, changed: changedTabs.has(t.key) }))} active={activeTab} onChange={setActiveTab} />
       </StickyPageTop>
@@ -142,7 +143,7 @@ function SystemSettings() {
             type="checkbox"
             checked={scheduling.value === 'schedule'}
             onChange={(e) => scheduling.setValue(e.target.checked ? 'schedule' : 'availability')}
-            style={{ width: '18px', height: '18px' }}
+            style={{ width: '18px', height: '18px', ...checkMark(scheduling.dirty) }}
           />
           <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', marginLeft: '8px' }}>
             {scheduling.value === 'schedule' ? 'Enabled' : 'Disabled'}
@@ -207,15 +208,15 @@ function CancellationBlock({ kind, label, initial, businessId }: { kind: 'events
         <p style={settingStyles.settingDesc}>Whether customers can cancel {kind === 'events' ? 'their own event registrations' : 'their own appointments'} online, and until when. Staff can always cancel.</p>
       </div>
       <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
-        <input type="checkbox" checked={enabled} onChange={(e) => set({ enabled: e.target.checked })} style={{ width: '18px', height: '18px' }} />
+        <input type="checkbox" checked={enabled} onChange={(e) => set({ enabled: e.target.checked })} style={{ width: '18px', height: '18px', ...checkMark(draft.changed((v) => v.enabled)) }} />
         Customers can cancel
       </label>
       {enabled && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' as const, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
             Up to
-            <input type="number" min={0} max={unit === 'days' ? 90 : 2160} value={amount} onChange={(e) => set({ amount: Number(e.target.value) })} style={{ ...field, width: '80px' }} aria-label="How long before" />
-            <select value={unit} onChange={(e) => set({ unit: e.target.value as 'hours' | 'days' })} style={field} aria-label="Unit">
+            <input type="number" min={0} max={unit === 'days' ? 90 : 2160} value={amount} onChange={(e) => set({ amount: Number(e.target.value) })} style={{ ...field, width: '80px', ...fieldMark(draft.changed((v) => v.amount)) }} aria-label="How long before" />
+            <select value={unit} onChange={(e) => set({ unit: e.target.value as 'hours' | 'days' })} style={{ ...field, ...fieldMark(draft.changed((v) => v.unit)) }} aria-label="Unit">
               <option value="hours">hours</option>
               <option value="days">days</option>
             </select>
@@ -224,10 +225,10 @@ function CancellationBlock({ kind, label, initial, businessId }: { kind: 'events
           <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
             <span style={{ color: 'var(--color-text-secondary)' }}>When a paid {noun} is cancelled in time, the money goes:</span>
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input type="radio" name={`refund-${kind}`} checked={refundTo === 'card'} onChange={() => set({ refundTo: 'card' })} /> Back to the customer's card (refund)
+              <input type="radio" name={`refund-${kind}`} checked={refundTo === 'card'} onChange={() => set({ refundTo: 'card' })} style={checkMark(draft.changed((v) => v.refundTo) && refundTo === 'card')} /> Back to the customer's card (refund)
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input type="radio" name={`refund-${kind}`} checked={refundTo === 'credit'} onChange={() => set({ refundTo: 'credit' })} /> To the customer's account credit, to use later
+              <input type="radio" name={`refund-${kind}`} checked={refundTo === 'credit'} onChange={() => set({ refundTo: 'credit' })} style={checkMark(draft.changed((v) => v.refundTo) && refundTo === 'credit')} /> To the customer's account credit, to use later
             </label>
           </div>
         </>
@@ -275,7 +276,7 @@ function PayrollFrequencySettings() {
         <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' as const }}>
           <div>
             <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Frequency</label>
-            <select value={draft.value.payFrequency} onChange={(e) => draft.setValue({ ...draft.value, payFrequency: e.target.value })} style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)' }}>
+            <select value={draft.value.payFrequency} onChange={(e) => draft.setValue({ ...draft.value, payFrequency: e.target.value })} style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', ...fieldMark(draft.changed((v) => v.payFrequency)) }}>
               <option value="weekly">Weekly</option>
               <option value="biweekly">Bi-weekly (every 2 weeks)</option>
               <option value="semi_monthly">Semi-monthly (1st & 16th)</option>
@@ -284,7 +285,7 @@ function PayrollFrequencySettings() {
           </div>
           <div>
             <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Period Start Reference Date</label>
-            <input type="date" value={draft.value.startDate} onChange={(e) => draft.setValue({ ...draft.value, startDate: e.target.value })} style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)' }} />
+            <input type="date" value={draft.value.startDate} onChange={(e) => draft.setValue({ ...draft.value, startDate: e.target.value })} style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', ...fieldMark(draft.changed((v) => v.startDate)) }} />
           </div>
         </div>
       </div>
@@ -320,11 +321,11 @@ function CommissionRefundSetting() {
           </p>
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
-          <input type="radio" name="commission-refunds" checked={draft.value} onChange={() => draft.setValue(true)} />
+          <input type="radio" name="commission-refunds" checked={draft.value} onChange={() => draft.setValue(true)} style={checkMark(draft.dirty && draft.value)} />
           Take the commission back
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
-          <input type="radio" name="commission-refunds" checked={!draft.value} onChange={() => draft.setValue(false)} />
+          <input type="radio" name="commission-refunds" checked={!draft.value} onChange={() => draft.setValue(false)} style={checkMark(draft.dirty && !draft.value)} />
           Keep the commission
         </label>
       </div>
@@ -390,7 +391,7 @@ function LifecycleSettings() {
 
       <div style={styles.field}>
         <label style={styles.checkLabel}>
-          <input type="checkbox" checked={config.enabled} onChange={(e) => setConfig({ ...config, enabled: e.target.checked })} />
+          <input type="checkbox" checked={config.enabled} onChange={(e) => setConfig({ ...config, enabled: e.target.checked })} style={checkMark(draft.changed((v) => v.enabled))} />
           <span>Enable automatic lifecycle transitions</span>
         </label>
       </div>
@@ -400,13 +401,13 @@ function LifecycleSettings() {
           <div style={styles.fieldRow}>
             <div style={styles.field}>
               <label style={styles.label}>Days before "Active" → "At Risk"</label>
-              <input style={styles.input} type="number" min={1} value={config.at_risk_days}
+              <input style={{ ...styles.input, ...fieldMark(draft.changed((v) => v.at_risk_days)) }} type="number" min={1} value={config.at_risk_days}
                 onChange={(e) => setConfig({ ...config, at_risk_days: parseInt(e.target.value) || 30 })} />
               <span style={styles.helper}>Customer has no bookings or activity for this many days</span>
             </div>
             <div style={styles.field}>
               <label style={styles.label}>Days before "At Risk" → "Churned"</label>
-              <input style={styles.input} type="number" min={1} value={config.churned_days}
+              <input style={{ ...styles.input, ...fieldMark(draft.changed((v) => v.churned_days)) }} type="number" min={1} value={config.churned_days}
                 onChange={(e) => setConfig({ ...config, churned_days: parseInt(e.target.value) || 60 })} />
               <span style={styles.helper}>Customer remains at-risk with no activity for this many additional days</span>
             </div>
@@ -414,7 +415,7 @@ function LifecycleSettings() {
 
           <div style={styles.field}>
             <label style={styles.label}>Daily evaluation time</label>
-            <input style={styles.input} type="time" value={config.run_time}
+            <input style={{ ...styles.input, ...fieldMark(draft.changed((v) => v.run_time)) }} type="time" value={config.run_time}
               onChange={(e) => setConfig({ ...config, run_time: e.target.value })} />
             <span style={styles.helper}>Time of day when the lifecycle evaluation runs (server timezone)</span>
           </div>
@@ -443,13 +444,9 @@ function ProcessesSettings() {
   const [running, setRunning] = useState(false);
   const [scheduleForm, setScheduleForm] = useState<any>(null);
   const [selectedHistory, setSelectedHistory] = useState<{ type: string; entries: any[] } | null>(null);
-  // Membership Renewals retry parameters (C6.4): max retries + days between, and the reminder.
-  // Loaded with the page so the page's Save covers them.
-  const [retryLoaded, setRetryLoaded] = useState(false);
-  const retryDraft = useDraft<payApi.RenewalRetryParams>('renewals', 'Processes › Membership renewals', { count: 1, intervalDays: 1 } as payApi.RenewalRetryParams,
-    (p) => payApi.saveRenewalRetryParams(businessId, p));
-  const retryParams = retryLoaded ? retryDraft.value : null;
-  const setRetryParams = retryDraft.setValue;
+  // Membership Renewals retry parameters (C6.4): max retries + days between.
+  const [retryParams, setRetryParams] = useState<payApi.RenewalRetryParams | null>(null);
+  const [savingRetry, setSavingRetry] = useState(false);
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
@@ -467,10 +464,21 @@ function ProcessesSettings() {
     }).catch(() => {}).finally(() => setLoading(false));
   }, [businessId]);
 
+  // Load the renewal retry parameters when the Membership Renewals process is expanded.
   useEffect(() => {
-    if (!businessId) return;
-    payApi.getRenewalRetryParams(businessId).then((p) => { retryDraft.load(p); setRetryLoaded(true); }).catch(() => {});
-  }, [businessId, retryDraft.load]);
+    if (expandedProcess !== 'billing_process' || !businessId) return;
+    payApi.getRenewalRetryParams(businessId).then(setRetryParams).catch(() => setRetryParams(null));
+  }, [expandedProcess, businessId]);
+
+  const saveRetryParams = async () => {
+    if (!retryParams || !businessId) return;
+    setSavingRetry(true);
+    try {
+      const saved = await payApi.saveRenewalRetryParams(businessId, retryParams);
+      setRetryParams(saved);
+    } catch { /* surfaced inline; keep the entered values */ }
+    finally { setSavingRetry(false); }
+  };
 
   const getJobForType = (type: string) => jobs.find((j: any) => j.job_type === type);
 
@@ -562,7 +570,6 @@ function ProcessesSettings() {
                 onClick={() => setExpandedProcess(isExpanded ? null : proc.type)}>
                 <div>
                   <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{proc.label}</span>
-                  {proc.type === 'billing_process' && <UnsavedTag dirty={retryDraft.dirty} />}
                   <span style={{ marginLeft: '12px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{proc.description}</span>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
@@ -701,8 +708,7 @@ function ProcessesSettings() {
 
                   {/* Failed-renewal retry parameters (C6.4) — only for Membership Renewals. */}
                   {proc.type === 'billing_process' && retryParams && (
-                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed var(--color-border)', display: 'flex', flexDirection: 'column', gap: '16px', ...draftBox(retryDraft.dirty) }}>
-                      <UnsavedTag dirty={retryDraft.dirty} />
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed var(--color-border)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                       {/* Failed renewal retries — inputs inline to the right of the explanation. */}
                       <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: '240px' }}>
@@ -738,6 +744,15 @@ function ProcessesSettings() {
                         </label>
                       </div>
 
+                      {/* Single Save applies to both sets of parameters above. */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingTop: '4px', borderTop: '1px dashed var(--color-border)' }}>
+                        <button style={{ ...styles.input, maxWidth: 'none', padding: '4px 16px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-primary)' }} onClick={saveRetryParams} disabled={savingRetry}>
+                          {savingRetry ? 'Saving...' : 'Save renewal settings'}
+                        </button>
+                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                          Saves both the retry and reminder settings.
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -840,6 +855,8 @@ function PaymentMethodsSettings() {
         {METHOD_INFO.map((info) => {
           const current = methods.find((m) => m.method === info.method);
           const enabled = current?.enabled ?? !info.integrationOnly;
+          const savedRow = methodsDraft.saved.find((m) => m.method === info.method);
+          const switchChanged = enabled !== (savedRow?.enabled ?? !info.integrationOnly);
           return (
             <div key={info.method} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: enabled ? 'var(--color-surface)' : 'var(--color-background)' }}>
               <div>
@@ -849,7 +866,7 @@ function PaymentMethodsSettings() {
                 {info.method === 'gift_card' && (
                   <>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={gift.tax} onChange={(e) => giftDraft.setValue({ ...gift, tax: e.target.checked })} />
+                      <input type="checkbox" checked={gift.tax} onChange={(e) => giftDraft.setValue({ ...gift, tax: e.target.checked })} style={checkMark(giftDraft.changed((v) => v.tax))} />
                       Apply tax to gift card sales (at the default tax rate) — depends on your jurisdiction
                     </label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', flexWrap: 'wrap' }}>
@@ -860,7 +877,7 @@ function PaymentMethodsSettings() {
                         min={0}
                         value={gift.expiryDays}
                         onChange={(e) => giftDraft.setValue({ ...gift, expiryDays: e.target.value })}
-                        style={{ width: '72px', padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm, 4px)', background: 'var(--color-background)', color: 'var(--color-text)' }}
+                        style={{ width: '72px', padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm, 4px)', background: 'var(--color-background)', color: 'var(--color-text)', ...fieldMark(giftDraft.changed((v) => v.expiryDays)) }}
                       />
                       <span>days from purchase (0 = no expiry) — depends on your jurisdiction</span>
                     </div>
@@ -873,7 +890,7 @@ function PaymentMethodsSettings() {
                 <span style={{
                   position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
                   backgroundColor: enabled ? 'var(--color-primary)' : 'var(--color-border)',
-                  borderRadius: '12px', transition: 'background-color 0.2s',
+                  borderRadius: '12px', transition: 'background-color 0.2s', ...toggleMark(switchChanged),
                 }} />
                 <span style={{
                   position: 'absolute', top: '2px', left: enabled ? '22px' : '2px',
@@ -923,7 +940,7 @@ function InvoicingSetting({ businessId }: { businessId: string }) {
         <span style={{ fontWeight: 600, fontSize: 'var(--font-size-base)', color: 'var(--color-text)' }}>Enable invoicing</span>
         <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px', cursor: 'pointer' }}>
           <input type="checkbox" checked={enabled} onChange={(e) => draft.setValue(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
-          <span style={{ position: 'absolute', inset: 0, backgroundColor: enabled ? 'var(--color-primary)' : 'var(--color-border)', borderRadius: '12px', transition: 'background-color 0.2s' }} />
+          <span style={{ position: 'absolute', inset: 0, backgroundColor: enabled ? 'var(--color-primary)' : 'var(--color-border)', borderRadius: '12px', transition: 'background-color 0.2s', ...toggleMark(draft.dirty) }} />
           <span style={{ position: 'absolute', top: '2px', left: enabled ? '22px' : '2px', width: '20px', height: '20px', backgroundColor: '#fff', borderRadius: '50%', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
         </label>
       </div>
@@ -972,16 +989,16 @@ function BillingRunTimeSetting({ businessId }: { businessId: string }) {
       <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '12px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Run time</label>
-          <input type="time" value={time} onChange={(e) => draft.setValue({ ...draft.value, time: e.target.value })} style={settingInputStyle} />
+          <input type="time" value={time} onChange={(e) => draft.setValue({ ...draft.value, time: e.target.value })} style={{ ...settingInputStyle, ...fieldMark(draft.changed((v) => v.time)) }} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '220px' }}>
           <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Timezone</label>
-          <select value={tz} onChange={(e) => draft.setValue({ ...draft.value, tz: e.target.value })} style={settingInputStyle}>
+          <select value={tz} onChange={(e) => draft.setValue({ ...draft.value, tz: e.target.value })} style={{ ...settingInputStyle, ...fieldMark(draft.changed((v) => v.tz)) }}>
             {TIMEZONES.map((z) => <option key={z.value} value={z.value}>{z.label}</option>)}
           </select>
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
-          <input type="checkbox" checked={enabled} onChange={(e) => draft.setValue({ ...draft.value, enabled: e.target.checked })} /> Enabled
+          <input type="checkbox" checked={enabled} onChange={(e) => draft.setValue({ ...draft.value, enabled: e.target.checked })} style={checkMark(draft.changed((v) => v.enabled))} /> Enabled
         </label>
       </div>
       {schedule?.nextRunAt && (
@@ -1059,11 +1076,11 @@ function BookingWidgetSettings() {
       {loadError && <p role="alert" style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-error, #b42318)' }}>The widget settings could not be loaded.</p>}
 
       <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', margin: 'var(--space-md) 0', color: 'var(--color-text)' }}>
-        <input type="checkbox" checked={enabled} onChange={(e) => set({ enabled: e.target.checked })} />
+        <input type="checkbox" checked={enabled} onChange={(e) => set({ enabled: e.target.checked })} style={checkMark(draft.changed((v) => v.enabled))} />
         Booking widget is on
       </label>
       <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', margin: 'var(--space-md) 0', color: 'var(--color-text)' }}>
-        <input type="checkbox" checked={requirePayment} onChange={(e) => set({ requirePayment: e.target.checked })} />
+        <input type="checkbox" checked={requirePayment} onChange={(e) => set({ requirePayment: e.target.checked })} style={checkMark(draft.changed((v) => v.requirePayment))} />
         A booking is confirmed only after it is paid
       </label>
 
@@ -1074,7 +1091,7 @@ function BookingWidgetSettings() {
         <textarea
           id="widget-origins" rows={3} value={origins} onChange={(e) => set({ origins: e.target.value })}
           placeholder="https://www.example.com"
-          style={{ width: '100%', maxWidth: '520px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' }}
+          style={{ width: '100%', maxWidth: '520px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', ...fieldMark(draft.changed((v) => v.origins)) }}
         />
         <p style={styles.muted}>One address per line. Leave empty to allow any website.</p>
       </div>
@@ -1108,7 +1125,7 @@ function IntegrationsSettings() {
           payments settle into.
         </p>
         {businessId ? (
-          <ProcessorConfigForm owner={{ owner_level: 'business', business_id: businessId }} />
+          <ProcessorConfigForm owner={{ owner_level: 'business', business_id: businessId }} sharedSave={{ id: 'processor', label: 'Integrations › Payment processor' }} />
         ) : (
           <p style={styles.muted}>Select a business to configure its payment processor.</p>
         )}

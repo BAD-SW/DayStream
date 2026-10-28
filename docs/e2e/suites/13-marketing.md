@@ -131,7 +131,7 @@ MKT-09 to MKT-11, MKT-21 and MKT-22 cover Leads as decided by David on 28 Octobe
 ### MKT-21 · Lead stages under Settings
 `P0` `regression` · THE-17 · Status: Verified
 1. From Marketing → Leads follow "Lead stages (Settings)". 2. Read the stages of a new business. 3. Add `E2E {RUN} Qualified`, add it again in lower case, rename it, move it up. 4. As a provider, try to add a stage (API). 5. Put a lead in the new stage and delete the stage. 6. Delete stages until one is left.
-**Expect:** step 1 opens Settings on the Leads tab; a business starts with New, Contacted, Interested, Trial booked, Lost; the duplicate name is refused; rename and order are saved; step 4 is refused (403); step 5 asks which stage its leads move to and moves them there; the last stage cannot be deleted.
+**Expect:** on screen, stage changes wait for Settings → Save changes like every other setting (UIX-12); step 1 opens Settings on the Leads tab; a business starts with New, Contacted, Interested, Trial booked, Lost; the duplicate name is refused; rename and order are saved; step 4 is refused (403); step 5 asks which stage its leads move to and moves them there; the last stage cannot be deleted.
 **Cross-check:** each lead moved in step 5 has a Timeline line naming the deleted stage.
 
 ### MKT-22 · Delete lead and restore it
