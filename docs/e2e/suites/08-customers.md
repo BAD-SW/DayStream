@@ -60,7 +60,7 @@ Persona: owner or manager unless stated. Covers spec 05. Customers are the hub t
 **Expect:** Contact opens the Messages tab inside the profile; Add task opens the Tasks tab with the form open; More lists New order, Record payment, Assign staff member, Request password reset, Send personal data (GDPR), Archive (or Reactivate) and GDPR anonymise, each on one line, the last two in red; New order opens the checkout with this person already chosen; Request password reset is disabled without an account; each change shows on the Timeline.
 
 ### CUS-11 · Import customers from CSV
-`P1` `regression` · Spec 05 R8, R14 · Status: Verified
+`P1` `regression` · Spec 05 R8, R14 · Status: Retired (2026-10-28): Bill `0921f79` removed the import from People; customer import is now Business Setup → Data Migration, covered by SET-17 and SET-18
 1. At `/customers/import` upload a CSV of 5 rows: 3 valid, 1 with a bad email, 1 duplicating an existing email. Validate, then import.
 **Expect:** validation lists the two problem rows with reasons before anything is written; the import creates exactly the valid rows and reports created / skipped counts.
 **Cross-check:** imported customers appear in search with the right fields (including accented characters).
@@ -229,3 +229,8 @@ The field is labelled **Staff member** everywhere (profile facts, Contact Inform
 `P2` `regression` · Linear THE-16 · As: owner, another organisation · Status: Verified
 1. Open the Overview of a person with a referral code, a referred person and a review.
 **Expect:** the Referrals card shows the code, who referred them and the people they referred with their stage; the Reviews card shows the reviews they wrote with stars and service; another organisation is refused.
+
+### CUS-39 · New Customer email
+`P1` `regression` · Bill `63fda1d` · As: owner · Status: Verified
+1. Add a person with an email. 2. Add the same person again. 3. Add a person without an email.
+**Expect:** the first gets one "New Customer" email (template Business Setup → Templates → New Customer); adding the same person again is refused as a duplicate and sends nothing; no email without an address. Imported people never get it (SET-18).

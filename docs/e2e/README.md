@@ -1,8 +1,8 @@
 # DayStream — End-to-End Test Book
 
 **Owner:** Claude (maintained in every working session) · **Created:** 2026-10-12
-**Synced through commit:** `d5c57bf` (fix(email): populate Appointment template customer + appointment tokens): accounting hardening, bank-draw reconciliation, and billing UX)
-**Script count:** 329 across 18 suites · **Verified by execution:** 240 · **Failing:** 0 · **Blocked:** 32 (specs 47–48 not built, sequence builder, API keys) · **Draft (not yet run, or only partly):** 39: run 20261012-6 covered suites 00 and 02 to 16; the journeys (suite 01) were not run as sequences, and the remaining drafts are mostly on-screen checks
+**Synced through commit:** `619bef3` (Bill, 2026-10-28: data migration Wave 1, gift-card expiry, renewals without a card, New Customer email, prospects background generation), merged locally as `bf80267`
+**Script count:** 338 across 18 suites · **Verified by execution:** 245 · **Failing:** 1 (SET-18, D-57) · **Retired:** 1 (CUS-11) · **Blocked:** 32 (specs 47–48 not built, sequence builder, API keys) · **Draft (not yet run, or only partly):** 39: run 20261012-6 covered suites 00 and 02 to 16; the journeys (suite 01) were not run as sequences, and the remaining drafts are mostly on-screen checks
 
 This is the living end-to-end (E2E) regression book for DayStream. It exists for two goals:
 
@@ -34,14 +34,14 @@ Every run ends with a report in chat and a new entry in [RUN-LOG.md](./RUN-LOG.m
 | 00 | [Preflight & smoke](./suites/00-preflight-smoke.md) | PRE, SMK | 20 | 00, 03 |
 | 01 | [Cross-module journeys](./suites/01-journeys.md) | JNY | 16 | all |
 | 02 | [Auth, access & isolation](./suites/02-auth-access.md) | AUTH | 21 | 02, 03, 29 |
-| 03 | [System admin](./suites/03-system-admin.md) | SYS | 18 | 03, 24, 31, 37 |
+| 03 | [System admin](./suites/03-system-admin.md) | SYS | 19 | 03, 24, 31, 37 |
 | 04 | [Tenant admin](./suites/04-tenant-admin.md) | TEN | 12 | 03, 31, 35-reporting |
 | 05 | [Billing layers A & B](./suites/05-billing-layers.md) | BILL | 16 | 10 (0, A, B) |
-| 06 | [Business setup, schedule & time clock](./suites/06-business-setup.md) | SET | 16 | 12, 13 |
+| 06 | [Business setup, schedule, time clock & data migration](./suites/06-business-setup.md) | SET | 20 | 12, 13, 50 |
 | 07 | [Offerings & pricing](./suites/07-offerings.md) | OFF | 15 | 06, 08, 09, 28 |
-| 08 | [People (CRM)](./suites/08-customers.md) | CUS | 38 | 05, 46 |
-| 09 | [Bookings, calendar & check-in](./suites/09-bookings-calendar.md) | BKG, CHK | 26 | 07, 15, 32, 33, 34 |
-| 10 | [Checkout & customer payments](./suites/10-checkout-payments.md) | PAY | 24 | 10 (C), 26, 28 |
+| 08 | [People (CRM)](./suites/08-customers.md) | CUS | 39 | 05, 46 |
+| 09 | [Bookings, calendar & check-in](./suites/09-bookings-calendar.md) | BKG, CHK | 27 | 07, 15, 32, 33, 34 |
+| 10 | [Checkout & customer payments](./suites/10-checkout-payments.md) | PAY | 26 | 10 (C), 26, 28 |
 | 11 | [Accounting & payroll](./suites/11-accounting-payroll.md) | ACC | 14 | 11 |
 | 12 | [Reports](./suites/12-reports.md) | REP | 11 | 17, 35-reporting |
 | 13 | [Marketing & leads](./suites/13-marketing.md) | MKT | 20 | 16, 48 |
@@ -190,6 +190,7 @@ How scripts are driven: UI steps through the browser, as the named persona; `Cro
 | 47 inbox | 17, 01 | Draft spec; not built. INB-01 to INB-15 run on the mock message adapter. Adds the Front Desk role (INB-13) |
 | 48 marketing-module | 13, 01 | Draft spec; not built. MKT-09 to MKT-20 |
 | 49 custom-lead-stages | — | Requirements only, not scheduled. Scripts are added when the phase is picked up |
+| 50 data-migration | 06, 08 | Wave 1 built (customers, payment methods, account balances): SET-17 to SET-20. Waves 2 and 3 (memberships, packages, appointments, transactions) not built |
 
 ---
 
@@ -221,6 +222,7 @@ The change is not done until the scripts that cover it are added or updated, and
 | `pages/Tenant*`, `tenant.service.ts` | 04 |
 | `platform-billing*`, `tenant-billing*`, `payments/*` adapters, `processor-config*`, `payment-methods*`, `jobs/*` | 05, 10, JNY-09, JNY-10 |
 | `routes/staff.ts`, `resources.ts`, `locations.ts`, `schedule.ts`, `clock.ts` and their pages | 06, 09 |
+| `routes/import.ts`, `services/migration/*`, `pages/settings/DataMigration.tsx` | 06, 08, 10 |
 | `routes/services.ts`, `merchandise.ts`, `packages.ts`, `promotions.ts`, `memberships.ts`, `pricing.ts` and their pages | 07, 09, 10 |
 | `routes/customers.ts`, `customer-profile.ts`, `segments.ts`, `customer-portal.ts`, `pages/Customer*`, `CustomerProfileParts`, `PersonalDataDownload`, `person-identity*`, `contactability*`, `consent*`, `customer-duplicates*` | 08, 10, 13, 17, JNY-15 |
 | role seeds (`seed.ts`, `seed-config.sql`, `tenant.service.ts` roles, role migrations) | 02, 17 (INB-13), and the role table in section 4 |
@@ -247,7 +249,7 @@ When in doubt, run more: any change to shared layout, auth, or migrations trigge
 | KI-1 | Availability for resource-type services with **no staff assigned** has a pre-existing bug in the staff-list handling (`availability.service.ts`) | BKG-08 tagged `known-issue` |
 | KI-2 | Stale active context in `sessionStorage` can show the wrong business (Linear THE-13) | Workaround in section 4; AUTH-12 watches for it |
 | KI-3 | Spec 10 task 2.3 / 3.2 / 5.1: net-collections feed (C → B → A) not built, so percentage-based platform and tenant billing computes on zero | BILL-05 and BILL-12 assert the flat part only; JNY-10 is `Blocked` until 5.1 lands |
-| KI-4 | Spec 10 Phase 7: `/pay/methods` routes are context-scoped without an explicit permission check; payment-method add/remove is not audited | AUTH-16 records current behaviour; tighten when Phase 7 lands |
+| KI-4 | Spec 10 Phase 7: `/pay/methods` routes are context-scoped without an explicit permission check. (Auditing of add / default / remove landed in Bill `13618b7`: PAY-05) | AUTH-16 records current behaviour; tighten when Phase 7 lands |
 | KI-5 | Spec 10 task 3.6 and 4.11 checkpoints (tenant billing, customer payments) are not yet validated by Bill | Suites 05 and 10 are the first full pass over this code: expect findings |
 | KI-6 | Businesses created after migration 045 have no default accepted payment methods (spec 10 task 1.6 follow-up) | PAY-01 checks and reports it |
 | KI-7 | Apple Pay cannot render on `http://localhost`; Google Pay needs a wallet-enabled browser | Wallet capture is not scripted locally |
@@ -260,6 +262,7 @@ When in doubt, run more: any change to shared layout, auth, or migrations trigge
 | KI-14 | Fixed by the spec 46 work (2026-10-12): **D-14** lead form submissions now create a lead in a business; **D-15** merging moves everything that points at the person and keeps the second record as `merged`; **D-16** consent has one store with a history. Also fixed: sending a campaign made every active person of the whole tenant a recipient, ignoring segment and consent (it now needs a segment and respects consent); customer reference numbers failed once a `CUS-…` style reference existed. Found by the browser check (run 20261012-4) and fixed: **D-17** a refused "add person" (already exists) silently filled in the existing person's details; **D-18** after a merge the profile form showed stale values as unsaved changes, so Save would have wiped merged details; **D-19** date of birth never showed in the profile form and moved back a day on each save when the server is not in UTC; **D-20** the consent reason was asked through a browser pop-up (now an inline field). Fixed in run 20261012-5: **D-21** the profile's Financial Summary showed fixed "$0.00 / Good" placeholders; it now shows balance due, lifetime value and account credit in the business currency. **D-22** a campaign could not be given an audience from the screen (the form had no segment picker, and sending needs one); the form now has an audience picker with a "who will receive it" line | CUS-13, CUS-18, CUS-21, CUS-23 and MKT-07 exercise these. Merge behaviour to expect: the second record is kept with status `merged` and old links redirect; staff switching marketing consent on must give a reason; a campaign needs a segment |
 | KI-15 | `packages/shared` is consumed by the server from its built `dist/`, which is not in git | After every pull that touches `packages/shared`, run `npm run build -w packages/shared` before starting the app or the tests |
 | KI-17 | Found in run 20261020-1. Resolved in run 20261022-1. **D-44**: refunded sales in the sales reports fixed in run 20261020-3 (option A); the Commissions report and payroll now follow the business setting "Commission after a refund" (THE-21, default: take it back in the pay period of the refund). **D-45**: customers now have their own Events screens (THE-20, option a) | REP-10, REP-11, EVT-06 to EVT-13 |
+| KI-18 | **D-57** (Bill's data migration, found 2026-10-28): the header-row check counts only columns whose values look like emails, phones, dates or amounts. A customer file whose columns are mostly text (ids, names, tags, notes) is taken as having no header row, so no column is matched until the owner ticks "has a header". Waiting for a decision: fix here or leave to Bill | SET-18 `Failing` on that one check |
 | KI-16 | People created before migration 136 have no international phone number stored, so they cannot be matched by phone | Run `npx tsx scripts/backfill-phone-e164.ts` in `packages/server` once per database (done locally on 2026-10-12; still to do on Render) |
 
 Gaps in the test approach itself:
@@ -291,3 +294,4 @@ Gaps in the test approach itself:
 | 2026-10-22 | after `90909b6` | Customer events and self-cancellation (Linear THE-20, migration 157) and commission after a refund (THE-21, migration 158): EVT-06 to EVT-13, BKG-21 and REP-11 added; EVT-02 and REP-10 updated. Run 20261022-1 (fresh organisation): all suites pass; D-53 to D-56 fixed; OFF-06, REP-10 and EVT-10 runner corrections. KI-17 resolved |
 | 2026-10-22 | after `fc0defe` | First-time-customer tickets offered (David); "custom" never offered; event emails (EVT-14); the "From" price is the lowest ticket open to the customer (approved canvas). EVT-06, EVT-07, EVT-13 updated. Runner: EVT-13's second business is archived after use. Run 20261022-1 addendum |
 | 2026-10-22 | after `61690c8` | One place per person per event (David): EVT-15 added; `rcev` passes (12 scripts), suite 15 and unit tests (983) pass |
+| 2026-10-28 | after `ac0ba19` | Pulled Bill `d5c57bf..619bef3` (merge `bf80267`). Added SET-17 to SET-20 (data migration), CUS-39 (New Customer email), BKG-22 (cancellation email fields), PAY-25 (gift-card expiry), PAY-26 (retry with another card, draft), SYS-19 (Google usage, draft). Updated PAY-05 (audit), PAY-16 (no card → dunning; billing window drives retries to expiry; Expired in the report), PAY-23, PAY-24, SYS-15. Retired CUS-11. D-57 found (KI-18). Runners' fixed dates made relative to next week. Run 20261028-3: all pass except SET-18 (D-57) |

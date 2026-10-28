@@ -31,6 +31,22 @@ What was not cleaned up, if anything.
 
 ## Runs
 
+## Run 20261028-3 — full, fresh organisation, after pulling Bill's work
+- Commit: `bf80267` (merge of Bill `619bef3` into `ac0ba19`) · Migrations at: 158 (Bill's 156 gift-card expiry and 157 data migration applied) · Processor mode: mock (and the Stripe test connection already set up)
+- Scope: every runner (r00 to r15, Bill's checks, profile, refunds, customer events, Bill's 2026-10-28 checks `rbill3`, sweep, routes). Unit tests: server 1000 of 1000. Type check: server 0, client 30 (unchanged)
+- Result: all pass except **SET-18** (one check): **D-57**, Bill's import takes a mostly-text customer file as having no header row (KI-18). Product defect, left failing until David decides who fixes it
+
+### Runs 20261028-1 and 20261028-2 (discarded: script dates)
+- Many runners had fixed dates in the week of Monday 2026-10-26, now in the past, so slots, bookings and everything built on them failed (OFF-07, BKG-01 to 03, payroll, events…). Verdict: script wrong. The runners now take those dates shifted by whole weeks to next week (`D()` in `e2e.cjs`, same weekday and spacing) and turn Madrid local times into instants with the right summer/winter offset (`madrid()`)
+- Run 2 crashed in the People runner, where the date change had landed inside a database query; fixed, and the run repeated from scratch as run 3
+
+### Script corrections made after run 3
+| Script | What changed and why |
+|---|---|
+| BKG-12 | The iCal check still held the date 2026-10-30; it now uses the shifted Friday. Checked against the iCal file of run 3 (DTSTART 16:00 UTC = 17:00 Madrid): passes |
+| CUS-33 | Failed in the run because its email waited behind the queue (the New Customer email of every created person now adds to it); passed when run again |
+| CUS-11 | Retired: its runner checks are kept as notes only (CUS-24 still uses the old import API) |
+
 ## Run 20261022-1 addendum — first-time tickets and event emails
 - Scope: `rcev` (EVT-06 to EVT-14, BKG-21, REP-11), then suites 10, 12, 15, Bill's checks, CUS-29 to CUS-38 and REP-10 again. Unit tests: server 983 of 983. Type check: server 0, client 30
 - Result: all pass. Two failures on the way were test data, not the product:
