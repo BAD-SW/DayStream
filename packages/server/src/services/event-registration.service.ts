@@ -50,7 +50,7 @@ export async function registerForEvent(
 
     // Check event capacity
     const { rows: eventRows } = await client.query(
-      `SELECT e.*, e.tenant_id FROM evt_events e WHERE e.id = $1 AND e.status = 'published' FOR UPDATE`,
+      `SELECT e.*, e.tenant_id FROM evt_events e WHERE e.id = $1 AND e.status = 'published' AND e.deleted_at IS NULL FOR UPDATE`,
       [eventId],
     );
     if (eventRows.length === 0) throw new Error('Event not found or not open for registration');

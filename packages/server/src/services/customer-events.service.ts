@@ -218,7 +218,7 @@ function registrationView(r: any, event: { start_time: string }, settings: Await
 /** Upcoming published events of the organisation, with the customer's own status. */
 export async function listForCustomer(tenantId: string, customerIds: string[]) {
   await releaseExpiredOnlineHolds();
-  const events = await eventRows(`e.tenant_id = $1 AND e.status = 'published' AND e.start_time > NOW()`, [tenantId]);
+  const events = await eventRows(`e.tenant_id = $1 AND e.status = 'published' AND e.start_time > NOW() AND e.deleted_at IS NULL`, [tenantId]);
   const tiers = await tiersOf(events.map((e) => e.id));
   const { regs, waits } = await myRegistrations(customerIds, events.map((e) => e.id));
   const standing = new Map<string, Standing>();
@@ -238,7 +238,7 @@ export async function listForCustomer(tenantId: string, customerIds: string[]) {
 /** One event as a customer sees it: tickets they can choose, totals with tax, and their own registration. */
 export async function eventForCustomer(tenantId: string, eventId: string, customerIds: string[]) {
   await releaseExpiredOnlineHolds(eventId);
-  const [e] = await eventRows(`e.tenant_id = $1 AND e.id = $2 AND e.status IN ('published', 'completed', 'cancelled')`, [tenantId, eventId]);
+  const [e] = await eventRows(`e.tenant_id = $1 AND e.id = $2 AND e.status IN ('published', 'completed', 'cancelled') AND e.deleted_at IS NULL`, [tenantId, eventId]);
   if (!e) throw new CustomerEventError('Event not found', 404, 'NOT_FOUND');
   const tiers = await tiersOf([e.id]);
   const who = await standingAt(customerIds, e.host_business_id);

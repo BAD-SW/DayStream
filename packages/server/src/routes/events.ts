@@ -52,7 +52,7 @@ eventsRouter.get('/calendar/:slug', async (req: Request, res: Response) => {
     const { rows } = await (await import('../db/pool')).adminPool.query(
       `SELECT e.*, et.name AS event_type_name FROM evt_events e
        LEFT JOIN evt_types et ON et.id = e.event_type_id
-       WHERE e.slug = $1 AND e.tenant_id = $2 AND e.status = 'published'`, [req.params.slug, tenantId]);
+       WHERE e.slug = $1 AND e.tenant_id = $2 AND e.status = 'published' AND e.deleted_at IS NULL`, [req.params.slug, tenantId]);
     if (rows.length === 0) { error(res, 'Event not found', 'NOT_FOUND', 404); return; }
     // Load tiers
     const tiers = await ticketsService.getTiers(rows[0].id);
@@ -408,6 +408,7 @@ eventsRouter.get('/', requirePermission('events:read'), async (req: Request, res
       startDate: req.query.start_date as string,
       endDate: req.query.end_date as string,
       search: req.query.search as string,
+      deleted: req.query.deleted === 'true',
       page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
     });
@@ -482,6 +483,27 @@ eventsRouter.put('/:id/cancel', requirePermission('events:*'), async (req: Reque
     const event = await eventService.cancelEvent(req.params.id, authReq.tenantId, authReq.user.sub);
     success(res, event);
   } catch (err: any) { error(res, err.message || 'Failed to cancel', 'VALIDATION_ERROR', 400); }
+});
+
+// Delete = archive, restorable; refused while the event has registrations or a waiting list.
+eventsRouter.delete('/:id', requirePermission('events:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    success(res, await eventService.archiveEvent(req.params.id, authReq.tenantId, authReq.user.sub));
+  } catch (err: any) {
+    if (err instanceof eventService.EventArchiveError) { error(res, err.message, err.code, err.status); return; }
+    console.error('Failed to delete event', err?.message || err); error(res, 'Failed to delete event', 'INTERNAL_ERROR', 500);
+  }
+});
+
+eventsRouter.put('/:id/restore', requirePermission('events:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    success(res, await eventService.restoreEvent(req.params.id, authReq.tenantId, authReq.user.sub));
+  } catch (err: any) {
+    if (err instanceof eventService.EventArchiveError) { error(res, err.message, err.code, err.status); return; }
+    console.error('Failed to restore event', err?.message || err); error(res, 'Failed to restore event', 'INTERNAL_ERROR', 500);
+  }
 });
 
 eventsRouter.put('/:id/complete', requirePermission('events:*'), async (req: Request, res: Response) => {

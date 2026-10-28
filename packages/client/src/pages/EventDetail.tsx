@@ -5,6 +5,8 @@ import { Badge } from '../design-system/components/data/Badge';
 import { ListRow, ListRows, ListRowTitle, ListRowMeta, ListEmpty } from '../design-system/components/data/ListRow';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
 import { TabBar } from '../design-system/components/navigation/TabBar';
+import { ConfirmDialog } from '../design-system/components/feedback/ConfirmDialog';
+import { Alert } from '../design-system/components/feedback/Alert';
 import * as eventsApi from '../api/events';
 import type { Event } from '../api/events';
 import { formatCurrency } from '../utils/currency';
@@ -21,6 +23,8 @@ export function EventDetail() {
   const [event, setEvent] = useState<Event | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('details');
   const [loading, setLoading] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [problem, setProblem] = useState('');
 
   useEffect(() => {
     if (!id) return;
@@ -39,6 +43,17 @@ export function EventDetail() {
 
   const handlePublish = async () => { const e = await eventsApi.publishEvent(event.id); setEvent(e); };
   const handleCancel = async () => { if (confirm('Cancel this event?')) { const e = await eventsApi.cancelEvent(event.id); setEvent(e); } };
+  // Delete archives the event (David, 2026-10-28); it is refused while people are registered or waiting.
+  const handleDelete = async () => {
+    setProblem('');
+    try { await eventsApi.deleteEvent(event.id); navigate('/events'); }
+    catch (err: any) { setProblem(err?.response?.data?.error || 'The event could not be deleted.'); }
+  };
+  const handleRestore = async () => {
+    setProblem('');
+    try { setEvent({ ...event, ...(await eventsApi.restoreEvent(event.id)) }); }
+    catch (err: any) { setProblem(err?.response?.data?.error || 'The event could not be restored.'); }
+  };
 
   return (
     <div>
@@ -49,10 +64,30 @@ export function EventDetail() {
         title={event.title}
         subtitle={`${event.event_type_name} · ${new Date(event.start_time).toLocaleDateString()}`}
         actions={<>
-          {event.status === 'draft' && <Button onClick={handlePublish}>Publish</Button>}
-          {event.status === 'published' && <Button variant="destructive" onClick={handleCancel}>Cancel</Button>}
+          {event.deleted_at ? (
+            <>
+              <Badge variant="error">deleted</Badge>
+              <Button onClick={handleRestore}>Restore</Button>
+            </>
+          ) : (
+            <>
+              {event.status === 'draft' && <Button onClick={handlePublish}>Publish</Button>}
+              {event.status === 'published' && <Button variant="destructive" onClick={handleCancel}>Cancel</Button>}
+              <Button variant="ghost" onClick={() => setConfirmDelete(true)}>Delete event</Button>
+            </>
+          )}
           <Badge variant={event.status === 'published' ? 'success' : event.status === 'cancelled' ? 'error' : 'neutral'}>{event.status}</Badge>
         </>}
+      />
+      {problem && <Alert variant="error">{problem}</Alert>}
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={handleDelete}
+        title="Delete this event?"
+        message="It leaves the event lists and customers no longer see it. You can restore it from Events with Show deleted events."
+        confirmLabel="Delete event"
+        cancelLabel="Keep it"
       />
       <TabBar aria-label="Event sections" tabs={tabs} active={activeTab} onChange={setActiveTab} />
       {activeTab === 'details' && <DetailsTab event={event} />}

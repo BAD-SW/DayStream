@@ -23,6 +23,7 @@ export function Events() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [showDeleted, setShowDeleted] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
 
@@ -31,10 +32,16 @@ export function Events() {
     try {
       const result = await eventsApi.getEvents({
         search: search || undefined, status: statusFilter || undefined, page, limit: 20,
+        deleted: showDeleted ? 'true' : undefined,
       });
       setEvents(result.data); setTotal(result.meta?.total || 0);
     } catch {} finally { setLoading(false); }
-  }, [search, statusFilter, page]);
+  }, [search, statusFilter, page, showDeleted]);
+
+  const restore = async (id: string) => {
+    await eventsApi.restoreEvent(id);
+    await fetchEvents();
+  };
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
@@ -66,8 +73,12 @@ export function Events() {
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
             </select>
+            <label className="ev-check">
+              <input type="checkbox" checked={showDeleted} onChange={(e) => { setShowDeleted(e.target.checked); setPage(1); }} />
+              Show deleted events
+            </label>
           </div>
-          {loading ? <ListEmpty>Loading...</ListEmpty> : events.length === 0 ? <ListEmpty>No events found</ListEmpty> : (
+          {loading ? <ListEmpty>Loading...</ListEmpty> : events.length === 0 ? <ListEmpty>{showDeleted ? 'No deleted events' : 'No events found'}</ListEmpty> : (
             <div className="ev-grid">
               {events.map((ev) => (
                 <div key={ev.id} className="ev-card" role="button" tabIndex={0}
@@ -83,6 +94,11 @@ export function Events() {
                     <div>{ev.registrations_count} / {ev.capacity} registered</div>
                     {ev.location_name && <div>{ev.location_name}</div>}
                   </div>
+                  {ev.deleted_at && (
+                    <div className="ev-card__restore">
+                      <Button size="sm" onClick={(e) => { e.stopPropagation(); restore(ev.id); }}>Restore</Button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

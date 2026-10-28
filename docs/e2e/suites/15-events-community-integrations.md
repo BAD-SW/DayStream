@@ -128,3 +128,8 @@ Covers spec 14 (events and workshops), spec 22 (community), spec 20 (integration
 1. Get the staff iCal feed URL; fetch it. Do the same for the customer feed. 2. Regenerate the token; fetch the old URL.
 **Expect:** valid iCalendar text listing only that person's bookings, with times in the right time zone; the old URL stops working after regeneration.
 **Cross-check:** a single booking's `GET /api/v1/bookings/{id}/ical` matches the same event in the feed.
+
+### EVT-16 · Delete an event and restore it
+`P1` `regression` · David, 2026-10-28 · As: owner, provider · Status: Verified
+1. On an event without registrations click "Delete event"; confirm. 2. On Events tick "Show deleted events"; Restore. 3. Delete an event that has a registration. 4. Cancel it, then delete it. 5. As a provider, delete (API).
+**Expect:** a confirmation first; the event leaves the list and customers' screens and is listed under deleted events; Restore brings it back with its status; step 3 is refused ("This event has 1 registration. Cancel the event first, then delete it."); step 4 works; step 5 is refused (403). Runner: `revdel`.

@@ -1,6 +1,8 @@
 import { apiClient } from './client';
 
 export interface Event {
+  /** Set while the event is deleted (archived); it can be restored. */
+  deleted_at?: string | null;
   id: string; tenant_id: string; event_type_id: string; title: string;
   slug: string; description: string | null; start_time: string; end_time: string;
   location_name: string | null; capacity: number; status: string;
@@ -26,6 +28,13 @@ export async function publishEvent(id: string) {
 }
 export async function cancelEvent(id: string) {
   const res = await apiClient.put(`/v1/events/${id}/cancel`); return res.data.data;
+}
+/** Delete = archive (restorable). Refused while the event has registrations or a waiting list. */
+export async function deleteEvent(id: string): Promise<Event> {
+  const res = await apiClient.delete(`/v1/events/${id}`); return res.data.data;
+}
+export async function restoreEvent(id: string): Promise<Event> {
+  const res = await apiClient.put(`/v1/events/${id}/restore`); return res.data.data;
 }
 export async function getEventTypes() {
   const res = await apiClient.get('/v1/events/types'); return res.data.data;

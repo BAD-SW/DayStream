@@ -35,6 +35,8 @@ interface EventFilters {
   startDate?: string;
   endDate?: string;
   search?: string;
+  /** true: only deleted (archived) events; otherwise deleted events are left out. */
+  deleted?: boolean;
   page?: number;
   limit?: number;
 }
@@ -90,7 +92,7 @@ export async function createEvent(input: CreateEventInput) {
  * List events with filters and pagination.
  */
 export async function getEvents(tenantId: string, filters: EventFilters = {}) {
-  const conditions = ['e.tenant_id = $1'];
+  const conditions = ['e.tenant_id = $1', filters.deleted ? 'e.deleted_at IS NOT NULL' : 'e.deleted_at IS NULL'];
   const params: any[] = [tenantId];
   let idx = 2;
 
@@ -256,6 +258,48 @@ export async function cancelEvent(id: string, tenantId: string, userId: string) 
     resourceId: id,
   });
 
+  return rows[0];
+}
+
+export class EventArchiveError extends Error {
+  constructor(message: string, public status = 400, public code = 'VALIDATION_ERROR') { super(message); }
+}
+
+/**
+ * Delete an event (David, 2026-10-28): it is archived, not erased, and can be restored. Only an
+ * event with no registrations and nobody on its waiting list can be deleted; one that has them
+ * is cancelled first (cancelling cancels its registrations and empties the waiting list).
+ */
+export async function archiveEvent(id: string, tenantId: string, userId: string) {
+  const { rows: ev } = await adminPool.query('SELECT id, deleted_at FROM evt_events WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+  if (!ev[0]) throw new EventArchiveError('Event not found', 404, 'NOT_FOUND');
+  if (ev[0].deleted_at) throw new EventArchiveError('This event is already deleted', 409, 'ALREADY_DELETED');
+  const { rows: [held] } = await adminPool.query(
+    `SELECT (SELECT COUNT(*)::int FROM evt_registrations WHERE event_id = $1 AND status IN ('pending', 'confirmed', 'waitlisted')) AS registrations,
+            (SELECT COUNT(*)::int FROM evt_waitlist WHERE event_id = $1 AND status IN ('waiting', 'notified')) AS waiting`,
+    [id],
+  );
+  if (held.registrations > 0 || held.waiting > 0) {
+    const parts = [held.registrations ? `${held.registrations} ${held.registrations === 1 ? 'registration' : 'registrations'}` : '',
+      held.waiting ? `${held.waiting} on the waiting list` : ''].filter(Boolean).join(' and ');
+    throw new EventArchiveError(`This event has ${parts}. Cancel the event first, then delete it.`, 409, 'HAS_REGISTRATIONS');
+  }
+  const { rows } = await adminPool.query(
+    'UPDATE evt_events SET deleted_at = NOW(), deleted_by = $3, updated_at = NOW() WHERE id = $1 AND tenant_id = $2 RETURNING *',
+    [id, tenantId, userId],
+  );
+  await logAudit({ tenantId, userId, action: 'event.deleted', resourceType: 'event', resourceId: id });
+  return rows[0];
+}
+
+/** Bring a deleted event back, with the status it had. */
+export async function restoreEvent(id: string, tenantId: string, userId: string) {
+  const { rows } = await adminPool.query(
+    'UPDATE evt_events SET deleted_at = NULL, deleted_by = NULL, updated_at = NOW() WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NOT NULL RETURNING *',
+    [id, tenantId],
+  );
+  if (!rows[0]) throw new EventArchiveError('Deleted event not found', 404, 'NOT_FOUND');
+  await logAudit({ tenantId, userId, action: 'event.restored', resourceType: 'event', resourceId: id });
   return rows[0];
 }
 
