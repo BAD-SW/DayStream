@@ -6,7 +6,7 @@ import { ListRow, ListRows, ListRowTitle, ListRowMeta, ListEmpty } from '../desi
 import { PageHeader } from '../design-system/components/layout/PageHeader';
 import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
 import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, useDraftList, fieldMark, draftBox, UnsavedTag, RowTag } from '../components/unsaved/DraftSections';
-import { LeaveGuard } from '../components/unsaved/LeaveGuard';
+import { LeaveGuard, confirmLeave } from '../components/unsaved/LeaveGuard';
 import { TabBar } from '../design-system/components/navigation/TabBar';
 import { ConfirmDialog } from '../design-system/components/feedback/ConfirmDialog';
 import { Alert } from '../design-system/components/feedback/Alert';
@@ -106,7 +106,7 @@ function EventDetailPage() {
       <LeaveGuard when={dirty} />
       <StickyPageTop>
       <div className="evd-back">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/events')}>← Back</Button>
+        <Button variant="ghost" size="sm" onClick={() => confirmLeave(() => navigate('/events'))}>← Back</Button>
       </div>
       <PageHeader
         title={event.title}

@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { TabBar } from '../design-system/components/navigation/TabBar';
 import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
-import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, fieldMark, draftBox, UnsavedTag } from '../components/unsaved/DraftSections';
-import { LeaveGuard } from '../components/unsaved/LeaveGuard';
+import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, fieldMark, checkMark, draftBox, UnsavedTag, RowTag } from '../components/unsaved/DraftSections';
+import { LeaveGuard, useGuardedNavigate } from '../components/unsaved/LeaveGuard';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import { Dropdown } from '../design-system/components/actions/Dropdown';
@@ -61,6 +61,8 @@ export function CustomerDetail() {
 function CustomerProfilePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  // Leaving the profile from a button asks first too when something is unsaved.
+  const guardedNavigate = useGuardedNavigate();
   const [customer, setCustomer] = useState<Customer | null>(null);
   // Bumped after a merge so the edit form restarts from the merged record instead of
   // showing its old values as "unsaved changes".
@@ -118,17 +120,6 @@ function CustomerProfilePage() {
 
   // Switching a marketing channel ON records the person's consent, so the Consent tab
   // sends how it was obtained as `evidence`.
-  const handlePreferenceChange = async (key: string, value: boolean, evidence?: string) => {
-    const payload: Record<string, any> = { [key]: value };
-    if (evidence) payload.evidence = evidence;
-    try {
-      const updated = await customersApi.updatePreferences(customer.id, businessId, payload);
-      setPreferences(updated);
-    } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to update preferences');
-    }
-  };
-
   const displayName = customer.display_name || `${customer.first_name} ${customer.last_name}`.trim() || customer.email || customer.phone || 'Unknown';
   const initials = `${(customer.first_name || displayName)[0]?.toUpperCase() || ''}${customer.last_name?.[0]?.toUpperCase() || ''}`;
   // Reload the person (and the Timeline) after an action changed something on them.
@@ -173,10 +164,10 @@ function CustomerProfilePage() {
 
   // Header actions: Contact opens Messages, Add task opens the task form; the rest are in More.
   const moreItems = [
-    { id: 'order', label: 'New order', onClick: () => navigate(`/checkout?new=true&customer=${customer.id}`) },
+    { id: 'order', label: 'New order', onClick: () => guardedNavigate(`/checkout?new=true&customer=${customer.id}`) },
     { id: 'payment', label: 'Record payment', onClick: () => setDialog('payment') },
     { id: 'd1', label: '', divider: true },
-    { id: 'assign', label: 'Assign staff member', onClick: () => setDialog('assign') },
+    { id: 'assign', label: 'Assign staff member', onClick: () => { setTab('overview'); setTimeout(() => document.getElementById('f-staff')?.focus(), 50); } },
     { id: 'reset', label: 'Request password reset', disabled: !customer.has_account, onClick: () => setDialog('reset') },
     { id: 'data', label: 'Send personal data (GDPR)', disabled: !customer.email, onClick: () => setDialog('data') },
     { id: 'd2', label: '', divider: true },
@@ -205,7 +196,7 @@ function CustomerProfilePage() {
 
       <LeaveGuard when={dirty} />
       {/* Back button */}
-      <button style={styles.back} onClick={() => navigate('/customers')}>← Back to People</button>
+      <button style={styles.back} onClick={() => guardedNavigate('/customers')}>← Back to People</button>
 
       <StickyPageTop>
       {/* Profile header: who, the actions, and the facts on one line (THE-16) */}
@@ -258,10 +249,10 @@ function CustomerProfilePage() {
       {tab === 'messages' && <MessagesTab customer={customer} />}
       {tab === 'timeline' && <TimelineTab key={timelineVersion} customerId={customer.id} businessId={businessId} />}
       {tab === 'billing' && <BillingTab customerId={customer.id} businessId={businessId} />}
-      {tab === 'notes' && <NotesTab notes={notes} customerId={customer.id} businessId={businessId} onRefresh={(n) => setNotes(n)} />}
-      <div hidden={tab !== 'tasks'}><TasksTab customer={customer} businessId={businessId} staff={staff} addSignal={addTaskSignal} /></div>
-      {tab === 'documents' && <DocumentsTab customerId={customer.id} businessId={businessId} />}
-      {tab === 'preferences' && <PreferencesTab preferences={preferences} onChange={handlePreferenceChange} customerId={customer.id} businessId={businessId} />}
+      <div hidden={tab !== 'notes'}><DraftTab tab="notes"><NotesTab notes={notes} customerId={customer.id} businessId={businessId} onRefresh={(n) => setNotes(n)} /></DraftTab></div>
+      <div hidden={tab !== 'tasks'}><DraftTab tab="tasks"><TasksTab customer={customer} businessId={businessId} staff={staff} addSignal={addTaskSignal} /></DraftTab></div>
+      <div hidden={tab !== 'documents'}><DraftTab tab="documents"><DocumentsTab customerId={customer.id} businessId={businessId} /></DraftTab></div>
+      <div hidden={tab !== 'preferences'}><DraftTab tab="preferences"><PreferencesTab preferences={preferences} onSaved={(prefs) => { setPreferences(prefs); setTimelineVersion((n) => n + 1); }} customerId={customer.id} businessId={businessId} /></DraftTab></div>
     </div>
   );
 }
@@ -498,24 +489,33 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
 
   useEffect(() => { fetchNotes(0); }, [fetchNotes]);
 
-  const handleAddNote = async () => {
-    if (!newNote.trim() || !category) return;
-    await customersApi.createNote(customerId, businessId, { category, content: newNote });
-    setNewNote('');
+  // New notes and deletions wait for the page's Save changes (David, 2026-11-01).
+  type PendingNotes = { added: Array<{ key: string; category: string; content: string }>; removed: string[] };
+  const draft = useDraft<PendingNotes>('profile-notes', 'Notes', { added: [], removed: [] }, async (d) => {
+    const left: PendingNotes = { added: [...d.added], removed: [...d.removed] };
+    try {
+      for (const n of d.added) { await customersApi.createNote(customerId, businessId, { category: n.category, content: n.content }); left.added.shift(); }
+      for (const id of d.removed) { await customersApi.deleteNote(customerId, id, businessId); left.removed.shift(); }
+    } catch (err) { fetchNotes(0); draft.rebase({ added: [], removed: [] }, left); throw err; }
     fetchNotes(0);
+    return { added: [], removed: [] };
+  });
+  const handleAddNote = () => {
+    if (!newNote.trim() || !category) return;
+    draft.setValue({ ...draft.value, added: [{ key: `${Date.now()}`, category, content: newNote.trim() }, ...draft.value.added] });
+    setNewNote('');
   };
-
-  const handleDelete = async (noteId: string) => {
-    if (!confirm('Delete this note? This cannot be undone.')) return;
-    await customersApi.deleteNote(customerId, noteId, businessId);
-    fetchNotes(offset);
-  };
+  const toggleDelete = (noteId: string) => draft.setValue({
+    ...draft.value,
+    removed: draft.value.removed.includes(noteId) ? draft.value.removed.filter((x) => x !== noteId) : [...draft.value.removed, noteId],
+  });
 
   const totalPages = Math.ceil(total / LIMIT);
   const currentPage = Math.floor(offset / LIMIT) + 1;
 
   return (
-    <div style={styles.tabContent}>
+    <div style={{ ...styles.tabContent, ...draftBox(draft.dirty) }}>
+      <UnsavedTag dirty={draft.dirty} />
       {/* Add note form */}
       <div style={styles.noteForm}>
         <textarea
@@ -555,9 +555,32 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
         <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginLeft: 'auto' }}>{total} note{total !== 1 ? 's' : ''}</span>
       </div>
 
-      {/* Notes list */}
-      {notesList.length === 0 && <p style={styles.empty}>No notes found</p>}
-      {notesList.map((note: any) => (
+      {/* Notes list: new ones first, then the stored ones */}
+      {draft.value.added.map((n) => (
+        <div key={n.key} style={{ ...styles.noteCard, ...fieldMark(true) }}>
+          <div style={styles.noteHeader}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <Badge variant="neutral">{n.category}</Badge>
+              <RowTag>New</RowTag>
+            </div>
+            <button onClick={() => draft.setValue({ ...draft.value, added: draft.value.added.filter((x) => x.key !== n.key) })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 }} title="Remove this new note">×</button>
+          </div>
+          <p style={styles.noteContent}>{n.content}</p>
+        </div>
+      ))}
+      {notesList.length === 0 && draft.value.added.length === 0 && <p style={styles.empty}>No notes found</p>}
+      {notesList.map((note: any) => draft.value.removed.includes(note.id) ? (
+        <div key={note.id} style={{ ...styles.noteCard, opacity: 0.6 }}>
+          <div style={styles.noteHeader}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <Badge variant="neutral">{note.category}</Badge>
+              <RowTag>Deleted when you save</RowTag>
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => toggleDelete(note.id)}>Undo</Button>
+          </div>
+          <p style={{ ...styles.noteContent, textDecoration: 'line-through' }}>{note.content || '(encrypted)'}</p>
+        </div>
+      ) : (
         <div key={note.id} style={styles.noteCard}>
           <div style={styles.noteHeader}>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -566,7 +589,7 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <span style={styles.noteDate}>{new Date(note.created_at).toLocaleDateString()}</span>
-              <button onClick={() => handleDelete(note.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 }} title="Delete note">×</button>
+              <button onClick={() => toggleDelete(note.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 }} title="Delete note">×</button>
             </div>
           </div>
           <p style={styles.noteContent}>{note.content || '(encrypted)'}</p>
@@ -1348,47 +1371,58 @@ function DuplicateBanner({ customer, businessId, onMerged }: { customer: Custome
   );
 }
 
-function PreferencesTab({ preferences, onChange, customerId, businessId }: {
-  preferences: any; onChange: (key: string, val: boolean, evidence?: string) => void; customerId: string; businessId: string;
+const CONSENT_KEYS = ['email_marketing', 'sms_marketing', 'push_notifications', 'booking_reminders', 'transactional_emails'];
+// Marketing needs the person's own agreement: switching it on asks how it was given.
+const needsEvidence = (key: string) => key !== 'booking_reminders' && key !== 'transactional_emails';
+
+function PreferencesTab({ preferences, onSaved, customerId, businessId }: {
+  preferences: any; onSaved: (prefs: any) => void; customerId: string; businessId: string;
 }) {
   const [history, setHistory] = useState<customersApi.ConsentEvent[] | null>(null);
-  // The marketing channel being switched on, waiting for how the consent was given.
-  const [pendingKey, setPendingKey] = useState<string | null>(null);
-  const [evidence, setEvidence] = useState('');
+  const pick = (p: any) => Object.fromEntries(CONSENT_KEYS.map((k) => [k, !!p?.[k]]));
+  // The switches wait for the page's Save changes (David, 2026-11-01); each change is then
+  // recorded in the consent history with its evidence.
+  const draft = useDraft<{ values: Record<string, boolean>; evidence: Record<string, string> }>('profile-consent', 'Consent', { values: pick(preferences), evidence: {} }, async (d) => {
+    const before = pick(preferences);
+    let latest = preferences;
+    for (const key of CONSENT_KEYS) {
+      if (d.values[key] === before[key]) continue;
+      if (d.values[key] && needsEvidence(key) && !(d.evidence[key] || '').trim()) {
+        throw new Error(`say how the person gave consent for ${CONSENT_CHANNEL_LABELS[key] || key}`);
+      }
+      const payload: Record<string, any> = { [key]: d.values[key] };
+      if (d.values[key] && needsEvidence(key)) payload.evidence = d.evidence[key].trim();
+      latest = await customersApi.updatePreferences(customerId, businessId, payload);
+    }
+    onSaved(latest);
+    return { values: pick(latest), evidence: {} };
+  });
+  // Stored values that change elsewhere become the new starting point while nothing is edited here.
+  useEffect(() => { if (!draft.dirty && preferences) draft.load({ values: pick(preferences), evidence: {} }); }, [preferences]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggle = (key: string, checked: boolean) => {
-    if (checked && key !== 'booking_reminders' && key !== 'transactional_emails') { setPendingKey(key); setEvidence(''); return; }
-    setPendingKey(null);
-    onChange(key, checked);
-  };
-  const confirmConsent = () => {
-    if (!pendingKey || !evidence.trim()) return;
-    onChange(pendingKey, true, evidence.trim());
-    setPendingKey(null);
-  };
-  const channelRow = (key: string, label: string) => (
-    <div key={key}>
-      <div style={styles.prefRow}>
-        <span>{label}</span>
-        <input type="checkbox" aria-label={label} checked={!!preferences[key] || pendingKey === key} onChange={(e) => toggle(key, e.target.checked)} style={styles.checkbox} />
-      </div>
-      {pendingKey === key && (
-        <div style={styles.consentEvidence}>
-          <label htmlFor="consent-evidence" style={styles.fieldLabel}>How did this person give their consent?</label>
-          <input
-            id="consent-evidence" autoFocus style={styles.fieldInput} value={evidence}
-            placeholder="For example: ticked the box on the sign-up form"
-            onChange={(e) => setEvidence(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') confirmConsent(); }}
-          />
-          <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end' }}>
-            <Button size="sm" variant="secondary" onClick={() => setPendingKey(null)}>Cancel</Button>
-            <Button size="sm" variant="primary" disabled={!evidence.trim()} onClick={confirmConsent}>Record consent</Button>
-          </div>
+  const toggle = (key: string, checked: boolean) => draft.setValue({ ...draft.value, values: { ...draft.value.values, [key]: checked } });
+  const channelRow = (key: string, label: string) => {
+    const changed = draft.changed((v) => v.values[key]);
+    const asking = changed && draft.value.values[key] && needsEvidence(key);
+    return (
+      <div key={key}>
+        <div style={styles.prefRow}>
+          <span>{label}</span>
+          <input type="checkbox" aria-label={label} checked={!!draft.value.values[key]} onChange={(e) => toggle(key, e.target.checked)} style={{ ...styles.checkbox, ...checkMark(changed) }} />
         </div>
-      )}
-    </div>
-  );
+        {asking && (
+          <div style={styles.consentEvidence}>
+            <label htmlFor={`consent-evidence-${key}`} style={styles.fieldLabel}>How did this person give their consent? (needed to save)</label>
+            <input
+              id={`consent-evidence-${key}`} autoFocus style={{ ...styles.fieldInput, ...fieldMark(true) }} value={draft.value.evidence[key] || ''}
+              placeholder="For example: ticked the box on the sign-up form"
+              onChange={(e) => draft.setValue({ ...draft.value, evidence: { ...draft.value.evidence, [key]: e.target.value } })}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Reload the history whenever a switch changes.
   useEffect(() => {
@@ -1398,7 +1432,8 @@ function PreferencesTab({ preferences, onChange, customerId, businessId }: {
   if (!preferences) return <p style={styles.empty}>Loading preferences...</p>;
 
   return (
-    <div style={styles.tabContent}>
+    <div style={{ ...styles.tabContent, ...draftBox(draft.dirty) }}>
+      <UnsavedTag dirty={draft.dirty} />
       <p style={styles.empty}>
         Marketing needs the person's own agreement, channel by channel. Transactional emails (confirmations, cancellations, receipts and purchases) are on unless the person asks to stop them; when off, none are sent.
       </p>

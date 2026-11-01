@@ -4,7 +4,7 @@ import { Button } from '../design-system/components/actions/Button';
 import { Alert } from '../design-system/components/feedback/Alert';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
 import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
-import { LeaveGuard } from '../components/unsaved/LeaveGuard';
+import { LeaveGuard, confirmLeave } from '../components/unsaved/LeaveGuard';
 import * as eventsApi from '../api/events';
 import { getLocations } from '../api/locations';
 import { getTaxCategories } from '../api/services';
@@ -95,11 +95,11 @@ export function EventCreate() {
       <LeaveGuard when={typed && !loading} />
       <form id="create-event" onSubmit={handleSubmit}>
         <StickyPageTop>
-          <button type="button" style={styles.back} onClick={() => navigate('/events')}>← Events</button>
+          <button type="button" style={styles.back} onClick={() => confirmLeave(() => navigate('/events'))}>← Events</button>
           <PageHeader
             title="Create Event"
             actions={<>
-              <Button type="button" variant="outline" onClick={() => navigate('/events')}>Cancel</Button>
+              <Button type="button" variant="outline" onClick={() => confirmLeave(() => navigate('/events'))}>Cancel</Button>
               <Button type="submit" disabled={loading}>{loading ? 'Creating...' : 'Create Event'}</Button>
             </>}
           />

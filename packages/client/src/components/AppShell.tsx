@@ -1,4 +1,5 @@
 import { ReactNode, useState } from 'react';
+import { confirmLeave } from './unsaved/LeaveGuard';
 import { Link, useLocation } from 'react-router-dom';
 import { icons } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -121,7 +122,7 @@ export function AppShell({ groups, brandTag, children }: AppShellProps) {
                 <span className="app-topbar__name">{fullName}</span>
               </button>
             )}
-            <button type="button" className="app-topbar__signout" onClick={logout}>
+            <button type="button" className="app-topbar__signout" onClick={() => confirmLeave(logout)}>
               <Icon name="LogOut" size="sm" />
               Sign out
             </button>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import { Modal } from '../design-system/components/feedback/Modal';
@@ -6,6 +6,7 @@ import { apiClient } from '../api/client';
 import * as customersApi from '../api/customers';
 import type { Customer } from '../api/customers';
 import { lifecycleStageLabel } from '@daystream/shared';
+import { useDraft, useDraftList, draftBox, UnsavedTag, RowTag } from '../components/unsaved/DraftSections';
 
 /**
  * Parts of the People profile added for Linear THE-16: photo, figures, communication,
@@ -31,9 +32,15 @@ export function ProfilePhoto({ customer, businessId, initials, onChanged }: {
   customer: Customer; businessId: string; initials: string; onChanged: () => void;
 }) {
   const [url, setUrl] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  // The new photo waits for the page's Save changes (David, 2026-11-01).
+  const draft = useDraft<{ file: File | null }>('profile-photo', 'Photo', { file: null }, async (d) => {
+    if (d.file) { await customersApi.uploadPhoto(customer.id, businessId, d.file); onChanged(); }
+    return { file: null };
+  });
+  const preview = useMemo(() => (draft.value.file ? URL.createObjectURL(draft.value.file) : null), [draft.value.file]);
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
   useEffect(() => {
     let objectUrl: string | null = null;
@@ -46,22 +53,22 @@ export function ProfilePhoto({ customer, businessId, initials, onChanged }: {
     return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [customer.id, customer.has_photo, businessId]);
 
-  const pick = async (file?: File | null) => {
+  const pick = (file?: File | null) => {
     if (!file) return;
-    setBusy(true); setMessage(null);
-    try { await customersApi.uploadPhoto(customer.id, businessId, file); onChanged(); }
-    catch (err) { setMessage(errorText(err, 'The photo could not be saved')); }
-    finally { setBusy(false); if (input.current) input.current.value = ''; }
+    setMessage(null);
+    draft.setValue({ file });
+    if (input.current) input.current.value = '';
   };
 
   return (
     <div style={{ position: 'relative', flexShrink: 0 }}>
-      {url
-        ? <img src={url} alt="" style={{ ...parts.avatar, objectFit: 'cover' }} />
+      {preview || url
+        ? <img src={preview || url || ''} alt="" style={{ ...parts.avatar, objectFit: 'cover', ...(draft.dirty ? { outline: '3px solid var(--color-warning)', outlineOffset: '2px' } : {}) }} />
         : <div style={parts.avatar}>{initials}</div>}
+      {draft.dirty && <span style={{ position: 'absolute', top: '100%', left: 0, marginTop: '4px', whiteSpace: 'nowrap' }}><RowTag>New photo · saved with Save changes</RowTag> <button type="button" onClick={() => draft.setValue({ file: null })} style={parts.link}>Undo</button></span>}
       <button
         type="button" title={customer.has_photo ? 'Change photo' : 'Add photo'} aria-label={customer.has_photo ? 'Change photo' : 'Add photo'}
-        onClick={() => input.current?.click()} disabled={busy} style={parts.photoButton}
+        onClick={() => input.current?.click()} style={parts.photoButton}
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></svg>
       </button>
@@ -192,75 +199,85 @@ export function MessagesTab({ customer }: { customer: Customer }) {
 
 // --- Tasks tab ---------------------------------------------------------------------
 
+type TaskItem = customersApi.CustomerTask & { staff_ids?: string[] };
+
 export function TasksTab({ customer, businessId, staff, addSignal }: { customer: Customer; businessId: string; staff: Staff[]; addSignal: number }) {
-  const [tasks, setTasks] = useState<customersApi.CustomerTask[] | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [view, setView] = useState<'open' | 'done'>('open');
   const [adding, setAdding] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  // New tasks, ticks and deletions wait for the page's Save changes (David, 2026-11-01); a
+  // reminder email of a new task is sent when it is saved.
+  const list = useDraftList<TaskItem>('profile-tasks', 'Tasks', {
+    create: (t) => customersApi.createTask(customer.id, businessId, {
+      title: t.title, description: t.description || undefined, due_at: t.due_at, staff_ids: t.staff_ids || [],
+      send_reminder: t.send_reminder, event_id: t.event_id || null,
+    }),
+    update: (t, before) => (t.status !== before.status ? customersApi.setTaskDone(customer.id, businessId, t.id, t.status === 'done') : Promise.resolve(t)),
+    remove: (t) => customersApi.deleteTask(customer.id, businessId, t.id),
+  });
 
-  const load = useCallback(() => {
-    customersApi.getTasks(customer.id, businessId).then(setTasks).catch(() => setTasks([]));
-  }, [customer.id, businessId]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    customersApi.getTasks(customer.id, businessId).then((t) => { list.load(t); setLoaded(true); }).catch(() => { list.load([]); setLoaded(true); });
+  }, [customer.id, businessId, list.load]);
   // The header's Add task button opens the form here.
   useEffect(() => { if (addSignal > 0) setAdding(true); }, [addSignal]);
 
-  const toggle = async (task: customersApi.CustomerTask) => {
-    setMessage(null);
-    try { await customersApi.setTaskDone(customer.id, businessId, task.id, task.status !== 'done'); load(); }
-    catch (err) { setMessage(errorText(err, 'The task could not be updated')); }
-  };
-  const remove = async (task: customersApi.CustomerTask) => {
-    if (!window.confirm(`Delete the task "${task.title}"?`)) return;
-    try { await customersApi.deleteTask(customer.id, businessId, task.id); load(); }
-    catch (err) { setMessage(errorText(err, 'The task could not be deleted')); }
-  };
-
-  const open = (tasks || []).filter((t) => t.status === 'open');
-  const done = (tasks || []).filter((t) => t.status === 'done');
+  const rows = list.rows;
+  const open = rows.filter((r) => r.item.status === 'open');
+  const done = rows.filter((r) => r.item.status === 'done');
   const shown = view === 'open' ? open : done;
-  const overdue = (t: customersApi.CustomerTask) => t.status === 'open' && t.due_at && new Date(t.due_at) < new Date();
+  const overdue = (t: TaskItem) => t.status === 'open' && t.due_at && new Date(t.due_at) < new Date();
 
   return (
     <div style={parts.tabContent}>
-      <AddTaskDialog open={adding} onClose={() => setAdding(false)} customer={customer} businessId={businessId} staff={staff} onCreated={() => { setAdding(false); setView('open'); load(); }} />
-      <div style={parts.card}>
+      <AddTaskDialog open={adding} onClose={() => setAdding(false)} customer={customer} businessId={businessId} staff={staff} onAdd={(t) => { list.add(t); setAdding(false); setView('open'); }} />
+      <div style={{ ...parts.card, ...draftBox(list.dirty) }}>
         <div style={parts.cardHeader}>
-          <div style={{ display: 'flex', gap: 'var(--space-xs)' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-xs)', alignItems: 'center' }}>
             <button type="button" aria-pressed={view === 'open'} onClick={() => setView('open')} style={{ ...parts.filterBtn, ...(view === 'open' ? parts.filterBtnActive : {}) }}>Open {open.length}</button>
             <button type="button" aria-pressed={view === 'done'} onClick={() => setView('done')} style={{ ...parts.filterBtn, ...(view === 'done' ? parts.filterBtnActive : {}) }}>Done {done.length}</button>
+            <UnsavedTag dirty={list.dirty} />
           </div>
           <Button size="sm" onClick={() => setAdding(true)}>Add task</Button>
         </div>
-        {message && <p role="alert" style={{ ...parts.muted, color: 'var(--color-error)' }}>{message}</p>}
-        {tasks === null && <p style={parts.muted}>Loading…</p>}
-        {tasks !== null && shown.length === 0 && <p style={parts.empty}>{view === 'open' ? 'No open tasks.' : 'No finished tasks.'}</p>}
+        {!loaded && <p style={parts.muted}>Loading…</p>}
+        {loaded && shown.length === 0 && <p style={parts.empty}>{view === 'open' ? 'No open tasks.' : 'No finished tasks.'}</p>}
         {shown.length > 0 && (
           <div role="table" aria-label="Tasks">
             <div role="row" style={{ ...parts.taskRow, ...parts.tableHead }}>
               <span role="columnheader" aria-label="Done" /><span role="columnheader">Task</span><span role="columnheader">Due</span><span role="columnheader">Staff</span><span role="columnheader">Reminder</span><span role="columnheader" aria-label="Actions" />
             </div>
-            {shown.map((t) => (
-              <div role="row" key={t.id} style={{ ...parts.taskRow, borderTop: '1px solid var(--color-border)' }}>
-                <span role="cell"><input type="checkbox" aria-label={t.status === 'done' ? `Reopen ${t.title}` : `Mark ${t.title} done`} checked={t.status === 'done'} onChange={() => toggle(t)} style={parts.checkbox} /></span>
-                <span role="cell" style={{ minWidth: 0 }}>
-                  <strong style={{ textDecoration: t.status === 'done' ? 'line-through' : 'none' }}>{t.title}</strong>
-                  {(t.description || t.event_title) && (
-                    <span style={{ ...parts.muted, display: 'block' }}>
-                      {t.event_title ? `For event: ${t.event_title}${t.event_start ? ` · ${formatDate(t.event_start)}` : ''}` : ''}{t.event_title && t.description ? ' · ' : ''}{t.description}
-                    </span>
-                  )}
-                </span>
-                <span role="cell" style={{ fontSize: 'var(--font-size-xs)', color: overdue(t) ? 'var(--color-error)' : 'var(--color-text-secondary)', fontWeight: overdue(t) ? 700 : 400 }}>
-                  {t.due_at ? `${overdue(t) ? 'Overdue · ' : ''}${formatDateTime(t.due_at)}` : '—'}
-                </span>
-                <span role="cell" style={{ fontSize: 'var(--font-size-xs)' }}>{t.staff.map((s) => s.name).join(', ')}</span>
-                <span role="cell" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }} title={t.reminder_skipped_reason || undefined}>
-                  {!t.send_reminder ? '—' : t.reminder_queued_at ? 'Sent' : `Not sent${t.reminder_skipped_reason ? `: ${t.reminder_skipped_reason}` : ''}`}
-                </span>
-                <span role="cell"><button type="button" onClick={() => remove(t)} style={parts.removeBtn} aria-label={`Delete ${t.title}`} title="Delete task">×</button></span>
-              </div>
-            ))}
+            {shown.map((r) => {
+              const t = r.item;
+              const ticked = list.changed(r, (x) => x.status);
+              return (
+                <div role="row" key={r.key} style={{ ...parts.taskRow, borderTop: '1px solid var(--color-border)', opacity: r.deleted ? 0.6 : 1 }}>
+                  <span role="cell"><input type="checkbox" disabled={r.deleted} aria-label={t.status === 'done' ? `Reopen ${t.title}` : `Mark ${t.title} done`} checked={t.status === 'done'}
+                    onChange={() => list.edit(r.key, { status: t.status === 'done' ? 'open' : 'done' })}
+                    style={{ ...parts.checkbox, ...(ticked ? { outline: '2px solid var(--color-warning)', outlineOffset: '2px' } : {}) }} /></span>
+                  <span role="cell" style={{ minWidth: 0 }}>
+                    <strong style={{ textDecoration: t.status === 'done' || r.deleted ? 'line-through' : 'none' }}>{t.title}</strong>
+                    {r.isNew && <> <RowTag>New</RowTag></>}
+                    {r.deleted && <> <RowTag>Deleted when you save</RowTag></>}
+                    {(t.description || t.event_title) && (
+                      <span style={{ ...parts.muted, display: 'block' }}>
+                        {t.event_title ? `For event: ${t.event_title}${t.event_start ? ` · ${formatDate(t.event_start)}` : ''}` : ''}{t.event_title && t.description ? ' · ' : ''}{t.description}
+                      </span>
+                    )}
+                  </span>
+                  <span role="cell" style={{ fontSize: 'var(--font-size-xs)', color: overdue(t) ? 'var(--color-error)' : 'var(--color-text-secondary)', fontWeight: overdue(t) ? 700 : 400 }}>
+                    {t.due_at ? `${overdue(t) ? 'Overdue · ' : ''}${formatDateTime(t.due_at)}` : '—'}
+                  </span>
+                  <span role="cell" style={{ fontSize: 'var(--font-size-xs)' }}>{t.staff.map((x) => x.name).join(', ')}</span>
+                  <span role="cell" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }} title={t.reminder_skipped_reason || undefined}>
+                    {!t.send_reminder ? '—' : r.isNew ? 'Sent when you save' : t.reminder_queued_at ? 'Sent' : `Not sent${t.reminder_skipped_reason ? `: ${t.reminder_skipped_reason}` : ''}`}
+                  </span>
+                  <span role="cell">{r.deleted
+                    ? <button type="button" onClick={() => list.undo(r.key)} style={parts.link}>Undo</button>
+                    : <button type="button" onClick={() => list.remove(r.key)} style={parts.removeBtn} aria-label={`Delete ${t.title}`} title="Delete task">×</button>}</span>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -268,13 +285,12 @@ export function TasksTab({ customer, businessId, staff, addSignal }: { customer:
   );
 }
 
-function AddTaskDialog({ open, onClose, customer, businessId, staff, onCreated }: {
-  open: boolean; onClose: () => void; customer: Customer; businessId: string; staff: Staff[]; onCreated: () => void;
+function AddTaskDialog({ open, onClose, customer, businessId, staff, onAdd }: {
+  open: boolean; onClose: () => void; customer: Customer; businessId: string; staff: Staff[]; onAdd: (task: TaskItem) => void;
 }) {
   const blank = { title: '', description: '', due_at: '', staff_ids: [] as string[], send_reminder: false, event_id: '' };
   const [form, setForm] = useState(blank);
   const [events, setEvents] = useState<Array<{ id: string; title: string; start_time: string }>>([]);
-  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -288,25 +304,25 @@ function AddTaskDialog({ open, onClose, customer, businessId, staff, onCreated }
 
   const toggleStaff = (id: string) => setForm((f) => ({ ...f, staff_ids: f.staff_ids.includes(id) ? f.staff_ids.filter((x) => x !== id) : [...f.staff_ids, id] }));
   const canSave = form.title.trim() !== '' && form.staff_ids.length > 0;
-  const save = async () => {
+  // The task goes on the list as new; it is stored (and its reminder sent) with Save changes.
+  const save = () => {
     if (!canSave) return;
-    setSaving(true); setMessage(null);
-    try {
-      await customersApi.createTask(customer.id, businessId, {
-        title: form.title.trim(), description: form.description || undefined,
-        due_at: form.due_at ? new Date(form.due_at).toISOString() : null,
-        staff_ids: form.staff_ids, send_reminder: form.send_reminder, event_id: form.event_id || null,
-      });
-      onCreated();
-    } catch (err) { setMessage(errorText(err, 'The task could not be created')); }
-    finally { setSaving(false); }
+    const ev = events.find((e) => e.id === form.event_id);
+    onAdd({
+      id: '', title: form.title.trim(), description: form.description || null,
+      due_at: form.due_at ? new Date(form.due_at).toISOString() : null, status: 'open',
+      send_reminder: form.send_reminder, reminder_queued_at: null, reminder_skipped_reason: null,
+      event_id: form.event_id || null, event_title: ev?.title || null, event_start: ev?.start_time || null,
+      staff: staff.filter((x) => form.staff_ids.includes(x.id)).map((x) => ({ id: x.id, name: `${x.first_name} ${x.last_name}`.trim() })),
+      staff_ids: form.staff_ids,
+    } as TaskItem);
   };
 
   return (
     <Modal open={open} onClose={onClose} title="Add task" footer={(
       <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end' }}>
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button onClick={save} disabled={!canSave} loading={saving}>Create task</Button>
+        <Button onClick={save} disabled={!canSave}>Add task</Button>
       </div>
     )}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
@@ -337,7 +353,7 @@ function AddTaskDialog({ open, onClose, customer, businessId, staff, onCreated }
         </fieldset>
         <label style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-start', fontSize: 'var(--font-size-sm)' }}>
           <input type="checkbox" checked={form.send_reminder} onChange={(e) => setForm({ ...form, send_reminder: e.target.checked })} style={parts.checkbox} />
-          <span>Send reminder email to {customer.first_name || 'the customer'}<span style={{ ...parts.muted, display: 'block' }}>Sent when the task is created{customer.email ? `, to ${customer.email}` : ''}.</span></span>
+          <span>Send reminder email to {customer.first_name || 'the customer'}<span style={{ ...parts.muted, display: 'block' }}>Sent when the task is saved{customer.email ? `, to ${customer.email}` : ''}.</span></span>
         </label>
         <div style={parts.formGroup}><span style={parts.label}>Task is for</span><div style={{ ...parts.input, background: 'var(--color-surface-hover)' }}><strong>{`${customer.first_name} ${customer.last_name}`.trim()}</strong> <span style={parts.muted}>filled in from this profile</span></div></div>
         {message && <p role="alert" style={{ margin: 0, fontSize: 'var(--font-size-sm)', color: 'var(--color-error)' }}>{message}</p>}
@@ -350,7 +366,6 @@ function AddTaskDialog({ open, onClose, customer, businessId, staff, onCreated }
 
 export function DocumentsTab({ customerId, businessId }: { customerId: string; businessId: string }) {
   const [docs, setDocs] = useState<customersApi.CustomerDocument[] | null>(null);
-  const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -360,12 +375,23 @@ export function DocumentsTab({ customerId, businessId }: { customerId: string; b
   }, [customerId, businessId]);
   useEffect(() => { load(); }, [load]);
 
-  const upload = async (files: FileList | null) => {
+  // Files to upload and documents to delete wait for the page's Save changes (David, 2026-11-01).
+  type Pending = { added: Array<{ key: string; file: File; name: string; size: number }>; removed: string[] };
+  const draft = useDraft<Pending>('profile-documents', 'Documents', { added: [], removed: [] }, async (d) => {
+    const left: Pending = { added: [...d.added], removed: [...d.removed] };
+    try {
+      for (const a of d.added) { await customersApi.uploadDocument(customerId, businessId, a.file); left.added.shift(); }
+      for (const id of d.removed) { await customersApi.deleteDocument(customerId, businessId, id); left.removed.shift(); }
+    } catch (err) { load(); draft.rebase({ added: [], removed: [] }, left); throw err; }
+    load();
+    return { added: [], removed: [] };
+  });
+  const pick = (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    setBusy(true); setMessage(null);
-    try { for (const f of Array.from(files)) await customersApi.uploadDocument(customerId, businessId, f); load(); }
-    catch (err) { setMessage(errorText(err, 'The file could not be uploaded')); load(); }
-    finally { setBusy(false); if (input.current) input.current.value = ''; }
+    setMessage(null);
+    const added = Array.from(files).map((file, i) => ({ key: `${Date.now()}-${i}-${file.name}`, file, name: file.name, size: file.size }));
+    draft.setValue({ ...draft.value, added: [...draft.value.added, ...added] });
+    if (input.current) input.current.value = '';
   };
   const download = async (doc: customersApi.CustomerDocument) => {
     try {
@@ -375,51 +401,66 @@ export function DocumentsTab({ customerId, businessId }: { customerId: string; b
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) { setMessage(errorText(err, 'The file could not be downloaded')); }
   };
-  const remove = async (doc: customersApi.CustomerDocument) => {
-    if (!window.confirm(`Delete ${doc.file_name}?`)) return;
-    try { await customersApi.deleteDocument(customerId, businessId, doc.id); load(); }
-    catch (err) { setMessage(errorText(err, 'The file could not be deleted')); }
-  };
+  const toggleRemove = (id: string) => draft.setValue({ ...draft.value, removed: draft.value.removed.includes(id) ? draft.value.removed.filter((x) => x !== id) : [...draft.value.removed, id] });
   const size = (b: number) => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
   const kind = (m: string) => (m === 'application/pdf' ? 'PDF' : m === 'image/png' ? 'PNG' : 'JPG');
+  const kindOf = (name: string) => (/\.pdf$/i.test(name) ? 'PDF' : /\.png$/i.test(name) ? 'PNG' : 'JPG');
 
   return (
     <div style={parts.tabContent}>
-      <div style={parts.card}>
+      <div style={{ ...parts.card, ...draftBox(draft.dirty) }}>
         <div style={parts.cardHeader}>
-          <h3 style={{ ...parts.cardTitle, margin: 0 }}>Documents</h3>
-          <Button size="sm" onClick={() => input.current?.click()} loading={busy}>Upload document</Button>
-          <input ref={input} type="file" multiple accept="application/pdf,image/jpeg,image/png" hidden onChange={(e) => upload(e.target.files)} />
+          <h3 style={{ ...parts.cardTitle, margin: 0 }}>Documents<UnsavedTag dirty={draft.dirty} /></h3>
+          <Button size="sm" onClick={() => input.current?.click()}>Upload document</Button>
+          <input ref={input} type="file" multiple accept="application/pdf,image/jpeg,image/png" hidden onChange={(e) => pick(e.target.files)} />
         </div>
         <div
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); upload(e.dataTransfer.files); }}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); pick(e.dataTransfer.files); }}
           style={{ border: `2px dashed ${dragOver ? 'var(--color-primary)' : 'var(--color-border)'}`, borderRadius: 'var(--radius-md)', padding: 'var(--space-lg)', textAlign: 'center', ...parts.muted, marginBottom: 'var(--space-md)' }}
         >
-          Drop files here, or use Upload document · PDF, JPG, PNG · up to 10 MB
+          Drop files here, or use Upload document · PDF, JPG, PNG · up to 10 MB · uploaded when you press Save changes
         </div>
         {message && <p role="alert" style={{ ...parts.muted, color: 'var(--color-error)' }}>{message}</p>}
         {docs === null && <p style={parts.muted}>Loading…</p>}
-        {docs !== null && docs.length === 0 && <p style={parts.empty}>No documents yet.</p>}
-        {docs && docs.length > 0 && (
+        {docs !== null && docs.length === 0 && draft.value.added.length === 0 && <p style={parts.empty}>No documents yet.</p>}
+        {docs && (docs.length > 0 || draft.value.added.length > 0) && (
           <div role="table" aria-label="Documents">
             <div role="row" style={{ ...parts.docRow, ...parts.tableHead }}>
               <span role="columnheader">Name</span><span role="columnheader">Type</span><span role="columnheader">Size</span><span role="columnheader">Uploaded by</span><span role="columnheader">Date</span><span role="columnheader" aria-label="Actions" />
             </div>
-            {docs.map((d) => (
-              <div role="row" key={d.id} style={{ ...parts.docRow, borderTop: '1px solid var(--color-border)' }}>
-                <span role="cell" style={{ minWidth: 0, overflowWrap: 'anywhere' }}><button type="button" onClick={() => download(d)} style={parts.link}>{d.file_name}</button></span>
-                <span role="cell" style={{ fontSize: 'var(--font-size-xs)' }}>{kind(d.mime_type)}</span>
-                <span role="cell" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>{size(d.size_bytes)}</span>
-                <span role="cell" style={{ fontSize: 'var(--font-size-xs)' }}>{d.uploaded_by_name || '—'}</span>
-                <span role="cell" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>{formatDate(d.created_at)}</span>
-                <span role="cell" style={{ display: 'flex', gap: 'var(--space-xs)', justifyContent: 'flex-end' }}>
-                  <Button size="sm" variant="secondary" onClick={() => download(d)}>Download</Button>
-                  <Button size="sm" variant="secondary" onClick={() => remove(d)}>Delete</Button>
+            {draft.value.added.map((a) => (
+              <div role="row" key={a.key} style={{ ...parts.docRow, borderTop: '1px solid var(--color-border)' }}>
+                <span role="cell" style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{a.name} <RowTag>New</RowTag></span>
+                <span role="cell" style={{ fontSize: 'var(--font-size-xs)' }}>{kindOf(a.name)}</span>
+                <span role="cell" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>{size(a.size)}</span>
+                <span role="cell" style={{ fontSize: 'var(--font-size-xs)' }}>—</span>
+                <span role="cell" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>When you save</span>
+                <span role="cell" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <Button size="sm" variant="secondary" onClick={() => draft.setValue({ ...draft.value, added: draft.value.added.filter((x) => x.key !== a.key) })}>Remove</Button>
                 </span>
               </div>
             ))}
+            {docs.map((d) => {
+              const gone = draft.value.removed.includes(d.id);
+              return (
+                <div role="row" key={d.id} style={{ ...parts.docRow, borderTop: '1px solid var(--color-border)', opacity: gone ? 0.6 : 1 }}>
+                  <span role="cell" style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                    {gone ? <s>{d.file_name}</s> : <button type="button" onClick={() => download(d)} style={parts.link}>{d.file_name}</button>}
+                    {gone && <> <RowTag>Deleted when you save</RowTag></>}
+                  </span>
+                  <span role="cell" style={{ fontSize: 'var(--font-size-xs)' }}>{kind(d.mime_type)}</span>
+                  <span role="cell" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>{size(d.size_bytes)}</span>
+                  <span role="cell" style={{ fontSize: 'var(--font-size-xs)' }}>{d.uploaded_by_name || '—'}</span>
+                  <span role="cell" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>{formatDate(d.created_at)}</span>
+                  <span role="cell" style={{ display: 'flex', gap: 'var(--space-xs)', justifyContent: 'flex-end' }}>
+                    {!gone && <Button size="sm" variant="secondary" onClick={() => download(d)}>Download</Button>}
+                    <Button size="sm" variant="secondary" onClick={() => toggleRemove(d.id)}>{gone ? 'Undo' : 'Delete'}</Button>
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
