@@ -477,6 +477,13 @@ eventsRouter.put('/:id/publish', requirePermission('events:*'), async (req: Requ
   } catch (err: any) { error(res, err.message || 'Failed to publish', 'VALIDATION_ERROR', 400); }
 });
 
+eventsRouter.get('/:id/cancel-preview', requirePermission('events:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    success(res, await eventService.cancelPreview(req.params.id, authReq.tenantId));
+  } catch (err: any) { error(res, err.message || 'Failed to load', 'NOT_FOUND', 404); }
+});
+
 eventsRouter.put('/:id/cancel', requirePermission('events:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;

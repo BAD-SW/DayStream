@@ -1,5 +1,5 @@
 import { adminPool } from '../db/pool';
-import { LEAD_SOURCES, DEFAULT_LEAD_STAGES } from '@daystream/shared';
+import { LEAD_SOURCES, DEFAULT_LEAD_STAGES, LEAD_SOURCE_LABELS } from '@daystream/shared';
 import { createActivity } from './customer-activity.service';
 import { createCustomer } from './customer.service';
 
@@ -314,10 +314,16 @@ export async function updateLead(
   const current = await getLead(businessId, id);
   if (current.lifecycle_stage !== 'lead') throw new LeadError('This person is no longer a lead', 'NOT_A_LEAD', 409);
 
-  if (patch.lead_source !== undefined) {
+  // The source can be corrected after the lead is added (David, 2026-10-29); the change is on the Timeline.
+  if (patch.lead_source !== undefined && (patch.lead_source || null) !== (current.lead_source || null)) {
     assertSource(patch.lead_source);
     await adminPool.query('UPDATE cus_customers SET lead_source = $3, updated_at = NOW() WHERE id = $1 AND business_id = $2',
       [id, businessId, patch.lead_source || null]);
+    const label = (v: string | null | undefined) => (v ? LEAD_SOURCE_LABELS[v] || v : 'none');
+    await createActivity({
+      customerId: id, businessId, activityType: 'profile_change', createdBy: userId,
+      description: `Lead source: ${label(current.lead_source)} → ${label(patch.lead_source)}`,
+    });
   }
   if (patch.owner_user_id !== undefined && (patch.owner_user_id || null) !== current.owner_user_id) {
     const name = await assertStaff(businessId, tenantId, patch.owner_user_id || null);

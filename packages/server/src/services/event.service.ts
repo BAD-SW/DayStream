@@ -240,15 +240,75 @@ export async function publishEvent(id: string, tenantId: string) {
 /**
  * Cancel an event.
  */
+/**
+ * What cancelling an event will do (David, 2026-10-29), shown before the person confirms:
+ * how many registrations are cancelled, how many paid tickets are refunded and for how much,
+ * where the money goes (the hosting business's event setting: card or account credit), and how
+ * many people leave the waiting list.
+ */
+export async function cancelPreview(id: string, tenantId: string) {
+  const { rows: ev } = await adminPool.query('SELECT id, status FROM evt_events WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+  if (!ev[0]) throw new Error('Event not found');
+  const { rows: [counts] } = await adminPool.query(
+    `SELECT (SELECT COUNT(*)::int FROM evt_registrations WHERE event_id = $1 AND status IN ('confirmed', 'pending')) AS registrations,
+            (SELECT COUNT(*)::int FROM evt_waitlist WHERE event_id = $1 AND status IN ('waiting', 'notified')) AS waiting`,
+    [id],
+  );
+  // Paid = the ticket's order is completed (or partly refunded) and still has event lines to refund.
+  const { rows: paid } = await adminPool.query(
+    `SELECT COUNT(DISTINCT r.id)::int AS tickets,
+            COALESCE(SUM(oi.line_left), 0)::int AS amount,
+            MAX(b.currency) AS currency
+       FROM evt_registrations r
+       JOIN fin_orders o ON o.id = r.order_id AND o.status IN ('completed', 'partially_refunded')
+       LEFT JOIN sys_businesses b ON b.id = o.business_id
+       JOIN LATERAL (
+         SELECT SUM(ROUND((oi.quantity - oi.refunded_quantity)::numeric / NULLIF(oi.quantity, 0) * (oi.unit_price * oi.quantity - COALESCE(oi.discount_amount, 0) + COALESCE(oi.tax_amount, 0))))::int AS line_left
+           FROM fin_order_items oi WHERE oi.order_id = o.id AND oi.item_type = 'event' AND oi.quantity > oi.refunded_quantity
+       ) oi ON oi.line_left > 0
+      WHERE r.event_id = $1 AND r.status IN ('confirmed', 'pending')`,
+    [id],
+  );
+  const { hostBusinessId } = await import('./customer-events.service');
+  const { getCancelSettings } = await import('./customer-cancellation.service');
+  const hostId = await hostBusinessId(id);
+  const settings = hostId ? await getCancelSettings(hostId, 'events') : null;
+  return {
+    status: ev[0].status,
+    registrations: counts.registrations,
+    waiting: counts.waiting,
+    paid_tickets: paid[0]?.tickets || 0,
+    refund_amount: paid[0]?.amount || 0,
+    currency: paid[0]?.currency || 'EUR',
+    refund_to: settings?.cancel_refund_to === 'credit' ? 'credit' : 'card',
+  };
+}
+
 export async function cancelEvent(id: string, tenantId: string, userId: string) {
+  const { rows: ev } = await adminPool.query(
+    `SELECT id FROM evt_events WHERE id = $1 AND tenant_id = $2 AND status IN ('draft','published')`, [id, tenantId]);
+  if (!ev[0]) throw new Error('Event not found or cannot be cancelled');
+  // The waiting list goes first, so nobody is moved into a place that is being cancelled.
+  await adminPool.query(`UPDATE evt_waitlist SET status = 'expired' WHERE event_id = $1 AND status IN ('waiting', 'notified')`, [id]).catch(() => undefined);
+  // Each registration is cancelled the way staff cancel one (David, 2026-10-29): a paid ticket is
+  // refunded (card or account credit, as the hosting business set it) and the customer is emailed.
+  const { cancelOwnRegistration } = await import('./customer-events.service');
+  const { rows: regs } = await adminPool.query(
+    `SELECT id FROM evt_registrations WHERE event_id = $1 AND status IN ('confirmed', 'pending') ORDER BY created_at`, [id]);
+  const failed: string[] = [];
+  for (const r of regs) {
+    try { await cancelOwnRegistration({ registrationId: r.id, tenantId, userId, byCustomer: false }); }
+    catch (err: any) { failed.push(err?.message || 'not cancelled'); }
+  }
+  if (failed.length > 0) {
+    throw new Error(`The event was not cancelled: ${failed.length} of ${regs.length} registrations could not be cancelled (${failed[0]}). The others were cancelled and refunded; try again.`);
+  }
   const { rows } = await adminPool.query(
     `UPDATE evt_events SET status = 'cancelled', updated_at = NOW()
      WHERE id = $1 AND tenant_id = $2 AND status IN ('draft','published') RETURNING *`,
     [id, tenantId],
   );
   if (!rows[0]) throw new Error('Event not found or cannot be cancelled');
-  await adminPool.query(`UPDATE evt_registrations SET status = 'cancelled' WHERE event_id = $1 AND status IN ('confirmed', 'pending')`, [id]);
-  await adminPool.query(`UPDATE evt_waitlist SET status = 'expired' WHERE event_id = $1 AND status IN ('waiting', 'notified')`, [id]).catch(() => undefined);
 
   await logAudit({
     tenantId,

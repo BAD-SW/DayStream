@@ -78,12 +78,12 @@ export function Leads() {
 
   const replaceRow = (next: Lead) => setLeads((rows) => rows.map((r) => (r.id === next.id ? { ...r, ...next } : r)));
 
-  async function change(lead: Lead, patch: { lead_stage_id?: string; owner_user_id?: string | null }) {
+  async function change(lead: Lead, patch: { lead_stage_id?: string; owner_user_id?: string | null; lead_source?: string | null }) {
     setMessage('');
     try {
       replaceRow(await leadsApi.updateLead(businessId, lead.id, patch));
       // A changed stage or staff member may take the lead out of the current filter.
-      if ((patch.lead_stage_id && stageFilter) || (patch.owner_user_id !== undefined && ownerFilter)) load();
+      if ((patch.lead_stage_id && stageFilter) || (patch.owner_user_id !== undefined && ownerFilter) || (patch.lead_source !== undefined && sourceFilter)) load();
     } catch (err: any) { setMessage(err.response?.data?.error || 'The change could not be saved'); }
   }
 
@@ -146,7 +146,17 @@ export function Leads() {
       ) : (val || 'Unassigned'),
     },
     { key: 'created_at', header: 'Created at', sortable: true, render: (val: string) => createdAt(val) },
-    { key: 'lead_source', header: 'Source', sortable: true, render: (val: string | null) => (val ? LEAD_SOURCE_LABELS[val] || val : '—') },
+    {
+      // Editable in the row, like stage and staff (David, 2026-10-29: a wrong source can be corrected).
+      key: 'lead_source', header: 'Source', sortable: true,
+      render: (val: string | null, row: Lead) => canEdit && !archived ? (
+        <select style={styles.cellSelect} aria-label={`Source for ${fullName(row)}`} value={val || ''}
+          onClick={stop} onChange={(e) => change(row, { lead_source: e.target.value || null })}>
+          <option value="">—</option>
+          {Object.entries(LEAD_SOURCE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      ) : (val ? LEAD_SOURCE_LABELS[val] || val : '—'),
+    },
     { key: 'messages_sent', header: 'Messages sent', sortable: true, align: 'right' as const, render: (val: number) => <span style={styles.num}>{val}</span> },
     {
       key: 'stage', header: 'Lead stage', sortable: true,

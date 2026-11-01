@@ -29,6 +29,11 @@ export async function publishEvent(id: string) {
 export async function cancelEvent(id: string) {
   const res = await apiClient.put(`/v1/events/${id}/cancel`); return res.data.data;
 }
+/** What cancelling the event will do: registrations cancelled, paid tickets refunded (and where to). */
+export interface CancelPreview { status: string; registrations: number; waiting: number; paid_tickets: number; refund_amount: number; currency: string; refund_to: 'card' | 'credit' }
+export async function getCancelPreview(id: string): Promise<CancelPreview> {
+  const res = await apiClient.get(`/v1/events/${id}/cancel-preview`); return res.data.data;
+}
 /** Delete = archive (restorable). Refused while the event has registrations or a waiting list. */
 export async function deleteEvent(id: string): Promise<Event> {
   const res = await apiClient.delete(`/v1/events/${id}`); return res.data.data;

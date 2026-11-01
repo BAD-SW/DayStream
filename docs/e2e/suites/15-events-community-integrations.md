@@ -11,7 +11,7 @@ Covers spec 14 (events and workshops), spec 22 (community), spec 20 (integration
 ### EVT-01 · Create, ticket and publish an event
 `P0` `regression` · Spec 14 R1, R4 · As: owner · Status: Verified
 1. `/events/new`: event `E2E {RUN} Workshop` next week, capacity 3, location, a facilitator. Add ticket tiers: Standard 40.00, Early bird 30.00 (limited to 1). 2. Publish.
-**Expect:** the start suggests 9:00; opening a time field lists quarter hours (scrolled to the current time) and any other minute can be typed (e.g. 14:20); setting the start date fills the end from the duration (default 1 hour), changing the duration moves the end and changing the end changes the duration (hours or days); an end not after the start is refused ("The end must be after the start"); Event Type is required (marked *); saving without one is refused with "Choose an event type", never a server error (D-58); a draft event is not public; after publishing it appears in the public event calendar (`GET /api/v1/events/calendar`) with its tiers; an event cannot be published without a date or a ticket tier.
+**Expect:** the start suggests 9:00; opening a time field lists quarter hours (scrolled to the current time) and any other minute can be typed (e.g. 14:20); setting the start date fills the end from the duration (default 3 hours, changeable), changing the duration moves the end and changing the end changes the duration (hours or days); an end not after the start is refused ("The end must be after the start"); Event Type is required (marked *); saving without one is refused with "Choose an event type", never a server error (D-58); a draft event is not public; after publishing it appears in the public event calendar (`GET /api/v1/events/calendar`) with its tiers; an event cannot be published without a date or a ticket tier.
 
 ### EVT-02 · Registration, capacity and waitlist
 `P0` `regression` · Spec 14 R5, R6 · As: reception, customer · Status: Verified
@@ -133,3 +133,8 @@ Covers spec 14 (events and workshops), spec 22 (community), spec 20 (integration
 `P1` `regression` · David, 2026-10-28 · As: owner, provider · Status: Verified
 1. On an event without registrations click "Delete event"; confirm. 2. On Events tick "Show deleted events"; Restore. 3. Delete an event that has a registration. 4. Cancel it, then delete it. 5. As a provider, delete (API).
 **Expect:** a confirmation first; the event leaves the list and customers' screens and is listed under deleted events; Restore brings it back with its status; step 3 is refused ("This event has 1 registration. Cancel the event first, then delete it."); step 4 works; step 5 is refused (403). Runner: `revdel`.
+
+### EVT-17 · Cancelling an event refunds its paid tickets
+`P0` `regression` · David, 2026-10-29 · As: owner · Status: Verified
+1. A published event has a paid registration (paid at reception). 2. Click Cancel on the event. 3. Confirm.
+**Expect:** step 2 says first what will happen: how many registrations are cancelled (customers emailed), how many paid tickets are refunded, the total, and where the money goes (card / original payment, or account credit, as set in Settings › System › Customer cancellations › Events), and how many people leave the waiting list; "Keep it" changes nothing. After step 3 the event is cancelled, each registration is cancelled with its refund, a refund is recorded on the ticket's order and the customer gets the "registration cancelled" email. If a refund fails, the event is not cancelled and the message says so. Runner: `revdel`.

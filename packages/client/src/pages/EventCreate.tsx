@@ -31,7 +31,8 @@ export function EventCreate() {
   // any minute can be typed; duration and end follow each other.
   const [startDate, setStartDate] = useState('');
   const [startTime, setStartTime] = useState(DEFAULT_START_TIME);
-  const [duration, setDuration] = useState<Duration>({ amount: 1, unit: 'hours' });
+  // Default 3 hours (David, 2026-10-29), changeable here.
+  const [duration, setDuration] = useState<Duration>({ amount: 3, unit: 'hours' });
   const [endDate, setEndDate] = useState('');
   const [endTime, setEndTime] = useState('');
   const endTooEarly = endNotAfterStart(startDate, startTime, endDate, endTime);

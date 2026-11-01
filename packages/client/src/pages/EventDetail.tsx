@@ -24,6 +24,8 @@ export function EventDetail() {
   const [activeTab, setActiveTab] = useState<Tab>('details');
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [cancelPreview, setCancelPreview] = useState<eventsApi.CancelPreview | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const [problem, setProblem] = useState('');
 
   useEffect(() => {
@@ -42,7 +44,30 @@ export function EventDetail() {
   ];
 
   const handlePublish = async () => { const e = await eventsApi.publishEvent(event.id); setEvent(e); };
-  const handleCancel = async () => { if (confirm('Cancel this event?')) { const e = await eventsApi.cancelEvent(event.id); setEvent(e); } };
+  // Before cancelling, say what will happen (David, 2026-10-29): registrations cancelled and
+  // emailed, paid tickets refunded to the card or account credit, the waiting list emptied.
+  const handleCancel = async () => {
+    setProblem('');
+    try { setCancelPreview(await eventsApi.getCancelPreview(event.id)); }
+    catch (err: any) { setProblem(err?.response?.data?.error || 'The event could not be cancelled.'); }
+  };
+  const confirmCancel = async () => {
+    setCancelling(true); setProblem('');
+    try { setEvent({ ...event, ...(await eventsApi.cancelEvent(event.id)) }); setCancelPreview(null); }
+    catch (err: any) { setProblem(err?.response?.data?.error || 'The event could not be cancelled.'); setCancelPreview(null); }
+    finally { setCancelling(false); }
+  };
+  const cancelText = (p: eventsApi.CancelPreview) => {
+    const lines: string[] = [];
+    lines.push(p.registrations === 0 ? 'Nobody is registered.'
+      : `${p.registrations} ${p.registrations === 1 ? 'registration is' : 'registrations are'} cancelled and ${p.registrations === 1 ? 'the customer is' : 'the customers are'} emailed.`);
+    if (p.paid_tickets > 0) {
+      lines.push(`${p.paid_tickets} paid ${p.paid_tickets === 1 ? 'ticket is' : 'tickets are'} refunded, ${formatCurrency(p.refund_amount, p.currency)} in total, ${p.refund_to === 'credit' ? "to the customers' account credit" : "to the customers' card or original payment"} (as set in Settings › System › Customer cancellations › Events).`);
+    }
+    if (p.waiting > 0) lines.push(`${p.waiting} ${p.waiting === 1 ? 'person leaves' : 'people leave'} the waiting list.`);
+    lines.push('This cannot be undone.');
+    return lines.join(' ');
+  };
   // Delete archives the event (David, 2026-10-28); it is refused while people are registered or waiting.
   const handleDelete = async () => {
     setProblem('');
@@ -80,6 +105,16 @@ export function EventDetail() {
         </>}
       />
       {problem && <Alert variant="error">{problem}</Alert>}
+      <ConfirmDialog
+        open={!!cancelPreview && !cancelling}
+        onClose={() => setCancelPreview(null)}
+        onConfirm={confirmCancel}
+        title="Cancel this event?"
+        message={cancelPreview ? cancelText(cancelPreview) : ''}
+        confirmLabel="Cancel event"
+        cancelLabel="Keep it"
+      />
+      {cancelling && <Alert variant="info">Cancelling the event and refunding paid tickets…</Alert>}
       <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}

@@ -52,7 +52,7 @@ export async function createLead(businessId: string, data: {
   return res.data.data;
 }
 
-export async function updateLead(businessId: string, id: string, data: { lead_stage_id?: string; owner_user_id?: string | null }): Promise<Lead> {
+export async function updateLead(businessId: string, id: string, data: { lead_stage_id?: string; owner_user_id?: string | null; lead_source?: string | null }): Promise<Lead> {
   const res = await apiClient.patch(`/v1/leads/${id}?business_id=${businessId}`, data);
   return res.data.data;
 }
