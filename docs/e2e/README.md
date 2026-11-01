@@ -307,3 +307,4 @@ Gaps in the test approach itself:
 | 2026-11-01 | local | Events module on the one-Save rule (details, tickets, facilitators, event types, series; Create Event asks before leaving). UIX-13 added, checked in the browser; event-archive test now removes its event type |
 | 2026-11-01 | local | People: customer profile on the one-Save rule (contact details; Save changes in the header; header and tabs stay in view). UIX-14 added, checked in the browser |
 | 2026-11-01 | local | Profile: tasks, notes, documents, photo and consent now also wait for Save changes; leaving by a button ("← Back to People", Back, Cancel, Sign out) or the browser's Back button asks first too (David's testing). UIX-14 rewritten; checked in the browser |
+| 2026-11-01 | local | Notes: the category is optional ("No category" by default; migration 161); a business without note categories can add notes. Checked through the API (note without category created and deleted) |

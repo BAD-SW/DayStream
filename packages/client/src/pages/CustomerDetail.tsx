@@ -468,7 +468,6 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
       .then((res) => {
         const cats = res.data.data || [];
         setCategories(cats);
-        if (cats.length > 0 && !category) setCategory(cats[0].name);
       })
       .catch(() => setCategories([]));
   }, [businessId]);
@@ -501,7 +500,7 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
     return { added: [], removed: [] };
   });
   const handleAddNote = () => {
-    if (!newNote.trim() || !category) return;
+    if (!newNote.trim()) return;
     draft.setValue({ ...draft.value, added: [{ key: `${Date.now()}`, category, content: newNote.trim() }, ...draft.value.added] });
     setNewNote('');
   };
@@ -526,16 +525,14 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
           rows={3}
         />
         <div style={styles.noteActions}>
-          {categories.length > 0 ? (
-            <select value={category} onChange={(e) => setCategory(e.target.value)} style={styles.select}>
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.name}>{cat.name}</option>
-              ))}
-            </select>
-          ) : (
-            <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>No categories defined. Add them in Settings.</span>
-          )}
-          <Button onClick={handleAddNote} disabled={categories.length === 0}>Add Note</Button>
+          {/* The category is optional (David, 2026-11-01). */}
+          <select value={category} onChange={(e) => setCategory(e.target.value)} style={styles.select} aria-label="Category">
+            <option value="">No category</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.name}>{cat.name}</option>
+            ))}
+          </select>
+          <Button onClick={handleAddNote} disabled={!newNote.trim()}>Add Note</Button>
         </div>
       </div>
 
@@ -560,7 +557,7 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
         <div key={n.key} style={{ ...styles.noteCard, ...fieldMark(true) }}>
           <div style={styles.noteHeader}>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <Badge variant="neutral">{n.category}</Badge>
+              {n.category && <Badge variant="neutral">{n.category}</Badge>}
               <RowTag>New</RowTag>
             </div>
             <button onClick={() => draft.setValue({ ...draft.value, added: draft.value.added.filter((x) => x.key !== n.key) })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 }} title="Remove this new note">×</button>
@@ -573,7 +570,7 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
         <div key={note.id} style={{ ...styles.noteCard, opacity: 0.6 }}>
           <div style={styles.noteHeader}>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <Badge variant="neutral">{note.category}</Badge>
+              {note.category && <Badge variant="neutral">{note.category}</Badge>}
               <RowTag>Deleted when you save</RowTag>
             </div>
             <Button size="sm" variant="ghost" onClick={() => toggleDelete(note.id)}>Undo</Button>
@@ -584,7 +581,7 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
         <div key={note.id} style={styles.noteCard}>
           <div style={styles.noteHeader}>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <Badge variant="neutral">{note.category}</Badge>
+              {note.category && <Badge variant="neutral">{note.category}</Badge>}
               {note.is_sensitive && <Badge variant="error">Sensitive</Badge>}
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>

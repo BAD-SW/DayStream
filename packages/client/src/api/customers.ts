@@ -248,7 +248,7 @@ export async function getNotes(customerId: string, businessId: string, filters?:
   return res.data;
 }
 
-export async function createNote(customerId: string, businessId: string, data: { category: string; content: string; is_sensitive?: boolean }) {
+export async function createNote(customerId: string, businessId: string, data: { category?: string; content: string; is_sensitive?: boolean }) {
   const res = await apiClient.post(`/v1/customers/${customerId}/notes?business_id=${businessId}`, data);
   return res.data.data;
 }

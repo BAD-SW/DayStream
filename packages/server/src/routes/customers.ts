@@ -684,7 +684,7 @@ customersRouter.post('/:id/anonymize', requirePermission('customers:*'), async (
 import * as notesService from '../services/customer-notes.service';
 
 const createNoteSchema = Joi.object({
-  category: Joi.string().min(1).max(50).required(),
+  category: Joi.string().max(50).allow('', null).optional(),
   content: Joi.string().min(1).required(),
   is_sensitive: Joi.boolean().default(false),
 });
