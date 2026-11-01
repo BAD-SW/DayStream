@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Tabs } from '../design-system/components/navigation/Tabs';
+import { TabBar } from '../design-system/components/navigation/TabBar';
+import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
+import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, fieldMark, draftBox, UnsavedTag } from '../components/unsaved/DraftSections';
+import { LeaveGuard } from '../components/unsaved/LeaveGuard';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import { Dropdown } from '../design-system/components/actions/Dropdown';
@@ -27,6 +30,12 @@ const LIFECYCLE_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info
   lead: 'neutral', trial: 'info', active: 'success', at_risk: 'warning', churned: 'error', winback: 'info',
 };
 
+const PROFILE_TABS: { key: string; label: string }[] = [
+  { key: 'overview', label: 'Overview' }, { key: 'messages', label: 'Messages' }, { key: 'timeline', label: 'Timeline' },
+  { key: 'billing', label: 'Billing' }, { key: 'notes', label: 'Notes' }, { key: 'tasks', label: 'Tasks' },
+  { key: 'documents', label: 'Documents' }, { key: 'preferences', label: 'Consent' },
+];
+
 // Stage and source names come from one shared map ('trial' is shown as "New customer").
 const formatStage = lifecycleStageLabel;
 
@@ -39,7 +48,17 @@ function formatDay(value?: string | null): string {
   return value ? new Date(value).toLocaleDateString(undefined, { dateStyle: 'medium' }) : '—';
 }
 
+// One Save for the profile (David, 2026-11-01, as in Settings): the contact details wait for
+// Save changes in the header; notes, tasks, documents, payments and the More actions act at once.
 export function CustomerDetail() {
+  return (
+    <DraftSectionsProvider>
+      <CustomerProfilePage />
+    </DraftSectionsProvider>
+  );
+}
+
+function CustomerProfilePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -57,6 +76,14 @@ export function CustomerDetail() {
   // Bumped by the header's Add task button (opens the form) and after changes (reloads the Timeline).
   const [addTaskSignal, setAddTaskSignal] = useState(0);
   const [timelineVersion, setTimelineVersion] = useState(0);
+  const { dirtySections, saveAll, saving } = useDraftSections();
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const dirty = dirtySections.length > 0;
+  useEffect(() => { if (dirty) setSaveResult((r) => (r?.ok ? null : r)); }, [dirty]);
+  const saveChanges = async () => {
+    const { failed } = await saveAll();
+    setSaveResult(failed.length ? { ok: false, text: `Not saved: ${failed.map((f) => `${f.label} (${f.error})`).join('; ')}` } : { ok: true, text: 'All changes saved.' });
+  };
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -176,9 +203,11 @@ export function CustomerDetail() {
       <PasswordResetDialog open={dialog === 'reset'} onClose={() => setDialog(null)} customer={customer} businessId={businessId} onSent={() => setTimelineVersion((n) => n + 1)} />
       <PersonalDataDialog open={dialog === 'data'} onClose={() => setDialog(null)} customer={customer} businessId={businessId} onSent={() => setTimelineVersion((n) => n + 1)} />
 
+      <LeaveGuard when={dirty} />
       {/* Back button */}
       <button style={styles.back} onClick={() => navigate('/customers')}>← Back to People</button>
 
+      <StickyPageTop>
       {/* Profile header: who, the actions, and the facts on one line (THE-16) */}
       <div style={styles.profileHeader}>
         <div style={styles.headerTop}>
@@ -197,7 +226,10 @@ export function CustomerDetail() {
             </div>
           </div>
           <div style={styles.headerActions}>
-            <Button size="sm" onClick={() => setTab('messages')}>Contact</Button>
+            {dirty ? <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning-dark)' }}>You have unsaved changes.</span>
+              : saveResult && <span role={saveResult.ok ? 'status' : 'alert'} style={{ fontSize: 'var(--font-size-sm)', color: saveResult.ok ? 'var(--color-success)' : 'var(--color-error)' }}>{saveResult.text}</span>}
+            <Button size="sm" onClick={saveChanges} loading={saving} disabled={!dirty}>Save changes</Button>
+            <Button size="sm" variant="secondary" onClick={() => setTab('messages')}>Contact</Button>
             <Button size="sm" variant="secondary" onClick={() => { setTab('tasks'); setAddTaskSignal((n) => n + 1); }}>Add task</Button>
             <Dropdown trigger={<Button size="sm" variant="secondary">More ▾</Button>} items={moreItems} />
           </div>
@@ -216,20 +248,20 @@ export function CustomerDetail() {
       }} />
 
       {/* Tabs (order agreed on THE-16) */}
-      <Tabs
-        activeTab={tab}
-        onTabChange={setTab}
-        items={[
-          { id: 'overview', label: 'Overview', content: <OverviewTab key={mergeCount} customer={customer} tags={tags} preferences={preferences} staff={staff} onUpdate={(c) => { setCustomer(c); setTimelineVersion((n) => n + 1); }} onOpenConsent={() => setTab('preferences')} /> },
-          { id: 'messages', label: 'Messages', content: <MessagesTab customer={customer} /> },
-          { id: 'timeline', label: 'Timeline', content: <TimelineTab key={timelineVersion} customerId={customer.id} businessId={businessId} /> },
-          { id: 'billing', label: 'Billing', content: <BillingTab customerId={customer.id} businessId={businessId} /> },
-          { id: 'notes', label: 'Notes', content: <NotesTab notes={notes} customerId={customer.id} businessId={businessId} onRefresh={(n) => setNotes(n)} /> },
-          { id: 'tasks', label: 'Tasks', content: <TasksTab customer={customer} businessId={businessId} staff={staff} addSignal={addTaskSignal} /> },
-          { id: 'documents', label: 'Documents', content: <DocumentsTab customerId={customer.id} businessId={businessId} /> },
-          { id: 'preferences', label: 'Consent', content: <PreferencesTab preferences={preferences} onChange={handlePreferenceChange} customerId={customer.id} businessId={businessId} /> },
-        ]}
-      />
+      <TabBar aria-label="Profile sections" tabs={PROFILE_TABS.map((t) => ({ ...t, changed: dirtySections.some((d) => d.tab === t.key) }))} active={tab} onChange={setTab} />
+      </StickyPageTop>
+      <div hidden={tab !== 'overview'}>
+        <DraftTab tab="overview">
+          <OverviewTab key={mergeCount} customer={customer} tags={tags} preferences={preferences} staff={staff} onUpdate={(c) => { setCustomer(c); setTimelineVersion((n) => n + 1); }} onOpenConsent={() => setTab('preferences')} />
+        </DraftTab>
+      </div>
+      {tab === 'messages' && <MessagesTab customer={customer} />}
+      {tab === 'timeline' && <TimelineTab key={timelineVersion} customerId={customer.id} businessId={businessId} />}
+      {tab === 'billing' && <BillingTab customerId={customer.id} businessId={businessId} />}
+      {tab === 'notes' && <NotesTab notes={notes} customerId={customer.id} businessId={businessId} onRefresh={(n) => setNotes(n)} />}
+      <div hidden={tab !== 'tasks'}><TasksTab customer={customer} businessId={businessId} staff={staff} addSignal={addTaskSignal} /></div>
+      {tab === 'documents' && <DocumentsTab customerId={customer.id} businessId={businessId} />}
+      {tab === 'preferences' && <PreferencesTab preferences={preferences} onChange={handlePreferenceChange} customerId={customer.id} businessId={businessId} />}
     </div>
   );
 }
@@ -293,7 +325,6 @@ function OverviewTab({ customer, tags, preferences, staff, onUpdate, onOpenConse
   customer: Customer; tags: any[]; preferences: any; staff: Array<{ id: string; first_name: string; last_name: string }>;
   onUpdate: (c: Customer) => void; onOpenConsent: () => void;
 }) {
-  const [saving, setSaving] = useState(false);
   const fromCustomer = () => ({
     first_name: customer.first_name,
     last_name: customer.last_name,
@@ -311,10 +342,18 @@ function OverviewTab({ customer, tags, preferences, staff, onUpdate, onOpenConse
     postal_code: customer.postal_code || '',
     region: customer.region || '',
   });
-  const [form, setForm] = useState(fromCustomer);
-  const [locations, setLocations] = useState<Array<{ id: string; name: string }>>([]);
-
   const businessId = localStorage.getItem('business_id') || '';
+  const draft = useDraft('profile-contact', 'Contact information', fromCustomer(), async (values) => {
+    const updated = await customersApi.updateCustomer(customer.id, businessId, values);
+    onUpdate(updated);
+  });
+  const form = draft.value;
+  const setForm = draft.setValue;
+  const [locations, setLocations] = useState<Array<{ id: string; name: string }>>([]);
+  // A change made elsewhere on the page (e.g. More › Assign staff member) becomes the new
+  // stored value while nothing here is being edited.
+  useEffect(() => { if (!draft.dirty) draft.load(fromCustomer()); }, [customer]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mark = (key: keyof ReturnType<typeof fromCustomer>) => fieldMark(draft.changed((v) => v[key]));
 
   // The home location is one of the business's own active locations.
   useEffect(() => {
@@ -324,42 +363,18 @@ function OverviewTab({ customer, tags, preferences, staff, onUpdate, onOpenConse
       .catch(() => setLocations([]));
   }, [businessId]);
 
-  // Detect if form has unsaved changes
-  const saved = fromCustomer();
-  const isDirty = (Object.keys(form) as Array<keyof typeof form>).some((k) => form[k] !== saved[k]);
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const updated = await customersApi.updateCustomer(customer.id, businessId, form);
-      onUpdate(updated);
-    } catch (err: any) { alert(err.response?.data?.error || 'Failed to update this person'); }
-    finally { setSaving(false); }
-  };
-
-  const handleDiscard = () => setForm(fromCustomer());
   const text = (key: keyof typeof form, label: string, extra: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
-    <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor={`f-${key}`}>{label}</label><input id={`f-${key}`} style={styles.fieldInput} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} {...extra} /></div>
+    <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor={`f-${key}`}>{label}</label><input id={`f-${key}`} style={{ ...styles.fieldInput, ...mark(key) }} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} {...extra} /></div>
   );
 
   return (
     <div style={styles.tabContent}>
-      {/* Unsaved changes bar */}
-      {isDirty && (
-        <div style={styles.saveBar}>
-          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>You have unsaved changes</span>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Button variant="outline" size="sm" onClick={handleDiscard}>Discard</Button>
-            <Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button>
-          </div>
-        </div>
-      )}
 
       {/* Cards layout */}
       <div style={styles.overviewGrid}>
         {/* Contact Information Card — always editable */}
-        <div style={{ ...styles.card, gridColumn: '1 / -1' }}>
-          <h3 style={styles.cardTitle}>Contact Information</h3>
+        <div style={{ ...styles.card, gridColumn: '1 / -1', ...draftBox(draft.dirty) }}>
+          <h3 style={styles.cardTitle}>Contact Information<UnsavedTag dirty={draft.dirty} /></h3>
           <div style={styles.contactGrid}>
             {text('first_name', 'First Name')}
             {text('last_name', 'Last Name')}
@@ -367,18 +382,18 @@ function OverviewTab({ customer, tags, preferences, staff, onUpdate, onOpenConse
             {text('phone', 'Phone')}
             {text('date_of_birth', 'Date of Birth', { type: 'date' })}
             <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-gender">Gender</label>
-              <select id="f-gender" style={styles.fieldInput} value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+              <select id="f-gender" style={{ ...styles.fieldInput, ...mark('gender') }} value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
                 <option value="">Not specified</option><option value="male">Male</option><option value="female">Female</option><option value="non-binary">Non-binary</option><option value="other">Other</option>
               </select>
             </div>
             <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-lang">Language</label>
-              <select id="f-lang" style={styles.fieldInput} value={form.preferred_language} onChange={(e) => setForm({ ...form, preferred_language: e.target.value })}>
+              <select id="f-lang" style={{ ...styles.fieldInput, ...mark('preferred_language') }} value={form.preferred_language} onChange={(e) => setForm({ ...form, preferred_language: e.target.value })}>
                 <option value="en">English</option><option value="es">Spanish</option>
               </select>
             </div>
             {text('country', 'Country')}
             <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-stage">Lifecycle Stage</label>
-              <select id="f-stage" style={styles.fieldInput} value={form.lifecycle_stage} onChange={(e) => setForm({ ...form, lifecycle_stage: e.target.value })}>
+              <select id="f-stage" style={{ ...styles.fieldInput, ...mark('lifecycle_stage') }} value={form.lifecycle_stage} onChange={(e) => setForm({ ...form, lifecycle_stage: e.target.value })}>
                 <option value="lead">Lead</option>
                 <option value="trial">New customer</option>
                 <option value="active">Active</option>
@@ -388,13 +403,13 @@ function OverviewTab({ customer, tags, preferences, staff, onUpdate, onOpenConse
               </select>
             </div>
             <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-staff">Staff member</label>
-              <select id="f-staff" style={styles.fieldInput} value={form.owner_user_id} onChange={(e) => setForm({ ...form, owner_user_id: e.target.value })}>
+              <select id="f-staff" style={{ ...styles.fieldInput, ...mark('owner_user_id') }} value={form.owner_user_id} onChange={(e) => setForm({ ...form, owner_user_id: e.target.value })}>
                 <option value="">Unassigned</option>
                 {staff.map((o) => <option key={o.id} value={o.id}>{o.first_name} {o.last_name}</option>)}
               </select>
             </div>
             <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-home">Home location</label>
-              <select id="f-home" style={styles.fieldInput} value={form.home_location_id} onChange={(e) => setForm({ ...form, home_location_id: e.target.value })}>
+              <select id="f-home" style={{ ...styles.fieldInput, ...mark('home_location_id') }} value={form.home_location_id} onChange={(e) => setForm({ ...form, home_location_id: e.target.value })}>
                 <option value="">Not set</option>
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 {form.home_location_id && !locations.some((l) => l.id === form.home_location_id) && <option value={form.home_location_id}>{customer.home_location_name || 'Current location'}</option>}
