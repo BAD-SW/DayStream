@@ -47,7 +47,7 @@ Every run ends with a report in chat and a new entry in [RUN-LOG.md](./RUN-LOG.m
 | 13 | [Marketing & leads](./suites/13-marketing.md) | MKT | 22 | 16, 48, THE-17 |
 | 14 | [Website, CMS & booking widget](./suites/14-website-widget.md) | WEB | 13 | 18, 38 |
 | 15 | [Events, community & integrations](./suites/15-events-community-integrations.md) | EVT, COM, INT | 22 | 14, 20, 22 |
-| 16 | [UI cross-cutting](./suites/16-ui-crosscutting.md) | UIX | 12 | 04, 30 |
+| 16 | [UI cross-cutting](./suites/16-ui-crosscutting.md) | UIX | 13 | 04, 30 |
 | 17 | [Inbox](./suites/17-inbox.md) | INB | 16 | 47 |
 
 Suite 01 is the heart of goal A. Suites 02–17 go deep per feature. Suite 00 is the fast gate for goal B.
@@ -304,3 +304,4 @@ Gaps in the test approach itself:
 | 2026-10-28 | local | Create Event: start date + time (suggests 9:00), duration (hours or days) and end that follow each other, quarter-hour time suggestions with any minute typeable (David's remarks on THE-20). EVT-01 expectation extended; checked in the browser; unit tests for the timing |
 | 2026-10-28 | local | Events: Delete event = archive with restore ("Show deleted events"), refused while registrations or a waiting list exist (migration 160); Create Event laid out as Proposal A. EVT-16 added, `revdel` passes and is in the full run; events-workshops test uses its own event type |
 | 2026-11-01 | local | Cancelling an event refunds its paid tickets and says so first (EVT-17 added); default event duration 3 hours; lead source editable in the Leads row with a Timeline line (MKT-11). `revdel` 2/2 and `rleads` 5/5 pass |
+| 2026-11-01 | local | Events module on the one-Save rule (details, tickets, facilitators, event types, series; Create Event asks before leaving). UIX-13 added, checked in the browser; event-archive test now removes its event type |

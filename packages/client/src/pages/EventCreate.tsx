@@ -4,6 +4,7 @@ import { Button } from '../design-system/components/actions/Button';
 import { Alert } from '../design-system/components/feedback/Alert';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
 import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
+import { LeaveGuard } from '../components/unsaved/LeaveGuard';
 import * as eventsApi from '../api/events';
 import { getLocations } from '../api/locations';
 import { getTaxCategories } from '../api/services';
@@ -36,6 +37,9 @@ export function EventCreate() {
   const [endDate, setEndDate] = useState('');
   const [endTime, setEndTime] = useState('');
   const endTooEarly = endNotAfterStart(startDate, startTime, endDate, endTime);
+  // Something typed and not created yet: leaving asks first (David, 2026-11-01).
+  const typed = !!(form.title || form.description || form.event_type_id || form.location_id || form.location_name || form.tax_category_id || startDate)
+    || form.capacity !== 50 || startTime !== DEFAULT_START_TIME || duration.amount !== 3 || duration.unit !== 'hours';
 
   const changeStart = (date: string, time: string) => {
     setStartDate(date); setStartTime(time);
@@ -88,6 +92,7 @@ export function EventCreate() {
   // "About the event" on the left and "When" and "Where and tickets" on the right, all on one screen.
   return (
     <div style={styles.page}>
+      <LeaveGuard when={typed && !loading} />
       <form id="create-event" onSubmit={handleSubmit}>
         <StickyPageTop>
           <button type="button" style={styles.back} onClick={() => navigate('/events')}>← Events</button>

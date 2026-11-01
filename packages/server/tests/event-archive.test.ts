@@ -58,7 +58,11 @@ describe('Deleting and restoring an event', () => {
     customerId = c[0].id;
     ownerToken = authService.generateAccessToken('00000000-0000-0000-0000-000000000021', TENANT_ID, 'business_owner', ['events:*']);
   });
-  afterAll(cleanUp);
+  // Leave the shared demo organisation as it was: these events and their type go.
+  afterAll(async () => {
+    await cleanUp();
+    await adminPool.query("DELETE FROM evt_types WHERE tenant_id = $1 AND name = 'Archive Test Type' AND id NOT IN (SELECT event_type_id FROM evt_events WHERE event_type_id IS NOT NULL)", [TENANT_ID]);
+  });
 
   it('archives an event without registrations, hides it, and restores it', async () => {
     const id = await makeEvent('Archive Me Empty');

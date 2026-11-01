@@ -4,6 +4,9 @@ import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { ListRow, ListRows, ListRowTitle, ListRowMeta, ListEmpty } from '../design-system/components/data/ListRow';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
+import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
+import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, useDraftList, fieldMark, draftBox, UnsavedTag, RowTag } from '../components/unsaved/DraftSections';
+import { LeaveGuard } from '../components/unsaved/LeaveGuard';
 import { TabBar } from '../design-system/components/navigation/TabBar';
 import { ConfirmDialog } from '../design-system/components/feedback/ConfirmDialog';
 import { Alert } from '../design-system/components/feedback/Alert';
@@ -17,7 +20,17 @@ import './EventDetail.css';
 
 type Tab = 'details' | 'tickets' | 'registrations' | 'waitlist' | 'facilitators' | 'communications' | 'reports';
 
+// One Save for the event (David, 2026-11-01, as in Settings): details, tickets and facilitators
+// wait for Save changes; Publish, Cancel, Delete, registrations and messages act straight away.
 export function EventDetail() {
+  return (
+    <DraftSectionsProvider>
+      <EventDetailPage />
+    </DraftSectionsProvider>
+  );
+}
+
+function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [event, setEvent] = useState<Event | null>(null);
@@ -26,6 +39,14 @@ export function EventDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [cancelPreview, setCancelPreview] = useState<eventsApi.CancelPreview | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const { dirtySections, saveAll, saving } = useDraftSections();
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const dirty = dirtySections.length > 0;
+  useEffect(() => { if (dirty) setSaveResult((r) => (r?.ok ? null : r)); }, [dirty]);
+  const saveChanges = async () => {
+    const { failed } = await saveAll();
+    setSaveResult(failed.length ? { ok: false, text: `Not saved: ${failed.map((f) => `${f.label} (${f.error})`).join('; ')}` } : { ok: true, text: 'All changes saved.' });
+  };
   const [problem, setProblem] = useState('');
 
   useEffect(() => {
@@ -82,6 +103,8 @@ export function EventDetail() {
 
   return (
     <div>
+      <LeaveGuard when={dirty} />
+      <StickyPageTop>
       <div className="evd-back">
         <Button variant="ghost" size="sm" onClick={() => navigate('/events')}>← Back</Button>
       </div>
@@ -89,6 +112,9 @@ export function EventDetail() {
         title={event.title}
         subtitle={`${event.event_type_name} · ${new Date(event.start_time).toLocaleDateString()}`}
         actions={<>
+          {dirty ? <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning-dark)' }}>You have unsaved changes.</span>
+            : saveResult && <span role={saveResult.ok ? 'status' : 'alert'} style={{ fontSize: 'var(--font-size-sm)', color: saveResult.ok ? 'var(--color-success)' : 'var(--color-error)' }}>{saveResult.text}</span>}
+          <Button onClick={saveChanges} loading={saving} disabled={!dirty}>Save changes</Button>
           {event.deleted_at ? (
             <>
               <Badge variant="error">deleted</Badge>
@@ -124,12 +150,14 @@ export function EventDetail() {
         confirmLabel="Delete event"
         cancelLabel="Keep it"
       />
-      <TabBar aria-label="Event sections" tabs={tabs} active={activeTab} onChange={setActiveTab} />
-      {activeTab === 'details' && <DetailsTab event={event} />}
-      {activeTab === 'tickets' && <TicketsTab eventId={event.id} />}
+      <TabBar aria-label="Event sections" tabs={tabs.map((t) => ({ ...t, changed: dirtySections.some((s) => s.tab === t.key) }))} active={activeTab} onChange={setActiveTab} />
+      </StickyPageTop>
+      {/* Tabs with drafts stay mounted, so their edits survive switching tabs. */}
+      <div hidden={activeTab !== 'details'}><DraftTab tab="details"><DetailsTab event={event} /></DraftTab></div>
+      <div hidden={activeTab !== 'tickets'}><DraftTab tab="tickets"><TicketsTab eventId={event.id} /></DraftTab></div>
       {activeTab === 'registrations' && <RegistrationsTab eventId={event.id} />}
       {activeTab === 'waitlist' && <WaitlistTab eventId={event.id} />}
-      {activeTab === 'facilitators' && <FacilitatorsTab eventId={event.id} />}
+      <div hidden={activeTab !== 'facilitators'}><DraftTab tab="facilitators"><FacilitatorsTab eventId={event.id} /></DraftTab></div>
       {activeTab === 'communications' && <CommsTab eventId={event.id} />}
       {activeTab === 'reports' && <ReportsTab eventId={event.id} />}
     </div>
@@ -161,106 +189,84 @@ function HostAndTax({ event }: { event: Event }) {
   const businessId = localStorage.getItem('business_id') || '';
   const [locations, setLocations] = useState<any[]>([]);
   const [taxes, setTaxes] = useState<any[]>([]);
-  const [locationId, setLocationId] = useState((event as any).location_id || '');
-  const [taxId, setTaxId] = useState((event as any).tax_category_id || '');
-  const [saved, setSaved] = useState('');
+  const draft = useDraft('event-details', 'Details', { location_id: (event as any).location_id || '', tax_category_id: (event as any).tax_category_id || '' },
+    async (d) => { await eventsApi.updateEvent(event.id, { location_id: d.location_id || null, tax_category_id: d.tax_category_id }); });
+  const locationId = draft.value.location_id;
+  const taxId = draft.value.tax_category_id;
   useEffect(() => {
     if (!businessId) return;
     getLocations(businessId).then(setLocations).catch(() => {});
     getTaxCategories(businessId).then(setTaxes).catch(() => {});
   }, [businessId]);
-  const save = async (changes: Record<string, any>) => {
-    setSaved('');
-    try { await eventsApi.updateEvent(event.id, changes); setSaved('Saved'); }
-    catch (e: any) { setSaved(e?.response?.data?.error || 'Not saved'); }
-  };
   return (
     <>
       <div><dt>Hosted at</dt><dd>
-        <select className="ev-select" aria-label="Hosted at" value={locationId}
-          onChange={(e) => { setLocationId(e.target.value); save({ location_id: e.target.value || null }); }}>
+        <select className="ev-select" aria-label="Hosted at" value={locationId} style={fieldMark(draft.changed((v) => v.location_id))}
+          onChange={(e) => draft.setValue({ ...draft.value, location_id: e.target.value })}>
           <option value="">{locationId && !locations.some((l) => l.id === locationId) ? 'A location of another business' : '— None —'}</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
       </dd></div>
       <div><dt>Ticket tax</dt><dd>
-        <select className="ev-select" aria-label="Ticket tax" value={taxId}
-          onChange={(e) => { setTaxId(e.target.value); save({ tax_category_id: e.target.value }); }}>
+        <select className="ev-select" aria-label="Ticket tax" value={taxId} style={fieldMark(draft.changed((v) => v.tax_category_id))}
+          onChange={(e) => draft.setValue({ ...draft.value, tax_category_id: e.target.value })}>
           <option value="">Business default tax</option>
           {taxes.map((t) => <option key={t.id} value={t.id}>{t.name} ({(t.rate / 100).toLocaleString()}%)</option>)}
         </select>
-        {saved && <span className="evd-label" style={{ marginLeft: 8 }}>{saved}</span>}
+        <UnsavedTag dirty={draft.dirty} />
       </dd></div>
     </>
   );
 }
 
 function TicketsTab({ eventId }: { eventId: string }) {
-  const [tiers, setTiers] = useState<any[]>([]);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editPrice, setEditPrice] = useState('');
-  useEffect(() => { eventsApi.getTiers(eventId).then(setTiers); }, [eventId]);
-
-  const handleDelete = async (tierId: string) => {
-    if (!confirm('Delete this ticket tier?')) return;
-    await eventsApi.deleteTier(eventId, tierId);
-    setTiers(tiers.filter((t) => t.id !== tierId));
-  };
-
-  const handleEdit = (t: any) => { setEditing(t.id); setEditName(t.name); setEditPrice(String(t.price / 100)); };
-
-  const handleSave = async (tierId: string) => {
-    const updated = await eventsApi.updateTier(eventId, tierId, { name: editName, price: Math.round(parseFloat(editPrice) * 100) });
-    setTiers(tiers.map((t) => t.id === tierId ? updated : t));
-    setEditing(null);
-  };
+  type Who = 'all' | 'members_only' | 'first_time';
+  type Tier = { id?: string; name: string; price: number; quantity_available: number | null; eligibility_type: Who; sold_count?: number };
+  const list = useDraftList<Tier>('event-tickets', 'Tickets', {
+    create: (t) => eventsApi.createTier(eventId, { name: t.name.trim(), price: t.price, quantity_available: t.quantity_available, eligibility_type: t.eligibility_type }).then((c: any) => ({ ...c, sold_count: 0 })),
+    update: (t) => eventsApi.updateTier(eventId, t.id!, { name: t.name.trim(), price: t.price }),
+    remove: (t) => eventsApi.deleteTier(eventId, t.id!),
+  });
+  useEffect(() => { eventsApi.getTiers(eventId).then(list.load); }, [eventId, list.load]);
 
   // A new ticket type (THE-20): who may buy it is everyone, members only (an active
   // membership at the hosting business) or first-time customers only (no earlier visit or
-  // purchase there). "Custom" is not defined, so it is not offered.
-  type Who = 'all' | 'members_only' | 'first_time';
+  // purchase there). "Custom" is not defined, so it is not offered. It is saved with Save changes.
   const [newName, setNewName] = useState('');
   const [newPrice, setNewPrice] = useState('');
   const [newQty, setNewQty] = useState('');
   const [newWho, setNewWho] = useState<Who>('all');
   const [addError, setAddError] = useState('');
-  const handleAdd = async () => {
+  const handleAdd = () => {
     setAddError('');
     if (!newName.trim()) { setAddError('Give the ticket a name'); return; }
-    try {
-      const created = await eventsApi.createTier(eventId, {
-        name: newName.trim(), price: Math.round((parseFloat(newPrice) || 0) * 100),
-        quantity_available: newQty ? Number(newQty) : null, eligibility_type: newWho,
-      });
-      setTiers([...tiers, { ...created, sold_count: 0 }]);
-      setNewName(''); setNewPrice(''); setNewQty(''); setNewWho('all');
-    } catch (e: any) { setAddError(e?.response?.data?.error || 'The ticket could not be added'); }
+    list.add({ name: newName.trim(), price: Math.round((parseFloat(newPrice) || 0) * 100), quantity_available: newQty ? Number(newQty) : null, eligibility_type: newWho });
+    setNewName(''); setNewPrice(''); setNewQty(''); setNewWho('all');
   };
 
   return (
-    <div>
-      <h3 className="ev-section-title">Ticket Tiers</h3>
-      {tiers.length === 0 ? <ListEmpty>No tiers configured</ListEmpty> : (
+    <div style={draftBox(list.dirty)}>
+      <h3 className="ev-section-title">Ticket Tiers<UnsavedTag dirty={list.dirty} /></h3>
+      {list.rows.length === 0 ? <ListEmpty>No tiers configured</ListEmpty> : (
         <ListRows>
-          {tiers.map((t: any) => editing === t.id ? (
-            <ListRow key={t.id} actions={<>
-              <Button size="sm" onClick={() => handleSave(t.id)}>Save</Button>
-              <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
-            </>}>
-              <input className="ev-input" aria-label="Tier name" value={editName} onChange={(e) => setEditName(e.target.value)} />
-              <input className="ev-input evd-price" aria-label="Price" type="number" step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} />
+          {list.rows.map((r) => r.deleted ? (
+            <ListRow key={r.key} actions={<Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button>}>
+              <ListRowTitle><s>{r.item.name}</s></ListRowTitle>
+              <RowTag>Deleted when you save</RowTag>
             </ListRow>
           ) : (
-            <ListRow key={t.id} actions={<>
-              <ListRowMeta>{t.sold_count || 0} / {t.quantity_available || '∞'} sold</ListRowMeta>
-              <Button size="sm" variant="ghost" onClick={() => handleEdit(t)}>Edit</Button>
-              <Button size="sm" variant="destructive" onClick={() => handleDelete(t.id)}>Delete</Button>
+            <ListRow key={r.key} actions={<>
+              <ListRowMeta>{r.item.sold_count || 0} / {r.item.quantity_available || '∞'} sold</ListRowMeta>
+              <Button size="sm" variant="destructive" onClick={() => list.remove(r.key)}>Delete</Button>
             </>}>
-              <ListRowTitle>{t.name}</ListRowTitle>
-              <span>— {t.price > 0 ? formatCurrency(t.price) : 'Free'}</span>
-              {t.eligibility_type === 'members_only' && <Badge variant="info">Members only</Badge>}
-              {t.eligibility_type === 'first_time' && <Badge variant="info">First-time customers only</Badge>}
+              <input className="ev-input" aria-label="Tier name" value={r.item.name} style={fieldMark(!!r.isNew || list.changed(r, (t) => t.name))}
+                onChange={(e) => list.edit(r.key, { name: e.target.value })} />
+              <input className="ev-input evd-price" aria-label="Price" type="number" step="0.01" min="0" value={r.item.price / 100}
+                style={fieldMark(!!r.isNew || list.changed(r, (t) => t.price))}
+                onChange={(e) => list.edit(r.key, { price: Math.round((parseFloat(e.target.value) || 0) * 100) })} />
+              {r.item.eligibility_type === 'members_only' && <Badge variant="info">Members only</Badge>}
+              {r.item.eligibility_type === 'first_time' && <Badge variant="info">First-time customers only</Badge>}
+              {r.isNew && <RowTag>New</RowTag>}
             </ListRow>
           ))}
         </ListRows>
@@ -402,28 +408,25 @@ function WaitlistTab({ eventId }: { eventId: string }) {
 }
 
 function FacilitatorsTab({ eventId }: { eventId: string }) {
-  const [facilitators, setFacilitators] = useState<any[]>([]);
+  type Fac = { id?: string; staff_id: string; role: string; staff_name?: string };
+  const list = useDraftList<Fac>('event-facilitators', 'Facilitators', {
+    create: (f) => eventsApi.addFacilitator(eventId, { staff_id: f.staff_id, role: f.role }),
+    remove: (f) => eventsApi.removeFacilitator(eventId, f.id!),
+  });
   const [staffId, setStaffId] = useState('');
   const [role, setRole] = useState('facilitator');
 
-  useEffect(() => { eventsApi.getFacilitators(eventId).then(setFacilitators).catch(() => {}); }, [eventId]);
+  useEffect(() => { eventsApi.getFacilitators(eventId).then(list.load).catch(() => {}); }, [eventId, list.load]);
 
-  const handleAdd = async () => {
+  const handleAdd = () => {
     if (!staffId) return;
-    const f = await eventsApi.addFacilitator(eventId, { staff_id: staffId, role });
-    setFacilitators([...facilitators, f]);
+    list.add({ staff_id: staffId, role });
     setStaffId(''); setRole('facilitator');
-  };
-
-  const handleRemove = async (fid: string) => {
-    if (!confirm('Remove this facilitator?')) return;
-    await eventsApi.removeFacilitator(eventId, fid);
-    setFacilitators(facilitators.filter((f) => f.id !== fid));
   };
 
   return (
     <div>
-      <h3 className="ev-section-title">Facilitators</h3>
+      <h3 className="ev-section-title">Facilitators<UnsavedTag dirty={list.dirty} /></h3>
       <div className="ev-add-row">
         <input className="ev-input" aria-label="Staff ID" placeholder="Staff ID" value={staffId} onChange={(e) => setStaffId(e.target.value)} />
         <select className="ev-select" aria-label="Role" value={role} onChange={(e) => setRole(e.target.value)}>
@@ -433,12 +436,16 @@ function FacilitatorsTab({ eventId }: { eventId: string }) {
         </select>
         <Button size="sm" onClick={handleAdd}>Add</Button>
       </div>
-      {facilitators.length === 0 ? <ListEmpty>No facilitators assigned</ListEmpty> : (
+      {list.rows.length === 0 ? <ListEmpty>No facilitators assigned</ListEmpty> : (
         <ListRows>
-          {facilitators.map((f: any) => (
-            <ListRow key={f.id} actions={<Button size="sm" variant="destructive" onClick={() => handleRemove(f.id)}>Remove</Button>}>
-              <ListRowTitle>{f.staff_name || f.staff_id}</ListRowTitle>
-              <Badge variant="neutral">{f.role}</Badge>
+          {list.rows.map((r) => (
+            <ListRow key={r.key} actions={r.deleted
+              ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button>
+              : <Button size="sm" variant="destructive" onClick={() => list.remove(r.key)}>Remove</Button>}>
+              <ListRowTitle>{r.deleted ? <s>{r.item.staff_name || r.item.staff_id}</s> : (r.item.staff_name || r.item.staff_id)}</ListRowTitle>
+              <Badge variant="neutral">{r.item.role}</Badge>
+              {r.isNew && <RowTag>New</RowTag>}
+              {r.deleted && <RowTag>Removed when you save</RowTag>}
             </ListRow>
           ))}
         </ListRows>

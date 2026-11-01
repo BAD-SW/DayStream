@@ -105,6 +105,67 @@ export function useDraft<T>(id: string, label: string, initial: T, persist: (val
   return { value, setValue, dirty, load, rebase, changed, saved, save };
 }
 
+/** One row of a list kept as a draft: added on screen (`isNew`), or deleted until the page is saved. */
+export interface DraftRow<T> { key: string; item: T; isNew?: boolean; deleted?: boolean }
+
+let draftRowKey = 0;
+const toRows = <T extends { id?: string }>(items: T[]): DraftRow<T>[] => items.map((item) => ({ key: String(item.id), item }));
+
+/**
+ * A list whose additions, edits and deletions wait for the page's Save (lead stages set the
+ * pattern: new rows are marked "New", edited fields are marked, deleted rows stay crossed out
+ * with Undo). `ops` stores one change each; deletions go first, then additions, then edits.
+ * If a change fails, what went through is kept and the rest stays on screen as unsaved.
+ */
+export function useDraftList<T extends { id?: string }>(
+  id: string,
+  label: string,
+  ops: { create?: (item: T) => Promise<T>; update?: (item: T, before: T) => Promise<T>; remove?: (item: T) => Promise<void> },
+) {
+  const draft = useDraft<DraftRow<T>[]>(id, label, [], async (rows) => {
+    const stored = [...draft.saved];
+    let onScreen = rows;
+    try {
+      for (const r of rows.filter((x) => x.deleted && !x.isNew)) {
+        await ops.remove!(r.item);
+        const i = stored.findIndex((s) => s.key === r.key); if (i >= 0) stored.splice(i, 1);
+        onScreen = onScreen.filter((x) => x.key !== r.key);
+      }
+      for (const r of rows.filter((x) => x.isNew && !x.deleted)) {
+        const created = await ops.create!(r.item);
+        const row = { key: String(created.id), item: created };
+        stored.push(row);
+        onScreen = onScreen.map((x) => (x.key === r.key ? row : x));
+      }
+      for (const r of rows.filter((x) => !x.isNew && !x.deleted)) {
+        const before = draft.saved.find((s) => s.key === r.key);
+        if (!before || JSON.stringify(before.item) === JSON.stringify(r.item)) continue;
+        const updated = await ops.update!(r.item, before.item);
+        const row = { key: r.key, item: { ...r.item, ...updated } };
+        stored.splice(stored.findIndex((s) => s.key === r.key), 1, row);
+        onScreen = onScreen.map((x) => (x.key === r.key ? row : x));
+      }
+    } catch (err) {
+      draft.rebase(stored, onScreen.filter((x) => !(x.isNew && x.deleted)));
+      throw err;
+    }
+    return onScreen.filter((x) => !x.deleted);
+  });
+  const rows = draft.value;
+  const load = useCallback((items: T[]) => draft.load(toRows(items)), [draft.load]);
+  const add = (item: T) => { draftRowKey += 1; draft.setValue([...rows, { key: `new-${draftRowKey}`, item, isNew: true }]); };
+  const edit = (key: string, patch: Partial<T>) => draft.setValue(rows.map((r) => (r.key === key ? { ...r, item: { ...r.item, ...patch } } : r)));
+  // A row added on screen just goes; a stored one is crossed out until the page is saved.
+  const remove = (key: string) => draft.setValue(rows.flatMap((r) => (r.key !== key ? [r] : r.isNew ? [] : [{ ...r, deleted: true }])));
+  const undo = (key: string) => draft.setValue(rows.map((r) => (r.key === key ? { ...r, deleted: false } : r)));
+  /** Whether one field of a stored row differs from what is stored. */
+  const changed = (row: DraftRow<T>, pick: (item: T) => unknown) => {
+    const before = draft.saved.find((s) => s.key === row.key);
+    return !!before && JSON.stringify(pick(before.item)) !== JSON.stringify(pick(row.item));
+  };
+  return { rows, load, add, edit, remove, undo, changed, dirty: draft.dirty };
+}
+
 /** Mark on a changed text field, number, date, time or select. */
 export function fieldMark(changed: boolean): React.CSSProperties {
   return changed ? { outline: '2px solid var(--color-warning)', outlineOffset: '1px', background: 'var(--color-warning-bg)' } : {};
@@ -125,6 +186,15 @@ export function draftBox(dirty: boolean): React.CSSProperties {
   return dirty
     ? { outline: '2px solid var(--color-warning)', outlineOffset: '4px', borderRadius: 'var(--radius-lg)' }
     : {};
+}
+
+/** Small label on a list row: "New", "Moved", "Deleted when you save". */
+export function RowTag({ children }: { children: ReactNode }) {
+  return (
+    <span style={{ padding: '2px 8px', borderRadius: 'var(--radius-full)', background: 'var(--color-warning-bg)', color: 'var(--color-warning-dark)', fontSize: 'var(--font-size-xs)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+      {children}
+    </span>
+  );
 }
 
 export function UnsavedTag({ dirty }: { dirty: boolean }) {
