@@ -217,6 +217,23 @@ describe('Resource Management', () => {
       expect(statusCode).toBe(200);
       expect(body.data.length).toBe(2);
     });
+
+    // D-81: the screen offered Weekly / Daily, which the database refused (500). A daily window is a recurring one with no weekday.
+    it('creates a daily maintenance window (recurring, no weekday)', async () => {
+      const { statusCode, body } = await request('POST', `/api/v1/resources/${RESOURCE_ID}/maintenance`, {
+        maintenance_type: 'recurring', start_time: '06:00', end_time: '07:00',
+      }, ownerToken);
+      expect(statusCode).toBe(201);
+      expect(body.data.day_of_week).toBeNull();
+      await adminPool.query('DELETE FROM res_maintenance WHERE id = $1', [body.data.id]);
+    });
+
+    it('refuses an unknown maintenance type or times out of order with 400', async () => {
+      const bad = await request('POST', `/api/v1/resources/${RESOURCE_ID}/maintenance`, { maintenance_type: 'weekly', day_of_week: 1, start_time: '06:00', end_time: '07:00' }, ownerToken);
+      expect(bad.statusCode).toBe(400);
+      const times = await request('POST', `/api/v1/resources/${RESOURCE_ID}/maintenance`, { maintenance_type: 'recurring', day_of_week: 1, start_time: '08:00', end_time: '07:00' }, ownerToken);
+      expect(times.statusCode).toBe(400);
+    });
   });
 
   // ==================== Resource Bookings & Conflict Prevention ====================

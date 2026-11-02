@@ -327,8 +327,9 @@ function MaintenanceTab({ resourceId }: { resourceId: string }) {
   const [form, setForm] = useState({ maintenance_type: 'weekly', day_of_week: '1', start_time: '06:00', end_time: '07:00', description: '' });
   const list = useDraftList<any>('resource-maintenance', 'Maintenance windows', {
     create: (m) => resourcesApi.createMaintenance(resourceId, {
-      maintenance_type: m.maintenance_type,
-      day_of_week: m.maintenance_type === 'weekly' ? m.day_of_week : undefined,
+      // Stored as a recurring window: on its weekday, or every day without one (D-81).
+      maintenance_type: 'recurring',
+      day_of_week: m.day_of_week ?? undefined,
       start_time: m.start_time,
       end_time: m.end_time,
       description: m.description || undefined,
@@ -345,7 +346,7 @@ function MaintenanceTab({ resourceId }: { resourceId: string }) {
 
   const handleAdd = () => {
     list.add({
-      maintenance_type: form.maintenance_type,
+      maintenance_type: 'recurring',
       day_of_week: form.maintenance_type === 'weekly' ? Number(form.day_of_week) : null,
       start_time: form.start_time,
       end_time: form.end_time,
@@ -414,7 +415,7 @@ function MaintenanceTab({ resourceId }: { resourceId: string }) {
               return (
                 <div key={row.key} style={{ ...styles.listItem, opacity: row.deleted ? 0.6 : 1 }}>
                   <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', textDecoration: row.deleted ? 'line-through' : 'none' }}>
-                    <Badge variant="neutral">{r.maintenance_type === 'weekly' ? dayLabels[r.day_of_week] : 'Daily'}</Badge>
+                    <Badge variant="neutral">{r.maintenance_type === 'one_time' ? formatDateOnly(r.specific_date) : r.day_of_week != null ? dayLabels[r.day_of_week] : 'Daily'}</Badge>
                     <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>{formatTime(r.start_time)}–{formatTime(r.end_time)}</span>
                     {r.description && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>— {r.description}</span>}
                     {row.isNew && <RowTag>New</RowTag>}

@@ -58,6 +58,6 @@ export function underMaintenance(windows: MaintenanceWindow[], resourceId: strin
   const slot = localSlotMinutes(start, end, timeZone);
   return windows.some((w) =>
     w.resource_id === resourceId
-    && (w.maintenance_type === 'recurring' ? w.day_of_week === slot.dayOfWeek : w.specific_date === slot.date)
+    && (w.maintenance_type === 'recurring' ? (w.day_of_week == null || w.day_of_week === slot.dayOfWeek) : w.specific_date === slot.date)
     && slot.startMinutes < w.end_minutes && slot.endMinutes > w.start_minutes);
 }
