@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
+import { Table } from '../design-system/components/data/Table';
 import * as reportsApi from '../api/reports';
 
 const REPORT_CONFIG: Record<string, { title: string; fetcher: (params?: any) => Promise<any> }> = {
@@ -73,28 +74,18 @@ export function ReportView() {
             ))
           ) : Array.isArray(data) ? (
             data.length === 0 ? <p style={styles.loading}>No data for this period.</p> : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-base)' }}>
-                <thead>
-                  <tr>
-                    {Object.keys(data[0]).map((k) => (
-                      <th key={k} style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border)', textTransform: 'capitalize', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>
-                        {k.replace(/_/g, ' ')}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.slice(0, 50).map((row: any, i: number) => (
-                    <tr key={i}>
-                      {Object.values(row).map((v: any, j: number) => (
-                        <td key={j} style={{ padding: '8px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
-                          {typeof v === 'object' ? JSON.stringify(v) : String(v ?? '')}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              // Every row on the shared table: column filters, scrolls instead of the old first-50 cut (David, 2026-11-02).
+              <Table
+                rowId={(row: any) => String(data.indexOf(row))}
+                data={data}
+                clientSort
+                columns={Object.keys(data[0]).map((k) => ({
+                  key: k,
+                  header: k.replace(/_/g, ' '),
+                  sortable: true,
+                  render: (v: any) => (typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v ?? '')),
+                }))}
+              />
             )
           ) : <p>{String(data)}</p>}
         </div>
