@@ -98,3 +98,96 @@ Implementation broken into territory setup (system admin), prospect generation e
 ---
 
 **Last Updated**: August 10, 2026
+
+
+---
+
+# Overture Redesign Tasks
+
+See `design.md`. Built **additively behind a feature flag** — the existing Google engine
+keeps working until the Overture path is validated and the default is flipped.
+
+## 5. Data Source Integration (Overture via DuckDB)
+
+### 5.1 DuckDB + Overture access
+- [ ] Add `duckdb` dependency to the server (native binary; note in AWS deploy image)
+- [ ] Config: Overture release id + S3 base path (not hardcoded)
+- [ ] Overture query service: load httpfs + spatial, query places Parquet by bbox
+- [ ] Derive the query bbox from the tenant's stored H3 territory hexes
+- [ ] Per-run safety timeout on the DuckDB query (no hung runs)
+- [ ] Map Overture fields (name, taxonomy, basic_category, confidence, address parts,
+      phones, websites, socials, lat/lng, source) to a common candidate shape
+
+### 5.2 Category mapping (config)
+- [ ] Define category → Overture taxonomy/basic_category mapping (curated, not regex)
+- [ ] Store mapping as editable config (extend/mirror prp_category_mappings)
+- [ ] Apply category selection in the query (kept slightly broad)
+
+## 6. Post-Query Filtering (app-side)
+
+### 6.1 Precise territory filter
+- [ ] For each candidate, compute res-7 H3 cell and keep only if in the territory hex set
+- [ ] Verify it drops bbox spillover (Canada / Erie PA) and keeps edge towns (e.g. Arcade)
+
+### 6.2 Tunable classification (reversible, not delete)
+- [ ] Store every fetched record; classify rather than discard
+- [ ] Local confidence threshold (active vs held) — configurable, not query-time
+- [ ] Operator-selectable contact-completeness filter: Include all / phone OR website
+      (default) / phone AND website — applied post-query as a reversible flag
+
+## 7. De-duplication & Reconciliation
+
+### 7.1 Normalize
+- [ ] Canonicalize address (street/city/region/postal/point) across field shapes
+- [ ] Normalize names (lowercase, strip punctuation + filler)
+
+### 7.2 Match & reconcile
+- [ ] Group by geographic proximity, confirm with fuzzy name similarity (tuned thresholds)
+- [ ] Reconcile merged records (canonical name + alias; best field per source; sources list)
+- [ ] De-dup within Overture AND against the tenant's existing prospects (update, not dup)
+- [ ] Preserve multi-location chains (same name, different address = distinct)
+
+## 8. Fit Signals, Fit Score, Territory Valuation
+
+### 8.1 Fit signals
+- [ ] Persist raw signals per prospect (category, confidence, has-phone/website/social,
+      multi-location flag, review count/rating, address completeness)
+- [ ] Derive multi-location-operator flag via name-clustering within the territory
+
+### 8.2 Fit Score (v1, configurable)
+- [ ] Transparent weighted 0–100 score; weights stored as config
+- [ ] Derive fit tier (strong/moderate/weak)
+- [ ] Keep strictly separate from Overture confidence
+
+### 8.3 Territory Valuation (descriptive)
+- [ ] Aggregate fit tiers/counts per territory (descriptive, not a $ figure)
+- [ ] Surface on the coverage/territory view
+
+## 9. Data Model
+
+- [ ] Migration: source='overture', external_id, confidence, fit_signals (JSONB),
+      fit_score, fit_tier, included/status flag, contact + address fields
+- [ ] Config entries: category→taxonomy map, fit-score weights, confidence threshold,
+      Overture release id
+
+## 10. Optional Enrichment (contact gaps)
+
+- [ ] (Optional) Google Place Details lookup for prospects missing phone/website only
+- [ ] Respect the existing Places daily quota; keep off the critical path; deferrable
+
+## 11. Background Job & UI
+
+- [ ] Run Overture generation as a background job (reuse status-polling pattern)
+- [ ] Generate screen: contact-completeness option + category selection
+- [ ] Prospect list: show fit score/tier, confidence, source, included/held state
+- [ ] Territory view: show descriptive valuation (fit-tier counts)
+
+## 12. Rollout & Testing
+
+- [ ] Feature flag to select Overture vs Google engine
+- [ ] Unit tests with STUBBED fixtures: Advanced Care (keep 6), Susan Naturally (merge),
+      Grand Island PT vs Island Aesthetics (don't merge)
+- [ ] Territory-polygon filter test (out-of-territory excluded; edge town included)
+- [ ] Fit-score tests (known inputs → expected tier; Exotic Tan → found, low fit)
+- [ ] Ground-truth recall check on one dense + one sparse territory
+- [ ] Validate against evaluation numbers, then flip default to Overture
