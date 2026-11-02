@@ -38,6 +38,7 @@ interface ReconciledProspect {
   name: string;
   category: string | null;
   basicCategory: string | null;
+  hierarchy: string[];
   confidence: number | null;
   address: string | null;
   city: string | null;
@@ -83,38 +84,54 @@ const LEN = { externalId: 300, name: 300, address: 500, city: 200, phone: 50, we
 interface CategoryRow { ui_category_name: string; overture_taxonomy: string[] | null; display_order: number | null }
 
 /**
- * Build a resolver mapping a business's Overture taxonomy to the UI category it belongs to.
+ * Build a resolver mapping a business's Overture taxonomy to the UI category it belongs to —
+ * HIERARCHY-AWARE to match the hierarchy-aware query filter.
  *
- * A business qualified for the result set because its taxonomy substring-matched some selected
- * category's curated terms. But a business's Overture `taxonomy.primary` / `basic_category`
- * may be broad (e.g. 'beauty_salon' umbrellas tattoo/waxing), so we attribute it to the UI
- * category whose MOST SPECIFIC (longest) curated term matches — 'medical_spa' beats a generic
- * 'spa'. Ties resolve by display order (first-listed category wins), which is deterministic.
+ * A business qualified because one of its hierarchy codes is in some category's selected set.
+ * We attribute it to the UI category whose selected code sits DEEPEST in this business's
+ * hierarchy path — i.e. the most specific match. Example: a business with hierarchy
+ * [health_care, ..., complementary_and_alternative_medicine, naturopathic_medicine] attributed
+ * to a category that selected `naturopathic_medicine` (depth 3) over one that selected
+ * `health_care` (depth 0). Ties resolve by category display order (deterministic).
  *
  * Returns null when nothing matches (caller falls back to the first selected category).
  */
-function makeCategoryResolver(rows: CategoryRow[]): (category: string | null, basicCategory: string | null) => string | null {
-  // Pre-normalize each category's terms (lowercased, non-empty), carried with display order.
+function makeCategoryResolver(rows: CategoryRow[]): (category: string | null, basicCategory: string | null, hierarchy?: string[]) => string | null {
+  // Each category's selected codes as a Set (exact codes), carried with display order.
   const cats = rows.map((r, idx) => ({
     name: r.ui_category_name,
     order: r.display_order ?? idx,
-    terms: (r.overture_taxonomy || []).map((t) => String(t).toLowerCase()).filter(Boolean),
+    codes: new Set((r.overture_taxonomy || []).map((t) => String(t).toLowerCase()).filter(Boolean)),
   }));
 
-  return (category: string | null, basicCategory: string | null): string | null => {
-    const hay = `${(category || '').toLowerCase()} ${(basicCategory || '').toLowerCase()}`;
-    let best: { name: string; termLen: number; order: number } | null = null;
+  return (category: string | null, basicCategory: string | null, hierarchy?: string[]): string | null => {
+    // Build the ordered path to test against (deepest-last), with primary/basic as fallbacks.
+    const path = (hierarchy && hierarchy.length ? hierarchy : [])
+      .map((c) => c.toLowerCase());
+    const prim = (category || '').toLowerCase();
+    const basic = (basicCategory || '').toLowerCase();
+    // A candidate "depth" for a code = its index in the hierarchy (deeper = more specific);
+    // primary/basic (not in hierarchy) are treated as deepest so an exact leaf still wins.
+    const depthOf = (code: string): number => {
+      const i = path.lastIndexOf(code);
+      if (i >= 0) return i;
+      if (code === prim || code === basic) return path.length; // treat as deepest
+      return -1;
+    };
+
+    let best: { name: string; depth: number; order: number } | null = null;
     for (const c of cats) {
-      for (const term of c.terms) {
-        if (!hay.includes(term)) continue;
+      for (const code of c.codes) {
+        const d = depthOf(code);
+        if (d < 0) continue;
         const better =
           best === null ||
-          term.length > best.termLen ||
-          (term.length === best.termLen && c.order < best.order);
-        if (better) best = { name: c.name, termLen: term.length, order: c.order };
+          d > best.depth ||
+          (d === best.depth && c.order < best.order);
+        if (better) best = { name: c.name, depth: d, order: c.order };
       }
     }
-    return best?.name ?? null;
+    return best ? best.name : null;
   };
 }
 
@@ -129,6 +146,7 @@ function reconcileCluster(records: Array<DedupRecord & OvertureCandidate>, canon
     name: clampLen(canonical.name, LEN.name) ?? canonical.name,
     category: (coalesceField(records, 'category') as string | null) ?? null,
     basicCategory: (coalesceField(records, 'basicCategory') as string | null) ?? null,
+    hierarchy: canonical.hierarchy || [],
     // Confidence: keep the HIGHEST across the cluster (best evidence the place is real).
     confidence: records.reduce<number | null>((best, r) => {
       if (r.confidence == null) return best;
@@ -203,7 +221,7 @@ export async function generateProspectsFromOverture(
 
   for (let i = 0; i < reconciled.length; i++) {
     const r = reconciled[i];
-    const rowCategory = resolveCategory(r.category, r.basicCategory) ?? fallbackLabel;
+    const rowCategory = resolveCategory(r.category, r.basicCategory, r.hierarchy) ?? fallbackLabel;
     const fitInput: FitInput = {
       name: r.name,
       category: r.category,

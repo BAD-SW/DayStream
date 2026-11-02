@@ -36,6 +36,7 @@ export interface OvertureCandidate {
   name: string;
   category: string | null;        // Overture taxonomy.primary
   basicCategory: string | null;
+  hierarchy: string[];            // Overture taxonomy.hierarchy [L0..primary] — for category attribution
   confidence: number | null;      // Overture's 0..1 data-quality score
   address: string | null;
   city: string | null;
@@ -143,9 +144,16 @@ export async function queryOvertureCandidates(
   const taxonomy = await loadOvertureTaxonomy(categoryIds);
   if (taxonomy.length === 0) return [];
 
-  // Category filter: keep slightly broad — match if the taxonomy OR basic_category contains
-  // any curated term. Done as a regexp_matches over lowercased concatenation.
-  const pattern = taxonomy.map((t) => t.replace(/[^a-z0-9_]/g, '')).filter(Boolean).join('|');
+  // HIERARCHY-AWARE category filter. The selected codes are exact Overture taxonomy codes
+  // (chosen from the catalog picker). A candidate matches if ANY selected code appears in its
+  // taxonomy.hierarchy path — so choosing a PARENT (e.g. complementary_and_alternative_medicine)
+  // catches every descendant (naturopathic_medicine, acupuncture, ...). We also match on
+  // basic_category and taxonomy.primary directly to be safe. Exact-code matching avoids the
+  // loose-substring false positives the old regexp approach produced (e.g. 'spa' inside words).
+  // Codes are sanitized to [a-z0-9_] and single-quoted for the SQL list literal.
+  const codes = [...new Set(taxonomy.map((t) => t.toLowerCase().replace(/[^a-z0-9_]/g, '')).filter(Boolean))];
+  if (codes.length === 0) return [];
+  const codeList = codes.map((c) => `'${c}'`).join(', ');
 
   const db = new duckdb.Database(':memory:');
   const con = db.connect();
@@ -157,6 +165,7 @@ export async function queryOvertureCandidates(
         names.primary AS name,
         taxonomy.primary AS category,
         basic_category,
+        CAST(taxonomy.hierarchy AS VARCHAR) AS hierarchy,
         confidence,
         addresses[1].freeform AS address,
         addresses[1].locality AS city,
@@ -171,7 +180,11 @@ export async function queryOvertureCandidates(
       WHERE bbox.xmin BETWEEN ${bbox.xmin} AND ${bbox.xmax}
         AND bbox.ymin BETWEEN ${bbox.ymin} AND ${bbox.ymax}
         AND names.primary IS NOT NULL
-        AND regexp_matches(lower(coalesce(taxonomy.primary,'') || ' ' || coalesce(basic_category,'')), '${pattern}')
+        AND (
+          len(list_intersect(coalesce(taxonomy.hierarchy, []), [${codeList}])) > 0
+          OR basic_category IN (${codeList})
+          OR taxonomy.primary IN (${codeList})
+        )
     `;
     const t0 = Date.now();
     const rows = await runQuery(con, sql);
@@ -193,6 +206,7 @@ export async function queryOvertureCandidates(
         name: String(r.name),
         category: r.category ?? null,
         basicCategory: r.basic_category ?? null,
+        hierarchy: parseList(r.hierarchy),
         confidence: r.confidence == null ? null : Number(r.confidence),
         address: r.address ?? null,
         city: r.city ?? null,

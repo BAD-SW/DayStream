@@ -299,14 +299,14 @@ prospectsRouter.get('/categories', requireTenantLevel(), requirePermission('sett
 // POST /api/v1/prospects/categories — Add a category mapping
 prospectsRouter.post('/categories', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
-    const { ui_category_name, google_search_strings, api_exclusion_types } = req.body;
+    const { ui_category_name, google_search_strings, api_exclusion_types, overture_taxonomy } = req.body;
     if (!ui_category_name || !google_search_strings || google_search_strings.length === 0) {
       error(res, 'ui_category_name and google_search_strings required', 'VALIDATION_ERROR', 400); return;
     }
     const { rows } = await adminPool.query(
-      `INSERT INTO prp_category_mappings (ui_category_name, google_search_strings, api_exclusion_types)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [ui_category_name, google_search_strings, api_exclusion_types || []],
+      `INSERT INTO prp_category_mappings (ui_category_name, google_search_strings, api_exclusion_types, overture_taxonomy)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [ui_category_name, google_search_strings, api_exclusion_types || [], overture_taxonomy || []],
     );
     success(res, rows[0], undefined, 201);
   } catch (err: any) { console.error('Failed to add category', err?.message || err); error(res, 'Failed to add category', 'INTERNAL_ERROR', 500); }
@@ -315,13 +315,14 @@ prospectsRouter.post('/categories', requirePermission('*:*'), async (req: Reques
 // PUT /api/v1/prospects/categories/:id — Update a category mapping
 prospectsRouter.put('/categories/:id', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
-    const { ui_category_name, google_search_strings, api_exclusion_types, active } = req.body;
+    const { ui_category_name, google_search_strings, api_exclusion_types, overture_taxonomy, active } = req.body;
     const fields: string[] = [];
     const params: any[] = [];
     let idx = 1;
     if (ui_category_name !== undefined) { fields.push(`ui_category_name = $${idx++}`); params.push(ui_category_name); }
     if (google_search_strings !== undefined) { fields.push(`google_search_strings = $${idx++}`); params.push(google_search_strings); }
     if (api_exclusion_types !== undefined) { fields.push(`api_exclusion_types = $${idx++}`); params.push(api_exclusion_types); }
+    if (overture_taxonomy !== undefined) { fields.push(`overture_taxonomy = $${idx++}`); params.push(overture_taxonomy); }
     if (active !== undefined) { fields.push(`active = $${idx++}`); params.push(active); }
     if (fields.length === 0) { error(res, 'Nothing to update', 'VALIDATION_ERROR', 400); return; }
     params.push(req.params.id);
@@ -339,6 +340,23 @@ prospectsRouter.delete('/categories/:id', requirePermission('*:*'), async (req: 
     await adminPool.query('DELETE FROM prp_category_mappings WHERE id = $1', [req.params.id]);
     success(res, { deleted: true });
   } catch (err: any) { console.error('Failed to delete category', err?.message || err); error(res, 'Failed to delete category', 'INTERNAL_ERROR', 500); }
+});
+
+// GET /api/v1/prospects/overture-taxonomy — The full Overture taxonomy catalog (the ~2.2k
+// categories with hierarchy) used to drive the category tag picker. Served from a committed
+// data asset extracted from the Overture release we query, so the picker's options are valid
+// by construction (no free-typing). Cached in memory after first read.
+let overtureTaxonomyCache: any = null;
+prospectsRouter.get('/overture-taxonomy', requirePermission('*:*'), async (_req: Request, res: Response) => {
+  try {
+    if (!overtureTaxonomyCache) {
+      const { readFileSync } = await import('fs');
+      const path = await import('path');
+      const file = path.join(__dirname, '..', 'data', 'overture-taxonomy.json');
+      overtureTaxonomyCache = JSON.parse(readFileSync(file, 'utf8'));
+    }
+    success(res, overtureTaxonomyCache);
+  } catch (err: any) { console.error('Failed to load Overture taxonomy', err?.message || err); error(res, 'Failed to load Overture taxonomy', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
