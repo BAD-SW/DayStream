@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Table } from '../design-system/components/data/Table';
+import type { TableFilters } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
@@ -40,13 +41,12 @@ export function Payments() {
   const businessId = localStorage.getItem('business_id') || '';
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [typeFilter, setTypeFilter] = useState('');
-  const [methodFilter, setMethodFilter] = useState('');
-  const [customerSearch, setCustomerSearch] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  // Column filters from the icon beside each sort icon (David, 2026-11-02).
+  const [tableFilters, setTableFilters] = useState<TableFilters>({});
+  // No pages: more payments load as the list scrolls.
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [summary, setSummary] = useState<any>(null);
 
   // Record payment form
@@ -114,21 +114,44 @@ export function Payments() {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ business_id: businessId });
-      if (typeFilter) params.set('type', typeFilter);
-      if (methodFilter) params.set('payment_method', methodFilter);
-      if (customerSearch) params.set('customer_search', customerSearch);
-      if (dateFrom) params.set('date_from', dateFrom);
-      if (dateTo) params.set('date_to', dateTo);
-      params.set('page', String(page));
-      const res = await apiClient.get(`/v1/payments?${params}`);
+      const res = await apiClient.get(`/v1/payments?${listParams(1)}`);
       setTransactions(res.data.data);
-      setTotalPages(res.data.meta?.totalPages || 1);
+      setPage(1);
+      setTotal(res.data.meta?.total || 0);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId, typeFilter, methodFilter, customerSearch, dateFrom, dateTo, page]);
+  }, [businessId, tableFilters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchTransactions(); }, [fetchTransactions]);
+
+  function listParams(p: number) {
+    const params = new URLSearchParams({ business_id: businessId, page: String(p), limit: '50' });
+    if (Object.keys(tableFilters).length) params.set('cf', JSON.stringify(tableFilters));
+    return params;
+  }
+  const loadMore = useCallback(async () => {
+    if (loadingMore || transactions.length >= total) return;
+    setLoadingMore(true);
+    try {
+      const res = await apiClient.get(`/v1/payments?${listParams(page + 1)}`);
+      setTransactions((rows) => [...rows, ...res.data.data]);
+      setPage(page + 1);
+      setTotal(res.data.meta?.total || 0);
+    } catch { /* Show more stays to try again */ }
+    finally { setLoadingMore(false); }
+  }, [businessId, tableFilters, page, loadingMore, transactions.length, total]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filterOptions = useCallback(async (key: string) => {
+    const params = new URLSearchParams({ business_id: businessId, column: key });
+    if (Object.keys(tableFilters).length) params.set('cf', JSON.stringify(tableFilters));
+    const res = await apiClient.get(`/v1/payments/column-values?${params}`);
+    return (res.data.data as Array<{ value: string; label: string; count: number }>).map((v) => ({
+      value: v.value, count: v.count,
+      label: key === 'payment_method' ? (METHOD_LABELS[v.value] || v.value)
+        : key === 'amount' ? formatCurrency(Number(v.value))
+        : v.label || v.value,
+    }));
+  }, [businessId, tableFilters]);
 
   useEffect(() => {
     if (!businessId) return;
@@ -230,11 +253,11 @@ export function Payments() {
 
   const columns = [
     {
-      key: 'created_at', header: 'Date',
+      key: 'created_at', header: 'Date', filter: 'date' as const,
       render: (val: string) => new Date(val).toLocaleDateString(),
     },
     {
-      key: 'customer', header: 'Customer',
+      key: 'customer', header: 'Customer', filter: 'values' as const,
       render: (_: any, t: Transaction) => `${t.customer_first_name} ${t.customer_last_name}`,
     },
     {
@@ -484,35 +507,10 @@ export function Payments() {
         </div>
       )}
 
-      {/* Filters */}
-      <div style={styles.toolbar}>
-        <select style={styles.select} value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}>
-          <option value="">All Types</option>
-          <option value="charge">Charges</option>
-          <option value="refund">Refunds</option>
-          <option value="credit">Credits</option>
-        </select>
-        <select style={styles.select} value={methodFilter} onChange={(e) => { setMethodFilter(e.target.value); setPage(1); }}>
-          <option value="">All Methods</option>
-          <option value="card">Card</option>
-          <option value="cash">Cash</option>
-          <option value="bank_transfer">Bank Transfer</option>
-          <option value="check">Check</option>
-          <option value="gift_card">Gift Card</option>
-          <option value="google_pay">Google Pay</option>
-          <option value="apple_pay">Apple Pay</option>
-          <option value="other">Other</option>
-        </select>
-        <input style={styles.select} type="text" value={customerSearch} onChange={(e) => { setCustomerSearch(e.target.value); setPage(1); }} placeholder="Customer..." />
-        <input style={styles.select} type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} title="From" />
-        <input style={styles.select} type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} title="To" />
-        {(typeFilter || methodFilter || customerSearch || dateFrom || dateTo) && (
-          <button style={styles.clearBtn} onClick={() => { setTypeFilter(''); setMethodFilter(''); setCustomerSearch(''); setDateFrom(''); setDateTo(''); setPage(1); }}>Clear</button>
-        )}
-      </div>
-
       {/* Transactions table */}
-      <Table columns={columns} data={transactions} loading={loading} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No transactions recorded" onRowClick={openDetail} />
+      <Table columns={columns} data={transactions} loading={loading} emptyMessage="No transactions recorded" onRowClick={openDetail}
+        filters={tableFilters} onFiltersChange={setTableFilters} filterOptions={filterOptions}
+        onLoadMore={loadMore} hasMore={transactions.length < total} loadingMore={loadingMore} />
 
       {/* Detail modal */}
       {detailTransaction && (
