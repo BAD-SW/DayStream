@@ -312,7 +312,7 @@ function TaxesTab() {
           columns={[
             { key: 'name', header: 'Name', sortable: true, filterValue: (t: any) => t.name,
               render: (_: any, { __row: r }: TableRow) => <DraftName row={r} edited={!r.isNew && !r.deleted && list.changed(r, taxData)}>{r.item.name}</DraftName> },
-            { key: 'rate', header: 'Rate', sortable: true, filterValue: (t: any) => t.rate, filterLabel: (v: string) => `${(Number(v) / 100).toFixed(2)}%`,
+            { key: 'rate', header: 'Rate', sortable: true, filter: 'number' as const, filterUnit: '%', filterScale: 100, filterValue: (t: any) => t.rate, filterLabel: (v: string) => `${(Number(v) / 100).toFixed(2)}%`,
               render: (_: any, { __row: r }: TableRow) => <span style={fieldMark(!r.isNew && list.changed(r, (t) => t.rate))}>{(r.item.rate / 100).toFixed(2)}%</span> },
             { key: 'is_default', header: 'Default', filterValue: (t: any) => (t.is_default ? 'Default' : ''),
               render: (_: any, { __row: r }: TableRow) => r.item.is_default ? <Badge variant="info">Default</Badge> : null },

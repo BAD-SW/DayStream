@@ -23,7 +23,10 @@ interface TableColumn<T> {
    * column's values or, for dates, a calendar. Found by itself from the data when left out;
    * `false` turns it off (e.g. a column of buttons).
    */
-  filter?: 'values' | 'date' | 'amount' | false;
+  filter?: 'values' | 'date' | 'amount' | 'number' | false;
+  /** A number column's unit in its slider filter (e.g. 'h', 'min', '%'), and stored value per unit (e.g. 100 for basis points). */
+  filterUnit?: string;
+  filterScale?: number;
   /** The value a row has for filtering, when it is not `row[key]`. */
   filterValue?: (row: T) => unknown;
   /** How a value is named in the filter list, when not as the cell shows it. */
@@ -163,12 +166,13 @@ export function Table<T extends Record<string, any>>({
     for (const col of columns) {
       if (col.filter === false) continue;
       const value = col.filterValue || ((row: T) => row[col.key]);
-      let kind = col.filter as 'values' | 'date' | 'amount' | undefined;
+      let kind = col.filter as 'values' | 'date' | 'amount' | 'number' | undefined;
       if (!kind) {
         const sample = source.slice(0, 200).map(value).filter((v) => v != null && v !== '');
         if (sample.length === 0 && !(filterOptions && controlled)) continue;
         if (sample.some((v) => typeof v === 'object')) continue;
-        kind = sample.length > 0 && sample.every(looksLikeDate) ? 'date' : 'values';
+        // Numbers get the slider (decision 7b); dates the calendar; the rest the list of values.
+        kind = sample.length > 0 && sample.every(looksLikeDate) ? 'date' : sample.length > 0 && sample.every((v) => typeof v === 'number') ? 'number' : 'values';
       }
       // Name each value as its cell shows it, when the cell is plain text.
       const label = col.filterLabel || (col.render ? (v: string) => {
@@ -240,8 +244,9 @@ export function Table<T extends Record<string, any>>({
   };
   const openDef = openFilter ? filterDefs.get(openFilter.key) : undefined;
   const openCol = openFilter ? columns.find((c) => c.key === openFilter.key) : undefined;
-  const popover = openFilter && openDef && openCol ? (openDef.kind === 'amount' ? (
+  const popover = openFilter && openDef && openCol ? (openDef.kind === 'amount' || openDef.kind === 'number' ? (
     <AmountFilter anchor={openFilter.anchor} title={openCol.header} current={filters[openCol.key]}
+      money={openDef.kind === 'amount'} unit={openCol.filterUnit} scale={openCol.filterScale}
       loadOptions={() => (filterOptions ? filterOptions(openCol.key) : optionsFrom(source, openDef.value))}
       onApply={(f) => applyFilter(openCol.key, f)} onClose={() => setOpenFilter(null)} />
   ) : openDef.kind === 'date' ? (

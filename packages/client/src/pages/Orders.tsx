@@ -101,7 +101,7 @@ export function Orders() {
           : (row.walk_in_name ? `${row.walk_in_name} (walk-in)` : 'Walk-in'),
     },
     {
-      key: 'item_count', header: 'Items', align: 'center' as const, filter: 'values' as const,
+      key: 'item_count', header: 'Items', align: 'center' as const, filter: 'number' as const,
       render: (_: any, row: Order) => String((row as any).item_count ?? 0),
     },
     {

@@ -10,7 +10,7 @@ export type ColumnFilters = Record<string, ColumnFilter>;
 export interface FilterableColumn {
   /** SQL for the column's value. */
   expr: string;
-  kind?: 'text' | 'date' | 'amount';
+  kind?: 'text' | 'date' | 'amount' | 'number';
   /** SQL for how a value is named in the filter list (e.g. a staff member's name for an id). */
   label?: string;
 }
@@ -31,8 +31,8 @@ export function parseColumnFilters(raw: unknown): ColumnFilters {
     if (typeof f.contains === 'string' && f.contains.trim()) cf.contains = f.contains.trim().slice(0, 200);
     if (typeof f.from === 'string' && DAY.test(f.from)) cf.from = f.from;
     if (typeof f.to === 'string' && DAY.test(f.to)) cf.to = f.to;
-    if (typeof f.min === 'number' && Number.isFinite(f.min)) cf.min = Math.round(f.min);
-    if (typeof f.max === 'number' && Number.isFinite(f.max)) cf.max = Math.round(f.max);
+    if (typeof f.min === 'number' && Number.isFinite(f.min)) cf.min = f.min;
+    if (typeof f.max === 'number' && Number.isFinite(f.max)) cf.max = f.max;
     if (cf.values?.length || cf.contains || cf.from || cf.to || cf.min != null || cf.max != null) out[key] = cf;
   }
   return out;
@@ -57,7 +57,8 @@ export function addColumnFilterConditions(
   for (const [key, f] of Object.entries(filters)) {
     const col = columns[key];
     if (!col || key === skipKey) continue;
-    if (col.kind === 'amount') {
+    // A number range (amounts in cents, decision 7; any number column, 7b).
+    if (col.kind !== 'date' && (f.min != null || f.max != null)) {
       if (f.min != null) { params.push(f.min); conditions.push(`(${col.expr})::numeric >= $${params.length}`); }
       if (f.max != null) { params.push(f.max); conditions.push(`(${col.expr})::numeric <= $${params.length}`); }
       continue;

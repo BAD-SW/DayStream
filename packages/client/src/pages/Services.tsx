@@ -102,7 +102,7 @@ function ServicesTab() {
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
     { key: 'category_name', header: 'Category', sortable: true, render: (val: string) => val || '—' },
-    { key: 'default_duration', header: 'Duration', sortable: true, filterLabel: (v: any) => (v ? `${v} min` : '—'), render: (val: number) => val ? `${val} min` : '—' },
+    { key: 'default_duration', header: 'Duration', sortable: true, filter: 'number' as const, filterUnit: 'min', filterLabel: (v: any) => (v ? `${v} min` : '—'), render: (val: number) => val ? `${val} min` : '—' },
     { key: 'status', header: 'Status', sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
     {
       key: 'actions', header: '', filter: false as const,
@@ -729,7 +729,7 @@ function PromotionsTab() {
     { key: 'name', header: 'Name', sortable: true },
     { key: 'type', header: 'Type', sortable: true, render: (val: string) => PROMO_TYPE_LABELS[val] || val },
     {
-      key: 'value', header: 'Value', sortable: true,
+      key: 'value', header: 'Value', sortable: true, filter: 'values' as const,
       render: (_: any, row: any) => {
         if (row.type.includes('percentage')) return `${row.value}%`;
         return formatCurrency(row.value);

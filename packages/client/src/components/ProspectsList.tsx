@@ -51,7 +51,7 @@ interface Props {
 
 // Columns the list filters on screen (same keys as the table).
 const FILTER_COLUMNS = (['name', 'address', 'city', 'category', 'rating', 'status', 'notes'] as const).map((key) => ({
-  key, kind: 'values' as const, value: (p: Prospect) => (p as any)[key],
+  key, kind: (key === 'rating' ? 'number' : 'values') as 'number' | 'values', value: (p: Prospect) => (p as any)[key],
 }));
 
 export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChange }: Props) {
@@ -206,7 +206,7 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
           { key: 'address', header: 'Address', sortable: true },
           { key: 'city', header: 'City', sortable: true, render: (v: string) => v || '—' },
           { key: 'category', header: 'Category', sortable: true },
-          { key: 'rating', header: 'Rating', sortable: true, render: (v: number) => v ?? '—' },
+          { key: 'rating', header: 'Rating', sortable: true, filter: 'number' as const, render: (v: number) => v ?? '—' },
           { key: 'status', header: 'Status', sortable: true, filterLabel: (v: string) => STATUS_OPTIONS.find((s) => s.value === v)?.label || v, render: (_: any, p: Prospect) => (
             <select value={p.status} onChange={(e) => handleStatusChange(p.id, e.target.value)} onClick={(e) => e.stopPropagation()} style={styles.statusSelect} aria-label={`Status for ${p.name}`}>
               {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}

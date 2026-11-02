@@ -274,8 +274,8 @@ export function PayrollTab() {
 // column (amounts with the slider); a row opens its breakdown; totals are for the rows shown.
 const ENTRY_FILTER_COLUMNS = [
   { key: 'employee', kind: 'values' as const, value: (e: PayrollEntry) => `${e.first_name} ${e.last_name}` },
-  { key: 'hours_worked', kind: 'values' as const, value: (e: PayrollEntry) => e.hours_worked },
-  { key: 'sessions_delivered', kind: 'values' as const, value: (e: PayrollEntry) => e.sessions_delivered },
+  { key: 'hours_worked', kind: 'number' as const, value: (e: PayrollEntry) => e.hours_worked },
+  { key: 'sessions_delivered', kind: 'number' as const, value: (e: PayrollEntry) => e.sessions_delivered },
   { key: 'gross_pay', kind: 'amount' as const, value: (e: PayrollEntry) => e.gross_pay },
   { key: 'total_deductions', kind: 'amount' as const, value: (e: PayrollEntry) => e.total_deductions },
   { key: 'net_pay', kind: 'amount' as const, value: (e: PayrollEntry) => e.net_pay },
@@ -315,8 +315,8 @@ function EntriesTable({ entries, expandedId, onToggle }: { entries: PayrollEntry
       ) : <span style={styles.muted}>No breakdown for this entry.</span>}
       columns={[
         { key: 'employee', header: 'Employee', sortable: true, filterValue: (e) => `${e.first_name} ${e.last_name}`, render: (_: any, e: PayrollEntry) => `${e.first_name} ${e.last_name}` },
-        { key: 'hours_worked', header: 'Hours', sortable: true, align: right, render: (v: number | null) => <div style={{ textAlign: 'right' }}>{v ?? '—'}</div> },
-        { key: 'sessions_delivered', header: 'Sessions', sortable: true, align: right, render: (v: number | null) => <div style={{ textAlign: 'right' }}>{v ?? '—'}</div> },
+        { key: 'hours_worked', header: 'Hours', sortable: true, align: right, filter: 'number', filterUnit: 'h', render: (v: number | null) => <div style={{ textAlign: 'right' }}>{v ?? '—'}</div> },
+        { key: 'sessions_delivered', header: 'Sessions', sortable: true, align: right, filter: 'number', render: (v: number | null) => <div style={{ textAlign: 'right' }}>{v ?? '—'}</div> },
         { key: 'gross_pay', header: 'Gross Pay', sortable: true, align: right, filter: 'amount', render: (v: number) => <div style={{ textAlign: 'right' }}>{formatCurrency(v)}</div> },
         { key: 'total_deductions', header: 'Deductions', sortable: true, align: right, filter: 'amount', render: (v: number) => <div style={{ textAlign: 'right' }}>{formatCurrency(v)}</div> },
         { key: 'net_pay', header: 'Net Pay', sortable: true, align: right, filter: 'amount', render: (v: number) => <div style={{ textAlign: 'right' }}><strong>{formatCurrency(v)}</strong></div> },

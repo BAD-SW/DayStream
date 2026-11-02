@@ -303,7 +303,7 @@ function AccountsPage() {
     { key: 'contact_name', header: 'Contact' },
     { key: 'email', header: 'Email' },
     { key: 'phone', header: 'Phone' },
-    { key: 'payment_terms', header: 'Terms', filterLabel: (v: any) => (v ? `Net ${v}` : '—'), render: (v: number) => v ? `Net ${v}` : '—' },
+    { key: 'payment_terms', header: 'Terms', filter: 'number' as const, filterUnit: 'days', filterLabel: (v: any) => (v ? `Net ${v}` : '—'), render: (v: number) => v ? `Net ${v}` : '—' },
     { key: 'actions', header: '', filter: false as const, render: (_: any, row: any) => (
       <div style={{ display: 'flex', gap: '4px' }}>
         <TableActionButton label="Edit" variant="edit" onClick={() => startEditVendor(row)} />

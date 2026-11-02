@@ -31,9 +31,9 @@ const cycleOf = (r: { cycle_year: number; cycle_month: number }) => `${r.cycle_y
 // The runs table's non-date columns, filtered on screen (Started is filtered by the server).
 const RUN_FILTER_COLUMNS = [
   { key: 'status', kind: 'values' as const, value: (r: payApi.PlatformBillingRun) => r.status },
-  { key: 'newCharges', kind: 'values' as const, value: (r: payApi.PlatformBillingRun) => r.summary?.newCharges ?? '' },
-  { key: 'settled', kind: 'values' as const, value: (r: payApi.PlatformBillingRun) => r.summary?.settled ?? '' },
-  { key: 'failed', kind: 'values' as const, value: (r: payApi.PlatformBillingRun) => r.summary?.failed ?? '' },
+  { key: 'newCharges', kind: 'number' as const, value: (r: payApi.PlatformBillingRun) => r.summary?.newCharges ?? '' },
+  { key: 'settled', kind: 'number' as const, value: (r: payApi.PlatformBillingRun) => r.summary?.settled ?? '' },
+  { key: 'failed', kind: 'number' as const, value: (r: payApi.PlatformBillingRun) => r.summary?.failed ?? '' },
 ];
 
 export function PlatformBillingActivity() {
@@ -104,9 +104,9 @@ export function PlatformBillingActivity() {
               columns={[
                 { key: 'startedAt', header: 'Started', sortable: true, filter: 'date' as const, render: (v: string) => (v ? new Date(v).toLocaleString() : '—') },
                 { key: 'status', header: 'Status', sortable: true, render: (v: string) => <span style={{ color: v === 'success' ? 'var(--color-success, #17794A)' : v === 'failed' ? 'var(--color-error, #C4291C)' : 'var(--color-text)' }}>{v}</span> },
-                { key: 'newCharges', header: 'New', align: 'right' as const, sortable: true, filterValue: (r: payApi.PlatformBillingRun) => r.summary?.newCharges ?? '', render: (_: any, r: payApi.PlatformBillingRun) => r.summary?.newCharges ?? '—' },
-                { key: 'settled', header: 'Set.', align: 'right' as const, sortable: true, filterValue: (r: payApi.PlatformBillingRun) => r.summary?.settled ?? '', render: (_: any, r: payApi.PlatformBillingRun) => r.summary?.settled ?? '—' },
-                { key: 'failed', header: 'Fail', align: 'right' as const, sortable: true, filterValue: (r: payApi.PlatformBillingRun) => r.summary?.failed ?? '', render: (_: any, r: payApi.PlatformBillingRun) => r.summary?.failed ?? '—' },
+                { key: 'newCharges', header: 'New', align: 'right' as const, sortable: true, filter: 'number' as const, filterValue: (r: payApi.PlatformBillingRun) => r.summary?.newCharges ?? '', render: (_: any, r: payApi.PlatformBillingRun) => r.summary?.newCharges ?? '—' },
+                { key: 'settled', header: 'Set.', align: 'right' as const, sortable: true, filter: 'number' as const, filterValue: (r: payApi.PlatformBillingRun) => r.summary?.settled ?? '', render: (_: any, r: payApi.PlatformBillingRun) => r.summary?.settled ?? '—' },
+                { key: 'failed', header: 'Fail', align: 'right' as const, sortable: true, filter: 'number' as const, filterValue: (r: payApi.PlatformBillingRun) => r.summary?.failed ?? '', render: (_: any, r: payApi.PlatformBillingRun) => r.summary?.failed ?? '—' },
               ]}
             />
           </div>

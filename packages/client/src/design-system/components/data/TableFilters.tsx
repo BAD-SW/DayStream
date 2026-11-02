@@ -34,7 +34,7 @@ const plain = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g
 
 export interface FilterColumnDef<T> {
   key: string;
-  kind: 'values' | 'date' | 'amount';
+  kind: 'values' | 'date' | 'amount' | 'number';
   /** The value a row has in this column (what the list shows and what is matched). */
   value: (row: T) => unknown;
 }
@@ -45,7 +45,7 @@ export function applyTableFilters<T>(rows: T[], columns: FilterColumnDef<T>[], f
   if (active.length === 0) return rows;
   return rows.filter((row) => active.every((c) => {
     const f = filters[c.key]; const v = c.value(row);
-    if (c.kind === 'amount') {
+    if (c.kind === 'amount' || c.kind === 'number') {
       const n = v == null || v === '' ? NaN : Number(v); if (!Number.isFinite(n)) return false;
       return (f.min == null || n >= f.min) && (f.max == null || n <= f.max);
     }
@@ -339,32 +339,43 @@ const pop: Record<string, React.CSSProperties> = {
 // --- Amount filter (slider over a bar chart) -----------------------------------------------
 
 const BINS = 14;
-/** A money amount in minor units (cents) as the currency shows it. */
-const money = (cents: number) => formatCurrency(Math.round(cents));
-/** What a typed amount means in cents ('' = no limit, null = not a number). */
-const parseAmount = (s: string): number | null | undefined => {
+/** A number with up to two decimals, as people read it (7.5, not 7.50). */
+const plainNumber = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+/** What a typed number means ('' = no limit, null = not a number), times `scale` (100 for cents). */
+const parseNumber = (s: string, scale: number): number | null | undefined => {
   const t = s.trim().replace(/[^\d,.\-−]/g, '').replace('−', '-').replace(',', '.');
   if (t === '') return undefined;
   const n = Number(t);
-  return Number.isFinite(n) ? Math.round(n * 100) : null;
+  return Number.isFinite(n) ? Math.round(n * scale * 100) / 100 : null;
 };
 
 /**
- * Amount filter (David, 2026-11-02, decision 7 option C): a bar chart of how the column's amounts
- * spread, two handles to drag, and From / To boxes in the currency. Values are cents; Apply keeps
- * rows from `min` to `max` (either may be left open).
+ * Number filter (David, 2026-11-02, decision 7 option C, and 7b for every number column): a bar
+ * chart of how the column's values spread, two handles to drag, and From / To boxes. Money is kept
+ * in cents and shown in the currency; other numbers in their `unit` (stored value / `scale`, e.g. a
+ * tax rate in basis points shown as %). Apply keeps rows from `min` to `max` (either may be open).
  */
-export function AmountFilter({ anchor, title, current, loadOptions, onApply, onClose }: {
+export function AmountFilter({ anchor, title, current, loadOptions, onApply, onClose, money: isMoney = true, unit, scale: scaleProp }: {
   anchor: HTMLElement; title: string; current?: ColumnFilter;
   loadOptions: () => Promise<FilterOption[]> | FilterOption[];
   onApply: (f: ColumnFilter | undefined) => void; onClose: () => void;
+  /** Money in cents (the default) or a plain number. */
+  money?: boolean;
+  /** The unit a plain number is shown in (e.g. 'h', 'min', '%'). */
+  unit?: string;
+  /** Stored value per shown unit: 100 for cents (money) or basis points; 1 for plain numbers. */
+  scale?: number;
 }) {
+  const scale = scaleProp ?? (isMoney ? 100 : 1);
+  const shown = (v: number) => (isMoney ? formatCurrency(Math.round(v)) : `${plainNumber(v / scale)}${unit ? (unit === '%' ? '%' : ` ${unit}`) : ''}`);
+  const typedText = (v: number) => (isMoney ? (v / scale).toFixed(2) : String(Math.round((v / scale) * 100) / 100));
+  const boxUnit = isMoney ? getCurrencySymbol() : unit;
   const [points, setPoints] = useState<Array<{ v: number; n: number }> | null>(null);
   const [failed, setFailed] = useState(false);
   const [min, setMin] = useState<number | undefined>(current?.min);
   const [max, setMax] = useState<number | undefined>(current?.max);
-  const [typedMin, setTypedMin] = useState(current?.min != null ? (current.min / 100).toFixed(2) : '');
-  const [typedMax, setTypedMax] = useState(current?.max != null ? (current.max / 100).toFixed(2) : '');
+  const [typedMin, setTypedMin] = useState(current?.min != null ? typedText(current.min) : '');
+  const [typedMax, setTypedMax] = useState(current?.max != null ? typedText(current.max) : '');
   const [bad, setBad] = useState<'min' | 'max' | null>(null);
 
   useEffect(() => {
@@ -376,9 +387,9 @@ export function AmountFilter({ anchor, title, current, loadOptions, onApply, onC
     return () => { live = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The range the handles move over: the lowest to the highest amount, in whole currency units.
-  const lo = points && points.length ? Math.floor(Math.min(...points.map((p) => p.v)) / 100) * 100 : 0;
-  const hi = points && points.length ? Math.max(Math.ceil(Math.max(...points.map((p) => p.v)) / 100) * 100, lo + 100) : 100;
+  // The range the handles move over: the lowest to the highest value, in whole units.
+  const lo = points && points.length ? Math.floor(Math.min(...points.map((p) => p.v)) / scale) * scale : 0;
+  const hi = points && points.length ? Math.max(Math.ceil(Math.max(...points.map((p) => p.v)) / scale) * scale, lo + scale) : scale;
   const step = (hi - lo) / BINS;
   const bins = useMemo(() => {
     const b = new Array(BINS).fill(0);
@@ -394,11 +405,11 @@ export function AmountFilter({ anchor, title, current, loadOptions, onApply, onC
   // A handle at the end of the range means "no limit" on that side.
   const slide = (which: 'min' | 'max', raw: number) => {
     setBad(null);
-    if (which === 'min') { const v = Math.min(raw, b); const open = v <= lo; setMin(open ? undefined : v); setTypedMin(open ? '' : (v / 100).toFixed(2)); }
-    else { const v = Math.max(raw, a); const open = v >= hi; setMax(open ? undefined : v); setTypedMax(open ? '' : (v / 100).toFixed(2)); }
+    if (which === 'min') { const v = Math.min(raw, b); const open = v <= lo; setMin(open ? undefined : v); setTypedMin(open ? '' : typedText(v)); }
+    else { const v = Math.max(raw, a); const open = v >= hi; setMax(open ? undefined : v); setTypedMax(open ? '' : typedText(v)); }
   };
   const typed = (which: 'min' | 'max', text: string) => {
-    const v = parseAmount(text);
+    const v = parseNumber(text, scale);
     if (v === null) { setBad(which); return; }
     setBad(null);
     if (which === 'min') setMin(v); else setMax(v);
@@ -408,14 +419,14 @@ export function AmountFilter({ anchor, title, current, loadOptions, onApply, onC
     if (lower != null && upper != null && lower > upper) [lower, upper] = [upper, lower];
     onApply(lower == null && upper == null ? undefined : { ...(lower != null ? { min: lower } : {}), ...(upper != null ? { max: upper } : {}) });
   };
-  const summary = min == null && max == null ? 'Any amount' : min == null ? `Up to ${money(max!)}` : max == null ? `From ${money(min)}` : `${money(min)} – ${money(max)}`;
+  const summary = min == null && max == null ? (isMoney ? 'Any amount' : 'Any value') : min == null ? `Up to ${shown(max!)}` : max == null ? `From ${shown(min)}` : `${shown(min)} – ${shown(max)}`;
 
   return (
     <Popover anchor={anchor} width={360} label={`Filter ${title}`} onClose={onClose}>
       <div style={pop.vals}>
         <strong style={pop.title}>Filter {title}</strong>
         {points === null && <div style={pop.none}>Loading…</div>}
-        {failed && <div style={pop.none}>The amounts could not be loaded.</div>}
+        {failed && <div style={pop.none}>The values could not be loaded.</div>}
         {points !== null && !failed && (
           <>
             <div style={amt.hist} aria-hidden="true">
@@ -426,18 +437,18 @@ export function AmountFilter({ anchor, title, current, loadOptions, onApply, onC
             </div>
             <div style={amt.dual}>
               <div style={amt.track} />
-              <input type="range" className="ds-amount-range" min={lo} max={hi} step={1} value={a} aria-label={`Lowest ${title}`}
+              <input type="range" className="ds-amount-range" min={lo} max={hi} step={scale / 100} value={a} aria-label={`Lowest ${title}`}
                 onChange={(e) => slide('min', Number(e.target.value))} style={amt.range} />
-              <input type="range" className="ds-amount-range" min={lo} max={hi} step={1} value={b} aria-label={`Highest ${title}`}
+              <input type="range" className="ds-amount-range" min={lo} max={hi} step={scale / 100} value={b} aria-label={`Highest ${title}`}
                 onChange={(e) => slide('max', Number(e.target.value))} style={amt.range} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-              <label style={pop.fld}>From ({getCurrencySymbol()})
-                <input style={{ ...pop.input, ...(bad === 'min' ? pop.inputBad : {}) }} inputMode="decimal" placeholder={money(lo)} value={typedMin}
+              <label style={pop.fld}>From{boxUnit ? ` (${boxUnit})` : ''}
+                <input style={{ ...pop.input, ...(bad === 'min' ? pop.inputBad : {}) }} inputMode="decimal" placeholder={shown(lo)} value={typedMin}
                   onChange={(e) => { setTypedMin(e.target.value); typed('min', e.target.value); }} />
               </label>
-              <label style={pop.fld}>To ({getCurrencySymbol()})
-                <input style={{ ...pop.input, ...(bad === 'max' ? pop.inputBad : {}) }} inputMode="decimal" placeholder={money(hi)} value={typedMax}
+              <label style={pop.fld}>To{boxUnit ? ` (${boxUnit})` : ''}
+                <input style={{ ...pop.input, ...(bad === 'max' ? pop.inputBad : {}) }} inputMode="decimal" placeholder={shown(hi)} value={typedMax}
                   onChange={(e) => { setTypedMax(e.target.value); typed('max', e.target.value); }} />
               </label>
             </div>
