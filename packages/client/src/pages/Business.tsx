@@ -21,7 +21,8 @@ const VALID_TABS = ['staff', 'resources', 'locations', 'categories', 'taxes', 't
 type Tab = typeof VALID_TABS[number];
 
 // One Save for Business Setup (David, 2026-11-02, as in Settings): categories and tax rates wait
-// for Save changes. Staff, resources and locations are lists that open their own pages.
+// for Save changes. Staff, resources and locations are lists that open their own pages. Templates
+// and Data Migration keep their own buttons, after a separator (decision 9).
 export function Business() {
   return (
     <DraftSectionsProvider>
@@ -35,18 +36,22 @@ function BusinessPage() {
   const tabParam = searchParams.get('tab') as Tab | null;
   const [activeTab, setActiveTab] = useState<Tab>(tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'staff');
   const { dirtySections } = useDraftSections();
+  // An open template with changes (Templates keep their own Save): leaving asks first too.
+  const [templateDirty, setTemplateDirty] = useState(false);
   const labels: Record<Tab, string> = { staff: 'Staff', resources: 'Resources', locations: 'Locations', categories: 'Categories', taxes: 'Taxes', templates: 'Templates', migration: 'Data Migration' };
 
   return (
     <div style={styles.page}>
-      <LeaveGuard when={dirtySections.length > 0} />
+      <LeaveGuard when={dirtySections.length > 0 || templateDirty} />
       <StickyPageTop>
         <div style={styles.header}>
           <h1 style={styles.title}>Business Setup</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}><SaveChanges /></div>
         </div>
         <TabBar aria-label="Business Setup sections" active={activeTab} onChange={setActiveTab}
-          tabs={VALID_TABS.map((key) => ({ key, label: labels[key], changed: dirtySections.some((s) => s.tab === key) }))} />
+          tabs={VALID_TABS.map((key) => ({ key, label: labels[key], changed: key === 'templates' ? templateDirty : dirtySections.some((s) => s.tab === key),
+            // Templates and Data Migration keep their own buttons, set apart (decision 9, as Processes and Appearance in Settings).
+            separatorBefore: key === 'templates' }))} />
       </StickyPageTop>
       <div style={{ marginTop: 'var(--space-md)' }}>
         {activeTab === 'staff' && <Staff />}
@@ -55,7 +60,7 @@ function BusinessPage() {
         {/* Tabs with drafts stay mounted, so their edits survive switching tabs. */}
         <div hidden={activeTab !== 'categories'}><DraftTab tab="categories"><CategoriesTab /></DraftTab></div>
         <div hidden={activeTab !== 'taxes'}><DraftTab tab="taxes"><TaxesTab /></DraftTab></div>
-        {activeTab === 'templates' && <DocumentTemplatesSettings />}
+        {activeTab === 'templates' && <DocumentTemplatesSettings onDirtyChange={setTemplateDirty} />}
         {activeTab === 'migration' && <DataMigration businessId={localStorage.getItem('business_id') || ''} />}
       </div>
     </div>
