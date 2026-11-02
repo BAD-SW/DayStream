@@ -25,35 +25,32 @@ export function Staff() {
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
 
   const fetchStaff = useCallback(async () => {
     setLoading(true);
     try {
       const businessId = localStorage.getItem('business_id') || '';
-      const result = await staffApi.getStaffList({
-        business_id: businessId || undefined,
-        search: search || undefined,
-        status: statusFilter || undefined,
-        page,
-        limit: 20,
-      });
-      setStaff(result.data);
-      setTotalPages(Math.ceil((result.meta?.total || 0) / 20));
+      // Every staff member (100 per call until all are in): the column filters replace the menu
+      // above the table (column filters beside the sort icon, David 2026-11-02).
+      const rows: StaffProfile[] = [];
+      for (let p = 1; ; p++) {
+        const result = await staffApi.getStaffList({ business_id: businessId || undefined, search: search || undefined, page: p, limit: 100 });
+        rows.push(...result.data);
+        if (result.data.length < 100 || p * 100 >= (result.meta?.total || 0)) break;
+      }
+      setStaff(rows);
     } catch {
       // handle error
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, page]);
+  }, [search]);
 
   useEffect(() => { fetchStaff(); }, [fetchStaff]);
 
   const [searchInput, setSearchInput] = useState('');
   useEffect(() => {
-    const timer = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300);
+    const timer = setTimeout(() => setSearch(searchInput), 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
@@ -82,13 +79,6 @@ export function Staff() {
     <div>
       <div style={styles.toolbar}>
         <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search staff..." />
-        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All Statuses</option>
-          <option value="active">Active</option>
-          <option value="onboarding">Onboarding</option>
-          <option value="inactive">Inactive</option>
-          <option value="terminated">Terminated</option>
-        </select>
         <div style={{ flex: 1 }} />
         <Button variant="secondary" onClick={() => navigate('/staff/new')}>Add Staff</Button>
       </div>
@@ -98,9 +88,6 @@ export function Staff() {
         data={staff}
         loading={loading}
         onRowClick={(row) => navigate(`/staff/${row.id}`)}
-        page={page}
-        totalPages={totalPages}
-        onPageChange={setPage}
         emptyMessage="No staff members found"
         mobileCardMode
         clientSort

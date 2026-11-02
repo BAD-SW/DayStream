@@ -17,26 +17,25 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
 export function StaffLeave() {
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('pending');
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
 
   const fetchRequests = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await staffApi.getLeaveRequests({
-        status: statusFilter || undefined,
-        page,
-        limit: 20,
-      });
-      setRequests(result.data);
-      setTotal(result.meta?.total || 0);
+      // Every request (100 per call until all are in); the list starts on Pending, as before, as
+      // the Status column's filter (column filters beside the sort icon, David 2026-11-02).
+      const rows: LeaveRequest[] = [];
+      for (let p = 1; ; p++) {
+        const result = await staffApi.getLeaveRequests({ page: p, limit: 100 });
+        rows.push(...result.data);
+        if (result.data.length < 100 || p * 100 >= (result.meta?.total || 0)) break;
+      }
+      setRequests(rows);
     } catch {
       // handle error
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, page]);
+  }, []);
 
   useEffect(() => { fetchRequests(); }, [fetchRequests]);
 
@@ -52,7 +51,7 @@ export function StaffLeave() {
 
   const columns = [
     {
-      key: 'staff', header: 'Staff',
+      key: 'staff', header: 'Staff', filterValue: (row: LeaveRequest) => `${row.first_name} ${row.last_name}`,
       render: (_: any, row: LeaveRequest) => `${row.first_name} ${row.last_name}`,
     },
     { key: 'leave_type', header: 'Type', render: (v: string) => v.charAt(0).toUpperCase() + v.slice(1) },
@@ -78,35 +77,14 @@ export function StaffLeave() {
     <div>
       <PageHeader title="Leave Management" />
 
-      <div className="lv-toolbar">
-        <select
-          className="lv-select"
-          aria-label="Status"
-          value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-        >
-          <option value="">All</option>
-          <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
-      </div>
-
       <Table
         columns={columns}
         data={requests}
         loading={loading}
         emptyMessage="No leave requests found"
+        initialFilters={{ status: { values: ['pending'] } }}
       />
 
-      {total > 20 && (
-        <div className="lv-pager">
-          <Button variant="ghost" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</Button>
-          <span className="lv-pager__info">Page {page} of {Math.ceil(total / 20)}</span>
-          <Button variant="ghost" disabled={page >= Math.ceil(total / 20)} onClick={() => setPage(page + 1)}>Next</Button>
-        </div>
-      )}
     </div>
   );
 }

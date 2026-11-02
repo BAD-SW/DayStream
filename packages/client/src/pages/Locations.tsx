@@ -20,7 +20,6 @@ export function Locations() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
 
   useEffect(() => { const t = setTimeout(() => { setSearch(searchInput); }, 300); return () => clearTimeout(t); }, [searchInput]);
 
@@ -28,11 +27,12 @@ export function Locations() {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const locs = await locationsApi.getLocations(businessId, { search: search || undefined, status: statusFilter || undefined });
+      // Every location: the Status column's filter replaces the menu above the table (column filters beside the sort icon, David 2026-11-02).
+      const locs = await locationsApi.getLocations(businessId, { search: search || undefined });
       setLocations(locs);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId, search, statusFilter]);
+  }, [businessId, search]);
 
   useEffect(() => { fetchLocations(); }, [fetchLocations]);
 
@@ -52,7 +52,7 @@ export function Locations() {
       render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val.replace('_', ' ')}</Badge>,
     },
     {
-      key: 'is_primary', header: '',
+      key: 'is_primary', header: '', filter: false as const,
       render: (val: boolean) => val ? <Badge variant="info">Primary</Badge> : null,
     },
   ];
@@ -61,13 +61,6 @@ export function Locations() {
     <div>
       <div style={styles.toolbar}>
         <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search locations..." />
-        <select style={styles.select} value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="">All Statuses</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-          <option value="temporarily_closed">Temporarily Closed</option>
-        </select>
         <div style={{ flex: 1 }} />
         <Button variant="secondary" onClick={() => navigate('/settings/locations/new')}>Add Location</Button>
       </div>
