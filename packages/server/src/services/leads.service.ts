@@ -2,6 +2,7 @@ import { adminPool } from '../db/pool';
 import { LEAD_SOURCES, DEFAULT_LEAD_STAGES, LEAD_SOURCE_LABELS } from '@daystream/shared';
 import { createActivity } from './customer-activity.service';
 import { createCustomer } from './customer.service';
+import { ColumnFilters, FilterableColumn, addColumnFilterConditions, columnValuesSql } from '../utils/column-filters';
 
 /**
  * Leads (THE-17): the people of a business still at lifecycle stage "lead", with the
@@ -148,6 +149,8 @@ export async function deleteStage(businessId: string, stageId: string, moveTo: s
 // --- The Leads list ---
 
 export interface LeadFilters {
+  /** Column filters of the shared table (David, 2026-11-02). */
+  columns?: ColumnFilters;
   stage_id?: string;
   lead_source?: string;
   owner?: string;
@@ -171,7 +174,30 @@ const MESSAGES_SENT = `
      WHERE cr.customer_id = c.id AND mc.business_id = c.business_id AND cr.sent_at IS NOT NULL
        AND cr.status IN ('sent', 'delivered', 'opened', 'clicked')))::int`;
 
-export async function listLeads(businessId: string, f: LeadFilters) {
+// The Leads list's filterable columns (keys as the table's columns). $2 is the first stage.
+const LEAD_COLUMNS: Record<string, FilterableColumn> = {
+  first_name: { expr: "NULLIF(BTRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')), '')" },
+  owner_name: {
+    expr: 'c.owner_user_id',
+    label: "(SELECT NULLIF(BTRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), '') FROM usr_users u WHERE u.id = c.owner_user_id)",
+  },
+  created_at: { expr: 'c.created_at', kind: 'date' },
+  lead_source: { expr: 'c.lead_source' },
+  messages_sent: { expr: MESSAGES_SENT },
+  stage: { expr: 'COALESCE(c.lead_stage_id, $2)', label: '(SELECT s.name FROM cus_lead_stages s WHERE s.id = COALESCE(c.lead_stage_id, $2))' },
+};
+const LEAD_TZ = "COALESCE((SELECT b.timezone FROM sys_businesses b WHERE b.id = c.business_id), 'UTC')";
+
+/** Every value of one Leads column (with counts) among the leads matching the other filters. */
+export async function leadColumnValues(businessId: string, column: string, f: LeadFilters) {
+  const col = LEAD_COLUMNS[column];
+  if (!col || col.kind === 'date') return [];
+  const { where, params } = await leadConditions(businessId, f, column);
+  const { rows } = await adminPool.query(columnValuesSql(col, 'cus_customers c', where.join(' AND ')), params);
+  return rows as Array<{ value: string; label: string; count: number }>;
+}
+
+async function leadConditions(businessId: string, f: LeadFilters, skipColumn?: string) {
   const stages = await getStages(businessId);
   const first = stages[0]?.id || null;
 
@@ -188,7 +214,12 @@ export async function listLeads(businessId: string, f: LeadFilters) {
     where.push(`(c.first_name ILIKE ${p} OR c.last_name ILIKE ${p} OR (c.first_name || ' ' || COALESCE(c.last_name, '')) ILIKE ${p}
                  OR COALESCE(c.email, '') ILIKE ${p} OR COALESCE(c.phone, '') ILIKE ${p})`);
   }
+  if (f.columns) addColumnFilterConditions(f.columns, LEAD_COLUMNS, where, params, LEAD_TZ, skipColumn);
+  return { where, params, stages };
+}
 
+export async function listLeads(businessId: string, f: LeadFilters) {
+  const { where, params, stages } = await leadConditions(businessId, f);
   const sort = SORTS[f.sort || ''] || 'c.created_at';
   const order = f.order === 'asc' ? 'ASC' : 'DESC';
   const limit = Math.min(Math.max(f.limit || 20, 1), 100);

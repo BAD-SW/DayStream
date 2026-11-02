@@ -24,6 +24,8 @@ export interface Lead {
 }
 
 export interface LeadFilters {
+  /** Column filters of the shared table. */
+  columns?: Record<string, { values?: string[]; contains?: string; from?: string; to?: string }>;
   stage_id?: string;
   lead_source?: string;
   owner?: string;
@@ -38,8 +40,10 @@ export interface LeadFilters {
 export async function getLeads(businessId: string, filters: LeadFilters = {}) {
   const params = new URLSearchParams({ business_id: businessId });
   for (const [k, v] of Object.entries(filters)) {
+    if (k === 'columns') continue;
     if (v !== undefined && v !== '' && v !== false) params.set(k, String(v));
   }
+  if (filters.columns && Object.keys(filters.columns).length) params.set('cf', JSON.stringify(filters.columns));
   const res = await apiClient.get(`/v1/leads?${params}`);
   return res.data as { data: Lead[]; meta: { page: number; total: number; totalPages: number; stages: LeadStage[]; timezone: string } };
 }
@@ -87,5 +91,15 @@ export async function deleteStage(businessId: string, id: string, moveTo?: strin
   const params = new URLSearchParams({ business_id: businessId });
   if (moveTo) params.set('move_to', moveTo);
   const res = await apiClient.delete(`/v1/leads/stages/${id}?${params}`);
+  return res.data.data;
+}
+
+/** Every value of one Leads column (with counts) among the leads matching the other filters. */
+export async function getLeadColumnValues(businessId: string, column: string, filters: LeadFilters = {}): Promise<Array<{ value: string; label: string; count: number }>> {
+  const params = new URLSearchParams({ business_id: businessId, column });
+  if (filters.search) params.set('search', filters.search);
+  if (filters.archived) params.set('archived', 'true');
+  if (filters.columns && Object.keys(filters.columns).length) params.set('cf', JSON.stringify(filters.columns));
+  const res = await apiClient.get(`/v1/leads/column-values?${params}`);
   return res.data.data;
 }

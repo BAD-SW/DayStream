@@ -7,6 +7,7 @@ import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import * as leads from '../services/leads.service';
+import { parseColumnFilters } from '../utils/column-filters';
 
 /**
  * Leads (THE-17): the Marketing → Leads list and the business's lead stages.
@@ -83,6 +84,17 @@ leadsRouter.delete('/stages/:id', requirePermission('settings:*'), async (req, r
 
 // --- Leads ---
 
+// GET /api/v1/leads/column-values?column= — the values of one column, for its filter list.
+leadsRouter.get('/column-values', requirePermission('customers:read'), async (req, res) => {
+  try {
+    const businessId = await businessOf(req, res); if (!businessId) return;
+    const q = req.query;
+    success(res, await leads.leadColumnValues(businessId, String(q.column || ''), {
+      columns: parseColumnFilters(q.cf), search: q.search as string | undefined, archived: q.archived === 'true',
+    }));
+  } catch (err) { fail(res, err, 'list column values'); }
+});
+
 leadsRouter.get('/', requirePermission('customers:read'), async (req, res) => {
   try {
     const businessId = await businessOf(req, res); if (!businessId) return;
@@ -91,6 +103,7 @@ leadsRouter.get('/', requirePermission('customers:read'), async (req, res) => {
     const stageId = q.stage_id as string | undefined;
     if (stageId && !uuid.test(stageId)) { error(res, 'Unknown stage', 'VALIDATION_ERROR', 400); return; }
     const result = await leads.listLeads(businessId, {
+      columns: parseColumnFilters(q.cf),
       stage_id: stageId,
       lead_source: q.lead_source as string | undefined,
       owner: owner === 'me' ? (req as AuthenticatedRequest).user.sub : owner,

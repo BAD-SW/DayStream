@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { LEAD_SOURCE_LABELS } from '@daystream/shared';
 import { Table } from '../design-system/components/data/Table';
+import type { TableFilters } from '../design-system/components/data/Table';
 import { Button } from '../design-system/components/actions/Button';
 import { Modal } from '../design-system/components/feedback/Modal';
 import { ConfirmDialog } from '../design-system/components/feedback/ConfirmDialog';
@@ -29,16 +30,16 @@ export function Leads() {
   const [stages, setStages] = useState<LeadStage[]>([]);
   const [timezone, setTimezone] = useState('UTC');
   const [loading, setLoading] = useState(true);
+  // No pages (David, 2026-11-02): more leads load as the list scrolls.
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [total, setTotal] = useState(0);
   const [sort, setSort] = useState('created_at');
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [stageFilter, setStageFilter] = useState('');
-  const [sourceFilter, setSourceFilter] = useState('');
-  const [ownerFilter, setOwnerFilter] = useState('');
+  // Column filters from the icon beside each sort icon (replace the stage / source / staff menus).
+  const [tableFilters, setTableFilters] = useState<TableFilters>({});
   const [archived, setArchived] = useState(false);
   const [owners, setOwners] = useState<Array<{ id: string; first_name: string; last_name: string }>>([]);
   const [tags, setTags] = useState<Array<{ id: string; name: string }>>([]);
@@ -47,7 +48,7 @@ export function Leads() {
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
-    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 300);
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(t);
   }, [search]);
 
@@ -56,19 +57,42 @@ export function Leads() {
     setLoading(true);
     try {
       const res = await leadsApi.getLeads(businessId, {
-        search: debouncedSearch || undefined, stage_id: stageFilter || undefined, lead_source: sourceFilter || undefined,
-        owner: ownerFilter || undefined, archived, sort, order, page, limit: 20,
+        search: debouncedSearch || undefined, columns: tableFilters, archived, sort, order, page: 1, limit: 50,
       });
       setLeads(res.data);
+      setPage(1);
       setStages(res.meta.stages);
       setTimezone(res.meta.timezone || 'UTC');
       setTotal(res.meta.total);
-      setTotalPages(res.meta.totalPages || 1);
     } catch { setMessage('Could not load the leads'); }
     finally { setLoading(false); }
-  }, [businessId, debouncedSearch, stageFilter, sourceFilter, ownerFilter, archived, sort, order, page]);
+  }, [businessId, debouncedSearch, tableFilters, archived, sort, order]);
 
   useEffect(() => { load(); }, [load]);
+
+  // The next leads, when the end of the list scrolls into view.
+  const loadMore = useCallback(async () => {
+    if (loadingMore || leads.length >= total) return;
+    setLoadingMore(true);
+    try {
+      const res = await leadsApi.getLeads(businessId, { search: debouncedSearch || undefined, columns: tableFilters, archived, sort, order, page: page + 1, limit: 50 });
+      setLeads((rows) => [...rows, ...res.data]);
+      setPage(page + 1);
+      setTotal(res.meta.total);
+    } catch { /* Show more stays to try again */ }
+    finally { setLoadingMore(false); }
+  }, [businessId, debouncedSearch, tableFilters, archived, sort, order, page, loadingMore, leads.length, total]);
+
+  // A column's filter list: every value among the matching leads, named as the cells show them.
+  const filterOptions = useCallback(async (key: string) => {
+    const values = await leadsApi.getLeadColumnValues(businessId, key, { search: debouncedSearch || undefined, columns: tableFilters, archived });
+    return values.map((v) => ({
+      value: v.value, count: v.count,
+      label: key === 'lead_source' ? (v.value ? LEAD_SOURCE_LABELS[v.value] || v.value : 'No source')
+        : key === 'owner_name' ? (v.label || 'Unassigned')
+        : v.label || v.value,
+    }));
+  }, [businessId, debouncedSearch, tableFilters, archived]);
 
   useEffect(() => {
     if (!businessId) return;
@@ -82,8 +106,8 @@ export function Leads() {
     setMessage('');
     try {
       replaceRow(await leadsApi.updateLead(businessId, lead.id, patch));
-      // A changed stage or staff member may take the lead out of the current filter.
-      if ((patch.lead_stage_id && stageFilter) || (patch.owner_user_id !== undefined && ownerFilter) || (patch.lead_source !== undefined && sourceFilter)) load();
+      // A changed stage, staff member or source may take the lead out of the current filters.
+      if ((patch.lead_stage_id && tableFilters.stage) || (patch.owner_user_id !== undefined && tableFilters.owner_name) || (patch.lead_source !== undefined && tableFilters.lead_source)) load();
     } catch (err: any) { setMessage(err.response?.data?.error || 'The change could not be saved'); }
   }
 
@@ -145,7 +169,7 @@ export function Leads() {
         </select>
       ) : (val || 'Unassigned'),
     },
-    { key: 'created_at', header: 'Created at', sortable: true, render: (val: string) => createdAt(val) },
+    { key: 'created_at', header: 'Created at', sortable: true, filter: 'date' as const, render: (val: string) => createdAt(val) },
     {
       // Editable in the row, like stage and staff (David, 2026-10-29: a wrong source can be corrected).
       key: 'lead_source', header: 'Source', sortable: true,
@@ -168,7 +192,7 @@ export function Leads() {
       ) : (row.lead_stage_name || '—'),
     },
     {
-      key: 'tags', header: 'Tags',
+      key: 'tags', header: 'Tags', filter: false as const,
       render: (_: unknown, row: Lead) => (
         <span style={styles.tags} onClick={stop}>
           {row.tags.length === 0 && <span style={styles.sub}>No tags assigned</span>}
@@ -190,7 +214,7 @@ export function Leads() {
       ),
     },
     ...(canEdit ? [{
-      key: 'actions', header: '',
+      key: 'actions', header: '', filter: false as const,
       render: (_: unknown, row: Lead) => (
         <span onClick={stop}>
           {archived
@@ -205,23 +229,8 @@ export function Leads() {
     <div>
       <div style={styles.toolbar}>
         <input style={styles.search} placeholder="Search name, email or phone" aria-label="Search leads" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={styles.filter} aria-label="Filter by lead stage" value={stageFilter} onChange={(e) => { setStageFilter(e.target.value); setPage(1); }}>
-          <option value="">All stages</option>
-          {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-        <select style={styles.filter} aria-label="Filter by source" value={sourceFilter} onChange={(e) => { setSourceFilter(e.target.value); setPage(1); }}>
-          <option value="">All sources</option>
-          {Object.entries(LEAD_SOURCE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          <option value="none">No source</option>
-        </select>
-        <select style={styles.filter} aria-label="Filter by assigned staff" value={ownerFilter} onChange={(e) => { setOwnerFilter(e.target.value); setPage(1); }}>
-          <option value="">Anyone</option>
-          <option value="me">Mine</option>
-          <option value="none">Unassigned</option>
-          {owners.map((o) => <option key={o.id} value={o.id}>{o.first_name} {o.last_name}</option>)}
-        </select>
         <label style={styles.check}>
-          <input type="checkbox" checked={archived} onChange={(e) => { setArchived(e.target.checked); setPage(1); }} />
+          <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} />
           Show deleted leads
         </label>
         <span style={styles.spacer} />
@@ -237,10 +246,13 @@ export function Leads() {
         data={leads}
         loading={loading}
         onRowClick={(row) => navigate(`/customers/${row.id}`)}
-        onSort={(key, o) => { setSort(key); setOrder(o); setPage(1); }}
-        page={page}
-        totalPages={totalPages}
-        onPageChange={setPage}
+        onSort={(key, o) => { setSort(key); setOrder(o); }}
+        filters={tableFilters}
+        onFiltersChange={setTableFilters}
+        filterOptions={filterOptions}
+        onLoadMore={loadMore}
+        hasMore={leads.length < total}
+        loadingMore={loadingMore}
         emptyMessage={archived ? 'No deleted leads' : 'No leads'}
         mobileCardMode
       />
