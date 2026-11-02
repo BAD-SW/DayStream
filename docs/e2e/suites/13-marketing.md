@@ -71,8 +71,8 @@ MKT-09 to MKT-11, MKT-21 and MKT-22 cover Leads as decided by David on 28 Octobe
 
 ### MKT-11 · Change stage and assigned staff in the row
 `P0` `regression` · THE-17 · Status: Verified
-1. In the lead's row, change the lead stage to Contacted and the assigned staff to Unassigned. 2. As a provider (no right to edit people), try the same through the API. 3. Open the lead's Timeline, filter Lifecycle.
-**Expect:** both changes save at once from the row; the lead source can be changed in the row too (David, 2026-10-29), with "Lead source: X → Y" on the Timeline; step 2 is refused (403); the Timeline shows "Lead stage: New → Contacted" with who made it. Tags are added and removed in the row in the same way.
+1. In the lead's row, change the lead stage to Contacted and the assigned staff to Unassigned. 2. Follow a menu link; choose Stay. 3. Save changes (Marketing header). 4. As a provider (no right to edit people), try the same through the API. 5. Open the lead's Timeline, filter Lifecycle.
+**Expect:** the changed cells are marked, the Leads tab has a dot, the list says "Unsaved changes" and the header "You have unsaved changes." — nothing is stored yet (David, 2026-11-02, decision 10); putting a value back clears its mark; step 2 asks "Leave without saving?"; step 3 stores both and says "All changes saved."; the lead source can be changed in the row too (David, 2026-10-29), with "Lead source: X → Y" on the Timeline; step 4 is refused (403); the Timeline shows "Lead stage: New → Contacted" with who made it. Tags are added and removed in the row in the same way (an added tag is marked "Added when you save", a removed one crossed out with ↺ to keep it). Add lead, Delete lead and Restore still act at once.
 
 ### MKT-12 · Follow-up due
 `P1` `regression` · Spec 48 R4 · As: manager · Status: Blocked (spec 48 task 3)
