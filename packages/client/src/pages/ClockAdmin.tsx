@@ -3,6 +3,7 @@ import { Button } from '../design-system/components/actions/Button';
 import { getStaffList } from '../api/staff';
 import { useContextManager } from '../context/ContextManager';
 import * as clockApi from '../api/clock';
+import { Table } from '../design-system/components/data/Table';
 import type { ClockEvent, ClockEventType, DayHours } from '../api/clock';
 
 /**
@@ -181,18 +182,16 @@ export function ClockAdmin() {
         {loading ? <p style={styles.muted}>Loading…</p> : hours.length === 0 ? (
           <p style={styles.muted}>No clocked hours in this range.</p>
         ) : (
-          <table style={styles.table}>
-            <thead><tr><th style={styles.th}>Date</th><th style={styles.th}>Worked</th><th style={styles.th}>Break</th></tr></thead>
-            <tbody>
-              {hours.map((d) => (
-                <tr key={d.date}>
-                  <td style={styles.td}>{d.date}</td>
-                  <td style={styles.td}>{fmtMinutes(d.worked_minutes)}</td>
-                  <td style={styles.td}>{fmtMinutes(d.break_minutes)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Table
+            rowId={(d: DayHours) => d.date}
+            data={hours}
+            clientSort
+            columns={[
+              { key: 'date', header: 'Date', sortable: true, filter: 'date' as const },
+              { key: 'worked_minutes', header: 'Worked', sortable: true, filterLabel: (v: string) => fmtMinutes(Number(v)), render: (v: number) => fmtMinutes(v) },
+              { key: 'break_minutes', header: 'Break', sortable: true, filterLabel: (v: string) => fmtMinutes(Number(v)), render: (v: number) => fmtMinutes(v) },
+            ]}
+          />
         )}
       </div>
 
@@ -202,22 +201,18 @@ export function ClockAdmin() {
         {events.length === 0 ? (
           <p style={styles.muted}>No punches in this range.</p>
         ) : (
-          <table style={styles.table}>
-            <thead><tr><th style={styles.th}>When</th><th style={styles.th}>Event</th><th style={styles.th}>Source</th><th style={styles.th}>Note</th><th style={styles.th}></th></tr></thead>
-            <tbody>
-              {events.map((ev) => (
-                <tr key={ev.id}>
-                  <td style={styles.td}>{new Date(ev.event_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</td>
-                  <td style={styles.td}>{EVENT_LABEL[ev.event_type]}</td>
-                  <td style={styles.td}>{ev.source === 'manual' ? 'Manual' : 'Clock'}</td>
-                  <td style={styles.td}>{ev.note || '—'}</td>
-                  <td style={styles.td}>
-                    <button style={styles.linkBtn} onClick={() => handleDelete(ev)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Table
+            rowId={(ev: ClockEvent) => ev.id}
+            data={events}
+            clientSort
+            columns={[
+              { key: 'event_at', header: 'When', sortable: true, filter: 'date' as const, render: (v: string) => new Date(v).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) },
+              { key: 'event_type', header: 'Event', sortable: true, filterLabel: (v: string) => EVENT_LABEL[v as ClockEventType] || v, render: (v: ClockEventType) => EVENT_LABEL[v] },
+              { key: 'source', header: 'Source', sortable: true, filterLabel: (v: string) => (v === 'manual' ? 'Manual' : 'Clock'), render: (v: string) => (v === 'manual' ? 'Manual' : 'Clock') },
+              { key: 'note', header: 'Note', sortable: true, render: (v: string) => v || '—' },
+              { key: 'actions', header: '', filter: false as const, render: (_: any, ev: ClockEvent) => <button style={styles.linkBtn} onClick={() => handleDelete(ev)}>Delete</button> },
+            ]}
+          />
         )}
 
         {/* Add a missed punch */}
@@ -252,9 +247,6 @@ const styles: Record<string, React.CSSProperties> = {
   card: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)' },
   cardHeader: { fontWeight: 'var(--font-weight-bold)' as any, fontSize: 'var(--font-size-base)', color: 'var(--color-text)', marginBottom: 'var(--space-sm)' },
   muted: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
-  table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: 'var(--font-size-sm)' },
-  th: { textAlign: 'left' as const, padding: '6px 10px', fontSize: 'var(--font-size-xs)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text-secondary)', borderBottom: '2px solid var(--color-border)' },
-  td: { padding: '6px 10px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)' },
   linkBtn: { background: 'none', border: 'none', color: 'var(--color-error, #C4291C)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontFamily: 'var(--font-family)' },
   addForm: { display: 'flex', gap: 'var(--space-sm)', alignItems: 'center', marginTop: 'var(--space-md)', flexWrap: 'wrap' as const },
   addLabel: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
