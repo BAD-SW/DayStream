@@ -124,9 +124,17 @@ export function Table<T extends Record<string, any>>({
   // one that fits scrolls with the page, header pinned.
   const wrapRef = useRef<HTMLDivElement>(null);
   const [tooWide, setTooWide] = useState(false);
+  const [inBox, setInBox] = useState(false);
   useEffect(() => {
     const el = wrapRef.current; if (!el) return;
     const check = () => { const t = el.firstElementChild as HTMLElement | null; setTooWide(!!t && t.scrollWidth > el.clientWidth + 1); };
+    // Inside a box that clips or scrolls, the header cannot pin to the page: it stays in place.
+    let boxed = false;
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      const cs = getComputedStyle(p);
+      if (cs.overflowY !== 'visible' || cs.overflowX !== 'visible') { boxed = true; break; }
+    }
+    setInBox(boxed);
     check();
     const ro = new ResizeObserver(check); ro.observe(el); if (el.firstElementChild) ro.observe(el.firstElementChild);
     return () => ro.disconnect();
@@ -265,7 +273,7 @@ export function Table<T extends Record<string, any>>({
   return (
     <div>
       {popover}
-      <div ref={wrapRef} className={cssStyles.wrapper} data-wide={tooWide || undefined}>
+      <div ref={wrapRef} className={cssStyles.wrapper} data-wide={tooWide || undefined} data-inbox={(inBox && !tooWide) || undefined}>
         <table style={{ ...styles.table, ...(fixedLayout ? { tableLayout: 'fixed' as const } : {}) }}>
           <thead>
             {filterRow && (
@@ -442,8 +450,9 @@ const styles: Record<string, React.CSSProperties> = {
   footerRow: { borderTop: '1px solid var(--color-border)', background: 'var(--color-surface)' },
   footerRowStrong: { borderTop: '2px solid var(--color-border)', background: 'var(--color-surface-hover)' },
   footerCell: { padding: 'var(--space-sm) var(--space-md)', color: 'var(--color-text)', fontWeight: 'var(--font-weight-bold)' as any, fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap' },
-  headWrap: { display: 'inline-flex', alignItems: 'center', gap: '2px', width: '100%' },
-  headLabel: { border: 0, background: 'none', padding: 0, font: 'inherit', color: 'inherit', textTransform: 'inherit', letterSpacing: 'inherit', cursor: 'pointer', textAlign: 'inherit' },
+  // In a narrow column the icons wrap under the label instead of being cut off.
+  headWrap: { display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px', width: '100%' },
+  headLabel: { border: 0, background: 'none', padding: 0, font: 'inherit', color: 'inherit', textTransform: 'inherit', letterSpacing: 'inherit', cursor: 'pointer', textAlign: 'inherit', whiteSpace: 'inherit', overflowWrap: 'anywhere' },
   more: { textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' },
   moreBtn: { border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', borderRadius: 999, padding: '6px 14px', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-xs)', fontWeight: 600, cursor: 'pointer' },
   empty: { padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' },

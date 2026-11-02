@@ -35,6 +35,7 @@
   max-height: calc(100vh - var(--app-topbar-height, 76px) - var(--page-top-h, 0px) - 24px);
 }
 .wrapper[data-wide] .stickyTh { top: 0; }
+.wrapper[data-inbox] .stickyTh { position: static; }
 
 .headIcon {
   position: relative;
