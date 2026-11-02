@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Table, applyTableFilters } from '../design-system/components/data/Table';
+import type { TableFilters } from '../design-system/components/data/Table';
 import { useParams, useNavigate } from 'react-router-dom';
 import { TabBar } from '../design-system/components/navigation/TabBar';
 import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
@@ -718,9 +720,20 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
   const [creditBalance, setCreditBalance] = useState<payApi.AccountCreditBalance | null>(null);
   const [applyingCreditTo, setApplyingCreditTo] = useState<string | null>(null);
   // Transaction history is date-ranged (defaults to the current month) so the
-  // list stays manageable as history grows.
-  const [dateFrom, setDateFrom] = useState<string>(firstOfCurrentMonth());
-  const [dateTo, setDateTo] = useState<string>(today());
+  // list stays manageable as history grows. The range is the Date column's filter
+  // (column filters beside the sort icon, David 2026-11-02); the other columns
+  // filter the loaded rows on screen.
+  const [txFilters, setTxFilters] = useState<TableFilters>(() => ({ created_at: { from: firstOfCurrentMonth(), to: today() } }));
+  const dateFrom = txFilters.created_at?.from || '';
+  const dateTo = txFilters.created_at?.to || txFilters.created_at?.from || '';
+  // The history's non-date columns, filtered on screen (Date is the server range).
+  const TX_FILTER_COLUMNS = [
+    { key: 'purpose_label', kind: 'values' as const, value: (t: PayTransaction) => t.purpose_label },
+    { key: 'payment_method', kind: 'values' as const, value: (t: PayTransaction) => t.payment_method },
+    { key: 'type', kind: 'values' as const, value: (t: PayTransaction) => t.type },
+    { key: 'amount', kind: 'values' as const, value: (t: PayTransaction) => t.amount },
+    { key: 'status', kind: 'values' as const, value: (t: PayTransaction) => displayStatus(t) },
+  ];
 
   // Transactions reload whenever the date range changes; the other panels
   // (invoices, methods, credit) are range-independent and load once.
@@ -992,90 +1005,62 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
       <div style={styles.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
           <h3 style={{ ...styles.cardTitle, margin: 0 }}>Transaction History</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)' }}>
-            <label style={{ color: 'var(--color-text-secondary)' }}>From</label>
-            <input
-              type="date"
-              value={dateFrom}
-              max={dateTo || undefined}
-              onChange={(e) => setDateFrom(e.target.value)}
-              style={{ ...refundInputStyle, padding: '6px 8px' }}
-              aria-label="Transactions from date"
-            />
-            <label style={{ color: 'var(--color-text-secondary)' }}>To</label>
-            <input
-              type="date"
-              value={dateTo}
-              min={dateFrom || undefined}
-              onChange={(e) => setDateTo(e.target.value)}
-              style={{ ...refundInputStyle, padding: '6px 8px' }}
-              aria-label="Transactions to date"
-            />
-          </div>
         </div>
-        {transactions.length === 0 ? (
-          <p style={styles.cardMuted}>No transactions in this date range.</p>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ textAlign: 'left', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>
-                <th style={{ padding: '6px 8px' }}>Date</th>
-                <th style={{ padding: '6px 8px' }}>For</th>
-                <th style={{ padding: '6px 8px' }}>Method</th>
-                <th style={{ padding: '6px 8px' }}>Type</th>
-                <th style={{ padding: '6px 8px', textAlign: 'right' }}>Amount</th>
-                <th style={{ padding: '6px 8px' }}>Status</th>
-                <th style={{ padding: '6px 8px', textAlign: 'right' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.map((t) => (
-                <tr key={t.id} style={{ borderTop: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
-                  <td style={{ padding: '8px' }}>{new Date(t.created_at).toLocaleDateString()}</td>
-                  <td style={{ padding: '8px' }}>
-                    {t.purpose_link ? (
-                      <button
-                        type="button"
-                        onClick={() => openPurpose(t.purpose_link!)}
-                        style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-accent)', cursor: 'pointer', textAlign: 'left', font: 'inherit', textDecoration: 'underline' }}
-                        title={t.purpose_link.type === 'invoice' ? 'Open invoice PDF' : t.purpose_link.type === 'credit_note' ? 'Open credit note PDF' : t.purpose_link.type === 'debit_note' ? 'Open debit note PDF' : t.purpose_link.type === 'order' ? 'Open receipt' : 'Open details'}
-                      >
-                        {t.purpose_label}
-                      </button>
-                    ) : (
-                      <span>{t.purpose_label}</span>
-                    )}
-                    {t.reference_number && (
-                      <span
-                        style={{ display: 'block', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family-mono, monospace)' }}
-                        title="Payment reference (for reconciliation with the processor)"
-                      >
-                        {t.reference_number}
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: '8px' }}>{t.payment_method}</td>
-                  <td style={{ padding: '8px' }}>{t.type}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>{formatCurrency(t.amount, t.currency)}</td>
-                  <td style={{ padding: '8px' }}>{(() => { const ds = displayStatus(t); return <Badge variant={statusVariant(ds)}>{ds}</Badge>; })()}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>
-                    <Dropdown
-                      trigger={<IconButton icon={<span style={{ fontSize: '18px', lineHeight: 1 }}>⋮</span>} aria-label="Row actions" size="sm" variant="ghost" />}
-                      items={(() => {
-                        const print = printForRow(t);
-                        return [
-                          ...(refundKindOf(t) ? [{ id: 'refund', label: 'Refund', icon: '↩', onClick: () => startRefund(t) }] : []),
-                          { id: 'email', label: 'Email', icon: '✉', onClick: () => emailTxnDoc(t) },
-                          ...(print ? [{ id: 'print', label: 'Print', icon: '🖨', onClick: print }] : []),
-                        ];
-                      })()}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <Table
+          rowId={(t: PayTransaction) => t.id}
+          data={applyTableFilters(transactions, TX_FILTER_COLUMNS, { ...txFilters, created_at: {} })}
+          filterSource={transactions}
+          filters={txFilters}
+          onFiltersChange={setTxFilters}
+          emptyMessage="No transactions in this date range."
+          clientSort
+          columns={[
+            { key: 'created_at', header: 'Date', sortable: true, filter: 'date' as const, render: (v: string) => new Date(v).toLocaleDateString() },
+            { key: 'purpose_label', header: 'For', sortable: true, render: (_: any, t: PayTransaction) => (
+              <>
+                {t.purpose_link ? (
+                  <button
+                    type="button"
+                    onClick={() => openPurpose(t.purpose_link!)}
+                    style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-accent)', cursor: 'pointer', textAlign: 'left', font: 'inherit', textDecoration: 'underline' }}
+                    title={t.purpose_link.type === 'invoice' ? 'Open invoice PDF' : t.purpose_link.type === 'credit_note' ? 'Open credit note PDF' : t.purpose_link.type === 'debit_note' ? 'Open debit note PDF' : t.purpose_link.type === 'order' ? 'Open receipt' : 'Open details'}
+                  >
+                    {t.purpose_label}
+                  </button>
+                ) : (
+                  <span>{t.purpose_label}</span>
+                )}
+                {t.reference_number && (
+                  <span
+                    style={{ display: 'block', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family-mono, monospace)' }}
+                    title="Payment reference (for reconciliation with the processor)"
+                  >
+                    {t.reference_number}
+                  </span>
+                )}
+              </>
+            ) },
+            { key: 'payment_method', header: 'Method', sortable: true },
+            { key: 'type', header: 'Type', sortable: true },
+            { key: 'amount', header: 'Amount', align: 'right' as const, sortable: true, filterLabel: (v: string) => formatCurrency(Number(v), transactions[0]?.currency), render: (v: number, t: PayTransaction) => <div style={{ textAlign: 'right' }}>{formatCurrency(v, t.currency)}</div> },
+            { key: 'status', header: 'Status', sortable: true, filterValue: (t: PayTransaction) => displayStatus(t), render: (_: any, t: PayTransaction) => { const ds = displayStatus(t); return <Badge variant={statusVariant(ds)}>{ds}</Badge>; } },
+            { key: 'actions', header: '', filter: false as const, render: (_: any, t: PayTransaction) => (
+              <div style={{ textAlign: 'right' }}>
+                <Dropdown
+                  trigger={<IconButton icon={<span style={{ fontSize: '18px', lineHeight: 1 }}>⋮</span>} aria-label="Row actions" size="sm" variant="ghost" />}
+                  items={(() => {
+                    const print = printForRow(t);
+                    return [
+                      ...(refundKindOf(t) ? [{ id: 'refund', label: 'Refund', icon: '↩', onClick: () => startRefund(t) }] : []),
+                      { id: 'email', label: 'Email', icon: '✉', onClick: () => emailTxnDoc(t) },
+                      ...(print ? [{ id: 'print', label: 'Print', icon: '🖨', onClick: print }] : []),
+                    ];
+                  })()}
+                />
+              </div>
+            ) },
+          ]}
+        />
       </div>
 
       {refundTxn && (
