@@ -57,10 +57,10 @@ export function TenantChargeHistory({ tenantId }: Props) {
         columns={[
           { key: 'reference_number', header: 'Ref', sortable: true },
           { key: 'cycle', header: 'Cycle', sortable: true, filterValue: (c: PlatformBillingCharge) => `${c.cycle_year}-${String(c.cycle_month).padStart(2, '0')}`, render: (_: any, c: PlatformBillingCharge) => `${c.cycle_year}-${String(c.cycle_month).padStart(2, '0')}` },
-          { key: 'flat_component_cents', header: 'Flat', align: 'right' as const, sortable: true, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
-          { key: 'percentage_component_cents', header: '%', align: 'right' as const, sortable: true, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
-          { key: 'credit_applied_cents', header: 'Credit', align: 'right' as const, sortable: true, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
-          { key: 'amount_charged_cents', header: 'Charged', align: 'right' as const, sortable: true, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
+          { key: 'flat_component_cents', header: 'Flat', align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
+          { key: 'percentage_component_cents', header: '%', align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
+          { key: 'credit_applied_cents', header: 'Credit', align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
+          { key: 'amount_charged_cents', header: 'Charged', align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), charges[0]?.currency), render: money },
           { key: 'status', header: 'Status', sortable: true, render: (v: string) => <span style={{ color: STATUS_COLOR[v] }}>{v}</span> },
           { key: 'settled_at', header: 'Settled', sortable: true, filter: 'date' as const, render: (v: string) => (v ? new Date(v).toLocaleDateString() : '—') },
         ]}

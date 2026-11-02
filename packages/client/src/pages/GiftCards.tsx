@@ -54,7 +54,7 @@ export function GiftCards() {
 
   const columns = [
     { key: 'code', header: 'Code', render: (_v: any, c: payApi.GiftCard) => <span style={{ fontFamily: 'var(--font-family-mono, monospace)' }}>{c.code}</span> },
-    { key: 'balance', header: 'Balance', render: (_v: any, c: payApi.GiftCard) => `${formatCurrency(c.balance_cents, c.currency)} of ${formatCurrency(c.initial_amount_cents, c.currency)}` },
+    { key: 'balance', header: 'Balance', filter: 'amount' as const, filterValue: (c: payApi.GiftCard) => c.balance_cents, render: (_v: any, c: payApi.GiftCard) => `${formatCurrency(c.balance_cents, c.currency)} of ${formatCurrency(c.initial_amount_cents, c.currency)}` },
     { key: 'recipient', header: 'Recipient', render: (_v: any, c: payApi.GiftCard) => c.recipient_name || c.recipient_email || '—' },
     { key: 'expires', header: 'Expires', render: (_v: any, c: payApi.GiftCard) => (c.expires_at ? new Date(c.expires_at).toLocaleDateString() : 'Never') },
     { key: 'status', header: 'Status', render: (_v: any, c: payApi.GiftCard) => <Badge variant={STATUS_VARIANT[c.status] || 'neutral'}>{c.status}</Badge> },

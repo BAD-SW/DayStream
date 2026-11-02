@@ -731,7 +731,7 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
     { key: 'purpose_label', kind: 'values' as const, value: (t: PayTransaction) => t.purpose_label },
     { key: 'payment_method', kind: 'values' as const, value: (t: PayTransaction) => t.payment_method },
     { key: 'type', kind: 'values' as const, value: (t: PayTransaction) => t.type },
-    { key: 'amount', kind: 'values' as const, value: (t: PayTransaction) => t.amount },
+    { key: 'amount', kind: 'amount' as const, value: (t: PayTransaction) => t.amount },
     { key: 'status', kind: 'values' as const, value: (t: PayTransaction) => displayStatus(t) },
   ];
 
@@ -1042,7 +1042,7 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
             ) },
             { key: 'payment_method', header: 'Method', sortable: true },
             { key: 'type', header: 'Type', sortable: true },
-            { key: 'amount', header: 'Amount', align: 'right' as const, sortable: true, filterLabel: (v: string) => formatCurrency(Number(v), transactions[0]?.currency), render: (v: number, t: PayTransaction) => <div style={{ textAlign: 'right' }}>{formatCurrency(v, t.currency)}</div> },
+            { key: 'amount', header: 'Amount', align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), transactions[0]?.currency), render: (v: number, t: PayTransaction) => <div style={{ textAlign: 'right' }}>{formatCurrency(v, t.currency)}</div> },
             { key: 'status', header: 'Status', sortable: true, filterValue: (t: PayTransaction) => displayStatus(t), render: (_: any, t: PayTransaction) => { const ds = displayStatus(t); return <Badge variant={statusVariant(ds)}>{ds}</Badge>; } },
             { key: 'actions', header: '', filter: false as const, render: (_: any, t: PayTransaction) => (
               <div style={{ textAlign: 'right' }}>

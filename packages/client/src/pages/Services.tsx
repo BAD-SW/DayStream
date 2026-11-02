@@ -181,7 +181,7 @@ function ProductsTab() {
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
     { key: 'category_name', header: 'Category', sortable: true, render: (val: string) => val || '—' },
-    { key: 'price', header: 'Price', sortable: true, filterLabel: (v: any) => (v != null ? formatCurrency(v) : '—'), render: (val: number) => val != null ? formatCurrency(val) : '—' },
+    { key: 'price', header: 'Price', sortable: true, filter: 'amount' as const, filterLabel: (v: any) => (v != null ? formatCurrency(v) : '—'), render: (val: number) => val != null ? formatCurrency(val) : '—' },
     { key: 'sku', header: 'SKU', sortable: true, render: (val: string) => val || '—' },
     { key: 'status', header: 'Status', sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
     {
@@ -354,7 +354,7 @@ function MembershipsTab() {
       render: (val: string) => val ? val.charAt(0).toUpperCase() + val.slice(1) : '—',
     },
     {
-      key: 'price', header: 'Price', sortable: true,
+      key: 'price', header: 'Price', sortable: true, filter: 'amount' as const,
       render: (val: number) => formatCurrency(val),
     },
     {
@@ -538,7 +538,7 @@ function PackagesTab() {
 
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
-    { key: 'price', header: 'Price', sortable: true, render: (val: number) => formatCurrency(val) },
+    { key: 'price', header: 'Price', sortable: true, filter: 'amount' as const, render: (val: number) => formatCurrency(val) },
     {
       key: 'expiration_type', header: 'Expiration', sortable: true,
       render: (val: string, row: any) => val === 'none' ? 'Never' : `${row.expiration_days} ${row.expiration_unit || 'days'}`,

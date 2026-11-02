@@ -127,7 +127,7 @@ export function PlatformBillingActivity() {
                   { key: 'reference_number', header: 'Ref', sortable: true, render: (v: string) => v ?? '—' },
                   { key: 'tenant_name', header: 'Tenant', sortable: true },
                   { key: 'cycle', header: 'Cycle', sortable: true, filterValue: cycleOf, render: (_: any, a: payApi.RunChargeAttempt) => cycleOf(a) },
-                  { key: 'amount_cents', header: 'Amount', align: 'right' as const, sortable: true, filterLabel: (v: string) => formatCurrency(Number(v), runCharges[0]?.currency), render: (v: number, a: payApi.RunChargeAttempt) => formatCurrency(v, a.currency) },
+                  { key: 'amount_cents', header: 'Amount', align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), runCharges[0]?.currency), render: (v: number, a: payApi.RunChargeAttempt) => formatCurrency(v, a.currency) },
                   { key: 'outcome', header: 'Outcome', sortable: true, render: (v: string) => <span style={{ color: CHARGE_STATUS_COLOR[v] }}>{v}</span> },
                   { key: 'detail', header: 'Detail', filterValue: (a: payApi.RunChargeAttempt) => a.failure_reason || a.provider_reference || '', render: (_: any, a: payApi.RunChargeAttempt) => a.failure_reason || a.provider_reference || '—' },
                 ]}
@@ -153,7 +153,7 @@ export function PlatformBillingActivity() {
               { key: 'reference_number', header: 'Ref', sortable: true },
               { key: 'tenant_name', header: 'Tenant', sortable: true },
               { key: 'cycle', header: 'Cycle', sortable: true, filterValue: cycleOf, render: (_: any, f: payApi.PlatformWideCharge) => cycleOf(f) },
-              { key: 'amount_charged_cents', header: 'Amount', align: 'right' as const, sortable: true, filterLabel: (v: string) => formatCurrency(Number(v), failed[0]?.currency), render: (v: number, f: payApi.PlatformWideCharge) => formatCurrency(v, f.currency) },
+              { key: 'amount_charged_cents', header: 'Amount', align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), failed[0]?.currency), render: (v: number, f: payApi.PlatformWideCharge) => formatCurrency(v, f.currency) },
               { key: 'attempts', header: 'Attempts', align: 'right' as const, sortable: true },
               { key: 'failure_reason', header: 'Reason', sortable: true, render: (v: string) => v || '—' },
             ]}

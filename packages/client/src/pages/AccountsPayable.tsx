@@ -267,9 +267,9 @@ export function AccountsPayable() {
   const billCols = [
     { key: 'vendor_name', header: 'Vendor', sortable: true },
     { key: 'invoice_number', header: 'Invoice #' },
-    { key: 'amount', header: 'Amount', filterLabel: (v: any) => formatCurrency(Number(v)), render: (v: number) => formatCurrency(v) },
-    { key: 'amount_paid', header: 'Paid', filterLabel: (v: any) => (Number(v) > 0 ? formatCurrency(Number(v)) : '—'), render: (v: number) => v > 0 ? formatCurrency(v) : '—' },
-    { key: 'balance', header: 'Balance', filterValue: (row: any) => row.amount - row.amount_paid, filterLabel: (v: any) => formatCurrency(Number(v)), render: (_: any, row: any) => formatCurrency(row.amount - row.amount_paid) },
+    { key: 'amount', header: 'Amount', filter: 'amount' as const, filterLabel: (v: any) => formatCurrency(Number(v)), render: (v: number) => formatCurrency(v) },
+    { key: 'amount_paid', header: 'Paid', filter: 'amount' as const, filterLabel: (v: any) => (Number(v) > 0 ? formatCurrency(Number(v)) : '—'), render: (v: number) => v > 0 ? formatCurrency(v) : '—' },
+    { key: 'balance', header: 'Balance', filter: 'amount' as const, filterValue: (row: any) => row.amount - row.amount_paid, filterLabel: (v: any) => formatCurrency(Number(v)), render: (_: any, row: any) => formatCurrency(row.amount - row.amount_paid) },
     { key: 'due_date', header: 'Due', sortable: true, filter: 'date' as const, render: (v: string) => new Date(v).toLocaleDateString() },
     { key: 'status', header: 'Status', sortable: true, render: (v: string) => <Badge variant={BILL_STATUS[v] || 'neutral'}>{v}</Badge> },
     { key: 'actions', header: '', filter: false as const, render: (_: any, row: any) => (
@@ -282,7 +282,7 @@ export function AccountsPayable() {
 
   const expenseCols = [
     { key: 'date', header: 'Date', sortable: true, filter: 'date' as const, render: (v: string) => new Date(v).toLocaleDateString() },
-    { key: 'amount', header: 'Amount', sortable: true, filterLabel: (v: any) => formatCurrency(Number(v)), render: (v: number) => formatCurrency(v) },
+    { key: 'amount', header: 'Amount', sortable: true, filter: 'amount' as const, filterLabel: (v: any) => formatCurrency(Number(v)), render: (v: number) => formatCurrency(v) },
     { key: 'account_name', header: 'Account' },
     { key: 'description', header: 'Description' },
     { key: 'payment_method', header: 'Paid via' },
