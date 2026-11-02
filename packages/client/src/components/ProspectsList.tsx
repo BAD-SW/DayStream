@@ -1,4 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Table, applyTableFilters } from '../design-system/components/data/Table';
+import type { TableFilters } from '../design-system/components/data/Table';
 import { apiClient } from '../api/client';
 import { Button } from '../design-system/components/actions/Button';
 
@@ -23,8 +25,6 @@ interface Prospect {
   notes?: string;
 }
 
-type SortField = 'name' | 'address' | 'city' | 'category' | 'rating' | 'status' | 'notes';
-type SortDir = 'asc' | 'desc';
 
 const STATUS_OPTIONS = [
   { value: 'new', label: 'New' },
@@ -49,6 +49,11 @@ interface Props {
   onCountChange?: (n: number) => void;
 }
 
+// Columns the list filters on screen (same keys as the table).
+const FILTER_COLUMNS = (['name', 'address', 'city', 'category', 'rating', 'status', 'notes'] as const).map((key) => ({
+  key, kind: 'values' as const, value: (p: Prospect) => (p as any)[key],
+}));
+
 export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChange }: Props) {
   // URL helpers derived from apiBase + mode.
   const listUrl = ownTenant ? apiBase : `${apiBase}/prospects`;
@@ -59,12 +64,9 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
   const [showDismissed, setShowDismissed] = useState(false);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [sortField, setSortField] = useState<SortField>('name');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  // Column filters beside the sort icon (David, 2026-11-02); Export CSV follows them.
+  const [tableFilters, setTableFilters] = useState<TableFilters>({});
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({ name: '', address: '', phone: '', website: '', category: '', notes: '' });
   const [editingNotes, setEditingNotes] = useState<Record<string, string>>({});
@@ -73,8 +75,6 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (statusFilter) params.append('status', statusFilter);
-      if (categoryFilter) params.append('category', categoryFilter);
       if (search) params.append('search', search);
       if (showDismissed) params.append('show_dismissed', 'true');
       const res = await apiClient.get(`${listUrl}?${params.toString()}`);
@@ -85,32 +85,11 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
       setProspects([]);
     } finally { setLoading(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listUrl, statusFilter, categoryFilter, search, showDismissed]);
+  }, [listUrl, search, showDismissed]);
 
   useEffect(() => { fetchProspects(); }, [fetchProspects]);
 
-  useEffect(() => {
-    apiClient.get('/v1/prospects/categories').then((res) => {
-      const cats = res.data.data || [];
-      setCategories(cats.map((c: any) => c.ui_category_name));
-    }).catch(() => {});
-  }, []);
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
-    else { setSortField(field); setSortDir('asc'); }
-  };
-
-  const sortedProspects = [...prospects].sort((a, b) => {
-    const aRaw = (a as any)[sortField] ?? '';
-    const bRaw = (b as any)[sortField] ?? '';
-    let cmp: number;
-    if (sortField === 'rating') cmp = (Number(aRaw) || 0) - (Number(bRaw) || 0);
-    else cmp = String(aRaw).localeCompare(String(bRaw));
-    return sortDir === 'asc' ? cmp : -cmp;
-  });
-
-  const renderSortIndicator = (field: SortField) => (sortField !== field ? null : sortDir === 'asc' ? ' ▲' : ' ▼');
+  const visibleProspects = useMemo(() => applyTableFilters(prospects, FILTER_COLUMNS, tableFilters), [prospects, tableFilters]);
 
   const handleStatusChange = async (id: string, status: string) => {
     try {
@@ -154,8 +133,7 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
     setExporting(true);
     try {
       const params = new URLSearchParams();
-      if (statusFilter) params.append('status', statusFilter);
-      if (categoryFilter) params.append('category', categoryFilter);
+      if (Object.values(tableFilters).some((f) => f.values?.length || f.contains || f.from || f.to)) params.append('ids', visibleProspects.map((p) => p.id).join(','));
       const url = `${exportUrl}?${params.toString()}`;
       const res = await apiClient.get(url, { responseType: 'blob' });
       const blob = new Blob([res.data], { type: 'text/csv' });
@@ -176,14 +154,6 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
       {/* Filters */}
       <div style={styles.filters}>
         <input type="text" placeholder="Search by name..." value={search} onChange={(e) => setSearch(e.target.value)} style={styles.searchInput} />
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={styles.select}>
-          <option value="">All Statuses</option>
-          {STATUS_OPTIONS.filter((s) => s.value !== 'dismissed').map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
-        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} style={styles.select}>
-          <option value="">All Categories</option>
-          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
         <label style={styles.checkboxLabel}>
           <input type="checkbox" checked={showDismissed} onChange={(e) => setShowDismissed(e.target.checked)} style={styles.checkbox} />
           Show Dismissed
@@ -220,50 +190,36 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
       )}
 
       {/* Table */}
-      {loading ? (
-        <div style={styles.empty}>Loading...</div>
-      ) : sortedProspects.length === 0 ? (
-        <div style={styles.empty}><p>No prospects found.</p></div>
-      ) : (
-        <div style={styles.tableWrapper}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                {(['name', 'address', 'city', 'category', 'rating', 'status', 'notes'] as SortField[]).map((field) => (
-                  <th key={field} style={styles.th} onClick={() => handleSort(field)}>
-                    {field.charAt(0).toUpperCase() + field.slice(1)}{renderSortIndicator(field)}
-                  </th>
-                ))}
-                <th style={styles.th}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedProspects.map((p, idx) => (
-                <tr key={p.id} style={idx % 2 === 0 ? styles.rowEven : styles.rowOdd}>
-                  <td style={styles.td}>
-                    <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name + ' ' + (p.address || ''))}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-text)', textDecoration: 'underline' }}>{p.name}</a>
-                  </td>
-                  <td style={styles.td}>{p.address}</td>
-                  <td style={styles.td}>{p.city || '—'}</td>
-                  <td style={styles.td}>{p.category}</td>
-                  <td style={styles.td}>{p.rating ?? '—'}</td>
-                  <td style={styles.td}>
-                    <select value={p.status} onChange={(e) => handleStatusChange(p.id, e.target.value)} style={styles.statusSelect}>
-                      {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                    </select>
-                  </td>
-                  <td style={styles.td}>
-                    <input type="text" value={editingNotes[p.id] ?? p.notes ?? ''} onChange={(e) => setEditingNotes({ ...editingNotes, [p.id]: e.target.value })} onBlur={() => handleNotesBlur(p.id)} style={styles.notesInput} placeholder="Add notes..." />
-                  </td>
-                  <td style={styles.td}>
-                    <button style={styles.dismissButton} onClick={() => handleDismiss(p.id)} title="Dismiss prospect">✕</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <Table
+        rowId={(p: Prospect) => p.id}
+        data={visibleProspects}
+        filterSource={prospects}
+        filters={tableFilters}
+        onFiltersChange={setTableFilters}
+        loading={loading}
+        emptyMessage="No prospects found."
+        clientSort
+        columns={[
+          { key: 'name', header: 'Name', sortable: true, render: (_: any, p: Prospect) => (
+            <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name + ' ' + (p.address || ''))}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-text)', textDecoration: 'underline' }}>{p.name}</a>
+          ) },
+          { key: 'address', header: 'Address', sortable: true },
+          { key: 'city', header: 'City', sortable: true, render: (v: string) => v || '—' },
+          { key: 'category', header: 'Category', sortable: true },
+          { key: 'rating', header: 'Rating', sortable: true, render: (v: number) => v ?? '—' },
+          { key: 'status', header: 'Status', sortable: true, filterLabel: (v: string) => STATUS_OPTIONS.find((s) => s.value === v)?.label || v, render: (_: any, p: Prospect) => (
+            <select value={p.status} onChange={(e) => handleStatusChange(p.id, e.target.value)} onClick={(e) => e.stopPropagation()} style={styles.statusSelect} aria-label={`Status for ${p.name}`}>
+              {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+          ) },
+          { key: 'notes', header: 'Notes', sortable: true, render: (_: any, p: Prospect) => (
+            <input type="text" value={editingNotes[p.id] ?? p.notes ?? ''} onChange={(e) => setEditingNotes({ ...editingNotes, [p.id]: e.target.value })} onBlur={() => handleNotesBlur(p.id)} style={styles.notesInput} placeholder="Add notes..." aria-label={`Notes for ${p.name}`} />
+          ) },
+          { key: 'actions', header: '', filter: false as const, render: (_: any, p: Prospect) => (
+            <button style={styles.dismissButton} onClick={() => handleDismiss(p.id)} title="Dismiss prospect">✕</button>
+          ) },
+        ]}
+      />
     </div>
   );
 }

@@ -628,12 +628,20 @@ prospectsRouter.put('/:tenantId/prospects/:id/dismiss', requirePermission('*:*')
 });
 
 /** Build the prospect CSV for a tenant (optional status/category filters). */
-async function buildProspectsCsv(tenantId: string, status?: string, category?: string): Promise<string> {
+/** `ids` query value (comma-separated uuids) → list, or undefined when absent. */
+function exportIds(raw: unknown): string[] | undefined {
+  if (typeof raw !== 'string') return undefined;
+  return raw.split(',').map((x) => x.trim()).filter((x) => /^[0-9a-f-]{36}$/i.test(x));
+}
+
+async function buildProspectsCsv(tenantId: string, status?: string, category?: string, ids?: string[]): Promise<string> {
   const conditions = ['tenant_id = $1', 'is_active = true'];
   const params: any[] = [tenantId];
   let idx = 2;
   if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
   if (category) { conditions.push(`category = $${idx++}`); params.push(category); }
+  // The rows the list's column filters left (David, 2026-11-02).
+  if (ids) { conditions.push(`id = ANY($${idx++}::uuid[])`); params.push(ids); }
   const { rows } = await adminPool.query(
     `SELECT name, address, phone, website, category, rating, review_count, status, notes, source, created_at
      FROM prp_prospects WHERE ${conditions.join(' AND ')} ORDER BY name`,
@@ -664,7 +672,7 @@ prospectsRouter.get('/export', requireTenantLevel(), requirePermission('settings
   try {
     const authReq = req as AuthenticatedRequest;
     if (!authReq.tenantId) { error(res, 'Tenant context required', 'VALIDATION_ERROR', 400); return; }
-    const csv = await buildProspectsCsv(authReq.tenantId, req.query.status as string | undefined, req.query.category as string | undefined);
+    const csv = await buildProspectsCsv(authReq.tenantId, req.query.status as string | undefined, req.query.category as string | undefined, exportIds(req.query.ids));
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="prospects.csv"');
     res.send(csv);
@@ -674,7 +682,7 @@ prospectsRouter.get('/export', requireTenantLevel(), requirePermission('settings
 // GET /api/v1/prospects/:tenantId/prospects/export — SYSTEM ADMIN: export a tenant's prospects.
 prospectsRouter.get('/:tenantId/prospects/export', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
-    const csv = await buildProspectsCsv(req.params.tenantId, req.query.status as string | undefined, req.query.category as string | undefined);
+    const csv = await buildProspectsCsv(req.params.tenantId, req.query.status as string | undefined, req.query.category as string | undefined, exportIds(req.query.ids));
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="prospects.csv"');
     res.send(csv);
