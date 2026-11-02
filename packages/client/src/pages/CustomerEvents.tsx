@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { SearchInput } from '../design-system/components/actions/SearchInput';
 import { Badge } from '../design-system/components/data/Badge';
+import { Table } from '../design-system/components/data/Table';
 import { ListEmpty } from '../design-system/components/data/ListRow';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
 import { TabBar } from '../design-system/components/navigation/TabBar';
@@ -38,6 +39,17 @@ export function refundWording(to: 'card' | 'credit' | null | undefined) {
 }
 
 type Tab = 'upcoming' | 'mine';
+
+// "My events" row texts — shared by the cells and their column filters.
+function myStatus(m: MyEventRow): string {
+  return m.kind === 'waitlist' ? (m.status === 'notified' ? 'Place offered' : `Waitlist #${m.position}`)
+    : m.status === 'confirmed' ? (m.upcoming ? 'Registered' : 'Attended / past')
+    : m.status === 'pending' ? (m.awaiting_payment === 'online' ? 'Payment not finished' : 'Pay at reception')
+    : m.status === 'cancelled' ? 'Cancelled' : m.status;
+}
+function myTicket(m: MyEventRow): string {
+  return m.kind === 'waitlist' ? '—' : `${m.tier_name || 'Ticket'}${m.group_size && m.group_size > 1 ? ` × ${m.group_size}` : ''}${m.amount ? ` · ${formatCurrency(m.amount, m.currency)}` : ''}`;
+}
 
 export function CustomerEvents() {
   const navigate = useNavigate();
@@ -145,36 +157,31 @@ export function CustomerEvents() {
       )}
 
       {tab === 'mine' && (loading ? <ListEmpty>Loading...</ListEmpty> : mine.length === 0 ? <ListEmpty>You have no event registrations yet</ListEmpty> : (
-        <div className="cev-table-wrap">
-          <table className="cev-table">
-            <thead><tr><th>Event</th><th>Date/time</th><th>Ticket</th><th>Status</th><th aria-label="Actions" /></tr></thead>
-            <tbody>
-              {mine.map((m) => {
-                const d = eventDateParts(m.start_time, m.timezone);
-                const status = m.kind === 'waitlist' ? (m.status === 'notified' ? 'Place offered' : `Waitlist #${m.position}`)
-                  : m.status === 'confirmed' ? (m.upcoming ? 'Registered' : 'Attended / past')
-                  : m.status === 'pending' ? (m.awaiting_payment === 'online' ? 'Payment not finished' : 'Pay at reception')
-                  : m.status === 'cancelled' ? 'Cancelled' : m.status;
-                const variant = m.kind === 'waitlist' ? 'info' : m.status === 'confirmed' ? 'success' : m.status === 'pending' ? 'warning' : 'neutral';
-                const canAct = m.upcoming && (m.kind === 'waitlist' || m.can_cancel);
-                return (
-                  <tr key={`${m.kind}-${m.id}`}>
-                    <td><button className="cev-link" onClick={() => navigate(`/events/${m.event_id}`)}>{m.title}</button></td>
-                    <td>{d.shortDate} · {d.time}</td>
-                    <td>{m.kind === 'waitlist' ? '—' : `${m.tier_name || 'Ticket'}${m.group_size && m.group_size > 1 ? ` × ${m.group_size}` : ''}${m.amount ? ` · ${formatCurrency(m.amount, m.currency)}` : ''}`}</td>
-                    <td><Badge variant={variant as any}>{status}</Badge></td>
-                    <td className="cev-actions">
-                      {canAct && <Button size="sm" variant="secondary" onClick={() => setToCancel(m)}>{m.kind === 'waitlist' ? 'Leave waitlist' : 'Cancel'}</Button>}
-                      {!canAct && m.kind === 'registration' && m.upcoming && (m.status === 'confirmed' || m.status === 'pending') && m.cancel_blocked_reason && (
-                        <span className="cev-hint" title={m.cancel_blocked_reason}>Contact the business to cancel</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <Table
+          rowId={(m: MyEventRow) => `${m.kind}-${m.id}`}
+          data={mine}
+          clientSort
+          columns={[
+            { key: 'title', header: 'Event', sortable: true, render: (_: any, m: MyEventRow) => <button className="cev-link" onClick={() => navigate(`/events/${m.event_id}`)}>{m.title}</button> },
+            { key: 'start_time', header: 'Date/time', sortable: true, filter: 'date' as const, render: (_: any, m: MyEventRow) => { const d = eventDateParts(m.start_time, m.timezone); return `${d.shortDate} · ${d.time}`; } },
+            { key: 'ticket', header: 'Ticket', sortable: true, filterValue: myTicket, render: (_: any, m: MyEventRow) => myTicket(m) },
+            { key: 'status', header: 'Status', sortable: true, filterValue: myStatus, render: (_: any, m: MyEventRow) => {
+              const variant = m.kind === 'waitlist' ? 'info' : m.status === 'confirmed' ? 'success' : m.status === 'pending' ? 'warning' : 'neutral';
+              return <Badge variant={variant as any}>{myStatus(m)}</Badge>;
+            } },
+            { key: 'actions', header: '', filter: false as const, render: (_: any, m: MyEventRow) => {
+              const canAct = m.upcoming && (m.kind === 'waitlist' || m.can_cancel);
+              return (
+                <div className="cev-actions">
+                  {canAct && <Button size="sm" variant="secondary" onClick={() => setToCancel(m)}>{m.kind === 'waitlist' ? 'Leave waitlist' : 'Cancel'}</Button>}
+                  {!canAct && m.kind === 'registration' && m.upcoming && (m.status === 'confirmed' || m.status === 'pending') && m.cancel_blocked_reason && (
+                    <span className="cev-hint" title={m.cancel_blocked_reason}>Contact the business to cancel</span>
+                  )}
+                </div>
+              );
+            } },
+          ]}
+        />
       ))}
 
       <ConfirmDialog
