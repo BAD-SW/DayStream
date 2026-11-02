@@ -553,7 +553,7 @@ export async function getBookingColumnValues(filters: BookingFilters, column: st
   if (!col || col.kind === 'date') return [];
   const { [column]: _own, ...others } = filters.columns || {};
   const conditions = ['b.business_id = $1']; const params: any[] = [filters.businessId];
-  if (filters.customerId) { params.push(filters.customerId); conditions.push(`b.customer_id = ${params.length}`); }
+  if (filters.customerId) { params.push(filters.customerId); conditions.push(`b.customer_id = $${params.length}`); }
   addColumnFilterConditions(others, BOOKING_COLUMNS, conditions, params, BOOKING_TZ);
   const { rows } = await adminPool.query(columnValuesSql(col, 'apt_bookings b', conditions.join(' AND ')), params);
   return rows as Array<{ value: string; label: string; count: number }>;

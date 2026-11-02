@@ -890,7 +890,7 @@ export async function getOrderColumnValues(businessId: string, column: string, c
   const col = ORDER_COLUMNS[column];
   if (!col || col.kind === 'date') return [];
   const conditions = ['o.business_id = $1']; const params: any[] = [businessId];
-  if (product?.trim()) { params.push(`%${product.trim()}%`); conditions.push(`EXISTS (SELECT 1 FROM fin_order_items oi WHERE oi.order_id = o.id AND oi.item_name ILIKE ${params.length})`); }
+  if (product?.trim()) { params.push(`%${product.trim()}%`); conditions.push(`EXISTS (SELECT 1 FROM fin_order_items oi WHERE oi.order_id = o.id AND oi.item_name ILIKE $${params.length})`); }
   addColumnFilterConditions(columns, ORDER_COLUMNS, conditions, params, ORDER_TZ, column);
   const { rows } = await adminPool.query(columnValuesSql(col, 'fin_orders o', conditions.join(' AND ')), params);
   return rows as Array<{ value: string; label: string; count: number }>;
