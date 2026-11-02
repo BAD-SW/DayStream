@@ -3,6 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { Alert } from '../design-system/components/feedback/Alert';
+import { TabBar } from '../design-system/components/navigation/TabBar';
+import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
+import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, useDraftList, fieldMark, checkMark, draftBox, UnsavedTag, RowTag } from '../components/unsaved/DraftSections';
+import type { DraftRow } from '../components/unsaved/DraftSections';
+import { LeaveGuard, useGuardedNavigate } from '../components/unsaved/LeaveGuard';
+import { SaveChanges } from '../components/unsaved/SaveChanges';
 import * as staffApi from '../api/staff';
 import * as payrollApi from '../api/payroll';
 import { formatDateOnly } from '../utils/date';
@@ -18,12 +24,33 @@ function formatTime(time: string): string {
   return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
+/** Labels on a row of a list kept as a draft. */
+function RowTags<T>({ row, edited }: { row: DraftRow<T>; edited?: boolean }) {
+  return <>
+    {row.isNew && <> <RowTag>New</RowTag></>}
+    {edited && <> <RowTag>Changed</RowTag></>}
+    {row.deleted && <> <RowTag>Deleted when you save</RowTag></>}
+  </>;
+}
+
+// One Save for the staff member (David, 2026-11-02, as in Settings, Events and People): profile,
+// qualifications, availability and compensation wait for Save changes; Deactivate acts straight away.
 export function StaffDetail() {
+  return (
+    <DraftSectionsProvider>
+      <StaffDetailPage />
+    </DraftSectionsProvider>
+  );
+}
+
+function StaffDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const guardedNavigate = useGuardedNavigate();
   const [staff, setStaff] = useState<StaffProfile | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('profile');
   const [loading, setLoading] = useState(true);
+  const { dirtySections } = useDraftSections();
 
   useEffect(() => {
     if (!id) return;
@@ -44,149 +71,108 @@ export function StaffDetail() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/business?tab=staff')}>← Back to Business Setup</button>
-      <div style={styles.headerRow}>
-        <div>
-          <h1 style={styles.title}>{staff.first_name} {staff.last_name}</h1>
-          <span style={styles.subtitle}>{staff.staff_ref} · {staff.employment_type.replace('_', ' ')}</span>
+      <LeaveGuard when={dirtySections.length > 0} />
+      <StickyPageTop>
+        <button style={styles.back} onClick={() => guardedNavigate('/business?tab=staff')}>← Back to Business Setup</button>
+        <div style={styles.headerRow}>
+          <div>
+            <h1 style={styles.title}>{staff.first_name} {staff.last_name}</h1>
+            <span style={styles.subtitle}>{staff.staff_ref} · {staff.employment_type.replace('_', ' ')}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <SaveChanges />
+            <Badge variant={staff.status === 'active' ? 'success' : 'warning'}>{staff.status}</Badge>
+          </div>
         </div>
-        <Badge variant={staff.status === 'active' ? 'success' : 'warning'}>{staff.status}</Badge>
-      </div>
+        <TabBar aria-label="Staff sections" tabs={tabs.map((t) => ({ ...t, changed: dirtySections.some((s) => s.tab === t.key) }))} active={activeTab} onChange={setActiveTab} />
+      </StickyPageTop>
 
-      <div style={styles.tabBar}>
-        {tabs.map((tab) => {
-          const isActive = activeTab === tab.key;
-          return (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-              style={{
-                background: 'none', border: 'none', outline: 'none',
-                borderBottom: isActive ? '3px solid var(--color-primary)' : '3px solid transparent',
-                padding: '10px 16px',
-                fontSize: 'var(--font-size-sm)',
-                fontWeight: isActive ? 600 : 500,
-                color: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                cursor: 'pointer',
-                fontFamily: 'var(--font-family)',
-                whiteSpace: 'nowrap' as const,
-                marginBottom: '-1px',
-              }}>
-              {tab.label}
-            </button>
-          );
-        })}
+      {/* Tabs with drafts stay mounted, so their edits survive switching tabs. */}
+      <div style={{ marginTop: 'var(--space-lg)' }}>
+        <div hidden={activeTab !== 'profile'}><DraftTab tab="profile"><ProfileTab staff={staff} onUpdate={setStaff} /></DraftTab></div>
+        <div hidden={activeTab !== 'qualifications'}><DraftTab tab="qualifications"><QualificationsTab staffId={staff.id} /></DraftTab></div>
+        <div hidden={activeTab !== 'availability'}><DraftTab tab="availability"><AvailabilityTab staffId={staff.id} /></DraftTab></div>
+        {activeTab === 'calendar' && <CalendarTab staffId={staff.id} />}
+        <div hidden={activeTab !== 'compensation'}><DraftTab tab="compensation"><CompensationTab userId={staff.user_id} /></DraftTab></div>
       </div>
-
-      {activeTab === 'profile' && <ProfileTab staff={staff} onUpdate={setStaff} />}
-      {activeTab === 'qualifications' && <QualificationsTab staffId={staff.id} />}
-      {activeTab === 'availability' && <AvailabilityTab staffId={staff.id} />}
-      {activeTab === 'calendar' && <CalendarTab staffId={staff.id} />}
-      {activeTab === 'compensation' && <CompensationTab userId={staff.user_id} />}
     </div>
   );
 }
 
-// --- Profile Tab (Editable) ---
+// --- Profile Tab (Editable; saved with the page's Save changes) ---
 
 function ProfileTab({ staff, onUpdate }: { staff: StaffProfile; onUpdate: (s: StaffProfile) => void }) {
-  const [form, setForm] = useState({
-    first_name: staff.first_name,
-    last_name: staff.last_name,
-    email: staff.email || '',
-    mobile_phone: staff.mobile_phone || '',
-    employment_type: staff.employment_type,
-    hire_date: staff.hire_date ? staff.hire_date.split('T')[0] : '',
-    languages: staff.languages || '',
-    bio: staff.bio || '',
-    show_on_directory: staff.show_on_directory,
+  const fromStaff = (s: StaffProfile) => ({
+    first_name: s.first_name,
+    last_name: s.last_name,
+    email: s.email || '',
+    mobile_phone: s.mobile_phone || '',
+    employment_type: s.employment_type,
+    hire_date: s.hire_date ? s.hire_date.split('T')[0] : '',
+    languages: s.languages || '',
+    bio: s.bio || '',
+    show_on_directory: s.show_on_directory,
   });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  const isDirty = form.first_name !== staff.first_name || form.last_name !== staff.last_name ||
-    form.email !== (staff.email || '') || form.mobile_phone !== (staff.mobile_phone || '') ||
-    form.employment_type !== staff.employment_type ||
-    form.hire_date !== (staff.hire_date ? staff.hire_date.split('T')[0] : '') ||
-    form.languages !== (staff.languages || '') || form.bio !== (staff.bio || '') ||
-    form.show_on_directory !== staff.show_on_directory;
-
-  const handleSave = async () => {
-    setSaving(true); setError('');
-    try {
-      const updated = await staffApi.updateStaff(staff.id, {
-        ...form,
-        hire_date: form.hire_date || null,
-        mobile_phone: form.mobile_phone || null,
-        languages: form.languages || null,
-        bio: form.bio || null,
-      });
-      onUpdate(updated);
-    } catch (err: any) { setError(err.response?.data?.error || 'Failed to save'); }
-    finally { setSaving(false); }
-  };
-
-  const handleDiscard = () => {
-    setForm({
-      first_name: staff.first_name, last_name: staff.last_name,
-      email: staff.email || '', mobile_phone: staff.mobile_phone || '',
-      employment_type: staff.employment_type,
-      hire_date: staff.hire_date ? staff.hire_date.split('T')[0] : '',
-      languages: staff.languages || '', bio: staff.bio || '',
-      show_on_directory: staff.show_on_directory,
+  const draft = useDraft('staff-profile', 'Profile', fromStaff(staff), async (form) => {
+    const updated = await staffApi.updateStaff(staff.id, {
+      ...form,
+      hire_date: form.hire_date || null,
+      mobile_phone: form.mobile_phone || null,
+      languages: form.languages || null,
+      bio: form.bio || null,
     });
-  };
+    onUpdate(updated);
+    return fromStaff(updated);
+  });
+  const form = draft.value;
+  const setForm = draft.setValue;
+  const mark = (key: keyof typeof form) => fieldMark(draft.changed((v) => v[key]));
+  const [error, setError] = useState('');
 
   const handleDeactivate = async () => {
     if (!confirm('Deactivate this staff member? They will no longer be bookable.')) return;
+    setError('');
     try {
       const updated = await staffApi.deactivateStaff(staff.id);
       onUpdate(updated);
-    } catch { /* silent */ }
+    } catch (err: any) { setError(err.response?.data?.error || 'Failed to deactivate'); }
   };
 
   return (
     <>
       {error && <Alert variant="error">{error}</Alert>}
-      {isDirty && (
-        <div style={styles.saveBar}>
-          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>You have unsaved changes</span>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Button variant="outline" size="sm" onClick={handleDiscard}>Discard</Button>
-            <Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button>
-          </div>
-        </div>
-      )}
-      <div style={styles.card}>
+      <div style={{ ...styles.card, ...draftBox(draft.changed((v) => [v.first_name, v.last_name, v.email, v.mobile_phone, v.languages])) }}>
         <h3 style={styles.cardTitle}>Personal Information</h3>
         <div style={styles.formGrid}>
           <div style={styles.formGroup}>
             <label style={styles.label}>First Name</label>
-            <input style={styles.input} value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} />
+            <input style={{ ...styles.input, ...mark('first_name') }} value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Last Name</label>
-            <input style={styles.input} value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
+            <input style={{ ...styles.input, ...mark('last_name') }} value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Email</label>
-            <input type="email" style={styles.input} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <input type="email" style={{ ...styles.input, ...mark('email') }} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Mobile Phone</label>
-            <input style={styles.input} value={form.mobile_phone} onChange={(e) => setForm({ ...form, mobile_phone: e.target.value })} />
+            <input style={{ ...styles.input, ...mark('mobile_phone') }} value={form.mobile_phone} onChange={(e) => setForm({ ...form, mobile_phone: e.target.value })} />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Languages</label>
-            <input style={styles.input} value={form.languages} onChange={(e) => setForm({ ...form, languages: e.target.value })} placeholder="e.g., English, Spanish" />
+            <input style={{ ...styles.input, ...mark('languages') }} value={form.languages} onChange={(e) => setForm({ ...form, languages: e.target.value })} placeholder="e.g., English, Spanish" />
           </div>
         </div>
       </div>
 
-      <div style={styles.card}>
+      <div style={{ ...styles.card, ...draftBox(draft.changed((v) => [v.employment_type, v.hire_date])) }}>
         <h3 style={styles.cardTitle}>Employment</h3>
         <div style={styles.formGrid}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Employment Type</label>
-            <select style={styles.input} value={form.employment_type} onChange={(e) => setForm({ ...form, employment_type: e.target.value })}>
+            <select style={{ ...styles.input, ...mark('employment_type') }} value={form.employment_type} onChange={(e) => setForm({ ...form, employment_type: e.target.value })}>
               <option value="full_time">Full-time</option>
               <option value="part_time">Part-time</option>
               <option value="contractor">Contractor</option>
@@ -194,22 +180,22 @@ function ProfileTab({ staff, onUpdate }: { staff: StaffProfile; onUpdate: (s: St
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Hire Date</label>
-            <input type="date" style={styles.input} value={form.hire_date} onChange={(e) => setForm({ ...form, hire_date: e.target.value })} />
+            <input type="date" style={{ ...styles.input, ...mark('hire_date') }} value={form.hire_date} onChange={(e) => setForm({ ...form, hire_date: e.target.value })} />
           </div>
         </div>
       </div>
 
-      <div style={styles.card}>
+      <div style={{ ...styles.card, ...draftBox(draft.changed((v) => [v.bio, v.show_on_directory])) }}>
         <h3 style={styles.cardTitle}>Public Profile</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Bio</label>
-            <textarea style={{ ...styles.input, minHeight: '100px', resize: 'vertical' }} value={form.bio}
+            <textarea style={{ ...styles.input, minHeight: '100px', resize: 'vertical', ...mark('bio') }} value={form.bio}
               onChange={(e) => setForm({ ...form, bio: e.target.value })} placeholder="Public-facing bio shown to customers..." />
           </div>
           <div style={styles.formGroup}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={form.show_on_directory} onChange={(e) => setForm({ ...form, show_on_directory: e.target.checked })} style={{ width: '16px', height: '16px' }} />
+              <input type="checkbox" checked={form.show_on_directory} onChange={(e) => setForm({ ...form, show_on_directory: e.target.checked })} style={{ width: '16px', height: '16px', ...checkMark(draft.changed((v) => v.show_on_directory)) }} />
               Show on public directory
             </label>
           </div>
@@ -225,59 +211,59 @@ function ProfileTab({ staff, onUpdate }: { staff: StaffProfile; onUpdate: (s: St
   );
 }
 
-// --- Qualifications Tab ---
+// --- Qualifications Tab (saved with the page's Save changes) ---
+
+const qualData = (q: Qualification) => ({
+  name: q.name, issuing_body: q.issuing_body || null, certification_number: q.certification_number || null,
+  date_obtained: q.date_obtained ? q.date_obtained.split('T')[0] : null, expiry_date: q.expiry_date ? q.expiry_date.split('T')[0] : null,
+  show_on_directory: q.show_on_directory,
+});
 
 function QualificationsTab({ staffId }: { staffId: string }) {
-  const [quals, setQuals] = useState<Qualification[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<Qualification | null>(null);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', issuing_body: '', certification_number: '', date_obtained: '', expiry_date: '', show_on_directory: true });
+  const list = useDraftList<Qualification>('staff-qualifications', 'Qualifications', {
+    create: (q) => staffApi.addQualification(staffId, qualData(q)),
+    update: (q) => staffApi.updateQualification(staffId, q.id, qualData(q)),
+    remove: (q) => staffApi.deleteQualification(staffId, q.id).then(() => undefined),
+  });
 
   const fetchQuals = useCallback(async () => {
     setLoading(true);
-    staffApi.getQualifications(staffId).then(setQuals).finally(() => setLoading(false));
-  }, [staffId]);
+    staffApi.getQualifications(staffId).then(list.load).finally(() => setLoading(false));
+  }, [staffId, list.load]);
 
   useEffect(() => { fetchQuals(); }, [fetchQuals]);
 
-  const openAdd = () => { setEditing(null); setForm({ name: '', issuing_body: '', certification_number: '', date_obtained: '', expiry_date: '', show_on_directory: true }); setShowForm(true); };
-  const openEdit = (q: Qualification) => {
-    setEditing(q);
+  const openAdd = () => { setEditingKey(null); setForm({ name: '', issuing_body: '', certification_number: '', date_obtained: '', expiry_date: '', show_on_directory: true }); setShowForm(true); };
+  const openEdit = (key: string, q: Qualification) => {
+    setEditingKey(key);
     setForm({ name: q.name, issuing_body: q.issuing_body || '', certification_number: q.certification_number || '', date_obtained: q.date_obtained ? q.date_obtained.split('T')[0] : '', expiry_date: q.expiry_date ? q.expiry_date.split('T')[0] : '', show_on_directory: q.show_on_directory });
     setShowForm(true);
   };
 
-  const handleSave = async () => {
+  const handleDone = () => {
     if (!form.name) return;
-    const data = { ...form, issuing_body: form.issuing_body || null, certification_number: form.certification_number || null, date_obtained: form.date_obtained || null, expiry_date: form.expiry_date || null };
-    if (editing) {
-      await staffApi.updateQualification(staffId, editing.id, data);
-    } else {
-      await staffApi.addQualification(staffId, data);
-    }
+    const data = { ...form, issuing_body: form.issuing_body || null, certification_number: form.certification_number || null, date_obtained: form.date_obtained || null, expiry_date: form.expiry_date || null } as unknown as Partial<Qualification>;
+    if (editingKey) list.edit(editingKey, data);
+    else list.add(data as Qualification);
     setShowForm(false);
-    fetchQuals();
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this qualification?')) return;
-    await staffApi.deleteQualification(staffId, id);
-    fetchQuals();
   };
 
   if (loading) return <div style={styles.loading}>Loading...</div>;
 
   return (
-    <>
+    <div style={draftBox(list.dirty)}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Qualifications & Certifications</h3>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Qualifications & Certifications<UnsavedTag dirty={list.dirty} /></h3>
         <Button variant="secondary" size="sm" onClick={openAdd}>Add Qualification</Button>
       </div>
 
       {showForm && (
         <div style={styles.card}>
-          <h4 style={{ ...styles.cardTitle, fontSize: 'var(--font-size-base)' }}>{editing ? 'Edit Qualification' : 'Add Qualification'}</h4>
+          <h4 style={{ ...styles.cardTitle, fontSize: 'var(--font-size-base)' }}>{editingKey ? 'Edit Qualification' : 'Add Qualification'}</h4>
           <div style={styles.formGrid}>
             <div style={styles.formGroup}><label style={styles.label}>Name *</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
             <div style={styles.formGroup}><label style={styles.label}>Issuing Body</label><input style={styles.input} value={form.issuing_body} onChange={(e) => setForm({ ...form, issuing_body: e.target.value })} /></div>
@@ -290,58 +276,86 @@ function QualificationsTab({ staffId }: { staffId: string }) {
               </label>
             </div>
           </div>
+          <p style={{ ...styles.emptyText, marginTop: 'var(--space-sm)' }}>Saved with the page's Save changes.</p>
           <div style={{ display: 'flex', gap: '8px', marginTop: 'var(--space-md)' }}>
-            <Button size="sm" onClick={handleSave}>{editing ? 'Save' : 'Add'}</Button>
+            <Button size="sm" onClick={handleDone}>{editingKey ? 'Done' : 'Add'}</Button>
             <Button variant="secondary" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
           </div>
         </div>
       )}
 
-      {quals.length === 0 && !showForm && <p style={styles.emptyText}>No qualifications recorded. Add certifications, licenses, or training records.</p>}
-      {quals.length > 0 && (
+      {list.rows.length === 0 && !showForm && <p style={styles.emptyText}>No qualifications recorded. Add certifications, licenses, or training records.</p>}
+      {list.rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {quals.map((q) => (
-            <div key={q.id} style={styles.listItem}>
-              <div style={{ flex: 1 }}>
-                <strong style={{ color: 'var(--color-text)' }}>{q.name}</strong>
-                {q.issuing_body && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>— {q.issuing_body}</span>}
-                {q.certification_number && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>#{q.certification_number}</span>}
+          {list.rows.map((r) => {
+            const q = r.item;
+            const edited = !r.isNew && !r.deleted && list.changed(r, qualData);
+            return (
+              <div key={r.key} style={{ ...styles.listItem, opacity: r.deleted ? 0.6 : 1, ...(edited ? fieldMark(true) : {}) }}>
+                <div style={{ flex: 1, textDecoration: r.deleted ? 'line-through' : 'none' }}>
+                  <strong style={{ color: 'var(--color-text)' }}>{q.name}</strong>
+                  {q.issuing_body && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>— {q.issuing_body}</span>}
+                  {q.certification_number && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>#{q.certification_number}</span>}
+                  <RowTags row={r} edited={edited} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {q.expiry_date && <Badge variant={new Date(q.expiry_date) < new Date() ? 'error' : 'info'}>{`Exp: ${formatDateOnly(q.expiry_date)}`}</Badge>}
+                  {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button> : <>
+                    <button style={styles.iconBtn} onClick={() => openEdit(r.key, q)} title="Edit">✏️</button>
+                    <button style={styles.iconBtn} onClick={() => list.remove(r.key)} title="Delete">🗑️</button>
+                  </>}
+                </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {q.expiry_date && <Badge variant={new Date(q.expiry_date) < new Date() ? 'error' : 'info'}>{`Exp: ${formatDateOnly(q.expiry_date)}`}</Badge>}
-                <button style={styles.iconBtn} onClick={() => openEdit(q)} title="Edit">✏️</button>
-                <button style={styles.iconBtn} onClick={() => handleDelete(q.id)} title="Delete">🗑️</button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
-// --- Availability Tab ---
+// --- Availability Tab (patterns and overrides saved with the page's Save changes) ---
 
 interface SlotEntry { day_of_week: number; start_time: string; end_time: string; }
 
+const patternData = (p: AvailabilityPattern) => ({
+  name: p.name,
+  effective_from: p.effective_from ? p.effective_from.split('T')[0] : '',
+  effective_to: p.effective_to ? p.effective_to.split('T')[0] : null,
+  is_default: p.is_default,
+  slots: (p.slots || []).map((s) => ({ day_of_week: s.day_of_week, start_time: s.start_time.slice(0, 5), end_time: s.end_time.slice(0, 5) })),
+});
+
 function AvailabilityTab({ staffId }: { staffId: string }) {
-  const [patterns, setPatterns] = useState<AvailabilityPattern[]>([]);
-  const [overrides, setOverrides] = useState<AvailabilityOverride[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPatternForm, setShowPatternForm] = useState(false);
-  const [editingPatternId, setEditingPatternId] = useState<string | null>(null);
+  const [editingPatternKey, setEditingPatternKey] = useState<string | null>(null);
   const [showOverrideForm, setShowOverrideForm] = useState(false);
   const [patternForm, setPatternForm] = useState({ name: '', effective_from: '', effective_to: '', is_default: true });
   const [patternSlots, setPatternSlots] = useState<SlotEntry[]>([]);
   const [overrideForm, setOverrideForm] = useState({ override_date: '', start_time: '09:00', end_time: '17:00', override_type: 'remove' as 'remove' | 'modify' | 'add', reason: '' });
+  const patterns = useDraftList<AvailabilityPattern>('staff-patterns', 'Weekly patterns', {
+    create: (p) => staffApi.createAvailabilityPattern(staffId, patternData(p)),
+    update: (p) => staffApi.updateAvailabilityPattern(staffId, p.id, patternData(p)),
+    remove: (p) => staffApi.deleteAvailabilityPattern(staffId, p.id).then(() => undefined),
+  });
+  const overrides = useDraftList<AvailabilityOverride>('staff-overrides', 'Overrides & time off', {
+    create: (o) => {
+      const data: Record<string, any> = { override_date: o.override_date, override_type: o.override_type };
+      if (o.override_type !== 'remove') { data.start_time = o.start_time; data.end_time = o.end_time; }
+      if (o.reason) data.reason = o.reason;
+      return staffApi.createAvailabilityOverride(staffId, data);
+    },
+    remove: (o) => staffApi.deleteAvailabilityOverride(staffId, o.id).then(() => undefined),
+  });
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     Promise.all([
       staffApi.getAvailabilityPatterns(staffId),
       staffApi.getAvailabilityOverrides(staffId),
-    ]).then(([p, o]) => { setPatterns(p); setOverrides(o); }).finally(() => setLoading(false));
-  }, [staffId]);
+    ]).then(([p, o]) => { patterns.load(p); overrides.load(o); }).finally(() => setLoading(false));
+  }, [staffId, patterns.load, overrides.load]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -350,14 +364,14 @@ function AvailabilityTab({ staffId }: { staffId: string }) {
 
   // --- Pattern Helpers ---
   const openPatternForm = () => {
-    setEditingPatternId(null);
+    setEditingPatternKey(null);
     setPatternForm({ name: 'Default Schedule', effective_from: new Date().toISOString().split('T')[0], effective_to: '', is_default: true });
     setPatternSlots([]);
     setShowPatternForm(true);
   };
 
-  const openEditPattern = (p: AvailabilityPattern) => {
-    setEditingPatternId(p.id);
+  const openEditPattern = (key: string, p: AvailabilityPattern) => {
+    setEditingPatternKey(key);
     setPatternForm({
       name: p.name,
       effective_from: p.effective_from ? p.effective_from.split('T')[0] : '',
@@ -382,73 +396,53 @@ function AvailabilityTab({ staffId }: { staffId: string }) {
     setPatternSlots(patternSlots.filter((_, i) => i !== index));
   };
 
-  const handleSavePattern = async () => {
+  const handlePatternDone = () => {
     if (!patternForm.name || !patternForm.effective_from) return;
-    const payload = {
+    const data = {
       name: patternForm.name,
       effective_from: patternForm.effective_from,
       effective_to: patternForm.effective_to || null,
       is_default: patternForm.is_default,
       slots: patternSlots,
-    };
-    if (editingPatternId) {
-      await staffApi.updateAvailabilityPattern(staffId, editingPatternId, payload);
-    } else {
-      await staffApi.createAvailabilityPattern(staffId, payload);
-    }
+    } as unknown as AvailabilityPattern;
+    if (editingPatternKey) patterns.edit(editingPatternKey, data);
+    else patterns.add(data);
     setShowPatternForm(false);
-    setEditingPatternId(null);
-    fetchData();
+    setEditingPatternKey(null);
   };
 
-  const handleDeletePattern = async (patternId: string) => {
-    if (!confirm('Delete this availability pattern?')) return;
-    await staffApi.deleteAvailabilityPattern(staffId, patternId);
-    fetchData();
-  };
-
-  const handleCopyPattern = async (patternId: string) => {
-    await staffApi.copyAvailabilityPattern(staffId, patternId);
-    fetchData();
+  // A copy is added like a new pattern: "(copy)", not default, same dates and hours.
+  const handleCopyPattern = (p: AvailabilityPattern) => {
+    patterns.add({ ...patternData(p), name: `${p.name} (copy)`, is_default: false } as unknown as AvailabilityPattern);
   };
 
   // --- Override Helpers ---
-  const handleCreateOverride = async () => {
+  const handleAddOverride = () => {
     if (!overrideForm.override_date) return;
-    const data: Record<string, any> = {
+    overrides.add({
       override_date: overrideForm.override_date,
       override_type: overrideForm.override_type,
-    };
-    if (overrideForm.override_type !== 'remove') {
-      data.start_time = overrideForm.start_time;
-      data.end_time = overrideForm.end_time;
-    }
-    if (overrideForm.reason) data.reason = overrideForm.reason;
-    await staffApi.createAvailabilityOverride(staffId, data);
+      start_time: overrideForm.override_type !== 'remove' ? overrideForm.start_time : null,
+      end_time: overrideForm.override_type !== 'remove' ? overrideForm.end_time : null,
+      reason: overrideForm.reason || null,
+    } as unknown as AvailabilityOverride);
     setShowOverrideForm(false);
     setOverrideForm({ override_date: '', start_time: '09:00', end_time: '17:00', override_type: 'remove', reason: '' });
-    fetchData();
-  };
-
-  const handleDeleteOverride = async (overrideId: string) => {
-    if (!confirm('Delete this override?')) return;
-    await staffApi.deleteAvailabilityOverride(staffId, overrideId);
-    setOverrides(overrides.filter((o) => o.id !== overrideId));
   };
 
   if (loading) return <div style={styles.loading}>Loading...</div>;
 
   return (
     <>
-      <div style={styles.card}>
+      <div style={{ ...styles.card, ...draftBox(patterns.dirty) }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Weekly Patterns</h3>
+          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Weekly Patterns<UnsavedTag dirty={patterns.dirty} /></h3>
           <Button variant="secondary" size="sm" onClick={openPatternForm}>Create Pattern</Button>
         </div>
 
         {showPatternForm && (
           <div style={{ ...styles.card, background: 'var(--color-background)', marginBottom: 'var(--space-md)' }}>
-            <h4 style={{ ...styles.cardTitle, fontSize: 'var(--font-size-base)' }}>{editingPatternId ? 'Edit Availability Pattern' : 'New Availability Pattern'}</h4>
+            <h4 style={{ ...styles.cardTitle, fontSize: 'var(--font-size-base)' }}>{editingPatternKey ? 'Edit Availability Pattern' : 'New Availability Pattern'}</h4>
             <div style={styles.formGrid}>
               <div style={styles.formGroup}><label style={styles.label}>Pattern Name *</label><input style={styles.input} value={patternForm.name} onChange={(e) => setPatternForm({ ...patternForm, name: e.target.value })} /></div>
               <div style={styles.formGroup}><label style={styles.label}>Effective From *</label><input type="date" style={styles.input} value={patternForm.effective_from} onChange={(e) => setPatternForm({ ...patternForm, effective_from: e.target.value })} /></div>
@@ -490,49 +484,56 @@ function AvailabilityTab({ staffId }: { staffId: string }) {
               })}
             </div>
 
+            <p style={{ ...styles.emptyText, marginTop: 'var(--space-sm)' }}>Saved with the page's Save changes.</p>
             <div style={{ display: 'flex', gap: '8px', marginTop: 'var(--space-md)' }}>
-              <Button size="sm" onClick={handleSavePattern}>{editingPatternId ? 'Save Changes' : 'Create Pattern'}</Button>
-              <Button variant="secondary" size="sm" onClick={() => { setShowPatternForm(false); setEditingPatternId(null); }}>Cancel</Button>
+              <Button size="sm" onClick={handlePatternDone}>{editingPatternKey ? 'Done' : 'Create Pattern'}</Button>
+              <Button variant="secondary" size="sm" onClick={() => { setShowPatternForm(false); setEditingPatternKey(null); }}>Cancel</Button>
             </div>
           </div>
         )}
 
-        {patterns.length === 0 && !showPatternForm && <p style={styles.emptyText}>No availability patterns defined. Create one to set this staff member's working hours.</p>}
-        {patterns.map((p) => (
-          <div key={p.id} style={{ ...styles.listItem, flexDirection: 'column', alignItems: 'stretch', padding: 'var(--space-md)', marginBottom: '8px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <strong style={{ color: 'var(--color-text)' }}>{p.name}</strong>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>{formatDateOnly(p.effective_from)} → {p.effective_to ? formatDateOnly(p.effective_to) : 'Ongoing'}</span>
-                <button style={styles.iconBtn} onClick={() => openEditPattern(p)} title="Edit">✏️</button>
-                <Button variant="ghost" size="sm" onClick={() => handleCopyPattern(p.id)}>Copy</Button>
-                <button style={styles.iconBtn} onClick={() => handleDeletePattern(p.id)} title="Delete">🗑️</button>
+        {patterns.rows.length === 0 && !showPatternForm && <p style={styles.emptyText}>No availability patterns defined. Create one to set this staff member's working hours.</p>}
+        {patterns.rows.map((r) => {
+          const p = r.item;
+          const edited = !r.isNew && !r.deleted && patterns.changed(r, patternData);
+          return (
+            <div key={r.key} style={{ ...styles.listItem, flexDirection: 'column', alignItems: 'stretch', padding: 'var(--space-md)', marginBottom: '8px', opacity: r.deleted ? 0.6 : 1, ...(edited ? fieldMark(true) : {}) }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <strong style={{ color: 'var(--color-text)', textDecoration: r.deleted ? 'line-through' : 'none' }}>{p.name}<RowTags row={r} edited={edited} /></strong>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>{formatDateOnly(p.effective_from)} → {p.effective_to ? formatDateOnly(p.effective_to) : 'Ongoing'}</span>
+                  {r.deleted ? <Button size="sm" variant="ghost" onClick={() => patterns.undo(r.key)}>Undo</Button> : <>
+                    <button style={styles.iconBtn} onClick={() => openEditPattern(r.key, p)} title="Edit">✏️</button>
+                    <Button variant="ghost" size="sm" onClick={() => handleCopyPattern(p)}>Copy</Button>
+                    <button style={styles.iconBtn} onClick={() => patterns.remove(r.key)} title="Delete">🗑️</button>
+                  </>}
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', fontSize: 'var(--font-size-sm)', textAlign: 'center' }}>
+                {dayAbbrev.map((day, idx) => {
+                  const slots = (p.slots || []).filter((s) => s.day_of_week === idx);
+                  return (
+                    <div key={idx}>
+                      <div style={{ fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{day}</div>
+                      {slots.length === 0 ? (
+                        <div style={{ color: 'var(--color-text-muted)' }}>Off</div>
+                      ) : (
+                        slots.map((s, i) => (
+                          <div key={i} style={{ color: 'var(--color-success, #2E7D32)' }}>{formatTime(s.start_time)}-{formatTime(s.end_time)}</div>
+                        ))
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', fontSize: 'var(--font-size-sm)', textAlign: 'center' }}>
-              {dayAbbrev.map((day, idx) => {
-                const slots = p.slots.filter((s) => s.day_of_week === idx);
-                return (
-                  <div key={idx}>
-                    <div style={{ fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: '4px' }}>{day}</div>
-                    {slots.length === 0 ? (
-                      <div style={{ color: 'var(--color-text-muted)' }}>Off</div>
-                    ) : (
-                      slots.map((s, i) => (
-                        <div key={i} style={{ color: 'var(--color-success, #2E7D32)' }}>{formatTime(s.start_time)}-{formatTime(s.end_time)}</div>
-                      ))
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      <div style={styles.card}>
+      <div style={{ ...styles.card, ...draftBox(overrides.dirty) }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Overrides & Time Off</h3>
+          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Overrides & Time Off<UnsavedTag dirty={overrides.dirty} /></h3>
           <Button variant="secondary" size="sm" onClick={() => setShowOverrideForm(true)}>Add Override</Button>
         </div>
 
@@ -556,27 +557,33 @@ function AvailabilityTab({ staffId }: { staffId: string }) {
                 <div style={styles.formGroup}><label style={styles.label}>End Time *</label><input type="time" style={styles.input} value={overrideForm.end_time} onChange={(e) => setOverrideForm({ ...overrideForm, end_time: e.target.value })} /></div>
               </div>
             )}
+            <p style={{ ...styles.emptyText, marginTop: 'var(--space-sm)' }}>Saved with the page's Save changes.</p>
             <div style={{ display: 'flex', gap: '8px', marginTop: 'var(--space-md)' }}>
-              <Button size="sm" onClick={handleCreateOverride}>Save Override</Button>
+              <Button size="sm" onClick={handleAddOverride}>Add Override</Button>
               <Button variant="secondary" size="sm" onClick={() => setShowOverrideForm(false)}>Cancel</Button>
             </div>
           </div>
         )}
 
-        {overrides.length === 0 && !showOverrideForm && <p style={styles.emptyText}>No overrides scheduled.</p>}
-        {overrides.length > 0 && (
+        {overrides.rows.length === 0 && !showOverrideForm && <p style={styles.emptyText}>No overrides scheduled.</p>}
+        {overrides.rows.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {overrides.map((o) => (
-              <div key={o.id} style={styles.listItem}>
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <strong style={{ color: 'var(--color-text)' }}>{formatDateOnly(o.override_date)}</strong>
-                  {o.override_type === 'remove' ? <Badge variant="warning">Day Off</Badge> : o.override_type === 'add' ? <Badge variant="success">Extra</Badge> : <Badge variant="info">Modified</Badge>}
-                  {o.override_type !== 'remove' && o.start_time && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-success, #2E7D32)' }}>{formatTime(o.start_time)}–{formatTime(o.end_time!)}</span>}
-                  {o.reason && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>({o.reason})</span>}
+            {overrides.rows.map((r) => {
+              const o = r.item;
+              return (
+                <div key={r.key} style={{ ...styles.listItem, opacity: r.deleted ? 0.6 : 1 }}>
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', textDecoration: r.deleted ? 'line-through' : 'none' }}>
+                    <strong style={{ color: 'var(--color-text)' }}>{formatDateOnly(o.override_date)}</strong>
+                    {o.override_type === 'remove' ? <Badge variant="warning">Day Off</Badge> : o.override_type === 'add' ? <Badge variant="success">Extra</Badge> : <Badge variant="info">Modified</Badge>}
+                    {o.override_type !== 'remove' && o.start_time && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-success, #2E7D32)' }}>{formatTime(o.start_time)}–{formatTime(o.end_time!)}</span>}
+                    {o.reason && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>({o.reason})</span>}
+                    <RowTags row={r} />
+                  </div>
+                  {r.deleted ? <Button size="sm" variant="ghost" onClick={() => overrides.undo(r.key)}>Undo</Button>
+                    : <button style={styles.iconBtn} onClick={() => overrides.remove(r.key)} title="Delete">🗑️</button>}
                 </div>
-                <button style={styles.iconBtn} onClick={() => handleDeleteOverride(o.id)} title="Delete">🗑️</button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -635,7 +642,7 @@ function CalendarTab({ staffId }: { staffId: string }) {
   );
 }
 
-// --- Compensation Tab ---
+// --- Compensation Tab (rules saved with the page's Save changes) ---
 
 const RULE_TYPE_LABELS: Record<string, string> = {
   hourly: 'Hourly Rate',
@@ -669,14 +676,32 @@ interface CompensationRule {
 
 interface OfferingItem { id: string; name: string; }
 
+// What is stored for a rule (the type is fixed once the rule exists).
+const ruleData = (r: CompensationRule) => ({
+  rate: r.rate,
+  threshold_amount: r.threshold_amount,
+  reference_type: r.reference_type,
+  reference_ids: r.reference_ids,
+  overtime_multiplier: Number(r.overtime_multiplier),
+  overtime_after_hours: Number(r.overtime_after_hours),
+  holiday_multiplier: Number(r.holiday_multiplier),
+  hours_basis: r.rule_type === 'hourly' ? r.hours_basis : null,
+  effective_from: r.effective_from ? r.effective_from.split('T')[0] : '',
+  effective_to: r.effective_to ? r.effective_to.split('T')[0] : null,
+  status: r.status,
+});
+
 function CompensationTab({ userId }: { userId: string | null }) {
   const businessId = localStorage.getItem('business_id') || '';
-  const [rules, setRules] = useState<CompensationRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<CompensationRule | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<{ key: string; rule: CompensationRule } | null>(null);
   const [offerings, setOfferings] = useState<Record<string, OfferingItem[]>>({ service: [], product: [], membership: [], package: [] });
+  const list = useDraftList<CompensationRule>('staff-compensation', 'Compensation rules', {
+    create: (r) => { const { status: _status, ...data } = ruleData(r); return payrollApi.createCompensationRule({ business_id: businessId, user_id: userId, rule_type: r.rule_type, ...data }); },
+    update: (r) => payrollApi.updateCompensationRule(r.id, businessId, ruleData(r)),
+    remove: (r) => payrollApi.deleteCompensationRule(r.id, businessId),
+  });
 
   const emptyForm = {
     rule_type: 'hourly' as string,
@@ -698,10 +723,10 @@ function CompensationTab({ userId }: { userId: string | null }) {
     setLoading(true);
     try {
       const data = await payrollApi.getCompensationRules(businessId, userId);
-      setRules(data);
+      list.load(data);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [userId, businessId]);
+  }, [userId, businessId, list.load]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchRules(); }, [fetchRules]);
 
@@ -728,8 +753,8 @@ function CompensationTab({ userId }: { userId: string | null }) {
     setShowForm(true);
   };
 
-  const openEdit = (rule: CompensationRule) => {
-    setEditing(rule);
+  const openEdit = (key: string, rule: CompensationRule) => {
+    setEditing({ key, rule });
     setForm({
       rule_type: rule.rule_type,
       rate: String(rule.rate / 100),
@@ -739,81 +764,31 @@ function CompensationTab({ userId }: { userId: string | null }) {
       overtime_multiplier: String(rule.overtime_multiplier),
       overtime_after_hours: String(rule.overtime_after_hours),
       holiday_multiplier: String(rule.holiday_multiplier),
-      hours_basis: (rule as any).hours_basis || 'scheduled',
+      hours_basis: rule.hours_basis || 'scheduled',
       effective_from: rule.effective_from ? rule.effective_from.split('T')[0] : '',
       effective_to: rule.effective_to ? rule.effective_to.split('T')[0] : '',
     });
     setShowForm(true);
   };
 
-  const handleSave = async () => {
+  const handleDone = () => {
     if (!form.rate || !form.effective_from) return;
-    setSaving(true);
-    try {
-      const rateInCents = Math.round(parseFloat(form.rate) * 100);
-      const thresholdInCents = form.threshold_amount ? Math.round(parseFloat(form.threshold_amount) * 100) : null;
-      const refType = form.reference_type || null;
-      const refIds = form.reference_ids.length > 0 ? form.reference_ids : null;
-
-      if (editing) {
-        await payrollApi.updateCompensationRule(editing.id, businessId, {
-          rate: rateInCents,
-          threshold_amount: thresholdInCents,
-          reference_type: refType,
-          reference_ids: refIds,
-          overtime_multiplier: parseFloat(form.overtime_multiplier),
-          overtime_after_hours: parseInt(form.overtime_after_hours),
-          holiday_multiplier: parseFloat(form.holiday_multiplier),
-          hours_basis: form.rule_type === 'hourly' ? form.hours_basis : null,
-          effective_from: form.effective_from,
-          effective_to: form.effective_to || null,
-        });
-      } else {
-        await payrollApi.createCompensationRule({
-          business_id: businessId,
-          user_id: userId,
-          rule_type: form.rule_type,
-          rate: rateInCents,
-          threshold_amount: thresholdInCents,
-          reference_type: refType,
-          reference_ids: refIds,
-          overtime_multiplier: parseFloat(form.overtime_multiplier),
-          overtime_after_hours: parseInt(form.overtime_after_hours),
-          holiday_multiplier: parseFloat(form.holiday_multiplier),
-          hours_basis: form.rule_type === 'hourly' ? form.hours_basis : null,
-          effective_from: form.effective_from,
-          effective_to: form.effective_to || null,
-        });
-      }
-      setShowForm(false);
-      fetchRules();
-    } catch (err: any) {
-      const msg = err?.response?.data?.error || 'Failed to save compensation rule';
-      alert(msg);
-    }
-    finally { setSaving(false); }
-  };
-
-  const handleDeactivate = async (rule: CompensationRule) => {
-    const newStatus = rule.status === 'active' ? 'inactive' : 'active';
-    try {
-      await payrollApi.updateCompensationRule(rule.id, businessId, { status: newStatus });
-      fetchRules();
-    } catch (err: any) {
-      const msg = err?.response?.data?.error || 'Failed to update rule status';
-      alert(msg);
-    }
-  };
-
-  const handleDelete = async (rule: CompensationRule) => {
-    const refLabel = rule.reference_type ? ` (${REF_TYPE_LABELS[rule.reference_type] || rule.reference_type})` : '';
-    if (!confirm(`Delete this ${RULE_TYPE_LABELS[rule.rule_type] || rule.rule_type}${refLabel} rule?`)) return;
-    try {
-      await payrollApi.deleteCompensationRule(rule.id, businessId);
-      fetchRules();
-    } catch {
-      alert('Failed to delete rule');
-    }
+    const data = {
+      rule_type: form.rule_type,
+      rate: Math.round(parseFloat(form.rate) * 100),
+      threshold_amount: form.threshold_amount ? Math.round(parseFloat(form.threshold_amount) * 100) : null,
+      reference_type: form.reference_type || null,
+      reference_ids: form.reference_ids.length > 0 ? form.reference_ids : null,
+      overtime_multiplier: parseFloat(form.overtime_multiplier),
+      overtime_after_hours: parseInt(form.overtime_after_hours),
+      holiday_multiplier: parseFloat(form.holiday_multiplier),
+      hours_basis: form.rule_type === 'hourly' ? form.hours_basis : null,
+      effective_from: form.effective_from,
+      effective_to: form.effective_to || null,
+    };
+    if (editing) list.edit(editing.key, data);
+    else list.add({ ...data, status: 'active' } as CompensationRule);
+    setShowForm(false);
   };
 
   const formatRate = (rule: CompensationRule) => {
@@ -859,9 +834,9 @@ function CompensationTab({ userId }: { userId: string | null }) {
   if (loading) return <div style={styles.loading}>Loading...</div>;
 
   return (
-    <>
+    <div style={draftBox(list.dirty)}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Compensation Rules</h3>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Compensation Rules<UnsavedTag dirty={list.dirty} /></h3>
         <Button variant="secondary" size="sm" onClick={openAdd}>Add Rule</Button>
       </div>
 
@@ -952,28 +927,32 @@ function CompensationTab({ userId }: { userId: string | null }) {
               <input type="date" style={styles.input} value={form.effective_to} onChange={(e) => setForm({ ...form, effective_to: e.target.value })} />
             </div>
           </div>
+          <p style={{ ...styles.emptyText, marginTop: 'var(--space-sm)' }}>Saved with the page's Save changes.</p>
           <div style={{ display: 'flex', gap: '8px', marginTop: 'var(--space-md)' }}>
-            <Button size="sm" onClick={handleSave} loading={saving}>{editing ? 'Save' : 'Add'}</Button>
+            <Button size="sm" onClick={handleDone}>{editing ? 'Done' : 'Add'}</Button>
             <Button variant="secondary" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
           </div>
         </div>
       )}
 
-      {rules.length === 0 && !showForm && <p style={styles.emptyText}>No compensation rules configured. Add pay rates, commissions, or salary to track this staff member's compensation.</p>}
-      {rules.length > 0 && (
+      {list.rows.length === 0 && !showForm && <p style={styles.emptyText}>No compensation rules configured. Add pay rates, commissions, or salary to track this staff member's compensation.</p>}
+      {list.rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {rules.map((rule) => {
+          {list.rows.map((r) => {
+            const rule = r.item;
             const refNames = getRefNames(rule);
             const refTypeLabel = rule.reference_type ? REF_TYPE_LABELS[rule.reference_type] : null;
+            const edited = !r.isNew && !r.deleted && list.changed(r, ruleData);
             return (
-            <div key={rule.id} style={{ ...styles.listItem, opacity: rule.status === 'inactive' ? 0.6 : 1 }}>
-              <div style={{ flex: 1 }}>
+            <div key={r.key} style={{ ...styles.listItem, opacity: rule.status === 'inactive' || r.deleted ? 0.6 : 1, ...(edited ? fieldMark(true) : {}) }}>
+              <div style={{ flex: 1, textDecoration: r.deleted ? 'line-through' : 'none' }}>
                 <strong style={{ color: 'var(--color-text)' }}>{RULE_TYPE_LABELS[rule.rule_type] || rule.rule_type}</strong>
                 {refTypeLabel && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', background: 'var(--color-surface)', padding: '2px 6px', borderRadius: '4px' }}>{refTypeLabel}</span>}
                 <span style={{ marginLeft: '12px', fontSize: 'var(--font-size-base)', fontWeight: 600, color: 'var(--color-primary)' }}>{formatRate(rule)}</span>
                 {rule.rule_type === 'commission' && rule.threshold_amount && (
                   <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>after €{(rule.threshold_amount / 100).toFixed(2)} revenue</span>
                 )}
+                <RowTags row={r} edited={edited} />
                 {refNames && (
                   <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: '2px' }}>Applies to: {refNames}</div>
                 )}
@@ -990,18 +969,20 @@ function CompensationTab({ userId }: { userId: string | null }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Badge variant={rule.status === 'active' ? 'success' : 'neutral'}>{rule.status}</Badge>
-                <button style={styles.iconBtn} onClick={() => openEdit(rule)} title="Edit">✏️</button>
-                <button style={styles.iconBtn} onClick={() => handleDeactivate(rule)} title={rule.status === 'active' ? 'Deactivate' : 'Activate'}>
-                  {rule.status === 'active' ? '⏸️' : '▶️'}
-                </button>
-                <button style={styles.iconBtn} onClick={() => handleDelete(rule)} title="Delete">🗑️</button>
+                {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button> : <>
+                  <button style={styles.iconBtn} onClick={() => openEdit(r.key, rule)} title="Edit">✏️</button>
+                  <button style={styles.iconBtn} onClick={() => list.edit(r.key, { status: rule.status === 'active' ? 'inactive' : 'active' })} title={rule.status === 'active' ? 'Deactivate' : 'Activate'}>
+                    {rule.status === 'active' ? '⏸️' : '▶️'}
+                  </button>
+                  <button style={styles.iconBtn} onClick={() => list.remove(r.key)} title="Delete">🗑️</button>
+                </>}
               </div>
             </div>
             );
           })}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
