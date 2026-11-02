@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Table } from '../design-system/components/data/Table';
+import type { TableFilters } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { ConfirmDialog } from '../design-system/components/feedback/ConfirmDialog';
 import { formatCurrency } from '../utils/currency';
@@ -18,17 +19,18 @@ export function Bookings() {
   const isCustomer = useContextManager().persona === 'customer';
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState(isCustomer ? '' : new Date().toISOString().split('T')[0]);
-  const [dateTo, setDateTo] = useState(isCustomer ? '' : new Date(Date.now() + 6 * 86400000).toISOString().split('T')[0]);
-  const [staffFilter, setStaffFilter] = useState('');
-  const [serviceFilter, setServiceFilter] = useState('');
-  const [customerFilter, setCustomerFilter] = useState('');
+  // Column filters from the icon beside each sort icon (David, 2026-11-02). Staff start on the
+  // next 7 days, as before, shown as the Date/Time filter.
+  const [tableFilters, setTableFilters] = useState<TableFilters>((): TableFilters => {
+    if (isCustomer) return {};
+    const day = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    return { start_time: { from: day(Date.now()), to: day(Date.now() + 6 * 86400000) } };
+  });
+  // No pages: more bookings load as the list scrolls.
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [businessTimezone, setBusinessTimezone] = useState('UTC');
-  const [staffList, setStaffList] = useState<any[]>([]);
-  const [serviceList, setServiceList] = useState<any[]>([]);
   const [pendingNoShow, setPendingNoShow] = useState<Booking | null>(null);
   // Customers: the business's appointment cancellation settings (THE-20).
   const [cancelSettings, setCancelSettings] = useState<bookingsApi.CancelSettings | null>(null);
@@ -44,8 +46,6 @@ export function Bookings() {
     if (!businessId || isCustomer) return;
     bookingsApi.getBookingFilters(businessId).then((f) => {
       if (f.timezone) setBusinessTimezone(f.timezone);
-      setStaffList(f.staff || []);
-      setServiceList(f.services || []);
     }).catch(() => {});
   }, [businessId, isCustomer]);
 
@@ -78,22 +78,38 @@ export function Bookings() {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const result = await bookingsApi.getBookings(businessId, {
-        status: statusFilter || undefined,
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-        staff_id: staffFilter || undefined,
-        service_id: serviceFilter || undefined,
-        customer_search: customerFilter || undefined,
-        page,
-      });
+      const result = await bookingsApi.getBookings(businessId, { columns: tableFilters, page: 1, limit: 50 });
       setBookings(result.data);
-      setTotalPages(result.meta?.totalPages || 1);
+      setPage(1);
+      setTotal(result.meta?.total || 0);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId, statusFilter, dateFrom, dateTo, staffFilter, serviceFilter, customerFilter, page]);
+  }, [businessId, tableFilters]);
 
   useEffect(() => { fetchBookings(); }, [fetchBookings]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || bookings.length >= total) return;
+    setLoadingMore(true);
+    try {
+      const result = await bookingsApi.getBookings(businessId, { columns: tableFilters, page: page + 1, limit: 50 });
+      setBookings((rows) => [...rows, ...result.data]);
+      setPage(page + 1);
+      setTotal(result.meta?.total || 0);
+    } catch { /* Show more stays to try again */ }
+    finally { setLoadingMore(false); }
+  }, [businessId, tableFilters, page, loadingMore, bookings.length, total]);
+
+  const filterOptions = useCallback(async (key: string) => {
+    const values = await bookingsApi.getBookingColumnValues(businessId, key, tableFilters);
+    return values.map((v) => ({
+      value: v.value, count: v.count,
+      label: key === 'status' ? v.value.replace('_', ' ')
+        : key === 'customer_first_name' ? (v.label || 'Walk-in')
+        : key === 'staff_first_name' ? (v.label || 'No staff member')
+        : v.label || v.value,
+    }));
+  }, [businessId, tableFilters]);
 
   const handleAction = async (action: string, booking: Booking) => {
     try {
@@ -115,7 +131,7 @@ export function Bookings() {
     },
     { key: 'service_name', header: 'Service', sortable: true },
     {
-      key: 'start_time', header: 'Date/Time', sortable: true,
+      key: 'start_time', header: 'Date/Time', sortable: true, filter: 'date' as const,
       render: (val: string) => new Date(val).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', timeZone: businessTimezone }),
     },
     {
@@ -127,7 +143,7 @@ export function Bookings() {
       render: (_: any, row: Booking) => row.staff_first_name ? `${row.staff_first_name} ${row.staff_last_name}` : '—',
     },
     {
-      key: 'actions', header: '',
+      key: 'actions', header: '', filter: false as const,
       render: (_: any, row: Booking) => (
         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
           {row.status === 'pending' && <ActionBtn label="Confirm" onClick={() => handleAction('confirm', row)} />}
@@ -141,7 +157,7 @@ export function Bookings() {
     },
   ];
   const customerActions = {
-    key: 'actions', header: '',
+    key: 'actions', header: '', filter: false as const,
     render: (_: any, row: Booking) => customerMayCancel(row)
       ? <ActionBtn label="Cancel" onClick={() => setToCancel(row)} />
       : null,
@@ -162,38 +178,6 @@ export function Bookings() {
         </div>
       </div>
 
-      <div style={styles.toolbar}>
-        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All Statuses</option>
-          <option value="pending">Pending</option>
-          <option value="confirmed">Confirmed</option>
-          <option value="checked_in">Checked In</option>
-          <option value="completed">Completed</option>
-          <option value="cancelled">Cancelled</option>
-          <option value="no_show">No Show</option>
-        </select>
-        {!isCustomer && <>
-        <select value={staffFilter} onChange={(e) => { setStaffFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All Staff</option>
-          {staffList.map((s: any) => (
-            <option key={s.user_id} value={s.user_id}>{s.first_name} {s.last_name}</option>
-          ))}
-        </select>
-        <select value={serviceFilter} onChange={(e) => { setServiceFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All Services</option>
-          {serviceList.map((s: any) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
-        <input type="text" style={styles.select} value={customerFilter} onChange={(e) => { setCustomerFilter(e.target.value); setPage(1); }} placeholder="Customer name..." title="Filter by customer" />
-        </>}
-        <input type="date" style={styles.select} value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} title="From date" />
-        <input type="date" style={styles.select} value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} title="To date" />
-        {(statusFilter || staffFilter || serviceFilter || dateFrom || dateTo || customerFilter) && (
-          <button style={styles.navBtn} onClick={() => { setStatusFilter(''); setStaffFilter(''); setServiceFilter(''); setDateFrom(''); setDateTo(''); setCustomerFilter(''); setPage(1); }}>Clear</button>
-        )}
-      </div>
-
       {isCustomer && cancelSettings && (
         <p style={styles.policy}>
           {cancelSettings.customer_cancel_enabled
@@ -203,7 +187,9 @@ export function Bookings() {
       )}
       {notice && <p style={{ ...styles.policy, color: notice.ok ? 'var(--color-success)' : 'var(--color-error)' }} role="status">{notice.text}</p>}
 
-      <Table columns={columns} data={bookings} loading={loading} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No bookings found" mobileCardMode clientSort onRowClick={isCustomer ? undefined : (row) => navigate(`/bookings/${row.id}/edit`)} />
+      <Table columns={columns} data={bookings} loading={loading} emptyMessage="No bookings found" mobileCardMode clientSort onRowClick={isCustomer ? undefined : (row) => navigate(`/bookings/${row.id}/edit`)}
+        filters={tableFilters} onFiltersChange={setTableFilters} filterOptions={filterOptions}
+        onLoadMore={loadMore} hasMore={bookings.length < total} loadingMore={loadingMore} />
 
       <ConfirmDialog
         open={!!pendingNoShow}

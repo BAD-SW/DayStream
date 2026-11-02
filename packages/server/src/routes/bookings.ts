@@ -1,6 +1,7 @@
 import { emitEvent } from '../services/integration-webhooks.service';
 import { createActivity } from '../services/customer-activity.service';
 import { Router, Request, Response } from 'express';
+import { parseColumnFilters } from '../utils/column-filters';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { tenantContext } from '../auth/tenant-context';
@@ -375,6 +376,22 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
 });
 
 // GET /api/v1/bookings — List bookings
+// GET /api/v1/bookings/column-values?column= — the values of one column, for its filter list.
+bookingsRouter.get('/column-values', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const ownCustomerId = await ownCustomerScope(req, businessId);
+    if (ownCustomerId === null) { success(res, []); return; }
+    success(res, await bookingService.getBookingColumnValues({
+      businessId, customerId: ownCustomerId ?? undefined, columns: parseColumnFilters(req.query.cf),
+    }, String(req.query.column || '')));
+  } catch (err: any) {
+    console.error('Failed to list column values', err?.message || err);
+    error(res, 'Failed to list column values', 'INTERNAL_ERROR', 500);
+  }
+});
+
 bookingsRouter.get('/', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
@@ -397,6 +414,7 @@ bookingsRouter.get('/', requirePermission('bookings:read'), async (req: Request,
       customerSearch: ownCustomerId ? undefined : (req.query.customer_search as string),
       staffId: req.query.staff_id as string,
       serviceId: req.query.service_id as string,
+      columns: parseColumnFilters(req.query.cf),
       page,
       limit,
     });
