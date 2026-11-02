@@ -53,7 +53,7 @@ function SettingsPage() {
   const dirty = dirtySections.length > 0;
   const changedTabs = new Set(dirtySections.map((s) => s.tab));
 
-  useEffect(() => { if (dirty) setResult((r) => (r?.ok ? null : r)); }, [dirty]);
+  useEffect(() => { setResult((r) => (dirty ? (r?.ok ? null : r) : (r && !r.ok ? null : r))); }, [dirty]);
 
   const save = async () => {
     const { failed } = await saveAll();
@@ -62,7 +62,8 @@ function SettingsPage() {
       : { ok: true, text: 'All changes saved.' });
   };
 
-  const status = dirty
+  // A failed save says what was not saved, even while those changes are still unsaved.
+  const status = dirty && !(result && !result.ok)
     ? <span style={{ color: 'var(--color-warning-dark)' }}>You have unsaved changes.</span>
     : result ? <span role={result.ok ? 'status' : 'alert'} style={{ color: result.ok ? 'var(--color-success)' : 'var(--color-error)' }}>{result.text}</span> : null;
 

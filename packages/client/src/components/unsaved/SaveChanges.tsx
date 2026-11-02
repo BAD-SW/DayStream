@@ -11,14 +11,15 @@ export function SaveChanges() {
   const { dirtySections, saveAll, saving } = useDraftSections();
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const dirty = dirtySections.length > 0;
-  useEffect(() => { if (dirty) setResult((r) => (r?.ok ? null : r)); }, [dirty]);
+  useEffect(() => { setResult((r) => (dirty ? (r?.ok ? null : r) : (r && !r.ok ? null : r))); }, [dirty]);
   const save = async () => {
     const { failed } = await saveAll();
     setResult(failed.length ? { ok: false, text: `Not saved: ${failed.map((f) => `${f.label} (${f.error})`).join('; ')}` } : { ok: true, text: 'All changes saved.' });
   };
   return (
     <>
-      {dirty ? <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning-dark)' }}>You have unsaved changes.</span>
+      {/* A failed save says what was not saved, even while those changes are still unsaved. */}
+      {dirty && !(result && !result.ok) ? <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning-dark)' }}>You have unsaved changes.</span>
         : result && <span role={result.ok ? 'status' : 'alert'} style={{ fontSize: 'var(--font-size-sm)', color: result.ok ? 'var(--color-success)' : 'var(--color-error)' }}>{result.text}</span>}
       <Button size="sm" onClick={save} loading={saving} disabled={!dirty}>Save changes</Button>
     </>

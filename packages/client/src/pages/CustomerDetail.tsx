@@ -83,7 +83,7 @@ function CustomerProfilePage() {
   const { dirtySections, saveAll, saving } = useDraftSections();
   const [saveResult, setSaveResult] = useState<{ ok: boolean; text: string } | null>(null);
   const dirty = dirtySections.length > 0;
-  useEffect(() => { if (dirty) setSaveResult((r) => (r?.ok ? null : r)); }, [dirty]);
+  useEffect(() => { setSaveResult((r) => (dirty ? (r?.ok ? null : r) : (r && !r.ok ? null : r))); }, [dirty]);
   const saveChanges = async () => {
     const { failed } = await saveAll();
     setSaveResult(failed.length ? { ok: false, text: `Not saved: ${failed.map((f) => `${f.label} (${f.error})`).join('; ')}` } : { ok: true, text: 'All changes saved.' });
@@ -219,7 +219,7 @@ function CustomerProfilePage() {
             </div>
           </div>
           <div style={styles.headerActions}>
-            {dirty ? <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning-dark)' }}>You have unsaved changes.</span>
+            {dirty && !(saveResult && !saveResult.ok) ? <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning-dark)' }}>You have unsaved changes.</span>
               : saveResult && <span role={saveResult.ok ? 'status' : 'alert'} style={{ fontSize: 'var(--font-size-sm)', color: saveResult.ok ? 'var(--color-success)' : 'var(--color-error)' }}>{saveResult.text}</span>}
             <Button size="sm" onClick={saveChanges} loading={saving} disabled={!dirty}>Save changes</Button>
             <Button size="sm" variant="secondary" onClick={() => setTab('messages')}>Contact</Button>
