@@ -28,6 +28,11 @@ interface Prospect {
   fit_tier?: 'strong' | 'moderate' | 'weak' | null;
   inclusion?: 'included' | 'held' | null;
   hold_reason?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  country?: string | null;
+  email?: string | null;
+  operating_status?: string | null;
 }
 
 type SortField = 'name' | 'address' | 'city' | 'category' | 'fit_score' | 'confidence' | 'status' | 'notes';
@@ -53,6 +58,28 @@ const TIER_TEXT: Record<'strong' | 'moderate' | 'weak', string> = {
   moderate: '#1A1A1A',
   weak: '#FFFFFF',
 };
+
+/**
+ * Build a Google Maps link that opens the specific business.
+ *
+ * Uses a NAME + ADDRESS + CITY + COUNTRY text query, NOT the stored coordinates. Overture's
+ * coordinates are sometimes mis-geocoded (observed: a business correctly addressed at "636 N
+ * French Rd" whose point was ~4km off in an empty field), so pinning the raw lat/lng can land
+ * on the wrong spot. The address text is the more reliable signal — Google resolves it to the
+ * right place. Including city + country (not just name + partial address, as the old link did)
+ * keeps the query specific enough to avoid a broad-area search. Coordinates are only a
+ * last-resort fallback when there is no address text at all.
+ */
+function mapsUrl(p: { name: string; address?: string; city?: string; country?: string | null; lat?: number | null; lng?: number | null }): string {
+  const parts = [p.name, p.address, p.city, p.country].filter(Boolean).join(' ').trim();
+  if (parts) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(parts)}`;
+  }
+  // No usable address text — fall back to coordinates if present.
+  const hasCoords = typeof p.lat === 'number' && typeof p.lng === 'number' && Number.isFinite(p.lat) && Number.isFinite(p.lng);
+  if (hasCoords) return `https://www.google.com/maps/search/?api=1&query=${p.lat}%2C${p.lng}`;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name)}`;
+}
 
 /** Render Overture confidence (0..1, may arrive as a numeric string) as a percentage. */
 function formatConfidence(c: number | string | null | undefined): string {
@@ -90,6 +117,7 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
   const [categoryFilter, setCategoryFilter] = useState('');
   const [showDismissed, setShowDismissed] = useState(false);
   const [showHeld, setShowHeld] = useState(false);
+  const [tierFilter, setTierFilter] = useState<Set<'strong' | 'moderate' | 'weak'>>(new Set());
   const [categories, setCategories] = useState<string[]>([]);
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -130,7 +158,12 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
     else { setSortField(field); setSortDir('asc'); }
   };
 
-  const sortedProspects = [...prospects].sort((a, b) => {
+  // Client-side fit-tier filter (chips). Empty set = show all tiers. Applied before sort.
+  const tierFiltered = tierFilter.size === 0
+    ? prospects
+    : prospects.filter((p) => p.fit_tier != null && tierFilter.has(p.fit_tier));
+
+  const sortedProspects = [...tierFiltered].sort((a, b) => {
     const aRaw = (a as any)[sortField] ?? '';
     const bRaw = (b as any)[sortField] ?? '';
     let cmp: number;
@@ -138,6 +171,13 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
     else cmp = String(aRaw).localeCompare(String(bRaw));
     return sortDir === 'asc' ? cmp : -cmp;
   });
+
+  const toggleTier = (tier: 'strong' | 'moderate' | 'weak') =>
+    setTierFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(tier)) next.delete(tier); else next.add(tier);
+      return next;
+    });
 
   // Descriptive territory valuation over the CURRENTLY-LISTED Overture prospects
   // (spec 31 §7 — counts by fit tier, not a $ figure). Only meaningful when the list
@@ -265,13 +305,33 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
         </>
       )}
 
-      {/* Territory valuation (descriptive) — fit-tier counts over Overture prospects. */}
+      {/* Territory valuation (descriptive) — fit-tier counts over Overture prospects.
+          The tier counts double as toggle filter chips: click to show only that tier. */}
       {valuation && (
         <div style={styles.valuation}>
           <span style={styles.valuationTitle}>Territory fit</span>
-          <span style={styles.valuationItem}><span style={{ ...styles.tierDot, background: TIER_COLOR.strong }} />{valuation.strong} strong</span>
-          <span style={styles.valuationItem}><span style={{ ...styles.tierDot, background: TIER_COLOR.moderate }} />{valuation.moderate} moderate</span>
-          <span style={styles.valuationItem}><span style={{ ...styles.tierDot, background: TIER_COLOR.weak }} />{valuation.weak} weak</span>
+          {(['strong', 'moderate', 'weak'] as const).map((tier) => {
+            const on = tierFilter.has(tier);
+            return (
+              <button
+                key={tier}
+                type="button"
+                onClick={() => toggleTier(tier)}
+                aria-pressed={on}
+                title={`Filter to ${tier} fit`}
+                style={{
+                  ...styles.tierChip,
+                  ...(on ? { background: TIER_COLOR[tier], color: TIER_TEXT[tier], borderColor: TIER_COLOR[tier] } : {}),
+                }}
+              >
+                <span style={{ ...styles.tierDot, background: on ? TIER_TEXT[tier] : TIER_COLOR[tier] }} />
+                {valuation[tier]} {tier}
+              </button>
+            );
+          })}
+          {tierFilter.size > 0 && (
+            <button type="button" onClick={() => setTierFilter(new Set())} style={styles.tierClear}>clear</button>
+          )}
           <span style={styles.valuationSep}>·</span>
           <span style={styles.valuationMuted}>{valuation.total} businesses{valuation.held > 0 ? `, ${valuation.held} held` : ''}</span>
         </div>
@@ -302,7 +362,7 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
               {sortedProspects.map((p, idx) => (
                 <tr key={p.id} style={{ ...(idx % 2 === 0 ? styles.rowEven : styles.rowOdd), ...(p.inclusion === 'held' ? styles.rowHeld : {}) }}>
                   <td style={styles.td}>
-                    <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name + ' ' + (p.address || ''))}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-text)', textDecoration: 'underline' }}>{p.name}</a>
+                    <a href={mapsUrl(p)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-text)', textDecoration: 'underline' }}>{p.name}</a>
                     {p.inclusion === 'held' && (
                       <span style={styles.heldBadge} title={`Held (${p.hold_reason || 'filtered'}) — retained but not shown as active`}>held</span>
                     )}
@@ -368,6 +428,8 @@ const styles: Record<string, React.CSSProperties> = {
   valuation: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', flexWrap: 'wrap' as const, padding: '10px 14px', marginBottom: 'var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface, transparent)', fontSize: 'var(--font-size-sm)' },
   valuationTitle: { fontWeight: 600, color: 'var(--color-text)' },
   valuationItem: { display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--color-text)' },
+  tierChip: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 10px', borderRadius: 'var(--radius-full, 9999px)', border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text)', fontSize: 'var(--font-size-sm)', cursor: 'pointer', textTransform: 'capitalize' as const, fontFamily: 'var(--font-family)' },
+  tierClear: { background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: 'var(--font-size-xs)', textDecoration: 'underline', padding: '0 4px' },
   valuationSep: { color: 'var(--color-text-secondary)' },
   valuationMuted: { color: 'var(--color-text-secondary)' },
   tierDot: { width: '10px', height: '10px', borderRadius: '50%', display: 'inline-block' },

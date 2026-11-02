@@ -10,10 +10,90 @@ import {
   detectMultiLocation,
   valuateTerritory,
   mergeFitConfig,
+  emailDomain,
+  websiteDomain,
+  classifyEmailQuality,
   DEFAULT_FIT_WEIGHTS,
   DEFAULT_FIT_TIER_THRESHOLDS,
   FitInput,
 } from '../src/services/prospect-fit';
+
+describe('email domain extraction', () => {
+  it('extracts email domain, lowercased', () => {
+    expect(emailDomain('Owner@Serenity.COM')).toBe('serenity.com');
+    expect(emailDomain('a.b+tag@mail.acme.co.uk')).toBe('mail.acme.co.uk');
+    expect(emailDomain('')).toBeNull();
+    expect(emailDomain(null)).toBeNull();
+    expect(emailDomain('not-an-email')).toBeNull();
+  });
+
+  it('extracts website host, stripping scheme/www/path', () => {
+    expect(websiteDomain('https://www.acme.com/contact')).toBe('acme.com');
+    expect(websiteDomain('http://acme.com')).toBe('acme.com');
+    expect(websiteDomain('acme.com')).toBe('acme.com');
+    expect(websiteDomain(null)).toBeNull();
+  });
+});
+
+describe('classifyEmailQuality', () => {
+  it('free provider (Serenity case) -> free_provider', () => {
+    expect(classifyEmailQuality('serenitymassagewny@gmail.com', 'http://www.serenitymassagewny.com/')).toBe('free_provider');
+    expect(classifyEmailQuality('x@yahoo.com', null)).toBe('free_provider');
+    expect(classifyEmailQuality('x@outlook.com', null)).toBe('free_provider');
+  });
+
+  it('domain email matching the website -> domain_matching (strongest signal)', () => {
+    expect(classifyEmailQuality('info@acme.com', 'https://www.acme.com')).toBe('domain_matching');
+    expect(classifyEmailQuality('hi@mail.acme.com', 'https://acme.com')).toBe('domain_matching'); // subdomain
+  });
+
+  it('custom domain not matching the site -> domain_other', () => {
+    expect(classifyEmailQuality('owner@acmegroup.com', 'https://acme.com')).toBe('domain_other');
+    expect(classifyEmailQuality('owner@acmegroup.com', null)).toBe('domain_other');
+  });
+
+  it('no email -> none', () => {
+    expect(classifyEmailQuality(null, 'https://acme.com')).toBe('none');
+    expect(classifyEmailQuality('', null)).toBe('none');
+  });
+});
+
+describe('email quality in the Fit Score', () => {
+  const base: FitInput = {
+    name: 'Serenity Massage WNY', category: 'massage_therapy', basicCategory: 'wellness_service',
+    confidence: 0.92, phone: '716-622-6111', website: 'http://www.serenitymassagewny.com/',
+    social: 'https://facebook.com/x', address: '7397 Ridge Rd',
+  };
+
+  it('penalizes a free-provider email (the Serenity solo-operation case)', () => {
+    const withGmail = scoreFit({ ...base, email: 'serenitymassagewny@gmail.com' });
+    const noEmail = scoreFit({ ...base, email: null });
+    // Free provider applies a negative weight, so the score drops vs no email.
+    expect(withGmail.score).toBeLessThan(noEmail.score);
+    expect(withGmail.signals.email_quality).toBe('free_provider');
+  });
+
+  it('rewards a domain email that matches the website', () => {
+    const withDomain = scoreFit({ ...base, email: 'info@serenitymassagewny.com' });
+    const noEmail = scoreFit({ ...base, email: null });
+    expect(withDomain.score).toBeGreaterThan(noEmail.score);
+    expect(withDomain.signals.email_quality).toBe('domain_matching');
+  });
+
+  it('a free-provider email can pull a borderline-strong business down a tier', () => {
+    // Choose weights/category so no-email lands strong and gmail drops it below the strong cut.
+    const strongNoEmail = scoreFit({ ...base, email: null });
+    const withGmail = scoreFit({ ...base, email: 'x@gmail.com' });
+    expect(strongNoEmail.tier === 'strong' || strongNoEmail.tier === 'moderate').toBe(true);
+    expect(withGmail.score).toBeLessThan(strongNoEmail.score);
+  });
+
+  it('no email contributes nothing (neutral)', () => {
+    const s = deriveFitSignals({ ...base, email: null });
+    expect(s.email_quality).toBe('none');
+    expect(s.has_email).toBe(false);
+  });
+});
 
 describe('classifyCategoryFit', () => {
   it('classifies recovery/spa/physio as strong', () => {

@@ -22,7 +22,7 @@
  */
 
 export type Inclusion = 'included' | 'held';
-export type HoldReason = 'confidence' | 'contact' | 'manual' | null;
+export type HoldReason = 'confidence' | 'contact' | 'manual' | 'closed' | null;
 
 export type ContactFilter = 'all' | 'phone_or_web' | 'phone_and_web';
 

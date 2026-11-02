@@ -693,24 +693,40 @@ async function buildProspectsCsv(tenantId: string, status?: string, category?: s
   if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
   if (category) { conditions.push(`category = $${idx++}`); params.push(category); }
   const { rows } = await adminPool.query(
-    `SELECT name, address, phone, website, category, rating, review_count, status, notes, source, created_at
+    `SELECT name, address, city, country, phone, email, website, category,
+            confidence, fit_score, fit_tier, operating_status, inclusion, hold_reason,
+            status, notes, source, created_at
      FROM prp_prospects WHERE ${conditions.join(' AND ')} ORDER BY name`,
     params,
   );
-  const headers = ['Name', 'Address', 'Phone', 'Website', 'Category', 'Rating', 'Reviews', 'Status', 'Notes', 'Source', 'Date Added'];
+  // Columns reflect what the data actually carries. Rating/Reviews were dropped — they came
+  // from Google Places only (Overture has no rating/review fields), so they were always blank
+  // for Overture rows. Added City/Country/Email, the DayStream signals (Confidence, Fit Score,
+  // Fit Tier), and the Overture open/closed + inclusion state.
+  const q = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const headers = ['Name', 'Address', 'City', 'Country', 'Phone', 'Email', 'Website', 'Category',
+    'Confidence', 'Fit Score', 'Fit Tier', 'Operating Status', 'Inclusion', 'Hold Reason',
+    'Status', 'Notes', 'Source', 'Date Added'];
   const lines = [headers.join(',')];
   for (const row of rows) {
     lines.push([
-      `"${(row.name || '').replace(/"/g, '""')}"`,
-      `"${(row.address || '').replace(/"/g, '""')}"`,
-      `"${row.phone || ''}"`,
-      `"${row.website || ''}"`,
-      `"${row.category || ''}"`,
-      row.rating || '',
-      row.review_count || 0,
-      row.status,
-      `"${(row.notes || '').replace(/"/g, '""')}"`,
-      row.source,
+      q(row.name),
+      q(row.address),
+      q(row.city),
+      q(row.country),
+      q(row.phone),
+      q(row.email),
+      q(row.website),
+      q(row.category),
+      row.confidence != null ? Number(row.confidence).toFixed(3) : '',
+      row.fit_score ?? '',
+      q(row.fit_tier),
+      q(row.operating_status),
+      q(row.inclusion),
+      q(row.hold_reason),
+      q(row.status),
+      q(row.notes),
+      q(row.source),
       new Date(row.created_at).toISOString().split('T')[0],
     ].join(','));
   }

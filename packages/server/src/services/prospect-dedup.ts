@@ -1,15 +1,20 @@
 /**
  * Prospect de-duplication & reconciliation (spec 31 design §5).
  *
- * Identity is NAME + LOCATION, never name alone. Two records are the same business only if
- * they are at essentially the same place AND their names are fuzzy-similar. This preserves
- * multi-location chains (same name, different addresses = distinct) and merges the same
- * place recorded with slightly different name strings.
+ * Identity is NAME + LOCATION, never name alone. Two records are the same business when their
+ * names are fuzzy-similar AND EITHER (a) they share the same normalized street address, OR
+ * (b) they are within a small proximity radius. The address path (a) exists because Overture
+ * occasionally mis-geocodes a record — two listings for the same business at the same address
+ * can be pinned far apart; sharing the address collapses them regardless of distance. The
+ * proximity path (b) handles records that lack matching address strings but sit at the same
+ * point. Multi-location chains (same name, DIFFERENT addresses, far apart) satisfy neither
+ * path, so they correctly stay distinct.
  *
  * Pure functions (no I/O) so they can be unit-tested against the design's fixtures:
  *   - Advanced Care PT: same name, 6 different addresses  -> 6 distinct (do NOT merge)
  *   - Susan Naturally:  different name strings, same place -> merge
  *   - Grand Island PT vs Island Aesthetics: near + shared token, different -> do NOT merge
+ *   - Silk Massage Spa: same name, SAME address, coords ~4km apart -> merge (bad geocode)
  */
 
 /** Minimal shape needed for de-dup. Any candidate/prospect can be adapted to this. */
@@ -17,6 +22,7 @@ export interface DedupRecord {
   name: string;
   lat: number;
   lng: number;
+  address?: string | null; // used for same-name + same-address merge (handles bad coordinates)
   [extra: string]: any; // carries through source fields for reconcile
 }
 
@@ -48,6 +54,29 @@ export function nameSimilarity(a: string, b: string): number {
   return inter / Math.min(ta.size, tb.size);
 }
 
+/**
+ * Normalize a street address for equality comparison: lowercase, strip punctuation, collapse
+ * whitespace, and canonicalize common street-type abbreviations so "636 N French Rd" ==
+ * "636 n french road". Returns '' for empty input (which never matches).
+ */
+const STREET_ABBR: Record<string, string> = {
+  rd: 'road', st: 'street', ave: 'avenue', av: 'avenue', blvd: 'boulevard', dr: 'drive',
+  ln: 'lane', ct: 'court', pl: 'place', hwy: 'highway', pkwy: 'parkway', ste: 'suite',
+  n: 'north', s: 'south', e: 'east', w: 'west',
+};
+export function normalizeAddress(addr: string | null | undefined): string {
+  if (!addr) return '';
+  return String(addr)
+    .toLowerCase()
+    .replace(/[.,#]/g, ' ')
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => STREET_ABBR[w] ?? w)
+    .join(' ')
+    .trim();
+}
+
 /** Great-circle distance in meters. */
 export function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -69,12 +98,26 @@ export function isSameBusiness(
   a: DedupRecord, b: DedupRecord,
   proximityM = DEDUP_PROXIMITY_METERS, nameSim = DEDUP_NAME_SIMILARITY,
 ): boolean {
-  if (!Number.isFinite(a.lat) || !Number.isFinite(b.lat)) return false;
-  if (haversineMeters(a.lat, a.lng, b.lat, b.lng) > proximityM) return false;
+  // Name agreement test (shared by both match paths below).
   const an = normalizeNameTokens(a.name).join(' ');
   const bn = normalizeNameTokens(b.name).join(' ');
-  if (an && bn && (an.includes(bn) || bn.includes(an))) return true; // containment (Susan Naturally)
-  return nameSimilarity(a.name, b.name) >= nameSim;
+  const namesAgree =
+    (!!an && !!bn && (an.includes(bn) || bn.includes(an))) ||
+    nameSimilarity(a.name, b.name) >= nameSim;
+  if (!namesAgree) return false;
+
+  // Path 1 — same name + SAME normalized address: the same business even if the stored
+  // coordinates disagree. This collapses Overture duplicates where one record is
+  // mis-geocoded (e.g. two "Silk Massage Spa" at "636 N French Rd" pinned ~4km apart).
+  const aAddr = normalizeAddress(a.address);
+  const bAddr = normalizeAddress(b.address);
+  if (aAddr && bAddr && aAddr === bAddr) return true;
+
+  // Path 2 — same name + PROXIMITY: the original rule, for records without matching address
+  // strings but physically at the same spot. Multi-location chains (same name, different
+  // address, far apart) satisfy neither path, so they correctly stay distinct.
+  if (!Number.isFinite(a.lat) || !Number.isFinite(b.lat)) return false;
+  return haversineMeters(a.lat, a.lng, b.lat, b.lng) <= proximityM;
 }
 
 export interface DedupCluster<T extends DedupRecord> {

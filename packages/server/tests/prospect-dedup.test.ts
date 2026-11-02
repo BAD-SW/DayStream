@@ -4,6 +4,7 @@ import {
   normalizeNameTokens,
   nameSimilarity,
   haversineMeters,
+  normalizeAddress,
   isSameBusiness,
   clusterBusinesses,
   coalesceField,
@@ -54,6 +55,24 @@ describe('nameSimilarity', () => {
   });
 });
 
+describe('normalizeAddress', () => {
+  it('lowercases, strips punctuation, and canonicalizes street abbreviations', () => {
+    expect(normalizeAddress('636 N French Rd')).toBe('636 north french road');
+    expect(normalizeAddress('636 n. french road')).toBe('636 north french road');
+    expect(normalizeAddress('12 W Main St., Ste 4')).toBe('12 west main street suite 4');
+  });
+
+  it('treats differently-formatted versions of the same address as equal', () => {
+    expect(normalizeAddress('636 N French Rd')).toBe(normalizeAddress('636 N. French Road'));
+  });
+
+  it('returns empty string for nullish/empty input', () => {
+    expect(normalizeAddress(null)).toBe('');
+    expect(normalizeAddress(undefined)).toBe('');
+    expect(normalizeAddress('   ')).toBe('');
+  });
+});
+
 describe('haversineMeters', () => {
   it('is ~0 for identical points', () => {
     expect(haversineMeters(42.9, -78.8, 42.9, -78.8)).toBeCloseTo(0, 5);
@@ -81,6 +100,32 @@ describe('isSameBusiness', () => {
     const a: DedupRecord = { name: 'Advanced Care Physical Therapy', lat: 42.9000, lng: -78.8000 };
     const b: DedupRecord = { name: 'Advanced Care Physical Therapy', lat: 43.0000, lng: -78.9000 };
     expect(isSameBusiness(a, b)).toBe(false);
+  });
+
+  it('merges same name + SAME address even when coordinates are far apart (Silk Massage bad geocode)', () => {
+    // Real case: two "Silk Massage Spa" records at "636 N French Rd", one mis-geocoded ~4km east.
+    const a: DedupRecord = { name: 'Silk Massage Spa', address: '636 N French Rd', lat: 43.03596, lng: -78.80113 };
+    const b: DedupRecord = { name: 'Silk Massage Spa', address: '636 N French Rd', lat: 43.03495, lng: -78.75414 };
+    expect(haversineMeters(a.lat, a.lng, b.lat, b.lng)).toBeGreaterThan(3000); // genuinely far apart
+    expect(isSameBusiness(a, b)).toBe(true); // ...but same name + same address -> merge
+  });
+
+  it('merges across minor address formatting differences (Rd vs Road)', () => {
+    const a: DedupRecord = { name: 'Silk Massage Spa', address: '636 N French Rd', lat: 43.036, lng: -78.801 };
+    const b: DedupRecord = { name: 'Silk Massage Spa', address: '636 N. French Road', lat: 43.20, lng: -78.60 };
+    expect(isSameBusiness(a, b)).toBe(true);
+  });
+
+  it('does NOT merge same name + DIFFERENT address far apart (true multi-location, with addresses)', () => {
+    const a: DedupRecord = { name: 'Advanced Care Physical Therapy', address: '100 Elm St', lat: 42.90, lng: -78.80 };
+    const b: DedupRecord = { name: 'Advanced Care Physical Therapy', address: '55 Oak Ave', lat: 43.00, lng: -78.90 };
+    expect(isSameBusiness(a, b)).toBe(false);
+  });
+
+  it('does NOT merge DIFFERENT names that happen to share an address (suite neighbors)', () => {
+    const a: DedupRecord = { name: 'Silk Massage Spa', address: '636 N French Rd', lat: 43.036, lng: -78.801 };
+    const b: DedupRecord = { name: 'Elite Dental Group', address: '636 N French Rd', lat: 43.036, lng: -78.801 };
+    expect(isSameBusiness(a, b)).toBe(false); // names must still agree
   });
 
   it('does NOT merge near neighbors that only share a generic token', () => {
@@ -122,6 +167,16 @@ describe('clusterBusinesses', () => {
     ];
     const clusters = clusterBusinesses(records);
     expect(clusters).toHaveLength(2);
+  });
+
+  it('collapses a mis-geocoded duplicate (same name + address, far apart) into one cluster', () => {
+    const records: DedupRecord[] = [
+      { name: 'Silk Massage Spa', address: '636 N French Rd', lat: 43.03596, lng: -78.80113 },
+      { name: 'Silk Massage Spa', address: '636 N French Rd', lat: 43.03495, lng: -78.75414 },
+    ];
+    const clusters = clusterBusinesses(records);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0].records).toHaveLength(2);
   });
 
   it('handles a mixed batch correctly', () => {

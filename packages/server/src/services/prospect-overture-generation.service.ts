@@ -44,9 +44,12 @@ interface ReconciledProspect {
   city: string | null;
   region: string | null;
   postcode: string | null;
+  country: string | null;
   phone: string | null;
   website: string | null;
+  email: string | null;
   social: string | null;
+  operatingStatus: string | null;
   lat: number;
   lng: number;
   contributingSources: string[];
@@ -79,7 +82,7 @@ function clampLen(v: string | null | undefined, max: number): string | null {
 }
 
 // prp_prospects varchar widths the Overture insert writes into.
-const LEN = { externalId: 300, name: 300, address: 500, city: 200, phone: 50, website: 500 } as const;
+const LEN = { externalId: 300, name: 300, address: 500, city: 200, phone: 50, website: 500, country: 2, email: 320, operatingStatus: 32 } as const;
 
 interface CategoryRow { ui_category_name: string; overture_taxonomy: string[] | null; display_order: number | null }
 
@@ -156,13 +159,34 @@ function reconcileCluster(records: Array<DedupRecord & OvertureCandidate>, canon
     city: clampLen(coalesceField(records, 'city') as string | null, LEN.city),
     region: (coalesceField(records, 'region') as string | null) ?? null,
     postcode: (coalesceField(records, 'postcode') as string | null) ?? null,
+    country: clampLen(coalesceField(records, 'country') as string | null, LEN.country),
     phone: clampLen(coalesceField(records, 'phone') as string | null, LEN.phone),
     website: clampLen(coalesceField(records, 'website') as string | null, LEN.website),
+    email: clampLen(coalesceField(records, 'email') as string | null, LEN.email),
     social: (coalesceField(records, 'social') as string | null) ?? null,
-    lat: canonical.lat,
-    lng: canonical.lng,
+    // operating_status: a business is "closed" if ANY clustered record says so (conservative).
+    operatingStatus: records.reduce<string | null>((acc, r) => {
+      if (r.operatingStatus && r.operatingStatus.toLowerCase() !== 'open') return r.operatingStatus;
+      return acc ?? r.operatingStatus ?? null;
+    }, null),
+    // Coordinates: take them from the HIGHEST-confidence record in the cluster, not the
+    // canonical (longest-name) pick. When a duplicate is mis-geocoded (same name+address, far
+    // apart), the higher-confidence record carries the trustworthy point — so the map pin is
+    // correct. Falls back to the canonical's coords if no confidence is present.
+    ...pickCoords(records, canonical),
     contributingSources: ['overture'],
   };
+}
+
+/** Choose the coordinates of the highest-confidence record (ties / no-confidence -> canonical). */
+function pickCoords(records: Array<DedupRecord & OvertureCandidate>, canonical: DedupRecord & OvertureCandidate): { lat: number; lng: number } {
+  let best = canonical;
+  let bestConf = canonical.confidence ?? -1;
+  for (const r of records) {
+    const c = r.confidence ?? -1;
+    if (c > bestConf) { best = r; bestConf = c; }
+  }
+  return { lat: best.lat, lng: best.lng };
 }
 
 /**
@@ -229,15 +253,21 @@ export async function generateProspectsFromOverture(
       confidence: r.confidence,
       phone: r.phone,
       website: r.website,
+      email: r.email,
       social: r.social,
       address: r.address,
       multiLocation: multiIdx.has(i),
     };
     const fit = scoreFit(fitInput, fitConfig.weights, fitConfig.tierThresholds);
-    const classification: Classification = classifyProspect(
+    let classification: Classification = classifyProspect(
       { confidence: r.confidence, phone: r.phone, website: r.website },
       { contactFilter, confidenceThreshold: classifyConfig.confidenceThreshold },
     );
+    // A business Overture flags as not "open" (closed/defunct) is held — reversible, never
+    // deleted — so we don't waste outreach on it. This takes precedence over confidence/contact.
+    if (r.operatingStatus && r.operatingStatus.toLowerCase() !== 'open') {
+      classification = { inclusion: 'held', holdReason: 'closed' };
+    }
     if (classification.inclusion === 'held') heldCount++;
     returnedExternalIds.push(r.externalId);
 
@@ -247,14 +277,15 @@ export async function generateProspectsFromOverture(
       `INSERT INTO prp_prospects
          (tenant_id, external_id, source, name, address, city, phone, website, category,
           lat, lng, confidence, fit_signals, fit_score, fit_tier, inclusion, hold_reason,
-          contributing_sources, is_active)
-       VALUES ($1, $2, 'overture', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, true)
+          contributing_sources, country, email, operating_status, is_active)
+       VALUES ($1, $2, 'overture', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, true)
        ON CONFLICT (tenant_id, external_id) WHERE external_id IS NOT NULL DO UPDATE SET
          name = EXCLUDED.name, address = EXCLUDED.address, city = EXCLUDED.city,
          phone = EXCLUDED.phone, website = EXCLUDED.website, category = EXCLUDED.category,
          lat = EXCLUDED.lat, lng = EXCLUDED.lng, confidence = EXCLUDED.confidence,
          fit_signals = EXCLUDED.fit_signals, fit_score = EXCLUDED.fit_score,
          fit_tier = EXCLUDED.fit_tier, contributing_sources = EXCLUDED.contributing_sources,
+         country = EXCLUDED.country, email = EXCLUDED.email, operating_status = EXCLUDED.operating_status,
          is_active = true, updated_at = NOW(),
          -- Preserve an operator's manual hold; otherwise take the recomputed classification.
          inclusion = CASE WHEN prp_prospects.hold_reason = 'manual' THEN prp_prospects.inclusion ELSE EXCLUDED.inclusion END,
@@ -263,6 +294,7 @@ export async function generateProspectsFromOverture(
         tenantId, r.externalId, r.name, r.address, r.city, r.phone, r.website, rowCategory,
         r.lat, r.lng, r.confidence, JSON.stringify(fit.signals), fit.score, fit.tier,
         classification.inclusion, classification.holdReason, r.contributingSources,
+        r.country, r.email, r.operatingStatus,
       ],
     );
     newCount++;

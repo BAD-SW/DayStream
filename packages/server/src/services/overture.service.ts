@@ -42,9 +42,12 @@ export interface OvertureCandidate {
   city: string | null;
   region: string | null;
   postcode: string | null;
+  country: string | null;         // ISO-2 country code (addresses[].country)
   phone: string | null;           // first phone, if any
   website: string | null;         // first website, if any
+  email: string | null;           // first email, if any
   social: string | null;          // first social (e.g. facebook), if any
+  operatingStatus: string | null; // Overture open/closed flag ('open', 'closed', ...)
   lat: number;
   lng: number;
 }
@@ -171,8 +174,11 @@ export async function queryOvertureCandidates(
         addresses[1].locality AS city,
         addresses[1].region AS region,
         addresses[1].postcode AS postcode,
+        addresses[1].country AS country,
+        operating_status,
         CAST(phones AS VARCHAR) AS phones,
         CAST(websites AS VARCHAR) AS websites,
+        CAST(emails AS VARCHAR) AS emails,
         CAST(socials AS VARCHAR) AS socials,
         bbox.ymin AS lat,
         bbox.xmin AS lng
@@ -200,6 +206,7 @@ export async function queryOvertureCandidates(
       };
       const phones = parseList(r.phones);
       const websites = parseList(r.websites);
+      const emails = parseList(r.emails);
       const socials = parseList(r.socials);
       return {
         externalId: String(r.external_id),
@@ -212,9 +219,12 @@ export async function queryOvertureCandidates(
         city: r.city ?? null,
         region: r.region ?? null,
         postcode: r.postcode ?? null,
+        country: r.country ?? null,
         phone: phones[0] ?? null,
         website: websites[0] ?? null,
+        email: emails[0] ?? null,
         social: socials[0] ?? null,
+        operatingStatus: r.operating_status ?? null,
         lat: Number(r.lat),
         lng: Number(r.lng),
       };

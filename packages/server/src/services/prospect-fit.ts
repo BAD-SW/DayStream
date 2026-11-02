@@ -26,12 +26,82 @@ export interface FitInput {
   confidence: number | null;      // Overture 0..1
   phone: string | null;
   website: string | null;
+  email?: string | null;          // first email, if any
   social: string | null;
   address: string | null;
   reviewCount?: number | null;
   rating?: number | null;
   /** True if this business is one of several locations under the same operator (name-cluster). */
   multiLocation?: boolean;
+}
+
+/**
+ * Email "quality" classification — a proxy for business maturity/size.
+ *
+ *   - 'domain_matching': email domain matches the website domain (e.g. info@acme.com with
+ *     site acme.com) — the strongest "established, invested business" signal.
+ *   - 'domain_other':    a custom domain that doesn't obviously match the site — still a real
+ *     domain investment; mildly positive / neutral.
+ *   - 'free_provider':   gmail/yahoo/outlook/etc. — overwhelmingly a solo or micro operation
+ *     that is a poor fit for DayStream (the "Serenity Massage WNY @gmail.com" case). Negative.
+ *   - 'none':            no email at all — no signal (neutral).
+ *
+ * This is a PROBABILISTIC heuristic, not a truth: a thriving business can use Gmail. It is a
+ * fit-score WEIGHT, never a hard filter, and is stored raw so the weight can be tuned against
+ * real conversion outcomes over time.
+ */
+export type EmailQuality = 'domain_matching' | 'domain_other' | 'free_provider' | 'none';
+
+/**
+ * Free/consumer email providers. A business using one of these skews small/informal. Kept as
+ * an editable constant (easy to extend as new providers appear). Lowercased, bare domains.
+ */
+export const FREE_EMAIL_PROVIDERS = new Set<string>([
+  'gmail.com', 'googlemail.com',
+  'yahoo.com', 'yahoo.co.uk', 'ymail.com', 'rocketmail.com',
+  'hotmail.com', 'hotmail.co.uk', 'outlook.com', 'live.com', 'msn.com',
+  'aol.com', 'icloud.com', 'me.com', 'mac.com',
+  'protonmail.com', 'proton.me', 'gmx.com', 'gmx.net', 'zoho.com',
+  'mail.com', 'yandex.com', 'inbox.com', 'fastmail.com',
+  'comcast.net', 'verizon.net', 'att.net', 'sbcglobal.net', 'cox.net',
+  'bellsouth.net', 'charter.net', 'roadrunner.com', 'rogers.com', 'btinternet.com',
+]);
+
+/** Extract a bare lowercased domain from an email address, or null. */
+export function emailDomain(email: string | null | undefined): string | null {
+  if (!email) return null;
+  const m = String(email).trim().toLowerCase().match(/@([a-z0-9.-]+\.[a-z]{2,})$/);
+  return m ? m[1] : null;
+}
+
+/** Extract a bare lowercased registrable-ish domain from a website URL/host, or null. */
+export function websiteDomain(website: string | null | undefined): string | null {
+  if (!website) return null;
+  let s = String(website).trim().toLowerCase();
+  s = s.replace(/^[a-z]+:\/\//, '');  // strip scheme
+  s = s.replace(/^www\./, '');         // strip leading www.
+  s = s.split(/[/?#]/)[0];             // host only
+  const m = s.match(/^([a-z0-9.-]+\.[a-z]{2,})$/);
+  return m ? m[1] : null;
+}
+
+/**
+ * Compare email + website domains loosely: equal, or one is a subdomain/suffix of the other
+ * (e.g. mail.acme.com vs acme.com). Both must be non-empty.
+ */
+function domainsMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  return a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
+}
+
+/** Classify a business's email quality from its email + website. */
+export function classifyEmailQuality(email: string | null | undefined, website: string | null | undefined): EmailQuality {
+  const ed = emailDomain(email);
+  if (!ed) return 'none';
+  if (FREE_EMAIL_PROVIDERS.has(ed)) return 'free_provider';
+  const wd = websiteDomain(website);
+  if (wd && domainsMatch(ed, wd)) return 'domain_matching';
+  return 'domain_other';
 }
 
 /** Raw fit signals persisted per prospect (stored as JSONB; never discarded). */
@@ -41,6 +111,8 @@ export interface FitSignals {
   confidence: number | null;
   has_phone: boolean;
   has_website: boolean;
+  has_email: boolean;
+  email_quality: EmailQuality;      // proxy for business maturity/size (see classifyEmailQuality)
   has_social: boolean;
   multi_location: boolean;
   review_count: number | null;
@@ -64,6 +136,14 @@ export interface FitWeights {
   hasSocial: number;
   multiLocation: number;    // higher potential value
   base: number;             // floor everyone starts from
+  // Email-quality contributions (proxy for business maturity/size). A domain email that
+  // matches the website is the strongest "real, established business" signal; a free-provider
+  // email (gmail/yahoo/...) signals a solo/micro operation that is a poor DayStream fit, so it
+  // is NEGATIVE. These are tunable because they ultimately drive territory valuation/pricing.
+  emailDomainMatching: number;  // email domain == website domain
+  emailDomainOther: number;     // custom domain, no obvious site match
+  emailFreeProvider: number;    // gmail/yahoo/etc. — negative
+  // emailNone: no contribution (0) — absence of email is not itself a size signal.
 }
 
 export const DEFAULT_FIT_WEIGHTS: FitWeights = {
@@ -75,6 +155,9 @@ export const DEFAULT_FIT_WEIGHTS: FitWeights = {
   hasPhone: 10,
   hasSocial: 5,
   multiLocation: 15,
+  emailDomainMatching: 15,
+  emailDomainOther: 8,
+  emailFreeProvider: -25,
 };
 
 /** Fit-tier cutoffs on the 0..100 score (configurable). */
@@ -127,6 +210,8 @@ export function deriveFitSignals(input: FitInput): FitSignals {
     confidence: input.confidence ?? null,
     has_phone: !!(input.phone && input.phone.trim()),
     has_website: !!(input.website && input.website.trim()),
+    has_email: !!(input.email && input.email.trim()),
+    email_quality: classifyEmailQuality(input.email, input.website),
     has_social: !!(input.social && input.social.trim()),
     multi_location: !!input.multiLocation,
     review_count: input.reviewCount ?? null,
@@ -145,6 +230,10 @@ export function computeFitScore(signals: FitSignals, weights: FitWeights = DEFAU
   if (signals.has_phone) score += weights.hasPhone;
   if (signals.has_social) score += weights.hasSocial;
   if (signals.multi_location) score += weights.multiLocation;
+  // Email-quality contribution (proxy for maturity/size). 'none' contributes nothing.
+  if (signals.email_quality === 'domain_matching') score += weights.emailDomainMatching;
+  else if (signals.email_quality === 'domain_other') score += weights.emailDomainOther;
+  else if (signals.email_quality === 'free_provider') score += weights.emailFreeProvider;
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
