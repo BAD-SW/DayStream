@@ -43,6 +43,7 @@ interface GenProgress {
 export function TenantProspectsPanel({ tenantId }: Props) {
   const [categories, setCategories] = useState<CategoryMapping[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [contactFilter, setContactFilter] = useState<'all' | 'phone_or_web' | 'phone_and_web'>('phone_or_web');
   const [generating, setGenerating] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [lastRun, setLastRun] = useState<{ total: number; added: number; inactive: number; calls?: number; truncated?: boolean } | null>(null);
@@ -83,13 +84,36 @@ export function TenantProspectsPanel({ tenantId }: Props) {
     setGenerating(true);
     setProgress(null);
     try {
-      // Kick off the background run; this returns immediately (202).
-      await apiClient.post(`/v1/prospects/${tenantId}/generate`, { category_ids: selectedIds });
+      // Kick off the background run; this returns immediately (202). contact_filter only
+      // affects the Overture engine (the Google engine ignores it).
+      await apiClient.post(`/v1/prospects/${tenantId}/generate`, { category_ids: selectedIds, contact_filter: contactFilter });
       setMsg({ ok: true, text: 'Generation started…' });
       pollStatus();
     } catch (err: any) {
       setMsg({ ok: false, text: err?.response?.data?.error || 'Failed to start generation.' });
       setGenerating(false);
+    }
+  }
+
+  const [clearing, setClearing] = useState(false);
+  async function handleClearAll() {
+    const ok = window.confirm(
+      'Delete ALL prospects for this tenant?\n\nThis permanently removes every prospect ' +
+      '(any status, any source, active or not). This cannot be undone.',
+    );
+    if (!ok) return;
+    setClearing(true);
+    setMsg(null);
+    try {
+      const res = await apiClient.delete(`/v1/prospects/${tenantId}/prospects`);
+      const n = res.data?.data?.deleted ?? 0;
+      setMsg({ ok: true, text: `Deleted ${n.toLocaleString()} prospect${n === 1 ? '' : 's'}.` });
+      setLastRun(null);
+      setListCount(0);
+    } catch (err: any) {
+      setMsg({ ok: false, text: err?.response?.data?.error || 'Failed to clear prospects.' });
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -147,6 +171,22 @@ export function TenantProspectsPanel({ tenantId }: Props) {
               );
             })}
           </div>
+          <div style={styles.contactRow}>
+            <label htmlFor="contact-filter" style={styles.contactLabel}>Contact completeness</label>
+            <select
+              id="contact-filter"
+              value={contactFilter}
+              onChange={(e) => setContactFilter(e.target.value as typeof contactFilter)}
+              style={styles.contactSelect}
+            >
+              <option value="all">Include all</option>
+              <option value="phone_or_web">Require phone or website</option>
+              <option value="phone_and_web">Require phone and website</option>
+            </select>
+            <span style={styles.muted}>
+              Businesses failing this are retained but held (reversible). Applies to the Overture engine.
+            </span>
+          </div>
           <div style={styles.row}>
             <div style={styles.actionsCol}>
               <div style={styles.actions}>
@@ -154,6 +194,9 @@ export function TenantProspectsPanel({ tenantId }: Props) {
                   {generating ? 'Generating…' : 'Generate prospects'}
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => setShowList(true)}>View prospects</Button>
+                <Button variant="destructive" size="sm" loading={clearing} onClick={handleClearAll}>
+                  {clearing ? 'Clearing…' : 'Clear all prospects'}
+                </Button>
                 <span style={styles.muted}>{selectedIds.length} of {categories.length} categories selected</span>
               </div>
 
@@ -290,6 +333,9 @@ const styles: Record<string, React.CSSProperties> = {
   status: { fontSize: 'var(--font-size-md)', fontWeight: 'var(--font-weight-bold)' as any, margin: 'var(--space-sm) 0 0' },
   statusDetail: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '2px 0 0' },
   chips: { display: 'flex', flexWrap: 'wrap', gap: '6px' },
+  contactRow: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', flexWrap: 'wrap', marginTop: '4px' },
+  contactLabel: { fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-medium)' as any, color: 'var(--color-text)' },
+  contactSelect: { padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md, 8px)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', background: 'var(--color-background)', fontFamily: 'var(--font-family)' },
   chip: { padding: '4px 12px', fontSize: 'var(--font-size-sm)', borderRadius: '16px', cursor: 'pointer', border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
   chipOn: { background: 'var(--color-primary)', color: '#fff', borderColor: 'var(--color-primary)' },
   actions: { display: 'flex', gap: 'var(--space-sm)', alignItems: 'center', marginTop: '4px' },

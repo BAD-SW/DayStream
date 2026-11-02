@@ -403,6 +403,11 @@ prospectsRouter.get('/', requireTenantLevel(), requirePermission('settings:*'), 
       conditions.push(`status != 'dismissed'`);
       conditions.push('is_active = true');
     }
+    // Held prospects (filtered out by the confidence/contact classification) are retained in
+    // the DB but hidden from the working list unless explicitly requested — so the contact
+    // filter visibly shrinks the list. 'held' is reversible, never a delete.
+    const showHeld = req.query.show_held === 'true';
+    if (!showHeld) conditions.push(`inclusion = 'included'`);
     if (req.query.status) { conditions.push(`status = $${idx++}`); params.push(req.query.status); }
     if (req.query.category) { conditions.push(`category = $${idx++}`); params.push(req.query.category); }
     if (req.query.search) { conditions.push(`(name ILIKE $${idx} OR address ILIKE $${idx})`); params.push(`%${req.query.search}%`); idx++; }
@@ -514,12 +519,26 @@ prospectsRouter.get('/:tenantId/generate/preview', requirePermission('*:*'), asy
 prospectsRouter.post('/:tenantId/generate', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
     const categoryIds = req.body?.category_ids || null;
+
+    // Engine selection: Overture (new, free) when the flag is on for this tenant, else the
+    // existing Google engine (fallback). Additive rollout — "don't break what works".
+    const { isFeatureEnabled } = await import('../services/feature-flag.service');
+    const useOverture = await isFeatureEnabled('feature.prospects_overture', { tenantId: req.params.tenantId });
+
+    if (useOverture) {
+      const contactFilter = req.body?.contact_filter; // 'all' | 'phone_or_web' | 'phone_and_web'
+      const { startOvertureGeneration } = await import('../services/prospect-overture-generation.service');
+      const status = await startOvertureGeneration(req.params.tenantId, categoryIds, contactFilter ? { contactFilter } : {});
+      success(res, { started: true, engine: 'overture', state: status.state, started_at: status.startedAt }, undefined, 202);
+      return;
+    }
+
     const maxApiCalls = Number.isFinite(Number(req.body?.max_api_calls)) && Number(req.body?.max_api_calls) > 0
       ? Math.floor(Number(req.body.max_api_calls)) : undefined;
     const { startProspectGeneration } = await import('../services/prospect-generation.service');
     const status = await startProspectGeneration(req.params.tenantId, categoryIds, maxApiCalls ? { maxApiCalls } : {});
     // 202 Accepted — work continues in the background; poll the status endpoint.
-    success(res, { started: true, state: status.state, started_at: status.startedAt }, undefined, 202);
+    success(res, { started: true, engine: 'google', state: status.state, started_at: status.startedAt }, undefined, 202);
   } catch (err: any) {
     if (err?.name === 'NoTerritoryError' || err?.name === 'NoCategoriesError') { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
     if (err.message?.includes('GOOGLE_PLACES_API_KEY')) { error(res, 'Google Places API key not configured.', 'CONFIGURATION_ERROR', 500); return; }
@@ -570,6 +589,10 @@ prospectsRouter.get('/:tenantId/prospects', requirePermission('*:*'), async (req
       conditions.push(`status != 'dismissed'`);
       conditions.push('is_active = true');
     }
+    // Hide held (classification-filtered) prospects unless explicitly requested. See the
+    // tenant-own list route above for the rationale.
+    const showHeld = req.query.show_held === 'true';
+    if (!showHeld) conditions.push(`inclusion = 'included'`);
     if (req.query.status) { conditions.push(`status = $${idx++}`); params.push(req.query.status); }
     if (req.query.category) { conditions.push(`category = $${idx++}`); params.push(req.query.category); }
     if (req.query.search) { conditions.push(`(name ILIKE $${idx} OR address ILIKE $${idx})`); params.push(`%${req.query.search}%`); idx++; }
@@ -627,11 +650,28 @@ prospectsRouter.put('/:tenantId/prospects/:id/dismiss', requirePermission('*:*')
   } catch (err: any) { console.error('Failed to dismiss prospect', err?.message || err); error(res, 'Failed to dismiss prospect', 'INTERNAL_ERROR', 500); }
 });
 
-/** Build the prospect CSV for a tenant (optional status/category filters). */
-async function buildProspectsCsv(tenantId: string, status?: string, category?: string): Promise<string> {
+// DELETE /api/v1/prospects/:tenantId/prospects — SYSTEM ADMIN: hard-delete ALL prospects for
+// a tenant, regardless of status/source/active flag. This is a destructive reset (e.g. before
+// re-running a territory from scratch), distinct from the per-prospect soft "dismiss". It
+// permanently removes rows — there is no undo. System-admin only.
+prospectsRouter.delete('/:tenantId/prospects', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const { rowCount } = await adminPool.query(
+      'DELETE FROM prp_prospects WHERE tenant_id = $1',
+      [req.params.tenantId],
+    );
+    logger.info(`[Prospects] System admin hard-deleted ${rowCount ?? 0} prospect(s) for tenant ${req.params.tenantId}`);
+    success(res, { deleted: rowCount ?? 0 });
+  } catch (err: any) { console.error('Failed to clear prospects', err?.message || err); error(res, 'Failed to clear prospects', 'INTERNAL_ERROR', 500); }
+});
+
+/** Build the prospect CSV for a tenant (optional status/category filters). Excludes held
+ *  prospects by default so the export matches the working list; pass showHeld to include them. */
+async function buildProspectsCsv(tenantId: string, status?: string, category?: string, showHeld = false): Promise<string> {
   const conditions = ['tenant_id = $1', 'is_active = true'];
   const params: any[] = [tenantId];
   let idx = 2;
+  if (!showHeld) conditions.push(`inclusion = 'included'`);
   if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
   if (category) { conditions.push(`category = $${idx++}`); params.push(category); }
   const { rows } = await adminPool.query(
@@ -664,7 +704,7 @@ prospectsRouter.get('/export', requireTenantLevel(), requirePermission('settings
   try {
     const authReq = req as AuthenticatedRequest;
     if (!authReq.tenantId) { error(res, 'Tenant context required', 'VALIDATION_ERROR', 400); return; }
-    const csv = await buildProspectsCsv(authReq.tenantId, req.query.status as string | undefined, req.query.category as string | undefined);
+    const csv = await buildProspectsCsv(authReq.tenantId, req.query.status as string | undefined, req.query.category as string | undefined, req.query.show_held === 'true');
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="prospects.csv"');
     res.send(csv);
@@ -674,7 +714,7 @@ prospectsRouter.get('/export', requireTenantLevel(), requirePermission('settings
 // GET /api/v1/prospects/:tenantId/prospects/export — SYSTEM ADMIN: export a tenant's prospects.
 prospectsRouter.get('/:tenantId/prospects/export', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
-    const csv = await buildProspectsCsv(req.params.tenantId, req.query.status as string | undefined, req.query.category as string | undefined);
+    const csv = await buildProspectsCsv(req.params.tenantId, req.query.status as string | undefined, req.query.category as string | undefined, req.query.show_held === 'true');
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="prospects.csv"');
     res.send(csv);

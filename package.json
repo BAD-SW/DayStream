@@ -16,6 +16,7 @@
     "seed:dev": "npm run seed:dev --workspace=packages/server"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "duckdb": "^1.4.4"
   }
 }

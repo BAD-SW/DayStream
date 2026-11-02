@@ -21,9 +21,16 @@ interface Prospect {
   rating?: number;
   status: string;
   notes?: string;
+  // Overture-engine fields (null for Google/manual rows).
+  source?: string;
+  confidence?: number | string | null;
+  fit_score?: number | null;
+  fit_tier?: 'strong' | 'moderate' | 'weak' | null;
+  inclusion?: 'included' | 'held' | null;
+  hold_reason?: string | null;
 }
 
-type SortField = 'name' | 'address' | 'city' | 'category' | 'rating' | 'status' | 'notes';
+type SortField = 'name' | 'address' | 'city' | 'category' | 'fit_score' | 'confidence' | 'status' | 'notes';
 type SortDir = 'asc' | 'desc';
 
 const STATUS_OPTIONS = [
@@ -34,6 +41,26 @@ const STATUS_OPTIONS = [
   { value: 'declined', label: 'Declined' },
   { value: 'dismissed', label: 'Dismissed' },
 ];
+
+/** Fit-tier colors (semantic, from the design system). */
+const TIER_COLOR: Record<'strong' | 'moderate' | 'weak', string> = {
+  strong: 'var(--color-success, #2E7D32)',
+  moderate: 'var(--color-warning, #E6A817)',
+  weak: 'var(--color-text-secondary, #8A8A8A)',
+};
+const TIER_TEXT: Record<'strong' | 'moderate' | 'weak', string> = {
+  strong: '#FFFFFF',
+  moderate: '#1A1A1A',
+  weak: '#FFFFFF',
+};
+
+/** Render Overture confidence (0..1, may arrive as a numeric string) as a percentage. */
+function formatConfidence(c: number | string | null | undefined): string {
+  if (c === null || c === undefined || c === '') return '—';
+  const n = Number(c);
+  if (!Number.isFinite(n)) return '—';
+  return `${Math.round(n * 100)}%`;
+}
 
 interface Props {
   /** API base for this list's data, e.g. '/v1/prospects' (own tenant) or
@@ -62,6 +89,7 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [showDismissed, setShowDismissed] = useState(false);
+  const [showHeld, setShowHeld] = useState(false);
   const [categories, setCategories] = useState<string[]>([]);
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -77,6 +105,7 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
       if (categoryFilter) params.append('category', categoryFilter);
       if (search) params.append('search', search);
       if (showDismissed) params.append('show_dismissed', 'true');
+      if (showHeld) params.append('show_held', 'true');
       const res = await apiClient.get(`${listUrl}?${params.toString()}`);
       const data: Prospect[] = res.data.data || res.data || [];
       setProspects(data);
@@ -85,7 +114,7 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
       setProspects([]);
     } finally { setLoading(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listUrl, statusFilter, categoryFilter, search, showDismissed]);
+  }, [listUrl, statusFilter, categoryFilter, search, showDismissed, showHeld]);
 
   useEffect(() => { fetchProspects(); }, [fetchProspects]);
 
@@ -105,10 +134,22 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
     const aRaw = (a as any)[sortField] ?? '';
     const bRaw = (b as any)[sortField] ?? '';
     let cmp: number;
-    if (sortField === 'rating') cmp = (Number(aRaw) || 0) - (Number(bRaw) || 0);
+    if (sortField === 'fit_score' || sortField === 'confidence') cmp = (Number(aRaw) || 0) - (Number(bRaw) || 0);
     else cmp = String(aRaw).localeCompare(String(bRaw));
     return sortDir === 'asc' ? cmp : -cmp;
   });
+
+  // Descriptive territory valuation over the CURRENTLY-LISTED Overture prospects
+  // (spec 31 §7 — counts by fit tier, not a $ figure). Only meaningful when the list
+  // contains Overture rows; hidden otherwise.
+  const overtureRows = prospects.filter((p) => p.source === 'overture');
+  const valuation = overtureRows.length > 0 ? {
+    total: overtureRows.length,
+    strong: overtureRows.filter((p) => p.fit_tier === 'strong').length,
+    moderate: overtureRows.filter((p) => p.fit_tier === 'moderate').length,
+    weak: overtureRows.filter((p) => p.fit_tier === 'weak').length,
+    held: overtureRows.filter((p) => p.inclusion === 'held').length,
+  } : null;
 
   const renderSortIndicator = (field: SortField) => (sortField !== field ? null : sortDir === 'asc' ? ' ▲' : ' ▼');
 
@@ -156,6 +197,7 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
       const params = new URLSearchParams();
       if (statusFilter) params.append('status', statusFilter);
       if (categoryFilter) params.append('category', categoryFilter);
+      if (showHeld) params.append('show_held', 'true');
       const url = `${exportUrl}?${params.toString()}`;
       const res = await apiClient.get(url, { responseType: 'blob' });
       const blob = new Blob([res.data], { type: 'text/csv' });
@@ -188,6 +230,10 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
           <input type="checkbox" checked={showDismissed} onChange={(e) => setShowDismissed(e.target.checked)} style={styles.checkbox} />
           Show Dismissed
         </label>
+        <label style={styles.checkboxLabel} title="Prospects held out by the confidence / contact-completeness filter (retained but excluded from the working list)">
+          <input type="checkbox" checked={showHeld} onChange={(e) => setShowHeld(e.target.checked)} style={styles.checkbox} />
+          Show Held
+        </label>
         <button style={styles.exportLink} onClick={handleExport} disabled={exporting}>
           {exporting ? 'Exporting…' : 'Export CSV'}
         </button>
@@ -219,6 +265,18 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
         </>
       )}
 
+      {/* Territory valuation (descriptive) — fit-tier counts over Overture prospects. */}
+      {valuation && (
+        <div style={styles.valuation}>
+          <span style={styles.valuationTitle}>Territory fit</span>
+          <span style={styles.valuationItem}><span style={{ ...styles.tierDot, background: TIER_COLOR.strong }} />{valuation.strong} strong</span>
+          <span style={styles.valuationItem}><span style={{ ...styles.tierDot, background: TIER_COLOR.moderate }} />{valuation.moderate} moderate</span>
+          <span style={styles.valuationItem}><span style={{ ...styles.tierDot, background: TIER_COLOR.weak }} />{valuation.weak} weak</span>
+          <span style={styles.valuationSep}>·</span>
+          <span style={styles.valuationMuted}>{valuation.total} businesses{valuation.held > 0 ? `, ${valuation.held} held` : ''}</span>
+        </div>
+      )}
+
       {/* Table */}
       {loading ? (
         <div style={styles.empty}>Loading...</div>
@@ -229,9 +287,12 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
           <table style={styles.table}>
             <thead>
               <tr>
-                {(['name', 'address', 'city', 'category', 'rating', 'status', 'notes'] as SortField[]).map((field) => (
+                {([
+                  ['name', 'Name'], ['address', 'Address'], ['city', 'City'], ['category', 'Category'],
+                  ['fit_score', 'Fit'], ['confidence', 'Confidence'], ['status', 'Status'], ['notes', 'Notes'],
+                ] as [SortField, string][]).map(([field, label]) => (
                   <th key={field} style={styles.th} onClick={() => handleSort(field)}>
-                    {field.charAt(0).toUpperCase() + field.slice(1)}{renderSortIndicator(field)}
+                    {label}{renderSortIndicator(field)}
                   </th>
                 ))}
                 <th style={styles.th}>Actions</th>
@@ -239,14 +300,25 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
             </thead>
             <tbody>
               {sortedProspects.map((p, idx) => (
-                <tr key={p.id} style={idx % 2 === 0 ? styles.rowEven : styles.rowOdd}>
+                <tr key={p.id} style={{ ...(idx % 2 === 0 ? styles.rowEven : styles.rowOdd), ...(p.inclusion === 'held' ? styles.rowHeld : {}) }}>
                   <td style={styles.td}>
                     <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name + ' ' + (p.address || ''))}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-text)', textDecoration: 'underline' }}>{p.name}</a>
+                    {p.inclusion === 'held' && (
+                      <span style={styles.heldBadge} title={`Held (${p.hold_reason || 'filtered'}) — retained but not shown as active`}>held</span>
+                    )}
                   </td>
                   <td style={styles.td}>{p.address}</td>
                   <td style={styles.td}>{p.city || '—'}</td>
                   <td style={styles.td}>{p.category}</td>
-                  <td style={styles.td}>{p.rating ?? '—'}</td>
+                  <td style={styles.td}>
+                    {p.fit_tier ? (
+                      <span style={styles.fitCell}>
+                        <span style={{ ...styles.tierBadge, background: TIER_COLOR[p.fit_tier], color: TIER_TEXT[p.fit_tier] }}>{p.fit_tier}</span>
+                        <span style={styles.fitScore}>{p.fit_score ?? '—'}</span>
+                      </span>
+                    ) : '—'}
+                  </td>
+                  <td style={styles.td}>{formatConfidence(p.confidence)}</td>
                   <td style={styles.td}>
                     <select value={p.status} onChange={(e) => handleStatusChange(p.id, e.target.value)} style={styles.statusSelect}>
                       {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -288,6 +360,17 @@ const styles: Record<string, React.CSSProperties> = {
   td: { padding: '10px 16px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)', verticalAlign: 'middle' as const },
   rowEven: { background: 'transparent' },
   rowOdd: { background: 'rgba(0,0,0,0.02)' },
+  rowHeld: { opacity: 0.6 },
+  heldBadge: { marginLeft: '8px', fontSize: 'var(--font-size-xs)', padding: '1px 6px', borderRadius: 'var(--radius-sm, 4px)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.4px' },
+  fitCell: { display: 'inline-flex', alignItems: 'center', gap: '8px' },
+  tierBadge: { fontSize: 'var(--font-size-xs)', fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--radius-full, 9999px)', textTransform: 'capitalize' as const },
+  fitScore: { fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-secondary)' },
+  valuation: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', flexWrap: 'wrap' as const, padding: '10px 14px', marginBottom: 'var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface, transparent)', fontSize: 'var(--font-size-sm)' },
+  valuationTitle: { fontWeight: 600, color: 'var(--color-text)' },
+  valuationItem: { display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--color-text)' },
+  valuationSep: { color: 'var(--color-text-secondary)' },
+  valuationMuted: { color: 'var(--color-text-secondary)' },
+  tierDot: { width: '10px', height: '10px', borderRadius: '50%', display: 'inline-block' },
   statusSelect: { padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', background: 'var(--color-background)' },
   notesInput: { padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', background: 'var(--color-background)', width: '100%', minWidth: '120px' },
   dismissButton: { background: 'none', border: 'none', color: 'var(--color-error)', cursor: 'pointer', fontSize: 'var(--font-size-base)', fontWeight: 700, padding: '4px 8px', borderRadius: 'var(--radius-md)' },
