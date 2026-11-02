@@ -62,6 +62,8 @@ export interface CustomerFilters {
   owner?: string;
   incomplete?: boolean;
   segment_id?: string;
+  /** Column filters of the shared table. */
+  columns?: Record<string, { values?: string[]; contains?: string; from?: string; to?: string }>;
 }
 
 export type ViewCounts = Record<string, number>;
@@ -132,9 +134,20 @@ export async function getCustomers(businessId: string, filters: CustomerFilters 
   if (filters.owner) params.set('owner', filters.owner);
   if (filters.incomplete) params.set('incomplete', 'true');
   if (filters.segment_id) params.set('segment_id', filters.segment_id);
+  if (filters.columns && Object.keys(filters.columns).length) params.set('cf', JSON.stringify(filters.columns));
 
   const res = await apiClient.get(`/v1/customers?${params}`);
   return res.data;
+}
+
+/** Every value of one column (with counts) among the people matching the other filters. */
+export async function getColumnValues(businessId: string, column: string, filters: CustomerFilters = {}): Promise<Array<{ value: string; label: string; count: number }>> {
+  const params = new URLSearchParams({ business_id: businessId, column });
+  if (filters.view && filters.view !== 'all') params.set('view', filters.view);
+  if (filters.segment_id) params.set('segment_id', filters.segment_id);
+  if (filters.columns && Object.keys(filters.columns).length) params.set('cf', JSON.stringify(filters.columns));
+  const res = await apiClient.get(`/v1/customers/column-values?${params}`);
+  return res.data.data;
 }
 
 /** People in each system view (All, Leads, Customers, At risk, Former). */
@@ -392,6 +405,9 @@ export function getExportUrl(businessId: string, filters?: CustomerFilters): str
   if (filters?.created_to) params.set('created_to', filters.created_to);
   if (filters?.sort) params.set('sort', filters.sort);
   if (filters?.order) params.set('order', filters.order);
+  if (filters?.view && filters.view !== 'all') params.set('view', filters.view);
+  if (filters?.segment_id) params.set('segment_id', filters.segment_id);
+  if (filters?.columns && Object.keys(filters.columns).length) params.set('cf', JSON.stringify(filters.columns));
   return `/api/v1/customers/export?${params}`;
 }
 

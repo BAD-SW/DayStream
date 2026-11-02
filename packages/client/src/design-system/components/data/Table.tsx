@@ -1,5 +1,12 @@
-import { CSSProperties, ReactNode, useState } from 'react';
+import { CSSProperties, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import cssStyles from './Table.module.css';
+import {
+  ColumnFilter, TableFilters, FilterOption, FilterColumnDef, applyTableFilters, optionsFrom, dayOf,
+  looksLikeDate, isFilterOn, SortIcon, FunnelIcon, ValuesFilter, DateFilter,
+} from './TableFilters';
+
+export type { ColumnFilter, TableFilters, FilterOption } from './TableFilters';
+export { applyTableFilters, optionsFrom } from './TableFilters';
 
 interface TableColumn<T> {
   key: string;
@@ -11,6 +18,16 @@ interface TableColumn<T> {
   align?: 'left' | 'right' | 'center';
   /** Optional extra style for this column's header cell (e.g. whiteSpace). */
   headerStyle?: CSSProperties;
+  /**
+   * The column filter (filter icon beside the sort icon, David 2026-11-02): a list of the
+   * column's values or, for dates, a calendar. Found by itself from the data when left out;
+   * `false` turns it off (e.g. a column of buttons).
+   */
+  filter?: 'values' | 'date' | false;
+  /** The value a row has for filtering, when it is not `row[key]`. */
+  filterValue?: (row: T) => unknown;
+  /** How a value is named in the filter list, when not as the cell shows it. */
+  filterLabel?: (value: string) => string;
 }
 
 interface TableProps<T> {
@@ -22,7 +39,7 @@ interface TableProps<T> {
   /** When true, the Table will sort data locally without needing onSort */
   clientSort?: boolean;
   onRowClick?: (row: T) => void;
-  // Pagination
+  // Pagination (kept for older callers; tables now scroll and load more instead)
   page?: number;
   totalPages?: number;
   onPageChange?: (page: number) => void;
@@ -49,7 +66,23 @@ interface TableProps<T> {
    * share identical column widths (e.g. grouped report sections).
    */
   fixedLayout?: boolean;
+  // Column filters
+  /** Controlled filters: the page filters the rows itself (on the server, or with applyTableFilters). */
+  filters?: TableFilters;
+  onFiltersChange?: (filters: TableFilters) => void;
+  /** The values of a column with counts, from the server, for tables that hold only some rows. */
+  filterOptions?: (key: string) => Promise<FilterOption[]>;
+  /** All rows, when `data` is already filtered by the page (the filter lists show every value). */
+  filterSource?: T[];
+  /** Turns column filters off for this table (e.g. a small summary table). */
+  noFilters?: boolean;
+  // Load more as the page scrolls (no pages)
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
 }
+
+const sortValue = (v: any) => (typeof v === 'number' ? v : looksLikeDate(v) ? new Date(v).getTime() : v == null ? v : String(v).toLowerCase());
 
 export function Table<T extends Record<string, any>>({
   columns,
@@ -70,9 +103,60 @@ export function Table<T extends Record<string, any>>({
   filterRow,
   footerRows,
   fixedLayout,
+  filters: controlledFilters,
+  onFiltersChange,
+  filterOptions,
+  filterSource,
+  noFilters,
+  onLoadMore,
+  hasMore,
+  loadingMore,
 }: TableProps<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [ownFilters, setOwnFilters] = useState<TableFilters>({});
+  const [openFilter, setOpenFilter] = useState<{ key: string; anchor: HTMLElement } | null>(null);
+  const controlled = !!onFiltersChange;
+  const filters = controlled ? controlledFilters || {} : ownFilters;
+  const setFilters = (f: TableFilters) => (controlled ? onFiltersChange!(f) : setOwnFilters(f));
+  const sentinel = useRef<HTMLTableRowElement>(null);
+  // A table wider than its place scrolls sideways inside itself (its header then stops pinning);
+  // one that fits scrolls with the page, header pinned.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [tooWide, setTooWide] = useState(false);
+  useEffect(() => {
+    const el = wrapRef.current; if (!el) return;
+    const check = () => { const t = el.firstElementChild as HTMLElement | null; setTooWide(!!t && t.scrollWidth > el.clientWidth + 1); };
+    check();
+    const ro = new ResizeObserver(check); ro.observe(el); if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  });
+
+  // Which columns can be filtered, and how: from the column, or found from the rows' values.
+  const source = filterSource || data;
+  const filterDefs = useMemo(() => {
+    const defs = new Map<string, FilterColumnDef<T> & { label?: (v: string) => string }>();
+    if (noFilters || filterRow) return defs;
+    for (const col of columns) {
+      if (col.filter === false) continue;
+      const value = col.filterValue || ((row: T) => row[col.key]);
+      let kind = col.filter as 'values' | 'date' | undefined;
+      if (!kind) {
+        const sample = source.slice(0, 200).map(value).filter((v) => v != null && v !== '');
+        if (sample.length === 0 && !(filterOptions && controlled)) continue;
+        if (sample.some((v) => typeof v === 'object')) continue;
+        kind = sample.length > 0 && sample.every(looksLikeDate) ? 'date' : 'values';
+      }
+      // Name each value as its cell shows it, when the cell is plain text.
+      const label = col.filterLabel || (col.render ? (v: string) => {
+        const row = source.find((r) => String(value(r) ?? '') === v);
+        const out = row ? col.render!(row[col.key], row) : null;
+        return typeof out === 'string' || typeof out === 'number' ? String(out) : v;
+      } : undefined);
+      defs.set(col.key, { key: col.key, kind, value, label });
+    }
+    return defs;
+  }, [columns, source, noFilters, filterRow, filterOptions, controlled]);
 
   function handleSort(key: string) {
     const newOrder = sortKey === key && sortOrder === 'asc' ? 'desc' : 'asc';
@@ -81,25 +165,31 @@ export function Table<T extends Record<string, any>>({
     onSort?.(key, newOrder);
   }
 
+  // Rows this table filters itself (when the page does not).
+  const visible = useMemo(() => (controlled ? data : applyTableFilters(data, [...filterDefs.values()], filters)), [controlled, data, filterDefs, filters]);
+
   // Client-side sorting
-  let sortedData = data;
+  let sortedData = visible;
   if (clientSort && sortKey) {
-    sortedData = [...data].sort((a, b) => {
-      const aVal = a[sortKey];
-      const bVal = b[sortKey];
+    sortedData = [...visible].sort((a, b) => {
+      const aVal = sortValue(a[sortKey]);
+      const bVal = sortValue(b[sortKey]);
       if (aVal == null && bVal == null) return 0;
       if (aVal == null) return sortOrder === 'asc' ? -1 : 1;
       if (bVal == null) return sortOrder === 'asc' ? 1 : -1;
-      if (typeof aVal === 'number' && typeof bVal === 'number') {
-        return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
-      }
-      const aStr = String(aVal).toLowerCase();
-      const bStr = String(bVal).toLowerCase();
-      if (aStr < bStr) return sortOrder === 'asc' ? -1 : 1;
-      if (aStr > bStr) return sortOrder === 'asc' ? 1 : -1;
+      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
   }
+
+  // Load the next rows when the end of the table scrolls into view.
+  useEffect(() => {
+    if (!onLoadMore || !hasMore || !sentinel.current) return;
+    const io = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting) && !loadingMore) onLoadMore(); }, { rootMargin: '400px' });
+    io.observe(sentinel.current);
+    return () => io.disconnect();
+  }, [onLoadMore, hasMore, loadingMore, sortedData.length]);
 
   function toggleRow(id: string) {
     if (!onSelectionChange) return;
@@ -111,12 +201,31 @@ export function Table<T extends Record<string, any>>({
 
   function toggleAll() {
     if (!onSelectionChange) return;
-    if (selectedIds.length === data.length) {
+    if (selectedIds.length === visible.length) {
       onSelectionChange([]);
     } else {
-      onSelectionChange(data.map(rowId));
+      onSelectionChange(visible.map(rowId));
     }
   }
+
+  const anyFilter = Object.values(filters).some(isFilterOn);
+  const applyFilter = (key: string, f: ColumnFilter | undefined) => {
+    const next = { ...filters };
+    if (f) next[key] = f; else delete next[key];
+    setFilters(next);
+    setOpenFilter(null);
+  };
+  const openDef = openFilter ? filterDefs.get(openFilter.key) : undefined;
+  const openCol = openFilter ? columns.find((c) => c.key === openFilter.key) : undefined;
+  const popover = openFilter && openDef && openCol ? (openDef.kind === 'date' ? (
+    <DateFilter anchor={openFilter.anchor} title={openCol.header} current={filters[openCol.key]}
+      countFor={controlled && filterOptions ? undefined : (from, to) => (from ? source.filter((r) => { const d = dayOf(openDef.value(r)); return !!d && d >= from && d <= (to || from); }).length : source.length)}
+      onApply={(f) => applyFilter(openCol.key, f)} onClose={() => setOpenFilter(null)} />
+  ) : (
+    <ValuesFilter anchor={openFilter.anchor} title={openCol.header} current={filters[openCol.key]}
+      loadOptions={() => (filterOptions ? filterOptions(openCol.key) : optionsFrom(source, openDef.value, openDef.label))}
+      onApply={(f) => applyFilter(openCol.key, f)} onClose={() => setOpenFilter(null)} />
+  )) : null;
 
   if (loading) {
     return (
@@ -128,7 +237,7 @@ export function Table<T extends Record<string, any>>({
     );
   }
 
-  if (data.length === 0 && !filterRow && !footerRows) {
+  if (data.length === 0 && !filterRow && !footerRows && !anyFilter) {
     return <div style={styles.empty}>{emptyMessage}</div>;
   }
 
@@ -155,7 +264,8 @@ export function Table<T extends Record<string, any>>({
 
   return (
     <div>
-      <div style={styles.wrapper}>
+      {popover}
+      <div ref={wrapRef} className={cssStyles.wrapper} data-wide={tooWide || undefined}>
         <table style={{ ...styles.table, ...(fixedLayout ? { tableLayout: 'fixed' as const } : {}) }}>
           <thead>
             {filterRow && (
@@ -169,34 +279,54 @@ export function Table<T extends Record<string, any>>({
                 <th style={{ ...styles.th, width: '40px' }}>
                   <input
                     type="checkbox"
-                    checked={selectedIds.length === data.length && data.length > 0}
+                    checked={selectedIds.length === visible.length && visible.length > 0}
                     onChange={toggleAll}
                     aria-label="Select all rows"
                   />
                 </th>
               )}
-              {columns.map((col) => (
-                <th
-                  key={col.key}
-                  style={{ ...styles.th, width: col.width, textAlign: col.align || 'left', cursor: col.sortable ? 'pointer' : 'default', ...col.headerStyle }}
-                  onClick={col.sortable ? () => handleSort(col.key) : undefined}
-                  aria-sort={sortKey === col.key ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
-                >
-                  {col.header}
-                  {col.sortable && (
-                    <span style={styles.sortIcon}>
-                      {sortKey === col.key ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
+              {columns.map((col) => {
+                const def = filterDefs.get(col.key);
+                const on = isFilterOn(filters[col.key]);
+                const sorted = sortKey === col.key;
+                return (
+                  <th
+                    key={col.key}
+                    className={cssStyles.stickyTh}
+                    style={{ ...styles.th, width: col.width, textAlign: col.align || 'left', ...col.headerStyle }}
+                    aria-sort={sorted ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
+                  >
+                    {/* Label, then the sort icon, then the filter icon beside it (David, 2026-11-02). */}
+                    <span style={{ ...styles.headWrap, justifyContent: col.align === 'right' ? 'flex-end' : col.align === 'center' ? 'center' : 'flex-start' }}>
+                      {col.sortable
+                        ? <button type="button" style={styles.headLabel} onClick={() => handleSort(col.key)}>{col.header}</button>
+                        : <span>{col.header}</span>}
+                      {col.sortable && (
+                        <button type="button" className={cssStyles.headIcon} data-on={sorted || undefined} onClick={() => handleSort(col.key)}
+                          aria-label={`Sort by ${col.header}`} title={`Sort by ${col.header}`}>
+                          <SortIcon dir={sorted ? sortOrder : undefined} />
+                        </button>
+                      )}
+                      {def && (
+                        <button type="button" className={cssStyles.headIcon} data-on={on || undefined}
+                          aria-label={`Filter ${col.header}`} title={`Filter ${col.header}`} aria-haspopup="dialog"
+                          aria-expanded={openFilter?.key === col.key}
+                          onClick={(e) => { const anchor = e.currentTarget.closest('th') as HTMLElement; setOpenFilter(openFilter?.key === col.key ? null : { key: col.key, anchor }); }}>
+                          <FunnelIcon on={on} />
+                          {on && <span className={cssStyles.headBadge}>{filters[col.key].values?.length || '•'}</span>}
+                        </button>
+                      )}
                     </span>
-                  )}
-                </th>
-              ))}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
-            {data.length === 0 && (
+            {visible.length === 0 && (
               <tr>
                 <td style={styles.td} colSpan={columns.length + (selectable ? 1 : 0)}>
-                  <div style={styles.empty}>{emptyMessage}</div>
+                  <div style={styles.empty}>{anyFilter && data.length > 0 ? 'Nothing matches these filters.' : emptyMessage}</div>
                 </td>
               </tr>
             )}
@@ -231,6 +361,13 @@ export function Table<T extends Record<string, any>>({
                 </tr>
               );
             })}
+            {onLoadMore && hasMore && (
+              <tr ref={sentinel}>
+                <td style={{ ...styles.td, ...styles.more }} colSpan={columns.length + (selectable ? 1 : 0)}>
+                  {loadingMore ? 'Loading more…' : <button type="button" style={styles.moreBtn} onClick={onLoadMore}>Show more</button>}
+                </td>
+              </tr>
+            )}
           </tbody>
           {footerRows && footerRows.length > 0 && (
             <tfoot>
@@ -277,7 +414,6 @@ function renderPagination(page: number, totalPages: number, onPageChange: (p: nu
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  wrapper: { overflowX: 'auto' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 'var(--table-font-size)' },
   th: {
     textAlign: 'left',
@@ -306,7 +442,10 @@ const styles: Record<string, React.CSSProperties> = {
   footerRow: { borderTop: '1px solid var(--color-border)', background: 'var(--color-surface)' },
   footerRowStrong: { borderTop: '2px solid var(--color-border)', background: 'var(--color-surface-hover)' },
   footerCell: { padding: 'var(--space-sm) var(--space-md)', color: 'var(--color-text)', fontWeight: 'var(--font-weight-bold)' as any, fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap' },
-  sortIcon: { color: 'var(--color-text-disabled)', fontSize: 'var(--font-size-sm)' },
+  headWrap: { display: 'inline-flex', alignItems: 'center', gap: '2px', width: '100%' },
+  headLabel: { border: 0, background: 'none', padding: 0, font: 'inherit', color: 'inherit', textTransform: 'inherit', letterSpacing: 'inherit', cursor: 'pointer', textAlign: 'inherit' },
+  more: { textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' },
+  moreBtn: { border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', borderRadius: 999, padding: '6px 14px', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-xs)', fontWeight: 600, cursor: 'pointer' },
   empty: { padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' },
   loading: { display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', padding: 'var(--space-md)' },
   skeleton: { height: '40px', borderRadius: 'var(--radius-md)', background: 'var(--color-surface-hover)' },

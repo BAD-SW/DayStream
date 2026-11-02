@@ -290,6 +290,8 @@ interface ExportFilters {
   created_to?: string;
   sort?: string;
   order?: 'asc' | 'desc';
+  /** Only these people (the list's filters, resolved by the caller). */
+  ids?: string[];
 }
 
 export async function exportCustomers(
@@ -302,8 +304,13 @@ export async function exportCustomers(
   let paramIndex = 2;
 
   if (filters?.lifecycle_stage) {
-    conditions.push(`lifecycle_stage = $${paramIndex++}`);
+    conditions.push(`lifecycle_stage = ${paramIndex++}`);
     params.push(filters.lifecycle_stage);
+  }
+
+  if (filters?.ids) {
+    conditions.push(`id = ANY(${paramIndex++}::uuid[])`);
+    params.push(filters.ids);
   }
 
   if (filters?.search) {

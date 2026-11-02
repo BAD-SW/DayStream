@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { parseColumnFilters } from '../utils/column-filters';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { tenantContext } from '../auth/tenant-context';
@@ -105,6 +106,22 @@ customersRouter.post('/', requirePermission('customers:*'), validate(createCusto
 });
 
 // GET /api/v1/customers — List/search customers
+// GET /api/v1/customers/column-values?column= — the values of one column, for its filter list.
+customersRouter.get('/column-values', requirePermission('customers:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id query parameter is required', 'VALIDATION_ERROR', 400); return; }
+    const values = await customerService.getColumnValues(businessId, String(req.query.column || ''), {
+      search: req.query.search as string,
+      ...peopleFilters(req),
+    });
+    success(res, values);
+  } catch (err: any) {
+    console.error('Failed to list column values', err?.message || err);
+    error(res, 'Failed to list column values', 'INTERNAL_ERROR', 500);
+  }
+});
+
 customersRouter.get('/', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
@@ -147,6 +164,7 @@ function peopleFilters(req: Request) {
   const q = req.query;
   const owner = q.owner as string | undefined;
   return {
+    columns: parseColumnFilters(q.cf),
     view: q.view as string | undefined,
     source: q.source as string | undefined,
     owner: owner === 'me' ? (req as AuthenticatedRequest).user.sub : owner,
@@ -196,6 +214,8 @@ const bulkFiltersSchema = Joi.object({
   owner: Joi.string(), incomplete: Joi.boolean(), segment_id: Joi.string().uuid(), include_archived: Joi.boolean(),
   ref: Joi.string(), first_name: Joi.string(), last_name: Joi.string(), email: Joi.string(), phone: Joi.string(),
   created_from: Joi.string(), created_to: Joi.string(), last_activity_from: Joi.string(), last_activity_to: Joi.string(),
+  // Column filters of the shared table (checked by parseColumnFilters).
+  columns: Joi.object().unknown(true),
 });
 
 const bulkSchema = Joi.object({
@@ -218,6 +238,7 @@ const BULK_BACKGROUND_THRESHOLD = 5000;
 function bulkTarget(req: Request) {
   const filters = req.body.filters ? { ...req.body.filters } : undefined;
   if (filters?.owner === 'me') filters.owner = (req as AuthenticatedRequest).user.sub;
+  if (filters?.columns) filters.columns = parseColumnFilters(filters.columns);
   return { ids: req.body.ids, filters };
 }
 
@@ -505,7 +526,13 @@ customersRouter.get('/export', requirePermission('customers:read'), async (req: 
       return;
     }
 
+    // The list's view, segment and column filters: export exactly the people the list shows.
+    const listFilters = peopleFilters(req);
+    const ids = (req.query.cf || req.query.view || req.query.segment_id)
+      ? await customerService.resolveBulkTarget(businessId, { filters: { search: req.query.search as string, ...listFilters } })
+      : undefined;
     const csv = await exportCustomers(businessId, {
+      ids,
       lifecycle_stage: req.query.lifecycle_stage as string,
       search: req.query.search as string,
       ref: req.query.ref as string,

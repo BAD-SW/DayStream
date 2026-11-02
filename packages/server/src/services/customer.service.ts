@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { ColumnFilters, FilterableColumn, addColumnFilterConditions, columnValuesSql } from '../utils/column-filters';
 import { logAudit } from './audit.service';
 import { logger } from '../middleware/logger';
 import { findOrCreatePerson, findPersonByContactPoint, normalisePhone, defaultRegionFor, PersonSource } from './person-identity.service';
@@ -59,6 +60,8 @@ interface CustomerFilters {
   include_archived?: boolean;
   last_activity_from?: string;
   last_activity_to?: string;
+  /** Column filters from the shared table (David, 2026-11-02). */
+  columns?: ColumnFilters;
 }
 
 /**
@@ -99,7 +102,7 @@ export async function createCustomer(input: CreateCustomerInput) {
 }
 
 /** Conditions shared by the list, the view counts and bulk actions. All columns are prefixed `c.`. */
-async function buildListConditions(businessId: string, filters: CustomerFilters, skipView = false) {
+async function buildListConditions(businessId: string, filters: CustomerFilters, skipView = false, skipColumn?: string) {
   const conditions = ['c.business_id = $1', "c.status NOT IN ('anonymized', 'merged')"];
   const params: any[] = [businessId];
   let paramIndex = 2;
@@ -188,12 +191,48 @@ async function buildListConditions(businessId: string, filters: CustomerFilters,
     paramIndex++;
   }
   if (filters.created_to) {
-    conditions.push(`c.created_at < ($${paramIndex}::date + INTERVAL '1 day')`);
+    conditions.push(`c.created_at < (${paramIndex}::date + INTERVAL '1 day')`);
     params.push(filters.created_to);
     paramIndex++;
   }
 
+  if (filters.columns) {
+    addColumnFilterConditions(filters.columns, PEOPLE_COLUMNS, conditions, params, PEOPLE_TZ, skipColumn);
+  }
+
   return { where: conditions.join(' AND '), params };
+}
+
+// The People list's filterable columns (keys as the table's columns).
+const PEOPLE_TZ = "COALESCE((SELECT b.timezone FROM sys_businesses b WHERE b.id = c.business_id), 'UTC')";
+const PEOPLE_COLUMNS: Record<string, FilterableColumn> = {
+  reference_number: { expr: 'c.reference_number' },
+  first_name: { expr: 'c.first_name' },
+  last_name: { expr: 'c.last_name' },
+  email: { expr: 'c.email' },
+  phone: { expr: 'c.phone' },
+  lifecycle_stage: { expr: 'c.lifecycle_stage' },
+  source: { expr: 'c.source' },
+  owner_name: {
+    expr: 'c.owner_user_id',
+    label: "(SELECT NULLIF(BTRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), '') FROM usr_users u WHERE u.id = c.owner_user_id)",
+  },
+  created_at: { expr: 'c.created_at', kind: 'date' },
+  last_activity_at: { expr: 'c.last_activity_at', kind: 'date' },
+  last_visit_at: { expr: 'c.last_visit_at', kind: 'date' },
+  last_login_at: { expr: '(SELECT u.last_login_at FROM usr_users u WHERE u.id = c.user_id)', kind: 'date' },
+};
+
+/**
+ * Every value of one column among the people that match the other filters, with counts, for
+ * the column's filter list (it shows all values, not only those on screen).
+ */
+export async function getColumnValues(businessId: string, column: string, filters: CustomerFilters) {
+  const col = PEOPLE_COLUMNS[column];
+  if (!col || col.kind === 'date') return [];
+  const { where, params } = await buildListConditions(businessId, filters, false, column);
+  const { rows } = await adminPool.query(columnValuesSql(col, 'cus_customers c', where), params);
+  return rows as Array<{ value: string; label: string; count: number }>;
 }
 
 /** The extra facts shown next to each person: owner, login, next booking, consent, incomplete. */
