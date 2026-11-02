@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import { CopyWidgetSnippetButton } from '../components/CopyWidgetSnippetButton';
 import { MultiSelect } from '../design-system/components/forms/MultiSelect';
+import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
+import { DraftSectionsProvider, useDraftSections, useDraft, useDraftList, fieldMark, checkMark, draftBox, UnsavedTag, RowTag } from '../components/unsaved/DraftSections';
+import { LeaveGuard, useGuardedNavigate } from '../components/unsaved/LeaveGuard';
+import { SaveChanges } from '../components/unsaved/SaveChanges';
 import * as servicesApi from '../api/services';
 import type { Service, ServiceVariant, ServiceCategory, AvailabilityRule } from '../api/services';
 import { formatCurrency } from '../utils/currency';
@@ -12,13 +16,25 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
   active: 'success', draft: 'neutral', paused: 'warning', archived: 'error',
 };
 
+// One Save for the service (David, 2026-11-02, as in Settings, Events and People): details,
+// variants, images and availability rules wait for Save changes; Activate, Pause, Archive and
+// Restore act straight away.
 export function ServiceDetail() {
+  return (
+    <DraftSectionsProvider>
+      <ServiceDetailPage />
+    </DraftSectionsProvider>
+  );
+}
+
+function ServiceDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   const [service, setService] = useState<Service | null>(null);
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [taxCategories, setTaxCategories] = useState<any[]>([]);
+  const { dirtySections } = useDraftSections();
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -41,97 +57,72 @@ export function ServiceDetail() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/offers?tab=services')}>← Back to Offerings</button>
+      <LeaveGuard when={dirtySections.length > 0} />
+      <StickyPageTop>
+        <button style={styles.back} onClick={() => navigate('/offers?tab=services')}>← Back to Offerings</button>
 
-      {/* Header Card */}
-      <div style={styles.headerCard}>
-        <div style={styles.headerInfo}>
-          <h1 style={styles.name}>{service.name}</h1>
-          <span style={styles.slug}>/{service.slug}</span>
-          {service.category_name && <span style={styles.categoryLabel}>{service.category_name}</span>}
+        {/* Header Card */}
+        <div style={styles.headerCard}>
+          <div style={styles.headerInfo}>
+            <h1 style={styles.name}>{service.name}</h1>
+            <span style={styles.slug}>/{service.slug}</span>
+            {service.category_name && <span style={styles.categoryLabel}>{service.category_name}</span>}
+          </div>
+          <div style={styles.headerRight}>
+            <div style={styles.saveRow}><SaveChanges /></div>
+            <div style={styles.saveRow}>
+              <Badge variant={STATUS_VARIANTS[service.status] || 'neutral'}>{service.status}</Badge>
+              <span style={styles.duration}>{service.default_duration} min</span>
+              <CopyWidgetSnippetButton
+                productId={service.id}
+                productName={service.name}
+                action="book"
+                enabled={service.online_booking_enabled}
+                disabledReason="Enable online booking to get a widget snippet"
+              />
+            </div>
+          </div>
         </div>
-        <div style={styles.headerRight}>
-          <Badge variant={STATUS_VARIANTS[service.status] || 'neutral'}>{service.status}</Badge>
-          <span style={styles.duration}>{service.default_duration} min</span>
-          <CopyWidgetSnippetButton
-            productId={service.id}
-            productName={service.name}
-            action="book"
-            enabled={service.online_booking_enabled}
-            disabledReason="Enable online booking to get a widget snippet"
-          />
-        </div>
-      </div>
+      </StickyPageTop>
 
       {/* Content */}
       <ServiceForm service={service} categories={categories} taxCategories={taxCategories} businessId={businessId} onUpdate={setService} />
-      <VariantsCard service={service} onUpdate={setService} />
+      <VariantsCard service={service} />
       <ImagesCard service={service} businessId={businessId} />
-      <AvailabilityCard service={service} businessId={businessId} />
+      <AvailabilityCard service={service} />
     </div>
   );
 }
 
-// --- Service Form (always editable with save bar) ---
+// --- Service Form (always editable; saved with the page's Save changes) ---
 
 function ServiceForm({ service, categories, taxCategories, businessId, onUpdate }: { service: Service; categories: ServiceCategory[]; taxCategories: any[]; businessId: string; onUpdate: (s: Service) => void }) {
-  const [saving, setSaving] = useState(false);
   const [statusChanging, setStatusChanging] = useState(false);
-  const [form, setForm] = useState({
-    name: service.name,
-    category_id: service.category_id || '',
-    description: service.description || '',
-    short_description: service.short_description || '',
-    booking_type: service.booking_type,
-    default_duration: service.default_duration,
-    buffer_before: service.buffer_before,
-    buffer_after: service.buffer_after,
-    max_capacity: service.max_capacity,
-    online_booking_enabled: service.online_booking_enabled,
-    requires_dedicated_staff: service.requires_dedicated_staff !== false,
-    is_taxable: (service as any).is_taxable || false,
-    tax_category_id: (service as any).tax_category_id || '',
+  const fromService = (s: Service) => ({
+    name: s.name,
+    category_id: s.category_id || '',
+    description: s.description || '',
+    short_description: s.short_description || '',
+    booking_type: s.booking_type,
+    default_duration: s.default_duration,
+    buffer_before: s.buffer_before,
+    buffer_after: s.buffer_after,
+    max_capacity: s.max_capacity,
+    online_booking_enabled: s.online_booking_enabled,
+    requires_dedicated_staff: s.requires_dedicated_staff !== false,
+    is_taxable: (s as any).is_taxable || false,
+    tax_category_id: (s as any).tax_category_id || '',
   });
-
-  const isDirty = form.name !== service.name ||
-    form.category_id !== (service.category_id || '') ||
-    form.description !== (service.description || '') ||
-    form.short_description !== (service.short_description || '') ||
-    form.booking_type !== service.booking_type ||
-    form.default_duration !== service.default_duration ||
-    form.buffer_before !== service.buffer_before ||
-    form.buffer_after !== service.buffer_after ||
-    form.max_capacity !== service.max_capacity ||
-    form.online_booking_enabled !== service.online_booking_enabled ||
-    form.requires_dedicated_staff !== (service.requires_dedicated_staff !== false) ||
-    form.is_taxable !== ((service as any).is_taxable || false) ||
-    form.tax_category_id !== ((service as any).tax_category_id || '');
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const updated = await servicesApi.updateService(service.id, businessId, form);
-      onUpdate(updated);
-    } catch { alert('Failed to save changes'); }
-    finally { setSaving(false); }
-  };
-
-  const handleDiscard = () => {
-    setForm({
-      name: service.name,
-      category_id: service.category_id || '',
-      description: service.description || '',
-      short_description: service.short_description || '',
-      booking_type: service.booking_type,
-      default_duration: service.default_duration,
-      buffer_before: service.buffer_before,
-      buffer_after: service.buffer_after,
-      max_capacity: service.max_capacity,
-      online_booking_enabled: service.online_booking_enabled,
-      is_taxable: (service as any).is_taxable || false,
-      tax_category_id: (service as any).tax_category_id || '',
-    });
-  };
+  const draft = useDraft('service-details', 'Service details', fromService(service), async (values) => {
+    await servicesApi.updateService(service.id, businessId, values);
+    // Read it back whole: the update's reply leaves out the category name shown in the header.
+    const updated = await servicesApi.getService(service.id, businessId);
+    onUpdate(updated);
+    return fromService(updated);
+  });
+  const form = draft.value;
+  const setForm = draft.setValue;
+  const mark = (key: keyof typeof form) => fieldMark(draft.changed((v) => v[key]));
 
   const handleStatusAction = async (action: string) => {
     setStatusChanging(true);
@@ -159,38 +150,27 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
         </div>
       </div>
 
-      {/* Save bar */}
-      {isDirty && (
-        <div style={styles.saveBar}>
-          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>You have unsaved changes</span>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Button variant="outline" size="sm" onClick={handleDiscard}>Discard</Button>
-            <Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button>
-          </div>
-        </div>
-      )}
-
       {/* Service Details Card */}
-      <div style={styles.card}>
+      <div style={{ ...styles.card, ...draftBox(draft.dirty) }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Service Details</h3>
+          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Service Details<UnsavedTag dirty={draft.dirty} /></h3>
           <Button size="sm" variant="secondary" onClick={() => { /* TODO: trigger translation */ }}>Translate</Button>
         </div>
         <div style={styles.formGrid}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Name *</label>
-            <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <input style={{ ...styles.input, ...mark('name') }} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Category</label>
-            <select style={styles.input} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
+            <select style={{ ...styles.input, ...mark('category_id') }} value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
               <option value="">None</option>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Booking Type</label>
-            <select style={styles.input} value={form.booking_type} onChange={(e) => setForm({ ...form, booking_type: e.target.value })}>
+            <select style={{ ...styles.input, ...mark('booking_type') }} value={form.booking_type} onChange={(e) => setForm({ ...form, booking_type: e.target.value })}>
               <option value="individual">Individual</option>
               <option value="shared">Shared</option>
               <option value="group">Group</option>
@@ -199,47 +179,47 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Duration (min)</label>
-            <input style={styles.input} type="number" min={5} value={form.default_duration} onChange={(e) => setForm({ ...form, default_duration: Number(e.target.value) })} />
+            <input style={{ ...styles.input, ...mark('default_duration') }} type="number" min={5} value={form.default_duration} onChange={(e) => setForm({ ...form, default_duration: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Buffer Before (min)</label>
-            <input style={styles.input} type="number" min={0} value={form.buffer_before} onChange={(e) => setForm({ ...form, buffer_before: Number(e.target.value) })} />
+            <input style={{ ...styles.input, ...mark('buffer_before') }} type="number" min={0} value={form.buffer_before} onChange={(e) => setForm({ ...form, buffer_before: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Buffer After (min)</label>
-            <input style={styles.input} type="number" min={0} value={form.buffer_after} onChange={(e) => setForm({ ...form, buffer_after: Number(e.target.value) })} />
+            <input style={{ ...styles.input, ...mark('buffer_after') }} type="number" min={0} value={form.buffer_after} onChange={(e) => setForm({ ...form, buffer_after: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Max Capacity</label>
-            <input style={styles.input} type="number" min={1} value={form.max_capacity} onChange={(e) => setForm({ ...form, max_capacity: Number(e.target.value) })} />
+            <input style={{ ...styles.input, ...mark('max_capacity') }} type="number" min={1} value={form.max_capacity} onChange={(e) => setForm({ ...form, max_capacity: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>&nbsp;</label>
             <div style={{ display: 'flex', gap: '24px', paddingTop: '4px' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
-                <input type="checkbox" checked={form.online_booking_enabled} onChange={(e) => setForm({ ...form, online_booking_enabled: e.target.checked })} style={{ width: '16px', height: '16px' }} />
+                <input type="checkbox" checked={form.online_booking_enabled} onChange={(e) => setForm({ ...form, online_booking_enabled: e.target.checked })} style={{ width: '16px', height: '16px', ...checkMark(draft.changed((v) => v.online_booking_enabled)) }} />
                 Online Booking
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer' }}>
-                <input type="checkbox" checked={form.requires_dedicated_staff} onChange={(e) => setForm({ ...form, requires_dedicated_staff: e.target.checked })} style={{ width: '16px', height: '16px' }} />
+                <input type="checkbox" checked={form.requires_dedicated_staff} onChange={(e) => setForm({ ...form, requires_dedicated_staff: e.target.checked })} style={{ width: '16px', height: '16px', ...checkMark(draft.changed((v) => v.requires_dedicated_staff)) }} />
                 Requires Dedicated Staff
               </label>
             </div>
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Tax Category</label>
-            <select style={styles.input} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
+            <select style={{ ...styles.input, ...mark('tax_category_id') }} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
               <option value="">No tax</option>
               {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
             </select>
           </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
             <label style={styles.label}>Short Description</label>
-            <input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />
+            <input style={{ ...styles.input, ...mark('short_description') }} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />
           </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
             <label style={styles.label}>Description</label>
-            <textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            <textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%', ...mark('description') }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
         </div>
       </div>
@@ -247,105 +227,102 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
   );
 }
 
-// --- Variants Card (with modal add/edit) ---
+// --- Variants Card (add/edit in a window; saved with the page's Save changes) ---
 
-function VariantsCard({ service }: { service: Service; onUpdate: (s: Service) => void }) {
-  const [variants, setVariants] = useState<ServiceVariant[]>(service.variants || []);
-  const [showModal, setShowModal] = useState(false);
-  const [editingVariant, setEditingVariant] = useState<ServiceVariant | undefined>(undefined);
+type VariantData = Pick<ServiceVariant, 'name' | 'duration' | 'price' | 'pricing_model' | 'billing_interval' | 'included_sessions' | 'no_show_fee'>;
+const variantData = (v: VariantData): VariantData => ({
+  name: v.name, duration: v.duration, price: v.price, pricing_model: v.pricing_model,
+  billing_interval: v.pricing_model === 'subscription' ? v.billing_interval : undefined,
+  included_sessions: v.pricing_model === 'subscription' ? v.included_sessions ?? null : undefined,
+  no_show_fee: v.no_show_fee ?? null,
+} as VariantData);
 
-  const handleDelete = async (variantId: string) => {
-    if (!confirm('Delete this variant?')) return;
-    try {
-      await servicesApi.deleteVariant(service.id, variantId);
-      setVariants(variants.filter((v) => v.id !== variantId));
-    } catch { /* silent */ }
-  };
+function VariantsCard({ service }: { service: Service }) {
+  const list = useDraftList<ServiceVariant>('service-variants', 'Variants', {
+    create: (v) => servicesApi.createVariant(service.id, variantData(v)),
+    update: (v) => servicesApi.updateVariant(service.id, v.id, variantData(v)),
+    remove: (v) => servicesApi.deleteVariant(service.id, v.id),
+  });
+  const [editing, setEditing] = useState<{ key?: string; variant?: ServiceVariant } | null>(null);
+  useEffect(() => { list.load(service.variants || []); }, [service.id, list.load]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSaved = async () => {
-    setShowModal(false);
-    setEditingVariant(undefined);
-    const updated = await servicesApi.getVariants(service.id);
-    setVariants(updated);
-  };
-
+  const shown = list.rows.filter((r) => !r.deleted);
   return (
-    <div style={styles.card}>
+    <div style={{ ...styles.card, ...draftBox(list.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Variants</h3>
-        <Button size="sm" variant="secondary" onClick={() => { setEditingVariant(undefined); setShowModal(true); }}>Add Variant</Button>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Variants<UnsavedTag dirty={list.dirty} /></h3>
+        <Button size="sm" variant="secondary" onClick={() => setEditing({})}>Add Variant</Button>
       </div>
 
-      {variants.length === 0 && <p style={styles.muted}>No variants yet. Add at least one variant to activate this service.</p>}
-      {variants.length > 0 && (
+      {shown.length === 0 && <p style={styles.muted}>No variants yet. Add at least one variant to activate this service.</p>}
+      {list.rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {variants.map((v) => (
-            <div key={v.id} style={styles.variantRow}>
-              <div style={{ flex: 1 }}>
-                <strong>{v.name}</strong> — {v.duration} min — {formatCurrency(v.price)}
-                {v.pricing_model === 'subscription' && <Badge variant="info">{`Sub: ${v.billing_interval || 'monthly'}`}</Badge>}
-                {v.no_show_fee != null && v.no_show_fee > 0 && <Badge variant="neutral">{`No-show: ${formatCurrency(v.no_show_fee)}`}</Badge>}
+          {list.rows.map((r) => {
+            const v = r.item;
+            const edited = !r.isNew && !r.deleted && list.changed(r, (x) => variantData(x));
+            return (
+              <div key={r.key} style={{ ...styles.variantRow, opacity: r.deleted ? 0.6 : 1, ...(edited ? fieldMark(true) : {}) }}>
+                <div style={{ flex: 1 }}>
+                  {r.deleted ? <s><strong>{v.name}</strong> — {v.duration} min — {formatCurrency(v.price)}</s>
+                    : <><strong>{v.name}</strong> — {v.duration} min — {formatCurrency(v.price)}</>}
+                  {v.pricing_model === 'subscription' && <Badge variant="info">{`Sub: ${v.billing_interval || 'monthly'}`}</Badge>}
+                  {v.no_show_fee != null && v.no_show_fee > 0 && <Badge variant="neutral">{`No-show: ${formatCurrency(v.no_show_fee)}`}</Badge>}
+                  {r.isNew && <> <RowTag>New</RowTag></>}
+                  {edited && <> <RowTag>Changed</RowTag></>}
+                  {r.deleted && <> <RowTag>Deleted when you save</RowTag></>}
+                </div>
+                {!r.isNew && <Badge variant={STATUS_VARIANTS[v.status] || 'neutral'}>{v.status}</Badge>}
+                {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button> : <>
+                  <button style={styles.editBtn} onClick={() => setEditing({ key: r.key, variant: v })} title="Edit">✏️</button>
+                  <button style={styles.deleteBtn} onClick={() => list.remove(r.key)} title="Delete">×</button>
+                </>}
               </div>
-              <Badge variant={STATUS_VARIANTS[v.status] || 'neutral'}>{v.status}</Badge>
-              <button style={styles.editBtn} onClick={() => { setEditingVariant(v); setShowModal(true); }} title="Edit">✏️</button>
-              <button style={styles.deleteBtn} onClick={() => handleDelete(v.id)} title="Delete">×</button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* Variant Modal */}
-      {showModal && (
+      {editing && (
         <ServiceVariantModal
-          serviceId={service.id}
-          variant={editingVariant}
-          onClose={() => { setShowModal(false); setEditingVariant(undefined); }}
-          onSaved={handleSaved}
+          variant={editing.variant}
+          onClose={() => setEditing(null)}
+          onDone={(data) => {
+            if (editing.key) list.edit(editing.key, data);
+            else list.add({ ...data, status: 'active' } as ServiceVariant);
+            setEditing(null);
+          }}
         />
       )}
     </div>
   );
 }
 
-function ServiceVariantModal({ serviceId, variant, onClose, onSaved }: { serviceId: string; variant?: ServiceVariant; onClose: () => void; onSaved: () => void }) {
+function ServiceVariantModal({ variant, onClose, onDone }: { variant?: ServiceVariant; onClose: () => void; onDone: (data: VariantData) => void }) {
   const [form, setForm] = useState({
     name: variant?.name || '',
     duration: variant?.duration || 60,
-    price: variant?.price || 0,
     pricing_model: variant?.pricing_model || 'per_session',
     billing_interval: variant?.billing_interval || 'monthly',
     included_sessions: variant?.included_sessions ? String(variant.included_sessions) : '',
-    no_show_fee: variant?.no_show_fee ?? null,
   });
   const [priceDisplay, setPriceDisplay] = useState(variant ? (variant.price / 100).toFixed(2) : '0.00');
   const [noShowFeeDisplay, setNoShowFeeDisplay] = useState(
     variant?.no_show_fee != null ? (variant.no_show_fee / 100).toFixed(2) : '',
   );
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name) { setError('Name is required'); return; }
-    setSaving(true);
-    setError('');
-    try {
-      const data: any = { name: form.name, duration: form.duration, price: form.price, pricing_model: form.pricing_model };
-      if (form.pricing_model === 'subscription') {
-        data.billing_interval = form.billing_interval;
-        data.included_sessions = form.included_sessions ? parseInt(form.included_sessions) : null;
-      }
+    onDone(variantData({
+      name: form.name, duration: form.duration, pricing_model: form.pricing_model,
+      price: Math.round(parseFloat(priceDisplay || '0') * 100),
+      billing_interval: form.billing_interval,
+      included_sessions: form.included_sessions ? parseInt(form.included_sessions) : null,
       // No-show fee: blank = null (no fee); otherwise cents
-      data.no_show_fee = noShowFeeDisplay.trim() === '' ? null : Math.round(parseFloat(noShowFeeDisplay) * 100);
-      if (variant) {
-        await servicesApi.updateVariant(serviceId, variant.id, data);
-      } else {
-        await servicesApi.createVariant(serviceId, data);
-      }
-      onSaved();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to save variant');
-    } finally { setSaving(false); }
+      no_show_fee: noShowFeeDisplay.trim() === '' ? null : Math.round(parseFloat(noShowFeeDisplay) * 100),
+    } as VariantData));
   };
 
   return (
@@ -369,7 +346,7 @@ function ServiceVariantModal({ serviceId, variant, onClose, onSaved }: { service
             <label style={styles.label}>Price *</label>
             <input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay}
               onChange={(e) => setPriceDisplay(e.target.value)}
-              onBlur={() => { const cents = Math.round(parseFloat(priceDisplay || '0') * 100); setForm({ ...form, price: cents }); setPriceDisplay((cents / 100).toFixed(2)); }}
+              onBlur={() => setPriceDisplay((Math.round(parseFloat(priceDisplay || '0') * 100) / 100).toFixed(2))}
             />
           </div>
           <div style={styles.formGroup}>
@@ -404,9 +381,10 @@ function ServiceVariantModal({ serviceId, variant, onClose, onSaved }: { service
               </div>
             </>
           )}
+          <p style={{ ...styles.muted, fontSize: 'var(--font-size-xs)' }}>Saved with the page's Save changes.</p>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button type="submit" loading={saving}>{variant ? 'Save Changes' : 'Add Variant'}</Button>
+            <Button type="submit">{variant ? 'Done' : 'Add Variant'}</Button>
           </div>
         </form>
       </div>
@@ -414,117 +392,145 @@ function ServiceVariantModal({ serviceId, variant, onClose, onSaved }: { service
   );
 }
 
-// --- Images Card ---
+// --- Images Card (uploads and deletions wait for the page's Save changes) ---
 
 function ImagesCard({ service, businessId }: { service: Service; businessId: string }) {
   const [images, setImages] = useState(service.images || []);
-  const [uploading, setUploading] = useState(false);
+  type Pending = { added: Array<{ key: string; file: File; url: string }>; removed: string[] };
+  const draft = useDraft<Pending>('service-images', 'Images', { added: [], removed: [] }, async (d) => {
+    const left: Pending = { added: [...d.added], removed: [...d.removed] };
+    let now = images;
+    try {
+      for (const a of d.added) { const img = await servicesApi.uploadImage(service.id, businessId, a.file); now = [...now, img]; left.added.shift(); }
+      for (const id of d.removed) { await servicesApi.deleteImage(service.id, id); now = now.filter((i) => i.id !== id); left.removed.shift(); }
+    } catch (err) { setImages(now); draft.rebase({ added: [], removed: [] }, left); throw err; }
+    setImages(now);
+    return { added: [], removed: [] };
+  });
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setUploading(true);
-    try {
-      const img = await servicesApi.uploadImage(service.id, businessId, file);
-      setImages([...images, img]);
-    } catch { alert('Failed to upload image'); }
-    finally { setUploading(false); }
+    draft.setValue({ ...draft.value, added: [...draft.value.added, { key: `${Date.now()}-${file.name}`, file, url: URL.createObjectURL(file) }] });
+    e.target.value = '';
   };
-
-  const handleDelete = async (imageId: string) => {
-    if (!confirm('Delete this image?')) return;
-    await servicesApi.deleteImage(service.id, imageId);
-    setImages(images.filter((i) => i.id !== imageId));
-  };
+  const toggleRemove = (id: string) => draft.setValue({ ...draft.value, removed: draft.value.removed.includes(id) ? draft.value.removed.filter((x) => x !== id) : [...draft.value.removed, id] });
 
   return (
-    <div style={styles.card}>
+    <div style={{ ...styles.card, ...draftBox(draft.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Images</h3>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Images<UnsavedTag dirty={draft.dirty} /></h3>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--color-text)' }}>
-          {uploading ? 'Uploading...' : 'Upload Image'}
-          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleUpload} style={{ display: 'none' }} disabled={uploading} />
+          Upload Image
+          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePick} style={{ display: 'none' }} />
         </label>
       </div>
-      {images.length === 0 && <p style={styles.muted}>No images uploaded</p>}
-      {images.length > 0 && (
+      {images.length === 0 && draft.value.added.length === 0 && <p style={styles.muted}>No images uploaded</p>}
+      {(images.length > 0 || draft.value.added.length > 0) && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 'var(--space-md)' }}>
-          {images.map((img) => (
-            <div key={img.id} style={{ position: 'relative', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-              <img src={img.urls?.thumbnail || ''} alt={img.alt_text || ''} style={{ width: '100%', height: '80px', objectFit: 'cover' }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 6px' }}>
-                {img.is_primary && <Badge variant="success">Primary</Badge>}
-                <button style={styles.deleteBtn} onClick={() => handleDelete(img.id)}>×</button>
+          {images.map((img) => {
+            const gone = draft.value.removed.includes(img.id);
+            return (
+              <div key={img.id} style={{ position: 'relative', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden', opacity: gone ? 0.5 : 1 }}>
+                <img src={img.urls?.thumbnail || ''} alt={img.alt_text || ''} style={{ width: '100%', height: '80px', objectFit: 'cover' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px', padding: '4px 6px', flexWrap: 'wrap' }}>
+                  {gone ? <RowTag>Deleted when you save</RowTag> : img.is_primary && <Badge variant="success">Primary</Badge>}
+                  {gone ? <Button size="sm" variant="ghost" onClick={() => toggleRemove(img.id)}>Undo</Button>
+                    : <button style={styles.deleteBtn} title="Delete" onClick={() => toggleRemove(img.id)}>×</button>}
+                </div>
+              </div>
+            );
+          })}
+          {draft.value.added.map((a) => (
+            <div key={a.key} style={{ position: 'relative', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+              <img src={a.url} alt={a.file.name} style={{ width: '100%', height: '80px', objectFit: 'cover' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px' }}>
+                <RowTag>New</RowTag>
+                <button style={styles.deleteBtn} title="Remove" onClick={() => draft.setValue({ ...draft.value, added: draft.value.added.filter((x) => x.key !== a.key) })}>×</button>
               </div>
             </div>
           ))}
         </div>
       )}
-      <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>Accepted: JPEG, PNG, or WebP. Max 5MB. Min 400×300px.</p>
+      <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>Accepted: JPEG, PNG, or WebP. Max 5MB. Min 400×300px. Uploaded when you press Save changes.</p>
     </div>
   );
 }
 
-// --- Availability Card ---
+// --- Availability Card (add/edit in a window; saved with the page's Save changes) ---
 
-function AvailabilityCard({ service }: { service: Service; businessId: string }) {
-  const [rules, setRules] = useState<AvailabilityRule[]>(service.availability || []);
-  const [showModal, setShowModal] = useState(false);
-  const [editingRule, setEditingRule] = useState<AvailabilityRule | undefined>(undefined);
+type RuleData = Partial<AvailabilityRule> & { location_ids?: string[]; staff_ids?: string[]; resource_ids?: string[] };
+
+function AvailabilityCard({ service }: { service: Service }) {
+  const list = useDraftList<AvailabilityRule & RuleData>('service-availability', 'Availability', {
+    create: (r) => servicesApi.createAvailabilityRule(service.id, ruleData(r)),
+    update: (r) => servicesApi.updateAvailabilityRule(service.id, r.id, ruleData(r)),
+    remove: (r) => servicesApi.deleteAvailabilityRule(service.id, r.id),
+  });
+  const [editing, setEditing] = useState<{ key?: string; rule?: AvailabilityRule } | null>(null);
+  useEffect(() => { list.load((service.availability || []) as any); }, [service.id, list.load]); // eslint-disable-line react-hooks/exhaustive-deps
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  const handleDelete = async (ruleId: string) => {
-    if (!confirm('Delete this availability rule?')) return;
-    try {
-      await servicesApi.deleteAvailabilityRule(service.id, ruleId);
-      setRules(rules.filter((r) => r.id !== ruleId));
-    } catch { alert('Failed to delete rule'); }
-  };
-
-  const handleSaved = async () => {
-    setShowModal(false);
-    setEditingRule(undefined);
-    const updated = await servicesApi.getAvailability(service.id);
-    setRules(updated);
-  };
-
   return (
-    <div style={styles.card}>
+    <div style={{ ...styles.card, ...draftBox(list.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Availability</h3>
-        <Button size="sm" variant="secondary" onClick={() => { setEditingRule(undefined); setShowModal(true); }}>Add Rule</Button>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Availability<UnsavedTag dirty={list.dirty} /></h3>
+        <Button size="sm" variant="secondary" onClick={() => setEditing({})}>Add Rule</Button>
       </div>
-      {rules.length === 0 && <p style={styles.muted}>No availability rules. Service is available anytime.</p>}
-      {rules.length > 0 && (
+      {list.rows.length === 0 && <p style={styles.muted}>No availability rules. Service is available anytime.</p>}
+      {list.rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {rules.map((rule) => (
-            <div key={rule.id} style={styles.variantRow}>
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <Badge variant="neutral">{rule.rule_type}</Badge>
-                {rule.rule_type === 'recurring' && <span>{[...(rule.days_of_week || [])].sort((a, b) => a - b).map((d) => dayNames[d]).join(', ')} {rule.start_time}–{rule.end_time}</span>}
-                {rule.rule_type === 'seasonal' && <span>{rule.effective_from} to {rule.effective_to} {rule.start_time}–{rule.end_time}</span>}
-                {rule.description && <span style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>— {rule.description}</span>}
+          {list.rows.map((r) => {
+            const rule = r.item;
+            const edited = !r.isNew && !r.deleted && list.changed(r, (x) => ruleData(x));
+            return (
+              <div key={r.key} style={{ ...styles.variantRow, opacity: r.deleted ? 0.6 : 1, ...(edited ? fieldMark(true) : {}) }}>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', textDecoration: r.deleted ? 'line-through' : 'none' }}>
+                  <Badge variant="neutral">{rule.rule_type}</Badge>
+                  {rule.rule_type === 'recurring' && <span>{[...(rule.days_of_week || [])].sort((a, b) => a - b).map((d) => dayNames[d]).join(', ')} {rule.start_time}–{rule.end_time}</span>}
+                  {rule.rule_type === 'seasonal' && <span>{rule.effective_from} to {rule.effective_to} {rule.start_time}–{rule.end_time}</span>}
+                  {rule.description && <span style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>— {rule.description}</span>}
+                  {r.isNew && <RowTag>New</RowTag>}
+                  {edited && <RowTag>Changed</RowTag>}
+                  {r.deleted && <RowTag>Deleted when you save</RowTag>}
+                </div>
+                {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button> : <>
+                  <button style={styles.editBtn} onClick={() => setEditing({ key: r.key, rule })} title="Edit">✏️</button>
+                  <button style={styles.deleteBtn} onClick={() => list.remove(r.key)} title="Delete">×</button>
+                </>}
               </div>
-              <button style={styles.editBtn} onClick={() => { setEditingRule(rule); setShowModal(true); }} title="Edit">✏️</button>
-              <button style={styles.deleteBtn} onClick={() => handleDelete(rule.id)} title="Delete">×</button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {showModal && (
+      {editing && (
         <AvailabilityModal
-          serviceId={service.id}
-          rule={editingRule}
-          onClose={() => { setShowModal(false); setEditingRule(undefined); }}
-          onSaved={handleSaved}
+          rule={editing.rule}
+          onClose={() => setEditing(null)}
+          onDone={(data) => {
+            if (editing.key) list.edit(editing.key, data as any);
+            else list.add(data as any);
+            setEditing(null);
+          }}
         />
       )}
     </div>
   );
 }
 
-function AvailabilityModal({ serviceId, rule, onClose, onSaved }: { serviceId: string; rule?: AvailabilityRule; onClose: () => void; onSaved: () => void }) {
+// What is sent for a rule: the fields of its type only; empty lists are left out.
+function ruleData(r: RuleData): RuleData {
+  const data: RuleData = { rule_type: r.rule_type, description: r.description || undefined };
+  if (r.rule_type === 'recurring') { data.days_of_week = r.days_of_week; data.start_time = r.start_time; data.end_time = r.end_time; }
+  else if (r.rule_type === 'seasonal') { data.days_of_week = r.days_of_week && r.days_of_week.length > 0 ? r.days_of_week : undefined; data.start_time = r.start_time; data.end_time = r.end_time; data.effective_from = r.effective_from; data.effective_to = r.effective_to; }
+  if (r.location_ids && r.location_ids.length > 0) data.location_ids = r.location_ids;
+  if (r.staff_ids && r.staff_ids.length > 0) data.staff_ids = r.staff_ids;
+  if (r.resource_ids && r.resource_ids.length > 0) data.resource_ids = r.resource_ids;
+  return data;
+}
+
+function AvailabilityModal({ rule, onClose, onDone }: { rule?: AvailabilityRule; onClose: () => void; onDone: (data: RuleData) => void }) {
   const businessId = localStorage.getItem('business_id') || '';
   const [form, setForm] = useState({
     rule_type: rule?.rule_type || 'recurring',
@@ -538,8 +544,6 @@ function AvailabilityModal({ serviceId, rule, onClose, onSaved }: { serviceId: s
     staff_ids: (rule as any)?.staff_ids || [] as string[],
     resource_ids: (rule as any)?.resource_ids || [] as string[],
   });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const [allLocations, setAllLocations] = useState<any[]>([]);
   const [allStaff, setAllStaff] = useState<any[]>([]);
   const [allResources, setAllResources] = useState<any[]>([]);
@@ -555,22 +559,9 @@ function AvailabilityModal({ serviceId, rule, onClose, onSaved }: { serviceId: s
     setForm({ ...form, days_of_week: form.days_of_week.includes(day) ? form.days_of_week.filter((d) => d !== day) : [...form.days_of_week, day] });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
-    setError('');
-    try {
-      const data: any = { rule_type: form.rule_type, description: form.description || undefined };
-      if (form.rule_type === 'recurring') { data.days_of_week = form.days_of_week; data.start_time = form.start_time; data.end_time = form.end_time; }
-      else if (form.rule_type === 'seasonal') { data.days_of_week = form.days_of_week.length > 0 ? form.days_of_week : undefined; data.start_time = form.start_time; data.end_time = form.end_time; data.effective_from = form.effective_from; data.effective_to = form.effective_to; }
-      if (form.location_ids.length > 0) data.location_ids = form.location_ids;
-      if (form.staff_ids.length > 0) data.staff_ids = form.staff_ids;
-      if (form.resource_ids.length > 0) data.resource_ids = form.resource_ids;
-      if (rule) { await servicesApi.updateAvailabilityRule(serviceId, rule.id, data); }
-      else { await servicesApi.createAvailabilityRule(serviceId, data); }
-      onSaved();
-    } catch (err: any) { setError(err.response?.data?.error || 'Failed to save rule'); }
-    finally { setSaving(false); }
+    onDone({ ...form, rule_type: form.rule_type as AvailabilityRule['rule_type'] });
   };
 
   return (
@@ -580,7 +571,6 @@ function AvailabilityModal({ serviceId, rule, onClose, onSaved }: { serviceId: s
           <h3 style={styles.modalTitle}>{rule ? 'Edit Availability Rule' : 'Add Availability Rule'}</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
         </div>
-        {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: '0 0 8px 0' }}>{error}</p>}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Rule Type</label>
@@ -638,9 +628,10 @@ function AvailabilityModal({ serviceId, rule, onClose, onSaved }: { serviceId: s
             />
           )}
           <div style={styles.formGroup}><label style={styles.label}>Description (optional)</label><input style={styles.input} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <p style={{ ...styles.muted, fontSize: 'var(--font-size-xs)' }}>Saved with the page's Save changes.</p>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button type="submit" loading={saving}>{rule ? 'Save Changes' : 'Add Rule'}</Button>
+            <Button type="submit">{rule ? 'Done' : 'Add Rule'}</Button>
           </div>
         </form>
       </div>
@@ -658,7 +649,8 @@ const styles: Record<string, React.CSSProperties> = {
   name: { margin: 0, fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)' },
   slug: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   categoryLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
-  headerRight: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: '4px' },
+  headerRight: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: '6px' },
+  saveRow: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' },
   duration: { fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)' },
   actionsBar: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: 'var(--space-md)' },
   saveBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-sm) var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-primary)' },
