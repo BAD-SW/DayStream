@@ -76,9 +76,11 @@ export function DraftTab({ tab, children }: { tab: string; children: ReactNode }
  * pass `persist` (stores the value; may return the stored result) to register the
  * section with the page's Save.
  */
-export function useDraft<T>(id: string, label: string, initial: T, persist: (value: T) => Promise<T | void>) {
+export function useDraft<T>(id: string, label: string, initial: T, persist: (value: T) => Promise<T | void>, options?: { tab?: string }) {
   const ctx = useContext(DraftContext);
-  const tab = useContext(TabContext);
+  const tabFromContext = useContext(TabContext);
+  // The tab can be named here when the section is not inside a DraftTab (e.g. forms of one component).
+  const tab = options?.tab ?? tabFromContext;
   const [value, setValue] = useState<T>(initial);
   const [saved, setSaved] = useState<T>(initial);
   const dirty = JSON.stringify(value) !== JSON.stringify(saved);

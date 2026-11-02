@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
-import { Tabs } from '../design-system/components/navigation/Tabs';
+import { TabBar } from '../design-system/components/navigation/TabBar';
+import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
+import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, fieldMark, draftBox } from '../components/unsaved/DraftSections';
+import { LeaveGuard } from '../components/unsaved/LeaveGuard';
+import { SaveChanges } from '../components/unsaved/SaveChanges';
 import { TableActionButton } from '../design-system/components/actions/TableActionButton';
 import * as apApi from '../api/accounts-payable';
 import { formatCurrency } from '../utils/currency';
@@ -10,7 +14,42 @@ import { PayrollTab } from './PayrollTab';
 
 const BILL_STATUS: Record<string, 'success' | 'warning' | 'error' | 'neutral'> = { draft: 'neutral', pending: 'neutral', approved: 'info' as any, paid: 'success', overdue: 'error', void: 'error' };
 
+/**
+ * Accounting (David, 2026-11-02, decision 8): every form (vendor, bill, payment, expense, account)
+ * keeps its own button, so a money record can be stored on its own; the page's Save changes in the
+ * header stores every open form with changes at once. Changed fields, forms and tabs are marked;
+ * a form saved on its own is no longer unsaved. Leaving with an unsaved form asks first. Archive,
+ * Delete and Void act straight away.
+ */
 export function AccountsPayable() {
+  return (
+    <DraftSectionsProvider>
+      <AccountsPage />
+    </DraftSectionsProvider>
+  );
+}
+
+type ApTab = 'vendors' | 'bills' | 'expenses' | 'accounts' | 'journal' | 'payroll';
+const AP_TABS: { key: ApTab; label: string }[] = [
+  { key: 'vendors', label: 'Vendors' }, { key: 'bills', label: 'Bills' }, { key: 'expenses', label: 'Expenses' },
+  { key: 'accounts', label: 'Chart of Accounts' }, { key: 'journal', label: 'Journal' }, { key: 'payroll', label: 'Payroll' },
+];
+const EMPTY_VENDOR = { name: '', contact_name: '', email: '', phone: '', category: '', payment_terms: 30, address: '', tax_id: '', notes: '', default_account_id: '' };
+const EMPTY_BILL = { vendor_id: '', invoice_number: '', amount: '', due_date: '', description: '', account_id: '' };
+const EMPTY_EXPENSE = { date: '', amount: '', account_id: '', description: '', payment_method: 'cash' };
+const EMPTY_PAYMENT = { bill_id: '', amount: '', payment_date: '', payment_method: 'transfer', reference: '' };
+const EMPTY_ACCOUNT = { code: '', name: '', account_type: 'expense', description: '' };
+
+function AccountsPage() {
+  const { dirtySections } = useDraftSections();
+  const [activeTab, setActiveTab] = useState<ApTab>('vendors');
+  // A form's own button: stores that form only; its error shows beside it.
+  const [formError, setFormError] = useState<Record<string, string>>({});
+  async function saveOne(key: string, save: () => Promise<void>) {
+    setFormError((e) => ({ ...e, [key]: '' }));
+    try { await save(); } catch (err: any) { setFormError((e) => ({ ...e, [key]: err?.response?.data?.error || err?.message || 'Not saved' })); }
+  }
+  const errorFor = (key: string) => formError[key] ? <span role="alert" style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)' }}>{formError[key]}</span> : null;
   const [vendors, setVendors] = useState<any[]>([]);
   const [bills, setBills] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -25,17 +64,32 @@ export function AccountsPayable() {
   });
   const [loading, setLoading] = useState(true);
   const [editingVendor, setEditingVendor] = useState<any | null>(null);
-  const [editVendorForm, setEditVendorForm] = useState<any>({});
+  const vendorDraft = useDraft<any>('ap-vendor', 'Vendor', EMPTY_VENDOR, async (f) => { await persistVendor(f); return EMPTY_VENDOR; }, { tab: 'vendors' });
+  const editVendorForm = vendorDraft.value;
+  const setEditVendorForm = vendorDraft.setValue;
+  const markVendor = (k: string) => fieldMark(vendorDraft.changed((v: any) => v[k]));
   const [showVendorForm, setShowVendorForm] = useState(false);
   const [showBillForm, setShowBillForm] = useState(false);
-  const [billForm, setBillForm] = useState<any>({ vendor_id: '', invoice_number: '', amount: '', due_date: '', description: '', account_id: '' });
+  const billDraft = useDraft<any>('ap-bill', 'Bill', EMPTY_BILL, async (f) => { await persistBill(f); return EMPTY_BILL; }, { tab: 'bills' });
+  const billForm = billDraft.value;
+  const setBillForm = billDraft.setValue;
+  const markBill = (k: string) => fieldMark(billDraft.changed((v: any) => v[k]));
   const [showExpenseForm, setShowExpenseForm] = useState(false);
-  const [expenseForm, setExpenseForm] = useState({ date: new Date().toISOString().slice(0, 10), amount: '', account_id: '', description: '', payment_method: 'cash' });
+  const expenseDraft = useDraft<any>('ap-expense', 'Expense', EMPTY_EXPENSE, async (f) => { await persistExpense(f); return EMPTY_EXPENSE; }, { tab: 'expenses' });
+  const expenseForm = expenseDraft.value;
+  const setExpenseForm = expenseDraft.setValue;
+  const markExpense = (k: string) => fieldMark(expenseDraft.changed((v: any) => v[k]));
   const [showPaymentForm, setShowPaymentForm] = useState(false);
-  const [paymentForm, setPaymentForm] = useState({ bill_id: '', amount: '', payment_date: '', payment_method: 'transfer', reference: '' });
+  const paymentDraft = useDraft<any>('ap-payment', 'Bill payment', EMPTY_PAYMENT, async (f) => { await persistPayment(f); return EMPTY_PAYMENT; }, { tab: 'bills' });
+  const paymentForm = paymentDraft.value;
+  const setPaymentForm = paymentDraft.setValue;
+  const markPayment = (k: string) => fieldMark(paymentDraft.changed((v: any) => v[k]));
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [editingAccount, setEditingAccount] = useState<any | null>(null);
-  const [accountForm, setAccountForm] = useState({ code: '', name: '', account_type: 'expense', description: '' });
+  const accountDraft = useDraft<any>('ap-account', 'Account', EMPTY_ACCOUNT, async (f) => { await persistAccount(f); return EMPTY_ACCOUNT; }, { tab: 'accounts' });
+  const accountForm = accountDraft.value;
+  const setAccountForm = accountDraft.setValue;
+  const markAccount = (k: string) => fieldMark(accountDraft.changed((v: any) => v[k]));
   const [showArchived, setShowArchived] = useState(false);
   const [journalDateFrom, setJournalDateFrom] = useState(() => {
     const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
@@ -98,12 +152,12 @@ export function AccountsPayable() {
 
   // --- Bills ---
   function openAddBill() {
-    setBillForm({ vendor_id: '', invoice_number: '', amount: '', due_date: '', description: '', account_id: '' });
+    billDraft.load(EMPTY_BILL);
     setShowBillForm(true);
   }
 
   function openEditBill(bill: any) {
-    setBillForm({ vendor_id: bill.vendor_id, invoice_number: bill.invoice_number || '', amount: String((bill.amount / 100).toFixed(2)), due_date: bill.due_date ? bill.due_date.split('T')[0] : '', description: bill.description || '', account_id: bill.account_id || '', _editId: bill.id });
+    billDraft.load({ vendor_id: bill.vendor_id, invoice_number: bill.invoice_number || '', amount: String((bill.amount / 100).toFixed(2)), due_date: bill.due_date ? bill.due_date.split('T')[0] : '', description: bill.description || '', account_id: bill.account_id || '', _editId: bill.id });
     setShowBillForm(true);
   }
 
@@ -115,12 +169,9 @@ export function AccountsPayable() {
     setBillForm({ ...billForm, vendor_id: vendorId, due_date: dueDate.toISOString().slice(0, 10), account_id: vendor?.default_account_id || billForm.account_id });
   }
 
-  async function saveBill() {
-    if (!billForm.vendor_id || !billForm.amount || !billForm.due_date) {
-      alert('Vendor, Amount, and Due Date are required');
-      return;
-    }
-    try {
+  async function persistBill(billForm: any) {
+    if (!billForm.vendor_id || !billForm.amount || !billForm.due_date) throw new Error('Vendor, Amount and Due Date are required');
+    {
       if ((billForm as any)._editId) {
         await apApi.updateBill((billForm as any)._editId, businessId, {
           vendor_id: billForm.vendor_id,
@@ -136,19 +187,19 @@ export function AccountsPayable() {
         setBills((prev) => [...prev, created]);
       }
       setShowBillForm(false);
-    } catch { alert('Failed to save bill'); }
+    }
   }
 
   async function handlePayBill(id: string) {
     const bill = bills.find((b: any) => b.id === id);
     const remaining = bill ? (bill.amount - bill.amount_paid) / 100 : 0;
-    setPaymentForm({ bill_id: id, amount: String(remaining.toFixed(2)), payment_date: new Date().toISOString().slice(0, 10), payment_method: 'transfer', reference: '' });
+    paymentDraft.load({ bill_id: id, amount: String(remaining.toFixed(2)), payment_date: new Date().toISOString().slice(0, 10), payment_method: 'transfer', reference: '' });
     setShowPaymentForm(true);
   }
 
-  async function submitPayment() {
-    if (!paymentForm.amount || !paymentForm.bill_id) return;
-    try {
+  async function persistPayment(paymentForm: any) {
+    if (!paymentForm.amount || !paymentForm.bill_id) throw new Error('Give the amount paid');
+    {
       await apApi.payBill(paymentForm.bill_id, businessId, {
         amount: Math.round(parseFloat(paymentForm.amount) * 100),
         payment_date: paymentForm.payment_date || undefined,
@@ -157,21 +208,18 @@ export function AccountsPayable() {
       });
       setShowPaymentForm(false);
       loadTab('bills');
-    } catch { alert('Failed to record payment'); }
+    }
   }
 
   // --- Expenses ---
   function openAddExpense() {
-    setExpenseForm({ date: new Date().toISOString().slice(0, 10), amount: '', account_id: '', description: '', payment_method: 'cash' });
+    expenseDraft.load({ ...EMPTY_EXPENSE, date: new Date().toISOString().slice(0, 10) });
     setShowExpenseForm(true);
   }
 
-  async function saveExpense() {
-    if (!expenseForm.amount || !expenseForm.date) {
-      alert('Date and Amount are required');
-      return;
-    }
-    try {
+  async function persistExpense(expenseForm: any) {
+    if (!expenseForm.amount || !expenseForm.date) throw new Error('Date and Amount are required');
+    {
       if ((expenseForm as any)._editId) {
         const updated = await apApi.updateExpense((expenseForm as any)._editId, businessId, {
           date: expenseForm.date,
@@ -193,11 +241,11 @@ export function AccountsPayable() {
         setExpenses((prev: any[]) => [...prev, created]);
       }
       setShowExpenseForm(false);
-    } catch { alert('Failed to save expense'); }
+    }
   }
 
   function openEditExpense(expense: any) {
-    setExpenseForm({
+    expenseDraft.load({
       date: expense.date ? expense.date.split('T')[0] : '',
       amount: String((expense.amount / 100).toFixed(2)),
       account_id: expense.account_id || '',
@@ -226,18 +274,18 @@ export function AccountsPayable() {
   // --- Edit Vendor ---
   function openAddVendor() {
     setEditingVendor(null);
-    setEditVendorForm({ name: '', contact_name: '', email: '', phone: '', category: '', payment_terms: 30, address: '', tax_id: '', notes: '', default_account_id: '' });
+    vendorDraft.load(EMPTY_VENDOR);
     setShowVendorForm(true);
   }
 
   function startEditVendor(vendor: any) {
     setEditingVendor(vendor);
-    setEditVendorForm({ name: vendor.name, contact_name: vendor.contact_name || '', email: vendor.email || '', phone: vendor.phone || '', category: vendor.category || '', payment_terms: vendor.payment_terms || 30, address: vendor.address || '', tax_id: vendor.tax_id || '', notes: vendor.notes || '', default_account_id: vendor.default_account_id || '' });
+    vendorDraft.load({ name: vendor.name, contact_name: vendor.contact_name || '', email: vendor.email || '', phone: vendor.phone || '', category: vendor.category || '', payment_terms: vendor.payment_terms || 30, address: vendor.address || '', tax_id: vendor.tax_id || '', notes: vendor.notes || '', default_account_id: vendor.default_account_id || '' });
     setShowVendorForm(true);
   }
 
-  async function saveVendor() {
-    if (!editVendorForm.name) return;
+  async function persistVendor(editVendorForm: any) {
+    if (!editVendorForm.name) throw new Error('Give the vendor a name');
     if (editingVendor) {
       const updated = await apApi.updateVendor(editingVendor.id, businessId, editVendorForm);
       setVendors((prev) => prev.map((v) => (v.id === editingVendor.id ? { ...v, ...updated } : v)));
@@ -314,19 +362,19 @@ export function AccountsPayable() {
 
   function openAddAccount() {
     setEditingAccount(null);
-    setAccountForm({ code: '', name: '', account_type: 'expense', description: '' });
+    accountDraft.load(EMPTY_ACCOUNT);
     setShowAddAccount(true);
   }
 
   function openEditAccount(acct: any) {
     setEditingAccount(acct);
-    setAccountForm({ code: acct.code, name: acct.name, account_type: acct.account_type, description: acct.description || '' });
+    accountDraft.load({ code: acct.code, name: acct.name, account_type: acct.account_type, description: acct.description || '' });
     setShowAddAccount(true);
   }
 
-  async function handleSaveAccount() {
-    if (!accountForm.code || !accountForm.name) return;
-    try {
+  async function persistAccount(accountForm: any) {
+    if (!accountForm.code || !accountForm.name) throw new Error('Code and Name are required');
+    {
       if (editingAccount) {
         await apApi.updateAccount(editingAccount.id, businessId, { code: accountForm.code, name: accountForm.name, description: accountForm.description });
       } else {
@@ -334,8 +382,6 @@ export function AccountsPayable() {
       }
       setShowAddAccount(false);
       loadTab('accounts');
-    } catch (err: any) {
-      alert(err?.response?.data?.error || 'Failed to save account');
     }
   }
 
@@ -368,17 +414,18 @@ export function AccountsPayable() {
         <button style={styles.primaryBtn} onClick={openAddAccount}>Add Account</button>
       </div>
       {showAddAccount && (
-        <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
+        <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)', ...draftBox(accountDraft.dirty) }}>
           <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
-            <div><label style={styles.fieldLabel}>Code</label><input style={{ ...styles.input, width: '80px' }} value={accountForm.code} onChange={(e) => setAccountForm({ ...accountForm, code: e.target.value })} placeholder="e.g. 4600" /></div>
-            <div><label style={styles.fieldLabel}>Type</label><select style={{ ...styles.input, width: '120px' }} value={accountForm.account_type} onChange={(e) => setAccountForm({ ...accountForm, account_type: e.target.value })} disabled={!!editingAccount}>
+            <div><label style={styles.fieldLabel}>Code</label><input style={{ ...({ ...styles.input, width: '80px' }), ...markAccount('code') }} value={accountForm.code} onChange={(e) => setAccountForm({ ...accountForm, code: e.target.value })} placeholder="e.g. 4600" /></div>
+            <div><label style={styles.fieldLabel}>Type</label><select style={{ ...({ ...styles.input, width: '120px' }), ...markAccount('account_type') }} value={accountForm.account_type} onChange={(e) => setAccountForm({ ...accountForm, account_type: e.target.value })} disabled={!!editingAccount}>
               <option value="asset">Asset</option><option value="liability">Liability</option><option value="equity">Equity</option><option value="revenue">Revenue</option><option value="expense">Expense</option>
             </select></div>
-            <div><label style={styles.fieldLabel}>Name</label><input style={{ ...styles.input, width: '280px' }} value={accountForm.name} onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} placeholder="Account name" /></div>
-            <div><label style={styles.fieldLabel}>Description</label><input style={{ ...styles.input, width: '280px' }} value={accountForm.description} onChange={(e) => setAccountForm({ ...accountForm, description: e.target.value })} placeholder="Optional" /></div>
+            <div><label style={styles.fieldLabel}>Name</label><input style={{ ...({ ...styles.input, width: '280px' }), ...markAccount('name') }} value={accountForm.name} onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} placeholder="Account name" /></div>
+            <div><label style={styles.fieldLabel}>Description</label><input style={{ ...({ ...styles.input, width: '280px' }), ...markAccount('description') }} value={accountForm.description} onChange={(e) => setAccountForm({ ...accountForm, description: e.target.value })} placeholder="Optional" /></div>
             <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
-              <button style={styles.primaryBtn} onClick={handleSaveAccount}>{editingAccount ? 'Save' : 'Create'}</button>
-              <button style={styles.secondaryBtn} onClick={() => setShowAddAccount(false)}>Cancel</button>
+              <button style={styles.primaryBtn} onClick={() => saveOne('account', accountDraft.save)}>{editingAccount ? 'Save' : 'Create'}</button>
+              <button style={styles.secondaryBtn} onClick={() => { setShowAddAccount(false); accountDraft.load(EMPTY_ACCOUNT); }}>Cancel</button>
+              {errorFor('account')}
             </div>
           </div>
         </div>
@@ -574,9 +621,17 @@ export function AccountsPayable() {
   // --- Render ---
   return (
     <div style={styles.page}>
-      <h1 style={styles.title}>Accounting</h1>
-
-      <Tabs onTabChange={(tabId) => loadTab(tabId)} items={[
+      <LeaveGuard when={dirtySections.length > 0} />
+      <StickyPageTop>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: 'var(--space-md)' }}>
+          <h1 style={{ ...styles.title, marginBottom: 0 }}>Accounting</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}><SaveChanges /></div>
+        </div>
+        <TabBar aria-label="Accounting sections" active={activeTab} onChange={(t) => { setActiveTab(t); loadTab(t); }}
+          tabs={AP_TABS.map((t) => ({ ...t, changed: dirtySections.some((s) => s.tab === t.key) }))} />
+      </StickyPageTop>
+      <div style={{ marginTop: 'var(--space-md)' }}>
+      {[
         { id: 'vendors', label: 'Vendors', content: (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
@@ -584,20 +639,21 @@ export function AccountsPayable() {
               <button style={styles.primaryBtn} onClick={openAddVendor}>Add Vendor</button>
             </div>
             {showVendorForm && (
-              <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
+              <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)', ...draftBox(vendorDraft.dirty) }}>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <div><label style={styles.fieldLabel}>Name *</label><input style={{ ...styles.input, width: '150px' }} value={editVendorForm.name} onChange={(e) => setEditVendorForm({ ...editVendorForm, name: e.target.value })} placeholder="Vendor name" /></div>
-                  <div><label style={styles.fieldLabel}>Contact</label><input style={{ ...styles.input, width: '130px' }} value={editVendorForm.contact_name} onChange={(e) => setEditVendorForm({ ...editVendorForm, contact_name: e.target.value })} placeholder="Contact person" /></div>
-                  <div><label style={styles.fieldLabel}>Email</label><input style={{ ...styles.input, width: '160px' }} value={editVendorForm.email} onChange={(e) => setEditVendorForm({ ...editVendorForm, email: e.target.value })} placeholder="Email" /></div>
-                  <div><label style={styles.fieldLabel}>Phone</label><input style={{ ...styles.input, width: '120px' }} value={editVendorForm.phone} onChange={(e) => setEditVendorForm({ ...editVendorForm, phone: e.target.value })} placeholder="Phone" /></div>
-                  <div><label style={styles.fieldLabel}>Terms</label><input style={{ ...styles.input, width: '50px' }} type="number" value={editVendorForm.payment_terms} onChange={(e) => setEditVendorForm({ ...editVendorForm, payment_terms: parseInt(e.target.value) || 0 })} /></div>
-                  <div><label style={styles.fieldLabel}>Default Account</label><select style={{ ...styles.input, width: '180px' }} value={editVendorForm.default_account_id} onChange={(e) => setEditVendorForm({ ...editVendorForm, default_account_id: e.target.value })}>
+                  <div><label style={styles.fieldLabel}>Name *</label><input style={{ ...({ ...styles.input, width: '150px' }), ...markVendor('name') }} value={editVendorForm.name} onChange={(e) => setEditVendorForm({ ...editVendorForm, name: e.target.value })} placeholder="Vendor name" /></div>
+                  <div><label style={styles.fieldLabel}>Contact</label><input style={{ ...({ ...styles.input, width: '130px' }), ...markVendor('contact_name') }} value={editVendorForm.contact_name} onChange={(e) => setEditVendorForm({ ...editVendorForm, contact_name: e.target.value })} placeholder="Contact person" /></div>
+                  <div><label style={styles.fieldLabel}>Email</label><input style={{ ...({ ...styles.input, width: '160px' }), ...markVendor('email') }} value={editVendorForm.email} onChange={(e) => setEditVendorForm({ ...editVendorForm, email: e.target.value })} placeholder="Email" /></div>
+                  <div><label style={styles.fieldLabel}>Phone</label><input style={{ ...({ ...styles.input, width: '120px' }), ...markVendor('phone') }} value={editVendorForm.phone} onChange={(e) => setEditVendorForm({ ...editVendorForm, phone: e.target.value })} placeholder="Phone" /></div>
+                  <div><label style={styles.fieldLabel}>Terms</label><input style={{ ...({ ...styles.input, width: '50px' }), ...markVendor('payment_terms') }} type="number" value={editVendorForm.payment_terms} onChange={(e) => setEditVendorForm({ ...editVendorForm, payment_terms: parseInt(e.target.value) || 0 })} /></div>
+                  <div><label style={styles.fieldLabel}>Default Account</label><select style={{ ...({ ...styles.input, width: '180px' }), ...markVendor('default_account_id') }} value={editVendorForm.default_account_id} onChange={(e) => setEditVendorForm({ ...editVendorForm, default_account_id: e.target.value })}>
                     <option value="">— None —</option>
                     {accounts.filter((a: any) => a.account_type === 'expense' && a.status === 'active').map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
                   </select></div>
                   <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
-                    <button style={styles.primaryBtn} onClick={saveVendor}>{editingVendor ? 'Save' : 'Create'}</button>
-                    <button style={styles.secondaryBtn} onClick={() => setShowVendorForm(false)}>Cancel</button>
+                    <button style={styles.primaryBtn} onClick={() => saveOne('vendor', vendorDraft.save)}>{editingVendor ? 'Save' : 'Create'}</button>
+                    <button style={styles.secondaryBtn} onClick={() => { setShowVendorForm(false); vendorDraft.load(EMPTY_VENDOR); }}>Cancel</button>
+                    {errorFor('vendor')}
                   </div>
                 </div>
               </div>
@@ -611,43 +667,45 @@ export function AccountsPayable() {
               <button style={{ ...styles.primaryBtn, marginLeft: 'auto' }} onClick={openAddBill}>Add Bill</button>
             </div>
             {showBillForm && (
-              <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
+              <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)', ...draftBox(billDraft.dirty) }}>
                 <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <div><label style={styles.fieldLabel}>Vendor *</label><select style={styles.input} value={billForm.vendor_id} onChange={(e) => handleVendorChange(e.target.value)}>
+                  <div><label style={styles.fieldLabel}>Vendor *</label><select style={{ ...(styles.input), ...markBill('vendor_id') }} value={billForm.vendor_id} onChange={(e) => handleVendorChange(e.target.value)}>
                     <option value="">— Select —</option>
                     {vendors.map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}
                   </select></div>
-                  <div><label style={styles.fieldLabel}>Expense Account</label><select style={styles.input} value={billForm.account_id} onChange={(e) => setBillForm({ ...billForm, account_id: e.target.value })}>
+                  <div><label style={styles.fieldLabel}>Expense Account</label><select style={{ ...(styles.input), ...markBill('account_id') }} value={billForm.account_id} onChange={(e) => setBillForm({ ...billForm, account_id: e.target.value })}>
                     <option value="">— Select —</option>
                     {accounts.filter((a: any) => a.account_type === 'expense' && a.status === 'active').map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
                   </select></div>
-                  <div><label style={styles.fieldLabel}>Invoice #</label><input style={styles.input} value={billForm.invoice_number} onChange={(e) => setBillForm({ ...billForm, invoice_number: e.target.value })} /></div>
-                  <div><label style={styles.fieldLabel}>Amount (€) *</label><input style={{ ...styles.input, width: '100px' }} type="number" step="0.01" value={billForm.amount} onChange={(e) => setBillForm({ ...billForm, amount: e.target.value })} /></div>
-                  <div><label style={styles.fieldLabel}>Due Date *</label><input style={styles.input} type="date" value={billForm.due_date} onChange={(e) => setBillForm({ ...billForm, due_date: e.target.value })} /></div>
-                  <div><label style={styles.fieldLabel}>Description</label><input style={styles.input} value={billForm.description} onChange={(e) => setBillForm({ ...billForm, description: e.target.value })} placeholder="What for" /></div>
+                  <div><label style={styles.fieldLabel}>Invoice #</label><input style={{ ...(styles.input), ...markBill('invoice_number') }} value={billForm.invoice_number} onChange={(e) => setBillForm({ ...billForm, invoice_number: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>Amount (€) *</label><input style={{ ...({ ...styles.input, width: '100px' }), ...markBill('amount') }} type="number" step="0.01" value={billForm.amount} onChange={(e) => setBillForm({ ...billForm, amount: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>Due Date *</label><input style={{ ...(styles.input), ...markBill('due_date') }} type="date" value={billForm.due_date} onChange={(e) => setBillForm({ ...billForm, due_date: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>Description</label><input style={{ ...(styles.input), ...markBill('description') }} value={billForm.description} onChange={(e) => setBillForm({ ...billForm, description: e.target.value })} placeholder="What for" /></div>
                   <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
-                    <button style={styles.primaryBtn} onClick={saveBill}>{(billForm as any)._editId ? 'Save' : 'Create'}</button>
-                    <button style={styles.secondaryBtn} onClick={() => setShowBillForm(false)}>Cancel</button>
+                    <button style={styles.primaryBtn} onClick={() => saveOne('bill', billDraft.save)}>{(billForm as any)._editId ? 'Save' : 'Create'}</button>
+                    <button style={styles.secondaryBtn} onClick={() => { setShowBillForm(false); billDraft.load(EMPTY_BILL); }}>Cancel</button>
+                    {errorFor('bill')}
                   </div>
                 </div>
               </div>
             )}
             {showPaymentForm && (
-              <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
+              <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)', ...draftBox(paymentDraft.dirty) }}>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <div><label style={styles.fieldLabel}>Amount (€) *</label><input style={{ ...styles.input, width: '100px' }} type="number" step="0.01" value={paymentForm.amount} onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })} /></div>
-                  <div><label style={styles.fieldLabel}>Payment Date</label><input style={styles.input} type="date" value={paymentForm.payment_date} onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })} /></div>
-                  <div><label style={styles.fieldLabel}>Method</label><select style={{ ...styles.input, width: '120px' }} value={paymentForm.payment_method} onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}>
+                  <div><label style={styles.fieldLabel}>Amount (€) *</label><input style={{ ...({ ...styles.input, width: '100px' }), ...markPayment('amount') }} type="number" step="0.01" value={paymentForm.amount} onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>Payment Date</label><input style={{ ...(styles.input), ...markPayment('payment_date') }} type="date" value={paymentForm.payment_date} onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>Method</label><select style={{ ...({ ...styles.input, width: '120px' }), ...markPayment('payment_method') }} value={paymentForm.payment_method} onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}>
                     <option value="transfer">Transfer</option>
                     <option value="cash">Cash</option>
                     <option value="card">Card</option>
                     <option value="check">Check</option>
                     <option value="other">Other</option>
                   </select></div>
-                  <div><label style={styles.fieldLabel}>Reference</label><input style={{ ...styles.input, width: '150px' }} value={paymentForm.reference} onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })} placeholder="Check #, transfer ref" /></div>
+                  <div><label style={styles.fieldLabel}>Reference</label><input style={{ ...({ ...styles.input, width: '150px' }), ...markPayment('reference') }} value={paymentForm.reference} onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })} placeholder="Check #, transfer ref" /></div>
                   <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
-                    <button style={styles.primaryBtn} onClick={submitPayment}>Record Payment</button>
-                    <button style={styles.secondaryBtn} onClick={() => setShowPaymentForm(false)}>Cancel</button>
+                    <button style={styles.primaryBtn} onClick={() => saveOne('payment', paymentDraft.save)}>Record Payment</button>
+                    <button style={styles.secondaryBtn} onClick={() => { setShowPaymentForm(false); paymentDraft.load(EMPTY_PAYMENT); }}>Cancel</button>
+                    {errorFor('payment')}
                   </div>
                 </div>
               </div>
@@ -661,24 +719,25 @@ export function AccountsPayable() {
               <button style={{ ...styles.primaryBtn, marginLeft: 'auto' }} onClick={openAddExpense}>Add Expense</button>
             </div>
             {showExpenseForm && (
-              <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
+              <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)', ...draftBox(expenseDraft.dirty) }}>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                  <div><label style={styles.fieldLabel}>Date *</label><input style={styles.input} type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} /></div>
-                  <div><label style={styles.fieldLabel}>Amount (€) *</label><input style={{ ...styles.input, width: '100px' }} type="number" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} /></div>
-                  <div><label style={styles.fieldLabel}>Expense Account</label><select style={{ ...styles.input, width: '180px' }} value={expenseForm.account_id} onChange={(e) => setExpenseForm({ ...expenseForm, account_id: e.target.value })}>
+                  <div><label style={styles.fieldLabel}>Date *</label><input style={{ ...(styles.input), ...markExpense('date') }} type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>Amount (€) *</label><input style={{ ...({ ...styles.input, width: '100px' }), ...markExpense('amount') }} type="number" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} /></div>
+                  <div><label style={styles.fieldLabel}>Expense Account</label><select style={{ ...({ ...styles.input, width: '180px' }), ...markExpense('account_id') }} value={expenseForm.account_id} onChange={(e) => setExpenseForm({ ...expenseForm, account_id: e.target.value })}>
                     <option value="">— Select —</option>
                     {accounts.filter((a: any) => a.account_type === 'expense' && a.status === 'active').map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
                   </select></div>
-                  <div><label style={styles.fieldLabel}>Description</label><input style={{ ...styles.input, width: '200px' }} value={expenseForm.description} onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })} placeholder="What was purchased" /></div>
-                  <div><label style={styles.fieldLabel}>Paid via</label><select style={{ ...styles.input, width: '100px' }} value={expenseForm.payment_method} onChange={(e) => setExpenseForm({ ...expenseForm, payment_method: e.target.value })}>
+                  <div><label style={styles.fieldLabel}>Description</label><input style={{ ...({ ...styles.input, width: '200px' }), ...markExpense('description') }} value={expenseForm.description} onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })} placeholder="What was purchased" /></div>
+                  <div><label style={styles.fieldLabel}>Paid via</label><select style={{ ...({ ...styles.input, width: '100px' }), ...markExpense('payment_method') }} value={expenseForm.payment_method} onChange={(e) => setExpenseForm({ ...expenseForm, payment_method: e.target.value })}>
                     <option value="cash">Cash</option>
                     <option value="card">Card</option>
                     <option value="transfer">Transfer</option>
                     <option value="other">Other</option>
                   </select></div>
                   <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
-                    <button style={styles.primaryBtn} onClick={saveExpense}>{(expenseForm as any)._editId ? 'Save' : 'Create'}</button>
-                    <button style={styles.secondaryBtn} onClick={() => setShowExpenseForm(false)}>Cancel</button>
+                    <button style={styles.primaryBtn} onClick={() => saveOne('expense', expenseDraft.save)}>{(expenseForm as any)._editId ? 'Save' : 'Create'}</button>
+                    <button style={styles.secondaryBtn} onClick={() => { setShowExpenseForm(false); expenseDraft.load(EMPTY_EXPENSE); }}>Cancel</button>
+                    {errorFor('expense')}
                   </div>
                 </div>
               </div>
@@ -688,8 +747,9 @@ export function AccountsPayable() {
         ) },
         { id: 'accounts', label: 'Chart of Accounts', content: accountsContent },
         { id: 'journal', label: 'Journal', content: <JournalTab entries={journalEntries} loading={loading} onVoid={handleVoidEntry} /> },
-        { id: 'payroll', label: 'Payroll', content: <PayrollTab /> },
-      ]} />
+      ].filter((t) => t.id === activeTab).map((t) => <div key={t.id}>{t.content}</div>)}
+      <div hidden={activeTab !== 'payroll'}><DraftTab tab="payroll"><PayrollTab /></DraftTab></div>
+      </div>
     </div>
   );
 }

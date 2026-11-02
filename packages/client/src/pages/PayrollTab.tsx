@@ -5,6 +5,7 @@ import { Button } from '../design-system/components/actions/Button';
 import { Table, applyTableFilters } from '../design-system/components/data/Table';
 import type { TableFilters } from '../design-system/components/data/Table';
 import { formatCurrency } from '../utils/currency';
+import { useDraft, fieldMark, checkMark, draftBox } from '../components/unsaved/DraftSections';
 import { formatDateOnly } from '../utils/date';
 
 interface PayPeriod {
@@ -53,7 +54,18 @@ export function PayrollTab() {
   const [taxProfiles, setTaxProfiles] = useState<any[]>([]);
   const [taxProfilesLoading, setTaxProfilesLoading] = useState(false);
   const [editingTaxUserId, setEditingTaxUserId] = useState<string | null>(null);
-  const [taxEditForm, setTaxEditForm] = useState({ country_code: 'US', state_code: '', filing_status: 'single', allowances: 0, additional_withholding: 0, exempt: false });
+  // The tax profile being edited: its own Save stores it, or Accounting's Save changes with the rest (decision 8).
+  const EMPTY_TAX = { user_id: '', country_code: 'US', state_code: '', filing_status: 'single', allowances: 0, additional_withholding: 0, exempt: false };
+  const taxDraft = useDraft('payroll-tax-profile', 'Tax profile', EMPTY_TAX, async ({ user_id, ...form }) => {
+    await apiClient.put(`/v1/payroll/tax-profiles/${user_id}`, { business_id: businessId, ...form });
+    setEditingTaxUserId(null);
+    await loadTaxProfiles();
+    return EMPTY_TAX;
+  });
+  const taxEditForm = taxDraft.value;
+  const setTaxEditForm = taxDraft.setValue;
+  const markTax = (k: keyof typeof EMPTY_TAX) => fieldMark(taxDraft.changed((v) => v[k]));
+  const [taxError, setTaxError] = useState('');
 
   // Load unprocessed periods
   useEffect(() => {
@@ -141,11 +153,8 @@ export function PayrollTab() {
 
   const handleSaveTaxProfile = async () => {
     if (!editingTaxUserId) return;
-    try {
-      await apiClient.put(`/v1/payroll/tax-profiles/${editingTaxUserId}`, { business_id: businessId, ...taxEditForm });
-      setEditingTaxUserId(null);
-      await loadTaxProfiles();
-    } catch { alert('Failed to save tax profile'); }
+    setTaxError('');
+    try { await taxDraft.save(); } catch (err: any) { setTaxError(err?.response?.data?.error || 'Failed to save tax profile'); }
   };
 
   const selectedPeriod = unprocessedPeriods.find(p => p.id === selectedPeriodId);
@@ -227,16 +236,17 @@ export function PayrollTab() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {taxProfiles.map((profile: any) => (
-                <div key={profile.user_id} style={styles.taxCard}>
+                <div key={profile.user_id} style={{ ...styles.taxCard, ...(editingTaxUserId === profile.user_id ? draftBox(taxDraft.dirty) : {}) }}>
                   {editingTaxUserId === profile.user_id ? (
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                      <div><label style={styles.label}>Country</label><select style={styles.input} value={taxEditForm.country_code} onChange={(e) => setTaxEditForm({ ...taxEditForm, country_code: e.target.value })}><option value="US">US</option><option value="ES">ES</option></select></div>
-                      <div><label style={styles.label}>State</label><input style={styles.input} value={taxEditForm.state_code} onChange={(e) => setTaxEditForm({ ...taxEditForm, state_code: e.target.value })} /></div>
-                      <div><label style={styles.label}>Filing Status</label><select style={styles.input} value={taxEditForm.filing_status} onChange={(e) => setTaxEditForm({ ...taxEditForm, filing_status: e.target.value })}><option value="single">Single</option><option value="married">Married</option><option value="head_of_household">Head of Household</option></select></div>
-                      <div><label style={styles.label}>Allowances</label><input style={styles.input} type="number" min="0" value={taxEditForm.allowances} onChange={(e) => setTaxEditForm({ ...taxEditForm, allowances: parseInt(e.target.value) || 0 })} /></div>
-                      <div><label style={styles.label}>Exempt</label><input type="checkbox" checked={taxEditForm.exempt} onChange={(e) => setTaxEditForm({ ...taxEditForm, exempt: e.target.checked })} /></div>
+                      <div><label style={styles.label}>Country</label><select style={{ ...styles.input, ...markTax('country_code') }} value={taxEditForm.country_code} onChange={(e) => setTaxEditForm({ ...taxEditForm, country_code: e.target.value })}><option value="US">US</option><option value="ES">ES</option></select></div>
+                      <div><label style={styles.label}>State</label><input style={{ ...styles.input, ...markTax('state_code') }} value={taxEditForm.state_code} onChange={(e) => setTaxEditForm({ ...taxEditForm, state_code: e.target.value })} /></div>
+                      <div><label style={styles.label}>Filing Status</label><select style={{ ...styles.input, ...markTax('filing_status') }} value={taxEditForm.filing_status} onChange={(e) => setTaxEditForm({ ...taxEditForm, filing_status: e.target.value })}><option value="single">Single</option><option value="married">Married</option><option value="head_of_household">Head of Household</option></select></div>
+                      <div><label style={styles.label}>Allowances</label><input style={{ ...styles.input, ...markTax('allowances') }} type="number" min="0" value={taxEditForm.allowances} onChange={(e) => setTaxEditForm({ ...taxEditForm, allowances: parseInt(e.target.value) || 0 })} /></div>
+                      <div><label style={styles.label}>Exempt</label><input type="checkbox" style={checkMark(taxDraft.changed((v) => v.exempt))} checked={taxEditForm.exempt} onChange={(e) => setTaxEditForm({ ...taxEditForm, exempt: e.target.checked })} /></div>
                       <Button size="sm" onClick={handleSaveTaxProfile}>Save</Button>
-                      <button style={styles.linkBtn} onClick={() => setEditingTaxUserId(null)}>Cancel</button>
+                      <button style={styles.linkBtn} onClick={() => { setEditingTaxUserId(null); taxDraft.load(EMPTY_TAX); setTaxError(''); }}>Cancel</button>
+                      {taxError && <span role="alert" style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)' }}>{taxError}</span>}
                     </div>
                   ) : (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -247,7 +257,7 @@ export function PayrollTab() {
                           {profile.exempt && ' · Exempt'}
                         </span>
                       </div>
-                      <button style={styles.linkBtn} onClick={() => { setEditingTaxUserId(profile.user_id); setTaxEditForm({ country_code: profile.country_code || 'US', state_code: profile.state_code || '', filing_status: profile.filing_status || 'single', allowances: profile.allowances || 0, additional_withholding: profile.additional_withholding || 0, exempt: profile.exempt || false }); }}>Edit</button>
+                      <button style={styles.linkBtn} onClick={() => { setEditingTaxUserId(profile.user_id); taxDraft.load({ user_id: profile.user_id, country_code: profile.country_code || 'US', state_code: profile.state_code || '', filing_status: profile.filing_status || 'single', allowances: profile.allowances || 0, additional_withholding: profile.additional_withholding || 0, exempt: profile.exempt || false }); }}>Edit</button>
                     </div>
                   )}
                 </div>
