@@ -41,6 +41,8 @@ interface TableProps<T> {
   onRowClick?: (row: T) => void;
   /** The row shown as open (e.g. its details beside the table). */
   activeRowId?: string | null;
+  /** Scroll inside its own area of this height (e.g. '100%' of a fixed panel), header pinned at its top. */
+  scrollHeight?: string;
   // Pagination (kept for older callers; tables now scroll and load more instead)
   page?: number;
   totalPages?: number;
@@ -97,6 +99,7 @@ export function Table<T extends Record<string, any>>({
   clientSort,
   onRowClick,
   activeRowId,
+  scrollHeight,
   page,
   totalPages,
   onPageChange,
@@ -142,6 +145,7 @@ export function Table<T extends Record<string, any>>({
     }
     setInBox(boxed);
     check();
+    if (typeof ResizeObserver === 'undefined') return; // e.g. the test DOM: no resizing to follow
     const ro = new ResizeObserver(check); ro.observe(el); if (el.firstElementChild) ro.observe(el.firstElementChild);
     return () => ro.disconnect();
   });
@@ -279,7 +283,7 @@ export function Table<T extends Record<string, any>>({
   return (
     <div>
       {popover}
-      <div ref={wrapRef} className={cssStyles.wrapper} data-wide={tooWide || undefined} data-inbox={(inBox && !tooWide) || undefined}>
+      <div ref={wrapRef} className={cssStyles.wrapper} data-wide={tooWide || !!scrollHeight || undefined} data-inbox={(inBox && !tooWide && !scrollHeight) || undefined} style={scrollHeight ? { maxHeight: scrollHeight } : undefined}>
         <table style={{ ...styles.table, ...(fixedLayout ? { tableLayout: 'fixed' as const } : {}) }}>
           <thead>
             {filterRow && (

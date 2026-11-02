@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
-import { sortByColumn, type SortDirection } from './utils';
+import { useState, useRef, useEffect } from 'react';
 import { truncateCellValue } from './utils';
+import { Table } from '../../design-system/components/data/Table';
 
 export interface ResultsPanelProps {
   columns: { name: string; dataType: string }[];
@@ -14,8 +14,9 @@ export interface ResultsPanelProps {
 }
 
 /**
- * ResultsPanel displays query results in a sortable table with fixed headers,
- * horizontal scrolling, null display, cell truncation, and various states.
+ * ResultsPanel displays query results on the shared table (sort, column filters
+ * beside the sort icon — David 2026-11-02) scrolling inside the panel with its
+ * header pinned, plus null display, cell truncation, and various states.
  */
 export function ResultsPanel({
   columns,
@@ -27,21 +28,17 @@ export function ResultsPanel({
   error,
   loading,
 }: ResultsPanelProps) {
-  const [sortColumn, setSortColumn] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-  const [expandedCell, setExpandedCell] = useState<{ row: number; col: string } | null>(null);
-
-  const handleSort = useCallback(
-    (columnName: string) => {
-      if (sortColumn === columnName) {
-        setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
-      } else {
-        setSortColumn(columnName);
-        setSortDirection('asc');
-      }
-    },
-    [sortColumn]
-  );
+  // The expanded cell: the row object itself (stays right when the rows are sorted or filtered).
+  const [expandedCell, setExpandedCell] = useState<{ row: Record<string, unknown>; col: string } | null>(null);
+  // The table scrolls inside the panel: its height, measured (a percentage cannot reach the table).
+  const areaRef = useRef<HTMLDivElement>(null);
+  const [areaHeight, setAreaHeight] = useState(0);
+  useEffect(() => {
+    const el = areaRef.current; if (!el) return;
+    const ro = new ResizeObserver(() => setAreaHeight(el.clientHeight));
+    ro.observe(el); setAreaHeight(el.clientHeight);
+    return () => ro.disconnect();
+  });
 
   // Loading state
   if (loading) {
@@ -77,11 +74,6 @@ export function ResultsPanel({
     );
   }
 
-  // Sort rows
-  const displayRows = sortColumn
-    ? sortByColumn(rows, sortColumn, sortDirection)
-    : rows;
-
   return (
     <div style={styles.container} data-testid="results-panel">
       {/* Truncation notice */}
@@ -92,72 +84,42 @@ export function ResultsPanel({
       )}
 
       {/* Table with fixed headers and scroll */}
-      <div style={styles.tableWrapper}>
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              {columns.map((col) => (
-                <th
-                  key={col.name}
-                  style={styles.headerCell}
-                  onClick={() => handleSort(col.name)}
-                  title={`Sort by ${col.name} (${col.dataType})`}
+      <div ref={areaRef} style={styles.tableWrapper}>
+        <Table
+          rowId={(row) => String(rows.indexOf(row))}
+          data={rows}
+          clientSort
+          scrollHeight={areaHeight ? `${areaHeight}px` : undefined}
+          columns={columns.map((col) => ({
+            key: col.name,
+            header: col.name,
+            // Wide enough for the name and its sort/filter icons on one line.
+            headerStyle: { minWidth: `${Math.max(col.name.length * 9 + 56, 96)}px`, whiteSpace: 'nowrap' as const },
+            sortable: true,
+            render: (_: unknown, row: Record<string, unknown>) => {
+              const cellInfo = truncateCellValue(row[col.name]);
+              const isNull = row[col.name] === null;
+              const isExpanded = expandedCell?.row === row && expandedCell?.col === col.name;
+              if (isNull) return <span style={styles.nullValue}>NULL</span>;
+              return (
+                <span
+                  style={{ ...styles.cellText, ...(isExpanded ? styles.cellTextExpanded : {}), ...(cellInfo.isTruncated ? { cursor: 'pointer' } : {}) }}
+                  onClick={cellInfo.isTruncated ? () => setExpandedCell(isExpanded ? null : { row, col: col.name }) : undefined}
+                  title={cellInfo.isTruncated ? cellInfo.fullValue : `${col.name} (${col.dataType})`}
                 >
-                  <span>{col.name}</span>
-                  {sortColumn === col.name && (
-                    <span style={styles.sortIndicator}>
-                      {sortDirection === 'asc' ? ' ▲' : ' ▼'}
-                    </span>
+                  {isExpanded ? (
+                    <span style={styles.expandedValue}>{cellInfo.fullValue}</span>
+                  ) : (
+                    <>
+                      {cellInfo.displayValue}
+                      {cellInfo.isTruncated && <span style={styles.truncationIndicator}>…</span>}
+                    </>
                   )}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {displayRows.map((row, rowIdx) => (
-              <tr key={rowIdx} style={rowIdx % 2 === 0 ? styles.evenRow : undefined}>
-                {columns.map((col) => {
-                  const cellInfo = truncateCellValue(row[col.name]);
-                  const isNull = row[col.name] === null;
-                  const isExpanded =
-                    expandedCell?.row === rowIdx && expandedCell?.col === col.name;
-
-                  return (
-                    <td
-                      key={col.name}
-                      style={{
-                        ...styles.cell,
-                        ...(isNull ? styles.nullCell : {}),
-                      }}
-                      onClick={
-                        cellInfo.isTruncated
-                          ? () =>
-                              setExpandedCell(
-                                isExpanded ? null : { row: rowIdx, col: col.name }
-                              )
-                          : undefined
-                      }
-                      title={cellInfo.isTruncated ? cellInfo.fullValue : undefined}
-                    >
-                      {isNull ? (
-                        <span style={styles.nullValue}>NULL</span>
-                      ) : isExpanded ? (
-                        <span style={styles.expandedValue}>{cellInfo.fullValue}</span>
-                      ) : (
-                        <>
-                          {cellInfo.displayValue}
-                          {cellInfo.isTruncated && (
-                            <span style={styles.truncationIndicator}>…</span>
-                          )}
-                        </>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </span>
+              );
+            },
+          }))}
+        />
       </div>
 
       {/* Footer with row count and execution time */}
@@ -230,7 +192,21 @@ const styles: Record<string, React.CSSProperties> = {
   },
   tableWrapper: {
     flex: 1,
-    overflow: 'auto',
+    minHeight: 0,
+    overflow: 'hidden',
+  },
+  cellText: {
+    display: 'inline-block',
+    maxWidth: '300px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    verticalAlign: 'top',
+    fontFamily: 'monospace',
+    fontSize: 'var(--font-size-sm)',
+  },
+  cellTextExpanded: {
+    whiteSpace: 'normal',
   },
   table: {
     width: '100%',
