@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { LEAD_SOURCE_LABELS } from '@daystream/shared';
 import { Table } from '../design-system/components/data/Table';
 import type { TableFilters } from '../design-system/components/data/Table';
 import { Button } from '../design-system/components/actions/Button';
 import { Modal } from '../design-system/components/feedback/Modal';
 import { ConfirmDialog } from '../design-system/components/feedback/ConfirmDialog';
+import { useDraft, fieldMark, UnsavedTag } from '../components/unsaved/DraftSections';
+import { useGuardedNavigate } from '../components/unsaved/LeaveGuard';
 import * as leadsApi from '../api/leads';
 import * as customersApi from '../api/customers';
 import { useAuth } from '../context/AuthContext';
@@ -14,12 +16,12 @@ import type { Lead, LeadStage } from '../api/leads';
 
 /**
  * Marketing → Leads (THE-17): the business's people still at lifecycle stage "lead".
- * Assigned staff, lead stage and tags are changed in the row; the row opens the person's
- * profile. "Delete lead" archives the person, who can be restored from "Show deleted leads".
+ * Assigned staff, source, lead stage and tags are changed in the row and wait for Marketing's
+ * Save changes (David, 2026-11-02, decision 10); the row opens the person's profile. "Delete lead" archives the person, who can be restored from "Show deleted leads".
  * Lead stages are set up under Settings → Leads.
  */
 export function Leads() {
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   const { user } = useAuth();
   const perms = getPermissionsFromRole(user?.role || '');
   const canEdit = perms.some((p) => p === '*:*' || p === 'customers:*');
@@ -102,32 +104,64 @@ export function Leads() {
 
   const replaceRow = (next: Lead) => setLeads((rows) => rows.map((r) => (r.id === next.id ? { ...r, ...next } : r)));
 
-  async function change(lead: Lead, patch: { lead_stage_id?: string; owner_user_id?: string | null; lead_source?: string | null }) {
-    setMessage('');
+  // Changes made in the rows, per lead, until Save changes stores them (stage changes then go on the Timeline).
+  type Fields = { lead_stage_id?: string; owner_user_id?: string | null; lead_source?: string | null };
+  type Pending = Record<string, Fields & { addTags?: string[]; removeTags?: string[] }>;
+  const draft = useDraft<Pending>('leads-rows', 'Leads', {}, async (all) => {
+    const left: Pending = { ...all };
     try {
-      replaceRow(await leadsApi.updateLead(businessId, lead.id, patch));
-      // A changed stage, staff member or source may take the lead out of the current filters.
-      if ((patch.lead_stage_id && tableFilters.stage) || (patch.owner_user_id !== undefined && tableFilters.owner_name) || (patch.lead_source !== undefined && tableFilters.lead_source)) load();
-    } catch (err: any) { setMessage(err.response?.data?.error || 'The change could not be saved'); }
+      for (const [id, p] of Object.entries(all)) {
+        const { addTags = [], removeTags = [], ...fields } = p;
+        let row = leads.find((l) => l.id === id);
+        if (Object.keys(fields).length) { const updated = await leadsApi.updateLead(businessId, id, fields); replaceRow(updated); row = row && { ...row, ...updated }; }
+        for (const t of addTags) await customersApi.assignTag(id, businessId, t);
+        for (const t of removeTags) await customersApi.removeTag(id, t);
+        delete left[id];
+      }
+    } catch (err) { draft.rebase({}, left); load(); throw err; }
+    // Stage, staff, source and tags may take leads out of the current filters.
+    load();
+    return {};
+  });
+  const pending = (lead: Lead) => draft.value[lead.id] || {};
+  const value = <K extends keyof Fields>(lead: Lead, key: K): Lead[K & keyof Lead] => (key in pending(lead) ? (pending(lead) as any)[key] : (lead as any)[key]);
+  const changed = (lead: Lead, key: keyof Fields) => key in pending(lead);
+  const setPending = (lead: Lead, next: Fields & { addTags?: string[]; removeTags?: string[] }) => {
+    // A value put back as it was is no longer a change.
+    const clean: any = {};
+    for (const [k, v] of Object.entries(next)) {
+      if (k === 'addTags' || k === 'removeTags') { if ((v as string[]).length) clean[k] = v; }
+      else if ((v ?? null) !== ((lead as any)[k] ?? null)) clean[k] = v;
+    }
+    const all = { ...draft.value };
+    if (Object.keys(clean).length) all[lead.id] = clean; else delete all[lead.id];
+    draft.setValue(all);
+  };
+  function change(lead: Lead, patch: Fields) {
+    setMessage('');
+    setPending(lead, { ...pending(lead), ...patch });
   }
 
-  async function addTag(lead: Lead, tagId: string) {
+  function addTag(lead: Lead, tagId: string) {
     if (!tagId) return;
-    setMessage('');
-    try {
-      await customersApi.assignTag(lead.id, businessId, tagId);
-      const tag = tags.find((t) => t.id === tagId);
-      if (tag) replaceRow({ ...lead, tags: [...lead.tags, tag].sort((a, b) => a.name.localeCompare(b.name)) });
-    } catch { setMessage('The tag could not be added'); }
+    const p = pending(lead);
+    const removing = (p.removeTags || []).includes(tagId);
+    setPending(lead, { ...p, removeTags: (p.removeTags || []).filter((x) => x !== tagId), addTags: removing ? (p.addTags || []) : [...(p.addTags || []), tagId] });
   }
 
-  async function removeTag(lead: Lead, tagId: string) {
-    setMessage('');
-    try {
-      await customersApi.removeTag(lead.id, tagId);
-      replaceRow({ ...lead, tags: lead.tags.filter((t) => t.id !== tagId) });
-    } catch { setMessage('The tag could not be removed'); }
+  function removeTag(lead: Lead, tagId: string) {
+    const p = pending(lead);
+    const adding = (p.addTags || []).includes(tagId);
+    setPending(lead, { ...p, addTags: (p.addTags || []).filter((x) => x !== tagId), removeTags: adding ? (p.removeTags || []) : [...(p.removeTags || []), tagId] });
   }
+
+  // Tags as they will be after Save changes, with what is new or going marked.
+  const shownTags = (lead: Lead) => {
+    const p = pending(lead);
+    const kept = lead.tags.map((t) => ({ ...t, state: (p.removeTags || []).includes(t.id) ? 'removed' : '' }));
+    const added = (p.addTags || []).map((id) => tags.find((t) => t.id === id)).filter(Boolean).map((t) => ({ ...t!, state: 'added' }));
+    return [...kept, ...added];
+  };
 
   async function deleteLead(lead: Lead) {
     try {
@@ -161,7 +195,7 @@ export function Leads() {
     {
       key: 'owner_name', header: 'Assigned staff', sortable: true,
       render: (val: string | null, row: Lead) => canEdit && !archived ? (
-        <select style={styles.cellSelect} aria-label={`Assigned staff for ${fullName(row)}`} value={row.owner_user_id || ''}
+        <select style={{ ...styles.cellSelect, ...fieldMark(changed(row, 'owner_user_id')) }} aria-label={`Assigned staff for ${fullName(row)}`} value={value(row, 'owner_user_id') || ''}
           onClick={stop} onChange={(e) => change(row, { owner_user_id: e.target.value || null })}>
           <option value="">Unassigned</option>
           {owners.map((o) => <option key={o.id} value={o.id}>{o.first_name} {o.last_name}</option>)}
@@ -174,7 +208,7 @@ export function Leads() {
       // Editable in the row, like stage and staff (David, 2026-10-29: a wrong source can be corrected).
       key: 'lead_source', header: 'Source', sortable: true,
       render: (val: string | null, row: Lead) => canEdit && !archived ? (
-        <select style={styles.cellSelect} aria-label={`Source for ${fullName(row)}`} value={val || ''}
+        <select style={{ ...styles.cellSelect, ...fieldMark(changed(row, 'lead_source')) }} aria-label={`Source for ${fullName(row)}`} value={value(row, 'lead_source') || ''}
           onClick={stop} onChange={(e) => change(row, { lead_source: e.target.value || null })}>
           <option value="">—</option>
           {Object.entries(LEAD_SOURCE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -185,7 +219,7 @@ export function Leads() {
     {
       key: 'stage', header: 'Lead stage', sortable: true,
       render: (_: unknown, row: Lead) => canEdit && !archived ? (
-        <select style={styles.cellSelect} aria-label={`Lead stage for ${fullName(row)}`} value={row.lead_stage_id || ''}
+        <select style={{ ...styles.cellSelect, ...fieldMark(changed(row, 'lead_stage_id')) }} aria-label={`Lead stage for ${fullName(row)}`} value={value(row, 'lead_stage_id') || ''}
           onClick={stop} onChange={(e) => change(row, { lead_stage_id: e.target.value })}>
           {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
@@ -195,19 +229,20 @@ export function Leads() {
       key: 'tags', header: 'Tags', filter: false as const,
       render: (_: unknown, row: Lead) => (
         <span style={styles.tags} onClick={stop}>
-          {row.tags.length === 0 && <span style={styles.sub}>No tags assigned</span>}
-          {row.tags.map((t) => (
-            <span key={t.id} style={styles.tag}>
+          {shownTags(row).length === 0 && <span style={styles.sub}>No tags assigned</span>}
+          {shownTags(row).map((t) => (
+            <span key={t.id} style={{ ...styles.tag, ...(t.state ? fieldMark(true) : {}), ...(t.state === 'removed' ? { textDecoration: 'line-through', opacity: 0.7 } : {}) }}
+              title={t.state === 'added' ? 'Added when you save' : t.state === 'removed' ? 'Removed when you save' : undefined}>
               {t.name}
-              {canEdit && !archived && (
-                <button style={styles.tagRemove} aria-label={`Remove tag ${t.name} from ${fullName(row)}`} onClick={() => removeTag(row, t.id)}>×</button>
-              )}
+              {canEdit && !archived && (t.state === 'removed'
+                ? <button style={styles.tagRemove} aria-label={`Keep tag ${t.name} on ${fullName(row)}`} title="Undo" onClick={() => addTag(row, t.id)}>↺</button>
+                : <button style={styles.tagRemove} aria-label={`Remove tag ${t.name} from ${fullName(row)}`} onClick={() => removeTag(row, t.id)}>×</button>)}
             </span>
           ))}
-          {canEdit && !archived && tags.some((t) => !row.tags.some((x) => x.id === t.id)) && (
+          {canEdit && !archived && tags.some((t) => !shownTags(row).some((x) => x.id === t.id)) && (
             <select style={styles.tagAdd} aria-label={`Add a tag to ${fullName(row)}`} value="" onChange={(e) => addTag(row, e.target.value)}>
               <option value="">+ Tag</option>
-              {tags.filter((t) => !row.tags.some((x) => x.id === t.id)).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {tags.filter((t) => !shownTags(row).some((x) => x.id === t.id)).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           )}
         </span>
@@ -238,7 +273,7 @@ export function Leads() {
         {canEdit && <Button onClick={() => setAdding(true)}>Add lead</Button>}
       </div>
 
-      <p style={styles.count} aria-live="polite">{loading ? ' ' : `${total} ${archived ? 'deleted ' : ''}${total === 1 ? 'lead' : 'leads'}`}</p>
+      <p style={styles.count} aria-live="polite">{loading ? ' ' : `${total} ${archived ? 'deleted ' : ''}${total === 1 ? 'lead' : 'leads'}`}<UnsavedTag dirty={draft.dirty} /></p>
       {message && <p style={styles.message} role="status">{message}</p>}
 
       <Table
