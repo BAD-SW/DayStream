@@ -64,33 +64,30 @@ function ServicesTab() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
 
   const businessId = localStorage.getItem('business_id') || '';
 
+  // Every service (100 per call until all are in): the column filters work on all of them
+  // (David, 2026-11-02). The search box stays — it also looks in the descriptions.
   const fetchServices = useCallback(async () => {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const result = await servicesApi.getServices(businessId, {
-        search: search || undefined,
-        status: statusFilter || undefined,
-        category_id: categoryFilter || undefined,
-        page,
-      });
-      setServices(result.data);
-      setTotalPages(result.meta?.totalPages || 1);
+      const rows: any[] = [];
+      for (let p = 1; ; p++) {
+        const result = await servicesApi.getServices(businessId, { search: search || undefined, page: p, limit: 100 });
+        rows.push(...result.data);
+        if (result.data.length < 100 || p >= (result.meta?.totalPages || 1)) break;
+      }
+      setServices(rows);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId, search, statusFilter, categoryFilter, page]);
+  }, [businessId, search]);
 
   useEffect(() => { fetchServices(); }, [fetchServices]);
   useEffect(() => { if (businessId) servicesApi.getCategories(businessId).then(setCategories).catch(() => {}); }, [businessId]);
-  useEffect(() => { const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300); return () => clearTimeout(t); }, [searchInput]);
+  useEffect(() => { const t = setTimeout(() => setSearch(searchInput), 300); return () => clearTimeout(t); }, [searchInput]);
 
   const handleQuickAction = async (action: string, svc: any) => {
     try {
@@ -105,10 +102,10 @@ function ServicesTab() {
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
     { key: 'category_name', header: 'Category', sortable: true, render: (val: string) => val || '—' },
-    { key: 'default_duration', header: 'Duration', sortable: true, render: (val: number) => val ? `${val} min` : '—' },
+    { key: 'default_duration', header: 'Duration', sortable: true, filterLabel: (v: any) => (v ? `${v} min` : '—'), render: (val: number) => val ? `${val} min` : '—' },
     { key: 'status', header: 'Status', sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
     {
-      key: 'actions', header: '',
+      key: 'actions', header: '', filter: false as const,
       render: (_: any, row: any) => (
         <div style={{ display: 'flex', gap: '4px' }}>
           {row.status === 'draft' && <ActionBtn label="Activate" onClick={() => handleQuickAction('activate', row)} />}
@@ -125,21 +122,10 @@ function ServicesTab() {
     <>
       <div style={styles.toolbar}>
         <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search services..." />
-        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All Statuses</option>
-          <option value="draft">Draft</option>
-          <option value="active">Active</option>
-          <option value="paused">Paused</option>
-          <option value="archived">Archived</option>
-        </select>
-        <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All Categories</option>
-          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
         <div style={{ flex: 1 }} />
         <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Service</Button>
       </div>
-      <Table columns={columns} data={services} loading={loading} onRowClick={(row) => navigate(`/offers/services/${row.id}`)} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No services found" mobileCardMode clientSort />
+      <Table columns={columns} data={services} loading={loading} onRowClick={(row) => navigate(`/offers/services/${row.id}`)} emptyMessage="No services found" mobileCardMode clientSort />
       {showCreate && <CreateServiceModal businessId={businessId} categories={categories} onClose={() => setShowCreate(false)} onCreated={(svc) => { setShowCreate(false); navigate(`/offers/services/${svc.id}`); }} />}
     </>
   );
@@ -154,33 +140,33 @@ function ProductsTab() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
 
   const businessId = localStorage.getItem('business_id') || '';
 
+  // Every product (100 per call until all are in): the column filters work on all of them
+  // (David, 2026-11-02).
   const fetchProducts = useCallback(async () => {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ business_id: businessId });
-      if (search) params.set('search', search);
-      if (statusFilter) params.set('status', statusFilter);
-      if (categoryFilter) params.set('category_id', categoryFilter);
-      params.set('page', String(page));
-      const res = await apiClient.get(`/v1/merchandise?${params}`);
-      setProducts(res.data.data || []);
-      setTotalPages(res.data.meta?.totalPages || 1);
+      const rows: any[] = [];
+      for (let p = 1; ; p++) {
+        const params = new URLSearchParams({ business_id: businessId, page: String(p), limit: '100' });
+        if (search) params.set('search', search);
+        const res = await apiClient.get(`/v1/merchandise?${params}`);
+        const data = res.data.data || [];
+        rows.push(...data);
+        if (data.length < 100 || p >= (res.data.meta?.totalPages || 1)) break;
+      }
+      setProducts(rows);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId, search, statusFilter, categoryFilter, page]);
+  }, [businessId, search]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
   useEffect(() => { if (businessId) servicesApi.getCategories(businessId).then(setCategories).catch(() => {}); }, [businessId]);
-  useEffect(() => { const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300); return () => clearTimeout(t); }, [searchInput]);
+  useEffect(() => { const t = setTimeout(() => setSearch(searchInput), 300); return () => clearTimeout(t); }, [searchInput]);
 
   const handleQuickAction = async (action: string, item: any) => {
     try {
@@ -195,11 +181,11 @@ function ProductsTab() {
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
     { key: 'category_name', header: 'Category', sortable: true, render: (val: string) => val || '—' },
-    { key: 'price', header: 'Price', sortable: true, render: (val: number) => val != null ? formatCurrency(val) : '—' },
+    { key: 'price', header: 'Price', sortable: true, filterLabel: (v: any) => (v != null ? formatCurrency(v) : '—'), render: (val: number) => val != null ? formatCurrency(val) : '—' },
     { key: 'sku', header: 'SKU', sortable: true, render: (val: string) => val || '—' },
     { key: 'status', header: 'Status', sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
     {
-      key: 'actions', header: '',
+      key: 'actions', header: '', filter: false as const,
       render: (_: any, row: any) => (
         <div style={{ display: 'flex', gap: '4px' }}>
           {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleQuickAction('pause', row)} />}
@@ -215,20 +201,10 @@ function ProductsTab() {
     <>
       <div style={styles.toolbar}>
         <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search products..." />
-        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All Statuses</option>
-          <option value="active">Active</option>
-          <option value="paused">Paused</option>
-          <option value="archived">Archived</option>
-        </select>
-        <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All Categories</option>
-          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
         <div style={{ flex: 1 }} />
         <Button variant="secondary" onClick={() => setShowCreate(true)}>Add Product</Button>
       </div>
-      <Table columns={columns} data={products} loading={loading} onRowClick={(row) => navigate(`/offers/merchandise/${row.id}`)} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No products found" mobileCardMode clientSort />
+      <Table columns={columns} data={products} loading={loading} onRowClick={(row) => navigate(`/offers/merchandise/${row.id}`)} emptyMessage="No products found" mobileCardMode clientSort />
       {showCreate && <CreateProductModal businessId={businessId} categories={categories} onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); fetchProducts(); }} />}
     </>
   );
@@ -390,7 +366,7 @@ function MembershipsTab() {
       render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge>,
     },
     {
-      key: 'actions', header: '',
+      key: 'actions', header: '', filter: false as const,
       render: (_: any, row: any) => (
         <div style={{ display: 'flex', gap: '4px' }}>
           {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleQuickAction('pause', row)} />}
@@ -570,7 +546,7 @@ function PackagesTab() {
     { key: 'active_purchases', header: 'Sold', sortable: true, render: (val: number) => val || 0 },
     { key: 'status', header: 'Status', sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
     {
-      key: 'actions', header: '',
+      key: 'actions', header: '', filter: false as const,
       render: (_: any, row: any) => (
         <div style={{ display: 'flex', gap: '4px' }}>
           {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleQuickAction('pause', row)} />}
@@ -771,7 +747,7 @@ function PromotionsTab() {
     },
     { key: 'status', header: 'Status', sortable: true, render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge> },
     {
-      key: 'actions', header: '',
+      key: 'actions', header: '', filter: false as const,
       render: (_: any, row: any) => (
         <div style={{ display: 'flex', gap: '4px' }}>
           {row.status === 'active' && <ActionBtn label="Pause" onClick={() => handleQuickAction('pause', row)} />}
