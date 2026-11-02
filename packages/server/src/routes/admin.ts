@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { parseColumnFilters } from '../utils/column-filters';
 import Joi from 'joi';
 import multer from 'multer';
 import { validate } from '../middleware/validate';
@@ -706,10 +707,23 @@ adminRouter.put('/feature-flags/:key/override', tenantContext, requirePermission
 // --- Audit Log ---
 
 // GET /api/v1/admin/audit-log — Query audit log
+// GET /api/v1/admin/audit-log/column-values?column= — the values of one column, for its filter list.
+adminRouter.get('/audit-log/column-values', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { auditColumnValues } = await import('../services/audit.service');
+    success(res, await auditColumnValues(authReq.tenantId, String(req.query.column || ''), parseColumnFilters(req.query.cf)));
+  } catch (err: any) {
+    console.error('Failed to list column values', err?.message || err);
+    error(res, 'Failed to list column values', 'INTERNAL_ERROR', 500);
+  }
+});
+
 adminRouter.get('/audit-log', tenantContext, requirePermission('settings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const result = await queryAuditLog(authReq.tenantId, {
+      columns: parseColumnFilters(req.query.cf),
       userId: req.query.user_id as string,
       action: req.query.action as string,
       resourceType: req.query.resource_type as string,

@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { adminPool } from '../db/pool';
+import { ColumnFilters, FilterableColumn, addColumnFilterConditions, columnValuesSql } from '../utils/column-filters';
 import { logger } from '../middleware/logger';
 
 interface AuditEntry {
@@ -84,6 +85,25 @@ export async function logAuditStrict(entry: AuditEntry): Promise<void> {
   lastSignature = signature;
 }
 
+// The audit log's filterable columns (keys as the table's columns). Days are in UTC.
+const AUDIT_COLUMNS: Record<string, FilterableColumn> = {
+  created_at: { expr: 'a.created_at', kind: 'date' },
+  action: { expr: 'a.action' },
+  resource_type: { expr: 'a.resource_type' },
+  user_email: { expr: 'a.user_id', label: '(SELECT u2.email FROM usr_users u2 WHERE u2.id::text = a.user_id::text)' },
+  tenant_name: { expr: 'a.tenant_id', label: '(SELECT t2.name FROM sys_tenants t2 WHERE t2.id::text = a.tenant_id::text)' },
+};
+
+/** Every value of one audit log column (with counts) among the entries matching the other filters. */
+export async function auditColumnValues(tenantId: string, column: string, columns: ColumnFilters) {
+  const col = AUDIT_COLUMNS[column];
+  if (!col || col.kind === 'date') return [];
+  const conditions = ['a.tenant_id = $1']; const params: any[] = [tenantId];
+  addColumnFilterConditions(columns, AUDIT_COLUMNS, conditions, params, "'UTC'", column);
+  const { rows } = await adminPool.query(columnValuesSql(col, 'usr_audit_log a', conditions.join(' AND ')), params);
+  return rows as Array<{ value: string; label: string; count: number }>;
+}
+
 /**
  * Query audit log with filters and pagination.
  * Joins users and tenants tables to return human-readable names.
@@ -96,6 +116,8 @@ export async function queryAuditLog(
     resourceType?: string;
     startDate?: string;
     endDate?: string;
+    /** Column filters of the shared table (David, 2026-11-02). */
+    columns?: ColumnFilters;
     page?: number;
     limit?: number;
   },
@@ -124,6 +146,8 @@ export async function queryAuditLog(
     conditions.push(`a.created_at <= $${paramIndex++}`);
     params.push(filters.endDate);
   }
+
+  if (filters.columns) { addColumnFilterConditions(filters.columns, AUDIT_COLUMNS, conditions, params, "'UTC'"); paramIndex = params.length + 1; }
 
   const page = filters.page || 1;
   const limit = Math.min(filters.limit || 50, 100);

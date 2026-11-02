@@ -19,10 +19,7 @@ export function Memberships() {
   const navigate = useNavigate();
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
   const [showEnroll, setShowEnroll] = useState(false);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -30,12 +27,12 @@ export function Memberships() {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const result = await membershipsApi.getMemberships(businessId, { status: statusFilter || undefined, page });
+      // Every membership: the column filters work on all of them (David, 2026-11-02).
+      const result = await membershipsApi.getMemberships(businessId, {});
       setMemberships(result.data);
-      setTotalPages(result.meta?.totalPages || 1);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId, statusFilter, page]);
+  }, [businessId]);
 
   useEffect(() => { fetchMemberships(); }, [fetchMemberships]);
 
@@ -65,11 +62,11 @@ export function Memberships() {
   };
 
   const columns = [
-    { key: 'customer', header: 'Customer', render: (_: any, row: any) => [row.customer_first_name ?? row.first_name, row.customer_last_name ?? row.last_name].filter(Boolean).join(' ') || row.customer_email || '—' },
+    { key: 'customer', header: 'Customer', filter: 'values' as const, filterValue: (row: any) => [row.customer_first_name ?? row.first_name, row.customer_last_name ?? row.last_name].filter(Boolean).join(' ') || row.customer_email || '', render: (_: any, row: any) => [row.customer_first_name ?? row.first_name, row.customer_last_name ?? row.last_name].filter(Boolean).join(' ') || row.customer_email || '—' },
     { key: 'plan_name', header: 'Plan' },
     // The list carries the plan's billing frequency (there is no plan_type: reading it crashed the screen).
     { key: 'billing_frequency', header: 'Billing', render: (v: string) => (v ? v.replace(/_/g, ' ') : '—') },
-    { key: 'status', header: 'Status', render: (v: string) => <Badge variant={STATUS_VARIANTS[v] || 'neutral'}>{STATUS_LABELS[v] || v}</Badge> },
+    { key: 'status', header: 'Status', filterLabel: (v: string) => STATUS_LABELS[v] || v, render: (v: string) => <Badge variant={STATUS_VARIANTS[v] || 'neutral'}>{STATUS_LABELS[v] || v}</Badge> },
     { key: 'credit_balance', header: 'Credits', render: (v: any) => (v === undefined || v === null ? '—' : v) },
     { key: 'next_billing_date', header: 'Next Billing', render: (v: string) => v ? new Date(v).toLocaleDateString() : '—' },
     {
@@ -102,17 +99,7 @@ export function Memberships() {
         <EnrollForm businessId={businessId} onEnrolled={() => { setShowEnroll(false); fetchMemberships(); }} />
       )}
 
-      <div style={styles.toolbar}>
-        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All</option>
-          <option value="active">Active</option>
-          <option value="renewing">Past due</option>
-          <option value="paused">Paused</option>
-          <option value="cancelled">Cancelled</option>
-          <option value="expired">Expired</option>
-        </select>
-      </div>
-      <Table columns={columns} data={memberships} loading={loading} onRowClick={(row) => navigate(`/memberships/${row.id}`)} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No memberships found" mobileCardMode />
+      <Table columns={columns} data={memberships} loading={loading} onRowClick={(row) => navigate(`/memberships/${row.id}`)} emptyMessage="No memberships found" mobileCardMode />
     </div>
   );
 }
