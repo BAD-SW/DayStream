@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { ColumnFilters, FilterableColumn, addColumnFilterConditions, columnValuesSql } from '../utils/column-filters';
 import { generateJournalEntries } from './order-journal.service';
 import { touchActivity } from './person-identity.service';
 import { validateCode, redeemCode } from './discount-codes.service';
@@ -870,9 +871,36 @@ export async function getOrder(orderId: string) {
 /**
  * List orders for a business with filters.
  */
+// The orders list's filterable columns (keys as the table's columns).
+const ORDER_TZ = "COALESCE((SELECT bz.timezone FROM sys_businesses bz WHERE bz.id = o.business_id), 'UTC')";
+const ORDER_COLUMNS: Record<string, FilterableColumn> = {
+  order_number: { expr: 'o.order_number' },
+  completed_at: { expr: 'COALESCE(o.completed_at, o.created_at)', kind: 'date' },
+  customer_first_name: {
+    expr: 'o.customer_id',
+    label: "COALESCE((SELECT NULLIF(BTRIM(COALESCE(c2.first_name, '') || ' ' || COALESCE(c2.last_name, '')), '') FROM cus_customers c2 WHERE c2.id = o.customer_id), o.walk_in_name)",
+  },
+  item_count: { expr: '(SELECT COUNT(*) FROM fin_order_items oi2 WHERE oi2.order_id = o.id)' },
+  status: { expr: 'o.status' },
+  total_amount: { expr: 'o.total_amount' },
+};
+
+/** Every value of one orders column (with counts) among the orders matching the other filters. */
+export async function getOrderColumnValues(businessId: string, column: string, columns: ColumnFilters, product?: string) {
+  const col = ORDER_COLUMNS[column];
+  if (!col || col.kind === 'date') return [];
+  const conditions = ['o.business_id = $1']; const params: any[] = [businessId];
+  if (product?.trim()) { params.push(`%${product.trim()}%`); conditions.push(`EXISTS (SELECT 1 FROM fin_order_items oi WHERE oi.order_id = o.id AND oi.item_name ILIKE ${params.length})`); }
+  addColumnFilterConditions(columns, ORDER_COLUMNS, conditions, params, ORDER_TZ, column);
+  const { rows } = await adminPool.query(columnValuesSql(col, 'fin_orders o', conditions.join(' AND ')), params);
+  return rows as Array<{ value: string; label: string; count: number }>;
+}
+
 export async function getOrders(businessId: string, filters?: {
   status?: string; customerId?: string; dateFrom?: string; dateTo?: string;
   orderNumber?: string; product?: string; page?: number; limit?: number;
+  /** Column filters of the shared table (David, 2026-11-02). */
+  columns?: ColumnFilters;
 }) {
   const conditions = ['o.business_id = $1'];
   const params: any[] = [businessId];
@@ -889,6 +917,7 @@ export async function getOrders(businessId: string, filters?: {
     conditions.push(`EXISTS (SELECT 1 FROM fin_order_items oi WHERE oi.order_id = o.id AND oi.item_name ILIKE $${idx++})`);
     params.push(`%${filters.product.trim()}%`);
   }
+  if (filters?.columns) { addColumnFilterConditions(filters.columns, ORDER_COLUMNS, conditions, params, ORDER_TZ); idx = params.length + 1; }
 
   const where = conditions.join(' AND ');
   const limit = Math.min(filters?.limit || 20, 100);

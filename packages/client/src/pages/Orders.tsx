@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Table } from '../design-system/components/data/Table';
+import type { TableFilters } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { formatCurrency } from '../utils/currency';
 import * as checkoutApi from '../api/checkout';
@@ -32,16 +33,17 @@ export function Orders() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [customerFilter, setCustomerFilter] = useState('');
-  const [orderNumberFilter, setOrderNumberFilter] = useState('');
+  // Searching inside the orders' items stays a search box (it is not a column).
   const [productFilter, setProductFilter] = useState('');
-  // (status defaults to "All" so partially_refunded / refunded sales are visible for lookup)
-  // Default to the last 7 days (to = today) so the list stays manageable.
-  const [dateFrom, setDateFrom] = useState(sevenDaysAgo());
-  const [dateTo, setDateTo] = useState(todayStr());
+  const [debouncedProduct, setDebouncedProduct] = useState('');
+  useEffect(() => { const t = setTimeout(() => setDebouncedProduct(productFilter.trim()), 300); return () => clearTimeout(t); }, [productFilter]);
+  // Column filters from the icon beside each sort icon (David, 2026-11-02). The list starts on
+  // the last 7 days, as before, shown as the Date filter.
+  const [tableFilters, setTableFilters] = useState<TableFilters>((): TableFilters => ({ completed_at: { from: sevenDaysAgo(), to: todayStr() } }));
+  // No pages: more orders load as the list scrolls.
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -49,35 +51,43 @@ export function Orders() {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const result = await checkoutApi.getOrders(businessId, {
-        status: statusFilter || undefined,
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-        order_number: orderNumberFilter.trim() || undefined,
-        product: productFilter.trim() || undefined,
-        page,
-      });
+      const result = await checkoutApi.getOrders(businessId, { product: debouncedProduct || undefined, columns: tableFilters, page: 1, limit: 50 });
       setOrders(result.data);
-      setTotalPages(result.meta?.totalPages || 1);
+      setPage(1);
+      setTotal(result.meta?.total || 0);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId, statusFilter, dateFrom, dateTo, orderNumberFilter, productFilter, page]);
+  }, [businessId, debouncedProduct, tableFilters]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
-  // Client-side customer name filter over the current page (the list endpoint
-  // filters by customer id, not free-text name, so this refines what's shown).
-  const visibleOrders = customerFilter.trim()
-    ? orders.filter((o) => {
-        const name = `${o.customer_first_name ?? ''} ${o.customer_last_name ?? ''}`.toLowerCase();
-        return name.includes(customerFilter.trim().toLowerCase());
-      })
-    : orders;
+  const loadMore = useCallback(async () => {
+    if (loadingMore || orders.length >= total) return;
+    setLoadingMore(true);
+    try {
+      const result = await checkoutApi.getOrders(businessId, { product: debouncedProduct || undefined, columns: tableFilters, page: page + 1, limit: 50 });
+      setOrders((rows) => [...rows, ...result.data]);
+      setPage(page + 1);
+      setTotal(result.meta?.total || 0);
+    } catch { /* Show more stays to try again */ }
+    finally { setLoadingMore(false); }
+  }, [businessId, debouncedProduct, tableFilters, page, loadingMore, orders.length, total]);
+
+  const filterOptions = useCallback(async (key: string) => {
+    const values = await checkoutApi.getOrderColumnValues(businessId, key, tableFilters, debouncedProduct || undefined);
+    return values.map((v) => ({
+      value: v.value, count: v.count,
+      label: key === 'total_amount' ? formatCurrency(Number(v.value))
+        : key === 'customer_first_name' ? (v.label || 'Walk-in')
+        : key === 'status' ? v.value.replace('_', ' ')
+        : v.label || v.value,
+    }));
+  }, [businessId, tableFilters, debouncedProduct]);
 
   const columns = [
     { key: 'order_number', header: 'Order', width: '140px', sortable: true },
     {
-      key: 'completed_at', header: 'Date', sortable: true,
+      key: 'completed_at', header: 'Date', sortable: true, filter: 'date' as const,
       render: (_: any, row: Order) => {
         const d = row.completed_at || row.created_at;
         return d ? new Date(d).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—';
@@ -91,7 +101,7 @@ export function Orders() {
           : (row.walk_in_name ? `${row.walk_in_name} (walk-in)` : 'Walk-in'),
     },
     {
-      key: 'item_count', header: 'Items', align: 'center' as const,
+      key: 'item_count', header: 'Items', align: 'center' as const, filter: 'values' as const,
       render: (_: any, row: Order) => String((row as any).item_count ?? 0),
     },
     {
@@ -115,29 +125,19 @@ export function Orders() {
       </div>
 
       <div style={styles.toolbar}>
-        <input type="text" style={styles.select} value={orderNumberFilter} onChange={(e) => { setOrderNumberFilter(e.target.value); setPage(1); }} placeholder="Order #…" title="Search by order number" />
-        <input type="text" style={styles.select} value={productFilter} onChange={(e) => { setProductFilter(e.target.value); setPage(1); }} placeholder="Product / item…" title="Search by item in the order" />
-        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All Statuses</option>
-          <option value="completed">Completed</option>
-          <option value="open">Open</option>
-          <option value="partially_refunded">Partially refunded</option>
-          <option value="refunded">Refunded</option>
-          <option value="voided">Voided</option>
-        </select>
-        <input type="text" style={styles.select} value={customerFilter} onChange={(e) => setCustomerFilter(e.target.value)} placeholder="Customer name..." title="Filter by customer" />
-        <input type="date" style={styles.select} value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} title="From date" />
-        <input type="date" style={styles.select} value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} title="To date" />
-        <button style={styles.navBtn} onClick={() => { setStatusFilter(''); setDateFrom(sevenDaysAgo()); setDateTo(todayStr()); setCustomerFilter(''); setOrderNumberFilter(''); setProductFilter(''); setPage(1); }}>Reset</button>
+        <input type="text" style={styles.select} value={productFilter} onChange={(e) => setProductFilter(e.target.value)} placeholder="Search items in the orders…" title="Orders that contain an item with this name" aria-label="Search items in the orders" />
       </div>
 
       <Table
         columns={columns}
-        data={visibleOrders}
+        data={orders}
         loading={loading}
-        page={page}
-        totalPages={totalPages}
-        onPageChange={setPage}
+        filters={tableFilters}
+        onFiltersChange={setTableFilters}
+        filterOptions={filterOptions}
+        onLoadMore={loadMore}
+        hasMore={orders.length < total}
+        loadingMore={loadingMore}
         emptyMessage="No orders found"
         mobileCardMode
         clientSort
