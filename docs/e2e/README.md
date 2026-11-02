@@ -47,7 +47,7 @@ Every run ends with a report in chat and a new entry in [RUN-LOG.md](./RUN-LOG.m
 | 13 | [Marketing & leads](./suites/13-marketing.md) | MKT | 22 | 16, 48, THE-17 |
 | 14 | [Website, CMS & booking widget](./suites/14-website-widget.md) | WEB | 13 | 18, 38 |
 | 15 | [Events, community & integrations](./suites/15-events-community-integrations.md) | EVT, COM, INT | 22 | 14, 20, 22 |
-| 16 | [UI cross-cutting](./suites/16-ui-crosscutting.md) | UIX | 14 | 04, 30 |
+| 16 | [UI cross-cutting](./suites/16-ui-crosscutting.md) | UIX | 15 | 04, 30 |
 | 17 | [Inbox](./suites/17-inbox.md) | INB | 16 | 47 |
 
 Suite 01 is the heart of goal A. Suites 02–17 go deep per feature. Suite 00 is the fast gate for goal B.
@@ -308,3 +308,4 @@ Gaps in the test approach itself:
 | 2026-11-01 | local | People: customer profile on the one-Save rule (contact details; Save changes in the header; header and tabs stay in view). UIX-14 added, checked in the browser |
 | 2026-11-01 | local | Profile: tasks, notes, documents, photo and consent now also wait for Save changes; leaving by a button ("← Back to People", Back, Cancel, Sign out) or the browser's Back button asks first too (David's testing). UIX-14 rewritten; checked in the browser |
 | 2026-11-01 | local | Notes: the category is optional ("No category" by default; migration 161); a business without note categories can add notes. Checked through the API (note without category created and deleted) |
+| 2026-11-02 | local | Shared table: column filters beside the sort icon (value list over all rows, date calendar, Apply/Cancel), pinned header, load-more instead of pages. Server-side for People, Leads, Bookings, Orders, Payments and Audit log (new column-values endpoints, `cf` parameter); Reports, Memberships and all tables that hold their rows filter on screen. UIX-15 added. Server tests 1013/1013 |
