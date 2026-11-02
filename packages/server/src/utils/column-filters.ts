@@ -1,16 +1,16 @@
 /**
  * Column filters sent by the shared table (David, 2026-11-02): per column, a list of chosen values
- * ('' = empty), a "contains" text, or a date range (calendar days 'YYYY-MM-DD' in the business's
- * time zone). Each list endpoint names which columns can be filtered and the SQL behind them.
+ * ('' = empty), a "contains" text, a date range (calendar days 'YYYY-MM-DD' in the business's
+ * time zone) or an amount range (`min` / `max` in cents, decision 7). Each list endpoint names which columns can be filtered and the SQL behind them.
  */
 
-export interface ColumnFilter { values?: string[]; contains?: string; from?: string; to?: string }
+export interface ColumnFilter { values?: string[]; contains?: string; from?: string; to?: string; min?: number; max?: number }
 export type ColumnFilters = Record<string, ColumnFilter>;
 
 export interface FilterableColumn {
   /** SQL for the column's value. */
   expr: string;
-  kind?: 'text' | 'date';
+  kind?: 'text' | 'date' | 'amount';
   /** SQL for how a value is named in the filter list (e.g. a staff member's name for an id). */
   label?: string;
 }
@@ -31,7 +31,9 @@ export function parseColumnFilters(raw: unknown): ColumnFilters {
     if (typeof f.contains === 'string' && f.contains.trim()) cf.contains = f.contains.trim().slice(0, 200);
     if (typeof f.from === 'string' && DAY.test(f.from)) cf.from = f.from;
     if (typeof f.to === 'string' && DAY.test(f.to)) cf.to = f.to;
-    if (cf.values?.length || cf.contains || cf.from || cf.to) out[key] = cf;
+    if (typeof f.min === 'number' && Number.isFinite(f.min)) cf.min = Math.round(f.min);
+    if (typeof f.max === 'number' && Number.isFinite(f.max)) cf.max = Math.round(f.max);
+    if (cf.values?.length || cf.contains || cf.from || cf.to || cf.min != null || cf.max != null) out[key] = cf;
   }
   return out;
 }
@@ -55,6 +57,11 @@ export function addColumnFilterConditions(
   for (const [key, f] of Object.entries(filters)) {
     const col = columns[key];
     if (!col || key === skipKey) continue;
+    if (col.kind === 'amount') {
+      if (f.min != null) { params.push(f.min); conditions.push(`(${col.expr})::numeric >= $${params.length}`); }
+      if (f.max != null) { params.push(f.max); conditions.push(`(${col.expr})::numeric <= $${params.length}`); }
+      continue;
+    }
     if (col.kind === 'date') {
       const day = `((${col.expr}) AT TIME ZONE ${tzExpr})::date`;
       if (f.from) { params.push(f.from); conditions.push(`${day} >= $${params.length}::date`); }

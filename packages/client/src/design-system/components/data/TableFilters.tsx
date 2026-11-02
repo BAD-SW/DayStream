@@ -1,20 +1,22 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { formatCurrency, getCurrencySymbol } from '../../../utils/currency';
+import './TableFilters.css';
 
 /**
  * Column filters for every table (David, 2026-11-02, design approved on the "DayStream Table
  * Filters" mock-up): a filter icon beside the sort icon opens either a list of all the column's
  * values (search, Select all / Unselect all, counts, "Contains") or, for dates, quick ranges
- * beside two months with typed From / To. Nothing changes until Apply; Cancel leaves the table
- * as it was.
+ * beside two months with typed From / To; for amounts, a slider over a bar chart (decision 7).
+ * Nothing changes until Apply; Cancel leaves the table as it was.
  */
 
-/** One column's filter. `values` holds the chosen values ('' = empty); dates are 'YYYY-MM-DD'. */
-export interface ColumnFilter { values?: string[]; contains?: string; from?: string; to?: string }
+/** One column's filter. `values` holds the chosen values ('' = empty); dates are 'YYYY-MM-DD'; amounts `min` / `max` in cents. */
+export interface ColumnFilter { values?: string[]; contains?: string; from?: string; to?: string; min?: number; max?: number }
 export type TableFilters = Record<string, ColumnFilter>;
 export interface FilterOption { value: string; label?: string; count?: number }
 
-export const isFilterOn = (f?: ColumnFilter) => !!f && (!!f.values?.length || !!f.contains || !!f.from || !!f.to);
+export const isFilterOn = (f?: ColumnFilter) => !!f && (!!f.values?.length || !!f.contains || !!f.from || !!f.to || f.min != null || f.max != null);
 
 const pad = (n: number) => String(n).padStart(2, '0');
 /** A date or timestamp as the local calendar day 'YYYY-MM-DD'. */
@@ -32,7 +34,7 @@ const plain = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g
 
 export interface FilterColumnDef<T> {
   key: string;
-  kind: 'values' | 'date';
+  kind: 'values' | 'date' | 'amount';
   /** The value a row has in this column (what the list shows and what is matched). */
   value: (row: T) => unknown;
 }
@@ -43,6 +45,10 @@ export function applyTableFilters<T>(rows: T[], columns: FilterColumnDef<T>[], f
   if (active.length === 0) return rows;
   return rows.filter((row) => active.every((c) => {
     const f = filters[c.key]; const v = c.value(row);
+    if (c.kind === 'amount') {
+      const n = v == null || v === '' ? NaN : Number(v); if (!Number.isFinite(n)) return false;
+      return (f.min == null || n >= f.min) && (f.max == null || n <= f.max);
+    }
     if (c.kind === 'date') {
       const d = dayOf(v); if (!d) return false;
       return (!f.from || d >= f.from) && (!f.to || d <= f.to);
@@ -328,4 +334,133 @@ const pop: Record<string, React.CSSProperties> = {
   day: { height: 32, border: 0, background: 'none', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', cursor: 'pointer', fontVariantNumeric: 'tabular-nums' },
   dayIn: { background: 'var(--color-surface-hover)' },
   daySel: { background: 'var(--color-primary)', color: 'var(--color-text-inverse, #fff)', fontWeight: 700 },
+};
+
+// --- Amount filter (slider over a bar chart) -----------------------------------------------
+
+const BINS = 14;
+/** A money amount in minor units (cents) as the currency shows it. */
+const money = (cents: number) => formatCurrency(Math.round(cents));
+/** What a typed amount means in cents ('' = no limit, null = not a number). */
+const parseAmount = (s: string): number | null | undefined => {
+  const t = s.trim().replace(/[^\d,.\-−]/g, '').replace('−', '-').replace(',', '.');
+  if (t === '') return undefined;
+  const n = Number(t);
+  return Number.isFinite(n) ? Math.round(n * 100) : null;
+};
+
+/**
+ * Amount filter (David, 2026-11-02, decision 7 option C): a bar chart of how the column's amounts
+ * spread, two handles to drag, and From / To boxes in the currency. Values are cents; Apply keeps
+ * rows from `min` to `max` (either may be left open).
+ */
+export function AmountFilter({ anchor, title, current, loadOptions, onApply, onClose }: {
+  anchor: HTMLElement; title: string; current?: ColumnFilter;
+  loadOptions: () => Promise<FilterOption[]> | FilterOption[];
+  onApply: (f: ColumnFilter | undefined) => void; onClose: () => void;
+}) {
+  const [points, setPoints] = useState<Array<{ v: number; n: number }> | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [min, setMin] = useState<number | undefined>(current?.min);
+  const [max, setMax] = useState<number | undefined>(current?.max);
+  const [typedMin, setTypedMin] = useState(current?.min != null ? (current.min / 100).toFixed(2) : '');
+  const [typedMax, setTypedMax] = useState(current?.max != null ? (current.max / 100).toFixed(2) : '');
+  const [bad, setBad] = useState<'min' | 'max' | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    Promise.resolve(loadOptions()).then((opts) => {
+      if (!live) return;
+      setPoints(opts.map((o) => ({ v: Number(o.value), n: o.count ?? 1 })).filter((p) => o_ok(p.v)));
+    }).catch(() => { if (live) { setFailed(true); setPoints([]); } });
+    return () => { live = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The range the handles move over: the lowest to the highest amount, in whole currency units.
+  const lo = points && points.length ? Math.floor(Math.min(...points.map((p) => p.v)) / 100) * 100 : 0;
+  const hi = points && points.length ? Math.max(Math.ceil(Math.max(...points.map((p) => p.v)) / 100) * 100, lo + 100) : 100;
+  const step = (hi - lo) / BINS;
+  const bins = useMemo(() => {
+    const b = new Array(BINS).fill(0);
+    for (const p of points || []) b[Math.min(BINS - 1, Math.max(0, Math.floor((p.v - lo) / step)))] += p.n;
+    return b;
+  }, [points, lo, step]);
+  const top = Math.max(1, ...bins);
+  const a = min ?? lo;
+  const b = max ?? hi;
+  const total = (points || []).reduce((s, p) => s + p.n, 0);
+  const inRange = (points || []).reduce((s, p) => s + ((min == null || p.v >= min) && (max == null || p.v <= max) ? p.n : 0), 0);
+
+  // A handle at the end of the range means "no limit" on that side.
+  const slide = (which: 'min' | 'max', raw: number) => {
+    setBad(null);
+    if (which === 'min') { const v = Math.min(raw, b); const open = v <= lo; setMin(open ? undefined : v); setTypedMin(open ? '' : (v / 100).toFixed(2)); }
+    else { const v = Math.max(raw, a); const open = v >= hi; setMax(open ? undefined : v); setTypedMax(open ? '' : (v / 100).toFixed(2)); }
+  };
+  const typed = (which: 'min' | 'max', text: string) => {
+    const v = parseAmount(text);
+    if (v === null) { setBad(which); return; }
+    setBad(null);
+    if (which === 'min') setMin(v); else setMax(v);
+  };
+  const apply = () => {
+    let lower = min; let upper = max;
+    if (lower != null && upper != null && lower > upper) [lower, upper] = [upper, lower];
+    onApply(lower == null && upper == null ? undefined : { ...(lower != null ? { min: lower } : {}), ...(upper != null ? { max: upper } : {}) });
+  };
+  const summary = min == null && max == null ? 'Any amount' : min == null ? `Up to ${money(max!)}` : max == null ? `From ${money(min)}` : `${money(min)} – ${money(max)}`;
+
+  return (
+    <Popover anchor={anchor} width={360} label={`Filter ${title}`} onClose={onClose}>
+      <div style={pop.vals}>
+        <strong style={pop.title}>Filter {title}</strong>
+        {points === null && <div style={pop.none}>Loading…</div>}
+        {failed && <div style={pop.none}>The amounts could not be loaded.</div>}
+        {points !== null && !failed && (
+          <>
+            <div style={amt.hist} aria-hidden="true">
+              {bins.map((n, i) => {
+                const x0 = lo + i * step; const x1 = x0 + step;
+                return <span key={i} style={{ ...amt.bar, height: n ? 8 + 40 * (n / top) : 2, background: x1 > a && x0 < b ? 'var(--color-primary)' : 'var(--color-border)' }} />;
+              })}
+            </div>
+            <div style={amt.dual}>
+              <div style={amt.track} />
+              <input type="range" className="ds-amount-range" min={lo} max={hi} step={1} value={a} aria-label={`Lowest ${title}`}
+                onChange={(e) => slide('min', Number(e.target.value))} style={amt.range} />
+              <input type="range" className="ds-amount-range" min={lo} max={hi} step={1} value={b} aria-label={`Highest ${title}`}
+                onChange={(e) => slide('max', Number(e.target.value))} style={amt.range} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+              <label style={pop.fld}>From ({getCurrencySymbol()})
+                <input style={{ ...pop.input, ...(bad === 'min' ? pop.inputBad : {}) }} inputMode="decimal" placeholder={money(lo)} value={typedMin}
+                  onChange={(e) => { setTypedMin(e.target.value); typed('min', e.target.value); }} />
+              </label>
+              <label style={pop.fld}>To ({getCurrencySymbol()})
+                <input style={{ ...pop.input, ...(bad === 'max' ? pop.inputBad : {}) }} inputMode="decimal" placeholder={money(hi)} value={typedMax}
+                  onChange={(e) => { setTypedMax(e.target.value); typed('max', e.target.value); }} />
+              </label>
+            </div>
+          </>
+        )}
+        <div style={pop.foot}>
+          <button type="button" style={{ ...pop.textBtn, color: 'var(--color-text-secondary)' }} onClick={() => { setMin(undefined); setMax(undefined); setTypedMin(''); setTypedMax(''); setBad(null); }}>Clear</button>
+          <span style={{ marginRight: 'auto', whiteSpace: 'nowrap', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+            {summary}{points ? ` · ${inRange} of ${total}` : ''}
+          </span>
+          <button type="button" style={pop.btn} onClick={onClose}>Cancel</button>
+          <button type="button" style={{ ...pop.btn, ...pop.primary, ...(bad ? pop.disabled : {}) }} disabled={!!bad} onClick={apply}>Apply</button>
+        </div>
+      </div>
+    </Popover>
+  );
+}
+const o_ok = (v: number) => Number.isFinite(v);
+
+const amt: Record<string, React.CSSProperties> = {
+  hist: { display: 'flex', alignItems: 'flex-end', gap: 3, height: 50 },
+  bar: { flex: 1, borderRadius: '2px 2px 0 0', minWidth: 0 },
+  dual: { position: 'relative', height: 22 },
+  track: { position: 'absolute', left: 0, right: 0, top: 9, height: 4, borderRadius: 2, background: 'var(--color-border)' },
+  range: { position: 'absolute', inset: 0, width: '100%', margin: 0, background: 'none', pointerEvents: 'none', WebkitAppearance: 'none', appearance: 'none' },
 };

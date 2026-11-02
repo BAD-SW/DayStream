@@ -109,7 +109,7 @@ export function Orders() {
       render: (val: string) => <Badge variant={STATUS_VARIANTS[val] || 'neutral'}>{val}</Badge>,
     },
     {
-      key: 'total_amount', header: 'Total', align: 'right' as const, sortable: true,
+      key: 'total_amount', header: 'Total', align: 'right' as const, sortable: true, filter: 'amount' as const,
       render: (val: number) => formatCurrency(val),
     },
   ];

@@ -2,7 +2,7 @@ import { CSSProperties, ReactNode, useEffect, useMemo, useRef, useState } from '
 import cssStyles from './Table.module.css';
 import {
   ColumnFilter, TableFilters, FilterOption, FilterColumnDef, applyTableFilters, optionsFrom, dayOf,
-  looksLikeDate, isFilterOn, SortIcon, FunnelIcon, ValuesFilter, DateFilter,
+  looksLikeDate, isFilterOn, SortIcon, FunnelIcon, ValuesFilter, DateFilter, AmountFilter,
 } from './TableFilters';
 
 export type { ColumnFilter, TableFilters, FilterOption } from './TableFilters';
@@ -23,7 +23,7 @@ interface TableColumn<T> {
    * column's values or, for dates, a calendar. Found by itself from the data when left out;
    * `false` turns it off (e.g. a column of buttons).
    */
-  filter?: 'values' | 'date' | false;
+  filter?: 'values' | 'date' | 'amount' | false;
   /** The value a row has for filtering, when it is not `row[key]`. */
   filterValue?: (row: T) => unknown;
   /** How a value is named in the filter list, when not as the cell shows it. */
@@ -158,7 +158,7 @@ export function Table<T extends Record<string, any>>({
     for (const col of columns) {
       if (col.filter === false) continue;
       const value = col.filterValue || ((row: T) => row[col.key]);
-      let kind = col.filter as 'values' | 'date' | undefined;
+      let kind = col.filter as 'values' | 'date' | 'amount' | undefined;
       if (!kind) {
         const sample = source.slice(0, 200).map(value).filter((v) => v != null && v !== '');
         if (sample.length === 0 && !(filterOptions && controlled)) continue;
@@ -235,7 +235,11 @@ export function Table<T extends Record<string, any>>({
   };
   const openDef = openFilter ? filterDefs.get(openFilter.key) : undefined;
   const openCol = openFilter ? columns.find((c) => c.key === openFilter.key) : undefined;
-  const popover = openFilter && openDef && openCol ? (openDef.kind === 'date' ? (
+  const popover = openFilter && openDef && openCol ? (openDef.kind === 'amount' ? (
+    <AmountFilter anchor={openFilter.anchor} title={openCol.header} current={filters[openCol.key]}
+      loadOptions={() => (filterOptions ? filterOptions(openCol.key) : optionsFrom(source, openDef.value))}
+      onApply={(f) => applyFilter(openCol.key, f)} onClose={() => setOpenFilter(null)} />
+  ) : openDef.kind === 'date' ? (
     <DateFilter anchor={openFilter.anchor} title={openCol.header} current={filters[openCol.key]}
       countFor={controlled && filterOptions ? undefined : (from, to) => (from ? source.filter((r) => { const d = dayOf(openDef.value(r)); return !!d && d >= from && d <= (to || from); }).length : source.length)}
       onApply={(f) => applyFilter(openCol.key, f)} onClose={() => setOpenFilter(null)} />

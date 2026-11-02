@@ -882,7 +882,7 @@ const ORDER_COLUMNS: Record<string, FilterableColumn> = {
   },
   item_count: { expr: '(SELECT COUNT(*) FROM fin_order_items oi2 WHERE oi2.order_id = o.id)' },
   status: { expr: 'o.status' },
-  total_amount: { expr: 'o.total_amount' },
+  total_amount: { expr: 'o.total_amount', kind: 'amount' },
 };
 
 /** Every value of one orders column (with counts) among the orders matching the other filters. */

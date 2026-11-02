@@ -88,7 +88,8 @@ const TRANSACTION_COLUMNS: Record<string, FilterableColumn> = {
     label: "(SELECT NULLIF(BTRIM(COALESCE(c2.first_name, '') || ' ' || COALESCE(c2.last_name, '')), '') FROM cus_customers c2 WHERE c2.id = t.customer_id)",
   },
   type: { expr: 't.type' },
-  amount: { expr: 't.amount' },
+  // Refunds count below zero, as the list shows them (amount filter, decision 7).
+  amount: { expr: "CASE WHEN t.type = 'refund' THEN -t.amount ELSE t.amount END", kind: 'amount' },
   payment_method: { expr: 't.payment_method' },
   reference_number: { expr: 't.reference_number' },
   description: { expr: 't.description' },

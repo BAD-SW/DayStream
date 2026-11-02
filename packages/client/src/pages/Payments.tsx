@@ -265,7 +265,7 @@ export function Payments() {
       render: (val: string) => <Badge variant={TYPE_VARIANTS[val] || 'neutral'}>{val}</Badge>,
     },
     {
-      key: 'amount', header: 'Amount',
+      key: 'amount', header: 'Amount', filter: 'amount' as const,
       render: (_: any, t: Transaction) => {
         const prefix = t.type === 'refund' ? '-' : '';
         return <span style={{ color: t.type === 'refund' ? 'var(--color-error)' : 'var(--color-success)' }}>{prefix}{formatCurrency(t.amount, t.currency)}</span>;
