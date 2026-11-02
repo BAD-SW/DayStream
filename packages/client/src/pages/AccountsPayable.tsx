@@ -17,24 +17,12 @@ export function AccountsPayable() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [journalEntries, setJournalEntries] = useState<any[]>([]);
   const [vendorSearch, setVendorSearch] = useState('');
-  const [billDateFrom, setBillDateFrom] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  // Bills and Expenses start on this month, as before, shown as the date column's filter
+  // (column filters beside the sort icon, David 2026-11-02).
+  const [thisMonth] = useState(() => {
+    const d = new Date(); const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    return { from: `${ym}-01`, to: `${ym}-${String(new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()).padStart(2, '0')}` };
   });
-  const [billDateTo, setBillDateTo] = useState(() => {
-    return new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().slice(0, 10);
-  });
-  const [billStatusFilter, setBillStatusFilter] = useState('all');
-  const [expenseDateFrom, setExpenseDateFrom] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-  });
-  const [expenseDateTo, setExpenseDateTo] = useState(() => {
-    return new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().slice(0, 10);
-  });
-  const [expenseAccountFilter, setExpenseAccountFilter] = useState('all');
-  const [expenseMethodFilter, setExpenseMethodFilter] = useState('all');
-  const [accountTypeFilter, setAccountTypeFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [editingVendor, setEditingVendor] = useState<any | null>(null);
   const [editVendorForm, setEditVendorForm] = useState<any>({});
@@ -267,8 +255,8 @@ export function AccountsPayable() {
     { key: 'contact_name', header: 'Contact' },
     { key: 'email', header: 'Email' },
     { key: 'phone', header: 'Phone' },
-    { key: 'payment_terms', header: 'Terms', render: (v: number) => v ? `Net ${v}` : '—' },
-    { key: 'actions', header: '', render: (_: any, row: any) => (
+    { key: 'payment_terms', header: 'Terms', filterLabel: (v: any) => (v ? `Net ${v}` : '—'), render: (v: number) => v ? `Net ${v}` : '—' },
+    { key: 'actions', header: '', filter: false as const, render: (_: any, row: any) => (
       <div style={{ display: 'flex', gap: '4px' }}>
         <TableActionButton label="Edit" variant="edit" onClick={() => startEditVendor(row)} />
         <TableActionButton label="Archive" variant="archive" onClick={() => handleArchiveVendor(row.id)} />
@@ -279,12 +267,12 @@ export function AccountsPayable() {
   const billCols = [
     { key: 'vendor_name', header: 'Vendor', sortable: true },
     { key: 'invoice_number', header: 'Invoice #' },
-    { key: 'amount', header: 'Amount', render: (v: number) => formatCurrency(v) },
-    { key: 'amount_paid', header: 'Paid', render: (v: number) => v > 0 ? formatCurrency(v) : '—' },
-    { key: 'balance', header: 'Balance', render: (_: any, row: any) => formatCurrency(row.amount - row.amount_paid) },
-    { key: 'due_date', header: 'Due', sortable: true, render: (v: string) => new Date(v).toLocaleDateString() },
+    { key: 'amount', header: 'Amount', filterLabel: (v: any) => formatCurrency(Number(v)), render: (v: number) => formatCurrency(v) },
+    { key: 'amount_paid', header: 'Paid', filterLabel: (v: any) => (Number(v) > 0 ? formatCurrency(Number(v)) : '—'), render: (v: number) => v > 0 ? formatCurrency(v) : '—' },
+    { key: 'balance', header: 'Balance', filterValue: (row: any) => row.amount - row.amount_paid, filterLabel: (v: any) => formatCurrency(Number(v)), render: (_: any, row: any) => formatCurrency(row.amount - row.amount_paid) },
+    { key: 'due_date', header: 'Due', sortable: true, filter: 'date' as const, render: (v: string) => new Date(v).toLocaleDateString() },
     { key: 'status', header: 'Status', sortable: true, render: (v: string) => <Badge variant={BILL_STATUS[v] || 'neutral'}>{v}</Badge> },
-    { key: 'actions', header: '', render: (_: any, row: any) => (
+    { key: 'actions', header: '', filter: false as const, render: (_: any, row: any) => (
       <div style={{ display: 'flex', gap: '4px' }}>
         <TableActionButton label="Edit" variant="edit" onClick={() => openEditBill(row)} />
         {row.status !== 'paid' && <TableActionButton label="Record Payment" variant="activate" onClick={() => handlePayBill(row.id)} />}
@@ -293,12 +281,12 @@ export function AccountsPayable() {
   ];
 
   const expenseCols = [
-    { key: 'date', header: 'Date', sortable: true, render: (v: string) => new Date(v).toLocaleDateString() },
-    { key: 'amount', header: 'Amount', sortable: true, render: (v: number) => formatCurrency(v) },
+    { key: 'date', header: 'Date', sortable: true, filter: 'date' as const, render: (v: string) => new Date(v).toLocaleDateString() },
+    { key: 'amount', header: 'Amount', sortable: true, filterLabel: (v: any) => formatCurrency(Number(v)), render: (v: number) => formatCurrency(v) },
     { key: 'account_name', header: 'Account' },
     { key: 'description', header: 'Description' },
     { key: 'payment_method', header: 'Paid via' },
-    { key: 'actions', header: '', render: (_: any, row: any) => (
+    { key: 'actions', header: '', filter: false as const, render: (_: any, row: any) => (
       <div style={{ display: 'flex', gap: '4px' }}>
         <TableActionButton label="Edit" variant="edit" onClick={() => openEditExpense(row)} />
         <TableActionButton label="Delete" variant="delete" onClick={() => handleDeleteExpense(row.id)} />
@@ -311,7 +299,7 @@ export function AccountsPayable() {
     { key: 'account_type', header: 'Type', sortable: true },
     { key: 'name', header: 'Name', sortable: true },
     { key: 'description', header: 'Description' },
-    { key: 'actions', header: '', render: (_: any, row: any) => (
+    { key: 'actions', header: '', filter: false as const, render: (_: any, row: any) => (
       <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
         <TableActionButton label="Edit" variant="edit" onClick={() => openEditAccount(row)} />
         {row.status === 'active' && (
@@ -367,26 +355,12 @@ export function AccountsPayable() {
     setVendors((prev) => prev.filter((v) => v.id !== id));
   }
 
-  const filteredAccounts = (() => {
-    let result = showArchived ? accounts : accounts.filter((a: any) => a.status === 'active');
-    if (accountTypeFilter !== 'all') {
-      result = result.filter((a: any) => a.account_type === accountTypeFilter);
-    }
-    return result;
-  })();
+  const filteredAccounts = showArchived ? accounts : accounts.filter((a: any) => a.status === 'active');
 
   const accountsContent = (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap', gap: '16px' }}>
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-          <label style={styles.fieldLabel}>Type <select style={styles.input} value={accountTypeFilter} onChange={(e) => setAccountTypeFilter(e.target.value)}>
-            <option value="all">All</option>
-            <option value="asset">Asset</option>
-            <option value="liability">Liability</option>
-            <option value="equity">Equity</option>
-            <option value="revenue">Revenue</option>
-            <option value="expense">Expense</option>
-          </select></label>
           <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
             <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived
           </label>
@@ -634,13 +608,6 @@ export function AccountsPayable() {
         { id: 'bills', label: 'Bills', content: (
           <div>
             <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
-              <label style={styles.fieldLabel}>From <input style={styles.input} type="date" value={billDateFrom} onChange={(e) => setBillDateFrom(e.target.value)} /></label>
-              <label style={styles.fieldLabel}>To <input style={styles.input} type="date" value={billDateTo} onChange={(e) => setBillDateTo(e.target.value)} /></label>
-              <label style={styles.fieldLabel}>Status <select style={styles.input} value={billStatusFilter} onChange={(e) => setBillStatusFilter(e.target.value)}>
-                <option value="all">All</option>
-                <option value="draft">Draft</option>
-                <option value="paid">Paid</option>
-              </select></label>
               <button style={{ ...styles.primaryBtn, marginLeft: 'auto' }} onClick={openAddBill}>Add Bill</button>
             </div>
             {showBillForm && (
@@ -685,30 +652,12 @@ export function AccountsPayable() {
                 </div>
               </div>
             )}
-            <Table columns={billCols} data={bills.filter((b: any) => {
-              if (billDateFrom && b.due_date && b.due_date.slice(0, 10) < billDateFrom) return false;
-              if (billDateTo && b.due_date && b.due_date.slice(0, 10) > billDateTo) return false;
-              if (billStatusFilter !== 'all' && b.status !== billStatusFilter) return false;
-              return true;
-            })} loading={loading} emptyMessage="No bills" clientSort />
+            <Table columns={billCols} data={bills} loading={loading} emptyMessage="No bills" clientSort initialFilters={{ due_date: thisMonth }} />
           </div>
         ) },
         { id: 'expenses', label: 'Expenses', content: (
           <div>
             <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
-              <label style={styles.fieldLabel}>From <input style={styles.input} type="date" value={expenseDateFrom} onChange={(e) => setExpenseDateFrom(e.target.value)} /></label>
-              <label style={styles.fieldLabel}>To <input style={styles.input} type="date" value={expenseDateTo} onChange={(e) => setExpenseDateTo(e.target.value)} /></label>
-              <label style={styles.fieldLabel}>Account <select style={styles.input} value={expenseAccountFilter} onChange={(e) => setExpenseAccountFilter(e.target.value)}>
-                <option value="all">All</option>
-                {accounts.filter((a: any) => a.account_type === 'expense' && a.status === 'active').map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
-              </select></label>
-              <label style={styles.fieldLabel}>Paid via <select style={styles.input} value={expenseMethodFilter} onChange={(e) => setExpenseMethodFilter(e.target.value)}>
-                <option value="all">All</option>
-                <option value="cash">Cash</option>
-                <option value="card">Card</option>
-                <option value="transfer">Transfer</option>
-                <option value="other">Other</option>
-              </select></label>
               <button style={{ ...styles.primaryBtn, marginLeft: 'auto' }} onClick={openAddExpense}>Add Expense</button>
             </div>
             {showExpenseForm && (
@@ -734,14 +683,7 @@ export function AccountsPayable() {
                 </div>
               </div>
             )}
-            <Table columns={expenseCols} data={expenses.filter((e: any) => {
-              const eDate = e.date ? e.date.slice(0, 10) : '';
-              if (expenseDateFrom && eDate < expenseDateFrom) return false;
-              if (expenseDateTo && eDate > expenseDateTo) return false;
-              if (expenseAccountFilter !== 'all' && e.account_id !== expenseAccountFilter) return false;
-              if (expenseMethodFilter !== 'all' && e.payment_method !== expenseMethodFilter) return false;
-              return true;
-            })} loading={loading} emptyMessage="No expenses" clientSort />
+            <Table columns={expenseCols} data={expenses} loading={loading} emptyMessage="No expenses" clientSort initialFilters={{ date: thisMonth }} />
           </div>
         ) },
         { id: 'accounts', label: 'Chart of Accounts', content: accountsContent },

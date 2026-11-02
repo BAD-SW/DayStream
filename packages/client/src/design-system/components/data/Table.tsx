@@ -74,6 +74,8 @@ interface TableProps<T> {
   filterOptions?: (key: string) => Promise<FilterOption[]>;
   /** All rows, when `data` is already filtered by the page (the filter lists show every value). */
   filterSource?: T[];
+  /** Filters a self-filtering table starts with (e.g. this month on a date column). */
+  initialFilters?: TableFilters;
   /** Turns column filters off for this table (e.g. a small summary table). */
   noFilters?: boolean;
   // Load more as the page scrolls (no pages)
@@ -107,6 +109,7 @@ export function Table<T extends Record<string, any>>({
   onFiltersChange,
   filterOptions,
   filterSource,
+  initialFilters,
   noFilters,
   onLoadMore,
   hasMore,
@@ -114,7 +117,7 @@ export function Table<T extends Record<string, any>>({
 }: TableProps<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [ownFilters, setOwnFilters] = useState<TableFilters>({});
+  const [ownFilters, setOwnFilters] = useState<TableFilters>(initialFilters || {});
   const [openFilter, setOpenFilter] = useState<{ key: string; anchor: HTMLElement } | null>(null);
   const controlled = !!onFiltersChange;
   const filters = controlled ? controlledFilters || {} : ownFilters;
