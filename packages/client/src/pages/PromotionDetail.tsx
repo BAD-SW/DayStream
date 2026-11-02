@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
+import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
+import { DraftSectionsProvider, useDraftSections, useDraft, fieldMark, checkMark, draftBox, UnsavedTag } from '../components/unsaved/DraftSections';
+import { LeaveGuard, useGuardedNavigate } from '../components/unsaved/LeaveGuard';
+import { SaveChanges } from '../components/unsaved/SaveChanges';
 import { apiClient } from '../api/client';
 import { formatCurrency } from '../utils/currency';
 
@@ -19,11 +23,22 @@ const PROMO_TYPE_LABELS: Record<string, string> = {
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+// One Save for the promotion (David, 2026-11-02, as in Settings, Events and People): details and
+// the "Applies to" scope wait for Save changes; Pause, Activate and Archive act straight away.
 export function PromotionDetail() {
+  return (
+    <DraftSectionsProvider>
+      <PromotionDetailPage />
+    </DraftSectionsProvider>
+  );
+}
+
+function PromotionDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   const [promo, setPromo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const { dirtySections } = useDraftSections();
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -41,22 +56,28 @@ export function PromotionDetail() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/offers?tab=promotions')}>← Back to Offerings</button>
+      <LeaveGuard when={dirtySections.length > 0} />
+      <StickyPageTop>
+        <button style={styles.back} onClick={() => navigate('/offers?tab=promotions')}>← Back to Offerings</button>
 
-      {/* Header */}
-      <div style={styles.headerCard}>
-        <div style={styles.headerInfo}>
-          <h1 style={styles.name}>{promo.name}</h1>
-          {promo.promo_code && <span style={styles.code}>Code: {promo.promo_code}</span>}
+        {/* Header */}
+        <div style={styles.headerCard}>
+          <div style={styles.headerInfo}>
+            <h1 style={styles.name}>{promo.name}</h1>
+            {promo.promo_code && <span style={styles.code}>Code: {promo.promo_code}</span>}
+          </div>
+          <div style={styles.headerRight}>
+            <div style={styles.saveRow}><SaveChanges /></div>
+            <div style={styles.saveRow}>
+              <Badge variant={STATUS_VARIANTS[promo.status] || 'neutral'}>{promo.status}</Badge>
+              <span style={styles.value}>
+                {promo.type.includes('percentage') ? `${promo.value}%` : formatCurrency(promo.value)}
+              </span>
+            </div>
+            <span style={styles.typeLabel}>{PROMO_TYPE_LABELS[promo.type]}</span>
+          </div>
         </div>
-        <div style={styles.headerRight}>
-          <Badge variant={STATUS_VARIANTS[promo.status] || 'neutral'}>{promo.status}</Badge>
-          <span style={styles.value}>
-            {promo.type.includes('percentage') ? `${promo.value}%` : formatCurrency(promo.value)}
-          </span>
-          <span style={styles.typeLabel}>{PROMO_TYPE_LABELS[promo.type]}</span>
-        </div>
-      </div>
+      </StickyPageTop>
 
       <PromotionForm promo={promo} businessId={businessId} onUpdate={setPromo} />
     </div>
@@ -64,69 +85,37 @@ export function PromotionDetail() {
 }
 
 function PromotionForm({ promo, businessId, onUpdate }: { promo: any; businessId: string; onUpdate: (p: any) => void }) {
-  const [saving, setSaving] = useState(false);
   const [statusChanging, setStatusChanging] = useState(false);
-  const [form, setForm] = useState({
-    name: promo.name,
-    description: promo.description || '',
-    type: promo.type,
-    value: promo.value,
-    promo_code: promo.promo_code || '',
-    date_from: promo.date_from ? promo.date_from.split('T')[0] : '',
-    date_to: promo.date_to ? promo.date_to.split('T')[0] : '',
-    days_of_week: promo.days_of_week || [],
-    time_from: promo.time_from || '',
-    time_to: promo.time_to || '',
-    applies_to: promo.applies_to || 'all',
-    max_redemptions: promo.max_redemptions ? String(promo.max_redemptions) : '',
-    max_per_customer: promo.max_per_customer ? String(promo.max_per_customer) : '',
-    priority: promo.priority || 0,
-    stackable: promo.stackable || false,
+  const fromPromo = (p: any) => ({
+    name: p.name,
+    description: p.description || '',
+    type: p.type,
+    value: p.value,
+    promo_code: p.promo_code || '',
+    date_from: p.date_from ? p.date_from.split('T')[0] : '',
+    date_to: p.date_to ? p.date_to.split('T')[0] : '',
+    days_of_week: (p.days_of_week || []) as number[],
+    time_from: p.time_from || '',
+    time_to: p.time_to || '',
+    applies_to: p.applies_to || 'all',
+    max_redemptions: p.max_redemptions ? String(p.max_redemptions) : '',
+    max_per_customer: p.max_per_customer ? String(p.max_per_customer) : '',
+    priority: p.priority || 0,
+    stackable: p.stackable || false,
   });
-
-  const isDirty = form.name !== promo.name ||
-    form.description !== (promo.description || '') ||
-    form.type !== promo.type ||
-    form.value !== promo.value ||
-    form.promo_code !== (promo.promo_code || '') ||
-    form.date_from !== (promo.date_from ? promo.date_from.split('T')[0] : '') ||
-    form.date_to !== (promo.date_to ? promo.date_to.split('T')[0] : '') ||
-    JSON.stringify(form.days_of_week) !== JSON.stringify(promo.days_of_week || []) ||
-    form.time_from !== (promo.time_from || '') ||
-    form.time_to !== (promo.time_to || '') ||
-    form.applies_to !== (promo.applies_to || 'all') ||
-    form.max_redemptions !== (promo.max_redemptions ? String(promo.max_redemptions) : '') ||
-    form.max_per_customer !== (promo.max_per_customer ? String(promo.max_per_customer) : '') ||
-    form.priority !== (promo.priority || 0) ||
-    form.stackable !== (promo.stackable || false);
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const data: any = { ...form };
-      data.value = form.type.includes('percentage') ? form.value : form.value;
-      data.max_redemptions = form.max_redemptions ? parseInt(form.max_redemptions) : null;
-      data.max_per_customer = form.max_per_customer ? parseInt(form.max_per_customer) : null;
-      const res = await apiClient.put(`/v1/promotions/${promo.id}?business_id=${businessId}`, data);
-      onUpdate(res.data.data);
-    } catch { alert('Failed to save changes'); }
-    finally { setSaving(false); }
-  };
-
-  const handleDiscard = () => {
-    setForm({
-      name: promo.name, description: promo.description || '', type: promo.type, value: promo.value,
-      promo_code: promo.promo_code || '',
-      date_from: promo.date_from ? promo.date_from.split('T')[0] : '',
-      date_to: promo.date_to ? promo.date_to.split('T')[0] : '',
-      days_of_week: promo.days_of_week || [],
-      time_from: promo.time_from || '', time_to: promo.time_to || '',
-      applies_to: promo.applies_to || 'all',
-      max_redemptions: promo.max_redemptions ? String(promo.max_redemptions) : '',
-      max_per_customer: promo.max_per_customer ? String(promo.max_per_customer) : '',
-      priority: promo.priority || 0, stackable: promo.stackable || false,
-    });
-  };
+  const draft = useDraft('promotion-details', 'Promotion details', fromPromo(promo), async (form) => {
+    // applies_to follows the scope ("Applies to"), which is saved on its own.
+    const { applies_to: _scope, ...rest } = form;
+    const data: any = { ...rest };
+    data.max_redemptions = form.max_redemptions ? parseInt(form.max_redemptions) : null;
+    data.max_per_customer = form.max_per_customer ? parseInt(form.max_per_customer) : null;
+    const res = await apiClient.put(`/v1/promotions/${promo.id}?business_id=${businessId}`, data);
+    onUpdate(res.data.data);
+    return fromPromo(res.data.data);
+  });
+  const form = draft.value;
+  const setForm = draft.setValue;
+  const mark = (key: keyof typeof form) => fieldMark(draft.changed((v) => v[key]));
 
   const handleStatusAction = async (action: string) => {
     setStatusChanging(true);
@@ -151,25 +140,14 @@ function PromotionForm({ promo, businessId, onUpdate }: { promo: any; businessId
         {promo.status !== 'archived' && <Button variant="destructive" size="sm" onClick={() => handleStatusAction('archive')} loading={statusChanging}>Archive</Button>}
       </div>
 
-      {/* Save bar */}
-      {isDirty && (
-        <div style={styles.saveBar}>
-          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>You have unsaved changes</span>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Button variant="outline" size="sm" onClick={handleDiscard}>Discard</Button>
-            <Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button>
-          </div>
-        </div>
-      )}
-
       {/* Details Card */}
-      <div style={styles.card}>
-        <h3 style={styles.cardTitle}>Promotion Details</h3>
+      <div style={{ ...styles.card, ...draftBox(draft.dirty) }}>
+        <h3 style={styles.cardTitle}>Promotion Details<UnsavedTag dirty={draft.dirty} /></h3>
         <div style={styles.formGrid}>
-          <div style={styles.formGroup}><label style={styles.label}>Name *</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Name *</label><input style={{ ...styles.input, ...mark('name') }} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Type *</label>
-            <select style={styles.input} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+            <select style={{ ...styles.input, ...mark('type') }} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
               <option value="discount_percentage">Percentage Discount</option>
               <option value="discount_fixed">Fixed Amount Discount</option>
               <option value="price_override">Price Override</option>
@@ -179,16 +157,16 @@ function PromotionForm({ promo, businessId, onUpdate }: { promo: any; businessId
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>{form.type.includes('percentage') ? 'Percentage' : 'Amount (cents)'}</label>
-            <input style={styles.input} type="number" min="0" value={form.value} onChange={(e) => setForm({ ...form, value: Number(e.target.value) })} />
+            <input style={{ ...styles.input, ...mark('value') }} type="number" min="0" value={form.value} onChange={(e) => setForm({ ...form, value: Number(e.target.value) })} />
           </div>
-          <div style={styles.formGroup}><label style={styles.label}>Promo Code</label><input style={styles.input} value={form.promo_code} onChange={(e) => setForm({ ...form, promo_code: e.target.value.toUpperCase() })} placeholder="Auto-applies if empty" /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Start Date</label><input style={styles.input} type="date" value={form.date_from} onChange={(e) => setForm({ ...form, date_from: e.target.value })} /></div>
-          <div style={styles.formGroup}><label style={styles.label}>End Date</label><input style={styles.input} type="date" value={form.date_to} onChange={(e) => setForm({ ...form, date_to: e.target.value })} /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Time From</label><input style={styles.input} type="time" value={form.time_from} onChange={(e) => setForm({ ...form, time_from: e.target.value })} /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Time To</label><input style={styles.input} type="time" value={form.time_to} onChange={(e) => setForm({ ...form, time_to: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Promo Code</label><input style={{ ...styles.input, ...mark('promo_code') }} value={form.promo_code} onChange={(e) => setForm({ ...form, promo_code: e.target.value.toUpperCase() })} placeholder="Auto-applies if empty" /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Start Date</label><input style={{ ...styles.input, ...mark('date_from') }} type="date" value={form.date_from} onChange={(e) => setForm({ ...form, date_from: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>End Date</label><input style={{ ...styles.input, ...mark('date_to') }} type="date" value={form.date_to} onChange={(e) => setForm({ ...form, date_to: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Time From</label><input style={{ ...styles.input, ...mark('time_from') }} type="time" value={form.time_from} onChange={(e) => setForm({ ...form, time_from: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Time To</label><input style={{ ...styles.input, ...mark('time_to') }} type="time" value={form.time_to} onChange={(e) => setForm({ ...form, time_to: e.target.value })} /></div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
             <label style={styles.label}>Days of Week</label>
-            <div style={{ display: 'flex', gap: '4px' }}>
+            <div style={{ display: 'flex', gap: '4px', borderRadius: 'var(--radius-md)', alignSelf: 'flex-start', ...mark('days_of_week') }}>
               {DAY_NAMES.map((name, idx) => (
                 <button key={idx} type="button" onClick={() => toggleDay(idx)}
                   style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: form.days_of_week.includes(idx) ? 'var(--color-accent, #C9A96E)' : 'var(--color-background)', color: form.days_of_week.includes(idx) ? '#1A1A1A' : 'var(--color-text)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>
@@ -197,14 +175,14 @@ function PromotionForm({ promo, businessId, onUpdate }: { promo: any; businessId
               ))}
             </div>
           </div>
-          <div style={styles.formGroup}><label style={styles.label}>Priority</label><input style={styles.input} type="number" min="0" value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) })} /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Max Redemptions</label><input style={styles.input} type="number" min="1" value={form.max_redemptions} onChange={(e) => setForm({ ...form, max_redemptions: e.target.value })} placeholder="Unlimited" /></div>
-          <div style={styles.formGroup}><label style={styles.label}>Max per Customer</label><input style={styles.input} type="number" min="1" value={form.max_per_customer} onChange={(e) => setForm({ ...form, max_per_customer: e.target.value })} placeholder="Unlimited" /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Priority</label><input style={{ ...styles.input, ...mark('priority') }} type="number" min="0" value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Max Redemptions</label><input style={{ ...styles.input, ...mark('max_redemptions') }} type="number" min="1" value={form.max_redemptions} onChange={(e) => setForm({ ...form, max_redemptions: e.target.value })} placeholder="Unlimited" /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Max per Customer</label><input style={{ ...styles.input, ...mark('max_per_customer') }} type="number" min="1" value={form.max_per_customer} onChange={(e) => setForm({ ...form, max_per_customer: e.target.value })} placeholder="Unlimited" /></div>
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', gridColumn: '1 / -1' }}>
-            <input type="checkbox" checked={form.stackable} onChange={(e) => setForm({ ...form, stackable: e.target.checked })} style={{ width: '16px', height: '16px' }} />
+            <input type="checkbox" checked={form.stackable} onChange={(e) => setForm({ ...form, stackable: e.target.checked })} style={{ width: '16px', height: '16px', ...checkMark(draft.changed((v) => v.stackable)) }} />
             Stackable (can combine with other promotions)
           </label>
-          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Description</label><textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Description</label><textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%', ...mark('description') }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
         </div>
       </div>
 
@@ -222,23 +200,42 @@ function PromotionForm({ promo, businessId, onUpdate }: { promo: any; businessId
   );
 }
 
-// --- Applies To Card ---
+// --- Applies To Card (the scope chosen in the picker is saved with the page's Save changes) ---
+
+interface Scope { service_ids: string[]; merchandise_ids: string[]; category_ids: string[]; location_ids: string[]; variant_ids: string[] }
+const scopeOf = (p: any): Scope => ({
+  service_ids: p.service_ids || [], merchandise_ids: p.merchandise_ids || [], category_ids: p.category_ids || [],
+  location_ids: p.location_ids || [], variant_ids: p.variant_ids || [],
+});
 
 function AppliesToCard({ promo, businessId, onUpdate }: { promo: any; businessId: string; onUpdate: (p: any) => void }) {
   const [showPicker, setShowPicker] = useState(false);
+  const draft = useDraft<Scope>('promotion-scope', 'Applies to', scopeOf(promo), async (s) => {
+    const data: any = {
+      ...s,
+      applies_to: (s.service_ids.length > 0 || s.merchandise_ids.length > 0 || s.category_ids.length > 0) ? 'specific' : 'all',
+    };
+    const res = await apiClient.put(`/v1/promotions/${promo.id}?business_id=${businessId}`, data);
+    onUpdate(res.data.data);
+    return scopeOf(res.data.data);
+  });
+  const scope = draft.value;
 
-  const serviceCount = promo.service_ids?.length || 0;
-  const productCount = promo.merchandise_ids?.length || 0;
-  const categoryCount = promo.category_ids?.length || 0;
-  const variantCount = promo.variant_ids?.length || 0;
-  const locationCount = promo.location_ids?.length || 0;
+  const serviceCount = scope.service_ids.length;
+  const productCount = scope.merchandise_ids.length;
+  const categoryCount = scope.category_ids.length;
+  const variantCount = scope.variant_ids.length;
+  const locationCount = scope.location_ids.length;
   const totalSelections = serviceCount + productCount + categoryCount + locationCount;
 
   return (
-    <div style={styles.card}>
+    <div style={{ ...styles.card, ...draftBox(draft.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Applies To</h3>
-        <Button size="sm" variant="secondary" onClick={() => setShowPicker(true)}>Configure</Button>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Applies To<UnsavedTag dirty={draft.dirty} /></h3>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {draft.dirty && <Button size="sm" variant="ghost" onClick={() => draft.setValue(draft.saved)}>Undo</Button>}
+          <Button size="sm" variant="secondary" onClick={() => setShowPicker(true)}>Configure</Button>
+        </div>
       </div>
 
       {totalSelections === 0 ? (
@@ -253,7 +250,7 @@ function AppliesToCard({ promo, businessId, onUpdate }: { promo: any; businessId
       )}
 
       {showPicker && (
-        <AppliesToPickerModal promo={promo} businessId={businessId} onClose={() => setShowPicker(false)} onSaved={(updated) => { setShowPicker(false); onUpdate(updated); }} />
+        <AppliesToPickerModal scope={scope} businessId={businessId} onClose={() => setShowPicker(false)} onDone={(next) => { setShowPicker(false); draft.setValue(next); }} />
       )}
     </div>
   );
@@ -263,22 +260,21 @@ const scopeBadgeStyle: React.CSSProperties = { fontSize: 'var(--font-size-sm)', 
 
 // --- Applies To Picker Modal ---
 
-function AppliesToPickerModal({ promo, businessId, onClose, onSaved }: { promo: any; businessId: string; onClose: () => void; onSaved: (p: any) => void }) {
+function AppliesToPickerModal({ scope, businessId, onClose, onDone }: { scope: Scope; businessId: string; onClose: () => void; onDone: (s: Scope) => void }) {
   const [services, setServices] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [locations, setLocations] = useState<any[]>([]);
   const [serviceVariants, setServiceVariants] = useState<Record<string, any[]>>({});
   const [productVariants, setProductVariants] = useState<Record<string, any[]>>({});
-  const [saving, setSaving] = useState(false);
   const [serviceSearch, setServiceSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');
 
-  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>(promo.service_ids || []);
-  const [selectedMerchandiseIds, setSelectedMerchandiseIds] = useState<string[]>(promo.merchandise_ids || []);
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>(promo.category_ids || []);
-  const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>(promo.location_ids || []);
-  const [selectedVariantIds, setSelectedVariantIds] = useState<string[]>(promo.variant_ids || []);
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>(scope.service_ids);
+  const [selectedMerchandiseIds, setSelectedMerchandiseIds] = useState<string[]>(scope.merchandise_ids);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>(scope.category_ids);
+  const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>(scope.location_ids);
+  const [selectedVariantIds, setSelectedVariantIds] = useState<string[]>(scope.variant_ids);
 
   useEffect(() => {
     apiClient.get(`/v1/services?business_id=${businessId}&status=active&limit=100`).then((r) => setServices(r.data.data || [])).catch(() => {});
@@ -303,21 +299,11 @@ function AppliesToPickerModal({ promo, businessId, onClose, onSaved }: { promo: 
     }
   }, [selectedMerchandiseIds]);
 
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const data: any = {
-        service_ids: selectedServiceIds.length > 0 ? selectedServiceIds : [],
-        merchandise_ids: selectedMerchandiseIds.length > 0 ? selectedMerchandiseIds : [],
-        category_ids: selectedCategoryIds.length > 0 ? selectedCategoryIds : [],
-        location_ids: selectedLocationIds.length > 0 ? selectedLocationIds : [],
-        variant_ids: selectedVariantIds.length > 0 ? selectedVariantIds : [],
-        applies_to: (selectedServiceIds.length > 0 || selectedMerchandiseIds.length > 0 || selectedCategoryIds.length > 0) ? 'specific' : 'all',
-      };
-      const res = await apiClient.put(`/v1/promotions/${promo.id}?business_id=${businessId}`, data);
-      onSaved(res.data.data);
-    } catch { alert('Failed to save scope'); }
-    finally { setSaving(false); }
+  const handleDone = () => {
+    onDone({
+      service_ids: selectedServiceIds, merchandise_ids: selectedMerchandiseIds, category_ids: selectedCategoryIds,
+      location_ids: selectedLocationIds, variant_ids: selectedVariantIds,
+    });
   };
 
   const toggleItem = (id: string, list: string[], setList: (ids: string[]) => void) => {
@@ -350,7 +336,7 @@ function AppliesToPickerModal({ promo, businessId, onClose, onSaved }: { promo: 
           <h3 style={styles.modalTitle}>Configure Scope</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
         </div>
-        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 12px' }}>Select items and locations. Leave all empty to apply to everything.</p>
+        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 12px' }}>Select items and locations. Leave all empty to apply to everything. Saved with the page's Save changes.</p>
 
         <div style={pickerStyles.columns}>
           {/* Services */}
@@ -420,7 +406,7 @@ function AppliesToPickerModal({ promo, businessId, onClose, onSaved }: { promo: 
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '12px', borderTop: '1px solid var(--color-border)', paddingTop: '12px' }}>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} loading={saving}>Save Scope</Button>
+          <Button onClick={handleDone}>Done</Button>
         </div>
       </div>
     </div>
@@ -448,7 +434,8 @@ const styles: Record<string, React.CSSProperties> = {
   headerInfo: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
   name: { margin: 0, fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)' },
   code: { fontSize: 'var(--font-size-sm)', color: 'var(--color-accent, #C9A96E)', fontFamily: 'monospace', fontWeight: 600 },
-  headerRight: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: '4px' },
+  headerRight: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: '6px' },
+  saveRow: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' },
   value: { fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)' },
   typeLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   actionsBar: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: 'var(--space-md)' },
