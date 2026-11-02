@@ -39,6 +39,8 @@ interface TableProps<T> {
   /** When true, the Table will sort data locally without needing onSort */
   clientSort?: boolean;
   onRowClick?: (row: T) => void;
+  /** The row shown as open (e.g. its details beside the table). */
+  activeRowId?: string | null;
   // Pagination (kept for older callers; tables now scroll and load more instead)
   page?: number;
   totalPages?: number;
@@ -94,6 +96,7 @@ export function Table<T extends Record<string, any>>({
   onSort,
   clientSort,
   onRowClick,
+  activeRowId,
   page,
   totalPages,
   onPageChange,
@@ -347,7 +350,7 @@ export function Table<T extends Record<string, any>>({
                 <tr
                   key={rowIndex}
                   className={onRowClick ? cssStyles.rowClickable : undefined}
-                  style={{ ...styles.tr, ...(selectedIds.includes(id) ? styles.trSelected : {}) }}
+                  style={{ ...styles.tr, ...(selectedIds.includes(id) || (activeRowId != null && activeRowId === id) ? styles.trSelected : {}) }}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
                 >
                   {selectable && (
