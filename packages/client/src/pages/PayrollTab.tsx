@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import { runPayroll, finalizePayroll, getPayrollEntries } from '../api/payroll';
 import { Button } from '../design-system/components/actions/Button';
+import { Table, applyTableFilters } from '../design-system/components/data/Table';
+import type { TableFilters } from '../design-system/components/data/Table';
 import { formatCurrency } from '../utils/currency';
 import { formatDateOnly } from '../utils/date';
 
@@ -258,64 +260,68 @@ export function PayrollTab() {
   );
 }
 
-function EntriesTable({ entries, expandedId, onToggle }: { entries: any[]; expandedId: string | null; onToggle: (id: string | null) => void }) {
-  const totals = entries.reduce((acc, e) => ({ gross: acc.gross + e.gross_pay, deductions: acc.deductions + e.total_deductions, net: acc.net + e.net_pay }), { gross: 0, deductions: 0, net: 0 });
+// Payroll entries on the shared table (David, 2026-11-02, decision 1): sort and filter on every
+// column (amounts with the slider); a row opens its breakdown; totals are for the rows shown.
+const ENTRY_FILTER_COLUMNS = [
+  { key: 'employee', kind: 'values' as const, value: (e: PayrollEntry) => `${e.first_name} ${e.last_name}` },
+  { key: 'hours_worked', kind: 'values' as const, value: (e: PayrollEntry) => e.hours_worked },
+  { key: 'sessions_delivered', kind: 'values' as const, value: (e: PayrollEntry) => e.sessions_delivered },
+  { key: 'gross_pay', kind: 'amount' as const, value: (e: PayrollEntry) => e.gross_pay },
+  { key: 'total_deductions', kind: 'amount' as const, value: (e: PayrollEntry) => e.total_deductions },
+  { key: 'net_pay', kind: 'amount' as const, value: (e: PayrollEntry) => e.net_pay },
+];
+
+function EntriesTable({ entries, expandedId, onToggle }: { entries: PayrollEntry[]; expandedId: string | null; onToggle: (id: string | null) => void }) {
+  const [filters, setFilters] = useState<TableFilters>({});
+  const shown = applyTableFilters(entries, ENTRY_FILTER_COLUMNS, filters);
+  const totals = shown.reduce((acc, e) => ({ gross: acc.gross + e.gross_pay, deductions: acc.deductions + e.total_deductions, net: acc.net + e.net_pay }), { gross: 0, deductions: 0, net: 0 });
+  const right = 'right' as const;
 
   return (
-    <div>
-      <table style={styles.table}>
-        <thead>
-          <tr>
-            <th style={styles.th}>Employee</th>
-            <th style={styles.th}>Hours</th>
-            <th style={styles.th}>Sessions</th>
-            <th style={styles.th}>Gross Pay</th>
-            <th style={styles.th}>Deductions</th>
-            <th style={styles.th}>Net Pay</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((entry: any, idx: number) => (
-            <>
-              <tr key={entry.id} style={{ background: idx % 2 === 0 ? 'transparent' : 'var(--color-background)', cursor: 'pointer' }} onClick={() => onToggle(expandedId === entry.id ? null : entry.id)}>
-                <td style={styles.td}>{entry.first_name} {entry.last_name}</td>
-                <td style={styles.td}>{entry.hours_worked ?? '—'}</td>
-                <td style={styles.td}>{entry.sessions_delivered ?? '—'}</td>
-                <td style={styles.td}>{formatCurrency(entry.gross_pay)}</td>
-                <td style={styles.td}>{formatCurrency(entry.total_deductions)}</td>
-                <td style={styles.td}><strong>{formatCurrency(entry.net_pay)}</strong></td>
-              </tr>
-              {expandedId === entry.id && entry.breakdown && (
-                <tr key={`${entry.id}-bd`}>
-                  <td colSpan={6} style={{ padding: '8px 16px', background: 'var(--color-background)', fontSize: 'var(--font-size-sm)' }}>
-                    <div style={{ display: 'flex', gap: '24px' }}>
-                      <div>
-                        <strong>Compensation</strong>
-                        {(entry.breakdown.compensation || []).map((c: any, i: number) => (
-                          <div key={i}>{c.type}: {formatCurrency(c.amount)}{c.hours ? ` (${c.hours}h)` : ''}{c.sessions ? ` (${c.sessions} sessions)` : ''}</div>
-                        ))}
-                      </div>
-                      <div>
-                        <strong>Deductions</strong>
-                        {(entry.breakdown.deductions || []).map((d: any, i: number) => (
-                          <div key={i}>{d.name}: {formatCurrency(d.amount)}</div>
-                        ))}
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </>
-          ))}
-          <tr style={{ borderTop: '2px solid var(--color-border)', fontWeight: 600 }}>
-            <td style={styles.td} colSpan={3}>Totals</td>
-            <td style={styles.td}>{formatCurrency(totals.gross)}</td>
-            <td style={styles.td}>{formatCurrency(totals.deductions)}</td>
-            <td style={styles.td}>{formatCurrency(totals.net)}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <Table
+      data={shown}
+      filterSource={entries}
+      filters={filters}
+      onFiltersChange={setFilters}
+      rowId={(e) => e.id}
+      clientSort
+      onRowClick={(e) => onToggle(expandedId === e.id ? null : e.id)}
+      expandedRowId={expandedId}
+      renderExpanded={(entry) => entry.breakdown ? (
+        <div style={{ display: 'flex', gap: '24px', fontSize: 'var(--font-size-sm)' }}>
+          <div>
+            <strong>Compensation</strong>
+            {(entry.breakdown.compensation || []).map((c: any, i: number) => (
+              <div key={i}>{c.type}: {formatCurrency(c.amount)}{c.hours ? ` (${c.hours}h)` : ''}{c.sessions ? ` (${c.sessions} sessions)` : ''}</div>
+            ))}
+          </div>
+          <div>
+            <strong>Deductions</strong>
+            {(entry.breakdown.deductions || []).map((d: any, i: number) => (
+              <div key={i}>{d.name}: {formatCurrency(d.amount)}</div>
+            ))}
+          </div>
+        </div>
+      ) : <span style={styles.muted}>No breakdown for this entry.</span>}
+      columns={[
+        { key: 'employee', header: 'Employee', sortable: true, filterValue: (e) => `${e.first_name} ${e.last_name}`, render: (_: any, e: PayrollEntry) => `${e.first_name} ${e.last_name}` },
+        { key: 'hours_worked', header: 'Hours', sortable: true, align: right, render: (v: number | null) => <div style={{ textAlign: 'right' }}>{v ?? '—'}</div> },
+        { key: 'sessions_delivered', header: 'Sessions', sortable: true, align: right, render: (v: number | null) => <div style={{ textAlign: 'right' }}>{v ?? '—'}</div> },
+        { key: 'gross_pay', header: 'Gross Pay', sortable: true, align: right, filter: 'amount', render: (v: number) => <div style={{ textAlign: 'right' }}>{formatCurrency(v)}</div> },
+        { key: 'total_deductions', header: 'Deductions', sortable: true, align: right, filter: 'amount', render: (v: number) => <div style={{ textAlign: 'right' }}>{formatCurrency(v)}</div> },
+        { key: 'net_pay', header: 'Net Pay', sortable: true, align: right, filter: 'amount', render: (v: number) => <div style={{ textAlign: 'right' }}><strong>{formatCurrency(v)}</strong></div> },
+      ]}
+      footerRows={[{
+        strong: true,
+        cells: [
+          { content: shown.length === entries.length ? 'Totals' : `Totals (${shown.length} of ${entries.length} shown)` },
+          { content: '' }, { content: '' },
+          { content: formatCurrency(totals.gross), align: right },
+          { content: formatCurrency(totals.deductions), align: right },
+          { content: formatCurrency(totals.net), align: right },
+        ],
+      }]}
+    />
   );
 }
 

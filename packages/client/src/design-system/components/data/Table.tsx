@@ -1,4 +1,4 @@
-import { CSSProperties, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { CSSProperties, ReactNode, useEffect, useMemo, useRef, useState, Fragment } from 'react';
 import cssStyles from './Table.module.css';
 import {
   ColumnFilter, TableFilters, FilterOption, FilterColumnDef, applyTableFilters, optionsFrom, dayOf,
@@ -41,6 +41,9 @@ interface TableProps<T> {
   onRowClick?: (row: T) => void;
   /** The row shown as open (e.g. its details beside the table). */
   activeRowId?: string | null;
+  /** A row that opens its details under it (e.g. a payroll breakdown): the open row, and what it shows. */
+  expandedRowId?: string | null;
+  renderExpanded?: (row: T) => ReactNode;
   /** Scroll inside its own area of this height (e.g. '100%' of a fixed panel), header pinned at its top. */
   scrollHeight?: string;
   // Pagination (kept for older callers; tables now scroll and load more instead)
@@ -99,6 +102,8 @@ export function Table<T extends Record<string, any>>({
   clientSort,
   onRowClick,
   activeRowId,
+  expandedRowId,
+  renderExpanded,
   scrollHeight,
   page,
   totalPages,
@@ -354,9 +359,10 @@ export function Table<T extends Record<string, any>>({
             )}
             {sortedData.map((row, rowIndex) => {
               const id = rowId(row);
+              const open = !!renderExpanded && expandedRowId != null && expandedRowId === id;
               return (
+                <Fragment key={rowIndex}>
                 <tr
-                  key={rowIndex}
                   className={onRowClick ? cssStyles.rowClickable : undefined}
                   style={{ ...styles.tr, ...(selectedIds.includes(id) || (activeRowId != null && activeRowId === id) ? styles.trSelected : {}) }}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
@@ -376,11 +382,17 @@ export function Table<T extends Record<string, any>>({
                     <td key={col.key} style={styles.td}>
                       {col.render ? col.render(row[col.key], row) : row[col.key]}
                       {onRowClick && colIndex === columns.length - 1 && (
-                        <span className={cssStyles.rowEditAffordance}>Edit &rsaquo;</span>
+                        <span className={cssStyles.rowEditAffordance}>{renderExpanded ? (open ? 'Hide' : 'Details ›') : <>Edit &rsaquo;</>}</span>
                       )}
                     </td>
                   ))}
                 </tr>
+                {open && (
+                  <tr>
+                    <td colSpan={columns.length + (selectable ? 1 : 0)} style={{ ...styles.td, background: 'var(--color-background)' }}>{renderExpanded!(row)}</td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
             {onLoadMore && hasMore && (
