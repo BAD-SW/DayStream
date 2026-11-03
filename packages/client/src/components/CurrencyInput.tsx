@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 
 interface CurrencyInputProps {
   value: number; // value in cents
@@ -16,8 +16,6 @@ interface CurrencyInputProps {
  * Uses the browser's locale for decimal separator (. or ,).
  */
 export function CurrencyInput({ value, onChange, style, placeholder, disabled }: CurrencyInputProps) {
-  const [focused, setFocused] = useState(false);
-
   const formatDisplay = useCallback((cents: number): string => {
     const abs = Math.abs(cents);
     const intPart = Math.floor(abs / 100);
@@ -69,10 +67,12 @@ export function CurrencyInput({ value, onChange, style, placeholder, disabled }:
     <input
       style={style}
       value={formatDisplay(value)}
+      // Edits are driven by onKeyDown/onPaste (digit-shift formatting), not native typing, so
+      // the field is intentionally controlled without a native onChange. Provide a no-op
+      // onChange so React doesn't warn it's an uncontrolled/read-only field.
+      onChange={() => {}}
       onKeyDown={handleKeyDown}
       onPaste={handlePaste}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
       placeholder={placeholder || '0.00'}
       disabled={disabled}
       inputMode="numeric"
