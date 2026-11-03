@@ -512,15 +512,28 @@ export function getSubCells(parentHex: string, targetResolution: number = 6): { 
   });
 }
 
+export interface CoverageTerritory {
+  tenantId: string;
+  name: string;
+  status: string;
+  location: string;
+  hexagons: string[];
+  components: Array<{ id: string | null; label: string; kind: string | null; population?: number | null }>;
+  population: number | null;
+}
+
 /**
- * Get all territory hexagons grouped by tenant (for coverage map).
+ * Get all territory hexagons grouped by tenant (for coverage map), plus each territory's
+ * component areas and population estimate so the UI can show details on selection.
  */
-export async function getAllTerritories(): Promise<{ tenantId: string; name: string; status: string; location: string; hexagons: string[] }[]> {
+export async function getAllTerritories(): Promise<CoverageTerritory[]> {
   const { rows } = await adminPool.query(
-    `SELECT t.id AS tenant_id, t.name, t.status, t.territory_address AS location, array_agg(tt.h3_index) AS hexagons
+    `SELECT t.id AS tenant_id, t.name, t.status, t.territory_address AS location,
+            t.territory_components AS components, t.territory_population AS population,
+            array_agg(tt.h3_index) AS hexagons
      FROM sys_tenants t
      JOIN prp_tenant_territories tt ON tt.tenant_id = t.id
-     GROUP BY t.id, t.name, t.status, t.territory_address
+     GROUP BY t.id, t.name, t.status, t.territory_address, t.territory_components, t.territory_population
      ORDER BY t.name`,
   );
   return rows.map((r: any) => ({
@@ -529,6 +542,8 @@ export async function getAllTerritories(): Promise<{ tenantId: string; name: str
     status: r.status,
     location: r.location || '',
     hexagons: r.hexagons || [],
+    components: Array.isArray(r.components) ? r.components : [],
+    population: r.population == null ? null : Number(r.population),
   }));
 }
 
