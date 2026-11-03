@@ -4,7 +4,9 @@ import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { CopyWidgetSnippetButton } from '../components/CopyWidgetSnippetButton';
 import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
-import { DraftSectionsProvider, useDraftSections, useDraft, useDraftList, fieldMark, draftBox, UnsavedTag, RowTag } from '../components/unsaved/DraftSections';
+import { TabBar } from '../design-system/components/navigation/TabBar';
+import { MembershipPeople } from '../components/OfferingPeople';
+import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, useDraftList, fieldMark, draftBox, UnsavedTag, RowTag } from '../components/unsaved/DraftSections';
 import { LeaveGuard, useGuardedNavigate } from '../components/unsaved/LeaveGuard';
 import { SaveChanges } from '../components/unsaved/SaveChanges';
 import { apiClient } from '../api/client';
@@ -62,6 +64,7 @@ function MembershipDetailPage() {
   const [plan, setPlan] = useState<MembershipPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const { dirtySections } = useDraftSections();
+  const [activeTab, setActiveTab] = useState<'details' | 'people'>('details');
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -105,11 +108,17 @@ function MembershipDetailPage() {
             </div>
           </div>
         </div>
+        <TabBar aria-label="Membership sections" tabs={[{ key: 'details' as const, label: 'Details' }, { key: 'people' as const, label: 'Enrolled' }].map((t) => ({ ...t, changed: dirtySections.some((s) => s.tab === t.key) }))} active={activeTab} onChange={setActiveTab} />
       </StickyPageTop>
 
-      {/* Content */}
-      <PlanForm plan={plan} businessId={businessId} onUpdate={setPlan} />
-      <PlanItemsCard planId={plan.id} />
+      {/* Details stay mounted, so their edits survive switching tabs. */}
+      <div hidden={activeTab !== 'details'}>
+        <DraftTab tab="details">
+          <PlanForm plan={plan} businessId={businessId} onUpdate={setPlan} />
+          <PlanItemsCard planId={plan.id} />
+        </DraftTab>
+      </div>
+      {activeTab === 'people' && <MembershipPeople planId={plan.id} businessId={businessId} />}
     </div>
   );
 }

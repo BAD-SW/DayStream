@@ -4,7 +4,9 @@ import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import { CopyWidgetSnippetButton } from '../components/CopyWidgetSnippetButton';
 import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
-import { DraftSectionsProvider, useDraftSections, useDraft, useDraftList, fieldMark, checkMark, draftBox, UnsavedTag, RowTag } from '../components/unsaved/DraftSections';
+import { TabBar } from '../design-system/components/navigation/TabBar';
+import { PackagePeople } from '../components/OfferingPeople';
+import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, useDraftList, fieldMark, checkMark, draftBox, UnsavedTag, RowTag } from '../components/unsaved/DraftSections';
 import { LeaveGuard, useGuardedNavigate } from '../components/unsaved/LeaveGuard';
 import { SaveChanges } from '../components/unsaved/SaveChanges';
 import { apiClient } from '../api/client';
@@ -30,6 +32,7 @@ function PackageDetailPage() {
   const [pkg, setPkg] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const { dirtySections } = useDraftSections();
+  const [activeTab, setActiveTab] = useState<'details' | 'people'>('details');
   const businessId = localStorage.getItem('business_id') || '';
 
   useEffect(() => {
@@ -70,9 +73,16 @@ function PackageDetailPage() {
             </div>
           </div>
         </div>
+        <TabBar aria-label="Package sections" tabs={[{ key: 'details' as const, label: 'Details' }, { key: 'people' as const, label: 'Buyers' }].map((t) => ({ ...t, changed: dirtySections.some((s) => s.tab === t.key) }))} active={activeTab} onChange={setActiveTab} />
       </StickyPageTop>
-      <PackageForm pkg={pkg} businessId={businessId} onUpdate={setPkg} />
-      <PackageItemsCard packageId={pkg.id} />
+      {/* Details stay mounted, so their edits survive switching tabs. */}
+      <div hidden={activeTab !== 'details'}>
+        <DraftTab tab="details">
+          <PackageForm pkg={pkg} businessId={businessId} onUpdate={setPkg} />
+          <PackageItemsCard packageId={pkg.id} />
+        </DraftTab>
+      </div>
+      {activeTab === 'people' && <PackagePeople packageId={pkg.id} businessId={businessId} />}
     </div>
   );
 }

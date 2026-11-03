@@ -261,6 +261,31 @@ export async function getCustomerPurchases(customerId: string, businessId: strin
   return rows;
 }
 
+// Everyone who bought a package, past purchases included (THE-23 item 1), with what they have
+// used: sessions and minutes counted apart, as items are redeemed in one or the other.
+export async function getPackagePurchases(packageId: string, businessId: string) {
+  const { rows } = await adminPool.query(
+    `SELECT pp.id, pp.customer_id, pp.status, pp.purchased_at, pp.expires_at,
+            c.first_name AS customer_first_name, c.last_name AS customer_last_name, c.email AS customer_email,
+            COALESCE(SUM(pi.quantity) FILTER (WHERE pi.redemption_type IS DISTINCT FROM 'minutes'), 0)::int AS sessions_total,
+            COALESCE(SUM(r.used) FILTER (WHERE pi.redemption_type IS DISTINCT FROM 'minutes'), 0)::int AS sessions_used,
+            COALESCE(SUM(pi.quantity) FILTER (WHERE pi.redemption_type = 'minutes'), 0)::int AS minutes_total,
+            COALESCE(SUM(r.used) FILTER (WHERE pi.redemption_type = 'minutes'), 0)::int AS minutes_used
+     FROM pkg_purchases pp
+     JOIN cus_customers c ON c.id = pp.customer_id
+     LEFT JOIN pkg_package_items pi ON pi.package_id = pp.package_id
+     LEFT JOIN LATERAL (
+       SELECT CASE WHEN pi.redemption_type = 'minutes' THEN COALESCE(SUM(rd.minutes_redeemed), 0) ELSE COALESCE(SUM(rd.quantity_redeemed), 0) END AS used
+       FROM pkg_redemptions rd WHERE rd.purchase_id = pp.id AND rd.package_item_id = pi.id
+     ) r ON true
+     WHERE pp.package_id = $1 AND pp.business_id = $2
+     GROUP BY pp.id, c.id
+     ORDER BY pp.purchased_at DESC`,
+    [packageId, businessId],
+  );
+  return rows;
+}
+
 // --- Redemptions ---
 
 interface RedeemInput {
