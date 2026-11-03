@@ -34,6 +34,28 @@ function shortName(label: string): string {
   return label.split(',').slice(0, 2).join(',').trim();
 }
 
+/** Format a modeled population estimate; null/undefined => unknown. */
+function fmtPop(p: number | null | undefined): string {
+  if (p == null) return 'pop. n/a';
+  return `~${p.toLocaleString()} people`;
+}
+
+/** Format population density (people/km²); null => unknown. */
+function fmtDensity(d: number | null | undefined): string {
+  if (d == null) return 'density n/a';
+  return `${d.toLocaleString(undefined, { maximumFractionDigits: 1 })}/km²`;
+}
+
+/** Overlap warning text, or null when there's no overlap with another tenant. */
+function overlapText(o: TerritoryCandidate['overlap']): string | null {
+  if (!o) return null;
+  const who = o.owners.length > 1 ? `${o.owner} +${o.owners.length - 1} more` : o.owner;
+  // Edge-bleed (a few shared border hexes) is noted more softly than a substantial overlap.
+  return o.substantial
+    ? `already in ${who}`
+    : `touches ${who} (shared border)`;
+}
+
 export function TerritoryPicker({ tenantId, onSaved }: Props) {
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
@@ -124,6 +146,16 @@ export function TerritoryPicker({ tenantId, onSaved }: Props) {
   }
 
   const totalCells = selected.reduce((n, c) => n + c.hexCount, 0); // approximate (pre-union)
+  // Aggregate population across selected areas. If any area has a known figure, sum the known
+  // ones; mark partial when some are unknown. All-unknown => show n/a.
+  const knownPops = selected.map((c) => c.population).filter((p): p is number => typeof p === 'number');
+  const totalPopulation = knownPops.length > 0 ? knownPops.reduce((a, b) => a + b, 0) : null;
+  const popPartial = knownPops.length > 0 && knownPops.length < selected.length;
+  // Aggregate density = summed population / summed area over areas that have both. This is a
+  // pre-union approximation in the picker (overlaps counted twice); the saved value on the
+  // server is computed from the de-duped union. Good enough for a live "urban vs rural" gauge.
+  const totalArea = selected.reduce((n, c) => n + (c.areaKm2 ?? 0), 0);
+  const totalDensity = totalPopulation != null && totalArea > 0 ? totalPopulation / totalArea : null;
 
   // --- Map preview: draw every selected area's boundary (the union being built) ---
   const drawSelected = useCallback(() => {
@@ -228,9 +260,14 @@ export function TerritoryPicker({ tenantId, onSaved }: Props) {
                   <span style={styles.resultLabel}>{shortName(c.label)}</span>
                   <span style={styles.resultMeta}>
                     <span style={styles.kindBadge}>{KIND_LABEL[c.kind] || c.kind}</span>
+                    <span style={styles.popMeta}>{fmtPop(c.population)}</span>
+                    {c.density != null && <span style={styles.densityMeta}>{fmtDensity(c.density)}</span>}
                     <span>{c.hexCount.toLocaleString()} cells</span>
                     {!c.hasBoundary && <span style={styles.warn}>approximate — no precise boundary</span>}
                     {c.hasBoundary && !c.complete && <span style={styles.warn}>large — coverage capped</span>}
+                    {overlapText(c.overlap) && (
+                      <span style={c.overlap?.substantial ? styles.overlapWarn : styles.overlapSoft}>⚠ {overlapText(c.overlap)}</span>
+                    )}
                   </span>
                 </span>
                 <Button variant={added ? 'ghost' : 'outline'} size="sm" disabled={added} onClick={() => addArea(c)}>
@@ -259,11 +296,20 @@ export function TerritoryPicker({ tenantId, onSaved }: Props) {
                   <li key={c.id} style={styles.selectedItem}>
                     <span style={{ ...styles.dot, background: COLORS[idx % COLORS.length] }} />
                     <span style={styles.selectedName}>{shortName(c.label)}</span>
+                    {overlapText(c.overlap) && (
+                      <span style={c.overlap?.substantial ? styles.overlapWarn : styles.overlapSoft} title={`${c.overlap?.overlapCount} of ${c.overlap?.totalCount} cells already assigned`}>⚠ {overlapText(c.overlap)}</span>
+                    )}
+                    <span style={styles.selectedPop}>{fmtPop(c.population)}</span>
                     <span style={styles.selectedKind}>{KIND_LABEL[c.kind] || c.kind}</span>
                     <button type="button" style={styles.removeBtn} onClick={() => removeArea(c.id)} aria-label="Remove area">×</button>
                   </li>
                 ))}
               </ul>
+              <p style={styles.popTotal}>
+                Est. territory population: <strong>{totalPopulation == null ? 'n/a' : `~${totalPopulation.toLocaleString()}`}</strong>
+                {totalDensity != null && <span style={styles.help}> · density ~{fmtDensity(totalDensity)}</span>}
+                {popPartial && <span style={styles.help}> (partial — some areas unknown)</span>}
+              </p>
               <p style={styles.help}>≈ {totalCells.toLocaleString()} cells before union (overlaps removed on save)</p>
             </>
           )}
@@ -299,6 +345,12 @@ const styles: Record<string, React.CSSProperties> = {
   resultMeta: { display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   kindBadge: { textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '1px 6px' },
   warn: { color: 'var(--color-warning, #B7791F)', fontWeight: 'var(--font-weight-medium)' as any },
+  popMeta: { color: 'var(--color-recovery, #4A90A4)', fontWeight: 'var(--font-weight-medium)' as any },
+  densityMeta: { color: 'var(--color-text-secondary)' },
+  overlapWarn: { color: 'var(--color-error, #C4291C)', fontWeight: 'var(--font-weight-medium)' as any, whiteSpace: 'nowrap' },
+  overlapSoft: { color: 'var(--color-warning, #B7791F)', whiteSpace: 'nowrap' },
+  selectedPop: { fontSize: 'var(--font-size-xs)', color: 'var(--color-recovery, #4A90A4)', whiteSpace: 'nowrap' },
+  popTotal: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', margin: '2px 0 0' },
   body: { display: 'grid', gridTemplateColumns: 'minmax(240px, 1fr) 2fr', gap: 'var(--space-md)', alignItems: 'start' },
   selectedPane: { display: 'flex', flexDirection: 'column', gap: '6px' },
   selectedHeader: { fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-bold)' as any, color: 'var(--color-text)' },

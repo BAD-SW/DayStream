@@ -27,17 +27,19 @@ prospectsRouter.post('/territories/:tenantId/preview', requirePermission('*:*'),
   try {
     const { query } = req.body;
     const { resolveTerritoryCandidates, geocodePostalCode } = await import('../services/google-places.service');
-    const { tileTerritoryComplete, geojsonToH3Rings } = await import('../services/h3-territory.service');
+    const { tileTerritoryComplete, geojsonToH3Rings, populationForHexes, areaKm2ForHexes, overlapSummary } = await import('../services/h3-territory.service');
 
     const found = await resolveTerritoryCandidates(query);
 
-    // Build a preview per candidate: tile its boundary completely and report the
-    // hex count / resolution / completeness so the UI can show the trade-off.
-    // Drop any that tile to 0 cells (a degenerate/point boundary is not a territory).
-    const candidates = found
-      .map((c) => {
+    // Build a preview per candidate: tile its boundary completely and report the hex count /
+    // resolution / completeness + population estimate + density (people/km²) + whether it
+    // overlaps another tenant's territory, so the UI can show the trade-off. Drop 0-cell areas.
+    const candidates = (await Promise.all(
+      found.map(async (c) => {
         const rings = geojsonToH3Rings(c.geojson);
         const tiling = tileTerritoryComplete(rings, c.viewport ?? null, c.lat, c.lng);
+        const population = await populationForHexes(tiling.hexagons);
+        const areaKm2 = areaKm2ForHexes(tiling.hexagons);
         return {
           id: c.id,
           label: c.label,
@@ -49,9 +51,13 @@ prospectsRouter.post('/territories/:tenantId/preview', requirePermission('*:*'),
           resolution: tiling.resolution,
           complete: tiling.complete,
           hasBoundary: tiling.hasBoundary,
+          population,
+          areaKm2: Math.round(areaKm2),
+          density: population != null && areaKm2 > 0 ? Math.round((population / areaKm2) * 10) / 10 : null,
+          overlap: await overlapSummary(req.params.tenantId, tiling.hexagons),
         };
-      })
-      .filter((c) => c.hexCount > 0);
+      }),
+    )).filter((c) => c.hexCount > 0);
 
     // Fallback: if NO administrative boundary matched (informal name), offer the raw
     // geocode viewport as a single approximate (rectangle) option, clearly flagged.
@@ -70,6 +76,10 @@ prospectsRouter.post('/territories/:tenantId/preview', requirePermission('*:*'),
           resolution: tiling.resolution,
           complete: tiling.complete,
           hasBoundary: false,
+          population: await populationForHexes(tiling.hexagons),
+          areaKm2: Math.round(areaKm2ForHexes(tiling.hexagons)),
+          density: null,
+          overlap: await overlapSummary(req.params.tenantId, tiling.hexagons),
         });
       }
     }
@@ -88,7 +98,7 @@ prospectsRouter.post('/territories/:tenantId/preview', requirePermission('*:*'),
 prospectsRouter.get('/territories/:tenantId', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
     const { rows } = await adminPool.query(
-      `SELECT id, name, territory_lat, territory_lng, territory_address, territory_components
+      `SELECT id, name, territory_lat, territory_lng, territory_address, territory_components, territory_population
        FROM sys_tenants WHERE id = $1`,
       [req.params.tenantId],
     );
@@ -119,16 +129,18 @@ prospectsRouter.post('/territories/hydrate', requirePermission('*:*'), validate(
   try {
     const components: Array<{ id?: string; label?: string; kind?: string; lat?: number; lng?: number }> = req.body.components || [];
     const { lookupTerritoryBoundaries } = await import('../services/google-places.service');
-    const { tileTerritoryComplete, geojsonToH3Rings } = await import('../services/h3-territory.service');
+    const { tileTerritoryComplete, geojsonToH3Rings, populationForHexes, areaKm2ForHexes, overlapSummary } = await import('../services/h3-territory.service');
 
     const refs = components.map((c) => c.id).filter((id): id is string => !!id && id !== 'viewport');
     const boundaryMap = refs.length > 0 ? await lookupTerritoryBoundaries(refs) : new Map();
 
-    const hydrated = components.map((c) => {
+    const hydrated = await Promise.all(components.map(async (c) => {
       const b = c.id ? boundaryMap.get(c.id) : undefined;
       const geojson = b?.geojson ?? null;
       const rings = geojson ? geojsonToH3Rings(geojson) : null;
       const tiling = tileTerritoryComplete(rings, null, c.lat ?? b?.lat, c.lng ?? b?.lng);
+      const population = await populationForHexes(tiling.hexagons);
+      const areaKm2 = areaKm2ForHexes(tiling.hexagons);
       return {
         id: c.id || '',
         label: c.label || '',
@@ -140,8 +152,12 @@ prospectsRouter.post('/territories/hydrate', requirePermission('*:*'), validate(
         resolution: tiling.resolution,
         complete: tiling.complete,
         hasBoundary: !!geojson,
+        population,
+        areaKm2: Math.round(areaKm2),
+        density: population != null && areaKm2 > 0 ? Math.round((population / areaKm2) * 10) / 10 : null,
+        overlap: await overlapSummary(req.params.tenantId, tiling.hexagons),
       };
-    });
+    }));
     success(res, { components: hydrated });
   } catch (err: any) {
     if (err?.name === 'GeoLookupUnavailableError') { error(res, err.message, 'GEO_UNAVAILABLE', 503); return; }
@@ -181,7 +197,7 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
     const { components, geojson, label, lat, lng, location, territory_radius_km } = req.body;
     const { geocodePostalCode, lookupTerritoryBoundaries } = await import('../services/google-places.service');
     const {
-      tileTerritoryComplete, tileManyComplete, saveTerritoryHexagons, geojsonToH3Rings,
+      tileTerritoryComplete, tileManyComplete, saveTerritoryHexagons, geojsonToH3Rings, populationForHexes, areaKm2ForHexes,
     } = await import('../services/h3-territory.service');
 
     // Normalize to a component list. Single-candidate and legacy-location collapse
@@ -200,14 +216,16 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
         // tileTerritoryComplete handles the viewport; pass it via a single-area tile below.
         const tiling = tileTerritoryComplete(null, geo.viewport, geo.lat, geo.lng, territory_radius_km);
         await saveTerritoryHexagons(req.params.tenantId, tiling.hexagons);
+        const population = await populationForHexes(tiling.hexagons);
+        const storedComps = comps.map((c) => stripComp({ ...c, population }));
         const { rows: r0 } = await adminPool.query(
           `UPDATE sys_tenants SET territory_lat = $1, territory_lng = $2, territory_radius_km = $3,
-             territory_address = $4, territory_components = $5, updated_at = NOW()
-           WHERE id = $6 RETURNING id, name, territory_lat, territory_lng, territory_radius_km, territory_address, territory_components`,
-          [geo.lat, geo.lng, territory_radius_km, location, JSON.stringify(comps.map(stripComp)), req.params.tenantId],
+             territory_address = $4, territory_components = $5, territory_population = $6, updated_at = NOW()
+           WHERE id = $7 RETURNING id, name, territory_lat, territory_lng, territory_radius_km, territory_address, territory_components, territory_population`,
+          [geo.lat, geo.lng, territory_radius_km, location, JSON.stringify(storedComps), population, req.params.tenantId],
         );
         if (r0.length === 0) { error(res, 'Tenant not found', 'NOT_FOUND', 404); return; }
-        success(res, { ...r0[0], hexagons: tiling.hexagons.length, resolution: tiling.resolution, complete: tiling.complete, hasBoundary: tiling.hasBoundary });
+        success(res, { ...r0[0], hexagons: tiling.hexagons.length, resolution: tiling.resolution, complete: tiling.complete, hasBoundary: tiling.hasBoundary, population });
         return;
       }
     }
@@ -239,17 +257,31 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
     })));
     await saveTerritoryHexagons(req.params.tenantId, tiling.hexagons);
 
-    // A combined human/contract label + the stored component list (geometry stripped).
+    // Per-component population: tile each area on its own (at the union's resolution) and sum
+    // its hexes' population. The TERRITORY total is summed over the UNION hexes (so overlapping
+    // areas aren't double-counted), which is why it can be < the sum of per-area figures.
+    const perComponentPop = await Promise.all(resolved.map(async (c) => {
+      if (!c.rings && c.centerLat == null) return null;
+      const t = tileTerritoryComplete(c.rings, null, c.centerLat, c.centerLng);
+      return populationForHexes(t.hexagons);
+    }));
+    const territoryPopulation = await populationForHexes(tiling.hexagons);
+    const territoryAreaKm2 = areaKm2ForHexes(tiling.hexagons);
+    const territoryDensity = territoryPopulation != null && territoryAreaKm2 > 0
+      ? Math.round((territoryPopulation / territoryAreaKm2) * 10) / 10 : null;
+
+    // A combined human/contract label + the stored component list (geometry stripped, population kept).
     const combinedLabel = comps.length === 1
       ? shortLabel(comps[0].label)
       : comps.map((c) => shortLabel(c.label)).join(' + ');
     const center = resolved.find((c) => c.lat != null && c.lng != null);
+    const storedComps = comps.map((c, i) => stripComp({ ...c, population: perComponentPop[i] ?? null }));
 
     const { rows } = await adminPool.query(
       `UPDATE sys_tenants SET territory_lat = $1, territory_lng = $2, territory_radius_km = $3,
-         territory_address = $4, territory_components = $5, updated_at = NOW()
-       WHERE id = $6 RETURNING id, name, territory_lat, territory_lng, territory_radius_km, territory_address, territory_components`,
-      [center?.lat ?? null, center?.lng ?? null, territory_radius_km, combinedLabel, JSON.stringify(comps.map(stripComp)), req.params.tenantId],
+         territory_address = $4, territory_components = $5, territory_population = $6, updated_at = NOW()
+       WHERE id = $7 RETURNING id, name, territory_lat, territory_lng, territory_radius_km, territory_address, territory_components, territory_population`,
+      [center?.lat ?? null, center?.lng ?? null, territory_radius_km, combinedLabel, JSON.stringify(storedComps), territoryPopulation, req.params.tenantId],
     );
     if (rows.length === 0) { error(res, 'Tenant not found', 'NOT_FOUND', 404); return; }
     success(res, {
@@ -259,13 +291,17 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
       complete: tiling.complete,
       hasBoundary: tiling.hasBoundary,
       componentCount: tiling.componentCount,
+      population: territoryPopulation,
+      areaKm2: Math.round(territoryAreaKm2),
+      density: territoryDensity,
     });
   } catch (err: any) { error(res, err.message || 'Failed to update territory', 'INTERNAL_ERROR', 500); }
 });
 
-/** Store a component without its (large) geometry — the list is the contract definition. */
-function stripComp(c: { id?: string; label: string; kind?: string; lat?: number; lng?: number }) {
-  return { id: c.id ?? null, label: c.label, kind: c.kind ?? null, lat: c.lat ?? null, lng: c.lng ?? null };
+/** Store a component without its (large) geometry — the list is the contract definition.
+ *  Carries a population estimate (modeled, may be null when unknown) for sizing/valuation. */
+function stripComp(c: { id?: string; label: string; kind?: string; lat?: number; lng?: number; population?: number | null }) {
+  return { id: c.id ?? null, label: c.label, kind: c.kind ?? null, lat: c.lat ?? null, lng: c.lng ?? null, population: c.population ?? null };
 }
 
 /** First 2 comma-parts of a long display name, for a compact label. */

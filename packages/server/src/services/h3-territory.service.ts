@@ -386,6 +386,77 @@ export async function saveTerritoryHexagons(tenantId: string, hexagons: string[]
 }
 
 /**
+ * Estimate the population of an area from its tiled H3 hexes by summing the Kontur
+ * population grid (prp_population_lookup, keyed by res-8 H3 cell). Each territory hex
+ * (res 5-7) is expanded to its res-8 children and their populations summed — the same
+ * res-8 alignment saveTerritoryHexagons uses for the searchability filter.
+ *
+ * Returns a rounded integer, or NULL when the population table has no data for the region
+ * (so callers can show "unknown" rather than a misleading 0). A modeled estimate, not a
+ * census count — good for sizing a territory, not for official figures.
+ */
+export async function populationForHexes(hexes: string[]): Promise<number | null> {
+  if (!hexes || hexes.length === 0) return 0;
+
+  // Expand to res-8 children (dedup in case of any overlap across input hexes).
+  const children = new Set<string>();
+  for (const hex of hexes) {
+    try { for (const c of h3.cellToChildren(hex, 8)) children.add(c); } catch { /* skip bad hex */ }
+  }
+  if (children.size === 0) return 0;
+
+  const all = [...children];
+  let total = 0;
+  let matched = 0;
+  for (let i = 0; i < all.length; i += 5000) {
+    const chunk = all.slice(i, i + 5000);
+    try {
+      const { rows } = await adminPool.query(
+        `SELECT COALESCE(SUM(population), 0)::bigint AS s, COUNT(*)::int AS n
+         FROM prp_population_lookup WHERE h3_index = ANY($1)`,
+        [chunk],
+      );
+      total += Number(rows[0]?.s ?? 0);
+      matched += Number(rows[0]?.n ?? 0);
+    } catch (err: any) {
+      // Table missing or query failure — treat as "no data" rather than a hard error.
+      logger.warn(`[H3Territory] population lookup failed: ${err.message}`);
+      return null;
+    }
+  }
+
+  // No population rows matched anywhere in the region => we have no data for it. Distinguish
+  // that (null = unknown) from a genuine zero-population area (0 with some matched cells).
+  if (matched === 0) return null;
+  return total;
+}
+
+/**
+ * Total geographic area (km²) of a set of H3 hexes, summing each cell's exact area. Handles
+ * mixed resolutions correctly (res-5/6/7 cells have very different sizes), so density derived
+ * from this is comparable across territories regardless of the tiling resolution used.
+ */
+export function areaKm2ForHexes(hexes: string[]): number {
+  let km2 = 0;
+  for (const hex of hexes) {
+    try { km2 += h3.cellArea(hex, 'km2'); } catch { /* skip bad hex */ }
+  }
+  return km2;
+}
+
+/**
+ * Population density (people per km²) for a set of hexes: population / area. Returns null when
+ * population is unknown (null) or area is zero, so callers show "n/a" rather than a bad number.
+ */
+export async function densityForHexes(hexes: string[]): Promise<number | null> {
+  const pop = await populationForHexes(hexes);
+  if (pop == null) return null;
+  const km2 = areaKm2ForHexes(hexes);
+  if (km2 <= 0) return null;
+  return pop / km2;
+}
+
+/**
  * Get territory hexagons for a tenant.
  */
 export async function getTerritoryHexagons(tenantId: string): Promise<string[]> {
@@ -478,6 +549,55 @@ export async function checkOverlap(tenantId: string, hexagons: string[]): Promis
 
   if (rows.length === 0) return null;
   return { overlapping: rows.map((r: any) => r.h3_index), owner: rows[0].owner_name };
+}
+
+export interface AreaOverlap {
+  owner: string;          // name of the (primary) other tenant already holding these hexes
+  owners: string[];       // all distinct other-tenant owners overlapping this area
+  overlapCount: number;   // how many of the area's hexes are already taken
+  totalCount: number;     // the area's total hex count
+  fraction: number;       // overlapCount / totalCount (0..1)
+  substantial: boolean;   // true when the overlap is more than edge-bleed (fraction >= threshold)
+}
+
+// A few shared hexes along a shared county border is normal H3 edge-bleed, not a real
+// "already assigned" conflict. Only flag as substantial when a meaningful share overlaps.
+const OVERLAP_SUBSTANTIAL_FRACTION = 0.1;
+
+/**
+ * Summarize how much a prospective area (its tiled hexes) overlaps OTHER tenants' territories.
+ * Returns null when there's no overlap at all. Informational — callers decide what to do.
+ * Counts the full overlap (not capped) and names every other owner involved.
+ */
+export async function overlapSummary(tenantId: string, hexagons: string[]): Promise<AreaOverlap | null> {
+  if (hexagons.length === 0) return null;
+
+  let overlapCount = 0;
+  const owners = new Set<string>();
+  // Chunk to keep the ANY($) parameter arrays reasonable for large areas.
+  for (let i = 0; i < hexagons.length; i += 5000) {
+    const chunk = hexagons.slice(i, i + 5000);
+    const { rows } = await adminPool.query(
+      `SELECT tt.h3_index, t.name AS owner_name
+       FROM prp_tenant_territories tt
+       JOIN sys_tenants t ON t.id = tt.tenant_id
+       WHERE tt.tenant_id != $1 AND tt.h3_index = ANY($2)`,
+      [tenantId, chunk],
+    );
+    for (const r of rows) { overlapCount++; owners.add(r.owner_name); }
+  }
+
+  if (overlapCount === 0) return null;
+  const fraction = overlapCount / hexagons.length;
+  const ownerList = [...owners];
+  return {
+    owner: ownerList[0],
+    owners: ownerList,
+    overlapCount,
+    totalCount: hexagons.length,
+    fraction,
+    substantial: fraction >= OVERLAP_SUBSTANTIAL_FRACTION,
+  };
 }
 
 /**
