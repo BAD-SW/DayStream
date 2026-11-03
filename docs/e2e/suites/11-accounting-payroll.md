@@ -86,3 +86,9 @@ Rule for every script here: **debits equal credits**, and amounts are whole cent
 `P2` `regression` · Spec 11 R12 · Status: Verified
 1. Generate tax documents for the last finalized period or year; open one.
 **Expect:** the document totals equal the sum of the finalized periods it covers.
+
+### ACC-15 · Journal: days in a table, date filter on the Date column
+`P1` `regression` · THE-23 item 2 (option A) · Status: Verified
+1. Open Accounting → Journal. 2. Open the filter icon beside **Date**; choose **Last month**; Apply. 3. Open the filter again; **Clear**; Apply. 4. Click a day; click an order in it. 5. Switch to **By Account**; sort by Date.
+**Expect:** the table lists one row per day (Date · Orders · Total) and starts on this month (1st to the last day of the month); the date popover is the same as on Bills and Expenses (quick ranges, two months, typed From / To) with no row count; Last month loads that month's days; Clear shows every day; a day opens its orders and an order its debit / credit lines, and they stay open; By Account shows an Accounts count per day; the Account selector, Export CSV and Void work as before.
+**Cross-check:** a day's Total equals the sum of its orders' debits.

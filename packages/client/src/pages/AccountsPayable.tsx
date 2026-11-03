@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Table } from '../design-system/components/data/Table';
+import type { TableFilters } from '../design-system/components/data/TableFilters';
 import { Badge } from '../design-system/components/data/Badge';
 import { TabBar } from '../design-system/components/navigation/TabBar';
 import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
@@ -91,14 +92,16 @@ function AccountsPage() {
   const setAccountForm = accountDraft.setValue;
   const markAccount = (k: string) => fieldMark(accountDraft.changed((v: any) => v[k]));
   const [showArchived, setShowArchived] = useState(false);
-  const [journalDateFrom, setJournalDateFrom] = useState(() => {
-    const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-  });
-  const [journalDateTo, setJournalDateTo] = useState(() => {
-    const d = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0);
-    return d.toISOString().slice(0, 10);
-  });
+  // The Journal's date filter is the Date column's filter, as on Bills and Expenses (THE-23 item 2,
+  // option A); it starts on this month and the entries load for the chosen range.
+  const [journalFilters, setJournalFilters] = useState<TableFilters>(() => ({ date: thisMonth }));
+  const journalDateFrom = journalFilters.date?.from || '';
+  const journalDateTo = journalFilters.date?.to || journalFilters.date?.from || '';
   const [journalPage, setJournalPage] = useState(1);
+  const [expandedDate, setExpandedDate] = useState<string | null>(null);
+  const [expandedEntry, setExpandedEntry] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'orders' | 'accounts'>('orders');
+  const [journalAccountFilter, setJournalAccountFilter] = useState('all');
   const businessId = localStorage.getItem('business_id') || '';
 
   useEffect(() => { loadTab('vendors'); }, [businessId]);
@@ -434,11 +437,9 @@ function AccountsPage() {
     </div>
   );
 
-  function JournalTab({ entries, loading: ld, onVoid }: { entries: any[]; loading: boolean; onVoid: (id: string) => void }) {
-    const [expandedDate, setExpandedDate] = useState<string | null>(null);
-    const [expandedEntry, setExpandedEntry] = useState<string | null>(null);
-    const [viewMode, setViewMode] = useState<'orders' | 'accounts'>('orders');
-    const [journalAccountFilter, setJournalAccountFilter] = useState('all');
+  // A render function, not a component declared inside this page: a nested component is a new
+  // type on every render of the page, so it remounted and lost what was open (a day, the filter).
+  function renderJournal(entries: any[], ld: boolean, onVoid: (id: string) => void) {
 
     // Filter entries by account if selected
     const filteredEntries = journalAccountFilter === 'all'
@@ -467,15 +468,15 @@ function AccountsPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `journal_${journalDateFrom}_to_${journalDateTo}.csv`;
+      link.download = journalDateFrom ? `journal_${journalDateFrom}_to_${journalDateTo}.csv` : 'journal_all_dates.csv';
       link.click();
       URL.revokeObjectURL(url);
     }
 
-    // Group entries by date (DATE-only value — parse as local to avoid a UTC day-shift)
+    // Group entries by day (DATE-only value — parse as local to avoid a UTC day-shift)
     const byDate = new Map<string, any[]>();
     for (const entry of filteredEntries) {
-      const dateStr = formatDateOnly(entry.entry_date);
+      const dateStr = toISODateOnly(entry.entry_date);
       if (!byDate.has(dateStr)) byDate.set(dateStr, []);
       byDate.get(dateStr)!.push(entry);
     }
@@ -502,11 +503,91 @@ function AccountsPage() {
       return result;
     }
 
+    // One row per day: the day, how many orders (or accounts) it has and its total; a row opens its details.
+    const dayRows = Array.from(byDate.entries()).map(([day, dateEntries]) => {
+      const summary = getAccountSummary(dateEntries);
+      return {
+        id: day, date: day, entries: dateEntries, summary,
+        count: viewMode === 'orders' ? dateEntries.length : summary.length,
+        total: viewMode === 'orders'
+          ? dateEntries.reduce((t: number, e: any) => t + (e.lines?.reduce((s: number, l: any) => s + l.debit, 0) || 0), 0)
+          : summary.reduce((t, a) => t + a.totalDebit, 0),
+      };
+    }).filter((r) => r.count > 0);
+
+    const dayCols = [
+      { key: 'date', header: 'Date', sortable: true, filter: 'date' as const, render: (v: string) => formatDateOnly(v) },
+      { key: 'count', header: viewMode === 'orders' ? 'Orders' : 'Accounts', filter: false as const },
+      { key: 'total', header: 'Total', filter: false as const, render: (v: number) => formatCurrency(v) },
+    ];
+
+    function renderDay(row: any) {
+      if (viewMode === 'orders') {
+        return (
+          <div>
+            {row.entries.map((entry: any) => (
+              <div key={entry.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                <div
+                  style={{ padding: '8px 4px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  onClick={() => setExpandedEntry(expandedEntry === entry.id ? null : entry.id)}
+                >
+                  <span style={{ fontSize: 'var(--font-size-sm)' }}>
+                    <strong>{entry.description}</strong>
+                    {entry.is_void && <Badge variant="error">voided</Badge>}
+                  </span>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>{formatCurrency(entry.lines?.reduce((s: number, l: any) => s + l.debit, 0) || 0)}</span>
+                    {!entry.is_void && <TableActionButton label="Void" variant="delete" onClick={() => onVoid(entry.id)} />}
+                  </div>
+                </div>
+                {expandedEntry === entry.id && entry.lines && (
+                  <div style={{ paddingLeft: '20px', paddingBottom: '8px' }}>
+                    {(journalAccountFilter === 'all' ? entry.lines : entry.lines.filter((l: any) => l.account_id === journalAccountFilter)).map((line: any) => (
+                      <div key={line.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+                        <span>{line.debit > 0 ? 'Debit' : 'Credit'}: {line.account_code} — {line.account_name}</span>
+                        <span>{formatCurrency(line.debit || line.credit)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        );
+      }
+      return (
+        <div>
+          {row.summary.map((acct: any) => (
+            <div key={acct.code} style={{ borderBottom: '1px solid var(--color-border)' }}>
+              <div
+                style={{ padding: '8px 4px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                onClick={() => setExpandedEntry(expandedEntry === acct.code + row.date ? null : acct.code + row.date)}
+              >
+                <span style={{ fontSize: 'var(--font-size-sm)' }}><strong>{acct.code} — {acct.name}</strong></span>
+                <span style={{ fontSize: 'var(--font-size-sm)' }}>
+                  {acct.totalDebit > 0 && <span style={{ marginRight: '16px' }}>Debit {formatCurrency(acct.totalDebit)}</span>}
+                  {acct.totalCredit > 0 && <span>Credit {formatCurrency(acct.totalCredit)}</span>}
+                </span>
+              </div>
+              {expandedEntry === acct.code + row.date && (
+                <div style={{ paddingLeft: '20px', paddingBottom: '8px' }}>
+                  {acct.orders.map((ord: any, idx: number) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+                      <span>{ord.description}</span>
+                      <span>{ord.debit > 0 ? formatCurrency(ord.debit) : formatCurrency(ord.credit)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
     return (
       <div>
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
-          <label style={styles.fieldLabel}>From <input style={styles.input} type="date" value={journalDateFrom} onChange={(e) => { setJournalDateFrom(e.target.value); setJournalPage(1); }} /></label>
-          <label style={styles.fieldLabel}>To <input style={styles.input} type="date" value={journalDateTo} onChange={(e) => { setJournalDateTo(e.target.value); setJournalPage(1); }} /></label>
           <label style={styles.fieldLabel}>Account <select style={styles.input} value={journalAccountFilter} onChange={(e) => setJournalAccountFilter(e.target.value)}>
             <option value="all">All Accounts</option>
             {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
@@ -518,101 +599,13 @@ function AccountsPage() {
           </div>
         </div>
 
-        {ld && <p style={{ color: 'var(--color-text-secondary)' }}>Loading...</p>}
-        {!ld && filteredEntries.length === 0 && <p style={{ color: 'var(--color-text-secondary)', textAlign: 'center' }}>No journal entries for this period</p>}
-
-        {!ld && filteredEntries.length > 0 && viewMode === 'orders' && (
-          <div>
-            {Array.from(byDate.entries()).map(([dateStr, dateEntries]) => (
-              <div key={dateStr} style={{ marginBottom: '4px' }}>
-                <div
-                  style={{ padding: '10px 8px', cursor: 'pointer', fontWeight: 600, fontSize: 'var(--font-size-base)', color: 'var(--color-text)', background: expandedDate === dateStr ? 'var(--color-background)' : undefined, borderBottom: '1px solid var(--color-border)' }}
-                  onClick={() => setExpandedDate(expandedDate === dateStr ? null : dateStr)}
-                >
-                  {dateStr} <span style={{ fontWeight: 400, fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginLeft: '8px' }}>({dateEntries.length} {dateEntries.length === 1 ? 'order' : 'orders'})</span>
-                </div>
-                {expandedDate === dateStr && (
-                  <div style={{ paddingLeft: '20px' }}>
-                    {dateEntries.map((entry: any) => (
-                      <div key={entry.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                        <div
-                          style={{ padding: '8px 4px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                          onClick={() => setExpandedEntry(expandedEntry === entry.id ? null : entry.id)}
-                        >
-                          <span style={{ fontSize: 'var(--font-size-sm)' }}>
-                            <strong>{entry.description}</strong>
-                            {entry.is_void && <Badge variant="error">voided</Badge>}
-                          </span>
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>{formatCurrency(entry.lines?.reduce((s: number, l: any) => s + l.debit, 0) || 0)}</span>
-                            {!entry.is_void && <TableActionButton label="Void" variant="delete" onClick={() => onVoid(entry.id)} />}
-                          </div>
-                        </div>
-                        {expandedEntry === entry.id && entry.lines && (
-                          <div style={{ paddingLeft: '20px', paddingBottom: '8px' }}>
-                            {(journalAccountFilter === 'all' ? entry.lines : entry.lines.filter((l: any) => l.account_id === journalAccountFilter)).map((line: any) => (
-                              <div key={line.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-                                <span>{line.debit > 0 ? 'Debit' : 'Credit'}: {line.account_code} — {line.account_name}</span>
-                                <span>{formatCurrency(line.debit || line.credit)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {!ld && filteredEntries.length > 0 && viewMode === 'accounts' && (
-          <div>
-            {Array.from(byDate.entries()).map(([dateStr, dateEntries]) => {
-              const summary = getAccountSummary(dateEntries);
-              if (summary.length === 0) return null;
-              return (
-                <div key={dateStr} style={{ marginBottom: '4px' }}>
-                  <div
-                    style={{ padding: '10px 8px', cursor: 'pointer', fontWeight: 600, fontSize: 'var(--font-size-base)', color: 'var(--color-text)', background: expandedDate === dateStr ? 'var(--color-background)' : undefined, borderBottom: '1px solid var(--color-border)' }}
-                    onClick={() => setExpandedDate(expandedDate === dateStr ? null : dateStr)}
-                  >
-                    {dateStr} <span style={{ fontWeight: 400, fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginLeft: '8px' }}>({summary.length} accounts)</span>
-                  </div>
-                  {expandedDate === dateStr && (
-                    <div style={{ paddingLeft: '20px' }}>
-                      {summary.map((acct) => (
-                        <div key={acct.code} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                          <div
-                            style={{ padding: '8px 4px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                            onClick={() => setExpandedEntry(expandedEntry === acct.code + dateStr ? null : acct.code + dateStr)}
-                          >
-                            <span style={{ fontSize: 'var(--font-size-sm)' }}><strong>{acct.code} — {acct.name}</strong></span>
-                            <span style={{ fontSize: 'var(--font-size-sm)' }}>
-                              {acct.totalDebit > 0 && <span style={{ marginRight: '16px' }}>Debit {formatCurrency(acct.totalDebit)}</span>}
-                              {acct.totalCredit > 0 && <span>Credit {formatCurrency(acct.totalCredit)}</span>}
-                            </span>
-                          </div>
-                          {expandedEntry === acct.code + dateStr && (
-                            <div style={{ paddingLeft: '20px', paddingBottom: '8px' }}>
-                              {acct.orders.map((ord, idx) => (
-                                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-                                  <span>{ord.description}</span>
-                                  <span>{ord.debit > 0 ? formatCurrency(ord.debit) : formatCurrency(ord.credit)}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <Table columns={dayCols} data={dayRows} loading={ld} clientSort
+          emptyMessage={journalDateFrom ? 'No journal entries for this period' : 'No journal entries'}
+          filters={journalFilters} onFiltersChange={(f) => { setJournalFilters(f); setJournalPage(1); }}
+          // The days load from the server for the chosen range, so the filter can't count rows it doesn't hold.
+          filterOptions={async () => []}
+          onRowClick={(row: any) => setExpandedDate(expandedDate === row.id ? null : row.id)}
+          expandedRowId={expandedDate} renderExpanded={renderDay} />
       </div>
     );
   }
@@ -746,7 +739,7 @@ function AccountsPage() {
           </div>
         ) },
         { id: 'accounts', label: 'Chart of Accounts', content: accountsContent },
-        { id: 'journal', label: 'Journal', content: <JournalTab entries={journalEntries} loading={loading} onVoid={handleVoidEntry} /> },
+        { id: 'journal', label: 'Journal', content: renderJournal(journalEntries, loading, handleVoidEntry) },
       ].filter((t) => t.id === activeTab).map((t) => <div key={t.id}>{t.content}</div>)}
       <div hidden={activeTab !== 'payroll'}><DraftTab tab="payroll"><PayrollTab /></DraftTab></div>
       </div>
