@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { ListRow, ListRows, ListRowTitle, ListRowMeta, ListEmpty } from '../design-system/components/data/ListRow';
@@ -361,7 +361,8 @@ function RegistrationsTab({ eventId }: { eventId: string }) {
                   </>
                 )}
               </>}>
-                <ListRowTitle>{r.first_name} {r.last_name}</ListRowTitle>
+                {/* The name opens the person's profile (THE-23 item 1). */}
+                <ListRowTitle>{r.customer_id ? <Link to={`/customers/${r.customer_id}`}>{r.first_name} {r.last_name}</Link> : <>{r.first_name} {r.last_name}</>}</ListRowTitle>
                 <ListRowMeta>{r.reference_number}{r.tier_name ? ` · ${r.tier_name}` : ''}{r.group_size > 1 ? ` × ${r.group_size}` : ''}</ListRowMeta>
               </ListRow>
               {transferTarget === r.id && (
