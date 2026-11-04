@@ -264,8 +264,19 @@ export async function getCustomerPurchases(customerId: string, businessId: strin
 // Everyone who bought a package, past purchases included (THE-23 item 1), with what they have
 // used: sessions and minutes counted apart, as items are redeemed in one or the other.
 export async function getPackagePurchases(packageId: string, businessId: string) {
+  // A purchase stays 'active' in the database after it expires or is used up; the Buyers list
+  // shows what it is now: 'expired' past its expiry date, 'used up' once every session / minute
+  // is used (THE-23 item 1 remark).
   const { rows } = await adminPool.query(
-    `SELECT pp.id, pp.customer_id, pp.status, pp.purchased_at, pp.expires_at,
+    `SELECT x.id, x.customer_id, x.purchased_at, x.expires_at, x.customer_first_name, x.customer_last_name, x.customer_email,
+            x.sessions_total, x.sessions_used, x.minutes_total, x.minutes_used,
+            CASE
+              WHEN x.stored_status = 'active' AND x.expires_at IS NOT NULL AND x.expires_at < NOW() THEN 'expired'
+              WHEN x.stored_status = 'active' AND x.sessions_total + x.minutes_total > 0
+                   AND x.sessions_used >= x.sessions_total AND x.minutes_used >= x.minutes_total THEN 'used up'
+              ELSE x.stored_status END AS status
+     FROM (
+     SELECT pp.id, pp.customer_id, pp.status AS stored_status, pp.purchased_at, pp.expires_at,
             c.first_name AS customer_first_name, c.last_name AS customer_last_name, c.email AS customer_email,
             COALESCE(SUM(pi.quantity) FILTER (WHERE pi.redemption_type IS DISTINCT FROM 'minutes'), 0)::int AS sessions_total,
             COALESCE(SUM(r.used) FILTER (WHERE pi.redemption_type IS DISTINCT FROM 'minutes'), 0)::int AS sessions_used,
@@ -280,7 +291,8 @@ export async function getPackagePurchases(packageId: string, businessId: string)
      ) r ON true
      WHERE pp.package_id = $1 AND pp.business_id = $2
      GROUP BY pp.id, c.id
-     ORDER BY pp.purchased_at DESC`,
+     ) x
+     ORDER BY x.purchased_at DESC`,
     [packageId, businessId],
   );
   return rows;

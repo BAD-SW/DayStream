@@ -178,7 +178,8 @@ export function ValuesFilter({ anchor, title, current, loadOptions, onApply, onC
           </div>
         )}
         <div style={pop.foot}>
-          <button type="button" style={{ ...pop.textBtn, color: 'var(--color-text-secondary)', marginRight: 'auto' }} onClick={() => onApply(undefined)}>Clear filter</button>
+          {/* Clear sits with Cancel and Apply, as a button like them (David, 2026-11-04). */}
+          <button type="button" style={{ ...pop.btn, marginLeft: 'auto' }} onClick={() => onApply(undefined)}>Clear</button>
           <button type="button" style={pop.btn} onClick={onClose}>Cancel</button>
           <button type="button" style={{ ...pop.btn, ...pop.primary, ...(sel && sel.size === 0 ? pop.disabled : {}) }} disabled={!sel || sel.size === 0} onClick={apply}
             title={sel && sel.size === 0 ? 'Tick at least one value' : undefined}>Apply</button>
@@ -215,7 +216,12 @@ export function DateFilter({ anchor, title, current, countFor, onApply, onClose 
   ];
   const [from, setFrom] = useState<string | null>(current?.from || null);
   const [to, setTo] = useState<string | null>(current?.to || null);
-  const [preset, setPreset] = useState<string | null>(null);
+  // A range that is one of the quick ranges opens showing it (e.g. "This month"), not "Custom range".
+  const [preset, setPreset] = useState<string | null>(() => {
+    if (!current?.from) return null;
+    const end = current.to || current.from;
+    return presets.find(([, range]) => { const [x, y] = range(); return toDay(x) === current.from && toDay(y) === end; })?.[0] ?? null;
+  });
   const [view, setView] = useState(monthStart(to ? fromDay(to) : today, -1));
   const [typedFrom, setTypedFrom] = useState(from ? dmy(from) : '');
   const [typedTo, setTypedTo] = useState(to ? dmy(to) : '');
@@ -294,10 +300,10 @@ export function DateFilter({ anchor, title, current, countFor, onApply, onClose 
         </div>
       </div>
       <div style={{ ...pop.foot, borderTop: '1px solid var(--color-border)', padding: '10px 14px' }}>
-        <button type="button" style={{ ...pop.textBtn, color: 'var(--color-text-secondary)' }} onClick={() => { setFrom(null); setTo(null); setPreset(null); }}>Clear</button>
-        <span style={{ marginRight: 'auto', marginLeft: 12, fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+        <span style={{ marginRight: 'auto', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
           {summary}{count !== null ? ` · ${count} ${count === 1 ? 'row' : 'rows'}` : ''}
         </span>
+        <button type="button" style={pop.btn} onClick={() => { setFrom(null); setTo(null); setPreset(null); }}>Clear</button>
         <button type="button" style={pop.btn} onClick={onClose}>Cancel</button>
         <button type="button" style={{ ...pop.btn, ...pop.primary }} onClick={() => onApply(from ? { from, to: end || from } : undefined)}>Apply</button>
       </div>
@@ -455,10 +461,10 @@ export function AmountFilter({ anchor, title, current, loadOptions, onApply, onC
           </>
         )}
         <div style={pop.foot}>
-          <button type="button" style={{ ...pop.textBtn, color: 'var(--color-text-secondary)' }} onClick={() => { setMin(undefined); setMax(undefined); setTypedMin(''); setTypedMax(''); setBad(null); }}>Clear</button>
           <span style={{ marginRight: 'auto', whiteSpace: 'nowrap', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
             {summary}{points ? ` · ${inRange} of ${total}` : ''}
           </span>
+          <button type="button" style={pop.btn} onClick={() => { setMin(undefined); setMax(undefined); setTypedMin(''); setTypedMax(''); setBad(null); }}>Clear</button>
           <button type="button" style={pop.btn} onClick={onClose}>Cancel</button>
           <button type="button" style={{ ...pop.btn, ...pop.primary, ...(bad ? pop.disabled : {}) }} disabled={!!bad} onClick={apply}>Apply</button>
         </div>

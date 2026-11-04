@@ -57,12 +57,6 @@ function AccountsPage() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [journalEntries, setJournalEntries] = useState<any[]>([]);
   const [vendorSearch, setVendorSearch] = useState('');
-  // Bills and Expenses start on this month, as before, shown as the date column's filter
-  // (column filters beside the sort icon, David 2026-11-02).
-  const [thisMonth] = useState(() => {
-    const d = new Date(); const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    return { from: `${ym}-01`, to: `${ym}-${String(new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()).padStart(2, '0')}` };
-  });
   const [loading, setLoading] = useState(true);
   const [editingVendor, setEditingVendor] = useState<any | null>(null);
   const vendorDraft = useDraft<any>('ap-vendor', 'Vendor', EMPTY_VENDOR, async (f) => { await persistVendor(f); return EMPTY_VENDOR; }, { tab: 'vendors' });
@@ -93,8 +87,11 @@ function AccountsPage() {
   const markAccount = (k: string) => fieldMark(accountDraft.changed((v: any) => v[k]));
   const [showArchived, setShowArchived] = useState(false);
   // The Journal's date filter is the Date column's filter, as on Bills and Expenses (THE-23 item 2,
-  // option A); it starts on this month and the entries load for the chosen range.
-  const [journalFilters, setJournalFilters] = useState<TableFilters>(() => ({ date: thisMonth }));
+  // option A); the entries load for the chosen range. No page starts filtered (David, 2026-11-04):
+  // with no range every entry is listed, newest first, more loading as the list scrolls.
+  const [journalFilters, setJournalFilters] = useState<TableFilters>({});
+  const [journalTotal, setJournalTotal] = useState(0);
+  const [journalLoadingMore, setJournalLoadingMore] = useState(false);
   const journalDateFrom = journalFilters.date?.from || '';
   const journalDateTo = journalFilters.date?.to || journalFilters.date?.from || '';
   const [journalPage, setJournalPage] = useState(1);
@@ -133,10 +130,12 @@ function AccountsPage() {
       } else if (tabId === 'journal') {
         const [accts, journal] = await Promise.all([
           apApi.getAccounts(businessId),
-          apApi.getJournalEntries(businessId, { date_from: journalDateFrom, date_to: journalDateTo, page: journalPage }),
+          apApi.getJournalEntries(businessId, { date_from: journalDateFrom, date_to: journalDateTo, page: 1 }),
         ]);
         setAccounts(accts);
         setJournalEntries(Array.isArray(journal) ? journal : journal.data || []);
+        setJournalTotal(Array.isArray(journal) ? journal.length : journal.meta?.total || 0);
+        setJournalPage(1);
       }
     } finally { setLoading(false); }
   }
@@ -144,7 +143,19 @@ function AccountsPage() {
   // Reload journal when date filters change
   useEffect(() => {
     if (businessId) loadTab('journal');
-  }, [journalDateFrom, journalDateTo, journalPage]);
+  }, [journalDateFrom, journalDateTo]);
+
+  // The next entries of the Journal, as the list scrolls (they come newest first).
+  async function loadMoreJournal() {
+    if (journalLoadingMore) return;
+    setJournalLoadingMore(true);
+    try {
+      const next = journalPage + 1;
+      const journal = await apApi.getJournalEntries(businessId, { date_from: journalDateFrom, date_to: journalDateTo, page: next });
+      setJournalEntries((prev) => [...prev, ...(Array.isArray(journal) ? journal : journal.data || [])]);
+      setJournalPage(next);
+    } finally { setJournalLoadingMore(false); }
+  }
 
   // --- Archive Account ---
   async function handleArchiveAccount(id: string) {
@@ -601,7 +612,8 @@ function AccountsPage() {
 
         <Table columns={dayCols} data={dayRows} loading={ld} clientSort
           emptyMessage={journalDateFrom ? 'No journal entries for this period' : 'No journal entries'}
-          filters={journalFilters} onFiltersChange={(f) => { setJournalFilters(f); setJournalPage(1); }}
+          filters={journalFilters} onFiltersChange={setJournalFilters} initialSort={{ key: 'date', order: 'desc' }}
+          onLoadMore={loadMoreJournal} hasMore={entries.length < journalTotal} loadingMore={journalLoadingMore}
           // The days load from the server for the chosen range, so the filter can't count rows it doesn't hold.
           filterOptions={async () => []}
           onRowClick={(row: any) => setExpandedDate(expandedDate === row.id ? null : row.id)}
@@ -703,7 +715,7 @@ function AccountsPage() {
                 </div>
               </div>
             )}
-            <Table columns={billCols} data={bills} loading={loading} emptyMessage="No bills" clientSort initialFilters={{ due_date: thisMonth }} />
+            <Table columns={billCols} data={bills} loading={loading} emptyMessage="No bills" clientSort initialSort={{ key: 'due_date', order: 'desc' }} />
           </div>
         ) },
         { id: 'expenses', label: 'Expenses', content: (
@@ -735,7 +747,7 @@ function AccountsPage() {
                 </div>
               </div>
             )}
-            <Table columns={expenseCols} data={expenses} loading={loading} emptyMessage="No expenses" clientSort initialFilters={{ date: thisMonth }} />
+            <Table columns={expenseCols} data={expenses} loading={loading} emptyMessage="No expenses" clientSort initialSort={{ key: 'date', order: 'desc' }} />
           </div>
         ) },
         { id: 'accounts', label: 'Chart of Accounts', content: accountsContent },

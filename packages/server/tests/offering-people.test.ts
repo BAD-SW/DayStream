@@ -72,6 +72,31 @@ describe('Offering people (THE-23 item 1)', () => {
     expect(rows[1]).toMatchObject({ customer_id: BEN, sessions_total: 5, sessions_used: 0, minutes_total: 60, minutes_used: 0 });
   });
 
+  it('shows a purchase past its expiry as expired, and one with everything used as used up', async () => {
+    const extra = async (first: string, ref: string, expires: string | null) => {
+      const cust = (await adminPool.query(
+        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, first_name, last_name, email) VALUES ($1, $2, $3, $4, 'Test', $5) RETURNING id`,
+        [TENANT_ID, BUSINESS_ID, ref, first, `${first.toLowerCase()}@offering-people.test`],
+      )).rows[0].id;
+      return (await adminPool.query(
+        `INSERT INTO pkg_purchases (package_id, business_id, customer_id, status, purchased_at, expires_at) VALUES ($1, $2, $3, 'active', '2026-01-01T10:00:00Z', $4) RETURNING id`,
+        [PACKAGE_ID, BUSINESS_ID, cust, expires],
+      )).rows[0].id;
+    };
+    await extra('Cleo', 'OPT-3', '2026-06-01T10:00:00Z');
+    const dan = await extra('Dan', 'OPT-4', null);
+    const items = (await adminPool.query('SELECT id, redemption_type FROM pkg_package_items WHERE package_id = $1', [PACKAGE_ID])).rows;
+    const sessions = items.find((i: any) => i.redemption_type === 'sessions').id;
+    const minutes = items.find((i: any) => i.redemption_type === 'minutes').id;
+    await adminPool.query(
+      `INSERT INTO pkg_redemptions (purchase_id, package_item_id, quantity_redeemed, minutes_redeemed) VALUES ($1, $2, 5, NULL), ($1, $3, 1, 60)`,
+      [dan, sessions, minutes],
+    );
+    const rows = await packageService.getPackagePurchases(PACKAGE_ID, BUSINESS_ID);
+    const status = (name: string) => rows.find((r: any) => r.customer_first_name === name)?.status;
+    expect([status('Ana'), status('Cleo'), status('Dan')]).toEqual(['active', 'expired', 'used up']);
+  });
+
   it('shows nothing from another business', async () => {
     expect(await packageService.getPackagePurchases(PACKAGE_ID, '00000000-0000-0000-0000-000000000002')).toEqual([]);
   });

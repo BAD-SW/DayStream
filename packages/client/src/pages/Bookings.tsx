@@ -19,13 +19,8 @@ export function Bookings() {
   const isCustomer = useContextManager().persona === 'customer';
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
-  // Column filters from the icon beside each sort icon (David, 2026-11-02). Staff start on the
-  // next 7 days, as before, shown as the Date/Time filter.
-  const [tableFilters, setTableFilters] = useState<TableFilters>((): TableFilters => {
-    if (isCustomer) return {};
-    const day = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-    return { start_time: { from: day(Date.now()), to: day(Date.now() + 6 * 86400000) } };
-  });
+  // Column filters from the icon beside each sort icon (David, 2026-11-02). No page starts filtered (David, 2026-11-04).
+  const [tableFilters, setTableFilters] = useState<TableFilters>({});
   // No pages: more bookings load as the list scrolls.
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -78,7 +73,7 @@ export function Bookings() {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const result = await bookingsApi.getBookings(businessId, { columns: tableFilters, page: 1, limit: 50 });
+      const result = await bookingsApi.getBookings(businessId, { columns: tableFilters, page: 1, limit: 50, order: isCustomer ? 'asc' : 'desc' });
       setBookings(result.data);
       setPage(1);
       setTotal(result.meta?.total || 0);
@@ -92,7 +87,7 @@ export function Bookings() {
     if (loadingMore || bookings.length >= total) return;
     setLoadingMore(true);
     try {
-      const result = await bookingsApi.getBookings(businessId, { columns: tableFilters, page: page + 1, limit: 50 });
+      const result = await bookingsApi.getBookings(businessId, { columns: tableFilters, page: page + 1, limit: 50, order: isCustomer ? 'asc' : 'desc' });
       setBookings((rows) => [...rows, ...result.data]);
       setPage(page + 1);
       setTotal(result.meta?.total || 0);

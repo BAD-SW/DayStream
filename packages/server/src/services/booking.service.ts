@@ -51,6 +51,8 @@ interface BookingFilters {
   columns?: ColumnFilters;
   page?: number;
   limit?: number;
+  /** Start time order: 'asc' (default) or 'desc' (newest first, the staff list). */
+  order?: 'asc' | 'desc';
 }
 
 /**
@@ -620,7 +622,7 @@ export async function getBookings(filters: BookingFilters) {
        LEFT JOIN cus_customers c ON c.id = b.customer_id
        LEFT JOIN usr_users u ON u.id = b.staff_id
        WHERE ${where}
-       ORDER BY b.start_time ASC
+       ORDER BY b.start_time ${filters.order === 'desc' ? 'DESC' : 'ASC'}
        LIMIT ${limit} OFFSET ${offset}`,
       params,
     ),

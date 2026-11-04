@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Table } from '../design-system/components/data/Table';
+import { dayOf } from '../design-system/components/data/TableFilters';
 import { Badge } from '../design-system/components/data/Badge';
 import { apiClient } from '../api/client';
 import { formatDateOnly } from '../utils/date';
@@ -9,15 +10,17 @@ import { formatDateOnly } from '../utils/date';
 // each with their status and a link to their profile.
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
-  active: 'success', renewing: 'info', pending: 'warning', paused: 'warning', cancelled: 'error', expired: 'neutral',
+  active: 'success', renewing: 'info', pending: 'warning', paused: 'warning', cancelled: 'error', expired: 'neutral', 'used up': 'neutral',
 };
 
 const name = (r: any) => `${r.customer_first_name || ''} ${r.customer_last_name || ''}`.trim() || r.customer_email || '—';
 const date = (v: string | null) => (v ? formatDateOnly(v) : '—');
 const moment = (v: string | null) => (v ? new Date(v).toLocaleDateString() : '—'); // timestamps
+// Timestamps shown as a date sort by that date, so rows on the same day keep their order.
+const byDay = (key: string) => (r: any) => dayOf(r[key]);
 
 const personCol = {
-  key: 'person', header: 'Name', sortable: true, filterValue: name,
+  key: 'person', header: 'Name', sortable: true, filterValue: name, sortValue: name,
   render: (_: unknown, r: any) => <Link to={`/customers/${r.customer_id}`}>{name(r)}</Link>,
 };
 const statusCol = {
@@ -61,9 +64,9 @@ export function PackagePeople({ packageId, businessId }: { packageId: string; bu
   const columns = [
     personCol,
     statusCol,
-    { key: 'purchased_at', header: 'Purchased', sortable: true, filter: 'date' as const, render: moment },
+    { key: 'purchased_at', header: 'Purchased', sortable: true, filter: 'date' as const, sortValue: byDay('purchased_at'), render: moment },
     { key: 'usage', header: 'Used / left', filter: false as const, render: (_: unknown, r: any) => usage(r) },
-    { key: 'expires_at', header: 'Expires', sortable: true, filter: 'date' as const, render: (v: string | null) => (v ? moment(v) : 'Never') },
+    { key: 'expires_at', header: 'Expires', sortable: true, filter: 'date' as const, sortValue: byDay('expires_at'), render: (v: string | null) => (v ? moment(v) : 'Never') },
   ];
   return <Table columns={columns} data={rows} loading={loading} clientSort emptyMessage={failed ? 'The list could not be loaded' : 'Nobody has bought this package yet'} />;
 }

@@ -82,7 +82,6 @@ export function StaffLeave() {
         data={requests}
         loading={loading}
         emptyMessage="No leave requests found"
-        initialFilters={{ status: { values: ['pending'] } }}
       />
 
     </div>

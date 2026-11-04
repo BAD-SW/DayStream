@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import { CopyWidgetSnippetButton } from '../components/CopyWidgetSnippetButton';
@@ -32,7 +32,10 @@ function PackageDetailPage() {
   const [pkg, setPkg] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const { dirtySections } = useDraftSections();
-  const [activeTab, setActiveTab] = useState<'details' | 'people'>('details');
+  // The tab is kept in the address (?tab=), as in Settings, so Back from a profile returns to it (THE-23 remark).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTabState] = useState<'details' | 'people'>(() => (searchParams.get('tab') === 'people' ? 'people' : 'details'));
+  const setActiveTab = (tab: 'details' | 'people') => { setActiveTabState(tab); setSearchParams(tab === 'details' ? {} : { tab }, { replace: true }); };
   const businessId = localStorage.getItem('business_id') || '';
 
   useEffect(() => {

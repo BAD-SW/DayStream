@@ -691,18 +691,6 @@ function TimelineTab({ customerId, businessId }: { customerId: string; businessI
   );
 }
 
-/** YYYY-MM-DD for the first day of the current month (local time). */
-function firstOfCurrentMonth(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-}
-
-/** YYYY-MM-DD for today (local time). */
-function today(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 // --- Billing tab: transaction history + outstanding invoices (Section C, task 4.10) ---
 function BillingTab({ customerId, businessId }: { customerId: string; businessId: string }) {
   const navigate = useNavigate();
@@ -719,11 +707,9 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
   const [showIssueInvoice, setShowIssueInvoice] = useState(false);
   const [creditBalance, setCreditBalance] = useState<payApi.AccountCreditBalance | null>(null);
   const [applyingCreditTo, setApplyingCreditTo] = useState<string | null>(null);
-  // Transaction history is date-ranged (defaults to the current month) so the
-  // list stays manageable as history grows. The range is the Date column's filter
-  // (column filters beside the sort icon, David 2026-11-02); the other columns
-  // filter the loaded rows on screen.
-  const [txFilters, setTxFilters] = useState<TableFilters>(() => ({ created_at: { from: firstOfCurrentMonth(), to: today() } }));
+  // The transaction history's date range is the Date column's filter (column filters beside the
+  // sort icon, David 2026-11-02); the other columns filter the loaded rows on screen. No page starts filtered (David, 2026-11-04).
+  const [txFilters, setTxFilters] = useState<TableFilters>({});
   const dateFrom = txFilters.created_at?.from || '';
   const dateTo = txFilters.created_at?.to || txFilters.created_at?.from || '';
   // The history's non-date columns, filtered on screen (Date is the server range).
@@ -1012,8 +998,8 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
           filterSource={transactions}
           filters={txFilters}
           onFiltersChange={setTxFilters}
-          emptyMessage="No transactions in this date range."
-          clientSort
+          emptyMessage={dateFrom ? 'No transactions in this date range.' : 'No transactions yet.'}
+          clientSort initialSort={{ key: 'created_at', order: 'desc' }}
           columns={[
             { key: 'created_at', header: 'Date', sortable: true, filter: 'date' as const, render: (v: string) => new Date(v).toLocaleDateString() },
             { key: 'purpose_label', header: 'For', sortable: true, render: (_: any, t: PayTransaction) => (

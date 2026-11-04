@@ -140,7 +140,7 @@ export async function getBookingFilters(businessId: string): Promise<BookingFilt
   return res.data.data;
 }
 
-export async function getBookings(businessId: string, filters?: { status?: string; customer_id?: string; customer_search?: string; staff_id?: string; service_id?: string; date_from?: string; date_to?: string; page?: number; limit?: number; columns?: Record<string, { values?: string[]; contains?: string; from?: string; to?: string }> }) {
+export async function getBookings(businessId: string, filters?: { status?: string; customer_id?: string; customer_search?: string; staff_id?: string; service_id?: string; date_from?: string; date_to?: string; page?: number; limit?: number; order?: 'asc' | 'desc'; columns?: Record<string, { values?: string[]; contains?: string; from?: string; to?: string }> }) {
   const params = new URLSearchParams({ business_id: businessId });
   if (filters?.status) params.set('status', filters.status);
   if (filters?.customer_id) params.set('customer_id', filters.customer_id);
@@ -151,6 +151,7 @@ export async function getBookings(businessId: string, filters?: { status?: strin
   if (filters?.date_to) params.set('date_to', filters.date_to);
   if (filters?.page) params.set('page', String(filters.page));
   if (filters?.limit) params.set('limit', String(filters.limit));
+  if (filters?.order) params.set('order', filters.order);
   if (filters?.columns && Object.keys(filters.columns).length) params.set('cf', JSON.stringify(filters.columns));
   const res = await apiClient.get(`/v1/bookings?${params}`);
   return res.data;

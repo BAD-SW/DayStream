@@ -11,18 +11,6 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
   open: 'warning', completed: 'success', voided: 'neutral', refunded: 'error', partially_refunded: 'warning',
 };
 
-/** YYYY-MM-DD for today (local). */
-function todayStr(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-/** YYYY-MM-DD for 7 days ago (local). */
-function sevenDaysAgo(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 7);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 /**
  * Orders — history of checkouts/orders for the business. Lists past orders
  * (filterable by status, customer, and date) and links each row to its full
@@ -37,9 +25,9 @@ export function Orders() {
   const [productFilter, setProductFilter] = useState('');
   const [debouncedProduct, setDebouncedProduct] = useState('');
   useEffect(() => { const t = setTimeout(() => setDebouncedProduct(productFilter.trim()), 300); return () => clearTimeout(t); }, [productFilter]);
-  // Column filters from the icon beside each sort icon (David, 2026-11-02). The list starts on
-  // the last 7 days, as before, shown as the Date filter.
-  const [tableFilters, setTableFilters] = useState<TableFilters>((): TableFilters => ({ completed_at: { from: sevenDaysAgo(), to: todayStr() } }));
+  // Column filters from the icon beside each sort icon (David, 2026-11-02). No page starts filtered (David, 2026-11-04): every order,
+  // newest first, more loading as the list scrolls.
+  const [tableFilters, setTableFilters] = useState<TableFilters>({});
   // No pages: more orders load as the list scrolls.
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);

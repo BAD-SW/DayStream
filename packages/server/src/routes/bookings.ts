@@ -417,6 +417,7 @@ bookingsRouter.get('/', requirePermission('bookings:read'), async (req: Request,
       columns: parseColumnFilters(req.query.cf),
       page,
       limit,
+      order: req.query.order === 'desc' ? 'desc' : 'asc',
     });
 
     success(res, result.bookings, {

@@ -39,7 +39,8 @@ const RUN_FILTER_COLUMNS = [
 export function TenantBillingActivity() {
   // Column filters beside the sort icon (David, 2026-11-02). The Started filter asks the server
   // for that range (default last 7 days); the other columns filter the runs on screen.
-  const [runFilters, setRunFilters] = useState<TableFilters>(() => ({ startedAt: { from: todayISO(-7), to: todayISO(0) } }));
+  // No page starts filtered (David, 2026-11-04): with no range, every run.
+  const [runFilters, setRunFilters] = useState<TableFilters>({});
   const from = runFilters.startedAt?.from || '2000-01-01';
   const to = runFilters.startedAt?.to || runFilters.startedAt?.from || todayISO(0);
   const [runs, setRuns] = useState<payApi.PlatformBillingRun[]>([]);

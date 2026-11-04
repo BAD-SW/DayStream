@@ -29,6 +29,8 @@ interface TableColumn<T> {
   filterScale?: number;
   /** The value a row has for filtering, when it is not `row[key]`. */
   filterValue?: (row: T) => unknown;
+  /** The value a row sorts by, when it is not `row[key]` (e.g. the day of a timestamp shown as a date). */
+  sortValue?: (row: T) => unknown;
   /** How a value is named in the filter list, when not as the cell shows it. */
   filterLabel?: (value: string) => string;
 }
@@ -84,8 +86,10 @@ interface TableProps<T> {
   filterOptions?: (key: string) => Promise<FilterOption[]>;
   /** All rows, when `data` is already filtered by the page (the filter lists show every value). */
   filterSource?: T[];
-  /** Filters a self-filtering table starts with (e.g. this month on a date column). */
+  /** Filters a self-filtering table starts with. No page starts filtered (David, 2026-11-04). */
   initialFilters?: TableFilters;
+  /** The sort a client-sorted table starts with (e.g. newest first on a date column). */
+  initialSort?: { key: string; order: 'asc' | 'desc' };
   /** Turns column filters off for this table (e.g. a small summary table). */
   noFilters?: boolean;
   // Load more as the page scrolls (no pages)
@@ -124,13 +128,17 @@ export function Table<T extends Record<string, any>>({
   filterOptions,
   filterSource,
   initialFilters,
+  initialSort,
   noFilters,
   onLoadMore,
   hasMore,
   loadingMore,
 }: TableProps<T>) {
-  const [sortKey, setSortKey] = useState<string | null>(null);
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  // Sorts so far, newest first: the earlier ones break ties, so rows with the same value keep the
+  // order they had (David, 2026-11-04: sorting a column whose rows are all equal reshuffled them).
+  const [sorts, setSorts] = useState<{ key: string; order: 'asc' | 'desc' }[]>(initialSort ? [initialSort] : []);
+  const sortKey = sorts[0]?.key ?? null;
+  const sortOrder = sorts[0]?.order ?? 'asc';
   const [ownFilters, setOwnFilters] = useState<TableFilters>(initialFilters || {});
   const [openFilter, setOpenFilter] = useState<{ key: string; anchor: HTMLElement } | null>(null);
   const controlled = !!onFiltersChange;
@@ -187,8 +195,7 @@ export function Table<T extends Record<string, any>>({
 
   function handleSort(key: string) {
     const newOrder = sortKey === key && sortOrder === 'asc' ? 'desc' : 'asc';
-    setSortKey(key);
-    setSortOrder(newOrder);
+    setSorts((prev) => [{ key, order: newOrder }, ...prev.filter((x) => x.key !== key)]);
     onSort?.(key, newOrder);
   }
 
@@ -198,14 +205,19 @@ export function Table<T extends Record<string, any>>({
   // Client-side sorting
   let sortedData = visible;
   if (clientSort && sortKey) {
-    sortedData = [...visible].sort((a, b) => {
-      const aVal = sortValue(a[sortKey]);
-      const bVal = sortValue(b[sortKey]);
+    const compare = (a: T, b: T, key: string, order: 'asc' | 'desc') => {
+      const get = columns.find((c) => c.key === key)?.sortValue;
+      const aVal = sortValue(get ? get(a) : a[key]);
+      const bVal = sortValue(get ? get(b) : b[key]);
       if (aVal == null && bVal == null) return 0;
-      if (aVal == null) return sortOrder === 'asc' ? -1 : 1;
-      if (bVal == null) return sortOrder === 'asc' ? 1 : -1;
-      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+      if (aVal == null) return order === 'asc' ? -1 : 1;
+      if (bVal == null) return order === 'asc' ? 1 : -1;
+      if (aVal < bVal) return order === 'asc' ? -1 : 1;
+      if (aVal > bVal) return order === 'asc' ? 1 : -1;
+      return 0;
+    };
+    sortedData = [...visible].sort((a, b) => {
+      for (const x of sorts) { const c = compare(a, b, x.key, x.order); if (c) return c; }
       return 0;
     });
   }
