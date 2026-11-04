@@ -21,6 +21,9 @@ export interface Customer {
   last_visit_at?: string | null;
   last_login_at?: string | null;
   next_booking_at?: string | null;
+  /** THE-18 optional People columns. */
+  last_contacted_at?: string | null;
+  visits_count?: number;
   lifecycle_changed_at?: string;
   marketing_consent?: string[];
   merged_into_id?: string | null;

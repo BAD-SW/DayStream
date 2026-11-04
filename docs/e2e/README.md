@@ -2,7 +2,7 @@
 
 **Owner:** Claude (maintained in every working session) · **Created:** 2026-10-12
 **Synced through commit:** `619bef3` (Bill, 2026-10-28: data migration Wave 1, gift-card expiry, renewals without a card, New Customer email, prospects background generation), merged locally as `bf80267`
-**Script count:** 349 across 18 suites · **Verified by execution:** 260 · **Failing:** 0 · **Retired:** 1 (CUS-11) · **Blocked:** 29 (specs 47–48 not built, sequence builder, API keys) · **Draft (not yet run, or only partly):** 39: run 20261012-6 covered suites 00 and 02 to 16; the journeys (suite 01) were not run as sequences, and the remaining drafts are mostly on-screen checks
+**Script count:** 349 across 18 suites · **Verified by execution:** 271 · **Failing:** 0 · **Retired:** 1 (CUS-11) · **Blocked:** 17 (Inbox SMS / WhatsApp / inbound email, spec 48, sequence builder, API keys) · **Draft (not yet run, or only partly):** 40: run 20261012-6 covered suites 00 and 02 to 16; the journeys (suite 01) were not run as sequences, and the remaining drafts are mostly on-screen checks
 
 This is the living end-to-end (E2E) regression book for DayStream. It exists for two goals:
 
@@ -48,7 +48,7 @@ Every run ends with a report in chat and a new entry in [RUN-LOG.md](./RUN-LOG.m
 | 14 | [Website, CMS & booking widget](./suites/14-website-widget.md) | WEB | 13 | 18, 38 |
 | 15 | [Events, community & integrations](./suites/15-events-community-integrations.md) | EVT, COM, INT | 22 | 14, 20, 22 |
 | 16 | [UI cross-cutting](./suites/16-ui-crosscutting.md) | UIX | 15 | 04, 30 |
-| 17 | [Inbox](./suites/17-inbox.md) | INB | 16 | 47 |
+| 17 | [Inbox](./suites/17-inbox.md) | INB | 14 | 47, THE-18 |
 
 Suite 01 is the heart of goal A. Suites 02–17 go deep per feature. Suite 00 is the fast gate for goal B.
 

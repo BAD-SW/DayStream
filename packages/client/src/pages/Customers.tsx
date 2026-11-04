@@ -8,6 +8,7 @@ import { Button } from '../design-system/components/actions/Button';
 import * as customersApi from '../api/customers';
 import { useAuth } from '../context/AuthContext';
 import { getPermissionsFromRole } from '../context/ContextManager';
+import { useColumnOrder, orderColumns } from '../utils/peopleColumns';
 import type { Customer, ViewCounts, Segment } from '../api/customers';
 
 const STAGE_COLORS: Record<string, { bg: string; fg: string }> = {
@@ -31,7 +32,18 @@ const OPTIONAL_COLUMNS: Array<{ key: string; label: string }> = [
   { key: 'owner_name', label: 'Staff member' },
   { key: 'last_activity_at', label: 'Last activity' },
   { key: 'created_at', label: 'Added' },
+  // THE-18, hidden until a user shows them.
+  { key: 'last_contacted_at', label: 'Last contacted' },
+  { key: 'next_booking_at', label: 'Next booking' },
+  { key: 'visits_count', label: 'Visits' },
 ];
+const OFF_BY_DEFAULT = ['last_contacted_at', 'next_booking_at', 'visits_count'];
+const SHOWN_STORAGE_KEY = 'ds_people_columns_shown';
+// People's columns in the business column order (Settings → People lists).
+const PEOPLE_CANONICAL: Record<string, string> = {
+  reference_number: 'reference_number', email: 'email', phone: 'phone', lifecycle_stage: 'stage', source: 'source', owner_name: 'owner',
+  last_activity_at: 'last_activity', created_at: 'created_at', last_contacted_at: 'last_contacted', next_booking_at: 'next_booking', visits_count: 'visits',
+};
 
 const BULK_ACTIONS: Array<{ id: customersApi.BulkAction; label: string }> = [
   { id: 'add_tag', label: 'Add a tag' },
@@ -88,8 +100,11 @@ export function Customers() {
   const [tableFilters, setTableFilters] = useState<TableFilters>(() => readFilters(searchParams.get('cf')));
   // Columns hidden by this user (remembered on this device).
   const [hiddenColumns, setHiddenColumns] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem(COLUMNS_STORAGE_KEY) || '[]'); } catch { return []; }
+    let hidden: string[] = []; let shown: string[] = [];
+    try { hidden = JSON.parse(localStorage.getItem(COLUMNS_STORAGE_KEY) || '[]'); shown = JSON.parse(localStorage.getItem(SHOWN_STORAGE_KEY) || '[]'); } catch { /* storage unavailable */ }
+    return [...hidden, ...OFF_BY_DEFAULT.filter((k) => !shown.includes(k) && !hidden.includes(k))];
   });
+  const columnOrder = useColumnOrder();
   const [showColumns, setShowColumns] = useState(false);
 
   // Bulk actions: the people ticked on this page, or everyone matching the filters.
@@ -174,7 +189,10 @@ export function Customers() {
   function toggleColumn(key: string) {
     setHiddenColumns((hidden) => {
       const next = hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key];
-      try { localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      try {
+        localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(next.filter((k) => !OFF_BY_DEFAULT.includes(k))));
+        localStorage.setItem(SHOWN_STORAGE_KEY, JSON.stringify(OFF_BY_DEFAULT.filter((k) => !next.includes(k))));
+      } catch { /* storage unavailable */ }
       return next;
     });
   }
@@ -297,8 +315,17 @@ export function Customers() {
       key: 'created_at', header: 'Added', sortable: true, filter: 'date' as const,
       render: (val: string) => new Date(val).toLocaleDateString(),
     },
+    {
+      key: 'last_contacted_at', header: 'Last contacted', sortable: true, filter: false as const,
+      render: (val: string | null) => <span title={val ? new Date(val).toLocaleString() : undefined}>{relativeDay(val)}</span>,
+    },
+    {
+      key: 'next_booking_at', header: 'Next booking', sortable: true, filter: false as const,
+      render: (val: string | null) => (val ? new Date(val).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'),
+    },
+    { key: 'visits_count', header: 'Visits', sortable: true, filter: false as const, align: 'right' as const, render: (val: number | null) => val ?? 0 },
   ];
-  const columns = allColumns.filter((c) => !hiddenColumns.includes(c.key));
+  const columns = orderColumns(allColumns.filter((c) => !hiddenColumns.includes(c.key)), columnOrder, PEOPLE_CANONICAL, ['first_name', 'last_name']);
 
 
   return (

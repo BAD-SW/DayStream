@@ -1,3 +1,5 @@
+import * as inboxApi from '../api/inbox';
+import { useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
@@ -183,15 +185,36 @@ export function ReviewsCard({ customer, businessId }: { customer: Customer; busi
 
 // --- Messages tab ------------------------------------------------------------------
 
+// The person's conversation, the same as in the Inbox (THE-18); answering happens in the Inbox.
 export function MessagesTab({ customer }: { customer: Customer }) {
+  const navigate = useNavigate();
+  const [conv, setConv] = useState<inboxApi.Conversation | null>(null);
+  const [problem, setProblem] = useState('');
+  useEffect(() => {
+    inboxApi.openConversation(customer.id).then(setConv)
+      .catch((e) => setProblem(e?.response?.data?.error || 'The conversation could not be loaded.'));
+  }, [customer.id]);
+  const label: Record<string, string> = { email: 'Email', in_app: 'In-app', sms: 'SMS', whatsapp: 'WhatsApp', internal: 'Note' };
   return (
     <div style={parts.tabContent}>
-      <div style={{ ...parts.card, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-sm)', textAlign: 'center', padding: 'var(--space-2xl) var(--space-lg)' }}>
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z" /><path d="M8 9h8M8 12h5" /></svg>
-        <strong>Messages will appear here</strong>
-        <span style={{ ...parts.muted, maxWidth: '520px' }}>
-          The conversation with {customer.first_name || 'this person'} on every channel (email, WhatsApp, SMS) will show here, the same as in the Inbox, once the Inbox is built.
-        </span>
+      <div style={{ ...parts.card, display: 'grid', gap: 'var(--space-sm)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <strong>Messages with {customer.first_name || 'this person'}</strong>
+          {conv && <Button size="sm" onClick={() => navigate(`/inbox?c=${conv.id}`)}>Open in the Inbox</Button>}
+        </div>
+        {problem && <span style={parts.muted}>{problem}</span>}
+        {conv && conv.messages.length === 0 && <span style={parts.muted}>No messages yet. Write the first one from the Inbox.</span>}
+        {conv && conv.messages.filter((m) => m.direction !== 'event').map((m) => (
+          <div key={m.id} style={{ display: 'grid', gap: 2, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--color-border)',
+            background: m.direction === 'note' ? 'var(--color-warning-light, #fdf0dc)' : m.direction === 'in' ? 'var(--color-background)' : 'var(--color-surface)' }}>
+            {m.subject && <b style={{ fontSize: 'var(--font-size-sm)' }}>{m.subject}</b>}
+            <span style={{ whiteSpace: 'pre-wrap', fontSize: 'var(--font-size-sm)' }}>{m.body}</span>
+            <small style={parts.muted}>
+              {m.direction === 'in' ? customer.first_name || 'Customer' : m.direction === 'auto' ? 'Sent automatically' : m.sender_name || 'Staff'} · {label[m.channel]} · {new Date(m.created_at).toLocaleString()}
+              {m.direction === 'note' && ' · only staff see notes'}
+            </small>
+          </div>
+        ))}
       </div>
     </div>
   );

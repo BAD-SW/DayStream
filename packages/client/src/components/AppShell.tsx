@@ -9,6 +9,8 @@ import { ThemeModeToggle } from '../design-system/themes/ThemeModeToggle';
 import { Logo } from '../design-system/components/layout/Logo';
 import { Icon } from '../design-system/components/icons/Icon';
 import { Profile } from '../pages/Profile';
+import { NotificationBell } from './NotificationBell';
+import { resolvePersona } from '../context/ContextManager';
 import './AppLayout.css';
 
 export type NavIconName = keyof typeof icons;
@@ -20,6 +22,8 @@ export interface ShellNavItem {
   icon: NavIconName;
   /** Shown muted with an "Off" tag (e.g. Schedule when scheduling is disabled). */
   off?: boolean;
+  /** A count beside the label (e.g. unread conversations on Inbox). */
+  badge?: number;
 }
 
 export interface ShellNavGroup {
@@ -93,6 +97,7 @@ export function AppShell({ groups, brandTag, children }: AppShellProps) {
                   <Icon name={item.icon} size="md" />
                   {sidebarOpen && <span className="app-sidebar__label">{item.label}</span>}
                   {sidebarOpen && item.off && <span className="app-sidebar__tag">Off</span>}
+                  {item.badge ? <span className="app-sidebar__badge" aria-label={`${item.badge} unread`}>{item.badge > 99 ? '99+' : item.badge}</span> : null}
                 </Link>
               );
             })}
@@ -114,6 +119,7 @@ export function AppShell({ groups, brandTag, children }: AppShellProps) {
           <ContextSwitcher />
 
           <div className="app-topbar__right">
+            {user && resolvePersona(user.role) !== 'customer' && <NotificationBell />}
             <LanguageSwitcher />
             {user && <ThemeModeToggle />}
             {user && (

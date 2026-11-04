@@ -307,3 +307,15 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+
+/* Unread count beside a menu entry (Inbox, THE-18). */
+.app-sidebar__badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--color-error, #b42318); color: #fff; font-size: 11px; font-weight: 700; display: inline-grid; place-items: center; }
+/* The staff bell (THE-18). */
+.app-bell { position: relative; }
+.app-bell__count { position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--color-error, #b42318); color: #fff; font-size: 10px; font-weight: 700; display: grid; place-items: center; }
+.app-bell__panel { position: absolute; right: 0; top: calc(100% + 6px); width: 340px; max-width: calc(100vw - 32px); max-height: 420px; overflow-y: auto; background: var(--color-surface-modal, var(--color-surface)); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,.15)); z-index: 50; }
+.app-bell__head { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--color-border); font-size: var(--font-size-sm); }
+.app-bell__item { display: grid; gap: 2px; width: 100%; text-align: left; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--color-border); background: none; color: var(--color-text); font-family: var(--font-family); cursor: pointer; font-size: var(--font-size-sm); }
+.app-bell__item.is-unread { background: var(--color-primary-light, var(--color-surface-hover)); }
+.app-bell__item small { color: var(--color-text-secondary); font-size: var(--font-size-xs); }
+.app-bell__empty { padding: 16px; color: var(--color-text-secondary); font-size: var(--font-size-sm); text-align: center; }

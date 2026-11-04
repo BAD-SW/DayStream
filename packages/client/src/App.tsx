@@ -78,6 +78,8 @@ import { useContextManager } from './context/ContextManager';
 import { EventCreate } from './pages/EventCreate';
 import { CheckIn } from './pages/CheckIn';
 import { Marketing } from './pages/Marketing';
+import { Inbox } from './pages/Inbox';
+import { CustomerMessages } from './pages/CustomerMessages';
 import { CampaignCreate } from './pages/CampaignCreate';
 import { CampaignDetail } from './pages/CampaignDetail';
 import { SequenceCreate } from './pages/SequenceCreate';
@@ -209,6 +211,8 @@ export function App() {
 
         {/* Marketing */}
         <Route path="/marketing" element={<ProtectedRoute><Marketing /></ProtectedRoute>} />
+        <Route path="/inbox" element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
+        <Route path="/messages" element={<ProtectedRoute><CustomerMessages /></ProtectedRoute>} />
         <Route path="/marketing/campaigns/new" element={<ProtectedRoute><CampaignCreate /></ProtectedRoute>} />
         <Route path="/marketing/campaigns/:id" element={<ProtectedRoute><CampaignDetail /></ProtectedRoute>} />
         <Route path="/marketing/sequences/new" element={<ProtectedRoute><SequenceCreate /></ProtectedRoute>} />

@@ -1,61 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { lifecycleStageLabel, LIFECYCLE_STAGES, PERSON_SOURCE_LABELS } from '@daystream/shared';
+import { lifecycleStageLabel } from '@daystream/shared';
+import { SegmentConditions, describeRules } from '../components/SegmentConditions';
+import type { Rule as SegRule } from '../components/SegmentConditions';
 import { Button } from '../design-system/components/actions/Button';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import * as customersApi from '../api/customers';
 import type { Segment } from '../api/customers';
 
-type Rule = { field: string; operator: string; value?: any };
-type FieldType = 'choice' | 'text' | 'date' | 'yesno';
-
-// What a rule can be about. `type` decides which conditions and which value control apply.
-const RULE_FIELDS: Array<{ id: string; label: string; type: FieldType; options?: Array<{ value: string; label: string }>; neverAllowed?: boolean }> = [
-  { id: 'lifecycle_stage', label: 'Stage', type: 'choice', options: LIFECYCLE_STAGES.map((s) => ({ value: s, label: lifecycleStageLabel(s) })) },
-  { id: 'source', label: 'Source', type: 'choice', options: Object.entries(PERSON_SOURCE_LABELS).map(([value, label]) => ({ value, label })) },
-  { id: 'gender', label: 'Gender', type: 'choice', options: [{ value: 'male', label: 'Male' }, { value: 'female', label: 'Female' }, { value: 'other', label: 'Other' }] },
-  { id: 'country', label: 'Country', type: 'text' },
-  { id: 'email', label: 'Email', type: 'text' },
-  { id: 'created_at', label: 'Added', type: 'date' },
-  { id: 'last_activity_at', label: 'Last activity', type: 'date', neverAllowed: true },
-  { id: 'last_visit_at', label: 'Last visit', type: 'date', neverAllowed: true },
-  { id: 'last_login_at', label: 'Last login', type: 'date', neverAllowed: true },
-  { id: 'has_account', label: 'Has a login account', type: 'yesno' },
-  { id: 'has_owner', label: 'Has an owner', type: 'yesno' },
-  { id: 'incomplete', label: 'Details incomplete', type: 'yesno' },
-  { id: 'birthday_this_month', label: 'Birthday this month', type: 'yesno' },
-  { id: 'created_this_month', label: 'Added this month', type: 'yesno' },
-  { id: 'consent.email', label: 'Agreed to email marketing', type: 'yesno' },
-  { id: 'consent.sms', label: 'Agreed to SMS marketing', type: 'yesno' },
-  { id: 'consent.whatsapp', label: 'Agreed to WhatsApp marketing', type: 'yesno' },
-];
-
-const OPERATORS: Record<FieldType, Array<{ id: string; label: string }>> = {
-  choice: [{ id: 'eq', label: 'is' }, { id: 'neq', label: 'is not' }],
-  text: [{ id: 'eq', label: 'is' }, { id: 'contains', label: 'contains' }],
-  date: [{ id: 'within_days', label: 'in the last (days)' }, { id: 'older_than_days', label: 'more than (days) ago' }, { id: 'never', label: 'never' }],
-  yesno: [{ id: 'is_true', label: 'yes' }, { id: 'is_false', label: 'no' }],
-};
-
-const OPERATOR_TEXT: Record<string, string> = {
-  eq: 'is', neq: 'is not', contains: 'contains', in: 'is one of', gt: 'after', lt: 'before', between: 'between',
-  within_days: 'in the last', older_than_days: 'more than', never: 'never', is_true: 'yes', is_false: 'no',
-};
-
-/** A rule in plain words, e.g. "Last visit more than 30 days ago". */
-function describeRule(rule: Rule): string {
-  const field = RULE_FIELDS.find((f) => f.id === rule.field);
-  const label = field?.label || rule.field;
-  if (rule.operator === 'is_true') return label;
-  if (rule.operator === 'is_false') return `Not: ${label.toLowerCase()}`;
-  if (rule.operator === 'never') return `${label}: never`;
-  if (rule.operator === 'within_days') return `${label} in the last ${rule.value} days`;
-  if (rule.operator === 'older_than_days') return `${label} more than ${rule.value} days ago`;
-  const values = Array.isArray(rule.value) ? rule.value : [rule.value];
-  const shown = values.map((v) => field?.options?.find((o) => o.value === v)?.label ?? String(v)).join(', ');
-  return `${label} ${OPERATOR_TEXT[rule.operator] || rule.operator} ${shown}`;
-}
+// The builder (one line per condition, match all / any, groups) is shared: THE-18.
+type Rule = SegRule;
 
 export function Segments() {
   const navigate = useNavigate();
@@ -159,7 +114,7 @@ export function Segments() {
                 <span style={styles.segmentRules}>
                   {seg.kind === 'static'
                     ? (seg.description || 'People added by hand')
-                    : seg.rules.rules.map(describeRule).join(seg.rules.logic === 'OR' ? ' or ' : ' and ')}
+                    : describeRules(seg.rules as any)}
                 </span>
               </div>
               <div style={styles.segmentActions}>
@@ -217,19 +172,12 @@ function SegmentForm({ businessId, kind, segment, onSaved, onCancel }: {
   const [description, setDescription] = useState(segment?.description || '');
   const [logic, setLogic] = useState<'AND' | 'OR'>(segment?.rules?.logic === 'OR' ? 'OR' : 'AND');
   const [rules, setRules] = useState<Rule[]>(segment?.rules?.rules || []);
-  const [field, setField] = useState(RULE_FIELDS[0].id);
-  const [operator, setOperator] = useState(OPERATORS[RULE_FIELDS[0].type][0].id);
-  const [value, setValue] = useState('');
   const [count, setCount] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   // Starter segments keep their rules; only their name and description can change.
   const rulesEditable = kind === 'dynamic' && !segment?.is_predefined;
-  const fieldDef = RULE_FIELDS.find((f) => f.id === field)!;
-  const operators = OPERATORS[fieldDef.type].filter((o) => o.id !== 'never' || fieldDef.neverAllowed);
-  const needsValue = !['never', 'is_true', 'is_false'].includes(operator);
-
   // Live count of who the rules match right now.
   useEffect(() => {
     if (!rulesEditable || rules.length === 0) { setCount(null); return; }
@@ -241,19 +189,6 @@ function SegmentForm({ businessId, kind, segment, onSaved, onCancel }: {
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [rules, logic, rulesEditable, businessId]);
-
-  const chooseField = (id: string) => {
-    const def = RULE_FIELDS.find((f) => f.id === id)!;
-    setField(id);
-    setOperator(OPERATORS[def.type][0].id);
-    setValue('');
-  };
-
-  const addRule = () => {
-    if (needsValue && !value) return;
-    setRules([...rules, needsValue ? { field, operator, value } : { field, operator }]);
-    setValue('');
-  };
 
   const save = async () => {
     if (!name.trim()) { setError('Give it a name.'); return; }
@@ -290,44 +225,7 @@ function SegmentForm({ businessId, kind, segment, onSaved, onCancel }: {
 
       {rulesEditable && (
         <>
-          <div style={styles.rulesList}>
-            {rules.length === 0 && <span style={styles.segmentRules}>No rules yet.</span>}
-            {rules.map((r, i) => (
-              <span key={i} style={styles.ruleChip}>
-                {i > 0 && <em style={styles.ruleJoin}>{logic === 'OR' ? 'or' : 'and'} </em>}
-                {describeRule(r)}
-                <button style={styles.chipRemove} aria-label={`Remove rule: ${describeRule(r)}`} onClick={() => setRules(rules.filter((_, j) => j !== i))}>×</button>
-              </span>
-            ))}
-          </div>
-          <div style={styles.ruleBuilder}>
-            <select value={field} onChange={(e) => chooseField(e.target.value)} style={styles.select} aria-label="Rule about">
-              {RULE_FIELDS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-            </select>
-            <select value={operator} onChange={(e) => setOperator(e.target.value)} style={styles.select} aria-label="Condition">
-              {operators.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-            </select>
-            {needsValue && fieldDef.type === 'choice' && (
-              <select value={value} onChange={(e) => setValue(e.target.value)} style={styles.select} aria-label="Value">
-                <option value="">Choose…</option>
-                {fieldDef.options!.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            )}
-            {needsValue && fieldDef.type !== 'choice' && (
-              <input
-                value={value} onChange={(e) => setValue(e.target.value)} style={styles.input} aria-label="Value"
-                type={fieldDef.type === 'date' ? 'number' : 'text'} min={fieldDef.type === 'date' ? 0 : undefined}
-                placeholder={fieldDef.type === 'date' ? 'Days' : 'Value'}
-              />
-            )}
-            <Button size="sm" variant="secondary" onClick={addRule} disabled={needsValue && !value}>Add rule</Button>
-            {rules.length > 1 && (
-              <select value={logic} onChange={(e) => setLogic(e.target.value as 'AND' | 'OR')} style={styles.select} aria-label="How rules combine">
-                <option value="AND">Match all rules</option>
-                <option value="OR">Match any rule</option>
-              </select>
-            )}
-          </div>
+          <SegmentConditions businessId={businessId} value={{ logic, rules }} onChange={(r) => { setLogic(r.logic); setRules(r.rules); }} />
           <span style={styles.segmentRules} aria-live="polite">
             {rules.length > 0 && (count === null ? 'Counting…' : `${count} ${count === 1 ? 'person matches' : 'people match'} right now`)}
           </span>

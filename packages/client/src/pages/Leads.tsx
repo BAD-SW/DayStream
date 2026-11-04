@@ -13,6 +13,10 @@ import * as customersApi from '../api/customers';
 import { useAuth } from '../context/AuthContext';
 import { getPermissionsFromRole } from '../context/ContextManager';
 import type { Lead, LeadStage } from '../api/leads';
+import { useColumnOrder, orderColumns } from '../utils/peopleColumns';
+
+// Leads' columns in the business column order (Settings → People lists, THE-18).
+const LEADS_CANONICAL: Record<string, string> = { email: 'email', phone: 'phone', owner_name: 'owner', created_at: 'created_at', lead_source: 'source', messages_sent: 'messages_sent', stage: 'stage', tags: 'tags' };
 
 /**
  * Marketing → Leads (THE-17): the business's people still at lifecycle stage "lead".
@@ -26,6 +30,7 @@ export function Leads() {
   const perms = getPermissionsFromRole(user?.role || '');
   const canEdit = perms.some((p) => p === '*:*' || p === 'customers:*');
   const canSetUp = perms.some((p) => p === '*:*' || p === 'settings:*');
+  const columnOrder = useColumnOrder();
   const businessId = localStorage.getItem('business_id') || '';
 
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -182,7 +187,7 @@ export function Leads() {
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   const createdAt = (iso: string) => new Date(iso).toLocaleDateString('en-US', { timeZone: timezone, month: 'short', day: 'numeric', year: 'numeric' });
 
-  const columns = [
+  const allColumns = [
     {
       key: 'first_name', header: 'Name', sortable: true,
       render: (_: string, row: Lead) => (
@@ -259,6 +264,7 @@ export function Leads() {
       ),
     }] : []),
   ];
+  const columns = orderColumns(allColumns, columnOrder, LEADS_CANONICAL, ['first_name', 'last_name']);
 
   return (
     <div>

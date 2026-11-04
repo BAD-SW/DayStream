@@ -14,14 +14,18 @@ import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, draftBox, 
 import { LeaveGuard } from '../components/unsaved/LeaveGuard';
 import * as payApi from '../api/payments';
 import * as bookingsApi from '../api/bookings';
+import { InboxSettings } from './settings/InboxSettings';
+import { PeopleListSettings } from './settings/PeopleListSettings';
 import { TIMEZONES } from '../utils/timezones';
 
-type SettingsTab = 'system' | 'lifecycle' | 'leads' | 'processes' | 'notifications' | 'payment-methods' | 'integrations' | 'booking-widget' | 'appearance';
+type SettingsTab = 'system' | 'lifecycle' | 'leads' | 'inbox' | 'people-lists' | 'processes' | 'notifications' | 'payment-methods' | 'integrations' | 'booking-widget' | 'appearance';
 
 const TABS: { key: SettingsTab; label: string; separatorBefore?: boolean }[] = [
   { key: 'system', label: 'System' },
   { key: 'lifecycle', label: 'Customer Lifecycle' },
   { key: 'leads', label: 'Leads' },
+  { key: 'inbox', label: 'Inbox' },
+  { key: 'people-lists', label: 'People lists' },
   { key: 'notifications', label: 'Notifications' },
   { key: 'payment-methods', label: 'Payment Methods' },
   { key: 'integrations', label: 'Integrations' },
@@ -91,6 +95,8 @@ function renderTab(tab: SettingsTab) {
     case 'system': return <SystemSettings />;
     case 'lifecycle': return <LifecycleSettings />;
     case 'leads': return <LeadStagesSettings />;
+    case 'inbox': return <InboxSettings />;
+    case 'people-lists': return <PeopleListSettings />;
     case 'processes': return <ProcessesSettings />;
     case 'notifications': return <NotificationSettings />;
     case 'payment-methods': return <PaymentMethodsSettings />;
