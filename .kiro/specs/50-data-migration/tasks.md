@@ -1,4 +1,4 @@
-# Phase 50: Data Migration - Tasks
+﻿# Phase 50: Data Migration - Tasks
 
 ## Overview
 
@@ -38,7 +38,7 @@ Waves:
 
 #### 1.3 Reference matching
 - [x] ✅ Unified customer matching (shared by all customer-associated imports): Legacy Customer ID when present (exact, preferred), else Identity Service (email, then unique phone); unmatched → failed (never create a customer)
-- [ ] Name matchers (normalized) for service, staff, plan, package — Wave 2/3 (not needed for Wave 1 entities)
+- [ ] Name matchers (normalized): plan and package done (Wave 2); service and staff pending (Wave 3)
 - [x] ✅ Reference resolution runs in the trial so unmatched refs surface pre-commit
 
 #### 1.4 Forgiving pipeline + trial/commit
@@ -97,24 +97,29 @@ Waves:
 ## Wave 2 — Recurring + Prepaid
 
 ### 8. Membership Import
-- [ ] Rows: customer (match), plan/level (match by name), next billing date, status (default active)
-- [ ] Write `mbr_enrollments`; auto-link the customer's default payment method
-- [ ] No default method → active but NOT auto-charged (reuse the renewal/dunning "needs a payment method" behavior)
-- [ ] Unmatched customer/plan → failed; idempotent per (customer + plan); no renewal/dunning email at import
+- [x] ✅ Rows: customer (match), plan (match by normalized name; ambiguous or non-active plan → failed), next billing date, status (blank/active, paused, cancelled; unknown → failed)
+- [x] ✅ Migration 161: `source` CHECK on `mbr_enrollments` and `pkg_purchases` widened to include `'import'`; applied
+- [x] ✅ Write `mbr_enrollments` directly (source `import`); period end = day before next billing date, period start = one billing frequency earlier; auto-link the customer's default payment method; seed `mbr_usage` for the current period
+- [x] ✅ No default method → imported active with a WARNING (first renewal enters the existing dunning flow); next billing date in the past → WARNING
+- [x] ✅ Unmatched customer/plan → failed; idempotent per (customer + plan); no renewal/dunning email at import
+- [x] ✅ Optional `warnings` on the import result (rows imported but needing attention), shown in the trial and done views with a download
 
 ### 9. Package Import
-- [ ] Rows: customer (match), package (match by name), original purchase date
-- [ ] Insert `pkg_purchases` directly to preserve purchase date + expiry window (not via `purchasePackage`, which dates from now)
-- [ ] No utilization in the file (fulfillment derived in Wave 3)
-- [ ] Unmatched customer/package → failed; idempotent per (customer + package + purchase date)
+- [x] ✅ Rows: customer (match), package (match by normalized name), original purchase date
+- [x] ✅ Insert `pkg_purchases` directly (source `import`); purchase stored at 12:00Z; `expires_at` computed from the package policy (days / weeks / months) relative to the purchase date
+- [x] ✅ Already-expired package → imported with a WARNING; archived package definitions accepted
+- [x] ✅ No utilization in the file (fulfillment derived in Wave 3)
+- [x] ✅ Unmatched customer/package → failed; idempotent per (customer + package + purchase date)
 
 ### 10. Wave 2 verification
-- [ ] Membership with a payment method bills normally going forward; without one is active but never auto-charged by the import
-- [ ] Package purchase imported with correct original date/expiry; re-run → no duplicate
-- [ ] No emails; type-check clean
+- [ ] Membership with a payment method bills normally going forward (link verified; an actual renewal run against an imported enrolment not yet exercised)
+- [x] ✅ Membership without a method is imported active and not charged by the import (warning raised)
+- [x] ✅ Trial writes nothing (verified); commit creates active, paused and cancelled enrolments; re-run → matched, no duplicates (verified live)
+- [x] ✅ Package purchase imported with correct original date/expiry (60-day window → purchase + 60 days); re-run → no duplicate (verified live)
+- [x] ✅ No emails: notification queue unchanged across trial, commit and re-run
+- [x] ✅ Server tsc clean; client tsc clean for the touched files; Business tab uses `activeContext.businessId`
 
 ---
-
 ## Wave 3 — Activity
 
 ### 11. Appointment Import
@@ -140,5 +145,6 @@ Waves:
 
 ---
 
-**Status**: � In Progress — Wave 1 ✅ complete (foundation + money); Waves 2 (memberships, packages) and 3 (appointments, transactions) planned
+**Status**: � In Progress — Wave 1 ✅ complete (foundation + money); Wave 2 (memberships, packages) built, renewal run on an imported enrolment still to verify; Wave 3 (appointments, transactions) planned
 **Dependencies**: Phase 46, Phase 05, Phase 10, Phase 08, packages, business setup
+

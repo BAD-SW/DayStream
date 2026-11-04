@@ -16,6 +16,7 @@ import { LeaveGuard } from '../components/unsaved/LeaveGuard';
 import { SaveChanges } from '../components/unsaved/SaveChanges';
 import { apiClient } from '../api/client';
 import * as servicesApi from '../api/services';
+import { useContextManager } from '../context/ContextManager';
 
 const VALID_TABS = ['staff', 'resources', 'locations', 'categories', 'taxes', 'templates', 'migration'] as const;
 type Tab = typeof VALID_TABS[number];
@@ -33,6 +34,7 @@ export function Business() {
 
 function BusinessPage() {
   const [searchParams] = useSearchParams();
+  const migrationBusinessId = useContextManager().activeContext.businessId || '';
   const tabParam = searchParams.get('tab') as Tab | null;
   const [activeTab, setActiveTab] = useState<Tab>(tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'staff');
   const { dirtySections } = useDraftSections();
@@ -61,7 +63,7 @@ function BusinessPage() {
         <div hidden={activeTab !== 'categories'}><DraftTab tab="categories"><CategoriesTab /></DraftTab></div>
         <div hidden={activeTab !== 'taxes'}><DraftTab tab="taxes"><TaxesTab /></DraftTab></div>
         {activeTab === 'templates' && <DocumentTemplatesSettings onDirtyChange={setTemplateDirty} />}
-        {activeTab === 'migration' && <DataMigration businessId={localStorage.getItem('business_id') || ''} />}
+        {activeTab === 'migration' && <DataMigration businessId={migrationBusinessId} />}
       </div>
     </div>
   );

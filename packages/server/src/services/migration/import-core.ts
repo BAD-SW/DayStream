@@ -26,11 +26,74 @@ export interface ImportResult {
   matched: number;
   failed: number;
   failures: RowFailure[];
+  /**
+   * Rows that were imported successfully but that the owner should know about (e.g. a
+   * membership imported with no payment method on file). Not failures — these rows ARE
+   * counted as imported. Optional so entity importers that never warn need not set it.
+   */
+  warnings?: RowFailure[];
 }
 
 /** A blank result accumulator. */
 export function emptyResult(): ImportResult {
-  return { runId: null, total: 0, imported: 0, matched: 0, failed: 0, failures: [] };
+  return { runId: null, total: 0, imported: 0, matched: 0, failed: 0, failures: [], warnings: [] };
+}
+
+// ---------------------------------------------------------------------------
+// Name-based reference matching (plans, packages, and later services/staff)
+// ---------------------------------------------------------------------------
+
+/** Normalize a reference name for comparison: case-, punctuation- and spacing-insensitive. */
+export function normalizeRefName(value: string | null | undefined): string {
+  return (value || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+export interface NameMatchResult<T> {
+  match: T | null;
+  /** Plain-language reason when match is null (names the value; says if it was ambiguous). */
+  reason: string | null;
+}
+
+/**
+ * Resolve a row's reference value to ONE candidate by normalized name. No match → null with a
+ * reason; more than one candidate sharing the normalized name → null (ambiguous), never a guess.
+ * `label` is the kind of thing being matched ("membership plan", "package") for the message.
+ */
+export function matchByName<T extends { name: string }>(
+  candidates: T[], value: string | null | undefined, label: string,
+): NameMatchResult<T> {
+  const wanted = normalizeRefName(value);
+  if (!wanted) return { match: null, reason: `No ${label} name on the row` };
+  const hits = candidates.filter((c) => normalizeRefName(c.name) === wanted);
+  if (hits.length === 1) return { match: hits[0], reason: null };
+  if (hits.length > 1) {
+    return { match: null, reason: `More than one ${label} is named "${value}" — rename one so the import can tell them apart` };
+  }
+  return { match: null, reason: `No ${label} named "${value}" — create it in setup first, or fix the name` };
+}
+
+/** Parse a date cell (YYYY-MM-DD, M/D/YYYY, or any Date-parseable string) to YYYY-MM-DD, or null. */
+export function parseDateCell(value: string | null | undefined): string | null {
+  const s = (value || '').trim();
+  if (!s) return null;
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    const d = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
+    return isNaN(d.getTime()) || d.getUTCMonth() !== Number(iso[2]) - 1 ? null : `${iso[1]}-${iso[2]}-${iso[3]}`;
+  }
+  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (us) {
+    const m = Number(us[1]); const day = Number(us[2]); const y = Number(us[3]);
+    const d = new Date(Date.UTC(y, m - 1, day));
+    if (isNaN(d.getTime()) || d.getUTCMonth() !== m - 1 || d.getUTCDate() !== day) return null;
+    return d.toISOString().slice(0, 10);
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
 }
 
 // ---------------------------------------------------------------------------

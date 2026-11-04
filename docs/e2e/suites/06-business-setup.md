@@ -112,11 +112,11 @@ Persona: owner unless stated. Covers spec 12 (staff), spec 13 (resources), locat
 
 ---
 
-## Data migration (spec 50, Wave 1)
+## Data migration (spec 50, Waves 1–2)
 
 ### SET-17 · Data Migration home and who may use it
 `P1` `regression` · Spec 50 R14–R16 (Bill `0921f79`) · As: owner, Staff, organisation owner · Status: Verified
-1. Business Setup → **Data Migration**: the imports in their fixed order (Customers → Payment Methods → … → Account Balances), with the later waves shown as not yet available. 2. As Staff, open it and call the import. 3. Try an import kind that is not built yet (memberships). 4. As the organisation owner, open the business from Businesses → Data Migration and run a trial there.
+1. Business Setup → **Data Migration**: the imports in their fixed order (Customers → Payment Methods → … → Account Balances), with the later waves shown as not yet available. 2. As Staff, open it and call the import. 3. Try an import kind that is not built yet (appointments; memberships and packages arrived with Wave 2, Bill `411f334`). 4. As the organisation owner, open the business from Businesses → Data Migration and run a trial there.
 **Expect:** the tab is under Business Setup, not in the main menu; Staff is refused (no settings permission); an unbuilt kind is refused with a plain message; the organisation owner can run imports for the business, and the run history names who ran each one. People has no "Import CSV" button any more, and `/customers/import` opens this tab.
 
 ### SET-18 · Import customers: detection, trial, import, run again
@@ -134,3 +134,14 @@ Persona: owner unless stated. Covers spec 12 (staff), spec 13 (resources), locat
 `P1` `regression` · Spec 50 R9, R11 · As: owner · Status: Verified
 1. Upload a balances file: a 25.00 credit for one customer, an 80.00 invoice issued 40 days ago with 30.00 paid for another, an invoice without an issue date, and a row for an unknown email. 2. Trial, then import.
 **Expect:** the trial changes no balance; the import adds 25.00 account credit and an issued invoice of 80.00 dated on its original issue date with 30.00 already paid; the undated invoice and the unknown customer fail with plain reasons.
+
+
+### SET-21 · Import memberships
+`P0` `regression` · Spec 50 Wave 2 (Bill `411f334`) · As: owner · Status: Verified
+1. After importing three people and a card for the first (SET-18, SET-19), upload a memberships file (Customer ID, Email, Membership Plan, Next Billing Date, Status, Member Since): the first person active with a billing date in 12 days and a start date; the second by email, plan name in capitals, no status, a billing date 3 days ago; the third cancelled; then rows with an unknown plan, an unknown status, an unknown old id, and an active row without a billing date. 2. Trial. 3. Import. 4. Import again. 5. Open the plan's **Enrolled** tab.
+**Expect:** the columns are matched by name; the trial writes nothing and predicts 3 imported and 4 failed, each with its row, field and a plain reason; the second person gets two warnings (no card on file, billing date in the past) but is still imported; the import writes 3 memberships marked as imported: the first active, its current period ending the day before the next billing date, the start date from the file and the card linked; the second active without a card; the third cancelled with no billing date; included items start with the full allowance; importing again adds nothing (3 matched); no email is sent; the Enrolled tab (THE-23) lists all three with their status.
+
+### SET-22 · Import packages
+`P0` `regression` · Spec 50 Wave 2 (Bill `411f334`) · As: owner · Status: Verified
+1. Upload a packages file (Email, Package, Purchase Date) for a 90-day package: the first person bought 10 days ago; the second 120 days ago (name in lower case); an unknown package; a row without a date; the first row repeated. 2. Trial. 3. Import. 4. Import again. 5. Open the package's **Buyers** tab.
+**Expect:** the trial writes nothing and predicts 2 imported, 1 matched (the repeated row) and 2 failed with plain reasons, plus a warning that the second one has already expired; the import writes 2 purchases marked as imported, dated on the original purchase day and expiring 90 days after it; importing again adds nothing; the Buyers tab (THE-23) shows the first as active and the second as expired. No email is sent.

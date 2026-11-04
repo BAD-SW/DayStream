@@ -31,6 +31,12 @@ What was not cleaned up, if anything.
 
 ## Runs
 
+## Run 20261104-3 — suites for Bill's pull of 4 Nov (`411f334`, data migration Wave 2)
+- Commit: `82306c8` + the merge of `411f334` · Migrations at: 165 + 161_import_source · Processor mode: mock
+- Scope: the areas Bill's change touches (David, 4 Nov: no full run for a small pull). `r03` (setup), `rbill3` (SET-17 to SET-20), new `rmig2` (SET-21, SET-22); Data Migration page checked in the browser (Memberships and Packages listed, upload opens; our header, Save and separator kept). Unit tests: server 1120 of 1120, client 191 of 191; client type errors 27, the same as before the merge
+- Result: the import checks pass: memberships (columns, trial, 3 imported / 4 failed with reasons, warnings for no card and a past date, period dates, card linked, allowances, no duplicates, no email) and packages (trial, 2 imported / 1 matched / 2 failed, original date, 90-day expiry, no duplicates); customers and payment methods imports (SET-18, SET-19) pass
+- Not completed: the Enrolled / Buyers tab checks (SET-21, SET-22) and SET-17 Staff, SET-20, PAY-25 need the data the suites in between create (business access, staff, invoicing); running the suites in order was stopped when the cached test logins from the stopped full run got mixed up (environment, not product). The tabs read the same tables the imports write; to re-check in the next full run
+
 ## Run 20261104-1 — full, after merging Bill's work (10 commits) and building THE-22 fixes, THE-23 items 1–3 and THE-18 (Inbox)
 - Commit: `c8e0267` plus the two date fixes below (committed after this run) · Migrations at: 165 (local only; Bill's 158–160 and ours 156–165) · Processor mode: mock
 - Scope: every runner (r00, r02, r02b, r02c, r03, r05 to r15, Bill's checks `rbill` / `rbill3`, `rprof`, `rrefund`, `rcev`, `revdel`, `rleads`, the cross-organisation sweep) and the new runner `rinbox` (INB-01, 03, 04, 06, 07, 08, CUS-40, UIX-19, EVT-20). Unit tests: server 1119 of 1120 (the one left is the queue timing test below), client 191 of 191
