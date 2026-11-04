@@ -14,9 +14,11 @@ import {
 import { runCustomerImport } from '../services/migration/customer-import';
 import { runPaymentMethodImport } from '../services/migration/payment-method-import';
 import { runAccountBalanceImport } from '../services/migration/account-balance-import';
+import { runMembershipImport } from '../services/migration/membership-import';
+import { runPackageImport } from '../services/migration/package-import';
 
 /**
- * Data migration import routes (spec 50, Wave 1). One shape across entity kinds:
+ * Data migration import routes (spec 50, Waves 1-2). One shape across entity kinds:
  *   POST /v1/import/:kind/analyze   (file → header/column detection + proposed mapping)
  *   POST /v1/import/:kind/trial     (writes nothing → full assessment + records a trial run)
  *   POST /v1/import/:kind/commit    (writes → result + records a committed run)
@@ -34,9 +36,10 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 importRouter.use(authenticate);
 importRouter.use(tenantContext);
 
-const WAVE1_KINDS: ImportKind[] = ['customers', 'payment_methods', 'account_balances'];
+// Kinds with a handler. Wave 3 (appointments, transactions) is added as those land.
+const SUPPORTED_KINDS: ImportKind[] = ['customers', 'payment_methods', 'memberships', 'packages', 'account_balances'];
 
-/** Field definitions per kind that drive auto-detection. Wave 1 set. */
+/** Field definitions per kind that drive auto-detection. Waves 1-2. */
 function fieldsForKind(kind: ImportKind): FieldDef[] {
   switch (kind) {
     case 'customers':
@@ -53,6 +56,24 @@ function fieldsForKind(kind: ImportKind): FieldDef[] {
         { field: 'exp_month', synonyms: ['expmonth', 'expirymonth'] },
         { field: 'exp_year', synonyms: ['expyear', 'expiryyear'] },
         { field: 'is_default', synonyms: ['isdefault', 'default'] },
+      ];
+    case 'memberships':
+      return [
+        { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid'] },
+        { field: 'email', synonyms: ['email', 'emailaddress'], valueKinds: ['email'] },
+        { field: 'phone', synonyms: ['phone', 'mobile'], valueKinds: ['phone'] },
+        { field: 'plan', synonyms: ['plan', 'planname', 'membership', 'membershipplan', 'membershiplevel', 'membershipname', 'level', 'tier'] },
+        { field: 'next_billing_date', synonyms: ['nextbillingdate', 'nextbilling', 'nextpayment', 'nextpaymentdate', 'nextcharge', 'nextchargedate', 'renewaldate', 'renewal', 'billingdate'], valueKinds: ['date'] },
+        { field: 'status', synonyms: ['status', 'membershipstatus', 'state'] },
+        { field: 'start_date', synonyms: ['startdate', 'start', 'joindate', 'joined', 'membersince', 'since', 'begindate'] },
+      ];
+    case 'packages':
+      return [
+        { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid'] },
+        { field: 'email', synonyms: ['email', 'emailaddress'], valueKinds: ['email'] },
+        { field: 'phone', synonyms: ['phone', 'mobile'], valueKinds: ['phone'] },
+        { field: 'package', synonyms: ['package', 'packagename', 'pkg', 'bundle', 'packagepurchased', 'pack'] },
+        { field: 'purchase_date', synonyms: ['purchasedate', 'purchasedat', 'datepurchased', 'purchased', 'saledate', 'boughton', 'orderdate', 'date'], valueKinds: ['date'] },
       ];
     case 'account_balances':
       return [
@@ -72,7 +93,7 @@ function fieldsForKind(kind: ImportKind): FieldDef[] {
 }
 
 function parseKind(raw: string, res: Response): ImportKind | null {
-  if ((WAVE1_KINDS as string[]).includes(raw)) return raw as ImportKind;
+  if ((SUPPORTED_KINDS as string[]).includes(raw)) return raw as ImportKind;
   error(res, `Unsupported or not-yet-available import kind: ${raw}`, 'VALIDATION_ERROR', 400);
   return null;
 }
@@ -141,6 +162,8 @@ async function dispatch(
   switch (kind) {
     case 'customers': return runCustomerImport({ businessId, tenantId, userId, rows, commit });
     case 'payment_methods': return runPaymentMethodImport({ businessId, tenantId, userId, rows, commit });
+    case 'memberships': return runMembershipImport({ businessId, tenantId, userId, rows, commit });
+    case 'packages': return runPackageImport({ businessId, tenantId, userId, rows, commit });
     case 'account_balances': return runAccountBalanceImport({ businessId, tenantId, userId, rows, commit });
     default: throw new Error(`No handler for kind ${kind}`);
   }

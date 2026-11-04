@@ -5,11 +5,12 @@ import { Badge } from '../../design-system/components/data/Badge';
 import * as api from '../../api/dataMigration';
 
 /**
- * Data Migration (spec 50, Wave 1) — one shared component scoped to a business,
+ * Data Migration (spec 50, Waves 1-2) — one shared component scoped to a business,
  * reused by the Business Setup "Data Migration" tab (business owner) and the
- * tenant's per-business view. Offers the Wave-1 imports (Customers, Payment
- * Methods, Account Balances), each a three-step flow: upload → review + trial
- * → commit. Shows recent import runs (trial vs committed) below.
+ * tenant's per-business view. Offers the imports in the recommended order
+ * (Customers, Payment Methods, Memberships, Packages, Account Balances), each a
+ * three-step flow: upload → review + trial → commit. Rows that import but need the
+ * owner's attention are listed as warnings. Shows recent import runs below.
  */
 
 type Step = 'pick' | 'upload' | 'review' | 'done';
@@ -24,6 +25,8 @@ interface KindInfo {
 const KINDS: KindInfo[] = [
   { kind: 'customers', label: 'Customers', blurb: 'Your customer list — names, contact details, tags, notes.' },
   { kind: 'payment_methods', label: 'Payment Methods', blurb: 'Migrated cards from your processor (Stripe Mapping File).', prereq: 'Import customers first.' },
+  { kind: 'memberships', label: 'Memberships', blurb: 'Current member enrollments, matched to the membership plans you have set up.', prereq: 'Import customers and payment methods first, and create your membership plans.' },
+  { kind: 'packages', label: 'Packages', blurb: 'Prepaid packages customers have purchased, keeping their original purchase date.', prereq: 'Import customers first, and create your packages.' },
   { kind: 'account_balances', label: 'Account Balances', blurb: 'Account credits and outstanding invoices.', prereq: 'Import customers first.' },
 ];
 
@@ -36,18 +39,22 @@ const FIELD_LABELS: Record<string, string> = {
   exp_month: 'Exp Month', exp_year: 'Exp Year', is_default: 'Default?',
   type: 'Type (credit/invoice)', amount: 'Amount', amount_paid: 'Amount Paid', description: 'Description',
   issue_date: 'Issue Date', due_date: 'Due Date',
+  plan: 'Membership Plan', next_billing_date: 'Next Billing Date', status: 'Status', start_date: 'Start Date',
+  package: 'Package', purchase_date: 'Purchase Date',
 };
 
-function downloadFailures(failures: api.RowFailure[]) {
-  const rows = [['Row', 'Field', 'Reason'], ...failures.map((f) => [String(f.row), f.field, f.message])];
-  const csv = rows.map((r) => r.map((c) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(',')).join('\n');
+function downloadRows(rows: api.RowFailure[], fileName: string) {
+  const grid = [['Row', 'Field', 'Reason'], ...rows.map((f) => [String(f.row), f.field, f.message])];
+  const csv = grid.map((r) => r.map((c) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = 'import-failures.csv';
+  link.download = fileName;
   link.click();
   URL.revokeObjectURL(link.href);
 }
+const downloadFailures = (failures: api.RowFailure[]) => downloadRows(failures, 'import-failures.csv');
+const downloadWarnings = (warnings: api.RowFailure[]) => downloadRows(warnings, 'import-warnings.csv');
 
 export function DataMigration({ businessId }: { businessId: string }) {
   const [step, setStep] = useState<Step>('pick');
@@ -71,6 +78,8 @@ export function DataMigration({ businessId }: { businessId: string }) {
   const fieldsForKind = (): string[] => {
     if (kind === 'customers') return ['', 'legacy_customer_id', 'email', 'first_name', 'last_name', 'phone', 'date_of_birth', 'gender', 'preferred_language', 'country', 'notes', 'tags', 'joined'];
     if (kind === 'payment_methods') return ['', 'legacy_customer_id', 'stripe_customer_id', 'payment_method_token', 'email', 'phone', 'brand', 'last4', 'exp_month', 'exp_year', 'is_default'];
+    if (kind === 'memberships') return ['', 'legacy_customer_id', 'email', 'phone', 'plan', 'next_billing_date', 'status', 'start_date'];
+    if (kind === 'packages') return ['', 'legacy_customer_id', 'email', 'phone', 'package', 'purchase_date'];
     return ['', 'legacy_customer_id', 'email', 'phone', 'type', 'amount', 'amount_paid', 'description', 'issue_date', 'due_date'];
   };
 
@@ -203,6 +212,7 @@ export function DataMigration({ businessId }: { businessId: string }) {
                   <div><Button variant="outline" size="sm" onClick={() => downloadFailures(trialResult.failures)}>Download all failures</Button></div>
                 </>
               )}
+              {(trialResult.warnings?.length ?? 0) > 0 && <WarningList warnings={trialResult.warnings!} />}
             </div>
           )}
         </div>
@@ -220,6 +230,7 @@ export function DataMigration({ businessId }: { businessId: string }) {
               <div><Button variant="outline" size="sm" onClick={() => downloadFailures(commitResult.failures)}>Download failures to fix &amp; re-import</Button></div>
             </>
           )}
+          {(commitResult.warnings?.length ?? 0) > 0 && <WarningList warnings={commitResult.warnings!} />}
           <div><Button size="sm" onClick={reset}>Import something else</Button></div>
         </div>
       )}
@@ -245,6 +256,27 @@ export function DataMigration({ businessId }: { businessId: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Rows that imported fine but need attention (e.g. a membership with no card on file). */
+function WarningList({ warnings }: { warnings: api.RowFailure[] }) {
+  const shown = warnings.slice(0, 20);
+  return (
+    <Alert variant="warning">
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>
+        {warnings.length} imported row{warnings.length === 1 ? '' : 's'} worth a look
+      </div>
+      {shown.map((w, i) => (
+        <div key={i} style={{ fontSize: 'var(--font-size-xs)' }}>Row {w.row} — {w.field}: {w.message}</div>
+      ))}
+      {warnings.length > shown.length && (
+        <div style={{ fontSize: 'var(--font-size-xs)', fontStyle: 'italic', marginTop: 4 }}>…and {warnings.length - shown.length} more</div>
+      )}
+      <div style={{ marginTop: 8 }}>
+        <Button variant="outline" size="sm" onClick={() => downloadWarnings(warnings)}>Download all warnings</Button>
+      </div>
+    </Alert>
   );
 }
 

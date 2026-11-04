@@ -10,12 +10,14 @@ import { Badge } from '../design-system/components/data/Badge';
 import { Table } from '../design-system/components/data/Table';
 import { apiClient } from '../api/client';
 import * as servicesApi from '../api/services';
+import { useContextManager } from '../context/ContextManager';
 
 const VALID_TABS = ['staff', 'resources', 'locations', 'categories', 'taxes', 'templates', 'migration'] as const;
 type Tab = typeof VALID_TABS[number];
 
 export function Business() {
   const [searchParams] = useSearchParams();
+  const migrationBusinessId = useContextManager().activeContext.businessId || '';
   const tabParam = searchParams.get('tab') as Tab | null;
   const [activeTab, setActiveTab] = useState<Tab>(tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'staff');
 
@@ -49,7 +51,7 @@ export function Business() {
       {activeTab === 'categories' && <CategoriesTab />}
       {activeTab === 'taxes' && <TaxesTab />}
       {activeTab === 'templates' && <DocumentTemplatesSettings />}
-      {activeTab === 'migration' && <DataMigration businessId={localStorage.getItem('business_id') || ''} />}
+      {activeTab === 'migration' && <DataMigration businessId={migrationBusinessId} />}
     </div>
   );
 }

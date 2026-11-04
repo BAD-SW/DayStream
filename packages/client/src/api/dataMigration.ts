@@ -1,8 +1,8 @@
 import { apiClient } from './client';
 
-/** Data migration import API (spec 50, Wave 1). */
+/** Data migration import API (spec 50, Waves 1-2). */
 
-export type ImportKind = 'customers' | 'payment_methods' | 'account_balances';
+export type ImportKind = 'customers' | 'payment_methods' | 'memberships' | 'packages' | 'account_balances';
 
 export interface ColumnProposal {
   index: number;
@@ -31,6 +31,8 @@ export interface ImportResult {
   matched: number;
   failed: number;
   failures: RowFailure[];
+  /** Rows that DID import but need the owner's attention (e.g. a membership with no card on file). */
+  warnings?: RowFailure[];
 }
 
 export interface ImportRun {
