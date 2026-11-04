@@ -294,6 +294,36 @@ customersRouter.get('/lifecycle-summary', requirePermission('customers:read'), a
   }
 });
 
+// --- Column order (THE-18, David 2026-11-04: one order per business, set by the owner) ---
+// The keys of the orderable columns, in order; People, Leads and the Inbox show their own columns
+// in this order. Everyone reads it; owners and managers (settings) change it.
+customersRouter.get('/column-order', async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { rows } = await adminPool.query(`SELECT value FROM sys_business_configurations WHERE business_id = $1 AND key = 'people.column_order'`, [businessId]);
+    let order: string[] = [];
+    try { order = JSON.parse(rows[0]?.value || '[]'); } catch { order = []; }
+    success(res, { order: Array.isArray(order) ? order : [] });
+  } catch (err: any) { console.error('Failed to get column order', err?.message || err); error(res, 'Failed to get column order', 'INTERNAL_ERROR', 500); }
+});
+
+customersRouter.put('/column-order', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const order = Array.isArray(req.body?.order) ? req.body.order.filter((k: any) => typeof k === 'string' && /^[a-z_]{1,40}$/.test(k)).slice(0, 50) : null;
+    if (!order) { error(res, 'order must be a list of column keys', 'VALIDATION_ERROR', 400); return; }
+    await adminPool.query(
+      `INSERT INTO sys_business_configurations (business_id, key, value, updated_by, updated_at) VALUES ($1, 'people.column_order', $2, $3, NOW())
+       ON CONFLICT (business_id, key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+      [businessId, JSON.stringify(order), authReq.user.sub],
+    );
+    success(res, { order });
+  } catch (err: any) { console.error('Failed to save column order', err?.message || err); error(res, 'Failed to save column order', 'INTERNAL_ERROR', 500); }
+});
+
 // --- Lifecycle Config & Scheduled Jobs (must be before /:id) ---
 import { getAvailableJobTypes } from '../jobs/job-registry';
 import { computeNextRunUtc } from '../jobs/schedule-time';

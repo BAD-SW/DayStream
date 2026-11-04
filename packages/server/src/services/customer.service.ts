@@ -252,6 +252,14 @@ const PERSON_EXTRAS = `
   (c.email IS NULL OR BTRIM(c.first_name) = '' OR BTRIM(c.last_name) = '') AS incomplete,
   (SELECT MIN(b.start_time) FROM apt_bookings b
     WHERE b.customer_id = c.id AND b.start_time > NOW() AND b.status NOT IN ('cancelled', 'no_show')) AS next_booking_at,
+  -- THE-18 optional columns: when the person was last contacted (any channel) and how many visits.
+  GREATEST(
+    (SELECT MAX(m.created_at) FROM inbox_messages m JOIN inbox_conversations ic ON ic.id = m.conversation_id WHERE ic.customer_id = c.id AND m.direction IN ('out', 'auto')),
+    (SELECT MAX(q.sent_at) FROM apt_notification_queue q WHERE q.recipient_id = c.id AND q.status = 'sent'),
+    (SELECT MAX(cr.sent_at) FROM mkt_campaign_recipients cr WHERE cr.customer_id = c.id)) AS last_contacted_at,
+  ((SELECT COUNT(*) FROM apt_bookings b WHERE b.customer_id = c.id AND b.status IN ('completed', 'checked_in'))
+   + (SELECT COUNT(*) FROM evt_registrations er JOIN evt_events ev ON ev.id = er.event_id
+       WHERE er.customer_id = c.id AND (er.checked_in_at IS NOT NULL OR (er.status = 'confirmed' AND ev.end_time < NOW()))))::int AS visits_count,
   COALESCE((SELECT array_agg(p.channel ORDER BY p.channel) FROM mkt_communication_preferences p
     WHERE p.customer_id = c.id AND p.category = 'marketing' AND p.opted_in), '{}') AS marketing_consent`;
 
@@ -264,6 +272,7 @@ const SORT_COLUMNS: Record<string, string> = {
   reference_number: 'c.reference_number', created_at: 'c.created_at', lifecycle_stage: 'c.lifecycle_stage',
   source: 'c.source', last_activity_at: 'c.last_activity_at', last_visit_at: 'c.last_visit_at',
   last_login_at: 'lu.last_login_at', owner_name: 'owner_name',
+  next_booking_at: 'next_booking_at', last_contacted_at: 'last_contacted_at', visits_count: 'visits_count',
 };
 
 export async function getCustomers(businessId: string, filters: CustomerFilters) {

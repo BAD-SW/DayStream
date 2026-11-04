@@ -134,6 +134,11 @@ export const jobRegistry: Record<string, JobHandler> = {
   // Normally runs PLATFORM-scoped (one job every ~15 min sweeping every business
   // with pending charges) so nothing needs per-business provisioning. If invoked
   // with a businessId (manual/scoped trigger), it reconciles just that business.
+  // Inbox (THE-18): unanswered conversations and the daily summary, every 15 minutes, all businesses.
+  'inbox_reminders': async () => {
+    const inbox = await import('../services/inbox.service');
+    return { status: 'done', ...(await inbox.runReminders()) };
+  },
   'payment_reconciliation': async (ctx) => {
     const recon = await import('../services/payment-reconciliation.service');
     if (ctx.businessId) {

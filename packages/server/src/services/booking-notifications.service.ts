@@ -386,6 +386,7 @@ async function sendEmail(notification: any): Promise<void> {
       ...(rendered.replyTo ? { replyTo: rendered.replyTo } : {}),
     });
     logger.info('Branded document email sent', { type, recipient });
+    await recordInThread(notification, rendered.subject, rendered.text);
     return;
   }
 
@@ -395,6 +396,16 @@ async function sendEmail(notification: any): Promise<void> {
   const rendered = renderDefaultEmail(type, data);
   await sendEmailTransport({ to: recipient, subject: rendered.subject, html: rendered.html, text: rendered.text });
   logger.info('Default email sent', { type, recipient });
+  await recordInThread(notification, rendered.subject, rendered.text);
+}
+
+/** What the system emailed a customer goes into their Inbox thread as an automatic message (THE-18). */
+async function recordInThread(notification: any, subject: string, text: string) {
+  if (!notification.recipient_id || !notification.business_id) return;
+  const { rows } = await adminPool.query('SELECT 1 FROM cus_customers WHERE id = $1 AND business_id = $2', [notification.recipient_id, notification.business_id]);
+  if (!rows[0]) return;
+  const { recordAutomatic } = await import('./inbox.service');
+  await recordAutomatic({ businessId: notification.business_id, customerId: notification.recipient_id, channel: 'email', subject, body: text });
 }
 
 /**
