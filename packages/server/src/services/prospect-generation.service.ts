@@ -306,7 +306,13 @@ export interface GenerationRunStatus {
   errorCode?: string;
 }
 
-const runs = new Map<string, GenerationRunStatus>();
+/**
+ * Shared in-process run registry. BOTH the Google engine (here) and the Overture engine
+ * (prospect-overture-generation.service) register their runs in this one map so the single
+ * status endpoint (/:tenantId/generate/status) serves whichever engine ran — only one run
+ * per tenant is active at a time regardless of engine.
+ */
+export const runs = new Map<string, GenerationRunStatus>();
 
 /** The current/last run status for a tenant, or null if none. */
 export function getGenerationStatus(tenantId: string): GenerationRunStatus | null {

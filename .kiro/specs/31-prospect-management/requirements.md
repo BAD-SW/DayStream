@@ -153,3 +153,83 @@ Provide tenant managers with a curated list of potential businesses in their ass
 **Status**: 📋 Planned
 **Dependencies**: Phase 03 (Core Platform)
 **Next Phase**: TBD
+
+
+---
+
+# Addendum: Hybrid Multi-Source Prospect Discovery (Redesign)
+
+**Added**: November 1, 2026
+**Status**: 🔬 Evaluation → design (not yet built)
+
+This addendum supersedes the original single-source (Google Places) discovery approach.
+The territory-definition process (Phase 1 — resolve area → boundary polygon → H3 tiling →
+population filter) is considered sound and is **retained unchanged**. Only the *discovery*
+and *storage/reconcile* of businesses is being re-engineered.
+
+## Why change
+
+The original design used Google Places as the sole source. Two problems surfaced in use:
+
+1. **Completeness is unreliable.** Google Places is a maps/discovery API (60-result cap on
+   legacy, 20 on the new API), not a business directory. The recursive H3 drill-down built
+   to work around the cap depends on Google's `next_page_token` "more results" signal, which
+   is inconsistent — sometimes absent in dense areas (under-capture) and sometimes present on
+   sparse cells (over-drilling). Measured on Oahu: ~8 API calls per business found, one run
+   consumed ~23,000 calls for a territory with ~150 real businesses, and repeat runs return
+   different lists (non-deterministic).
+2. **Platform risk.** The endpoint in use is the **legacy** Places API, which Google has
+   marked for deprecation; its successor caps results even lower per request.
+
+See `docs/PROSPECT_SEARCH_HOW_IT_WORKS.md`, `docs/PROSPECT_SEARCH_REDESIGN_NOTES.md`, and
+`docs/GOOGLE_API_COST_CONTROLS.md` for the full analysis and incident history.
+
+## Target architecture: hybrid discovery + de-duplication
+
+Three phases, replacing the single Places call:
+
+- **Phase A — Discovery (multiple sources, in parallel), each queried by the territory
+  polygon:**
+  - **OpenStreetMap / Overpass** — free, keyless, polygon-queryable, no result cap.
+  - **Overture Maps Places** — free, open license, conflated from multiple providers
+    (Meta/Microsoft/etc.), carries a confidence score; bulk GeoParquet dataset.
+  - **Foursquare Open Source Places** — free (Apache 2.0), 100M+ POIs, monthly updates;
+    bulk dataset.
+  - **Google Places (optional, as enrichment only)** — used to confirm/complete contact
+    details, not as the primary enumerator. Reduces reliance on the capped/legacy API.
+- **Phase B — Normalize** each source's records into a common shape (name, address, phone,
+  website, category, lat/lng, source).
+- **Phase C — De-duplicate & reconcile** across sources: match the same business (by
+  name + address proximity, phone, website domain, geocoded point within a small radius),
+  merge into one record keeping the best field from each source, and record WHICH sources
+  found it (a confidence signal — a business found by 3 sources is almost certainly real).
+
+## Requirements (draft — to be refined during design)
+
+- THE system SHALL discover businesses within a tenant's territory polygon from multiple
+  independent data sources.
+- THE system SHALL NOT depend on any single vendor API for completeness.
+- THE system SHALL de-duplicate businesses across sources into a single reconciled record.
+- THE system SHALL record, per prospect, which sources contributed it (for confidence).
+- THE system SHALL produce deterministic results for the same territory + categories.
+- THE system SHALL bound the cost/time of any run (no unbounded API usage).
+- THE system SHALL retain the existing territory-definition workflow unchanged.
+- THE design SHALL be validated against ground truth (a known-count area) before replacing
+  the existing engine, and SHALL be built additively (behind a flag) so the current engine
+  keeps working until the new path is proven.
+
+## Open questions (to resolve via the evaluation spike)
+
+- Which sources actually have the best coverage for small wellness businesses in the target
+  markets (WNY, Mallorca)? (Measure, don't assume.)
+- How much do the sources overlap (drives de-dup difficulty)?
+- How large is the contact-data gap (phone/website) that would justify a Google enrichment
+  pass or a paid firmographic source?
+- Operational model for the bulk datasets (host a regional slice vs. query a cloud copy).
+
+## Evaluation spike (must precede design/build)
+
+A throwaway measurement (no app changes): pull one WNY county (e.g. Erie) for the three
+active categories from OSM, Overture, and Foursquare; report raw counts and cross-source
+overlap; compare against the current ~543 Google-derived prospects and a hand-count of one
+small dense area. The spike's numbers decide the source mix before any engine is built.

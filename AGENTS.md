@@ -30,19 +30,26 @@ See `docs/PROJECT_CONTEXT.md` for full project history, architecture, and curren
 
 ---
 
-## Dual-Tool Workflow (KIRO + Claude)
+## Workflow (Kiro)
 
-This project uses **KIRO for specs, requirements, design, and tasks** and **Claude for coding implementation**.
+Specs, requirements, design, tasks, and coding are all done **in Kiro, collaboratively with
+the user**. The agent may author and update spec documents (requirements.md, design.md,
+tasks.md, README.md) as well as implement the code. Spec documents under `.kiro/specs/` are
+owned jointly by the user and the agent.
 
-### Rules for Claude (coding agent)
-1. **Read the spec first** — before implementing any feature, read the relevant spec in `.kiro/specs/XX-feature-name/` (requirements.md, design.md, tasks.md)
-2. **Never modify spec files** — `.kiro/specs/` files are owned by KIRO. Do not edit requirements.md, design.md, tasks.md, or .config.kiro
-3. **Never modify steering files** — `.kiro/steering/` files are KIRO configuration. Do not edit them
-4. **Follow the design exactly** — implement what the design.md specifies, not what seems convenient
-5. **Update task status** — after completing a task, update the checkbox in tasks.md from `- [ ]` to `- [x]`
-6. **Commit only when asked** — never auto-commit; wait for explicit user instruction
-7. **Commit directly to main** — never create branches unless explicitly asked
-8. **Pull before starting** — always pull latest from GitHub before beginning implementation work
+> Historical note: an earlier split used KIRO for specs and Claude only for coding. That no
+> longer applies — the agent works in Kiro across both specs and implementation.
+
+### Rules for the agent
+1. **Read the spec first** — before implementing a feature, read the relevant spec in `.kiro/specs/XX-feature-name/` (requirements.md, design.md, tasks.md).
+2. **Spec documents are editable** — the agent may create and update requirements.md, design.md, tasks.md, and README.md within a spec, with the user. Follow the formatting in `.kiro/steering/spec-documentation-standards.md`.
+3. **Do NOT edit `.config.kiro`** — that file is KIRO's internal workflow config, not content.
+4. **Never modify steering files** — `.kiro/steering/` files are configuration. Do not edit them.
+5. **Follow the design** — implement what design.md specifies, not what seems convenient; if the design should change, update the design doc with the user rather than silently diverging.
+6. **Update task status** — after completing a task, update the checkbox in tasks.md from `- [ ]` to `- [x]`.
+7. **Commit only when asked** — never auto-commit; wait for explicit user instruction.
+8. **Commit directly to main** — never create branches unless explicitly asked.
+9. **Pull before starting** — pull latest from GitHub before beginning implementation work.
 
 ---
 
@@ -173,8 +180,10 @@ Spec files live in `.kiro/specs/XX-feature-name/` and follow this structure:
 └── tasks.md            ← Implementation task list
 ```
 
-**Folder naming**: `XX-feature-name` where XX is the next sequential number (currently at 30).  
-**Do not create spec folders** — spec creation is KIRO's job. Claude only reads specs and implements them.
+**Folder naming**: `XX-feature-name` where XX is the next sequential number.
+**Creating/updating specs**: the agent may create new spec folders and author/update their
+documents collaboratively with the user, following `spec-documentation-standards.md`. Do not
+touch `.config.kiro`.
 
 ---
 

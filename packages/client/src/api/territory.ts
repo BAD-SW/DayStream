@@ -17,6 +17,20 @@ export interface TerritoryCandidate {
   resolution: number;         // H3 resolution used (coarser for very large areas)
   complete: boolean;          // false => coverage was capped (very large area)
   hasBoundary: boolean;       // false => approximate rectangle (no precise boundary)
+  population?: number | null; // modeled population estimate (null when unknown for the region)
+  areaKm2?: number | null;    // geographic area of the tiled hexes
+  density?: number | null;    // people per km² (population / area), null when unknown
+  overlap?: AreaOverlap | null; // set when this area overlaps another tenant's territory
+}
+
+/** How much a prospective area overlaps OTHER tenants' territories (informational). */
+export interface AreaOverlap {
+  owner: string;          // primary other-tenant owner
+  owners: string[];       // all other-tenant owners overlapping this area
+  overlapCount: number;   // hexes already assigned elsewhere
+  totalCount: number;     // the area's total hex count
+  fraction: number;       // overlapCount / totalCount
+  substantial: boolean;   // true when more than edge-bleed
 }
 
 export interface GeoJsonGeometry {
@@ -41,6 +55,7 @@ export interface SaveTerritoryResult {
   complete: boolean;
   hasBoundary: boolean;
   componentCount?: number;
+  population?: number | null;        // modeled territory population estimate
 }
 
 /** Save a single chosen candidate as the tenant's territory. */
@@ -79,6 +94,7 @@ export interface TerritoryComponent {
   kind: string | null;
   lat: number | null;
   lng: number | null;
+  population?: number | null;        // modeled per-area population estimate
 }
 
 export interface CurrentTerritory {
@@ -88,6 +104,7 @@ export interface CurrentTerritory {
   territory_lng: number | null;
   territory_address: string | null;
   territory_components: TerritoryComponent[];
+  territory_population?: number | null;  // modeled aggregate territory population
   hexagons: number;
 }
 

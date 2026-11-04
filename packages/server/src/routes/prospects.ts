@@ -27,17 +27,19 @@ prospectsRouter.post('/territories/:tenantId/preview', requirePermission('*:*'),
   try {
     const { query } = req.body;
     const { resolveTerritoryCandidates, geocodePostalCode } = await import('../services/google-places.service');
-    const { tileTerritoryComplete, geojsonToH3Rings } = await import('../services/h3-territory.service');
+    const { tileTerritoryComplete, geojsonToH3Rings, populationForHexes, areaKm2ForHexes, overlapSummary } = await import('../services/h3-territory.service');
 
     const found = await resolveTerritoryCandidates(query);
 
-    // Build a preview per candidate: tile its boundary completely and report the
-    // hex count / resolution / completeness so the UI can show the trade-off.
-    // Drop any that tile to 0 cells (a degenerate/point boundary is not a territory).
-    const candidates = found
-      .map((c) => {
+    // Build a preview per candidate: tile its boundary completely and report the hex count /
+    // resolution / completeness + population estimate + density (people/km²) + whether it
+    // overlaps another tenant's territory, so the UI can show the trade-off. Drop 0-cell areas.
+    const candidates = (await Promise.all(
+      found.map(async (c) => {
         const rings = geojsonToH3Rings(c.geojson);
         const tiling = tileTerritoryComplete(rings, c.viewport ?? null, c.lat, c.lng);
+        const population = await populationForHexes(tiling.hexagons);
+        const areaKm2 = areaKm2ForHexes(tiling.hexagons);
         return {
           id: c.id,
           label: c.label,
@@ -49,9 +51,13 @@ prospectsRouter.post('/territories/:tenantId/preview', requirePermission('*:*'),
           resolution: tiling.resolution,
           complete: tiling.complete,
           hasBoundary: tiling.hasBoundary,
+          population,
+          areaKm2: Math.round(areaKm2),
+          density: population != null && areaKm2 > 0 ? Math.round((population / areaKm2) * 10) / 10 : null,
+          overlap: await overlapSummary(req.params.tenantId, tiling.hexagons),
         };
-      })
-      .filter((c) => c.hexCount > 0);
+      }),
+    )).filter((c) => c.hexCount > 0);
 
     // Fallback: if NO administrative boundary matched (informal name), offer the raw
     // geocode viewport as a single approximate (rectangle) option, clearly flagged.
@@ -70,6 +76,10 @@ prospectsRouter.post('/territories/:tenantId/preview', requirePermission('*:*'),
           resolution: tiling.resolution,
           complete: tiling.complete,
           hasBoundary: false,
+          population: await populationForHexes(tiling.hexagons),
+          areaKm2: Math.round(areaKm2ForHexes(tiling.hexagons)),
+          density: null,
+          overlap: await overlapSummary(req.params.tenantId, tiling.hexagons),
         });
       }
     }
@@ -88,7 +98,7 @@ prospectsRouter.post('/territories/:tenantId/preview', requirePermission('*:*'),
 prospectsRouter.get('/territories/:tenantId', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
     const { rows } = await adminPool.query(
-      `SELECT id, name, territory_lat, territory_lng, territory_address, territory_components
+      `SELECT id, name, territory_lat, territory_lng, territory_address, territory_components, territory_population
        FROM sys_tenants WHERE id = $1`,
       [req.params.tenantId],
     );
@@ -119,16 +129,18 @@ prospectsRouter.post('/territories/hydrate', requirePermission('*:*'), validate(
   try {
     const components: Array<{ id?: string; label?: string; kind?: string; lat?: number; lng?: number }> = req.body.components || [];
     const { lookupTerritoryBoundaries } = await import('../services/google-places.service');
-    const { tileTerritoryComplete, geojsonToH3Rings } = await import('../services/h3-territory.service');
+    const { tileTerritoryComplete, geojsonToH3Rings, populationForHexes, areaKm2ForHexes, overlapSummary } = await import('../services/h3-territory.service');
 
     const refs = components.map((c) => c.id).filter((id): id is string => !!id && id !== 'viewport');
     const boundaryMap = refs.length > 0 ? await lookupTerritoryBoundaries(refs) : new Map();
 
-    const hydrated = components.map((c) => {
+    const hydrated = await Promise.all(components.map(async (c) => {
       const b = c.id ? boundaryMap.get(c.id) : undefined;
       const geojson = b?.geojson ?? null;
       const rings = geojson ? geojsonToH3Rings(geojson) : null;
       const tiling = tileTerritoryComplete(rings, null, c.lat ?? b?.lat, c.lng ?? b?.lng);
+      const population = await populationForHexes(tiling.hexagons);
+      const areaKm2 = areaKm2ForHexes(tiling.hexagons);
       return {
         id: c.id || '',
         label: c.label || '',
@@ -140,8 +152,12 @@ prospectsRouter.post('/territories/hydrate', requirePermission('*:*'), validate(
         resolution: tiling.resolution,
         complete: tiling.complete,
         hasBoundary: !!geojson,
+        population,
+        areaKm2: Math.round(areaKm2),
+        density: population != null && areaKm2 > 0 ? Math.round((population / areaKm2) * 10) / 10 : null,
+        overlap: await overlapSummary(req.params.tenantId, tiling.hexagons),
       };
-    });
+    }));
     success(res, { components: hydrated });
   } catch (err: any) {
     if (err?.name === 'GeoLookupUnavailableError') { error(res, err.message, 'GEO_UNAVAILABLE', 503); return; }
@@ -181,7 +197,7 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
     const { components, geojson, label, lat, lng, location, territory_radius_km } = req.body;
     const { geocodePostalCode, lookupTerritoryBoundaries } = await import('../services/google-places.service');
     const {
-      tileTerritoryComplete, tileManyComplete, saveTerritoryHexagons, geojsonToH3Rings,
+      tileTerritoryComplete, tileManyComplete, saveTerritoryHexagons, geojsonToH3Rings, populationForHexes, areaKm2ForHexes,
     } = await import('../services/h3-territory.service');
 
     // Normalize to a component list. Single-candidate and legacy-location collapse
@@ -200,14 +216,16 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
         // tileTerritoryComplete handles the viewport; pass it via a single-area tile below.
         const tiling = tileTerritoryComplete(null, geo.viewport, geo.lat, geo.lng, territory_radius_km);
         await saveTerritoryHexagons(req.params.tenantId, tiling.hexagons);
+        const population = await populationForHexes(tiling.hexagons);
+        const storedComps = comps.map((c) => stripComp({ ...c, population }));
         const { rows: r0 } = await adminPool.query(
           `UPDATE sys_tenants SET territory_lat = $1, territory_lng = $2, territory_radius_km = $3,
-             territory_address = $4, territory_components = $5, updated_at = NOW()
-           WHERE id = $6 RETURNING id, name, territory_lat, territory_lng, territory_radius_km, territory_address, territory_components`,
-          [geo.lat, geo.lng, territory_radius_km, location, JSON.stringify(comps.map(stripComp)), req.params.tenantId],
+             territory_address = $4, territory_components = $5, territory_population = $6, updated_at = NOW()
+           WHERE id = $7 RETURNING id, name, territory_lat, territory_lng, territory_radius_km, territory_address, territory_components, territory_population`,
+          [geo.lat, geo.lng, territory_radius_km, location, JSON.stringify(storedComps), population, req.params.tenantId],
         );
         if (r0.length === 0) { error(res, 'Tenant not found', 'NOT_FOUND', 404); return; }
-        success(res, { ...r0[0], hexagons: tiling.hexagons.length, resolution: tiling.resolution, complete: tiling.complete, hasBoundary: tiling.hasBoundary });
+        success(res, { ...r0[0], hexagons: tiling.hexagons.length, resolution: tiling.resolution, complete: tiling.complete, hasBoundary: tiling.hasBoundary, population });
         return;
       }
     }
@@ -239,17 +257,31 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
     })));
     await saveTerritoryHexagons(req.params.tenantId, tiling.hexagons);
 
-    // A combined human/contract label + the stored component list (geometry stripped).
+    // Per-component population: tile each area on its own (at the union's resolution) and sum
+    // its hexes' population. The TERRITORY total is summed over the UNION hexes (so overlapping
+    // areas aren't double-counted), which is why it can be < the sum of per-area figures.
+    const perComponentPop = await Promise.all(resolved.map(async (c) => {
+      if (!c.rings && c.centerLat == null) return null;
+      const t = tileTerritoryComplete(c.rings, null, c.centerLat, c.centerLng);
+      return populationForHexes(t.hexagons);
+    }));
+    const territoryPopulation = await populationForHexes(tiling.hexagons);
+    const territoryAreaKm2 = areaKm2ForHexes(tiling.hexagons);
+    const territoryDensity = territoryPopulation != null && territoryAreaKm2 > 0
+      ? Math.round((territoryPopulation / territoryAreaKm2) * 10) / 10 : null;
+
+    // A combined human/contract label + the stored component list (geometry stripped, population kept).
     const combinedLabel = comps.length === 1
       ? shortLabel(comps[0].label)
       : comps.map((c) => shortLabel(c.label)).join(' + ');
     const center = resolved.find((c) => c.lat != null && c.lng != null);
+    const storedComps = comps.map((c, i) => stripComp({ ...c, population: perComponentPop[i] ?? null }));
 
     const { rows } = await adminPool.query(
       `UPDATE sys_tenants SET territory_lat = $1, territory_lng = $2, territory_radius_km = $3,
-         territory_address = $4, territory_components = $5, updated_at = NOW()
-       WHERE id = $6 RETURNING id, name, territory_lat, territory_lng, territory_radius_km, territory_address, territory_components`,
-      [center?.lat ?? null, center?.lng ?? null, territory_radius_km, combinedLabel, JSON.stringify(comps.map(stripComp)), req.params.tenantId],
+         territory_address = $4, territory_components = $5, territory_population = $6, updated_at = NOW()
+       WHERE id = $7 RETURNING id, name, territory_lat, territory_lng, territory_radius_km, territory_address, territory_components, territory_population`,
+      [center?.lat ?? null, center?.lng ?? null, territory_radius_km, combinedLabel, JSON.stringify(storedComps), territoryPopulation, req.params.tenantId],
     );
     if (rows.length === 0) { error(res, 'Tenant not found', 'NOT_FOUND', 404); return; }
     success(res, {
@@ -259,13 +291,17 @@ prospectsRouter.put('/territories/:tenantId', requirePermission('*:*'), validate
       complete: tiling.complete,
       hasBoundary: tiling.hasBoundary,
       componentCount: tiling.componentCount,
+      population: territoryPopulation,
+      areaKm2: Math.round(territoryAreaKm2),
+      density: territoryDensity,
     });
   } catch (err: any) { error(res, err.message || 'Failed to update territory', 'INTERNAL_ERROR', 500); }
 });
 
-/** Store a component without its (large) geometry — the list is the contract definition. */
-function stripComp(c: { id?: string; label: string; kind?: string; lat?: number; lng?: number }) {
-  return { id: c.id ?? null, label: c.label, kind: c.kind ?? null, lat: c.lat ?? null, lng: c.lng ?? null };
+/** Store a component without its (large) geometry — the list is the contract definition.
+ *  Carries a population estimate (modeled, may be null when unknown) for sizing/valuation. */
+function stripComp(c: { id?: string; label: string; kind?: string; lat?: number; lng?: number; population?: number | null }) {
+  return { id: c.id ?? null, label: c.label, kind: c.kind ?? null, lat: c.lat ?? null, lng: c.lng ?? null, population: c.population ?? null };
 }
 
 /** First 2 comma-parts of a long display name, for a compact label. */
@@ -299,14 +335,14 @@ prospectsRouter.get('/categories', requireTenantLevel(), requirePermission('sett
 // POST /api/v1/prospects/categories — Add a category mapping
 prospectsRouter.post('/categories', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
-    const { ui_category_name, google_search_strings, api_exclusion_types } = req.body;
+    const { ui_category_name, google_search_strings, api_exclusion_types, overture_taxonomy } = req.body;
     if (!ui_category_name || !google_search_strings || google_search_strings.length === 0) {
       error(res, 'ui_category_name and google_search_strings required', 'VALIDATION_ERROR', 400); return;
     }
     const { rows } = await adminPool.query(
-      `INSERT INTO prp_category_mappings (ui_category_name, google_search_strings, api_exclusion_types)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [ui_category_name, google_search_strings, api_exclusion_types || []],
+      `INSERT INTO prp_category_mappings (ui_category_name, google_search_strings, api_exclusion_types, overture_taxonomy)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [ui_category_name, google_search_strings, api_exclusion_types || [], overture_taxonomy || []],
     );
     success(res, rows[0], undefined, 201);
   } catch (err: any) { console.error('Failed to add category', err?.message || err); error(res, 'Failed to add category', 'INTERNAL_ERROR', 500); }
@@ -315,13 +351,14 @@ prospectsRouter.post('/categories', requirePermission('*:*'), async (req: Reques
 // PUT /api/v1/prospects/categories/:id — Update a category mapping
 prospectsRouter.put('/categories/:id', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
-    const { ui_category_name, google_search_strings, api_exclusion_types, active } = req.body;
+    const { ui_category_name, google_search_strings, api_exclusion_types, overture_taxonomy, active } = req.body;
     const fields: string[] = [];
     const params: any[] = [];
     let idx = 1;
     if (ui_category_name !== undefined) { fields.push(`ui_category_name = $${idx++}`); params.push(ui_category_name); }
     if (google_search_strings !== undefined) { fields.push(`google_search_strings = $${idx++}`); params.push(google_search_strings); }
     if (api_exclusion_types !== undefined) { fields.push(`api_exclusion_types = $${idx++}`); params.push(api_exclusion_types); }
+    if (overture_taxonomy !== undefined) { fields.push(`overture_taxonomy = $${idx++}`); params.push(overture_taxonomy); }
     if (active !== undefined) { fields.push(`active = $${idx++}`); params.push(active); }
     if (fields.length === 0) { error(res, 'Nothing to update', 'VALIDATION_ERROR', 400); return; }
     params.push(req.params.id);
@@ -339,6 +376,23 @@ prospectsRouter.delete('/categories/:id', requirePermission('*:*'), async (req: 
     await adminPool.query('DELETE FROM prp_category_mappings WHERE id = $1', [req.params.id]);
     success(res, { deleted: true });
   } catch (err: any) { console.error('Failed to delete category', err?.message || err); error(res, 'Failed to delete category', 'INTERNAL_ERROR', 500); }
+});
+
+// GET /api/v1/prospects/overture-taxonomy — The full Overture taxonomy catalog (the ~2.2k
+// categories with hierarchy) used to drive the category tag picker. Served from a committed
+// data asset extracted from the Overture release we query, so the picker's options are valid
+// by construction (no free-typing). Cached in memory after first read.
+let overtureTaxonomyCache: any = null;
+prospectsRouter.get('/overture-taxonomy', requirePermission('*:*'), async (_req: Request, res: Response) => {
+  try {
+    if (!overtureTaxonomyCache) {
+      const { readFileSync } = await import('fs');
+      const path = await import('path');
+      const file = path.join(__dirname, '..', 'data', 'overture-taxonomy.json');
+      overtureTaxonomyCache = JSON.parse(readFileSync(file, 'utf8'));
+    }
+    success(res, overtureTaxonomyCache);
+  } catch (err: any) { console.error('Failed to load Overture taxonomy', err?.message || err); error(res, 'Failed to load Overture taxonomy', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -403,6 +457,11 @@ prospectsRouter.get('/', requireTenantLevel(), requirePermission('settings:*'), 
       conditions.push(`status != 'dismissed'`);
       conditions.push('is_active = true');
     }
+    // Held prospects (filtered out by the confidence/contact classification) are retained in
+    // the DB but hidden from the working list unless explicitly requested — so the contact
+    // filter visibly shrinks the list. 'held' is reversible, never a delete.
+    const showHeld = req.query.show_held === 'true';
+    if (!showHeld) conditions.push(`inclusion = 'included'`);
     if (req.query.status) { conditions.push(`status = $${idx++}`); params.push(req.query.status); }
     if (req.query.category) { conditions.push(`category = $${idx++}`); params.push(req.query.category); }
     if (req.query.search) { conditions.push(`(name ILIKE $${idx} OR address ILIKE $${idx})`); params.push(`%${req.query.search}%`); idx++; }
@@ -514,12 +573,26 @@ prospectsRouter.get('/:tenantId/generate/preview', requirePermission('*:*'), asy
 prospectsRouter.post('/:tenantId/generate', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
     const categoryIds = req.body?.category_ids || null;
+
+    // Engine selection: Overture (new, free) when the flag is on for this tenant, else the
+    // existing Google engine (fallback). Additive rollout — "don't break what works".
+    const { isFeatureEnabled } = await import('../services/feature-flag.service');
+    const useOverture = await isFeatureEnabled('feature.prospects_overture', { tenantId: req.params.tenantId });
+
+    if (useOverture) {
+      const contactFilter = req.body?.contact_filter; // 'all' | 'phone_or_web' | 'phone_and_web'
+      const { startOvertureGeneration } = await import('../services/prospect-overture-generation.service');
+      const status = await startOvertureGeneration(req.params.tenantId, categoryIds, contactFilter ? { contactFilter } : {});
+      success(res, { started: true, engine: 'overture', state: status.state, started_at: status.startedAt }, undefined, 202);
+      return;
+    }
+
     const maxApiCalls = Number.isFinite(Number(req.body?.max_api_calls)) && Number(req.body?.max_api_calls) > 0
       ? Math.floor(Number(req.body.max_api_calls)) : undefined;
     const { startProspectGeneration } = await import('../services/prospect-generation.service');
     const status = await startProspectGeneration(req.params.tenantId, categoryIds, maxApiCalls ? { maxApiCalls } : {});
     // 202 Accepted — work continues in the background; poll the status endpoint.
-    success(res, { started: true, state: status.state, started_at: status.startedAt }, undefined, 202);
+    success(res, { started: true, engine: 'google', state: status.state, started_at: status.startedAt }, undefined, 202);
   } catch (err: any) {
     if (err?.name === 'NoTerritoryError' || err?.name === 'NoCategoriesError') { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
     if (err.message?.includes('GOOGLE_PLACES_API_KEY')) { error(res, 'Google Places API key not configured.', 'CONFIGURATION_ERROR', 500); return; }
@@ -570,6 +643,10 @@ prospectsRouter.get('/:tenantId/prospects', requirePermission('*:*'), async (req
       conditions.push(`status != 'dismissed'`);
       conditions.push('is_active = true');
     }
+    // Hide held (classification-filtered) prospects unless explicitly requested. See the
+    // tenant-own list route above for the rationale.
+    const showHeld = req.query.show_held === 'true';
+    if (!showHeld) conditions.push(`inclusion = 'included'`);
     if (req.query.status) { conditions.push(`status = $${idx++}`); params.push(req.query.status); }
     if (req.query.category) { conditions.push(`category = $${idx++}`); params.push(req.query.category); }
     if (req.query.search) { conditions.push(`(name ILIKE $${idx} OR address ILIKE $${idx})`); params.push(`%${req.query.search}%`); idx++; }
@@ -627,40 +704,74 @@ prospectsRouter.put('/:tenantId/prospects/:id/dismiss', requirePermission('*:*')
   } catch (err: any) { console.error('Failed to dismiss prospect', err?.message || err); error(res, 'Failed to dismiss prospect', 'INTERNAL_ERROR', 500); }
 });
 
-/** Build the prospect CSV for a tenant (optional status/category filters). */
+// DELETE /api/v1/prospects/:tenantId/prospects — SYSTEM ADMIN: hard-delete ALL prospects for
+// a tenant, regardless of status/source/active flag. This is a destructive reset (e.g. before
+// re-running a territory from scratch), distinct from the per-prospect soft "dismiss". It
+// permanently removes rows — there is no undo. System-admin only.
+prospectsRouter.delete('/:tenantId/prospects', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const { rowCount } = await adminPool.query(
+      'DELETE FROM prp_prospects WHERE tenant_id = $1',
+      [req.params.tenantId],
+    );
+    logger.info(`[Prospects] System admin hard-deleted ${rowCount ?? 0} prospect(s) for tenant ${req.params.tenantId}`);
+    success(res, { deleted: rowCount ?? 0 });
+  } catch (err: any) { console.error('Failed to clear prospects', err?.message || err); error(res, 'Failed to clear prospects', 'INTERNAL_ERROR', 500); }
+});
+
 /** `ids` query value (comma-separated uuids) → list, or undefined when absent. */
 function exportIds(raw: unknown): string[] | undefined {
   if (typeof raw !== 'string') return undefined;
   return raw.split(',').map((x) => x.trim()).filter((x) => /^[0-9a-f-]{36}$/i.test(x));
 }
 
-async function buildProspectsCsv(tenantId: string, status?: string, category?: string, ids?: string[]): Promise<string> {
+/** Build the prospect CSV for a tenant (optional status/category filters). Excludes held
+ *  prospects by default so the export matches the working list; pass showHeld to include them.
+ *  `ids`: only the rows the list's column filters left. */
+async function buildProspectsCsv(tenantId: string, status?: string, category?: string, showHeld = false, ids?: string[]): Promise<string> {
   const conditions = ['tenant_id = $1', 'is_active = true'];
   const params: any[] = [tenantId];
   let idx = 2;
+  if (!showHeld) conditions.push(`inclusion = 'included'`);
   if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
   if (category) { conditions.push(`category = $${idx++}`); params.push(category); }
   // The rows the list's column filters left (David, 2026-11-02).
   if (ids) { conditions.push(`id = ANY($${idx++}::uuid[])`); params.push(ids); }
   const { rows } = await adminPool.query(
-    `SELECT name, address, phone, website, category, rating, review_count, status, notes, source, created_at
+    `SELECT name, address, city, country, phone, email, website, category,
+            confidence, fit_score, fit_tier, operating_status, inclusion, hold_reason,
+            status, notes, source, created_at
      FROM prp_prospects WHERE ${conditions.join(' AND ')} ORDER BY name`,
     params,
   );
-  const headers = ['Name', 'Address', 'Phone', 'Website', 'Category', 'Rating', 'Reviews', 'Status', 'Notes', 'Source', 'Date Added'];
+  // Columns reflect what the data actually carries. Rating/Reviews were dropped — they came
+  // from Google Places only (Overture has no rating/review fields), so they were always blank
+  // for Overture rows. Added City/Country/Email, the DayStream signals (Confidence, Fit Score,
+  // Fit Tier), and the Overture open/closed + inclusion state.
+  const q = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const headers = ['Name', 'Address', 'City', 'Country', 'Phone', 'Email', 'Website', 'Category',
+    'Confidence', 'Fit Score', 'Fit Tier', 'Operating Status', 'Inclusion', 'Hold Reason',
+    'Status', 'Notes', 'Source', 'Date Added'];
   const lines = [headers.join(',')];
   for (const row of rows) {
     lines.push([
-      `"${(row.name || '').replace(/"/g, '""')}"`,
-      `"${(row.address || '').replace(/"/g, '""')}"`,
-      `"${row.phone || ''}"`,
-      `"${row.website || ''}"`,
-      `"${row.category || ''}"`,
-      row.rating || '',
-      row.review_count || 0,
-      row.status,
-      `"${(row.notes || '').replace(/"/g, '""')}"`,
-      row.source,
+      q(row.name),
+      q(row.address),
+      q(row.city),
+      q(row.country),
+      q(row.phone),
+      q(row.email),
+      q(row.website),
+      q(row.category),
+      row.confidence != null ? Number(row.confidence).toFixed(3) : '',
+      row.fit_score ?? '',
+      q(row.fit_tier),
+      q(row.operating_status),
+      q(row.inclusion),
+      q(row.hold_reason),
+      q(row.status),
+      q(row.notes),
+      q(row.source),
       new Date(row.created_at).toISOString().split('T')[0],
     ].join(','));
   }
@@ -672,7 +783,7 @@ prospectsRouter.get('/export', requireTenantLevel(), requirePermission('settings
   try {
     const authReq = req as AuthenticatedRequest;
     if (!authReq.tenantId) { error(res, 'Tenant context required', 'VALIDATION_ERROR', 400); return; }
-    const csv = await buildProspectsCsv(authReq.tenantId, req.query.status as string | undefined, req.query.category as string | undefined, exportIds(req.query.ids));
+    const csv = await buildProspectsCsv(authReq.tenantId, req.query.status as string | undefined, req.query.category as string | undefined, req.query.show_held === 'true', exportIds(req.query.ids));
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="prospects.csv"');
     res.send(csv);
@@ -682,7 +793,7 @@ prospectsRouter.get('/export', requireTenantLevel(), requirePermission('settings
 // GET /api/v1/prospects/:tenantId/prospects/export — SYSTEM ADMIN: export a tenant's prospects.
 prospectsRouter.get('/:tenantId/prospects/export', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
-    const csv = await buildProspectsCsv(req.params.tenantId, req.query.status as string | undefined, req.query.category as string | undefined, exportIds(req.query.ids));
+    const csv = await buildProspectsCsv(req.params.tenantId, req.query.status as string | undefined, req.query.category as string | undefined, req.query.show_held === 'true', exportIds(req.query.ids));
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="prospects.csv"');
     res.send(csv);

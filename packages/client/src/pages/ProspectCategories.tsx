@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import { Button } from '../design-system/components/actions/Button';
+import { OvertureTaxonomyPicker } from '../components/OvertureTaxonomyPicker';
 
 interface CategoryMapping {
   id: string;
   ui_category_name: string;
   google_search_strings: string[];
   api_exclusion_types: string[];
+  overture_taxonomy: string[];
   active: boolean;
   display_order: number;
 }
@@ -15,9 +17,9 @@ export function ProspectCategories() {
   const [categories, setCategories] = useState<CategoryMapping[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ ui_category_name: '', google_search_strings: '', api_exclusion_types: '' });
+  const [editForm, setEditForm] = useState<{ ui_category_name: string; google_search_strings: string; api_exclusion_types: string; overture_taxonomy: string[] }>({ ui_category_name: '', google_search_strings: '', api_exclusion_types: '', overture_taxonomy: [] });
   const [showAdd, setShowAdd] = useState(false);
-  const [addForm, setAddForm] = useState({ ui_category_name: '', google_search_strings: '', api_exclusion_types: '' });
+  const [addForm, setAddForm] = useState<{ ui_category_name: string; google_search_strings: string; api_exclusion_types: string; overture_taxonomy: string[] }>({ ui_category_name: '', google_search_strings: '', api_exclusion_types: '', overture_taxonomy: [] });
 
   const fetchCategories = async () => {
     try {
@@ -40,8 +42,9 @@ export function ProspectCategories() {
         ui_category_name: addForm.ui_category_name.trim(),
         google_search_strings: addForm.google_search_strings.split('\n').map(s => s.trim()).filter(Boolean),
         api_exclusion_types: addForm.api_exclusion_types.split(',').map(s => s.trim()).filter(Boolean),
+        overture_taxonomy: addForm.overture_taxonomy,
       });
-      setAddForm({ ui_category_name: '', google_search_strings: '', api_exclusion_types: '' });
+      setAddForm({ ui_category_name: '', google_search_strings: '', api_exclusion_types: '', overture_taxonomy: [] });
       setShowAdd(false);
       fetchCategories();
     } catch (err: any) { alert(err.response?.data?.error || 'Failed to add category'); }
@@ -53,6 +56,7 @@ export function ProspectCategories() {
       ui_category_name: cat.ui_category_name,
       google_search_strings: cat.google_search_strings.join('\n'),
       api_exclusion_types: cat.api_exclusion_types.join(', '),
+      overture_taxonomy: cat.overture_taxonomy || [],
     });
   };
 
@@ -63,6 +67,7 @@ export function ProspectCategories() {
         ui_category_name: editForm.ui_category_name.trim(),
         google_search_strings: editForm.google_search_strings.split('\n').map(s => s.trim()).filter(Boolean),
         api_exclusion_types: editForm.api_exclusion_types.split(',').map(s => s.trim()).filter(Boolean),
+        overture_taxonomy: editForm.overture_taxonomy,
       });
       setEditingId(null);
       fetchCategories();
@@ -110,6 +115,10 @@ export function ProspectCategories() {
             <label style={styles.label}>Exclusion Types (comma-separated, optional)</label>
             <input style={styles.input} type="text" placeholder="e.g., hospital, doctor, car_wash" value={addForm.api_exclusion_types} onChange={(e) => setAddForm({ ...addForm, api_exclusion_types: e.target.value })} />
           </div>
+          <div style={styles.formField}>
+            <label style={styles.label}>Overture Tags (for the Overture engine)</label>
+            <OvertureTaxonomyPicker selected={addForm.overture_taxonomy} onChange={(codes) => setAddForm({ ...addForm, overture_taxonomy: codes })} />
+          </div>
           <Button size="sm" onClick={handleAdd}>Save</Button>
         </div>
       )}
@@ -133,6 +142,10 @@ export function ProspectCategories() {
                   <div style={styles.formField}>
                     <label style={styles.label}>Exclusion Types (comma-separated)</label>
                     <input style={styles.input} type="text" value={editForm.api_exclusion_types} onChange={(e) => setEditForm({ ...editForm, api_exclusion_types: e.target.value })} />
+                  </div>
+                  <div style={styles.formField}>
+                    <label style={styles.label}>Overture Tags (for the Overture engine)</label>
+                    <OvertureTaxonomyPicker selected={editForm.overture_taxonomy} onChange={(codes) => setEditForm({ ...editForm, overture_taxonomy: codes })} />
                   </div>
                   <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                     <Button size="sm" onClick={handleSaveEdit}>Save</Button>
@@ -165,6 +178,16 @@ export function ProspectCategories() {
                         Excludes: {cat.api_exclusion_types.join(', ')}
                       </div>
                     )}
+                    {(cat.overture_taxonomy?.length ?? 0) > 0 && (
+                      <div style={{ marginTop: '8px' }}>
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Overture tags:</div>
+                        <div style={styles.chipRow}>
+                          {cat.overture_taxonomy.map((t, i) => (
+                            <span key={i} style={styles.overtureChip}>{t.replace(/_/g, ' ')}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -194,5 +217,6 @@ const styles: Record<string, React.CSSProperties> = {
   cardBody: {},
   chipRow: { display: 'flex', flexWrap: 'wrap' as const, gap: '4px' },
   chip: { padding: '2px 8px', borderRadius: '12px', fontSize: 'var(--font-size-xs)', background: 'var(--color-border)', color: 'var(--color-text)' },
+  overtureChip: { padding: '2px 8px', borderRadius: '12px', fontSize: 'var(--font-size-xs)', background: 'var(--color-recovery, #4A90A4)', color: '#fff', textTransform: 'capitalize' as const },
   actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-sm)', color: 'var(--color-primary)', padding: '2px 4px', borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
 };

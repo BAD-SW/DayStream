@@ -418,7 +418,7 @@ export function Tenants() {
                     type="text"
                     value={editForm.slug}
                     onChange={(e) => setEditForm({ ...editForm, slug: e.target.value })}
-                    pattern="^[a-z0-9-]+$"
+                    pattern="[a-z0-9\-]+"
                   />
                   <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>Lowercase letters, numbers, and hyphens only</span>
                 </div>
