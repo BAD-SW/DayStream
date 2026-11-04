@@ -26,6 +26,10 @@ export async function updateEvent(id: string, data: Record<string, any>) {
 export async function publishEvent(id: string) {
   const res = await apiClient.put(`/v1/events/${id}/publish`); return res.data.data;
 }
+/** Back to draft, only while nobody is registered or waiting (decision 14). */
+export async function unpublishEvent(id: string) {
+  const res = await apiClient.put(`/v1/events/${id}/unpublish`); return res.data.data;
+}
 export async function cancelEvent(id: string) {
   const res = await apiClient.put(`/v1/events/${id}/cancel`); return res.data.data;
 }
@@ -181,6 +185,8 @@ export interface CustomerRegistration {
   reference_number: string; order_number: string | null; paid: boolean; amount: number;
   awaiting_payment: 'online' | 'reception' | null; hold_expires_at: string | null;
   can_cancel: boolean; cancel_until: string | null; cancel_blocked_reason: string | null; refund_to: 'card' | 'credit' | null;
+  /** The event's date, time or place changed: cancelling gives a full refund until cancel_until. */
+  changed_event?: boolean;
 }
 export interface CustomerEventDetail extends CustomerEventSummary {
   status: string; open_for_registration: boolean; is_member: boolean; is_first_time: boolean; tax_rate: number;

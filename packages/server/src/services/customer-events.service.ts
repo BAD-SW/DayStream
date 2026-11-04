@@ -130,7 +130,7 @@ function tierState(t: any, who: Standing, now = new Date()) {
 async function eventRows(where: string, params: any[]) {
   const { rows } = await adminPool.query(
     `SELECT e.id, e.slug, e.title, e.description, e.start_time, e.end_time, e.location_name, e.capacity,
-            e.status, e.cover_image_path, et.name AS event_type_name,
+            e.status, e.cover_image_path, e.change_refund_until, et.name AS event_type_name,
             COALESCE(l.business_id, u.business_id) AS host_business_id, b.name AS host_business_name, b.timezone AS host_timezone,
             b.currency AS currency,
             (SELECT COALESCE(SUM(r.group_size), 0)::int FROM evt_registrations r WHERE r.event_id = e.id AND ${HOLDS_PLACE}) AS taken
@@ -198,9 +198,9 @@ function summary(e: any, tiers: any[], who: Standing) {
   };
 }
 
-function registrationView(r: any, event: { start_time: string }, settings: Awaited<ReturnType<typeof getCancelSettings>>) {
+function registrationView(r: any, event: { start_time: string; change_refund_until?: string | null }, settings: Awaited<ReturnType<typeof getCancelSettings>>) {
   const active = r.status === 'confirmed' || r.status === 'pending';
-  const window = customerCancelWindow(settings, event.start_time);
+  const window = customerCancelWindow(settings, event.start_time, new Date(), event.change_refund_until);
   const paid = r.order_status === 'completed' || r.order_status === 'partially_refunded';
   return {
     id: r.id, status: r.status, pay_at: r.pay_at, group_size: r.group_size, tier_name: r.tier_name,
@@ -211,7 +211,9 @@ function registrationView(r: any, event: { start_time: string }, settings: Await
     can_cancel: active && window.allowed,
     cancel_until: active ? window.until : null,
     cancel_blocked_reason: active && !window.allowed ? window.reason : null,
-    refund_to: paid ? settings.cancel_refund_to : null,
+    // The event's date, time or place changed: a full refund to the card until cancel_until.
+    changed_event: active && !!window.afterChange,
+    refund_to: paid ? (window.afterChange ? 'card' : settings.cancel_refund_to) : null,
   };
 }
 
@@ -482,7 +484,7 @@ export async function markRegistrationPaid(registrationId: string) {
  */
 export async function cancelOwnRegistration(args: { registrationId: string; tenantId: string; userId: string; byCustomer: boolean }) {
   const { rows } = await adminPool.query(
-    `SELECT r.*, e.start_time, e.title, e.tenant_id, o.status AS order_status, o.business_id AS order_business_id
+    `SELECT r.*, e.start_time, e.title, e.tenant_id, e.change_refund_until, o.status AS order_status, o.business_id AS order_business_id
        FROM evt_registrations r JOIN evt_events e ON e.id = r.event_id LEFT JOIN fin_orders o ON o.id = r.order_id
       WHERE r.id = $1 AND e.tenant_id = $2`,
     [args.registrationId, args.tenantId],
@@ -492,10 +494,14 @@ export async function cancelOwnRegistration(args: { registrationId: string; tena
   if (!['confirmed', 'pending'].includes(r.status)) throw new CustomerEventError('This registration is already cancelled', 409, 'CONFLICT');
   const hostId = await hostBusinessId(r.event_id);
   const settings = await getCancelSettings(hostId, 'events');
+  // After a date, time or place change the money goes back to the card in full (decision 14).
+  let afterChange = false;
   if (args.byCustomer) {
-    const window = customerCancelWindow(settings, r.start_time);
+    const window = customerCancelWindow(settings, r.start_time, new Date(), r.change_refund_until);
     if (!window.allowed) throw new CustomerEventError(window.reason || 'It can no longer be cancelled online', 409, 'CANCEL_NOT_ALLOWED');
+    afterChange = !!window.afterChange;
   }
+  const refundTo = afterChange ? 'card' : settings.cancel_refund_to;
 
   // Money back first: if the refund fails, the place is kept and nothing changes.
   let refund: any = null;
@@ -511,7 +517,7 @@ export async function cancelOwnRegistration(args: { registrationId: string; tena
         lines: lines.map((l: any) => ({ orderItemId: l.id, quantity: Number(l.left) })),
         reason: `Event registration cancelled${args.byCustomer ? ' by the customer' : ''}: ${r.title}`,
         processedBy: args.userId,
-        refundTo: settings.cancel_refund_to === 'credit' ? 'account_credit' : 'original',
+        refundTo: refundTo === 'credit' ? 'account_credit' : 'original',
       });
       if (refund.status === 'failed') throw new CustomerEventError(refund.failureReason || 'The refund failed', 502, 'REFUND_FAILED');
     }
@@ -525,9 +531,9 @@ export async function cancelOwnRegistration(args: { registrationId: string; tena
     [r.id, refund?.amountCents ?? 0],
   );
   await promoteFromWaitlist(r.event_id).catch((e) => logger.warn(`Waitlist not promoted after cancelling ${r.id}: ${e?.message || e}`));
-  await queueEventEmail(r.id, 'cancelled', refund ? { amount: refund.amountCents, to: settings.cancel_refund_to } : null);
+  await queueEventEmail(r.id, 'cancelled', refund ? { amount: refund.amountCents, to: refundTo } : null);
   return {
     ...done[0],
-    refund: refund ? { amount: refund.amountCents, to: settings.cancel_refund_to, status: refund.status, reference: refund.referenceNumber } : null,
+    refund: refund ? { amount: refund.amountCents, to: refundTo, status: refund.status, reference: refund.referenceNumber } : null,
   };
 }

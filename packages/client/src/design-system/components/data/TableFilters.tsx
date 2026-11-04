@@ -192,6 +192,15 @@ export function ValuesFilter({ anchor, title, current, loadOptions, onApply, onC
 // --- Date range filter ---------------------------------------------------------------------
 
 const DAY = 86400000;
+/** The quick date ranges: [label, () => [first day, last day] as local-midnight times]. */
+function datePresets(): Array<[string, () => [number, number]]> {
+  const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return [
+    ['Today', () => [today, today]], ['Yesterday', () => [today - DAY, today - DAY]],
+    ['Last 7 days', () => [today - 6 * DAY, today]], ['Last 30 days', () => [today - 29 * DAY, today]],
+    ['This month', () => [monthStart(today), today]], ['Last month', () => [monthStart(today, -1), monthStart(today) - DAY]],
+  ];
+}
 const toDay = (t: number) => dayOf(t)!;
 const fromDay = (d: string) => { const [y, m, dd] = d.split('-').map(Number); return new Date(y, m - 1, dd).getTime(); };
 const monthStart = (t: number, add = 0) => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth() + add, 1).getTime(); };
@@ -209,11 +218,7 @@ export function DateFilter({ anchor, title, current, countFor, onApply, onClose 
   onApply: (f: ColumnFilter | undefined) => void; onClose: () => void;
 }) {
   const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const presets: Array<[string, () => [number, number]]> = [
-    ['Today', () => [today, today]], ['Yesterday', () => [today - DAY, today - DAY]],
-    ['Last 7 days', () => [today - 6 * DAY, today]], ['Last 30 days', () => [today - 29 * DAY, today]],
-    ['This month', () => [monthStart(today), today]], ['Last month', () => [monthStart(today, -1), monthStart(today) - DAY]],
-  ];
+  const presets = datePresets();
   const [from, setFrom] = useState<string | null>(current?.from || null);
   const [to, setTo] = useState<string | null>(current?.to || null);
   // A range that is one of the quick ranges opens showing it (e.g. "This month"), not "Custom range".
@@ -480,4 +485,69 @@ const amt: Record<string, React.CSSProperties> = {
   dual: { position: 'relative', height: 22 },
   track: { position: 'absolute', left: 0, right: 0, top: 9, height: 4, borderRadius: 2, background: 'var(--color-border)' },
   range: { position: 'absolute', inset: 0, width: '100%', margin: 0, background: 'none', pointerEvents: 'none', WebkitAppearance: 'none', appearance: 'none' },
+};
+
+// --- Filter chips ----------------------------------------------------------------------------
+
+/**
+ * The bar above a filtered table (David, 2026-11-04, decision 13 option B): one chip per filtered
+ * column naming what it keeps. A chip shows the first values that fit, then "+N", and is cut with
+ * "…" when too long; hovering lists every value, clicking opens that column's filter, its ✕ clears
+ * that column. "Clear all" clears every filter.
+ */
+export interface ChipColumn { key: string; header: string; kind: 'values' | 'date' | 'amount' | 'number'; label?: (v: string) => string; unit?: string; scale?: number }
+
+export function describeFilter(c: ChipColumn, f: ColumnFilter): { text: string; full: string; more?: string } {
+  if (c.kind === 'date' && f.from) {
+    const end = f.to || f.from;
+    const preset = datePresets().find(([, range]) => { const [x, y] = range(); return toDay(x) === f.from && toDay(y) === end; })?.[0];
+    const range = preset || (end === f.from ? showDay(f.from) : `${showDay(f.from)} – ${showDay(end)}`);
+    return { text: `${c.header}: ${range}`, full: `${c.header}: ${range}` };
+  }
+  if ((c.kind === 'amount' || c.kind === 'number') && (f.min != null || f.max != null)) {
+    const scale = c.scale ?? (c.kind === 'amount' ? 100 : 1);
+    const shown = (v: number) => (c.kind === 'amount' ? formatCurrency(Math.round(v)) : `${plainNumber(v / scale)}${c.unit ? (c.unit === '%' ? '%' : ` ${c.unit}`) : ''}`);
+    const range = f.min != null && f.max != null ? `${shown(f.min)} – ${shown(f.max)}` : f.min != null ? `≥ ${shown(f.min)}` : `≤ ${shown(f.max!)}`;
+    return { text: `${c.header}: ${range}`, full: `${c.header}: ${range}` };
+  }
+  if (f.contains) return { text: `${c.header} contains “${f.contains}”`, full: `${c.header} contains “${f.contains}”` };
+  const names = (f.values || []).map((v) => (v === '' ? '(empty)' : c.label ? c.label(v) : v));
+  // "+N" stays visible; only the names are cut with "…" when they don't fit.
+  return { text: `${c.header}: ${names.slice(0, 2).join(', ')}`, more: names.length > 2 ? `+${names.length - 2}` : undefined, full: `${c.header}: ${names.join(', ')}` };
+}
+
+export function FilterChips({ columns, filters, onOpen, onClear, onClearAll }: {
+  columns: ChipColumn[]; filters: TableFilters;
+  onOpen: (key: string) => void; onClear: (key: string) => void; onClearAll: () => void;
+}) {
+  const on = columns.filter((c) => isFilterOn(filters[c.key]));
+  if (!on.length) return null;
+  return (
+    <div role="group" aria-label="Filters on this list" style={chip.bar}>
+      <span style={chip.lead}>Filtered:</span>
+      {on.map((c) => {
+        const { text, full, more } = describeFilter(c, filters[c.key]);
+        return (
+          <span key={c.key} style={chip.chip} title={full}>
+            <button type="button" style={chip.open} onClick={() => onOpen(c.key)} aria-label={`Change filter: ${full}`}>
+              <span style={chip.text}>{text}</span>{more && <span style={chip.more}>{more}</span>}
+            </button>
+            <button type="button" style={chip.x} onClick={() => onClear(c.key)} aria-label={`Remove filter on ${c.header}`}>✕</button>
+          </span>
+        );
+      })}
+      <button type="button" style={chip.all} onClick={onClearAll}>Clear all</button>
+    </div>
+  );
+}
+
+const chip: Record<string, React.CSSProperties> = {
+  bar: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: '8px 12px', marginBottom: 8, background: 'var(--color-primary-light, var(--color-surface-hover))', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)' },
+  lead: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)', fontWeight: 600 },
+  chip: { display: 'inline-flex', alignItems: 'center', maxWidth: 300, minWidth: 0, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 999 },
+  open: { display: 'inline-flex', alignItems: 'center', gap: 4, border: 0, background: 'none', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-xs)', padding: '3px 4px 3px 10px', cursor: 'pointer', minWidth: 0 },
+  text: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 },
+  more: { flexShrink: 0, fontWeight: 600, color: 'var(--color-text-secondary)' },
+  x: { border: 0, background: 'none', color: 'var(--color-text-secondary)', fontSize: 11, padding: '3px 9px 3px 4px', cursor: 'pointer', flexShrink: 0 },
+  all: { border: 0, background: 'none', color: 'var(--color-primary)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-xs)', fontWeight: 600, cursor: 'pointer', padding: '0 4px' },
 };

@@ -46,6 +46,8 @@ const putSchema = Joi.object({
   // Up to 90 days before the start, in hours.
   customer_cancel_hours: Joi.number().integer().min(0).max(2160),
   cancel_refund_to: Joi.string().valid('card', 'credit'),
+  // Events: days to cancel for a full refund after a date, time or place change (decision 14).
+  change_refund_days: Joi.number().integer().min(0).max(90),
 });
 
 // PUT /v1/cancellation-settings — one kind

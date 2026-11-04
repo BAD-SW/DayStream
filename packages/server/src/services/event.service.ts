@@ -165,12 +165,46 @@ export async function getEventById(id: string, tenantId: string) {
 /**
  * Update an event.
  */
+/** A change the server refuses (shown to the user as it is). */
+export class EventChangeError extends Error {}
+
+/**
+ * Update an event. Changes to a published event stay live (decision 14). Capacity cannot go below
+ * the places already taken. When the date, time or place changes while people are registered, the
+ * refund window opens (`change_refund_until`, events.change_refund_days of the hosting business)
+ * and the result says so in `material_change`, so the page can offer to tell them.
+ * Choosing where it is hosted also sets the location's name, which customers see.
+ */
 export async function updateEvent(
   id: string,
   tenantId: string,
   updates: Record<string, any>,
   userId: string,
 ) {
+  const { rows: before } = await adminPool.query(
+    `SELECT e.start_time, e.end_time, e.location_id, e.status,
+            (SELECT COALESCE(SUM(r.group_size), 0)::int FROM evt_registrations r WHERE r.event_id = e.id AND r.status IN ('confirmed', 'pending')) AS taken,
+            (SELECT COUNT(*)::int FROM evt_registrations r WHERE r.event_id = e.id AND r.status IN ('confirmed', 'pending')) AS registrations
+       FROM evt_events e WHERE e.id = $1 AND e.tenant_id = $2`,
+    [id, tenantId],
+  );
+  const old = before[0];
+  if (!old) return null;
+  if (updates.capacity !== undefined && updates.capacity !== null && Number(updates.capacity) < old.taken) {
+    throw new EventChangeError(`Capacity cannot be lower than the ${old.taken} ${old.taken === 1 ? "place" : "places"} already taken`);
+  }
+  if (updates.start_time !== undefined || updates.end_time !== undefined) {
+    const start = new Date(updates.start_time ?? old.start_time); const end = new Date(updates.end_time ?? old.end_time);
+    if (!(end > start)) throw new EventChangeError('The event must end after it starts');
+  }
+  if (updates.location_id) {
+    const { rows: loc } = await adminPool.query('SELECT name FROM sys_locations WHERE id = $1', [updates.location_id]);
+    if (loc[0]) updates = { ...updates, location_name: loc[0].name };
+  }
+  const changedTime = (k: 'start_time' | 'end_time') => updates[k] !== undefined && new Date(updates[k]).getTime() !== new Date(old[k]).getTime();
+  const material = changedTime('start_time') || changedTime('end_time')
+    || (updates.location_id !== undefined && (updates.location_id || null) !== (old.location_id || null));
+
   const fields: string[] = [];
   const values: any[] = [];
   let idx = 1;
@@ -209,7 +243,42 @@ export async function updateEvent(
     });
   }
 
+  if (rows[0] && material && old.registrations > 0) {
+    const { rows: host } = await adminPool.query(
+      `SELECT COALESCE(l.business_id, u.business_id) AS business_id FROM evt_events e
+         LEFT JOIN sys_locations l ON l.id = e.location_id LEFT JOIN usr_users u ON u.id = e.created_by WHERE e.id = $1`, [id],
+    );
+    const { getCancelSettings } = await import('./customer-cancellation.service');
+    const days = (await getCancelSettings(host[0]?.business_id || null, 'events')).change_refund_days;
+    const { rows: opened } = await adminPool.query(
+      `UPDATE evt_events SET change_refund_until = LEAST(NOW() + make_interval(days => $2::int), start_time) WHERE id = $1 RETURNING change_refund_until`,
+      [id, days],
+    );
+    return { ...rows[0], change_refund_until: opened[0].change_refund_until, material_change: { registrations: old.registrations, refund_until: opened[0].change_refund_until, refund_days: days } };
+  }
+
   return rows[0] || null;
+}
+
+/**
+ * Take a published event back to draft (decision 14): only while nobody is registered or waiting.
+ */
+export async function unpublishEvent(id: string, tenantId: string) {
+  const { rows: held } = await adminPool.query(
+    `SELECT (SELECT COUNT(*)::int FROM evt_registrations r WHERE r.event_id = $1 AND r.status IN ('confirmed', 'pending')) AS registrations,
+            (SELECT COUNT(*)::int FROM evt_waitlist w WHERE w.event_id = $1 AND w.status IN ('waiting', 'offered', 'notified')) AS waiting`,
+    [id],
+  );
+  if (held[0].registrations > 0 || held[0].waiting > 0) {
+    throw new EventChangeError('People are registered or waiting: it can no longer be unpublished. Cancel the event instead (they are told and refunded).');
+  }
+  const { rows } = await adminPool.query(
+    `UPDATE evt_events SET status = 'draft', updated_at = NOW() WHERE id = $1 AND tenant_id = $2 AND status = 'published' RETURNING *`,
+    [id, tenantId],
+  );
+  if (!rows[0]) throw new EventChangeError('Only a published event can be unpublished');
+  await logAudit({ tenantId, action: 'event.unpublished', resourceType: 'event', resourceId: id });
+  return rows[0];
 }
 
 /**

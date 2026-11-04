@@ -9,6 +9,7 @@ import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, useDraftLi
 import { LeaveGuard, confirmLeave } from '../components/unsaved/LeaveGuard';
 import { TabBar } from '../design-system/components/navigation/TabBar';
 import { ConfirmDialog } from '../design-system/components/feedback/ConfirmDialog';
+import { Modal } from '../design-system/components/feedback/Modal';
 import { Alert } from '../design-system/components/feedback/Alert';
 import * as eventsApi from '../api/events';
 import type { Event } from '../api/events';
@@ -19,7 +20,8 @@ import { getStaffList } from '../api/staff';
 import './Events.css';
 import './EventDetail.css';
 
-type Tab = 'details' | 'tickets' | 'registrations' | 'waitlist' | 'facilitators' | 'communications' | 'reports';
+type Tab = 'overview' | 'tickets' | 'registrations' | 'waitlist' | 'facilitators' | 'communications';
+const TABS: Tab[] = ['overview', 'tickets', 'registrations', 'waitlist', 'facilitators', 'communications'];
 
 // One Save for the event (David, 2026-11-01, as in Settings): details, tickets and facilitators
 // wait for Save changes; Publish, Cancel, Delete, registrations and messages act straight away.
@@ -37,8 +39,11 @@ function EventDetailPage() {
   const [event, setEvent] = useState<Event | null>(null);
   // The tab is kept in the address (?tab=), as in Settings, so Back from a profile returns to it (THE-23 remark).
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTabState] = useState<Tab>(() => (searchParams.get('tab') as Tab) || 'details');
-  const setActiveTab = (tab: Tab) => { setActiveTabState(tab); setSearchParams(tab === 'details' ? {} : { tab }, { replace: true }); };
+  // Details and Reports are one tab, Overview (THE-23 item 3); old links to them open it.
+  const [activeTab, setActiveTabState] = useState<Tab>(() => { const t = searchParams.get('tab') as Tab; return TABS.includes(t) ? t : 'overview'; });
+  const setActiveTab = (tab: Tab) => { setActiveTabState(tab); setSearchParams(tab === 'overview' ? {} : { tab }, { replace: true }); };
+  // After a date, time or place change with people registered: offer to tell them (decision 14).
+  const [changeNotice, setChangeNotice] = useState<{ registrations: number; refund_until: string; refund_days: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [cancelPreview, setCancelPreview] = useState<eventsApi.CancelPreview | null>(null);
@@ -62,13 +67,23 @@ function EventDetailPage() {
   if (!event) return <ListEmpty>Event not found</ListEmpty>;
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: 'details', label: 'Details' }, { key: 'tickets', label: 'Tickets' },
+    { key: 'overview', label: 'Overview' }, { key: 'tickets', label: 'Tickets' },
     { key: 'registrations', label: 'Registrations' }, { key: 'waitlist', label: 'Waitlist' },
     { key: 'facilitators', label: 'Facilitators' },
-    { key: 'communications', label: 'Communications' }, { key: 'reports', label: 'Reports' },
+    { key: 'communications', label: 'Communications' },
   ];
 
-  const handlePublish = async () => { const e = await eventsApi.publishEvent(event.id); setEvent(e); };
+  const handlePublish = async () => {
+    setProblem('');
+    try { const e = await eventsApi.publishEvent(event.id); setEvent({ ...event, ...e }); }
+    catch (err: any) { setProblem(err?.response?.data?.error || 'The event could not be published.'); }
+  };
+  // Back to draft, only while nobody is registered or waiting (decision 14).
+  const handleUnpublish = async () => {
+    setProblem('');
+    try { const e = await eventsApi.unpublishEvent(event.id); setEvent({ ...event, ...e }); }
+    catch (err: any) { setProblem(err?.response?.data?.error || 'The event could not be unpublished.'); }
+  };
   // Before cancelling, say what will happen (David, 2026-10-29): registrations cancelled and
   // emailed, paid tickets refunded to the card or account credit, the waiting list emptied.
   const handleCancel = async () => {
@@ -114,7 +129,7 @@ function EventDetailPage() {
       </div>
       <PageHeader
         title={event.title}
-        subtitle={`${event.event_type_name} · ${new Date(event.start_time).toLocaleDateString()}`}
+        subtitle={[event.event_type_name, event.location_name].filter(Boolean).join(' · ')}
         actions={<>
           {dirty && !(saveResult && !saveResult.ok) ? <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning-dark)' }}>You have unsaved changes.</span>
             : saveResult && <span role={saveResult.ok ? 'status' : 'alert'} style={{ fontSize: 'var(--font-size-sm)', color: saveResult.ok ? 'var(--color-success)' : 'var(--color-error)' }}>{saveResult.text}</span>}
@@ -127,6 +142,7 @@ function EventDetailPage() {
           ) : (
             <>
               {event.status === 'draft' && <Button onClick={handlePublish}>Publish</Button>}
+              {event.status === 'published' && event.registrations_count === 0 && <Button variant="ghost" onClick={handleUnpublish}>Unpublish</Button>}
               {event.status === 'published' && <Button variant="destructive" onClick={handleCancel}>Cancel</Button>}
               <Button variant="ghost" onClick={() => setConfirmDelete(true)}>Delete event</Button>
             </>
@@ -134,6 +150,7 @@ function EventDetailPage() {
           <Badge variant={event.status === 'published' ? 'success' : event.status === 'cancelled' ? 'error' : 'neutral'}>{event.status}</Badge>
         </>}
       />
+      <EventWhen start={event.start_time} end={event.end_time} />
       {problem && <Alert variant="error">{problem}</Alert>}
       <ConfirmDialog
         open={!!cancelPreview && !cancelling}
@@ -157,69 +174,156 @@ function EventDetailPage() {
       <TabBar aria-label="Event sections" tabs={tabs.map((t) => ({ ...t, changed: dirtySections.some((s) => s.tab === t.key) }))} active={activeTab} onChange={setActiveTab} />
       </StickyPageTop>
       {/* Tabs with drafts stay mounted, so their edits survive switching tabs. */}
-      <div hidden={activeTab !== 'details'}><DraftTab tab="details"><DetailsTab event={event} /></DraftTab></div>
+      <div hidden={activeTab !== 'overview'}><DraftTab tab="overview"><OverviewTab event={event}
+        onSaved={(e) => { setEvent((prev) => (prev ? { ...prev, ...e } : prev)); if (e.material_change) setChangeNotice(e.material_change); }} /></DraftTab></div>
       <div hidden={activeTab !== 'tickets'}><DraftTab tab="tickets"><TicketsTab eventId={event.id} /></DraftTab></div>
       {activeTab === 'registrations' && <RegistrationsTab eventId={event.id} />}
       {activeTab === 'waitlist' && <WaitlistTab eventId={event.id} />}
       <div hidden={activeTab !== 'facilitators'}><DraftTab tab="facilitators"><FacilitatorsTab eventId={event.id} /></DraftTab></div>
       {activeTab === 'communications' && <CommsTab eventId={event.id} />}
-      {activeTab === 'reports' && <ReportsTab eventId={event.id} />}
+      {changeNotice && <ChangeNotice event={event} notice={changeNotice} onClose={() => setChangeNotice(null)} />}
     </div>
   );
 }
 
-function DetailsTab({ event }: { event: Event }) {
+const fmtDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
+// The date and time, the largest line under the title (THE-23 item 3, option D).
+function EventWhen({ start, end }: { start: string; end: string }) {
+  const mins = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000);
+  const sameDay = new Date(start).toDateString() === new Date(end).toDateString();
+  const length = mins >= 60 ? `${Math.floor(mins / 60)} ${Math.floor(mins / 60) === 1 ? 'hour' : 'hours'}${mins % 60 ? ` ${mins % 60} min` : ''}` : `${mins} min`;
   return (
-    <div className="evd-details">
-      <dl className="evd-facts">
-        <div><dt>Start</dt><dd>{new Date(event.start_time).toLocaleString()}</dd></div>
-        <div><dt>End</dt><dd>{new Date(event.end_time).toLocaleString()}</dd></div>
-        <div><dt>Location</dt><dd>{event.location_name || '—'}</dd></div>
-        <HostAndTax event={event} />
-        <div><dt>Capacity</dt><dd>{event.registrations_count} / {event.capacity}</dd></div>
-        {event.tags?.length > 0 && <div><dt>Tags</dt><dd>{event.tags.join(', ')}</dd></div>}
-      </dl>
-      <div className="evd-description">
-        <span className="evd-label">Description</span>
-        <p>{event.description || 'No description'}</p>
-      </div>
+    <div className="evd-when">
+      <strong>{fmtDay(start)}</strong>
+      <span>{fmtTime(start)} – {sameDay ? fmtTime(end) : `${fmtDay(end)}, ${fmtTime(end)}`}</span>
+      <small>{length}</small>
     </div>
   );
 }
 
-// Where the event is held decides which business sells its tickets; the tax is one of that
-// business's tax categories, or its default tax (THE-20).
-function HostAndTax({ event }: { event: Event }) {
+// Tell the registered people about a date, time or place change (decision 14): the message is
+// prefilled and editable; they can cancel for a full refund until the window closes.
+function ChangeNotice({ event, notice, onClose }: { event: Event; notice: { registrations: number; refund_until: string; refund_days: number }; onClose: () => void }) {
+  const until = new Date(notice.refund_until).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+  const [subject, setSubject] = useState(`Change to ${event.title}`);
+  const [content, setContent] = useState(
+    `Hello,\n\n${event.title} has changed. It now takes place on ${fmtDay(event.start_time)}, ${fmtTime(event.start_time)} – ${fmtTime(event.end_time)}`
+    + `${event.location_name ? `, at ${event.location_name}` : ''}.\n\nIf you can no longer come, you can cancel from your account for a full refund until ${until}.\n\nSee you there!`,
+  );
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const send = async () => {
+    setSending(true); setError('');
+    try { await eventsApi.sendCommunication(event.id, { subject, content }); onClose(); }
+    catch (err: any) { setError(err?.response?.data?.error || 'The message could not be sent.'); }
+    finally { setSending(false); }
+  };
+  const people = `${notice.registrations} ${notice.registrations === 1 ? 'person is' : 'people are'}`;
+  return (
+    <Modal open onClose={onClose} title="Tell the registered people?" size="md"
+      footer={<><Button variant="ghost" onClick={onClose}>Don't send</Button><Button onClick={send} loading={sending}>Send to {notice.registrations}</Button></>}>
+      <p style={{ marginTop: 0, fontSize: 'var(--font-size-sm)' }}>The date, time or place changed and {people} registered. Until <b>{until}</b> ({notice.refund_days} days, or the start if sooner) each of them can cancel for a full refund, even where cancelling is not normally allowed.</p>
+      <label className="evd-field">Subject<input className="ev-input" value={subject} onChange={(e) => setSubject(e.target.value)} /></label>
+      <label className="evd-field" style={{ marginTop: 'var(--space-sm)' }}>Message<textarea className="ev-input evd-textarea" rows={8} value={content} onChange={(e) => setContent(e.target.value)} /></label>
+      {error && <Alert variant="error">{error}</Alert>}
+    </Modal>
+  );
+}
+
+// Overview (THE-23 item 3, option D): the figures of the old Reports tab in one strip, then the
+// event's settings (all editable, saved with Save changes) and a compact description. Where it is
+// hosted decides which business sells its tickets; the tax is one of that business's tax
+// categories, or its default tax (THE-20). Hosted at replaces the free-text location (David, 4 Nov).
+type EventForm = { title: string; event_type_id: string; start: string; end: string; location_id: string; capacity: string; tax_category_id: string; tags: string; description: string };
+const toLocalInput = (iso: string) => { const d = new Date(iso); const p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+const toForm = (e: Event): EventForm => ({
+  title: e.title || '', event_type_id: e.event_type_id || '', start: toLocalInput(e.start_time), end: toLocalInput(e.end_time),
+  location_id: (e as any).location_id || '', capacity: String(e.capacity ?? ''), tax_category_id: (e as any).tax_category_id || '',
+  tags: (e.tags || []).join(', '), description: e.description || '',
+});
+
+function OverviewTab({ event, onSaved }: { event: Event; onSaved: (e: any) => void }) {
   const businessId = localStorage.getItem('business_id') || '';
   const [locations, setLocations] = useState<any[]>([]);
   const [taxes, setTaxes] = useState<any[]>([]);
-  const draft = useDraft('event-details', 'Details', { location_id: (event as any).location_id || '', tax_category_id: (event as any).tax_category_id || '' },
-    async (d) => { await eventsApi.updateEvent(event.id, { location_id: d.location_id || null, tax_category_id: d.tax_category_id }); });
-  const locationId = draft.value.location_id;
-  const taxId = draft.value.tax_category_id;
+  const [types, setTypes] = useState<any[]>([]);
+  const [report, setReport] = useState<any>(null);
+  const loadReport = () => eventsApi.getEventReport(event.id).then(setReport).catch(() => {});
+  useEffect(() => { loadReport(); }, [event.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
+    eventsApi.getEventTypes().then((t) => setTypes(t || [])).catch(() => {});
     if (!businessId) return;
     getLocations(businessId).then(setLocations).catch(() => {});
     getTaxCategories(businessId).then(setTaxes).catch(() => {});
   }, [businessId]);
+
+  const draft = useDraft<EventForm>('event-details', 'Overview', toForm(event), async (f) => {
+    if (!f.title.trim()) throw new Error('Give the event a title');
+    const updated = await eventsApi.updateEvent(event.id, {
+      title: f.title.trim(), event_type_id: f.event_type_id || undefined, description: f.description,
+      start_time: new Date(f.start).toISOString(), end_time: new Date(f.end).toISOString(),
+      location_id: f.location_id || null, capacity: Number(f.capacity) || 0, tax_category_id: f.tax_category_id,
+      tags: f.tags.split(',').map((t) => t.trim()).filter(Boolean),
+    });
+    onSaved(updated);
+    loadReport();
+    return toForm({ ...event, ...updated });
+  });
+  const f = draft.value;
+  const set = (patch: Partial<EventForm>) => draft.setValue({ ...f, ...patch });
+  const mark = (k: keyof EventForm) => fieldMark(draft.changed((v) => v[k]));
+  const unknownPlace = f.location_id && !locations.some((l) => l.id === f.location_id);
+
+  const pct = (v: any) => `${Number(v || 0)}%`;
+  const figures: [string, string | number][] = [
+    [`${event.registrations_count} / ${event.capacity}`, `Registered · ${pct(report?.capacityUtilization)} full`],
+    [report?.registrations?.confirmed ?? 0, 'Confirmed'],
+    [formatCurrency(report?.revenue || 0), 'Revenue'],
+    [pct(report?.attendanceRate), 'Attendance rate'],
+    [report?.waitlistSize ?? 0, 'Waitlist'],
+    [pct(report?.cancellationRate), 'Cancellation rate'],
+  ];
+
   return (
-    <>
-      <div><dt>Hosted at</dt><dd>
-        <select className="ev-select" aria-label="Hosted at" value={locationId} style={fieldMark(draft.changed((v) => v.location_id))}
-          onChange={(e) => draft.setValue({ ...draft.value, location_id: e.target.value })}>
-          <option value="">{locationId && !locations.some((l) => l.id === locationId) ? 'A location of another business' : '— None —'}</option>
-          {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-        </select>
-      </dd></div>
-      <div><dt>Ticket tax</dt><dd>
-        <select className="ev-select" aria-label="Ticket tax" value={taxId} style={fieldMark(draft.changed((v) => v.tax_category_id))}
-          onChange={(e) => draft.setValue({ ...draft.value, tax_category_id: e.target.value })}>
-          <option value="">Business default tax</option>
-          {taxes.map((t) => <option key={t.id} value={t.id}>{t.name} ({(t.rate / 100).toLocaleString()}%)</option>)}
-        </select>
-        <UnsavedTag dirty={draft.dirty} />
-      </dd></div>
-    </>
+    <div className="evd-overview">
+      <div className="evd-kpis">
+        {figures.map(([value, label]) => (
+          <div key={label} className="evd-kpi"><b>{report ? value : '—'}</b><small>{label}</small></div>
+        ))}
+      </div>
+      <div className="evd-cards">
+        <section className="evd-card" style={draftBox(draft.dirty)}>
+          <h3 className="evd-card__title">Settings<UnsavedTag dirty={draft.dirty} /></h3>
+          <div className="evd-fields">
+            <label className="evd-field">Title<input className="ev-input" value={f.title} onChange={(e) => set({ title: e.target.value })} style={mark('title')} /></label>
+            <label className="evd-field">Type<select className="ev-select" value={f.event_type_id} onChange={(e) => set({ event_type_id: e.target.value })} style={mark('event_type_id')}>
+              {!types.some((t) => t.id === f.event_type_id) && <option value={f.event_type_id}>{event.event_type_name || '—'}</option>}
+              {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select></label>
+            <label className="evd-field">Start<input className="ev-input" type="datetime-local" value={f.start} onChange={(e) => set({ start: e.target.value })} style={mark('start')} /></label>
+            <label className="evd-field">End<input className="ev-input" type="datetime-local" value={f.end} onChange={(e) => set({ end: e.target.value })} style={mark('end')} /></label>
+            <label className="evd-field">Hosted at<select className="ev-select" aria-label="Hosted at" value={f.location_id} onChange={(e) => set({ location_id: e.target.value })} style={mark('location_id')}>
+              <option value="">{unknownPlace ? 'A location of another business' : '— None —'}</option>
+              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select></label>
+            <label className="evd-field">Capacity<input className="ev-input" type="number" min={Math.max(1, event.registrations_count)} value={f.capacity} onChange={(e) => set({ capacity: e.target.value })} style={mark('capacity')} /></label>
+            <label className="evd-field">Ticket tax<select className="ev-select" aria-label="Ticket tax" value={f.tax_category_id} onChange={(e) => set({ tax_category_id: e.target.value })} style={mark('tax_category_id')}>
+              <option value="">Business default tax</option>
+              {taxes.map((t) => <option key={t.id} value={t.id}>{t.name} ({(t.rate / 100).toLocaleString()}%)</option>)}
+            </select></label>
+            <label className="evd-field">Tags<input className="ev-input" placeholder="Comma-separated" value={f.tags} onChange={(e) => set({ tags: e.target.value })} style={mark('tags')} /></label>
+          </div>
+          {!f.location_id && event.location_name && <p className="evd-hint">Was entered as text: “{event.location_name}”. Choose where it is hosted.</p>}
+        </section>
+        <section className="evd-card" style={draftBox(draft.dirty)}>
+          <h3 className="evd-card__title">Description</h3>
+          <textarea className="ev-input evd-textarea" aria-label="Description" rows={4} value={f.description} placeholder="What the event is about"
+            onChange={(e) => set({ description: e.target.value })} style={mark('description')} />
+        </section>
+      </div>
+    </div>
   );
 }
 
@@ -489,26 +593,3 @@ function CommsTab({ eventId }: { eventId: string }) {
   );
 }
 
-function ReportsTab({ eventId }: { eventId: string }) {
-  const [report, setReport] = useState<any>(null);
-  useEffect(() => { eventsApi.getEventReport(eventId).then(setReport).catch(() => {}); }, [eventId]);
-  if (!report) return <ListEmpty>Loading...</ListEmpty>;
-  const stats: [string, string | number][] = [
-    ['Confirmed', report.registrations?.confirmed || 0],
-    ['Attendance Rate', `${report.attendanceRate}%`],
-    ['Revenue', formatCurrency(report.revenue || 0)],
-    ['Capacity Used', `${report.capacityUtilization}%`],
-    ['Waitlist', report.waitlistSize],
-    ['Cancellation Rate', `${report.cancellationRate}%`],
-  ];
-  return (
-    <div className="evd-stats">
-      {stats.map(([label, value]) => (
-        <div key={label} className="evd-stat">
-          <div className="evd-stat__value">{value}</div>
-          <div className="evd-stat__label">{label}</div>
-        </div>
-      ))}
-    </div>
-  );
-}

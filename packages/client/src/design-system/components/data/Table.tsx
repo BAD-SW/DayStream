@@ -2,7 +2,7 @@ import { CSSProperties, ReactNode, useEffect, useMemo, useRef, useState, Fragmen
 import cssStyles from './Table.module.css';
 import {
   ColumnFilter, TableFilters, FilterOption, FilterColumnDef, applyTableFilters, optionsFrom, dayOf,
-  looksLikeDate, isFilterOn, SortIcon, FunnelIcon, ValuesFilter, DateFilter, AmountFilter,
+  looksLikeDate, isFilterOn, SortIcon, FunnelIcon, ValuesFilter, DateFilter, AmountFilter, FilterChips,
 } from './TableFilters';
 
 export type { ColumnFilter, TableFilters, FilterOption } from './TableFilters';
@@ -306,9 +306,20 @@ export function Table<T extends Record<string, any>>({
     );
   }
 
+  // The filters on, named above the table, each one clearable (decision 13).
+  const chipColumns = columns.filter((c) => filterDefs.has(c.key)).map((c) => ({
+    key: c.key, header: c.header, kind: filterDefs.get(c.key)!.kind, label: c.filterLabel || filterDefs.get(c.key)!.label, unit: c.filterUnit, scale: c.filterScale,
+  }));
+  const chips = anyFilter ? (
+    <FilterChips columns={chipColumns} filters={filters}
+      onOpen={(key) => { const th = wrapRef.current?.querySelector(`th[data-col="${CSS.escape(key)}"]`) as HTMLElement | null; if (th) setOpenFilter({ key, anchor: th }); }}
+      onClear={(key) => applyFilter(key, undefined)} onClearAll={() => { setFilters({}); setOpenFilter(null); }} />
+  ) : null;
+
   return (
     <div>
       {popover}
+      {chips}
       <div ref={wrapRef} className={cssStyles.wrapper} data-wide={tooWide || !!scrollHeight || undefined} data-inbox={(inBox && !tooWide && !scrollHeight) || undefined} style={scrollHeight ? { maxHeight: scrollHeight } : undefined}>
         <table style={{ ...styles.table, ...(fixedLayout ? { tableLayout: 'fixed' as const } : {}) }}>
           <thead>
@@ -336,6 +347,7 @@ export function Table<T extends Record<string, any>>({
                 return (
                   <th
                     key={col.key}
+                    data-col={col.key}
                     className={cssStyles.stickyTh}
                     style={{ ...styles.th, width: col.width, textAlign: col.align || 'left', ...col.headerStyle }}
                     aria-sort={sorted ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}

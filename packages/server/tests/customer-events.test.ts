@@ -91,8 +91,8 @@ describe('Customer events and cancellations (THE-20), commission after a refund 
     it('keeps events and appointments separate per business', async () => {
       await setCancelSettings(BUSINESS_ID, 'events', { customer_cancel_enabled: true, customer_cancel_hours: 24, cancel_refund_to: 'credit' });
       await setCancelSettings(BUSINESS_ID, 'appointments', { customer_cancel_enabled: true, customer_cancel_hours: 72, cancel_refund_to: 'card' });
-      expect(await getCancelSettings(BUSINESS_ID, 'events')).toEqual({ customer_cancel_enabled: true, customer_cancel_hours: 24, cancel_refund_to: 'credit' });
-      expect(await getCancelSettings(BUSINESS_ID, 'appointments')).toEqual({ customer_cancel_enabled: true, customer_cancel_hours: 72, cancel_refund_to: 'card' });
+      expect(await getCancelSettings(BUSINESS_ID, 'events')).toEqual({ customer_cancel_enabled: true, customer_cancel_hours: 24, cancel_refund_to: 'credit', change_refund_days: 7 });
+      expect(await getCancelSettings(BUSINESS_ID, 'appointments')).toEqual({ customer_cancel_enabled: true, customer_cancel_hours: 72, cancel_refund_to: 'card', change_refund_days: 7 });
       expect(await getCancelSettings(OTHER_BUSINESS_ID, 'events')).toEqual(DEFAULT_CANCEL_SETTINGS);
     });
   });

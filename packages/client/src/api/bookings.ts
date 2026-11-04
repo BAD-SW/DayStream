@@ -269,6 +269,8 @@ export interface CancelSettings {
   customer_cancel_enabled: boolean;
   customer_cancel_hours: number;
   cancel_refund_to: 'card' | 'credit';
+  /** Events: days to cancel for a full refund after a date, time or place change (decision 14). */
+  change_refund_days?: number;
 }
 
 /** The business's customer cancellation settings for events and appointments, and its time zone. */

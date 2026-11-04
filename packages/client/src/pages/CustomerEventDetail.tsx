@@ -180,7 +180,9 @@ export function CustomerEventDetail() {
                   {r.amount > 0 && <div className="cev-row"><span>{r.paid ? 'Paid' : 'To pay'}</span><span>{formatCurrency(r.amount, ev.currency)}</span></div>}
                   {r.can_cancel && <Button size="sm" variant="secondary" onClick={() => setToCancel(r)}>Cancel registration</Button>}
                   {!r.can_cancel && r.cancel_blocked_reason && <p className="cev-small">{r.cancel_blocked_reason}</p>}
-                  {r.can_cancel && r.cancel_until && <p className="cev-small">You can cancel until {eventDateParts(r.cancel_until, tz).date}, {eventDateParts(r.cancel_until, tz).time}.</p>}
+                  {r.can_cancel && r.cancel_until && (r.changed_event
+                    ? <p className="cev-small"><b>This event has changed.</b> If you can no longer come, you can cancel for a full refund until {eventDateParts(r.cancel_until, tz).date}, {eventDateParts(r.cancel_until, tz).time}.</p>
+                    : <p className="cev-small">You can cancel until {eventDateParts(r.cancel_until, tz).date}, {eventDateParts(r.cancel_until, tz).time}.</p>)}
                 </div>
               ))}
               {waiting && (

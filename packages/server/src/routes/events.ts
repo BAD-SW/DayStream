@@ -466,7 +466,21 @@ eventsRouter.put('/:id', requirePermission('events:*'), async (req: Request, res
     const event = await eventService.updateEvent(req.params.id, authReq.tenantId, updates, authReq.user.sub);
     if (!event) { error(res, 'Event not found', 'NOT_FOUND', 404); return; }
     success(res, event);
-  } catch (err: any) { console.error('Failed to update event', err?.message || err); error(res, 'Failed to update event', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) {
+    if (err instanceof eventService.EventChangeError) { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
+    console.error('Failed to update event', err?.message || err); error(res, 'Failed to update event', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// Back to draft, only while nobody is registered or waiting (decision 14).
+eventsRouter.put('/:id/unpublish', requirePermission('events:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    success(res, await eventService.unpublishEvent(req.params.id, authReq.tenantId));
+  } catch (err: any) {
+    if (err instanceof eventService.EventChangeError) { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
+    console.error('Failed to unpublish event', err?.message || err); error(res, 'Failed to unpublish event', 'INTERNAL_ERROR', 500);
+  }
 });
 
 eventsRouter.put('/:id/publish', requirePermission('events:*'), async (req: Request, res: Response) => {

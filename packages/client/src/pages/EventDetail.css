@@ -83,3 +83,26 @@
 @media (max-width: 768px) {
   .evd-details, .evd-stats { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Overview (THE-23 item 3, option D). */
+.evd-when { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 14px; margin: 2px 0 var(--space-sm); color: var(--color-text-title); }
+.evd-when strong { font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold); }
+.evd-when span { font-size: var(--font-size-lg); }
+.evd-when small { font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+.evd-overview { display: grid; gap: var(--space-md); }
+.evd-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-sm); }
+.evd-kpi { padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--card-radius); background: var(--color-surface); display: grid; gap: 2px; min-width: 0; }
+.evd-kpi b { font-size: var(--font-size-xl); font-weight: var(--font-weight-bold); color: var(--color-text-title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.evd-kpi small { font-size: var(--font-size-xs); color: var(--color-text-secondary); }
+.evd-cards { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--space-md); align-items: start; }
+.evd-card { padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--card-radius); background: var(--color-surface); min-width: 0; }
+.evd-card__title { margin: 0 0 var(--space-sm); font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--color-text-secondary); display: flex; align-items: center; gap: 6px; }
+.evd-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
+.evd-field { display: grid; gap: 4px; font-size: var(--font-size-xs); color: var(--color-text-secondary); min-width: 0; }
+.evd-field .ev-input, .evd-field .ev-select { width: 100%; box-sizing: border-box; }
+.evd-textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 96px; font-family: var(--font-family); }
+.evd-hint { margin: var(--space-sm) 0 0; font-size: var(--font-size-xs); color: var(--color-warning-dark); }
+@media (max-width: 900px) {
+  .evd-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .evd-cards, .evd-fields { grid-template-columns: minmax(0, 1fr); }
+}

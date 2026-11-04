@@ -2,7 +2,7 @@
 
 **Owner:** Claude (maintained in every working session) · **Created:** 2026-10-12
 **Synced through commit:** `619bef3` (Bill, 2026-10-28: data migration Wave 1, gift-card expiry, renewals without a card, New Customer email, prospects background generation), merged locally as `bf80267`
-**Script count:** 346 across 18 suites · **Verified by execution:** 257 · **Failing:** 0 · **Retired:** 1 (CUS-11) · **Blocked:** 29 (specs 47–48 not built, sequence builder, API keys) · **Draft (not yet run, or only partly):** 39: run 20261012-6 covered suites 00 and 02 to 16; the journeys (suite 01) were not run as sequences, and the remaining drafts are mostly on-screen checks
+**Script count:** 349 across 18 suites · **Verified by execution:** 260 · **Failing:** 0 · **Retired:** 1 (CUS-11) · **Blocked:** 29 (specs 47–48 not built, sequence builder, API keys) · **Draft (not yet run, or only partly):** 39: run 20261012-6 covered suites 00 and 02 to 16; the journeys (suite 01) were not run as sequences, and the remaining drafts are mostly on-screen checks
 
 This is the living end-to-end (E2E) regression book for DayStream. It exists for two goals:
 

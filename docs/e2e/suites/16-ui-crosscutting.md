@@ -69,7 +69,7 @@ Staff pages are excluded from visual-consistency checks until they are migrated 
 
 ### UIX-13 · Events: one Save, changes marked, leaving asks first
 `P1` `regression` · David 2026-11-01 · As: owner · Status: Verified
-1. Open an event. On Details change Hosted at. 2. On Tickets add a ticket, rename or reprice one, delete one. 3. On Facilitators add one. 4. Follow a menu link; choose Stay. 5. Save changes. 6. Events → Types: add a type, rename one, delete one; Save changes. 7. Create Event: type a title, then follow a menu link.
+1. Open an event. On Overview change Hosted at. 2. On Tickets add a ticket, rename or reprice one, delete one. 3. On Facilitators add one. 4. Follow a menu link; choose Stay. 5. Save changes. 6. Events → Types: add a type, rename one, delete one; Save changes. 7. Create Event: type a title, then follow a menu link.
 **Expect:** as in Settings (UIX-12): the changed field is marked, its section outlined, its tab has a dot, the title row says "You have unsaved changes." next to Save changes; new rows show "New", deleted ones stay crossed out ("Deleted when you save" / "Removed when you save") with Undo; nothing is stored until Save changes, which says "All changes saved."; step 4 asks "Leave without saving?" (Leave / Stay); the title row and tabs stay in view. Publish, Cancel, Delete event, registrations, the waiting list, messages and recurring templates still act at once. Step 7 asks before leaving too.
 
 ### UIX-14 · Customer profile: one Save, changes marked, leaving asks first
@@ -93,3 +93,8 @@ Staff pages are excluded from visual-consistency checks until they are migrated 
 `P1` `regression` · THE-22 test (David 2026-11-04) · As: owner · Status: Verified
 1. Settings → Customer Lifecycle: change "Days before At Risk → Churned" (e.g. 60 → 90); Save changes. 2. Reload. 3. Put it back.
 **Expect:** "All changes saved." and the value stays after the reload (before: "Not saved: Customer Lifecycle (Failed to save lifecycle config)", whatever the value, because two of its settings had no definition; migration 162).
+
+### UIX-18 · Filter chips above a filtered table; Clear all
+`P1` `regression` · Decision 13 option B (David, 2026-11-04) · As: owner · Status: Verified (Accounting → Bills)
+1. Accounting → Bills: filter Vendor to four vendors and Due to This month. 2. Hover the Vendor chip; click it. 3. Click ✕ on the Due chip. 4. Click Clear all. 5. Repeat on any other table (People, Bookings, Buyers).
+**Expect:** while a filter is on, a bar above the table says "Filtered:" with one chip per filtered column: values show the first two then "+N" ("Vendor: Aceites Esenciales Baleares, Gestoría Ramis +2"), long text is cut with "…" but "+N" stays visible; dates show the quick range ("Due: This month") or the dates; amounts the range ("€40.00 – €100.00", "≥", "≤"); "contains" as `Name contains "…"`. Hovering lists every value; clicking a chip opens that column's filter; its ✕ clears only that column; Clear all clears every filter and the bar goes away. No bar when nothing is filtered.

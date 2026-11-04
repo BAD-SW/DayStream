@@ -182,11 +182,11 @@ function CustomerCancellationSettings() {
   );
 }
 
-interface CancelDraft { enabled: boolean; amount: number; unit: 'hours' | 'days'; refundTo: bookingsApi.CancelSettings['cancel_refund_to'] }
+interface CancelDraft { enabled: boolean; amount: number; unit: 'hours' | 'days'; refundTo: bookingsApi.CancelSettings['cancel_refund_to']; changeDays: number }
 
 function toCancelDraft(s: bookingsApi.CancelSettings): CancelDraft {
   const inDays = s.customer_cancel_hours > 0 && s.customer_cancel_hours % 24 === 0;
-  return { enabled: s.customer_cancel_enabled, amount: inDays ? s.customer_cancel_hours / 24 : s.customer_cancel_hours, unit: inDays ? 'days' : 'hours', refundTo: s.cancel_refund_to };
+  return { enabled: s.customer_cancel_enabled, amount: inDays ? s.customer_cancel_hours / 24 : s.customer_cancel_hours, unit: inDays ? 'days' : 'hours', refundTo: s.cancel_refund_to, changeDays: s.change_refund_days ?? 7 };
 }
 
 function CancellationBlock({ kind, label, initial, businessId }: { kind: 'events' | 'appointments'; label: string; initial: bookingsApi.CancelSettings; businessId: string }) {
@@ -195,9 +195,10 @@ function CancellationBlock({ kind, label, initial, businessId }: { kind: 'events
       customer_cancel_enabled: d.enabled,
       customer_cancel_hours: Math.round(Number(d.amount) || 0) * (d.unit === 'days' ? 24 : 1),
       cancel_refund_to: d.refundTo,
+      ...(kind === 'events' ? { change_refund_days: Math.max(0, Math.round(Number(d.changeDays) || 0)) } : {}),
     });
   });
-  const { enabled, amount, unit, refundTo } = draft.value;
+  const { enabled, amount, unit, refundTo, changeDays } = draft.value;
   const set = (patch: Partial<CancelDraft>) => draft.setValue({ ...draft.value, ...patch });
   const noun = kind === 'events' ? 'event' : 'appointment';
 
@@ -233,6 +234,14 @@ function CancellationBlock({ kind, label, initial, businessId }: { kind: 'events
             </label>
           </div>
         </>
+      )}
+      {/* After a date, time or place change, registered people can cancel for a full refund (decision 14). */}
+      {kind === 'events' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' as const, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+          When an event's date, time or place changes, the people registered can cancel for a full refund for
+          <input type="number" min={0} max={90} value={changeDays} onChange={(e) => set({ changeDays: Number(e.target.value) })} style={{ ...field, width: '70px', ...fieldMark(draft.changed((v) => v.changeDays)) }} aria-label="Days to cancel after a change" />
+          days (or until it starts, if sooner), even when they could not cancel otherwise.
+        </div>
       )}
     </div>
   );
