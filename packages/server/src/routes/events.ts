@@ -522,11 +522,23 @@ eventsRouter.put('/:id/complete', requirePermission('events:*'), async (req: Req
 });
 
 // Facilitators
+eventsRouter.get('/:id/facilitators', requirePermission('events:read'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const event = await eventService.getEventById(req.params.id, authReq.tenantId);
+    if (!event) { error(res, 'Event not found', 'NOT_FOUND', 404); return; }
+    success(res, await eventService.getFacilitators(req.params.id));
+  } catch (err: any) { console.error('Failed to list facilitators', err?.message || err); error(res, 'Failed to list facilitators', 'INTERNAL_ERROR', 500); }
+});
+
 eventsRouter.post('/:id/facilitators', requirePermission('events:*'), async (req: Request, res: Response) => {
   try {
     const f = await eventService.addFacilitator(req.params.id, req.body.staff_id, req.body.role || 'facilitator');
     success(res, f, undefined, 201);
-  } catch (err: any) { console.error('Failed to add facilitator', err?.message || err); error(res, 'Failed to add facilitator', 'INTERNAL_ERROR', 500); }
+  } catch (err: any) {
+    if (err?.status === 400) { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
+    console.error('Failed to add facilitator', err?.message || err); error(res, 'Failed to add facilitator', 'INTERNAL_ERROR', 500);
+  }
 });
 
 eventsRouter.delete('/:id/facilitators/:fid', requirePermission('events:*'), async (req: Request, res: Response) => {

@@ -385,9 +385,28 @@ export async function completeEvent(id: string, tenantId: string) {
 }
 
 /**
- * Add a facilitator to an event.
+ * An event's facilitators with the staff member's name (the Facilitators tab).
+ */
+export async function getFacilitators(eventId: string) {
+  const { rows } = await adminPool.query(
+    `SELECT f.id, f.staff_id, f.role, f.created_at, TRIM(CONCAT(p.first_name, ' ', p.last_name)) AS staff_name
+     FROM evt_facilitators f JOIN stf_profiles p ON p.id = f.staff_id
+     WHERE f.event_id = $1 ORDER BY f.created_at`,
+    [eventId],
+  );
+  return rows;
+}
+
+/**
+ * Add a facilitator to an event. The staff member must belong to the event's tenant.
  */
 export async function addFacilitator(eventId: string, staffId: string, role: string) {
+  const { rows: ok } = await adminPool.query(
+    `SELECT 1 FROM evt_events e JOIN stf_profiles p ON p.tenant_id = e.tenant_id
+     WHERE e.id = $1 AND p.id::text = $2`,
+    [eventId, staffId || ''],
+  );
+  if (!ok.length) throw Object.assign(new Error('Choose a staff member of this business'), { status: 400 });
   const { rows } = await adminPool.query(
     `INSERT INTO evt_facilitators (event_id, staff_id, role)
      VALUES ($1, $2, $3)

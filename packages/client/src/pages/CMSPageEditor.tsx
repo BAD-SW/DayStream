@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
@@ -19,13 +19,29 @@ export function CMSPageEditor() {
   );
 }
 
+// A page stores its content as blocks and its SEO as seo_config. The Content box edits the page's
+// text block (the other blocks, e.g. a hero, are left as they are); the SEO fields edit seo_config.
+// Before, the editor sent content / meta_title / meta_description, which the server ignored, so
+// they were never saved (THE-22 test, David 2026-11-04).
+const isTextBlock = (b: any) => b?.type === 'text_section' || b?.type === 'text-block';
+const blocksOf = (p: any): any[] => (Array.isArray(p?.content_blocks) ? p.content_blocks : []);
 const toForm = (p: any) => ({
   title: p?.title || '',
   slug: p?.slug || '',
-  content: p?.content || '',
-  meta_title: p?.meta_title || '',
-  meta_description: p?.meta_description || '',
+  content: blocksOf(p).find(isTextBlock)?.config?.html || '',
+  meta_title: p?.seo_config?.title || '',
+  meta_description: p?.seo_config?.description || '',
 });
+function toUpdate(p: any, f: ReturnType<typeof toForm>) {
+  const blocks = blocksOf(p).map((b) => ({ ...b }));
+  const i = blocks.findIndex(isTextBlock);
+  if (i >= 0) blocks[i] = { ...blocks[i], type: 'text_section', config: { ...(blocks[i].config || {}), html: f.content } };
+  else if (f.content) blocks.push({ type: 'text_section', config: { html: f.content } });
+  return {
+    title: f.title, slug: f.slug, contentBlocks: blocks,
+    seoConfig: { ...(p?.seo_config || {}), title: f.meta_title, description: f.meta_description },
+  };
+}
 
 function CMSPageEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -34,8 +50,10 @@ function CMSPageEditorPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const { dirtySections } = useDraftSections();
+  const pageRef = useRef<any>(null);
+  pageRef.current = page;
   const draft = useDraft('cms-page', 'Page', toForm(null), async (values) => {
-    const updated = await cmsApi.updatePage(id!, values);
+    const updated = await cmsApi.updatePage(id!, toUpdate(pageRef.current, values));
     setPage(updated);
     return toForm(updated);
   });

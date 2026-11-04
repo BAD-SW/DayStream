@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { ListRow, ListRows, ListRowTitle, ListRowMeta, ListEmpty } from '../design-system/components/data/ListRow';
@@ -15,6 +15,7 @@ import type { Event } from '../api/events';
 import { formatCurrency } from '../utils/currency';
 import { getLocations } from '../api/locations';
 import { getTaxCategories } from '../api/services';
+import { getStaffList } from '../api/staff';
 import './Events.css';
 import './EventDetail.css';
 
@@ -34,7 +35,10 @@ function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [event, setEvent] = useState<Event | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>('details');
+  // The tab is kept in the address (?tab=), as in Settings, so Back from a profile returns to it (THE-23 remark).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTabState] = useState<Tab>(() => (searchParams.get('tab') as Tab) || 'details');
+  const setActiveTab = (tab: Tab) => { setActiveTabState(tab); setSearchParams(tab === 'details' ? {} : { tab }, { replace: true }); };
   const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [cancelPreview, setCancelPreview] = useState<eventsApi.CancelPreview | null>(null);
@@ -416,12 +420,19 @@ function FacilitatorsTab({ eventId }: { eventId: string }) {
   });
   const [staffId, setStaffId] = useState('');
   const [role, setRole] = useState('facilitator');
+  // Facilitators are chosen from the business's staff (it used to ask for a typed staff ID).
+  const [staff, setStaff] = useState<{ id: string; first_name: string; last_name: string }[]>([]);
 
   useEffect(() => { eventsApi.getFacilitators(eventId).then(list.load).catch(() => {}); }, [eventId, list.load]);
+  useEffect(() => {
+    getStaffList({ business_id: localStorage.getItem('business_id') || '', status: 'active' }).then((res) => setStaff(res.data || [])).catch(() => {});
+  }, []);
 
+  const taken = new Set(list.rows.filter((r) => !r.deleted).map((r) => r.item.staff_id));
   const handleAdd = () => {
     if (!staffId) return;
-    list.add({ staff_id: staffId, role });
+    const person = staff.find((p) => p.id === staffId);
+    list.add({ staff_id: staffId, role, staff_name: person ? `${person.first_name} ${person.last_name}`.trim() : undefined });
     setStaffId(''); setRole('facilitator');
   };
 
@@ -429,13 +440,16 @@ function FacilitatorsTab({ eventId }: { eventId: string }) {
     <div>
       <h3 className="ev-section-title">Facilitators<UnsavedTag dirty={list.dirty} /></h3>
       <div className="ev-add-row">
-        <input className="ev-input" aria-label="Staff ID" placeholder="Staff ID" value={staffId} onChange={(e) => setStaffId(e.target.value)} />
+        <select className="ev-select" aria-label="Staff member" value={staffId} onChange={(e) => setStaffId(e.target.value)}>
+          <option value="">Choose a staff member…</option>
+          {staff.filter((p) => !taken.has(p.id)).map((p) => <option key={p.id} value={p.id}>{p.first_name} {p.last_name}</option>)}
+        </select>
         <select className="ev-select" aria-label="Role" value={role} onChange={(e) => setRole(e.target.value)}>
           <option value="facilitator">Facilitator</option>
           <option value="instructor">Instructor</option>
           <option value="assistant">Assistant</option>
         </select>
-        <Button size="sm" onClick={handleAdd}>Add</Button>
+        <Button size="sm" onClick={handleAdd} disabled={!staffId}>Add</Button>
       </div>
       {list.rows.length === 0 ? <ListEmpty>No facilitators assigned</ListEmpty> : (
         <ListRows>

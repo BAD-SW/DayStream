@@ -138,3 +138,9 @@ Covers spec 14 (events and workshops), spec 22 (community), spec 20 (integration
 `P0` `regression` · David, 2026-10-29 · As: owner · Status: Verified
 1. A published event has a paid registration (paid at reception). 2. Click Cancel on the event. 3. Confirm.
 **Expect:** step 2 says first what will happen: how many registrations are cancelled (customers emailed), how many paid tickets are refunded, the total, and where the money goes (card / original payment, or account credit, as set in Settings › System › Customer cancellations › Events), and how many people leave the waiting list; "Keep it" changes nothing. After step 3 the event is cancelled, each registration is cancelled with its refund, a refund is recorded on the ticket's order and the customer gets the "registration cancelled" email. If a refund fails, the event is not cancelled and the message says so. Runner: `revdel`.
+
+### EVT-18 · Facilitators chosen from the staff
+`P1` `regression` · THE-22 test (David 2026-11-04) · As: owner · Status: Verified
+1. Open an event → Facilitators. 2. Choose a staff member and a role; Add; Save changes. 3. Reload.
+**Expect:** the list offers the business's active staff by name (no typed staff ID); someone already added is not offered again; after Save and reload the facilitator is listed by name with the role (before, saving failed with "Failed to add facilitator" and saved facilitators never showed).
+**Cross-check:** `GET /api/v1/events/{id}/facilitators` returns them with `staff_name`; a staff id from another business is refused with "Choose a staff member of this business".
