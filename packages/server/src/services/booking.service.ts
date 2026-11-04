@@ -599,7 +599,7 @@ export async function getBookings(filters: BookingFilters) {
   }
 
   if (filters.dateTo) {
-    conditions.push(`b.start_time < (${paramIndex}::date + interval '1 day')`);
+    conditions.push(`b.start_time < ($${paramIndex}::date + interval '1 day')`);
     params.push(filters.dateTo);
     paramIndex++;
   }

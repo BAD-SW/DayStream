@@ -191,7 +191,7 @@ async function buildListConditions(businessId: string, filters: CustomerFilters,
     paramIndex++;
   }
   if (filters.created_to) {
-    conditions.push(`c.created_at < (${paramIndex}::date + INTERVAL '1 day')`);
+    conditions.push(`c.created_at < ($${paramIndex}::date + INTERVAL '1 day')`);
     params.push(filters.created_to);
     paramIndex++;
   }

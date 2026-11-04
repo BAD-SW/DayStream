@@ -31,6 +31,32 @@ What was not cleaned up, if anything.
 
 ## Runs
 
+## Run 20261104-1 — full, after merging Bill's work (10 commits) and building THE-22 fixes, THE-23 items 1–3 and THE-18 (Inbox)
+- Commit: `c8e0267` plus the two date fixes below (committed after this run) · Migrations at: 165 (local only; Bill's 158–160 and ours 156–165) · Processor mode: mock
+- Scope: every runner (r00, r02, r02b, r02c, r03, r05 to r15, Bill's checks `rbill` / `rbill3`, `rprof`, `rrefund`, `rcev`, `revdel`, `rleads`, the cross-organisation sweep) and the new runner `rinbox` (INB-01, 03, 04, 06, 07, 08, CUS-40, UIX-19, EVT-20). Unit tests: server 1119 of 1120 (the one left is the queue timing test below), client 191 of 191
+- Result: all scripts pass after the fixes and corrections below (267 script checks; sweep: 9344 calls, none answered with another organisation's data)
+
+### Failures
+| Script | Step | Expected | Actual | Evidence | Verdict |
+|---|---|---|---|---|---|
+| BKG-02, BKG-12, BKG-16 | list | the bookings list filtered by `date_from` / `date_to` | 500 "cannot cast type integer to date" | `$` lost from the `date_to` placeholder in `6914a30` (2 Nov, our commit) | **product defect, fixed**: placeholder restored, test `bookings-list-dates` |
+| — (found by the same check) | People `created_to` | People filtered by "added up to" | the same lost `$` (our `aec1b2e`) | code scan of our diff | **product defect, fixed**, same test file |
+| r08 to r15 (first pass) | all | — | `fetch failed`: the API restarted during the run | API answered again minutes later; each runner passed when run again | environment |
+| CUS-33, CUS-36, SET-20, PAY-05 (first pass) | — | — | stale queue rows left "processing" by the restart; data r08 / r10 create was missing | passed when run again after r08 to r15 | environment |
+| BKG-14 | 1 | days of the script's month | the script still asked for October 2026, now past | — | script wrong: the month now moves with the shifted dates |
+| REP-08 | summary | `total_bookings` | the report answers `totalBookings` (it always did; the 28 Oct pass compared undefined with 0) | API 1 = database 1 | script wrong: reads `totalBookings` |
+
+### Unit test left failing
+| Test | What | Verdict |
+|---|---|---|
+| booking-notifications · "does not process future-scheduled notifications" | times out (60 s) only when the whole suite runs, while other files use the same queue; passes alone (8 of 8, 17 s). It failed the same way in the full suite earlier the same day, before the Inbox code | test timing, not product; to be made independent of the shared queue |
+
+### Blocked
+INB-10 to INB-13 (SMS, WhatsApp, inbound email, saved replies, snooze): not built (THE-19, spec 41).
+
+### Leftover test data
+E2E `20261104-1` records in the E2E organisation and one closed E2E conversation (James Wilson) at Transcend; the demo data (`demo-seed` 1–5) is listed in the demo manifest for `demo-cleanup`.
+
 ## Run 20261028-3 — full, fresh organisation, after pulling Bill's work
 - Commit: `bf80267` (merge of Bill `619bef3` into `ac0ba19`) · Migrations at: 158 (Bill's 156 gift-card expiry and 157 data migration applied) · Processor mode: mock (and the Stripe test connection already set up)
 - Scope: every runner (r00 to r15, Bill's checks, profile, refunds, customer events, Bill's 2026-10-28 checks `rbill3`, sweep, routes). Unit tests: server 1000 of 1000. Type check: server 0, client 30 (unchanged)
