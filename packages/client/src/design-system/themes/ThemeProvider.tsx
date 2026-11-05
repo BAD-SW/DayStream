@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { useContextManager } from '../../context/ContextManager';
-import { applyBaseTheme, applyResolvedTokens, resetToDefault } from '../../context/ThemeManager';
+import { applyBaseTheme, applyResolvedTokens, resetToDefault, DEFAULT_BASE_THEME } from '../../context/ThemeManager';
 import { resolveTheme, resolveThemeForTenant, resolveThemeForSystem } from '../../api/themes';
 import { ResolvedTheme } from '@daystream/shared';
 
@@ -160,8 +160,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } catch {
       if (requestGenerationRef.current !== generation) return;
       setResolvedTheme(null);
-      applyBaseTheme(null);
       resetToDefault();
+      applyBaseTheme(DEFAULT_BASE_THEME);
+      loadGoogleFont(BASE_THEME_FONTS[DEFAULT_BASE_THEME]);
     }
   }, [activeContext.contextLevel, activeContext.tenantId, activeContext.businessId]);
 

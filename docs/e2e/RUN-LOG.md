@@ -31,6 +31,13 @@ What was not cleaned up, if anything.
 
 ## Runs
 
+## Run 20261105-1 — full, after the push of 4 Nov (main at `4e43a22`, Bill's `411f334` merged)
+- Commit: `4e43a22` · Migrations at: 165 + 161_import_source · Processor mode: mock
+- Scope: every runner (`fullrun.sh`), including `rmig2` (SET-21, SET-22) and `rinbox`. Unit tests (with the Navy default change made after the run): server 1121 of 1122, client 191 of 191
+- Result: all scripts pass (270 script checks; sweep: 14892 calls, none answered with another organisation's data). SET-21 and SET-22 now pass in full, including the Enrolled / Buyers tabs that run 20261104-3 could not reach
+- `r00` and `r02` stopped at their first call with "fetch failed" (the API was restarting when the run started); both were run again straight after and pass (7 and 9). Environment, not product
+- Unit tests: the one left fails only when the whole suite runs at once and changes between runs (once the queue timing test, once a segments test); each passes on its own
+
 ## Run 20261104-3 — suites for Bill's pull of 4 Nov (`411f334`, data migration Wave 2)
 - Commit: `82306c8` + the merge of `411f334` · Migrations at: 165 + 161_import_source · Processor mode: mock
 - Scope: the areas Bill's change touches (David, 4 Nov: no full run for a small pull). `r03` (setup), `rbill3` (SET-17 to SET-20), new `rmig2` (SET-21, SET-22); Data Migration page checked in the browser (Memberships and Packages listed, upload opens; our header, Save and separator kept). Unit tests: server 1120 of 1120, client 191 of 191; client type errors 27, the same as before the merge
