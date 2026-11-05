@@ -38,7 +38,7 @@ Waves:
 
 #### 1.3 Reference matching
 - [x] ✅ Unified customer matching (shared by all customer-associated imports): Legacy Customer ID when present (exact, preferred), else Identity Service (email, then unique phone); unmatched → failed (never create a customer)
-- [ ] Name matchers (normalized): plan and package done (Wave 2); service and staff pending (Wave 3)
+- [x] ✅ Name matchers (normalized) for service, staff, plan, package (Waves 2-3)
 - [x] ✅ Reference resolution runs in the trial so unmatched refs surface pre-commit
 
 #### 1.4 Forgiving pipeline + trial/commit
@@ -123,28 +123,30 @@ Waves:
 ## Wave 3 — Activity
 
 ### 11. Appointment Import
-- [ ] Rows: customer (match), service (match), staff (match, optional), date/time, status
-- [ ] Future → real `apt_bookings` via the booking path, created WITHOUT notifications; NO availability/staff/hours/capacity validation at import (conflicts accepted; constraints only on later edit)
-- [ ] Past → `cus_activities` timeline entry (activityType `booking`), no `apt_bookings`, no availability impact
-- [ ] Unmatched customer/service → failed; idempotent per (customer + service + start time)
+- [x] ✅ Rows: customer (match), service (match by name), staff (match by name, optional), date, time (optional), duration (optional), status
+- [x] ✅ Migration 162: `source` CHECK on `apt_bookings` widened to include `'import'`; applied
+- [x] ✅ Future → real `apt_bookings` (status `confirmed`, source `import`) inserted directly; NO notifications and NO availability/staff/hours/lead-time/capacity validation (conflicts accepted; constraints only on later edit); variant chosen by stated duration else first active; `booking_type` from the service; reference via `generate_booking_reference`
+- [x] ✅ Past → `cus_activities` timeline entry (activityType `booking`, `imported: true`), backdated to the appointment time; no `apt_bookings`, no availability impact
+- [x] ✅ Unmatched/ambiguous service or staff → failed; unmatched customer → failed; idempotent per (customer + service + start time)
 
 ### 12. Package fulfillment derivation
-- [ ] When importing a past/completed appointment, check for a qualifying imported package purchase (same customer, service the package covers, within validity window) and insert the corresponding `pkg_redemptions` row
-- [ ] Define the selection rule when multiple packages qualify (e.g. oldest active covering package first); never over-redeem
+- [x] ✅ On a past attended appointment, find a qualifying imported `pkg_purchase` (same customer, `pkg_package_items.service_id` matches, within `expires_at`, purchased on/before the appointment) and insert a `pkg_redemptions` row
+- [x] ✅ Oldest qualifying purchase consumed first; remaining computed (quantity − SUM redeemed), sessions vs minutes handled (minutes draws the variant duration); never over-redeems — a used-up/expired package is skipped with a WARNING
+- [x] ✅ No `source`/CHECK change needed on `pkg_redemptions` (no such column); provenance noted via `notes = 'Imported appointment'`
 
 ### 13. Transaction History Import
-- [ ] Rows: customer (match), date, amount (integer cents), description, method (optional), reference (optional)
-- [ ] Write `cus_activities` only (activityType `payment`, `imported: true`); NEVER `pay_transactions`/GL/revenue/reporting (the key safety property)
-- [ ] Unmatched customer → failed; idempotent per (customer + date + amount + reference)
+- [x] ✅ Rows: customer (match), date, amount (integer cents), description, method (optional), reference (optional)
+- [x] ✅ Writes `cus_activities` only (activityType `payment`, `imported: true` in metadata), backdated to the transaction date; NEVER `pay_transactions`/GL/revenue/reporting
+- [x] ✅ Unmatched customer → failed; invalid amount/date → failed; idempotent per (customer + date + amount + reference)
 
 ### 14. Wave 3 verification
-- [ ] Future appointment is an editable live booking; past appointment is timeline-only and doesn't affect availability/capacity
-- [ ] A past completed appointment against an imported package creates a redemption; remaining balance reflects it
-- [ ] Transaction history appears on the timeline AND nothing lands in `pay_transactions`/GL/reporting
-- [ ] No emails; full locked-order run-through for a sample business; type-check clean
+- [x] ✅ Future appointment is a live `apt_bookings` booking (editable); past appointment is timeline-only and writes no booking row (verified live)
+- [x] ✅ A past attended appointment against an imported package creates a redemption; remaining balance reflects it (60 of 180 min drawn; verified live). A no-show draws nothing
+- [x] ✅ Transaction history appears on the timeline AND nothing lands in `pay_transactions` (count unchanged 96 → 96; verified live)
+- [x] ✅ Trial writes nothing; re-run → matched, no duplicates (bookings, timeline, redemptions, payments); notification queue unchanged across trial/commit/re-run; server tsc clean, client tsc clean for touched files
 
 ---
-
-**Status**: � In Progress — Wave 1 ✅ complete (foundation + money); Wave 2 (memberships, packages) built, renewal run on an imported enrolment still to verify; Wave 3 (appointments, transactions) planned
+**Status**: ✅ All waves built — Wave 1 (foundation + money), Wave 2 (memberships, packages), Wave 3 (appointments + package-fulfillment derivation, transaction history); all verified live. Outstanding follow-ups: a renewal run against an imported membership enrolment not yet exercised; account-balance import has no idempotency (design §6); a per-balance-import ledger-double-count warning in the UI.
 **Dependencies**: Phase 46, Phase 05, Phase 10, Phase 08, packages, business setup
+
 

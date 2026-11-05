@@ -1,8 +1,10 @@
 import { apiClient } from './client';
 
-/** Data migration import API (spec 50, Waves 1-2). */
+/** Data migration import API (spec 50, Waves 1-3). */
 
-export type ImportKind = 'customers' | 'payment_methods' | 'memberships' | 'packages' | 'account_balances';
+export type ImportKind =
+  | 'customers' | 'payment_methods' | 'memberships' | 'packages'
+  | 'appointments' | 'account_balances' | 'transactions';
 
 export interface ColumnProposal {
   index: number;

@@ -7,10 +7,12 @@ import * as api from '../../api/dataMigration';
 /**
  * Data Migration (spec 50, Waves 1-2) — one shared component scoped to a business,
  * reused by the Business Setup "Data Migration" tab (business owner) and the
- * tenant's per-business view. Offers the imports in the recommended order
- * (Customers, Payment Methods, Memberships, Packages, Account Balances), each a
+ * tenant's per-business view. Offers the imports in the recommended order, each a
  * three-step flow: upload → review + trial → commit. Rows that import but need the
  * owner's attention are listed as warnings. Shows recent import runs below.
+ *
+ * Full locked order (spec 50, Waves 1-3): Customers, Payment Methods, Memberships,
+ * Packages, Appointments, Account Balances, Transaction History.
  */
 
 type Step = 'pick' | 'upload' | 'review' | 'done';
@@ -27,7 +29,9 @@ const KINDS: KindInfo[] = [
   { kind: 'payment_methods', label: 'Payment Methods', blurb: 'Migrated cards from your processor (Stripe Mapping File).', prereq: 'Import customers first.' },
   { kind: 'memberships', label: 'Memberships', blurb: 'Current member enrollments, matched to the membership plans you have set up.', prereq: 'Import customers and payment methods first, and create your membership plans.' },
   { kind: 'packages', label: 'Packages', blurb: 'Prepaid packages customers have purchased, keeping their original purchase date.', prereq: 'Import customers first, and create your packages.' },
+  { kind: 'appointments', label: 'Appointments', blurb: 'Appointment history and upcoming bookings. Future dates become live bookings; past dates go on the customer timeline.', prereq: 'Import customers and packages first, and set up your services and staff.' },
   { kind: 'account_balances', label: 'Account Balances', blurb: 'Account credits and outstanding invoices.', prereq: 'Import customers first.' },
+  { kind: 'transactions', label: 'Transaction History', blurb: 'Past payments shown on the customer timeline only — never added to your books or reports.', prereq: 'Import customers first.' },
 ];
 
 // Friendly field labels for the mapping review.
@@ -41,6 +45,8 @@ const FIELD_LABELS: Record<string, string> = {
   issue_date: 'Issue Date', due_date: 'Due Date',
   plan: 'Membership Plan', next_billing_date: 'Next Billing Date', status: 'Status', start_date: 'Start Date',
   package: 'Package', purchase_date: 'Purchase Date',
+  service: 'Service', staff: 'Staff Member', date: 'Date', time: 'Time', duration: 'Duration (min)',
+  method: 'Payment Method', reference: 'Reference',
 };
 
 function downloadRows(rows: api.RowFailure[], fileName: string) {
@@ -80,6 +86,8 @@ export function DataMigration({ businessId }: { businessId: string }) {
     if (kind === 'payment_methods') return ['', 'legacy_customer_id', 'stripe_customer_id', 'payment_method_token', 'email', 'phone', 'brand', 'last4', 'exp_month', 'exp_year', 'is_default'];
     if (kind === 'memberships') return ['', 'legacy_customer_id', 'email', 'phone', 'plan', 'next_billing_date', 'status', 'start_date'];
     if (kind === 'packages') return ['', 'legacy_customer_id', 'email', 'phone', 'package', 'purchase_date'];
+    if (kind === 'appointments') return ['', 'legacy_customer_id', 'email', 'phone', 'service', 'staff', 'date', 'time', 'duration', 'status'];
+    if (kind === 'transactions') return ['', 'legacy_customer_id', 'email', 'phone', 'date', 'amount', 'description', 'method', 'reference'];
     return ['', 'legacy_customer_id', 'email', 'phone', 'type', 'amount', 'amount_paid', 'description', 'issue_date', 'due_date'];
   };
 

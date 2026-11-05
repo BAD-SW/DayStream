@@ -16,9 +16,11 @@ import { runPaymentMethodImport } from '../services/migration/payment-method-imp
 import { runAccountBalanceImport } from '../services/migration/account-balance-import';
 import { runMembershipImport } from '../services/migration/membership-import';
 import { runPackageImport } from '../services/migration/package-import';
+import { runAppointmentImport } from '../services/migration/appointment-import';
+import { runTransactionImport } from '../services/migration/transaction-import';
 
 /**
- * Data migration import routes (spec 50, Waves 1-2). One shape across entity kinds:
+ * Data migration import routes (spec 50, Waves 1-3). One shape across entity kinds:
  *   POST /v1/import/:kind/analyze   (file → header/column detection + proposed mapping)
  *   POST /v1/import/:kind/trial     (writes nothing → full assessment + records a trial run)
  *   POST /v1/import/:kind/commit    (writes → result + records a committed run)
@@ -36,10 +38,13 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 importRouter.use(authenticate);
 importRouter.use(tenantContext);
 
-// Kinds with a handler. Wave 3 (appointments, transactions) is added as those land.
-const SUPPORTED_KINDS: ImportKind[] = ['customers', 'payment_methods', 'memberships', 'packages', 'account_balances'];
+// Kinds with a handler. Full locked order: customers → payment_methods → memberships →
+// packages → appointments → account_balances → transactions (spec 50 §Sequence).
+const SUPPORTED_KINDS: ImportKind[] = [
+  'customers', 'payment_methods', 'memberships', 'packages', 'appointments', 'account_balances', 'transactions',
+];
 
-/** Field definitions per kind that drive auto-detection. Waves 1-2. */
+/** Field definitions per kind that drive auto-detection. Waves 1-3. */
 function fieldsForKind(kind: ImportKind): FieldDef[] {
   switch (kind) {
     case 'customers':
@@ -75,6 +80,18 @@ function fieldsForKind(kind: ImportKind): FieldDef[] {
         { field: 'package', synonyms: ['package', 'packagename', 'pkg', 'bundle', 'packagepurchased', 'pack'] },
         { field: 'purchase_date', synonyms: ['purchasedate', 'purchasedat', 'datepurchased', 'purchased', 'saledate', 'boughton', 'orderdate', 'date'], valueKinds: ['date'] },
       ];
+    case 'appointments':
+      return [
+        { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid'] },
+        { field: 'email', synonyms: ['email', 'emailaddress'], valueKinds: ['email'] },
+        { field: 'phone', synonyms: ['phone', 'mobile'], valueKinds: ['phone'] },
+        { field: 'service', synonyms: ['service', 'servicename', 'treatment', 'session', 'appointmenttype', 'type'] },
+        { field: 'staff', synonyms: ['staff', 'staffmember', 'provider', 'therapist', 'trainer', 'practitioner', 'employee', 'with'] },
+        { field: 'date', synonyms: ['date', 'appointmentdate', 'bookingdate', 'startdate', 'day'], valueKinds: ['date'] },
+        { field: 'time', synonyms: ['time', 'starttime', 'appointmenttime', 'startat', 'at'] },
+        { field: 'duration', synonyms: ['duration', 'minutes', 'length', 'mins'] },
+        { field: 'status', synonyms: ['status', 'bookingstatus', 'state', 'outcome'] },
+      ];
     case 'account_balances':
       return [
         { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid'] },
@@ -86,6 +103,17 @@ function fieldsForKind(kind: ImportKind): FieldDef[] {
         { field: 'description', synonyms: ['description', 'reason', 'memo', 'note'] },
         { field: 'issue_date', synonyms: ['issuedate', 'date', 'invoicedate'], valueKinds: ['date'] },
         { field: 'due_date', synonyms: ['duedate', 'due'], valueKinds: ['date'] },
+      ];
+    case 'transactions':
+      return [
+        { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid'] },
+        { field: 'email', synonyms: ['email', 'emailaddress'], valueKinds: ['email'] },
+        { field: 'phone', synonyms: ['phone', 'mobile'], valueKinds: ['phone'] },
+        { field: 'date', synonyms: ['date', 'transactiondate', 'paymentdate', 'paid', 'paidon'], valueKinds: ['date'] },
+        { field: 'amount', synonyms: ['amount', 'total', 'paid', 'value'], valueKinds: ['money'] },
+        { field: 'description', synonyms: ['description', 'memo', 'note', 'details', 'item'] },
+        { field: 'method', synonyms: ['method', 'paymentmethod', 'paymenttype', 'tender', 'via'] },
+        { field: 'reference', synonyms: ['reference', 'ref', 'transactionid', 'receipt', 'receiptnumber', 'invoice', 'invoicenumber'] },
       ];
     default:
       return [];
@@ -164,7 +192,9 @@ async function dispatch(
     case 'payment_methods': return runPaymentMethodImport({ businessId, tenantId, userId, rows, commit });
     case 'memberships': return runMembershipImport({ businessId, tenantId, userId, rows, commit });
     case 'packages': return runPackageImport({ businessId, tenantId, userId, rows, commit });
+    case 'appointments': return runAppointmentImport({ businessId, tenantId, userId, rows, commit });
     case 'account_balances': return runAccountBalanceImport({ businessId, tenantId, userId, rows, commit });
+    case 'transactions': return runTransactionImport({ businessId, tenantId, userId, rows, commit });
     default: throw new Error(`No handler for kind ${kind}`);
   }
 }
