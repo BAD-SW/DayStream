@@ -1,4 +1,4 @@
-import { useState, ReactNode, useRef, KeyboardEvent } from 'react';
+import { useState, useEffect, ReactNode, useRef, KeyboardEvent } from 'react';
 
 interface TabItem {
   id: string;
@@ -9,12 +9,15 @@ interface TabItem {
 interface TabsProps {
   items: TabItem[];
   defaultTab?: string;
+  /** Opens this tab when it changes, e.g. a button elsewhere on the page that leads to a tab. */
+  activeTab?: string;
   orientation?: 'horizontal' | 'vertical';
   onTabChange?: (tabId: string) => void;
 }
 
-export function Tabs({ items, defaultTab, orientation = 'horizontal', onTabChange }: TabsProps) {
-  const [active, setActive] = useState(defaultTab || items[0]?.id);
+export function Tabs({ items, defaultTab, activeTab, orientation = 'horizontal', onTabChange }: TabsProps) {
+  const [active, setActive] = useState(activeTab || defaultTab || items[0]?.id);
+  useEffect(() => { if (activeTab) setActive(activeTab); }, [activeTab]);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   function handleKeyDown(e: KeyboardEvent, index: number) {

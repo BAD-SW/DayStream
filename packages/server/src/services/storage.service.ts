@@ -14,6 +14,7 @@ export interface StoredFile {
  */
 interface StorageBackend {
   save(relativePath: string, data: Buffer): Promise<void>;
+  read(relativePath: string): Promise<Buffer | null>;
   delete(relativePath: string): Promise<void>;
   deleteDirectory(relativePath: string): Promise<void>;
   getUrl(relativePath: string): string;
@@ -66,6 +67,13 @@ class LocalStorage implements StorageBackend {
     fs.writeFileSync(fullPath, data);
   }
 
+  async read(relativePath: string): Promise<Buffer | null> {
+    const root = await getStorageRoot();
+    const fullPath = path.resolve(root, relativePath);
+    if (!fullPath.startsWith(path.resolve(root)) || !fs.existsSync(fullPath)) return null;
+    return fs.readFileSync(fullPath);
+  }
+
   async delete(relativePath: string): Promise<void> {
     const root = await getStorageRoot();
     const fullPath = path.join(root, relativePath);
@@ -115,6 +123,11 @@ class S3Storage implements StorageBackend {
     throw new Error('S3 storage not yet implemented');
   }
 
+  async read(relativePath: string): Promise<Buffer | null> {
+    // TODO: Implement S3 GetObject
+    throw new Error('S3 storage not yet implemented');
+  }
+
   async delete(relativePath: string): Promise<void> {
     // TODO: Implement S3 DeleteObject
     throw new Error('S3 storage not yet implemented');
@@ -150,6 +163,7 @@ if (BACKEND === 's3') {
 
 export const storage = {
   save: (relativePath: string, data: Buffer) => backend.save(relativePath, data),
+  read: (relativePath: string) => backend.read(relativePath),
   delete: (relativePath: string) => backend.delete(relativePath),
   deleteDirectory: (relativePath: string) => backend.deleteDirectory(relativePath),
   getUrl: (relativePath: string) => backend.getUrl(relativePath),

@@ -1,4 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Table, applyTableFilters } from '../design-system/components/data/Table';
+import type { TableFilters } from '../design-system/components/data/Table';
 import { apiClient } from '../api/client';
 import { Button } from '../design-system/components/actions/Button';
 
@@ -35,8 +37,6 @@ interface Prospect {
   operating_status?: string | null;
 }
 
-type SortField = 'name' | 'address' | 'city' | 'category' | 'fit_score' | 'confidence' | 'status' | 'notes';
-type SortDir = 'asc' | 'desc';
 
 const STATUS_OPTIONS = [
   { value: 'new', label: 'New' },
@@ -103,6 +103,12 @@ interface Props {
   onCountChange?: (n: number) => void;
 }
 
+// Columns the list filters on screen (same keys as the table).
+const FILTER_COLUMNS = (['name', 'address', 'city', 'category', 'fit_score', 'confidence', 'status', 'notes'] as const).map((key) => ({
+  key, kind: (key === 'fit_score' || key === 'confidence' ? 'number' : 'values') as 'number' | 'values',
+  value: (p: Prospect) => (key === 'confidence' ? (p.confidence == null || p.confidence === '' ? null : Number(p.confidence)) : (p as any)[key]),
+}));
+
 export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChange }: Props) {
   // URL helpers derived from apiBase + mode.
   const listUrl = ownTenant ? apiBase : `${apiBase}/prospects`;
@@ -113,14 +119,11 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
   const [showDismissed, setShowDismissed] = useState(false);
   const [showHeld, setShowHeld] = useState(false);
   const [tierFilter, setTierFilter] = useState<Set<'strong' | 'moderate' | 'weak'>>(new Set());
-  const [categories, setCategories] = useState<string[]>([]);
-  const [sortField, setSortField] = useState<SortField>('name');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  // Column filters beside the sort icon (David, 2026-11-02); Export CSV follows them.
+  const [tableFilters, setTableFilters] = useState<TableFilters>({});
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({ name: '', address: '', phone: '', website: '', category: '', notes: '' });
   const [editingNotes, setEditingNotes] = useState<Record<string, string>>({});
@@ -129,8 +132,6 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (statusFilter) params.append('status', statusFilter);
-      if (categoryFilter) params.append('category', categoryFilter);
       if (search) params.append('search', search);
       if (showDismissed) params.append('show_dismissed', 'true');
       if (showHeld) params.append('show_held', 'true');
@@ -142,35 +143,15 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
       setProspects([]);
     } finally { setLoading(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listUrl, statusFilter, categoryFilter, search, showDismissed, showHeld]);
+  }, [listUrl, search, showDismissed, showHeld]);
 
   useEffect(() => { fetchProspects(); }, [fetchProspects]);
 
-  useEffect(() => {
-    apiClient.get('/v1/prospects/categories').then((res) => {
-      const cats = res.data.data || [];
-      setCategories(cats.map((c: any) => c.ui_category_name));
-    }).catch(() => {});
-  }, []);
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
-    else { setSortField(field); setSortDir('asc'); }
-  };
-
-  // Client-side fit-tier filter (chips). Empty set = show all tiers. Applied before sort.
-  const tierFiltered = tierFilter.size === 0
+  // Client-side fit-tier filter (chips). Empty set = show all tiers. Applied before the column filters.
+  const tierFiltered = useMemo(() => (tierFilter.size === 0
     ? prospects
-    : prospects.filter((p) => p.fit_tier != null && tierFilter.has(p.fit_tier));
-
-  const sortedProspects = [...tierFiltered].sort((a, b) => {
-    const aRaw = (a as any)[sortField] ?? '';
-    const bRaw = (b as any)[sortField] ?? '';
-    let cmp: number;
-    if (sortField === 'fit_score' || sortField === 'confidence') cmp = (Number(aRaw) || 0) - (Number(bRaw) || 0);
-    else cmp = String(aRaw).localeCompare(String(bRaw));
-    return sortDir === 'asc' ? cmp : -cmp;
-  });
+    : prospects.filter((p) => p.fit_tier != null && tierFilter.has(p.fit_tier))), [prospects, tierFilter]);
+  const visibleProspects = useMemo(() => applyTableFilters(tierFiltered, FILTER_COLUMNS, tableFilters), [tierFiltered, tableFilters]);
 
   const toggleTier = (tier: 'strong' | 'moderate' | 'weak') =>
     setTierFilter((prev) => {
@@ -191,7 +172,6 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
     held: overtureRows.filter((p) => p.inclusion === 'held').length,
   } : null;
 
-  const renderSortIndicator = (field: SortField) => (sortField !== field ? null : sortDir === 'asc' ? ' ▲' : ' ▼');
 
   const handleStatusChange = async (id: string, status: string) => {
     try {
@@ -235,8 +215,7 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
     setExporting(true);
     try {
       const params = new URLSearchParams();
-      if (statusFilter) params.append('status', statusFilter);
-      if (categoryFilter) params.append('category', categoryFilter);
+      if (tierFilter.size > 0 || Object.values(tableFilters).some((f) => f.values?.length || f.contains || f.from || f.to || f.min != null || f.max != null)) params.append('ids', visibleProspects.map((p) => p.id).join(','));
       if (showHeld) params.append('show_held', 'true');
       const url = `${exportUrl}?${params.toString()}`;
       const res = await apiClient.get(url, { responseType: 'blob' });
@@ -258,14 +237,6 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
       {/* Filters */}
       <div style={styles.filters}>
         <input type="text" placeholder="Search by name..." value={search} onChange={(e) => setSearch(e.target.value)} style={styles.searchInput} />
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={styles.select}>
-          <option value="">All Statuses</option>
-          {STATUS_OPTIONS.filter((s) => s.value !== 'dismissed').map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
-        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} style={styles.select}>
-          <option value="">All Categories</option>
-          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
         <label style={styles.checkboxLabel}>
           <input type="checkbox" checked={showDismissed} onChange={(e) => setShowDismissed(e.target.checked)} style={styles.checkbox} />
           Show Dismissed
@@ -338,64 +309,47 @@ export function ProspectsList({ apiBase, ownTenant, allowAdd = true, onCountChan
       )}
 
       {/* Table */}
-      {loading ? (
-        <div style={styles.empty}>Loading...</div>
-      ) : sortedProspects.length === 0 ? (
-        <div style={styles.empty}><p>No prospects found.</p></div>
-      ) : (
-        <div style={styles.tableWrapper}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                {([
-                  ['name', 'Name'], ['address', 'Address'], ['city', 'City'], ['category', 'Category'],
-                  ['fit_score', 'Fit'], ['confidence', 'Confidence'], ['status', 'Status'], ['notes', 'Notes'],
-                ] as [SortField, string][]).map(([field, label]) => (
-                  <th key={field} style={styles.th} onClick={() => handleSort(field)}>
-                    {label}{renderSortIndicator(field)}
-                  </th>
-                ))}
-                <th style={styles.th}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedProspects.map((p, idx) => (
-                <tr key={p.id} style={{ ...(idx % 2 === 0 ? styles.rowEven : styles.rowOdd), ...(p.inclusion === 'held' ? styles.rowHeld : {}) }}>
-                  <td style={styles.td}>
-                    <a href={mapsUrl(p)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-text)', textDecoration: 'underline' }}>{p.name}</a>
-                    {p.inclusion === 'held' && (
-                      <span style={styles.heldBadge} title={`Held (${p.hold_reason || 'filtered'}) — retained but not shown as active`}>held</span>
-                    )}
-                  </td>
-                  <td style={styles.td}>{p.address}</td>
-                  <td style={styles.td}>{p.city || '—'}</td>
-                  <td style={styles.td}>{p.category}</td>
-                  <td style={styles.td}>
-                    {p.fit_tier ? (
-                      <span style={styles.fitCell}>
-                        <span style={{ ...styles.tierBadge, background: TIER_COLOR[p.fit_tier], color: TIER_TEXT[p.fit_tier] }}>{p.fit_tier}</span>
-                        <span style={styles.fitScore}>{p.fit_score ?? '—'}</span>
-                      </span>
-                    ) : '—'}
-                  </td>
-                  <td style={styles.td}>{formatConfidence(p.confidence)}</td>
-                  <td style={styles.td}>
-                    <select value={p.status} onChange={(e) => handleStatusChange(p.id, e.target.value)} style={styles.statusSelect}>
-                      {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                    </select>
-                  </td>
-                  <td style={styles.td}>
-                    <input type="text" value={editingNotes[p.id] ?? p.notes ?? ''} onChange={(e) => setEditingNotes({ ...editingNotes, [p.id]: e.target.value })} onBlur={() => handleNotesBlur(p.id)} style={styles.notesInput} placeholder="Add notes..." />
-                  </td>
-                  <td style={styles.td}>
-                    <button style={styles.dismissButton} onClick={() => handleDismiss(p.id)} title="Dismiss prospect">✕</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <Table
+        rowId={(p: Prospect) => p.id}
+        data={visibleProspects}
+        filterSource={prospects}
+        filters={tableFilters}
+        onFiltersChange={setTableFilters}
+        loading={loading}
+        emptyMessage="No prospects found."
+        clientSort
+        columns={[
+          { key: 'name', header: 'Name', sortable: true, render: (_: any, p: Prospect) => (
+            <>
+              <a href={mapsUrl(p)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-text)', textDecoration: 'underline' }}>{p.name}</a>
+              {p.inclusion === 'held' && (
+                <span style={styles.heldBadge} title={`Held (${p.hold_reason || 'filtered'}) — retained but not shown as active`}>held</span>
+              )}
+            </>
+          ) },
+          { key: 'address', header: 'Address', sortable: true },
+          { key: 'city', header: 'City', sortable: true, render: (v: string) => v || '—' },
+          { key: 'category', header: 'Category', sortable: true },
+          { key: 'fit_score', header: 'Fit', sortable: true, filter: 'number' as const, render: (_: any, p: Prospect) => (p.fit_tier ? (
+            <span style={styles.fitCell}>
+              <span style={{ ...styles.tierBadge, background: TIER_COLOR[p.fit_tier], color: TIER_TEXT[p.fit_tier] }}>{p.fit_tier}</span>
+              <span style={styles.fitScore}>{p.fit_score ?? '—'}</span>
+            </span>
+          ) : '—') },
+          { key: 'confidence', header: 'Confidence', sortable: true, filter: 'number' as const, filterValue: (p: Prospect) => (p.confidence == null || p.confidence === '' ? null : Number(p.confidence)), filterLabel: (v: any) => formatConfidence(v), render: (_: any, p: Prospect) => formatConfidence(p.confidence) },
+          { key: 'status', header: 'Status', sortable: true, filterLabel: (v: string) => STATUS_OPTIONS.find((s) => s.value === v)?.label || v, render: (_: any, p: Prospect) => (
+            <select value={p.status} onChange={(e) => handleStatusChange(p.id, e.target.value)} onClick={(e) => e.stopPropagation()} style={styles.statusSelect} aria-label={`Status for ${p.name}`}>
+              {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+          ) },
+          { key: 'notes', header: 'Notes', sortable: true, render: (_: any, p: Prospect) => (
+            <input type="text" value={editingNotes[p.id] ?? p.notes ?? ''} onChange={(e) => setEditingNotes({ ...editingNotes, [p.id]: e.target.value })} onBlur={() => handleNotesBlur(p.id)} style={styles.notesInput} placeholder="Add notes..." aria-label={`Notes for ${p.name}`} />
+          ) },
+          { key: 'actions', header: '', filter: false as const, render: (_: any, p: Prospect) => (
+            <button style={styles.dismissButton} onClick={() => handleDismiss(p.id)} title="Dismiss prospect">✕</button>
+          ) },
+        ]}
+      />
     </div>
   );
 }

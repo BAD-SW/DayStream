@@ -219,7 +219,9 @@ payrollRouter.put('/periods/:id/finalize', requirePermission('staff:*'), async (
 // GET /api/v1/payroll/periods/:id/entries
 payrollRouter.get('/periods/:id/entries', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
-    const entries = await payrollService.getPayrollEntries(req.params.id);
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const entries = await payrollService.getPayrollEntries(req.params.id, businessId);
     success(res, entries);
   } catch (err: any) { console.error('Failed to get entries', err?.message || err); error(res, 'Failed to get entries', 'INTERNAL_ERROR', 500); }
 });
@@ -432,6 +434,26 @@ payrollRouter.put('/settings', requirePermission('settings:*'), async (req: Requ
     );
     success(res, { saved: true });
   } catch (err: any) { console.error('Failed to save payroll settings', err?.message || err); error(res, 'Failed to save payroll settings', 'INTERNAL_ERROR', 500); }
+});
+
+// Commission after a refund (THE-21): take it back (default) or keep it.
+payrollRouter.get('/settings/commission-refunds', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { isRefundClawbackEnabled } = await import('../services/commission.service');
+    success(res, { take_back: await isRefundClawbackEnabled(businessId) });
+  } catch (err: any) { console.error('Failed to read the commission refund setting', err?.message || err); error(res, 'Failed to read the commission refund setting', 'INTERNAL_ERROR', 500); }
+});
+
+payrollRouter.put('/settings/commission-refunds', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (typeof req.body.take_back !== 'boolean') { error(res, 'take_back must be true or false', 'VALIDATION_ERROR', 400); return; }
+    const { setRefundClawbackEnabled } = await import('../services/commission.service');
+    success(res, { take_back: await setRefundClawbackEnabled(businessId, req.body.take_back) });
+  } catch (err: any) { console.error('Failed to save the commission refund setting', err?.message || err); error(res, 'Failed to save the commission refund setting', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Table } from '../design-system/components/data/Table';
+import type { TableFilters } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { ConfirmDialog } from '../design-system/components/feedback/ConfirmDialog';
 import { formatCurrency } from '../utils/currency';
@@ -18,18 +19,18 @@ export function Bookings() {
   const isCustomer = useContextManager().persona === 'customer';
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState(isCustomer ? '' : new Date().toISOString().split('T')[0]);
-  const [dateTo, setDateTo] = useState(isCustomer ? '' : new Date(Date.now() + 6 * 86400000).toISOString().split('T')[0]);
-  const [staffFilter, setStaffFilter] = useState('');
-  const [serviceFilter, setServiceFilter] = useState('');
-  const [customerFilter, setCustomerFilter] = useState('');
+  // Column filters from the icon beside each sort icon (David, 2026-11-02). No page starts filtered (David, 2026-11-04).
+  const [tableFilters, setTableFilters] = useState<TableFilters>({});
+  // No pages: more bookings load as the list scrolls.
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [businessTimezone, setBusinessTimezone] = useState('UTC');
-  const [staffList, setStaffList] = useState<any[]>([]);
-  const [serviceList, setServiceList] = useState<any[]>([]);
   const [pendingNoShow, setPendingNoShow] = useState<Booking | null>(null);
+  // Customers: the business's appointment cancellation settings (THE-20).
+  const [cancelSettings, setCancelSettings] = useState<bookingsApi.CancelSettings | null>(null);
+  const [toCancel, setToCancel] = useState<Booking | null>(null);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -40,31 +41,70 @@ export function Bookings() {
     if (!businessId || isCustomer) return;
     bookingsApi.getBookingFilters(businessId).then((f) => {
       if (f.timezone) setBusinessTimezone(f.timezone);
-      setStaffList(f.staff || []);
-      setServiceList(f.services || []);
     }).catch(() => {});
   }, [businessId, isCustomer]);
+
+  useEffect(() => {
+    if (!businessId || !isCustomer) return;
+    bookingsApi.getCancellationSettings(businessId).then((s) => {
+      setCancelSettings(s.appointments);
+      setBusinessTimezone(s.timezone);
+    }).catch(() => {});
+  }, [businessId, isCustomer]);
+
+  const cancelUntil = (b: Booking) => cancelSettings?.customer_cancel_enabled
+    ? new Date(new Date(b.start_time).getTime() - cancelSettings.customer_cancel_hours * 3600 * 1000) : null;
+  const customerMayCancel = (b: Booking) => {
+    const until = cancelUntil(b);
+    return (b.status === 'pending' || b.status === 'confirmed') && !!until && Date.now() <= until.getTime();
+  };
+  const customerCancel = async (b: Booking) => {
+    setNotice(null);
+    try {
+      const out = await bookingsApi.customerCancelBooking(b.id, businessId);
+      setNotice({ ok: true, text: out.refund
+        ? `Appointment cancelled. ${formatCurrency(out.refund.amount)} ${out.refund.to === 'credit' ? 'was added to your account credit' : 'will be refunded to your card'}.`
+        : 'Appointment cancelled.' });
+      fetchBookings();
+    } catch (e: any) { setNotice({ ok: false, text: e?.response?.data?.error || 'The appointment could not be cancelled.' }); }
+  };
 
   const fetchBookings = useCallback(async () => {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const result = await bookingsApi.getBookings(businessId, {
-        status: statusFilter || undefined,
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-        staff_id: staffFilter || undefined,
-        service_id: serviceFilter || undefined,
-        customer_search: customerFilter || undefined,
-        page,
-      });
+      const result = await bookingsApi.getBookings(businessId, { columns: tableFilters, page: 1, limit: 50, order: isCustomer ? 'asc' : 'desc' });
       setBookings(result.data);
-      setTotalPages(result.meta?.totalPages || 1);
+      setPage(1);
+      setTotal(result.meta?.total || 0);
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [businessId, statusFilter, dateFrom, dateTo, staffFilter, serviceFilter, customerFilter, page]);
+  }, [businessId, tableFilters]);
 
   useEffect(() => { fetchBookings(); }, [fetchBookings]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || bookings.length >= total) return;
+    setLoadingMore(true);
+    try {
+      const result = await bookingsApi.getBookings(businessId, { columns: tableFilters, page: page + 1, limit: 50, order: isCustomer ? 'asc' : 'desc' });
+      setBookings((rows) => [...rows, ...result.data]);
+      setPage(page + 1);
+      setTotal(result.meta?.total || 0);
+    } catch { /* Show more stays to try again */ }
+    finally { setLoadingMore(false); }
+  }, [businessId, tableFilters, page, loadingMore, bookings.length, total]);
+
+  const filterOptions = useCallback(async (key: string) => {
+    const values = await bookingsApi.getBookingColumnValues(businessId, key, tableFilters);
+    return values.map((v) => ({
+      value: v.value, count: v.count,
+      label: key === 'status' ? v.value.replace('_', ' ')
+        : key === 'customer_first_name' ? (v.label || 'Walk-in')
+        : key === 'staff_first_name' ? (v.label || 'No staff member')
+        : v.label || v.value,
+    }));
+  }, [businessId, tableFilters]);
 
   const handleAction = async (action: string, booking: Booking) => {
     try {
@@ -86,7 +126,7 @@ export function Bookings() {
     },
     { key: 'service_name', header: 'Service', sortable: true },
     {
-      key: 'start_time', header: 'Date/Time', sortable: true,
+      key: 'start_time', header: 'Date/Time', sortable: true, filter: 'date' as const,
       render: (val: string) => new Date(val).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', timeZone: businessTimezone }),
     },
     {
@@ -98,7 +138,7 @@ export function Bookings() {
       render: (_: any, row: Booking) => row.staff_first_name ? `${row.staff_first_name} ${row.staff_last_name}` : '—',
     },
     {
-      key: 'actions', header: '',
+      key: 'actions', header: '', filter: false as const,
       render: (_: any, row: Booking) => (
         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
           {row.status === 'pending' && <ActionBtn label="Confirm" onClick={() => handleAction('confirm', row)} />}
@@ -111,7 +151,15 @@ export function Bookings() {
       ),
     },
   ];
-  const columns = isCustomer ? allColumns.filter((c) => c.key !== 'customer_first_name' && c.key !== 'actions') : allColumns;
+  const customerActions = {
+    key: 'actions', header: '', filter: false as const,
+    render: (_: any, row: Booking) => customerMayCancel(row)
+      ? <ActionBtn label="Cancel" onClick={() => setToCancel(row)} />
+      : null,
+  };
+  const columns = isCustomer
+    ? [...allColumns.filter((c) => c.key !== 'customer_first_name' && c.key !== 'actions'), customerActions]
+    : allColumns;
 
   return (
     <div style={styles.page}>
@@ -125,39 +173,18 @@ export function Bookings() {
         </div>
       </div>
 
-      <div style={styles.toolbar}>
-        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All Statuses</option>
-          <option value="pending">Pending</option>
-          <option value="confirmed">Confirmed</option>
-          <option value="checked_in">Checked In</option>
-          <option value="completed">Completed</option>
-          <option value="cancelled">Cancelled</option>
-          <option value="no_show">No Show</option>
-        </select>
-        {!isCustomer && <>
-        <select value={staffFilter} onChange={(e) => { setStaffFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All Staff</option>
-          {staffList.map((s: any) => (
-            <option key={s.user_id} value={s.user_id}>{s.first_name} {s.last_name}</option>
-          ))}
-        </select>
-        <select value={serviceFilter} onChange={(e) => { setServiceFilter(e.target.value); setPage(1); }} style={styles.select}>
-          <option value="">All Services</option>
-          {serviceList.map((s: any) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
-        <input type="text" style={styles.select} value={customerFilter} onChange={(e) => { setCustomerFilter(e.target.value); setPage(1); }} placeholder="Customer name..." title="Filter by customer" />
-        </>}
-        <input type="date" style={styles.select} value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} title="From date" />
-        <input type="date" style={styles.select} value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} title="To date" />
-        {(statusFilter || staffFilter || serviceFilter || dateFrom || dateTo || customerFilter) && (
-          <button style={styles.navBtn} onClick={() => { setStatusFilter(''); setStaffFilter(''); setServiceFilter(''); setDateFrom(''); setDateTo(''); setCustomerFilter(''); setPage(1); }}>Clear</button>
-        )}
-      </div>
+      {isCustomer && cancelSettings && (
+        <p style={styles.policy}>
+          {cancelSettings.customer_cancel_enabled
+            ? `You can cancel an appointment here up to ${cancelSettings.customer_cancel_hours} hours before it starts. A visit you paid in advance is returned ${cancelSettings.cancel_refund_to === 'credit' ? 'as account credit' : 'to your card'}.`
+            : 'To cancel an appointment, please contact the business.'}
+        </p>
+      )}
+      {notice && <p style={{ ...styles.policy, color: notice.ok ? 'var(--color-success)' : 'var(--color-error)' }} role="status">{notice.text}</p>}
 
-      <Table columns={columns} data={bookings} loading={loading} page={page} totalPages={totalPages} onPageChange={setPage} emptyMessage="No bookings found" mobileCardMode clientSort onRowClick={isCustomer ? undefined : (row) => navigate(`/bookings/${row.id}/edit`)} />
+      <Table columns={columns} data={bookings} loading={loading} emptyMessage="No bookings found" mobileCardMode clientSort onRowClick={isCustomer ? undefined : (row) => navigate(`/bookings/${row.id}/edit`)}
+        filters={tableFilters} onFiltersChange={setTableFilters} filterOptions={filterOptions}
+        onLoadMore={loadMore} hasMore={bookings.length < total} loadingMore={loadingMore} />
 
       <ConfirmDialog
         open={!!pendingNoShow}
@@ -171,6 +198,17 @@ export function Bookings() {
         variant="destructive"
         onClose={() => setPendingNoShow(null)}
         onConfirm={() => { if (pendingNoShow) handleAction('no-show', pendingNoShow); }}
+      />
+
+      <ConfirmDialog
+        open={!!toCancel}
+        title="Cancel this appointment?"
+        message={toCancel ? `${toCancel.service_name}, ${new Date(toCancel.start_time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: businessTimezone })}.` : ''}
+        confirmLabel="Cancel appointment"
+        cancelLabel="Keep it"
+        variant="destructive"
+        onClose={() => setToCancel(null)}
+        onConfirm={() => { if (toCancel) customerCancel(toCancel); }}
       />
 
     </div>
@@ -189,6 +227,7 @@ const styles: Record<string, React.CSSProperties> = {
   select: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
   navBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '8px 16px', color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', minHeight: 'var(--button-height-sm)' },
   actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', minHeight: 'var(--button-height-sm)' },
+  policy: { margin: '0 0 var(--space-md)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
   empty: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', textAlign: 'center', padding: 'var(--space-lg)' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-lg)', maxWidth: '600px', width: '90%', maxHeight: '80vh', overflow: 'auto', border: '1px solid var(--color-border)' },

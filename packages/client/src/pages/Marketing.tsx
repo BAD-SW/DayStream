@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
 import { TabBar } from '../design-system/components/navigation/TabBar';
+import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
+import { DraftSectionsProvider, DraftTab, useDraftSections } from '../components/unsaved/DraftSections';
+import { LeaveGuard, useGuardedNavigate } from '../components/unsaved/LeaveGuard';
+import { SaveChanges } from '../components/unsaved/SaveChanges';
 import { ListRow, ListRows, ListRowTitle, ListRowMeta, ListEmpty } from '../design-system/components/data/ListRow';
 import * as marketingApi from '../api/marketing';
+import { Leads } from './Leads';
 import './Marketing.css';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
@@ -13,11 +18,27 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
   active: 'success', paused: 'warning', archived: 'neutral',
 };
 
+type MarketingTab = 'leads' | 'campaigns' | 'sequences';
+
+// Changes in the Leads rows wait for Save changes (David, 2026-11-02, decision 10); leaving asks first.
 export function Marketing() {
-  const navigate = useNavigate();
+  return (
+    <DraftSectionsProvider>
+      <MarketingPage />
+    </DraftSectionsProvider>
+  );
+}
+
+function MarketingPage() {
+  const navigate = useGuardedNavigate();
+  const { dirtySections } = useDraftSections();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [sequences, setSequences] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'campaigns' | 'sequences'>('campaigns');
+  // Leads is the first section of Marketing (THE-17); the tab is kept in the address.
+  const tabParam = searchParams.get('tab');
+  const activeTab: MarketingTab = tabParam === 'campaigns' || tabParam === 'sequences' ? tabParam : 'leads';
+  const setActiveTab = (tab: MarketingTab) => setSearchParams(tab === 'leads' ? {} : { tab }, { replace: true });
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null);
   const [recipients, setRecipients] = useState<any[]>([]);
   const [selectedSequence, setSelectedSequence] = useState<string | null>(null);
@@ -62,18 +83,27 @@ export function Marketing() {
     } catch { alert('Could not load enrollments'); }
   };
 
-  const tabs = [{ key: 'campaigns' as const, label: 'Campaigns' }, { key: 'sequences' as const, label: 'Sequences' }];
+  const tabs: { key: MarketingTab; label: string }[] = [
+    { key: 'leads', label: 'Leads' }, { key: 'campaigns', label: 'Campaigns' }, { key: 'sequences', label: 'Sequences' },
+  ];
 
   return (
     <div className="mk-page">
+      <LeaveGuard when={dirtySections.length > 0} />
+      <StickyPageTop>
       <PageHeader
         title="Marketing"
         actions={<>
+          <SaveChanges />
           <Button onClick={() => navigate('/marketing/campaigns/new')}>New Campaign</Button>
           <Button variant="ghost" onClick={() => navigate('/marketing/sequences/new')}>New Sequence</Button>
         </>}
       />
-      <TabBar aria-label="Marketing sections" tabs={tabs} active={activeTab} onChange={setActiveTab} />
+      <TabBar aria-label="Marketing sections" tabs={tabs.map((t) => ({ ...t, changed: dirtySections.some((s) => s.tab === t.key) }))} active={activeTab} onChange={setActiveTab} />
+      </StickyPageTop>
+
+      {/* Leads stays mounted, so its unsaved changes survive switching tabs. */}
+      <div hidden={activeTab !== 'leads'}><DraftTab tab="leads"><Leads /></DraftTab></div>
 
       {activeTab === 'campaigns' && (
         <ListRows>

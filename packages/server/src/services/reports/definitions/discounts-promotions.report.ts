@@ -45,7 +45,8 @@ export const discountsPromotionsReport: ReportDefinition = {
          JOIN fin_orders o ON o.id = oi.order_id
          LEFT JOIN prm_promotions p ON p.id = o.promotion_id
         WHERE o.business_id = $1
-          AND o.status = 'completed'
+          -- a discount given stays given when the sale is later refunded (D-44)
+          AND o.status IN ('completed', 'partially_refunded', 'refunded')
           AND oi.discount_amount <> 0
           AND o.completed_at::date BETWEEN $2::date AND $3::date
         ORDER BY o.completed_at DESC, o.order_number`,

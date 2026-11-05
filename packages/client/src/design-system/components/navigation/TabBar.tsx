@@ -1,8 +1,12 @@
-import { KeyboardEvent, useRef } from 'react';
+import { Fragment, KeyboardEvent, useRef } from 'react';
 
 interface TabBarItem<T extends string> {
   key: T;
   label: string;
+  /** The section behind this tab has unsaved changes: the tab is marked. */
+  changed?: boolean;
+  /** Draws a separator before this tab, to set a group of tabs apart. */
+  separatorBefore?: boolean;
 }
 
 interface TabBarProps<T extends string> {
@@ -36,8 +40,9 @@ export function TabBar<T extends string>({ tabs, active, onChange, 'aria-label':
       {tabs.map((tab, index) => {
         const isActive = tab.key === active;
         return (
+          <Fragment key={tab.key}>
+          {tab.separatorBefore && <span aria-hidden="true" style={styles.separator} />}
           <button
-            key={tab.key}
             ref={(el) => { refs.current[index] = el; }}
             type="button"
             role="tab"
@@ -45,10 +50,12 @@ export function TabBar<T extends string>({ tabs, active, onChange, 'aria-label':
             tabIndex={isActive ? 0 : -1}
             onClick={() => onChange(tab.key)}
             onKeyDown={(e) => handleKeyDown(e, index)}
-            style={{ ...styles.tab, ...(isActive ? styles.tabActive : {}) }}
+            style={{ ...styles.tab, ...(isActive ? styles.tabActive : {}), ...(tab.changed ? styles.tabChanged : {}) }}
           >
             {tab.label}
+            {tab.changed && <span aria-label="unsaved changes" title="Unsaved changes" style={styles.changedDot} />}
           </button>
+          </Fragment>
         );
       })}
     </div>
@@ -75,6 +82,9 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--color-text-secondary)',
     cursor: 'pointer',
   },
+  tabChanged: { background: 'var(--color-warning-bg)', borderTopLeftRadius: 'var(--radius-md)', borderTopRightRadius: 'var(--radius-md)' },
+  separator: { alignSelf: 'stretch', width: '1px', margin: '6px 4px', background: 'var(--color-border-strong, var(--color-text-muted))' },
+  changedDot: { display: 'inline-block', width: '8px', height: '8px', marginLeft: '6px', borderRadius: '50%', background: 'var(--color-warning)', verticalAlign: 'middle' },
   tabActive: {
     color: 'var(--color-primary)',
     // Full shorthand, not borderBottomColor: React drops a removed longhand, which would

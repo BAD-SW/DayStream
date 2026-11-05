@@ -287,7 +287,7 @@ reportsRouter.get('/business-kpis', requirePermission('reports:read'), async (re
                              date_trunc('year', NOW() AT TIME ZONE tz)::date AS year_start, tz FROM biz),
             money AS (
               SELECT (o.completed_at AT TIME ZONE clock.tz)::date AS day, o.total_amount AS amount
-                FROM fin_orders o, clock WHERE o.business_id = $1 AND o.status IN ('completed', 'refunded')
+                FROM fin_orders o, clock WHERE o.business_id = $1 AND o.status IN ('completed', 'partially_refunded', 'refunded')
               UNION ALL
               SELECT (t.created_at AT TIME ZONE clock.tz)::date,
                      CASE WHEN t.type = 'charge' THEN t.amount ELSE -ABS(t.amount) END

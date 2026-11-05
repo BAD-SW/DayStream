@@ -51,7 +51,7 @@ export async function isResourceAvailable(
   const dayOfWeek = new Date(year, month - 1, day).getDay();
   const { rows: maint } = await adminPool.query(
     `SELECT * FROM res_maintenance WHERE resource_id = $1
-     AND ((maintenance_type = 'recurring' AND day_of_week = $2)
+     AND ((maintenance_type = 'recurring' AND (day_of_week = $2 OR day_of_week IS NULL))
        OR (maintenance_type = 'one_time' AND specific_date = $3::date))`,
     [resourceId, dayOfWeek, date]);
 

@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { ColumnFilters, FilterableColumn, addColumnFilterConditions, columnValuesSql } from '../utils/column-filters';
 import { logAudit } from './audit.service';
 import { logger } from '../middleware/logger';
 import { findOrCreatePerson, findPersonByContactPoint, normalisePhone, defaultRegionFor, PersonSource } from './person-identity.service';
@@ -59,6 +60,8 @@ interface CustomerFilters {
   include_archived?: boolean;
   last_activity_from?: string;
   last_activity_to?: string;
+  /** Column filters from the shared table (David, 2026-11-02). */
+  columns?: ColumnFilters;
 }
 
 /**
@@ -99,7 +102,7 @@ export async function createCustomer(input: CreateCustomerInput) {
 }
 
 /** Conditions shared by the list, the view counts and bulk actions. All columns are prefixed `c.`. */
-async function buildListConditions(businessId: string, filters: CustomerFilters, skipView = false) {
+async function buildListConditions(businessId: string, filters: CustomerFilters, skipView = false, skipColumn?: string) {
   const conditions = ['c.business_id = $1', "c.status NOT IN ('anonymized', 'merged')"];
   const params: any[] = [businessId];
   let paramIndex = 2;
@@ -193,7 +196,43 @@ async function buildListConditions(businessId: string, filters: CustomerFilters,
     paramIndex++;
   }
 
+  if (filters.columns) {
+    addColumnFilterConditions(filters.columns, PEOPLE_COLUMNS, conditions, params, PEOPLE_TZ, skipColumn);
+  }
+
   return { where: conditions.join(' AND '), params };
+}
+
+// The People list's filterable columns (keys as the table's columns).
+const PEOPLE_TZ = "COALESCE((SELECT b.timezone FROM sys_businesses b WHERE b.id = c.business_id), 'UTC')";
+const PEOPLE_COLUMNS: Record<string, FilterableColumn> = {
+  reference_number: { expr: 'c.reference_number' },
+  first_name: { expr: 'c.first_name' },
+  last_name: { expr: 'c.last_name' },
+  email: { expr: 'c.email' },
+  phone: { expr: 'c.phone' },
+  lifecycle_stage: { expr: 'c.lifecycle_stage' },
+  source: { expr: 'c.source' },
+  owner_name: {
+    expr: 'c.owner_user_id',
+    label: "(SELECT NULLIF(BTRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), '') FROM usr_users u WHERE u.id = c.owner_user_id)",
+  },
+  created_at: { expr: 'c.created_at', kind: 'date' },
+  last_activity_at: { expr: 'c.last_activity_at', kind: 'date' },
+  last_visit_at: { expr: 'c.last_visit_at', kind: 'date' },
+  last_login_at: { expr: '(SELECT u.last_login_at FROM usr_users u WHERE u.id = c.user_id)', kind: 'date' },
+};
+
+/**
+ * Every value of one column among the people that match the other filters, with counts, for
+ * the column's filter list (it shows all values, not only those on screen).
+ */
+export async function getColumnValues(businessId: string, column: string, filters: CustomerFilters) {
+  const col = PEOPLE_COLUMNS[column];
+  if (!col || col.kind === 'date') return [];
+  const { where, params } = await buildListConditions(businessId, filters, false, column);
+  const { rows } = await adminPool.query(columnValuesSql(col, 'cus_customers c', where), params);
+  return rows as Array<{ value: string; label: string; count: number }>;
 }
 
 /** The extra facts shown next to each person: owner, login, next booking, consent, incomplete. */
@@ -208,9 +247,19 @@ const PERSON_EXTRAS = `
   NULLIF(BTRIM(COALESCE(ou.first_name, '') || ' ' || COALESCE(ou.last_name, '')), '') AS owner_name,
   lu.last_login_at,
   (c.user_id IS NOT NULL) AS has_account,
+  (c.photo_path IS NOT NULL) AS has_photo,
+  (SELECT l.name FROM sys_locations l WHERE l.id = c.home_location_id) AS home_location_name,
   (c.email IS NULL OR BTRIM(c.first_name) = '' OR BTRIM(c.last_name) = '') AS incomplete,
   (SELECT MIN(b.start_time) FROM apt_bookings b
     WHERE b.customer_id = c.id AND b.start_time > NOW() AND b.status NOT IN ('cancelled', 'no_show')) AS next_booking_at,
+  -- THE-18 optional columns: when the person was last contacted (any channel) and how many visits.
+  GREATEST(
+    (SELECT MAX(m.created_at) FROM inbox_messages m JOIN inbox_conversations ic ON ic.id = m.conversation_id WHERE ic.customer_id = c.id AND m.direction IN ('out', 'auto')),
+    (SELECT MAX(q.sent_at) FROM apt_notification_queue q WHERE q.recipient_id = c.id AND q.status = 'sent'),
+    (SELECT MAX(cr.sent_at) FROM mkt_campaign_recipients cr WHERE cr.customer_id = c.id)) AS last_contacted_at,
+  ((SELECT COUNT(*) FROM apt_bookings b WHERE b.customer_id = c.id AND b.status IN ('completed', 'checked_in'))
+   + (SELECT COUNT(*) FROM evt_registrations er JOIN evt_events ev ON ev.id = er.event_id
+       WHERE er.customer_id = c.id AND (er.checked_in_at IS NOT NULL OR (er.status = 'confirmed' AND ev.end_time < NOW()))))::int AS visits_count,
   COALESCE((SELECT array_agg(p.channel ORDER BY p.channel) FROM mkt_communication_preferences p
     WHERE p.customer_id = c.id AND p.category = 'marketing' AND p.opted_in), '{}') AS marketing_consent`;
 
@@ -223,6 +272,7 @@ const SORT_COLUMNS: Record<string, string> = {
   reference_number: 'c.reference_number', created_at: 'c.created_at', lifecycle_stage: 'c.lifecycle_stage',
   source: 'c.source', last_activity_at: 'c.last_activity_at', last_visit_at: 'c.last_visit_at',
   last_login_at: 'lu.last_login_at', owner_name: 'owner_name',
+  next_booking_at: 'next_booking_at', last_contacted_at: 'last_contacted_at', visits_count: 'visits_count',
 };
 
 export async function getCustomers(businessId: string, filters: CustomerFilters) {
@@ -392,14 +442,23 @@ export async function updateCustomer(id: string, businessId: string, updates: Re
   const customer = await getCustomerById(id, businessId);
   if (!customer) return null;
 
-  const allowedFields = ['email', 'first_name', 'last_name', 'phone', 'date_of_birth', 'gender', 'preferred_language', 'country', 'avatar_url', 'status', 'lifecycle_stage', 'owner_user_id', 'source_detail'];
+  const allowedFields = ['email', 'first_name', 'last_name', 'phone', 'date_of_birth', 'gender', 'preferred_language', 'country', 'avatar_url', 'status', 'lifecycle_stage', 'owner_user_id', 'source_detail',
+    'address_line', 'city', 'postal_code', 'region', 'home_location_id'];
   const fields: string[] = [];
   const values: any[] = [];
   let idx = 1;
 
   // An email or phone cleared on screen arrives as '': store that as "none".
-  for (const key of ['email', 'phone', 'owner_user_id']) {
+  for (const key of ['email', 'phone', 'owner_user_id', 'home_location_id', 'address_line', 'city', 'postal_code', 'region']) {
     if (updates[key] === '') updates[key] = null;
+  }
+  // The home location is one of the business's own active locations.
+  if (updates.home_location_id) {
+    const { rows: loc } = await adminPool.query(
+      `SELECT id FROM sys_locations WHERE id = $1 AND business_id = $2 AND status = 'active'`,
+      [updates.home_location_id, businessId],
+    );
+    if (!loc[0]) throw Object.assign(new Error('The home location must be one of this business\'s active locations'), { code: 'INVALID_LOCATION' });
   }
   if (typeof updates.email === 'string') updates.email = updates.email.trim().toLowerCase();
 

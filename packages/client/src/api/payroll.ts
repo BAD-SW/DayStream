@@ -61,8 +61,8 @@ export async function finalizePayroll(periodId: string, businessId: string) {
   return res.data.data;
 }
 
-export async function getPayrollEntries(periodId: string) {
-  const res = await apiClient.get(`/v1/payroll/periods/${periodId}/entries`);
+export async function getPayrollEntries(periodId: string, businessId: string) {
+  const res = await apiClient.get(`/v1/payroll/periods/${periodId}/entries?business_id=${businessId}`);
   return res.data.data;
 }
 

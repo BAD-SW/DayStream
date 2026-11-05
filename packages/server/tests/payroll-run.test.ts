@@ -167,7 +167,7 @@ describe('Payroll Processing & Deductions', () => {
   describe('GET /payroll/periods/:id/entries', () => {
     it('returns payroll entries with staff names', async () => {
       const { statusCode, body } = await request(
-        'GET', `/api/v1/payroll/periods/${PERIOD_ID}/entries`,
+        'GET', `/api/v1/payroll/periods/${PERIOD_ID}/entries?business_id=${BUSINESS_ID}`,
         undefined, ownerToken,
       );
 
@@ -175,6 +175,18 @@ describe('Payroll Processing & Deductions', () => {
       expect(body.data.length).toBe(1);
       expect(body.data[0].first_name).toBe('PayRun');
       expect(body.data[0].breakdown).toBeDefined();
+    });
+
+    it('requires the business and does not list the period under another business', async () => {
+      const noBiz = await request('GET', `/api/v1/payroll/periods/${PERIOD_ID}/entries`, undefined, ownerToken);
+      expect(noBiz.statusCode).toBe(400);
+      const otherBiz = await adminPool.query(
+        `SELECT id FROM sys_businesses WHERE tenant_id = (SELECT tenant_id FROM sys_businesses WHERE id = $1) AND id <> $1 LIMIT 1`, [BUSINESS_ID],
+      );
+      if (otherBiz.rows[0]) {
+        const wrong = await request('GET', `/api/v1/payroll/periods/${PERIOD_ID}/entries?business_id=${otherBiz.rows[0].id}`, undefined, ownerToken);
+        expect(wrong.body.data ?? []).toEqual([]);
+      }
     });
   });
 

@@ -413,6 +413,11 @@ resourcesRouter.get('/:id/maintenance', requirePermission('resources:read'), asy
 
 resourcesRouter.post('/:id/maintenance', requirePermission('resources:*'), async (req: Request, res: Response) => {
   try {
+    // A window repeats every week (on its weekday, or every day when no weekday is given: D-81) or is one date.
+    const type = req.body.maintenance_type;
+    if (type !== 'recurring' && type !== 'one_time') { error(res, 'maintenance_type must be recurring or one_time', 'VALIDATION_ERROR', 400); return; }
+    if (type === 'one_time' && !req.body.specific_date) { error(res, 'A one-time maintenance window needs a date', 'VALIDATION_ERROR', 400); return; }
+    if (!req.body.start_time || !req.body.end_time || req.body.start_time >= req.body.end_time) { error(res, 'Give a start time before the end time', 'VALIDATION_ERROR', 400); return; }
     const maint = await maintenanceService.createMaintenance(req.params.id, {
       maintenanceType: req.body.maintenance_type, dayOfWeek: req.body.day_of_week,
       startTime: req.body.start_time, endTime: req.body.end_time,

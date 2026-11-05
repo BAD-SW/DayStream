@@ -5,6 +5,7 @@ import { AdminLayout } from './components/AdminLayout';
 import { Login } from './pages/Login';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
+import { PersonalDataDownload } from './pages/PersonalDataDownload';
 import { Profile } from './pages/Profile';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { Tenants } from './pages/Tenants';
@@ -71,9 +72,14 @@ import { ResourceCreate } from './pages/ResourceCreate';
 import { ResourceCalendar } from './pages/ResourceCalendar';
 import { Events } from './pages/Events';
 import { EventDetail } from './pages/EventDetail';
+import { CustomerEvents } from './pages/CustomerEvents';
+import { CustomerEventDetail } from './pages/CustomerEventDetail';
+import { useContextManager } from './context/ContextManager';
 import { EventCreate } from './pages/EventCreate';
 import { CheckIn } from './pages/CheckIn';
 import { Marketing } from './pages/Marketing';
+import { Inbox } from './pages/Inbox';
+import { CustomerMessages } from './pages/CustomerMessages';
 import { CampaignCreate } from './pages/CampaignCreate';
 import { CampaignDetail } from './pages/CampaignDetail';
 import { SequenceCreate } from './pages/SequenceCreate';
@@ -94,6 +100,11 @@ import { LocationDetail } from './pages/LocationDetail';
 import { LocationCreate } from './pages/LocationCreate';
 import { BookingWidget } from './pages/BookingWidget';
 
+/** One address, two screens: the customer's own view, or the staff screen. */
+function ForPersona({ customer, staff }: { customer: JSX.Element; staff: JSX.Element }) {
+  return useContextManager().persona === 'customer' ? customer : staff;
+}
+
 export function App() {
   return (
     <ErrorBoundary>
@@ -102,6 +113,7 @@ export function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/personal-data" element={<PersonalDataDownload />} />
 
         {/* Embeddable booking widget (spec 38) — standalone, no admin chrome, no auth gate */}
         <Route path="/booking-widget" element={<BookingWidget />} />
@@ -189,15 +201,18 @@ export function App() {
         <Route path="/resources/:id" element={<ProtectedRoute><ResourceDetail /></ProtectedRoute>} />
 
         {/* Events & Workshops */}
-        <Route path="/events" element={<ProtectedRoute><Events /></ProtectedRoute>} />
+        {/* A customer sees the organisation's events and their own registrations (THE-20). */}
+        <Route path="/events" element={<ProtectedRoute><ForPersona customer={<CustomerEvents />} staff={<Events />} /></ProtectedRoute>} />
         <Route path="/events/new" element={<ProtectedRoute><EventCreate /></ProtectedRoute>} />
-        <Route path="/events/:id" element={<ProtectedRoute><EventDetail /></ProtectedRoute>} />
+        <Route path="/events/:id" element={<ProtectedRoute><ForPersona customer={<CustomerEventDetail />} staff={<EventDetail />} /></ProtectedRoute>} />
 
         {/* Check-In */}
         <Route path="/check-in" element={<ProtectedRoute><CheckIn /></ProtectedRoute>} />
 
         {/* Marketing */}
         <Route path="/marketing" element={<ProtectedRoute><Marketing /></ProtectedRoute>} />
+        <Route path="/inbox" element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
+        <Route path="/messages" element={<ProtectedRoute><CustomerMessages /></ProtectedRoute>} />
         <Route path="/marketing/campaigns/new" element={<ProtectedRoute><CampaignCreate /></ProtectedRoute>} />
         <Route path="/marketing/campaigns/:id" element={<ProtectedRoute><CampaignDetail /></ProtectedRoute>} />
         <Route path="/marketing/sequences/new" element={<ProtectedRoute><SequenceCreate /></ProtectedRoute>} />

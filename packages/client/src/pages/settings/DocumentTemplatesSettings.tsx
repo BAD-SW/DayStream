@@ -133,7 +133,11 @@ const SAMPLE_DETAILS_TABLE = {
   currency: 'EUR',
 };
 
-export function DocumentTemplatesSettings() {
+/**
+ * Templates keep their own Save (David, 2026-11-02, decision 9). `onDirtyChange` tells the page
+ * whether an open template has unsaved changes, so leaving can ask first.
+ */
+export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void } = {}) {
   const businessId = useContextManager().activeContext.businessId || '';
 
   const [catalog, setCatalog] = useState<DocumentArtifactType[]>([]);
@@ -145,6 +149,11 @@ export function DocumentTemplatesSettings() {
   // Editor state: which template is open (or 'new'), the working form, saving flag.
   const [editingId, setEditingId] = useState<string | 'new' | null>(null);
   const [form, setForm] = useState<EditForm>(EMPTY_FORM);
+  // The form as it was opened, to tell whether it has been changed.
+  const [openedForm, setOpenedForm] = useState<EditForm>(EMPTY_FORM);
+  const dirty = editingId !== null && JSON.stringify(form) !== JSON.stringify(openedForm);
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   const [saving, setSaving] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
@@ -186,11 +195,13 @@ export function DocumentTemplatesSettings() {
 
   const openNew = () => {
     setForm({ ...EMPTY_FORM, name: 'New Template' });
+    setOpenedForm({ ...EMPTY_FORM, name: 'New Template' });
     setEditingId('new');
   };
 
   const openEdit = (t: DocumentBrandingTemplate) => {
     setForm(toForm(t));
+    setOpenedForm(toForm(t));
     setEditingId(t.id);
   };
 
@@ -199,12 +210,14 @@ export function DocumentTemplatesSettings() {
   // fresh variant without re-entering everything. Saving creates a new template.
   const openDuplicate = (t: DocumentBrandingTemplate) => {
     setForm({ ...toForm(t), name: `${t.name} (Copy)` });
+    setOpenedForm({ ...toForm(t), name: `${t.name} (Copy)` });
     setEditingId('new');
   };
 
   const closeEditor = () => {
     setEditingId(null);
     setForm(EMPTY_FORM);
+    setOpenedForm(EMPTY_FORM);
   };
 
   const handleSave = async () => {

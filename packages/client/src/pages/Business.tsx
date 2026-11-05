@@ -8,6 +8,12 @@ import { DataMigration } from './settings/DataMigration';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { Table } from '../design-system/components/data/Table';
+import { TabBar } from '../design-system/components/navigation/TabBar';
+import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
+import { DraftSectionsProvider, DraftTab, useDraftSections, useDraftList, fieldMark, draftBox, UnsavedTag, RowTag } from '../components/unsaved/DraftSections';
+import type { DraftRow } from '../components/unsaved/DraftSections';
+import { LeaveGuard } from '../components/unsaved/LeaveGuard';
+import { SaveChanges } from '../components/unsaved/SaveChanges';
 import { apiClient } from '../api/client';
 import * as servicesApi from '../api/services';
 import { useContextManager } from '../context/ContextManager';
@@ -15,43 +21,66 @@ import { useContextManager } from '../context/ContextManager';
 const VALID_TABS = ['staff', 'resources', 'locations', 'categories', 'taxes', 'templates', 'migration'] as const;
 type Tab = typeof VALID_TABS[number];
 
+// One Save for Business Setup (David, 2026-11-02, as in Settings): categories and tax rates wait
+// for Save changes. Staff, resources and locations are lists that open their own pages. Templates
+// and Data Migration keep their own buttons, after a separator (decision 9).
 export function Business() {
+  return (
+    <DraftSectionsProvider>
+      <BusinessPage />
+    </DraftSectionsProvider>
+  );
+}
+
+function BusinessPage() {
   const [searchParams] = useSearchParams();
   const migrationBusinessId = useContextManager().activeContext.businessId || '';
   const tabParam = searchParams.get('tab') as Tab | null;
   const [activeTab, setActiveTab] = useState<Tab>(tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'staff');
+  const { dirtySections } = useDraftSections();
+  // An open template with changes (Templates keep their own Save): leaving asks first too.
+  const [templateDirty, setTemplateDirty] = useState(false);
+  const labels: Record<Tab, string> = { staff: 'Staff', resources: 'Resources', locations: 'Locations', categories: 'Categories', taxes: 'Taxes', templates: 'Templates', migration: 'Data Migration' };
 
   return (
     <div style={styles.page}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>Business Setup</h1>
+      <LeaveGuard when={dirtySections.length > 0 || templateDirty} />
+      <StickyPageTop>
+        <div style={styles.header}>
+          <h1 style={styles.title}>Business Setup</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}><SaveChanges /></div>
+        </div>
+        <TabBar aria-label="Business Setup sections" active={activeTab} onChange={setActiveTab}
+          tabs={VALID_TABS.map((key) => ({ key, label: labels[key], changed: key === 'templates' ? templateDirty : dirtySections.some((s) => s.tab === key),
+            // Templates and Data Migration keep their own buttons, set apart (decision 9, as Processes and Appearance in Settings).
+            separatorBefore: key === 'templates' }))} />
+      </StickyPageTop>
+      <div style={{ marginTop: 'var(--space-md)' }}>
+        {activeTab === 'staff' && <Staff />}
+        {activeTab === 'resources' && <Resources />}
+        {activeTab === 'locations' && <Locations />}
+        {/* Tabs with drafts stay mounted, so their edits survive switching tabs. */}
+        <div hidden={activeTab !== 'categories'}><DraftTab tab="categories"><CategoriesTab /></DraftTab></div>
+        <div hidden={activeTab !== 'taxes'}><DraftTab tab="taxes"><TaxesTab /></DraftTab></div>
+        {activeTab === 'templates' && <DocumentTemplatesSettings onDirtyChange={setTemplateDirty} />}
+        {activeTab === 'migration' && <DataMigration businessId={migrationBusinessId} />}
       </div>
-      <div style={styles.tabBar}>
-        {(['staff', 'resources', 'locations', 'categories', 'taxes', 'templates', 'migration'] as const).map((tab) => {
-          const isActive = activeTab === tab;
-          const labels: Record<string, string> = { staff: 'Staff', resources: 'Resources', locations: 'Locations', categories: 'Categories', taxes: 'Taxes', templates: 'Templates', migration: 'Data Migration' };
-          return (
-            <button key={tab} onClick={() => setActiveTab(tab)}
-              style={{
-                background: 'none', border: 'none', outline: 'none',
-                borderBottom: isActive ? '3px solid var(--color-primary)' : '3px solid transparent',
-                padding: '10px 20px', fontSize: 'var(--font-size-base)',
-                fontWeight: isActive ? 600 : 500,
-                color: isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                cursor: 'pointer', fontFamily: 'var(--font-family)', marginBottom: '-1px',
-              }}>
-              {labels[tab]}
-            </button>
-          );
-        })}
-      </div>
-      {activeTab === 'staff' && <Staff />}
-      {activeTab === 'resources' && <Resources />}
-      {activeTab === 'locations' && <Locations />}
-      {activeTab === 'categories' && <CategoriesTab />}
-      {activeTab === 'taxes' && <TaxesTab />}
-      {activeTab === 'templates' && <DocumentTemplatesSettings />}
-      {activeTab === 'migration' && <DataMigration businessId={migrationBusinessId} />}
+    </div>
+  );
+}
+
+/** A draft row as the table gets it: the item's fields, for sorting and filters, and the row itself. */
+type TableRow = Record<string, any> & { __row: DraftRow<any> };
+const tableRows = (rows: DraftRow<any>[]): TableRow[] => rows.map((r) => ({ ...r.item, __row: r }));
+
+/** Name cell of a row kept as a draft: its labels, crossed out when it goes on save. */
+function DraftName<T>({ row, edited, children }: { row: DraftRow<T>; edited?: boolean; children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', opacity: row.deleted ? 0.6 : 1 }}>
+      <span style={{ textDecoration: row.deleted ? 'line-through' : 'none', display: 'inline-flex', gap: '8px', alignItems: 'center' }}>{children}</span>
+      {row.isNew && <RowTag>New</RowTag>}
+      {edited && <RowTag>Changed</RowTag>}
+      {row.deleted && <RowTag>Deleted when you save</RowTag>}
     </div>
   );
 }
@@ -71,134 +100,115 @@ function CategoriesTab() {
   );
 }
 
-// --- Product Categories ---
+// --- Product Categories (saved with the page's Save changes) ---
 
 function ProductCategoriesSection({ businessId }: { businessId: string }) {
-  const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [addName, setAddName] = useState('');
-  const [adding, setAdding] = useState(false);
+  const list = useDraftList<any>('product-categories', 'Product & service categories', {
+    create: (c) => servicesApi.createCategory({ business_id: businessId, name: c.name }),
+    remove: (c) => servicesApi.deleteCategory(c.id, businessId).then(() => undefined),
+  });
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
-    servicesApi.getCategories(businessId).then(setCategories).catch(() => []).finally(() => setLoading(false));
-  }, [businessId]);
+    servicesApi.getCategories(businessId).then(list.load).catch(() => list.load([])).finally(() => setLoading(false));
+  }, [businessId, list.load]);
 
-  const handleAdd = async () => {
+  const handleAdd = () => {
     if (!addName.trim()) return;
-    setAdding(true);
-    try {
-      const created = await servicesApi.createCategory({ business_id: businessId, name: addName.trim() });
-      setCategories([...categories, created]);
-      setAddName('');
-      setShowAdd(false);
-    } catch { alert('Failed to create category'); }
-    finally { setAdding(false); }
-  };
-
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete "${name}" category?`)) return;
-    try {
-      await servicesApi.deleteCategory(id, businessId);
-      setCategories(categories.filter((c) => c.id !== id));
-    } catch { alert('Failed to delete category'); }
+    list.add({ name: addName.trim() });
+    setAddName('');
+    setShowAdd(false);
   };
 
   const columns = [
-    { key: 'name', header: 'Name', sortable: true },
+    { key: 'name', header: 'Name', sortable: true, filterValue: (t: any) => t.name,
+      render: (_: any, { __row: r }: TableRow) => <DraftName row={r}>{r.item.name}</DraftName> },
     {
-      key: 'id', header: '',
-      render: (_: any, row: any) => (
+      key: 'actions', header: '', filter: false as const,
+      render: (_: any, { __row: r }: TableRow) => (
         <div style={{ textAlign: 'right' }}>
-          <button onClick={(e) => { e.stopPropagation(); handleDelete(row.id, row.name); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>
+          {r.deleted ? <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); list.undo(r.key); }}>Undo</Button>
+            : <button onClick={(e) => { e.stopPropagation(); list.remove(r.key); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>}
         </div>
       ),
     },
   ];
 
   return (
-    <div>
+    <div style={draftBox(list.dirty)}>
       <div style={catStyles.toolbar}>
-        <h3 style={catStyles.sectionTitle}>Product & Service Categories</h3>
+        <h3 style={catStyles.sectionTitle}>Product & Service Categories<UnsavedTag dirty={list.dirty} /></h3>
         <div style={{ flex: 1 }} />
         {showAdd ? (
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <input style={catStyles.input} value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="Category name" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }} />
-            <Button size="sm" onClick={handleAdd} loading={adding}>Create</Button>
+            <Button size="sm" onClick={handleAdd}>Add</Button>
             <Button size="sm" variant="secondary" onClick={() => { setShowAdd(false); setAddName(''); }}>Cancel</Button>
           </div>
         ) : (
           <Button size="sm" variant="secondary" onClick={() => setShowAdd(true)}>Add Category</Button>
         )}
       </div>
-      <Table columns={columns} data={categories} loading={loading} emptyMessage="No product/service categories defined" clientSort />
+      <Table columns={columns} data={tableRows(list.rows)} rowId={(r) => r.__row.key} loading={loading} emptyMessage="No product/service categories defined" clientSort />
     </div>
   );
 }
 
-// --- Note Categories ---
+// --- Note Categories (saved with the page's Save changes) ---
 
 function NoteCategoriesSection({ businessId }: { businessId: string }) {
-  const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ name: '', is_sensitive: false, customer_visible: false });
-  const [adding, setAdding] = useState(false);
+  const list = useDraftList<any>('note-categories', 'Customer note categories', {
+    create: (c) => apiClient.post(`/v1/customers/note-categories?business_id=${businessId}`, { name: c.name, is_sensitive: c.is_sensitive, customer_visible: c.customer_visible }).then((res) => res.data.data),
+    remove: (c) => apiClient.delete(`/v1/customers/note-categories/${c.id}?business_id=${businessId}`).then(() => undefined),
+  });
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
     apiClient.get(`/v1/customers/note-categories/list?business_id=${businessId}`)
-      .then((res) => setCategories(res.data.data || []))
-      .catch(() => setCategories([]))
+      .then((res) => list.load(res.data.data || []))
+      .catch(() => list.load([]))
       .finally(() => setLoading(false));
-  }, [businessId]);
+  }, [businessId, list.load]);
 
-  const handleAdd = async () => {
+  const handleAdd = () => {
     if (!addForm.name.trim()) return;
-    setAdding(true);
-    try {
-      const res = await apiClient.post(`/v1/customers/note-categories?business_id=${businessId}`, addForm);
-      setCategories([...categories, res.data.data]);
-      setAddForm({ name: '', is_sensitive: false, customer_visible: false });
-      setShowAdd(false);
-    } catch { alert('Failed to create category'); }
-    finally { setAdding(false); }
-  };
-
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete "${name}" note category?`)) return;
-    try {
-      await apiClient.delete(`/v1/customers/note-categories/${id}?business_id=${businessId}`);
-      setCategories(categories.filter((c) => c.id !== id));
-    } catch { alert('Failed to delete category'); }
+    list.add({ ...addForm, name: addForm.name.trim() });
+    setAddForm({ name: '', is_sensitive: false, customer_visible: false });
+    setShowAdd(false);
   };
 
   const columns = [
     {
-      key: 'name', header: 'Name', sortable: true,
-      render: (_: any, row: any) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span>{row.name}</span>
-          {row.is_sensitive && <Badge variant="error">Sensitive</Badge>}
-          {row.customer_visible && <Badge variant="info">Customer Visible</Badge>}
-        </div>
+      key: 'name', header: 'Name', sortable: true, filterValue: (t: any) => t.name,
+      render: (_: any, { __row: r }: TableRow) => (
+        <DraftName row={r}>
+          <span>{r.item.name}</span>
+          {r.item.is_sensitive && <Badge variant="error">Sensitive</Badge>}
+          {r.item.customer_visible && <Badge variant="info">Customer Visible</Badge>}
+        </DraftName>
       ),
     },
     {
-      key: 'id', header: '',
-      render: (_: any, row: any) => (
+      key: 'actions', header: '', filter: false as const,
+      render: (_: any, { __row: r }: TableRow) => (
         <div style={{ textAlign: 'right' }}>
-          <button onClick={(e) => { e.stopPropagation(); handleDelete(row.id, row.name); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>
+          {r.deleted ? <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); list.undo(r.key); }}>Undo</Button>
+            : <button onClick={(e) => { e.stopPropagation(); list.remove(r.key); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>}
         </div>
       ),
     },
   ];
 
   return (
-    <div>
+    <div style={draftBox(list.dirty)}>
       <div style={catStyles.toolbar}>
-        <h3 style={catStyles.sectionTitle}>Customer Note Categories</h3>
+        <h3 style={catStyles.sectionTitle}>Customer Note Categories<UnsavedTag dirty={list.dirty} /></h3>
         <div style={{ flex: 1 }} />
         {showAdd ? (
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -209,83 +219,65 @@ function NoteCategoriesSection({ businessId }: { businessId: string }) {
             <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', cursor: 'pointer' }}>
               <input type="checkbox" checked={addForm.customer_visible} onChange={(e) => setAddForm({ ...addForm, customer_visible: e.target.checked })} style={{ width: '14px', height: '14px' }} /> Customer Visible
             </label>
-            <Button size="sm" onClick={handleAdd} loading={adding}>Create</Button>
+            <Button size="sm" onClick={handleAdd}>Add</Button>
             <Button size="sm" variant="secondary" onClick={() => { setShowAdd(false); setAddForm({ name: '', is_sensitive: false, customer_visible: false }); }}>Cancel</Button>
           </div>
         ) : (
           <Button size="sm" variant="secondary" onClick={() => setShowAdd(true)}>Add Category</Button>
         )}
       </div>
-      <Table columns={columns} data={categories} loading={loading} emptyMessage="No note categories defined" clientSort />
+      <Table columns={columns} data={tableRows(list.rows)} rowId={(r) => r.__row.key} loading={loading} emptyMessage="No note categories defined" clientSort />
     </div>
   );
 }
 
-// --- Taxes Tab ---
+// --- Taxes Tab (saved with the page's Save changes) ---
+
+const taxData = (t: any) => ({ name: t.name, rate: t.rate, is_default: !!t.is_default });
 
 function TaxesTab() {
   const businessId = localStorage.getItem('business_id') || '';
-  const [taxes, setTaxes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', rate: '', is_default: false });
-  const [saving, setSaving] = useState(false);
+  const list = useDraftList<any>('tax-rates', 'Tax rates', {
+    create: (t) => servicesApi.createTaxCategory(businessId, taxData(t)),
+    update: (t) => servicesApi.updateTaxCategory(t.id, businessId, taxData(t)),
+    remove: (t) => servicesApi.deleteTaxCategory(t.id, businessId).then(() => undefined),
+  });
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
-    servicesApi.getTaxCategories(businessId).then(setTaxes).catch(() => []).finally(() => setLoading(false));
-  }, [businessId]);
-
-  const refresh = () => {
-    servicesApi.getTaxCategories(businessId).then(setTaxes).catch(() => {});
-  };
+    servicesApi.getTaxCategories(businessId).then(list.load).catch(() => list.load([])).finally(() => setLoading(false));
+  }, [businessId, list.load]);
 
   const openAdd = () => {
-    setEditingId(null);
+    setEditingKey(null);
     setForm({ name: '', rate: '0', is_default: false });
     setShowAdd(true);
   };
 
-  const openEdit = (tax: any) => {
-    setEditingId(tax.id);
+  const openEdit = (key: string, tax: any) => {
+    setEditingKey(key);
     setForm({ name: tax.name, rate: String(tax.rate / 100), is_default: tax.is_default });
     setShowAdd(true);
   };
 
-  const handleSave = async () => {
+  const handleDone = () => {
     if (!form.name.trim() || !form.rate) return;
-    setSaving(true);
-    try {
-      const rateInBasisPoints = Math.round(parseFloat(form.rate) * 100);
-      if (editingId) {
-        await servicesApi.updateTaxCategory(editingId, businessId, { name: form.name.trim(), rate: rateInBasisPoints, is_default: form.is_default });
-      } else {
-        await servicesApi.createTaxCategory(businessId, { name: form.name.trim(), rate: rateInBasisPoints, is_default: form.is_default });
-      }
-      setShowAdd(false);
-      refresh();
-    } catch (err: any) {
-      alert(err?.response?.data?.error || 'Failed to save tax rate');
-    } finally { setSaving(false); }
-  };
-
-  const handleDelete = async (tax: any) => {
-    if (!confirm(`Delete "${tax.name}" tax rate?`)) return;
-    try {
-      await servicesApi.deleteTaxCategory(tax.id, businessId);
-      refresh();
-    } catch (err: any) {
-      alert(err?.response?.data?.error || 'Failed to delete tax rate');
-    }
+    const data = { name: form.name.trim(), rate: Math.round(parseFloat(form.rate) * 100), is_default: form.is_default };
+    if (editingKey) list.edit(editingKey, data);
+    else list.add(data);
+    setShowAdd(false);
   };
 
   if (loading) return <div style={{ padding: 'var(--space-lg)', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading...</div>;
 
   return (
-    <div>
+    <div style={draftBox(list.dirty)}>
       <div style={catStyles.toolbar}>
-        <h3 style={catStyles.sectionTitle}>Tax Rates</h3>
+        <h3 style={catStyles.sectionTitle}>Tax Rates<UnsavedTag dirty={list.dirty} /></h3>
         <div style={{ flex: 1 }} />
         <Button size="sm" variant="secondary" onClick={openAdd}>Add Tax Rate</Button>
       </div>
@@ -305,34 +297,41 @@ function TaxesTab() {
               <input type="checkbox" checked={form.is_default} onChange={(e) => setForm({ ...form, is_default: e.target.checked })} style={{ width: '14px', height: '14px' }} /> Default
             </label>
           </div>
+          <p style={{ margin: 'var(--space-sm) 0 0', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>Saved with the page's Save changes.</p>
           <div style={{ display: 'flex', gap: '8px', marginTop: 'var(--space-md)' }}>
-            <Button size="sm" onClick={handleSave} loading={saving}>{editingId ? 'Save' : 'Create'}</Button>
+            <Button size="sm" onClick={handleDone}>{editingKey ? 'Done' : 'Add'}</Button>
             <Button size="sm" variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
           </div>
         </div>
       )}
 
-      {taxes.length === 0 && !showAdd && (
+      {list.rows.length === 0 && !showAdd && (
         <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' }}>No tax rates defined. Add tax rates that can be assigned to services and products.</p>
       )}
 
-      {taxes.length > 0 && (
+      {list.rows.length > 0 && (
         <Table
           columns={[
-            { key: 'name', header: 'Name', sortable: true },
-            { key: 'rate', header: 'Rate', sortable: true, render: (val: number) => `${(val / 100).toFixed(2)}%` },
-            { key: 'is_default', header: 'Default', render: (val: boolean) => val ? <Badge variant="info">Default</Badge> : null },
+            { key: 'name', header: 'Name', sortable: true, filterValue: (t: any) => t.name,
+              render: (_: any, { __row: r }: TableRow) => <DraftName row={r} edited={!r.isNew && !r.deleted && list.changed(r, taxData)}>{r.item.name}</DraftName> },
+            { key: 'rate', header: 'Rate', sortable: true, filter: 'number' as const, filterUnit: '%', filterScale: 100, filterValue: (t: any) => t.rate, filterLabel: (v: string) => `${(Number(v) / 100).toFixed(2)}%`,
+              render: (_: any, { __row: r }: TableRow) => <span style={fieldMark(!r.isNew && list.changed(r, (t) => t.rate))}>{(r.item.rate / 100).toFixed(2)}%</span> },
+            { key: 'is_default', header: 'Default', filterValue: (t: any) => (t.is_default ? 'Default' : ''),
+              render: (_: any, { __row: r }: TableRow) => r.item.is_default ? <Badge variant="info">Default</Badge> : null },
             {
-              key: 'id', header: '',
-              render: (_: any, row: any) => (
+              key: 'actions', header: '', filter: false as const,
+              render: (_: any, { __row: r }: TableRow) => (
                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                  <button onClick={(e) => { e.stopPropagation(); openEdit(row); }} style={catStyles.deleteBtn} title="Edit">✏️</button>
-                  <button onClick={(e) => { e.stopPropagation(); handleDelete(row); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>
+                  {r.deleted ? <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); list.undo(r.key); }}>Undo</Button> : <>
+                    <button onClick={(e) => { e.stopPropagation(); openEdit(r.key, r.item); }} style={catStyles.deleteBtn} title="Edit">✏️</button>
+                    <button onClick={(e) => { e.stopPropagation(); list.remove(r.key); }} style={catStyles.deleteBtn} title="Delete">🗑️</button>
+                  </>}
                 </div>
               ),
             },
           ]}
-          data={taxes}
+          data={tableRows(list.rows)}
+          rowId={(r) => r.__row.key}
           loading={false}
           emptyMessage="No tax rates defined"
           clientSort

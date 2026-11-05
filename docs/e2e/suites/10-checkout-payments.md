@@ -35,7 +35,7 @@ Method classes to keep in mind: **processed** (card, bank draw, wallets: charged
 `P0` `guarded` `needs-config` · Spec 10 C3; task 4.5 · As: manager · Status: Verified
 1. Customer detail → Overview → payment methods: add a test card; add a second; set default; remove one.
 **Expect:** as BILL-03, at customer level: hosted fields, masked display, exactly one default.
-**Cross-check:** the method was vaulted on the **business's** processor connection; the customer sees the same masked methods in their portal if exposed there; another business's staff cannot list them.
+**Cross-check:** the method was vaulted on the **business's** processor connection; the customer sees the same masked methods in their portal if exposed there; another business's staff cannot list them. Adding, making default and removing are in the audit log (`payment_method.added`, `.set_default`, `.removed`) with brand and last 4 only, never the token (Bill `13618b7`).
 
 ### PAY-06 · Pay with a stored card
 `P0` `guarded` `needs-config` · Spec 10 C1 · Status: Verified
@@ -48,11 +48,13 @@ Method classes to keep in mind: **processed** (card, bank draw, wallets: charged
 1. Customer detail → **Record Payment**: 25.00 cash, with a note. Try 0.00 and a negative amount.
 **Expect:** the payment is recorded and appears in the Billing tab; invalid amounts are refused. Reception (Staff, `bookings:update`) is allowed to take payments.
 
-### PAY-08 · Refunds: full, partial, limits, permissions
-`P0` `guarded` · Spec 10 C4 · As: manager, reception · Status: Verified
-1. As reception, attempt a refund. 2. As manager: partial refund without a reason; partial with a reason; refund of more than the remainder; full refund of another payment (amount left blank).
-**Expect:** reception is refused (403); a reason is required; over-refund is refused; processed charges are returned through the processor, manual ones are recorded only.
-**Cross-check:** refund rows link to the original payment; the journal has reversals; a credit-note notification is queued; the audit log names the manager. JNY-07 covers the report side.
+### PAY-08 · Refunds: from the order, line by line
+`P0` `guarded` · Spec 10 C4 (rewritten 2026-10-20 for Bill's `764002c`) · As: owner, Staff · Status: Verified
+1. Try to refund a sale from its payment (Billing tab, transaction row) instead of from its order.
+2. From the order / receipt (**Refund**): as Staff; without a reason; the service line; one unit of a product line; the remaining units; one more unit.
+3. Sell one product by card and refund it from its order.
+**Expect:** a sale's payment cannot be refunded directly (`REFUND_VIA_ORDER`); Staff is refused (403); a reason is required; a service line is not refundable ("issue a discount instead"; memberships and packs are cancelled, gift cards are never refunded); the product units are refunded and a further unit is refused (`INVALID_QUANTITY`); the order becomes **partially refunded** / **refunded**; the card refund goes through the processor.
+**Cross-check:** refund rows link to the original payment and add up to the refunded lines; the journal takes cash out (1100 credit); the audit log has the refunds. REP-04 checks the dashboard and the Payments Received report net them.
 
 ### PAY-09 · Invoices: enable, issue, number, PDF
 `P0` `regression` · Spec 10 C5 · As: owner, manager · Status: Verified
@@ -99,7 +101,8 @@ Method classes to keep in mind: **processed** (card, bank draw, wallets: charged
 1. Give an E2E enrolment a declining method; make it due; **Run Now**. 2. Replace the method with a good card and trigger the retry (manual retry, or Run Now on the retry date). 3. On a second enrolment, let every retry fail.
 **Expect:** step 1 records a failed transaction and opens a retry without advancing the period (the membership stays active while retries are open; there is no "past due" status); step 2 recovers: charge settles, period advances; step 3 ends with the membership expired once the schedule (default days 1, 3, 7) is exhausted. With the mock processor, which never declines, the failure is produced by removing the saved card.
 **Cross-check:** while a dunning attempt is open, the renewal run does not charge the enrolment again; notices escalate (friendly, warning, final) in the notification queue; all events are in the audit log.
-**Note:** if retry dates cannot be reached without waiting days, verify step 1 and the manual retry, and mark the expiry path `Blocked` with that reason.
+4. A paid membership whose customer has no card at all: Run Now. 5. Settings → Scheduled processes → billing process, run by hand with an end date past each retry date until the retries are used up. 6. Memberships report for today.
+**Expect (Bill `ec3e319`):** step 4 is a failed renewal, not a skip: the membership shows "Past due" (status `renewing`), a retry opens with the reason "No payment method on file", and the customer's Timeline says the renewal failed; step 5: each run works through the retries due by its end date (the next retry is scheduled after that date); when they are used up the membership is expired, billing stops, and the Timeline says so; the customer card shows it as Expired; step 6 counts it under Expired. A free membership still renews without a card.
 
 ### PAY-17 · Transactions ledger and payments page reconcile
 `P0` `regression` · Spec 10 C1 · As: owner · Status: Verified
@@ -112,3 +115,50 @@ Method classes to keep in mind: **processed** (card, bank draw, wallets: charged
 1. As Staff: issue an invoice, void an invoice, create a gift card, create a voucher, change accepted methods, change the billing schedule.
 2. As customer: list transactions, list gift cards, charge another customer's method.
 **Expect:** every call refused (403), except that a customer listing payments or invoices gets only their own. Staff can still take a payment and read invoices (`bookings:update` / `bookings:read`).
+
+### PAY-19 · Credit note (Adjustment, credit side)
+`P0` `guarded` · Spec 10 C4/C5 (Bill `24e89e1`) · As: owner, Staff, another organisation · Status: Verified
+1. Customer → Billing → **New Adjustment** → Credit: as Staff; without a reason; with no lines; then as owner, one 20.00 line with 4.20 tax.
+2. Open its PDF; list the customer's credit notes; open it as another organisation's owner.
+**Expect:** Staff refused (403); reason and at least one line required (400); the credit note gets a number and the customer's account credit rises by 24.20; the PDF opens; another organisation is refused.
+**Cross-check:** journal 4100 debit 20.00, 2300 debit 4.20, 2500 credit 24.20 (posted at issue).
+
+### PAY-20 · Debit note (Adjustment, debit side)
+`P0` `guarded` · Spec 10 (Bill `24e89e1`) · As: owner, Staff · Status: Verified
+1. **New Adjustment** → Debit: 10.00. 2. Open its PDF. 3. As Staff, try to issue one. 4. Open the customer's transaction history.
+**Expect:** account credit falls by 10.00 (it may go negative); the PDF opens; Staff refused; both notes are in the transaction history.
+**Cross-check:** journal 2500 debit 10.00, 4100 credit 10.00 (mirror of the credit note).
+
+### PAY-21 · Gift card sold through checkout
+`P0` `guarded` · Spec 10 C7 (Bill `9fbd978`, `147` tax setting) · As: owner, Staff · Status: Verified
+1. Settings: read the gift-card tax setting; as Staff, try to change it. 2. Checkout: add a 50.00 gift card for a recipient (`.test` email), pay cash. 3. Look the card up by its code. 4. Run the Gift Cards report.
+**Expect:** gift-card tax is off by default and only the owner may change it; no tax on the line; one card issued with a code and 50.00 balance, shown after payment; the lookup shows 50.00 active; the report lists the code.
+**Cross-check:** the order's journal books the 50.00 as a liability (2600), not revenue.
+
+### PAY-22 · Receipts: PDF and email
+`P1` `regression` · Spec 10 Phase 6 (Bill `ceb942d`, `2605119`) · As: owner, Staff, another organisation · Status: Verified
+1. Open the receipt PDF from the order and from the payment; load its fields. 2. Email the receipt. 3. Open it as another organisation.
+**Expect:** both PDFs open and use the business's receipt template; the email is queued to the customer's (`.test`) address; another organisation is refused (403).
+
+### PAY-23 · Document templates (branding)
+`P1` `regression` · Spec 10 Phase 6 task 6.3a (Bill `1de7993`, `b81e763`) · As: owner, Staff, another organisation · Status: Verified
+1. Business Setup → **Templates**: the document types list. 2. Create a Payment Receipt template (colour, footer text, footer link); as Staff, try to create one; try a `javascript:` footer link. 3. Edit its footer; list templates; edit it as another organisation. 4. Open a receipt PDF. 5. Delete the template.
+**Expect:** the types include Appointment, Cancellation, New Customer, Adjustment, Payment Receipt, Refund Confirmation, Failed Payment, Renewal Reminder and Gift Card (others marked Coming Soon); the owner can create, edit and delete; **Duplicate** opens the editor with a copy (Bill `566320f`); Staff refused; a non-web link refused (400); another organisation refused; receipts still render. A branded email is sent from the template's reply-to address with the business's name (Bill `05a494c`; checked up to the queue only).
+
+### PAY-24 · Membership renewal retries and reminder
+`P1` `regression` · Spec 10 (Bill `3526e98`, `3d69af7`) · As: owner, Staff · Status: Verified
+1. Settings → Membership Renewals: read the retry settings. 2. Save count 0, then interval 200 days, then count 4 / every 2 days / reminder 5 days before. 3. As Staff, read them.
+**Expect:** out-of-range values refused (count 1–10, interval 1–90 days); the valid values are saved; Staff refused.
+**Covered by PAY-16 since Bill `ec3e319`:** a renewal that fails and is retried on the saved schedule (the manual billing run's end date now drives the retries). **Not yet scripted:** the reminder email lead time.
+
+### PAY-25 · Gift-card expiry
+`P1` `regression` · Spec 10 C7 (Bill `143ef0a`, migration 156) · As: owner, Staff · Status: Verified
+1. Settings: read the gift-card expiry; as Staff try to change it; try -1. 2. Set 365 days. 3. Sell three gift cards at checkout: one with the default date, one with another date, one with no expiry. 4. Set it back to 0.
+**Expect:** 0 days (no expiry) by default; only the owner may change it; negative refused; the checkout line shows sale date + 365 days and the card gets it; a date set at the point of sale, or none, wins.
+**Watch:** the default date is worked out in UTC, so a sale between midnight and 01:00/02:00 Madrid time could get a date one day early (not seen in this run).
+
+### PAY-26 · Paying again with another card after a failed card payment
+`P2` `regression` `needs-config` · Bill `143ef0a` · As: reception · Status: Draft
+**Pre:** the business on Stripe test mode.
+1. Checkout: pay an order with the Stripe test card that is declined. 2. Pay it again with a good test card. 3. Double-click Pay on the good card.
+**Expect:** the second card is charged (the retry is not refused as a repeat of the first request); a double click charges once.

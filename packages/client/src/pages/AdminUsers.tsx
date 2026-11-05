@@ -70,7 +70,6 @@ export function AdminUsers() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterPersona, setFilterPersona] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
   // Create modal
@@ -91,16 +90,15 @@ export function AdminUsers() {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
-      if (filterPersona) params.set('persona', filterPersona);
-      const res = await apiClient.get(`/v1/admin/users?${params}`);
+      // Every user: the Level column's filter replaces the menu above the table (column filters beside the sort icon, David 2026-11-02).
+      const res = await apiClient.get('/v1/admin/users');
       setUsers(res.data.data);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to load users');
     } finally {
       setLoading(false);
     }
-  }, [filterPersona]);
+  }, []);
 
   const fetchTenants = useCallback(async () => {
     try {
@@ -267,16 +265,6 @@ export function AdminUsers() {
 
       <div style={styles.toolbar}>
         <SearchInput value={search} onChange={setSearch} placeholder="Search users..." />
-        <select
-          style={styles.select}
-          value={filterPersona}
-          onChange={(e) => setFilterPersona(e.target.value)}
-          aria-label="Filter by level"
-        >
-          <option value="">All Levels</option>
-          <option value="system">System</option>
-          <option value="tenant">Tenant</option>
-        </select>
       </div>
 
       {error && <div style={styles.error}>{error}</div>}

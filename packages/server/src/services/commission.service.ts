@@ -4,11 +4,18 @@ import { adminPool } from '../db/pool';
  * Order-based commission — the single source of truth shared by payroll (Posted)
  * and the Commissions report (Projected), so the two always agree.
  *
- * Commission is earned on COMPLETED-order line items credited to a staff member
- * (fin_orders.status = 'completed'). Basing it on completed orders means it is
- * tied to locked-in, collected revenue: an order that is never checked out, or
- * later voided/refunded, earns nothing — which closes the "fake completed
- * appointment" abuse vector that a booking-status basis allowed.
+ * Commission is earned on COMPLETED-order line items credited to a staff member,
+ * on the day of the sale. Basing it on completed orders means it is tied to
+ * locked-in, collected revenue: an order that is never checked out, or voided,
+ * earns nothing — which closes the "fake completed appointment" abuse vector that
+ * a booking-status basis allowed.
+ *
+ * Refunds (THE-21, a business setting `commission.refund_clawback`, default on):
+ * a sale keeps its commission on its own day even when it is refunded later. With
+ * the setting on, each refunded line takes the commission on the refunded part
+ * back on the day of the refund — at the rule and rate of the original sale — so
+ * it lands in the pay period of the refund and a finalized period never changes.
+ * With it off, a refund changes no commission.
  *
  * Two compensation rule types earn commission, both from the same order lines
  * and both applying to any eligible offer type (service, product, membership,
@@ -28,9 +35,11 @@ import { adminPool } from '../db/pool';
  */
 
 export interface CommissionLine {
+  /** 'Sale' on the day of the sale; 'Refund' (negative) on the day of a refund. */
+  entry: 'Sale' | 'Refund';
   order_id: string;
   order_number: string;
-  /** TIMESTAMPTZ from pg — a Date at runtime (or null). */
+  /** When the line counts: the sale's completion, or the refund. TIMESTAMPTZ from pg — a Date at runtime (or null). */
   completed_at: Date | string | null;
   customer_id: string | null;
   staff_id: string;
@@ -51,13 +60,33 @@ interface ComputeArgs {
   userId?: string;
 }
 
+/** Whether a refund takes the commission back at this business (default: yes). */
+export async function isRefundClawbackEnabled(businessId: string): Promise<boolean> {
+  const { rows } = await adminPool.query(
+    `SELECT value FROM sys_business_configurations WHERE business_id = $1 AND key = 'commission.refund_clawback'`,
+    [businessId],
+  );
+  return rows[0]?.value !== 'false';
+}
+
+export async function setRefundClawbackEnabled(businessId: string, enabled: boolean): Promise<boolean> {
+  await adminPool.query(
+    `INSERT INTO sys_business_configurations (business_id, key, value)
+     VALUES ($1, 'commission.refund_clawback', $2)
+     ON CONFLICT (business_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+    [businessId, String(enabled)],
+  );
+  return enabled;
+}
+
 /**
  * Return one row per (completed order line × the matching commission rule) that
  * earns commission for a credited staff member in the range. Ordered by order.
  */
 export async function computeOrderCommissionLines(args: ComputeArgs): Promise<CommissionLine[]> {
   const { businessId, start, end, userId } = args;
-  const params: any[] = [businessId, start, end];
+  const clawback = await isRefundClawbackEnabled(businessId);
+  const params: any[] = [businessId, start, end, clawback];
   let userClause = '';
   if (userId) { params.push(userId); userClause = `AND COALESCE(oi.credited_to, o.credited_to) = $${params.length}`; }
 
@@ -67,10 +96,13 @@ export async function computeOrderCommissionLines(args: ComputeArgs): Promise<Co
   // the same rule_type via DISTINCT ON ordering (specific first).
   const { rows } = await adminPool.query(
     `WITH lines AS (
+       -- Sold lines, on the day of the sale (also when refunded later)...
        SELECT oi.id AS line_id,
+              'Sale' AS entry,
               o.id AS order_id,
               o.order_number,
               o.completed_at,
+              o.completed_at AS sold_at,
               o.customer_id,
               COALESCE(oi.credited_to, o.credited_to) AS staff_id,
               oi.item_type,
@@ -81,8 +113,33 @@ export async function computeOrderCommissionLines(args: ComputeArgs): Promise<Co
          FROM fin_order_items oi
          JOIN fin_orders o ON o.id = oi.order_id
         WHERE o.business_id = $1
-          AND o.status = 'completed'
+          AND o.status IN ('completed', 'partially_refunded', 'refunded')
           AND o.completed_at::date BETWEEN $2::date AND $3::date
+          AND COALESCE(oi.credited_to, o.credited_to) IS NOT NULL
+          AND oi.item_type IN ('service', 'product', 'membership', 'package')
+          ${userClause}
+       UNION ALL
+       -- ...less the refunded part, on the day of the refund, when the business takes
+       -- commission back ($4). Pre-tax, like the sale's base.
+       SELECT rl.id AS line_id,
+              'Refund' AS entry,
+              o.id AS order_id,
+              o.order_number,
+              rl.created_at AS completed_at,
+              o.completed_at AS sold_at,
+              o.customer_id,
+              COALESCE(oi.credited_to, o.credited_to) AS staff_id,
+              oi.item_type,
+              oi.item_name,
+              oi.item_id,
+              -rl.quantity AS quantity,
+              -rl.revenue_cents AS line_base
+         FROM pay_order_refund_lines rl
+         JOIN fin_order_items oi ON oi.id = rl.order_item_id
+         JOIN fin_orders o ON o.id = rl.order_id
+        WHERE $4::boolean
+          AND rl.business_id = $1
+          AND rl.created_at::date BETWEEN $2::date AND $3::date
           AND COALESCE(oi.credited_to, o.credited_to) IS NOT NULL
           AND oi.item_type IN ('service', 'product', 'membership', 'package')
           ${userClause}
@@ -92,7 +149,7 @@ export async function computeOrderCommissionLines(args: ComputeArgs): Promise<Co
        -- one, then most-recent effective_from. A line can earn under BOTH a
        -- 'commission' and a 'per_session' rule (distinct rule_types).
        SELECT DISTINCT ON (l.line_id, cr.rule_type)
-              l.order_id, l.order_number, l.completed_at, l.customer_id, l.staff_id,
+              l.entry, l.order_id, l.order_number, l.completed_at, l.customer_id, l.staff_id,
               l.item_type, l.item_name, l.quantity, l.line_base,
               cr.rule_type, cr.rate
          FROM lines l
@@ -101,8 +158,9 @@ export async function computeOrderCommissionLines(args: ComputeArgs): Promise<Co
           AND cr.user_id = l.staff_id
           AND cr.status = 'active'
           AND cr.rule_type IN ('commission', 'per_session')
-          AND cr.effective_from <= l.completed_at::date
-          AND (cr.effective_to IS NULL OR cr.effective_to >= l.completed_at::date)
+          -- the rule in force when the sale was made (a refund reverses at the sale's rate)
+          AND cr.effective_from <= l.sold_at::date
+          AND (cr.effective_to IS NULL OR cr.effective_to >= l.sold_at::date)
           -- scope: generic (NULL) matches any eligible line; scoped matches its type + ids
           AND (
             cr.reference_type IS NULL
@@ -111,7 +169,7 @@ export async function computeOrderCommissionLines(args: ComputeArgs): Promise<Co
           )
         ORDER BY l.line_id, cr.rule_type, (cr.reference_ids IS NOT NULL) DESC, cr.effective_from DESC
      )
-     SELECT order_id, order_number, completed_at, customer_id, staff_id,
+     SELECT entry, order_id, order_number, completed_at, customer_id, staff_id,
             item_type, item_name, quantity, line_base, rule_type, rate,
             CASE
               WHEN rule_type = 'commission' THEN ROUND(line_base * rate / 10000.0)::int
@@ -128,6 +186,7 @@ export async function computeOrderCommissionLines(args: ComputeArgs): Promise<Co
   );
 
   return rows.map((r) => ({
+    entry: r.entry,
     order_id: r.order_id,
     order_number: r.order_number,
     completed_at: r.completed_at,

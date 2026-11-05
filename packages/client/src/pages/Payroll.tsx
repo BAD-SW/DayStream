@@ -52,7 +52,7 @@ function PeriodsSection({ businessId }: { businessId: string }) {
 
   const handleSelect = async (periodId: string) => {
     setSelectedPeriod(periodId);
-    const e = await payrollApi.getPayrollEntries(periodId);
+    const e = await payrollApi.getPayrollEntries(periodId, businessId);
     setEntries(e);
   };
 

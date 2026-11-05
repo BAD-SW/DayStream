@@ -6,24 +6,29 @@ interface CreateNoteInput {
   customerId: string;
   businessId: string;
   tenantId: string;
-  category: string;
+  /** Optional (David, 2026-11-01): empty or missing means no category. */
+  category?: string | null;
   content: string;
   isSensitive: boolean;
   createdBy: string;
 }
 
 export async function createNote(input: CreateNoteInput) {
-  // Validate category exists for business
-  const { rows: catRows } = await adminPool.query(
-    'SELECT id, is_sensitive FROM cus_note_categories WHERE business_id = $1 AND name = $2',
-    [input.businessId, input.category],
-  );
-
-  if (catRows.length === 0) {
-    throw new Error(`Note category "${input.category}" does not exist for this business`);
+  // A category, when given, must be one of the business's; a note may also have none.
+  const category = (input.category || '').trim() || null;
+  let categorySensitive = false;
+  if (category) {
+    const { rows: catRows } = await adminPool.query(
+      'SELECT id, is_sensitive FROM cus_note_categories WHERE business_id = $1 AND name = $2',
+      [input.businessId, category],
+    );
+    if (catRows.length === 0) {
+      throw new Error(`Note category "${category}" does not exist for this business`);
+    }
+    categorySensitive = catRows[0].is_sensitive;
   }
 
-  const isSensitive = input.isSensitive || catRows[0].is_sensitive;
+  const isSensitive = input.isSensitive || categorySensitive;
 
   // Encrypt content
   const contentEncrypted = encrypt(input.content);
@@ -32,14 +37,14 @@ export async function createNote(input: CreateNoteInput) {
     `INSERT INTO cus_notes (customer_id, business_id, category, content_encrypted, is_sensitive, created_by)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id, customer_id, business_id, category, is_sensitive, created_by, created_at`,
-    [input.customerId, input.businessId, input.category, contentEncrypted, isSensitive, input.createdBy],
+    [input.customerId, input.businessId, category, contentEncrypted, isSensitive, input.createdBy],
   );
 
   // Log in activity timeline
   await adminPool.query(
     `INSERT INTO cus_activities (customer_id, business_id, activity_type, description, metadata, created_by)
      VALUES ($1, $2, 'note', $3, $4, $5)`,
-    [input.customerId, input.businessId, `Note added: ${input.category}`, JSON.stringify({ category: input.category, isSensitive }), input.createdBy],
+    [input.customerId, input.businessId, category ? `Note added: ${category}` : 'Note added', JSON.stringify({ category, isSensitive }), input.createdBy],
   );
 
   return { ...rows[0], content: input.content };

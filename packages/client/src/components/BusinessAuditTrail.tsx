@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Pagination } from '../design-system/components/navigation/Pagination';
+import { Table } from '../design-system/components/data/Table';
 import * as payApi from '../api/payments';
 import type { TenantAuditEntry, AuditChange } from '../api/payments';
 
@@ -51,24 +51,29 @@ function fieldLabel(field: string): string {
 export function BusinessAuditTrail({ businessId }: Props) {
   const [entries, setEntries] = useState<TenantAuditEntry[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(25);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await payApi.getBusinessAudit(businessId, page, limit);
-      setEntries(res.entries);
-      setTotal(res.total);
+      // Every entry (100 per call until all are in): the shared table's column filters work
+      // on all of them, and it scrolls instead of paging (David, 2026-11-02).
+      const rows: TenantAuditEntry[] = [];
+      let all = 0;
+      for (let p = 1; ; p++) {
+        const res = await payApi.getBusinessAudit(businessId, p, 100);
+        rows.push(...res.entries);
+        all = res.total;
+        if (res.entries.length < 100 || rows.length >= res.total) break;
+      }
+      setEntries(rows);
+      setTotal(all);
     } catch {
       setEntries([]); setTotal(0);
     } finally { setLoading(false); }
-  }, [businessId, page, limit]);
+  }, [businessId]);
 
   useEffect(() => { load(); }, [load]);
-
-  const totalPages = Math.max(1, Math.ceil(total / limit));
 
   function who(e: TenantAuditEntry): string {
     const name = [e.user_first_name, e.user_last_name].filter(Boolean).join(' ').trim();
@@ -104,48 +109,26 @@ export function BusinessAuditTrail({ businessId }: Props) {
   return (
     <div>
       <p style={styles.muted}>{total} change{total === 1 ? '' : 's'} recorded</p>
-      <table style={styles.table}>
-        <thead>
-          <tr>
-            <th style={styles.th}>When</th>
-            <th style={styles.th}>Who</th>
-            <th style={styles.th}>Action</th>
-            <th style={styles.th}>Details</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((e) => (
-            <tr key={e.id}>
-              <td style={styles.tdTop}>{new Date(e.created_at).toLocaleString()}</td>
-              <td style={styles.tdTop}>{who(e)}</td>
-              <td style={styles.tdTop}>{ACTION_LABEL[e.action] || e.action}</td>
-              <td style={styles.tdTop}>{renderChanges(e)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div style={styles.pager}>
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          onPageChange={setPage}
-          itemsPerPage={limit}
-          itemsPerPageOptions={[25, 50, 100]}
-          onItemsPerPageChange={(n) => { setLimit(n); setPage(1); }}
-        />
-      </div>
+      <Table
+        rowId={(e: TenantAuditEntry) => e.id}
+        data={entries}
+        loading={loading}
+        clientSort
+        columns={[
+          { key: 'created_at', header: 'When', sortable: true, filter: 'date' as const, render: (v: string) => new Date(v).toLocaleString() },
+          { key: 'who', header: 'Who', sortable: true, filterValue: (e: TenantAuditEntry) => who(e), render: (_: any, e: TenantAuditEntry) => who(e) },
+          { key: 'action', header: 'Action', sortable: true, filterLabel: (v: string) => ACTION_LABEL[v] || v, render: (v: string) => ACTION_LABEL[v] || v },
+          { key: 'details', header: 'Details', filter: false as const, render: (_: any, e: TenantAuditEntry) => renderChanges(e) },
+        ]}
+      />
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
   muted: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' },
-  th: { textAlign: 'left', padding: '6px 8px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)', textTransform: 'uppercase', letterSpacing: '0.5px' },
-  tdTop: { padding: '8px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)', verticalAlign: 'top' },
   changeList: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '2px' },
   field: { color: 'var(--color-text-secondary)' },
   from: { color: 'var(--color-text-secondary)' },
   to: { color: 'var(--color-text)', fontWeight: 'var(--font-weight-medium)' as any },
-  pager: { marginTop: 'var(--space-md)', display: 'flex', justifyContent: 'flex-end' },
 };

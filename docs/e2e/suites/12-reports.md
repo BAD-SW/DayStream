@@ -47,3 +47,20 @@ Method: for each figure, take a reading before the run's data is created (or use
 `P0` `negative` · Spec 02 R4, R5 · As: reception, manager, biz-thin · Status: Verified
 1. As reception: open `/reports`, call `GET /api/v1/reports/revenue`. 2. As manager (`reports:read`): open reports. 3. As biz-thin: run the revenue report for today.
 **Expect:** reception refused; manager can read; the other business's report contains none of the demo business's revenue.
+
+### REP-09 · Reconciliation report and sales tax
+`P2` `regression` · Bill `cdca3f2` (reconciliation is work in progress) · Status: Verified
+1. Run Reconciliation for the month. 2. Run Sales by Item.
+**Expect:** reconciliation runs with no NaN, undefined or error; Sales by Item has a tax column. Totals are not asserted while the report is work in progress, except that Sales equals the Sales by Item Net total (REP-10) and Payments leaves out credit and debit notes (D-52).
+
+### REP-10 · Refunds in the sales reports
+`P0` `regression` · D-44, option A (David, 2026-10-20) · As: owner · Status: Verified
+1. Sell two units of a product with a discount and tax, paid in cash. 2. From the order, refund one unit. 3. Run, for today: Sales by Item, Sales by Staff, Tax Summary, Revenue, Reconciliation, Discounts & Promotions, Staff Performance.
+**Expect:** the sale stays on its own day at full value (Entry "Sale", quantity 2) although the order is now partly refunded; the refund is its own row (Entry "Refund") on the day of the refund: quantity −1, Refunds = −the revenue refunded, Tax = −the tax refunded, Net = −the amount refunded. Sales by Staff takes the refund (pre-tax) off the staff member credited with the sale; Tax Summary has the tax given back as a negative row; Revenue has the refunded service or product line as a negative row; Reconciliation's Sales still equals the Sales by Item Net total; Discounts still lists the discounted line of the refunded sale; Staff Performance's product revenue is sales less refunds.
+**Cross-check:** refund rows and totals agree with `pay_order_refund_lines` for the day.
+**Commissions:** see REP-11.
+
+### REP-11 · Commission after a refund
+`P0` `regression` · THE-21 (David, 2026-10-22) · As: owner, staff · Status: Verified
+1. A staff member with a 15% product commission sells two units (cash); refund one unit the same day. 2. Run Commissions for today. 3. Settings → System → Commission after a refund: "Keep the commission"; run it again; set it back.
+**Expect:** by default the sale keeps its commission on its own day (Entry "Sale", 15% of both units) and the refund takes the commission on the refunded unit back on the day of the refund (Entry "Refund", negative), so it lands in the pay period of the refund and a finalized pay period never changes; with "Keep the commission" there is no Refund line; only the business changes the setting.

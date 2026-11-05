@@ -21,6 +21,9 @@ export interface Customer {
   last_visit_at?: string | null;
   last_login_at?: string | null;
   next_booking_at?: string | null;
+  /** THE-18 optional People columns. */
+  last_contacted_at?: string | null;
+  visits_count?: number;
   lifecycle_changed_at?: string;
   marketing_consent?: string[];
   merged_into_id?: string | null;
@@ -28,6 +31,14 @@ export interface Customer {
   gender?: string;
   preferred_language?: string;
   country?: string;
+  // Customer profile (THE-16)
+  address_line?: string | null;
+  city?: string | null;
+  postal_code?: string | null;
+  region?: string | null;
+  home_location_id?: string | null;
+  home_location_name?: string | null;
+  has_photo?: boolean;
   lifecycle_stage: string;
   status: string;
   created_at: string;
@@ -54,6 +65,8 @@ export interface CustomerFilters {
   owner?: string;
   incomplete?: boolean;
   segment_id?: string;
+  /** Column filters of the shared table. */
+  columns?: Record<string, { values?: string[]; contains?: string; from?: string; to?: string }>;
 }
 
 export type ViewCounts = Record<string, number>;
@@ -124,9 +137,20 @@ export async function getCustomers(businessId: string, filters: CustomerFilters 
   if (filters.owner) params.set('owner', filters.owner);
   if (filters.incomplete) params.set('incomplete', 'true');
   if (filters.segment_id) params.set('segment_id', filters.segment_id);
+  if (filters.columns && Object.keys(filters.columns).length) params.set('cf', JSON.stringify(filters.columns));
 
   const res = await apiClient.get(`/v1/customers?${params}`);
   return res.data;
+}
+
+/** Every value of one column (with counts) among the people matching the other filters. */
+export async function getColumnValues(businessId: string, column: string, filters: CustomerFilters = {}): Promise<Array<{ value: string; label: string; count: number }>> {
+  const params = new URLSearchParams({ business_id: businessId, column });
+  if (filters.view && filters.view !== 'all') params.set('view', filters.view);
+  if (filters.segment_id) params.set('segment_id', filters.segment_id);
+  if (filters.columns && Object.keys(filters.columns).length) params.set('cf', JSON.stringify(filters.columns));
+  const res = await apiClient.get(`/v1/customers/column-values?${params}`);
+  return res.data.data;
 }
 
 /** People in each system view (All, Leads, Customers, At risk, Former). */
@@ -240,7 +264,7 @@ export async function getNotes(customerId: string, businessId: string, filters?:
   return res.data;
 }
 
-export async function createNote(customerId: string, businessId: string, data: { category: string; content: string; is_sensitive?: boolean }) {
+export async function createNote(customerId: string, businessId: string, data: { category?: string; content: string; is_sensitive?: boolean }) {
   const res = await apiClient.post(`/v1/customers/${customerId}/notes?business_id=${businessId}`, data);
   return res.data.data;
 }
@@ -384,6 +408,9 @@ export function getExportUrl(businessId: string, filters?: CustomerFilters): str
   if (filters?.created_to) params.set('created_to', filters.created_to);
   if (filters?.sort) params.set('sort', filters.sort);
   if (filters?.order) params.set('order', filters.order);
+  if (filters?.view && filters.view !== 'all') params.set('view', filters.view);
+  if (filters?.segment_id) params.set('segment_id', filters.segment_id);
+  if (filters?.columns && Object.keys(filters.columns).length) params.set('cf', JSON.stringify(filters.columns));
   return `/api/v1/customers/export?${params}`;
 }
 
@@ -391,4 +418,119 @@ export function getExportUrl(businessId: string, filters?: CustomerFilters): str
 
 export async function anonymizeCustomer(customerId: string, businessId: string): Promise<void> {
   await apiClient.post(`/v1/customers/${customerId}/anonymize?business_id=${businessId}`);
+}
+
+// --- Customer profile (THE-16) ---
+
+const profileUrl = (customerId: string, path: string, businessId: string) => `/v1/customers/${customerId}${path}?business_id=${businessId}`;
+
+export interface ProfileFigures { visits: number; appointments: number; events: number; session_credits: number }
+
+export async function getProfileFigures(customerId: string, businessId: string): Promise<ProfileFigures> {
+  return (await apiClient.get(profileUrl(customerId, '/figures', businessId))).data.data;
+}
+
+export type TimelineFilter = 'all' | 'booking' | 'membership' | 'pack' | 'payment' | 'lifecycle' | 'profile_change' | 'message';
+
+export interface TimelineItem {
+  id: string;
+  kind: string;
+  description: string;
+  actor_name: string;
+  at: string;
+  upcoming: boolean;
+  link?: { type: 'order' | 'transaction'; id: string } | null;
+}
+
+export async function getTimeline(customerId: string, businessId: string, kind: TimelineFilter = 'all'): Promise<TimelineItem[]> {
+  return (await apiClient.get(`${profileUrl(customerId, '/timeline', businessId)}&kind=${kind}`)).data.data;
+}
+
+export interface Referrals {
+  codes: Array<{ id: string; code: string; referrals_count: number; is_active: boolean }>;
+  referred: Array<{ id: string; status: string; customer_id: string; first_name: string; last_name: string; lifecycle_stage: string }>;
+  referred_by: { customer_id: string; first_name: string; last_name: string; code: string } | null;
+}
+
+export async function getReferrals(customerId: string, businessId: string): Promise<Referrals> {
+  return (await apiClient.get(profileUrl(customerId, '/referrals', businessId))).data.data;
+}
+
+export interface Review { id: string; rating: number; content: string | null; status: string; created_at: string; service_name: string | null }
+
+export async function getReviews(customerId: string, businessId: string): Promise<Review[]> {
+  return (await apiClient.get(profileUrl(customerId, '/reviews', businessId))).data.data;
+}
+
+export interface CustomerTask {
+  id: string;
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  status: 'open' | 'done';
+  send_reminder: boolean;
+  reminder_queued_at: string | null;
+  reminder_skipped_reason: string | null;
+  event_id: string | null;
+  event_title: string | null;
+  event_start: string | null;
+  staff: Array<{ id: string; name: string }>;
+  created_at: string;
+}
+
+export async function getTasks(customerId: string, businessId: string): Promise<CustomerTask[]> {
+  return (await apiClient.get(profileUrl(customerId, '/tasks', businessId))).data.data;
+}
+
+export async function createTask(customerId: string, businessId: string, data: {
+  title: string; description?: string; due_at?: string | null; staff_ids: string[]; send_reminder: boolean; event_id?: string | null;
+}): Promise<CustomerTask> {
+  return (await apiClient.post(profileUrl(customerId, '/tasks', businessId), data)).data.data;
+}
+
+export async function setTaskDone(customerId: string, businessId: string, taskId: string, done: boolean): Promise<CustomerTask> {
+  return (await apiClient.put(profileUrl(customerId, `/tasks/${taskId}/status`, businessId), { done })).data.data;
+}
+
+export async function deleteTask(customerId: string, businessId: string, taskId: string): Promise<void> {
+  await apiClient.delete(profileUrl(customerId, `/tasks/${taskId}`, businessId));
+}
+
+export interface CustomerDocument { id: string; file_name: string; mime_type: string; size_bytes: number; created_at: string; uploaded_by_name: string | null }
+
+export async function getDocuments(customerId: string, businessId: string): Promise<CustomerDocument[]> {
+  return (await apiClient.get(profileUrl(customerId, '/documents', businessId))).data.data;
+}
+
+export async function uploadDocument(customerId: string, businessId: string, file: File): Promise<CustomerDocument> {
+  const body = new FormData();
+  body.append('file', file);
+  return (await apiClient.post(profileUrl(customerId, '/documents', businessId), body, { headers: { 'Content-Type': 'multipart/form-data' } })).data.data;
+}
+
+export async function downloadDocument(customerId: string, businessId: string, documentId: string): Promise<Blob> {
+  return (await apiClient.get(profileUrl(customerId, `/documents/${documentId}/file`, businessId), { responseType: 'blob' })).data;
+}
+
+export async function deleteDocument(customerId: string, businessId: string, documentId: string): Promise<void> {
+  await apiClient.delete(profileUrl(customerId, `/documents/${documentId}`, businessId));
+}
+
+/** The photo as a blob (it is served only to a signed-in user of the business). */
+export async function getPhoto(customerId: string, businessId: string): Promise<Blob> {
+  return (await apiClient.get(profileUrl(customerId, '/photo', businessId), { responseType: 'blob' })).data;
+}
+
+export async function uploadPhoto(customerId: string, businessId: string, file: File): Promise<void> {
+  const body = new FormData();
+  body.append('photo', file);
+  await apiClient.post(profileUrl(customerId, '/photo', businessId), body, { headers: { 'Content-Type': 'multipart/form-data' } });
+}
+
+export async function requestPasswordReset(customerId: string, businessId: string): Promise<{ sent_to: string }> {
+  return (await apiClient.post(profileUrl(customerId, '/password-reset', businessId))).data.data;
+}
+
+export async function sendPersonalData(customerId: string, businessId: string): Promise<{ sent_to: string; expires_at: string; password: string }> {
+  return (await apiClient.post(profileUrl(customerId, '/personal-data', businessId))).data.data;
 }

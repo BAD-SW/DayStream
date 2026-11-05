@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { evaluateOnBooking } from './customer-lifecycle.service';
 import { adminPool } from '../db/pool';
+import { ColumnFilters, FilterableColumn, addColumnFilterConditions, columnValuesSql } from '../utils/column-filters';
 import { logAudit } from './audit.service';
 import { createActivity } from './customer-activity.service';
 import { calculatePrice } from './pricing.service';
@@ -46,8 +47,12 @@ interface BookingFilters {
   customerSearch?: string;
   staffId?: string;
   serviceId?: string;
+  /** Column filters of the shared table (David, 2026-11-02). */
+  columns?: ColumnFilters;
   page?: number;
   limit?: number;
+  /** Start time order: 'asc' (default) or 'desc' (newest first, the staff list). */
+  order?: 'asc' | 'desc';
 }
 
 /**
@@ -531,6 +536,31 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
 /**
  * List bookings with filters.
  */
+// The bookings list's filterable columns (keys as the table's columns).
+const BOOKING_TZ = "COALESCE((SELECT bz.timezone FROM sys_businesses bz WHERE bz.id = b.business_id), 'UTC')";
+const personName = (table: string, id: string) =>
+  `(SELECT NULLIF(BTRIM(COALESCE(x.first_name, '') || ' ' || COALESCE(x.last_name, '')), '') FROM ${table} x WHERE x.id = ${id})`;
+const BOOKING_COLUMNS: Record<string, FilterableColumn> = {
+  booking_reference: { expr: 'b.booking_reference' },
+  customer_first_name: { expr: 'b.customer_id', label: personName('cus_customers', 'b.customer_id') },
+  service_name: { expr: 'b.service_id', label: '(SELECT sv2.name FROM svc_services sv2 WHERE sv2.id = b.service_id)' },
+  start_time: { expr: 'b.start_time', kind: 'date' },
+  status: { expr: 'b.status' },
+  staff_first_name: { expr: 'b.staff_id', label: personName('usr_users', 'b.staff_id') },
+};
+
+/** Every value of one bookings column (with counts) among the bookings matching the other filters. */
+export async function getBookingColumnValues(filters: BookingFilters, column: string) {
+  const col = BOOKING_COLUMNS[column];
+  if (!col || col.kind === 'date') return [];
+  const { [column]: _own, ...others } = filters.columns || {};
+  const conditions = ['b.business_id = $1']; const params: any[] = [filters.businessId];
+  if (filters.customerId) { params.push(filters.customerId); conditions.push(`b.customer_id = $${params.length}`); }
+  addColumnFilterConditions(others, BOOKING_COLUMNS, conditions, params, BOOKING_TZ);
+  const { rows } = await adminPool.query(columnValuesSql(col, 'apt_bookings b', conditions.join(' AND ')), params);
+  return rows as Array<{ value: string; label: string; count: number }>;
+}
+
 export async function getBookings(filters: BookingFilters) {
   const conditions = ['b.business_id = $1'];
   const params: any[] = [filters.businessId];
@@ -574,6 +604,8 @@ export async function getBookings(filters: BookingFilters) {
     paramIndex++;
   }
 
+  if (filters.columns) addColumnFilterConditions(filters.columns, BOOKING_COLUMNS, conditions, params, BOOKING_TZ);
+
   const where = conditions.join(' AND ');
   const limit = Math.min(filters.limit || 20, 100);
   const page = filters.page || 1;
@@ -590,7 +622,7 @@ export async function getBookings(filters: BookingFilters) {
        LEFT JOIN cus_customers c ON c.id = b.customer_id
        LEFT JOIN usr_users u ON u.id = b.staff_id
        WHERE ${where}
-       ORDER BY b.start_time ASC
+       ORDER BY b.start_time ${filters.order === 'desc' ? 'DESC' : 'ASC'}
        LIMIT ${limit} OFFSET ${offset}`,
       params,
     ),

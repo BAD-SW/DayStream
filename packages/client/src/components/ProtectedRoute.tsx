@@ -5,7 +5,7 @@ import { mayOpenBusinessPath } from '../design-system/components/dashboard/modul
 import { LoadingSpinner } from './LoadingSpinner';
 import { AppLayout } from './AppLayout';
 
-const CUSTOMER_PATHS = [/^\/dashboard$/, /^\/profile$/, /^\/bookings$/, /^\/events(\/(?!new$)[^/]+)?$/, /^\/community$/];
+const CUSTOMER_PATHS = [/^\/dashboard$/, /^\/profile$/, /^\/bookings$/, /^\/messages$/, /^\/events(\/(?!new$)[^/]+)?$/, /^\/community$/];
 
 // Platform screens (DayStream's own staff) and organisation screens (a tenant's owner). A user
 // below that level never sees them, even by typing the address: the server would refuse the

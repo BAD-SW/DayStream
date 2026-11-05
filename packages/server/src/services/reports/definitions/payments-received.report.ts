@@ -53,8 +53,38 @@ export const paymentsReceivedReport: ReportDefinition = {
       FROM fin_orders o
       LEFT JOIN cus_customers c ON c.id = o.customer_id
       WHERE o.business_id = $1
-        AND o.status = 'completed'
+        -- A sale stays money taken after a later (partial) refund; the refund is its own row below.
+        AND o.status IN ('completed', 'partially_refunded', 'refunded')
         AND o.completed_at::date BETWEEN $2::date AND $3::date
+
+      UNION ALL
+
+      -- Refunds of checkout orders (line-item refunds), dated when refunded
+      SELECT
+        t.created_at::date AS received_date,
+        'Checkout' AS source,
+        INITCAP(REPLACE(t.payment_method, '_', ' ')) AS method,
+        CASE
+          WHEN c.id IS NULL THEN '—'
+          ELSE TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, ''))
+               || ' (' || c.reference_number || ')'
+        END AS customer,
+        c.id AS customer_id,
+        o.order_number AS reference,
+        o.id AS order_id,
+        'Refund' AS payment_type,
+        -ABS(t.amount)::int AS amount,
+        t.created_at AS sort_ts
+
+      FROM pay_transactions t
+      JOIN fin_orders o ON o.id = t.order_id
+      LEFT JOIN cus_customers c ON c.id = t.customer_id
+      WHERE t.business_id = $1
+        AND t.type = 'refund'
+        AND t.status = 'completed'
+        -- a refund given as account credit pays no money out (THE-20)
+        AND t.payment_method NOT IN ('account_credit', 'account_debit')
+        AND t.created_at::date BETWEEN $2::date AND $3::date
 
       UNION ALL
 
@@ -81,7 +111,7 @@ export const paymentsReceivedReport: ReportDefinition = {
       WHERE t.business_id = $1
         AND t.status = 'completed'
         AND t.order_id IS NULL
-        AND t.payment_method <> 'account_credit'
+        AND t.payment_method NOT IN ('account_credit', 'account_debit') -- credit and debit notes move the account balance, not money (D-52)
         AND t.created_at::date BETWEEN $2::date AND $3::date
 
       ORDER BY sort_ts DESC

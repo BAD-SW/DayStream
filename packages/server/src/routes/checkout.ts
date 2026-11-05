@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { parseColumnFilters } from '../utils/column-filters';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { tenantContext, recordScope, isCustomerLogin, ownCustomerIds } from '../auth/tenant-context';
@@ -82,6 +83,15 @@ checkoutRouter.post('/orders/from-booking', requirePermission('bookings:*'), asy
 });
 
 // GET /api/v1/checkout/orders — List orders
+// GET /api/v1/checkout/orders/column-values?column= — the values of one column, for its filter list.
+checkoutRouter.get('/orders/column-values', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, await checkoutService.getOrderColumnValues(businessId, String(req.query.column || ''), parseColumnFilters(req.query.cf), req.query.product as string));
+  } catch (err: any) { console.error('Failed to list column values', err?.message || err); error(res, 'Failed to list column values', 'INTERNAL_ERROR', 500); }
+});
+
 checkoutRouter.get('/orders', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
@@ -93,6 +103,7 @@ checkoutRouter.get('/orders', requirePermission('bookings:read'), async (req: Re
       dateTo: req.query.date_to as string,
       orderNumber: req.query.order_number as string,
       product: req.query.product as string,
+      columns: parseColumnFilters(req.query.cf),
       page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
     });

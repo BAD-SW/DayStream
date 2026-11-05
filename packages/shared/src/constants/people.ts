@@ -47,3 +47,26 @@ export const PEOPLE_VIEWS: Array<{ id: string; label: string; stages: LifecycleS
   { id: 'at_risk', label: 'At risk', stages: ['at_risk'] },
   { id: 'former', label: 'Former', stages: ['churned'] },
 ];
+
+/**
+ * Leads (THE-17): where a lead came from, chosen by staff. Separate from the person's
+ * `source`, which records how the record was created. Values agreed with David on
+ * 28 October 2026 (Momence's list).
+ */
+export const LEAD_SOURCE_LABELS: Record<string, string> = {
+  abandoned_checkout: 'Abandoned checkout',
+  meta_ads: 'Paid Meta ads (Facebook/Instagram)',
+  api: 'API endpoint',
+  missed_call: 'Missed call',
+  incoming_call: 'Incoming call',
+  incoming_sms: 'Incoming SMS',
+  web_chat: 'Web chat',
+  app_message: 'Incoming app message',
+  whatsapp: 'WhatsApp',
+  website: 'Website',
+};
+
+export const LEAD_SOURCES = Object.keys(LEAD_SOURCE_LABELS);
+
+/** The stages a new business starts with; each business can change them. */
+export const DEFAULT_LEAD_STAGES = ['New', 'Contacted', 'Interested', 'Trial booked', 'Lost'];

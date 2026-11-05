@@ -719,15 +719,24 @@ prospectsRouter.delete('/:tenantId/prospects', requirePermission('*:*'), async (
   } catch (err: any) { console.error('Failed to clear prospects', err?.message || err); error(res, 'Failed to clear prospects', 'INTERNAL_ERROR', 500); }
 });
 
+/** `ids` query value (comma-separated uuids) → list, or undefined when absent. */
+function exportIds(raw: unknown): string[] | undefined {
+  if (typeof raw !== 'string') return undefined;
+  return raw.split(',').map((x) => x.trim()).filter((x) => /^[0-9a-f-]{36}$/i.test(x));
+}
+
 /** Build the prospect CSV for a tenant (optional status/category filters). Excludes held
- *  prospects by default so the export matches the working list; pass showHeld to include them. */
-async function buildProspectsCsv(tenantId: string, status?: string, category?: string, showHeld = false): Promise<string> {
+ *  prospects by default so the export matches the working list; pass showHeld to include them.
+ *  `ids`: only the rows the list's column filters left. */
+async function buildProspectsCsv(tenantId: string, status?: string, category?: string, showHeld = false, ids?: string[]): Promise<string> {
   const conditions = ['tenant_id = $1', 'is_active = true'];
   const params: any[] = [tenantId];
   let idx = 2;
   if (!showHeld) conditions.push(`inclusion = 'included'`);
   if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
   if (category) { conditions.push(`category = $${idx++}`); params.push(category); }
+  // The rows the list's column filters left (David, 2026-11-02).
+  if (ids) { conditions.push(`id = ANY($${idx++}::uuid[])`); params.push(ids); }
   const { rows } = await adminPool.query(
     `SELECT name, address, city, country, phone, email, website, category,
             confidence, fit_score, fit_tier, operating_status, inclusion, hold_reason,
@@ -774,7 +783,7 @@ prospectsRouter.get('/export', requireTenantLevel(), requirePermission('settings
   try {
     const authReq = req as AuthenticatedRequest;
     if (!authReq.tenantId) { error(res, 'Tenant context required', 'VALIDATION_ERROR', 400); return; }
-    const csv = await buildProspectsCsv(authReq.tenantId, req.query.status as string | undefined, req.query.category as string | undefined, req.query.show_held === 'true');
+    const csv = await buildProspectsCsv(authReq.tenantId, req.query.status as string | undefined, req.query.category as string | undefined, req.query.show_held === 'true', exportIds(req.query.ids));
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="prospects.csv"');
     res.send(csv);
@@ -784,7 +793,7 @@ prospectsRouter.get('/export', requireTenantLevel(), requirePermission('settings
 // GET /api/v1/prospects/:tenantId/prospects/export — SYSTEM ADMIN: export a tenant's prospects.
 prospectsRouter.get('/:tenantId/prospects/export', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
-    const csv = await buildProspectsCsv(req.params.tenantId, req.query.status as string | undefined, req.query.category as string | undefined, req.query.show_held === 'true');
+    const csv = await buildProspectsCsv(req.params.tenantId, req.query.status as string | undefined, req.query.category as string | undefined, req.query.show_held === 'true', exportIds(req.query.ids));
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="prospects.csv"');
     res.send(csv);

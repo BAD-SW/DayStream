@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { lifecycleStageLabel, personSourceLabel, PEOPLE_VIEWS, PERSON_SOURCE_LABELS, LIFECYCLE_STAGES } from '@daystream/shared';
+import { lifecycleStageLabel, personSourceLabel, PEOPLE_VIEWS, LIFECYCLE_STAGES } from '@daystream/shared';
 import { Table } from '../design-system/components/data/Table';
+import type { TableFilters } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
-import { DateRangeFilter, DateRange } from '../design-system/components/data/DateRangeFilter';
 import * as customersApi from '../api/customers';
 import { useAuth } from '../context/AuthContext';
 import { getPermissionsFromRole } from '../context/ContextManager';
+import { useColumnOrder, orderColumns } from '../utils/peopleColumns';
 import type { Customer, ViewCounts, Segment } from '../api/customers';
 
 const STAGE_COLORS: Record<string, { bg: string; fg: string }> = {
@@ -28,27 +29,33 @@ const OPTIONAL_COLUMNS: Array<{ key: string; label: string }> = [
   { key: 'phone', label: 'Phone' },
   { key: 'lifecycle_stage', label: 'Stage' },
   { key: 'source', label: 'Source' },
-  { key: 'owner_name', label: 'Owner' },
+  { key: 'owner_name', label: 'Staff member' },
   { key: 'last_activity_at', label: 'Last activity' },
   { key: 'created_at', label: 'Added' },
+  // THE-18, hidden until a user shows them.
+  { key: 'last_contacted_at', label: 'Last contacted' },
+  { key: 'next_booking_at', label: 'Next booking' },
+  { key: 'visits_count', label: 'Visits' },
 ];
+const OFF_BY_DEFAULT = ['last_contacted_at', 'next_booking_at', 'visits_count'];
+const SHOWN_STORAGE_KEY = 'ds_people_columns_shown';
+// People's columns in the business column order (Settings → People lists).
+const PEOPLE_CANONICAL: Record<string, string> = {
+  reference_number: 'reference_number', email: 'email', phone: 'phone', lifecycle_stage: 'stage', source: 'source', owner_name: 'owner',
+  last_activity_at: 'last_activity', created_at: 'created_at', last_contacted_at: 'last_contacted', next_booking_at: 'next_booking', visits_count: 'visits',
+};
 
 const BULK_ACTIONS: Array<{ id: customersApi.BulkAction; label: string }> = [
   { id: 'add_tag', label: 'Add a tag' },
   { id: 'remove_tag', label: 'Remove a tag' },
-  { id: 'assign_owner', label: 'Assign an owner' },
+  { id: 'assign_owner', label: 'Assign a staff member' },
   { id: 'change_stage', label: 'Change stage' },
   { id: 'add_to_list', label: 'Add to a fixed list' },
   { id: 'archive', label: 'Archive' },
 ];
 
-interface ColumnFilters {
-  ref: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  phone: string;
-}
+const PAGE_SIZE = 50;
+const readFilters = (raw: string | null): TableFilters => { try { return raw ? JSON.parse(raw) : {}; } catch { return {}; } };
 
 function relativeDay(value?: string | null): string {
   if (!value) return '—';
@@ -73,8 +80,9 @@ export function Customers() {
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(Number(searchParams.get('page')) || 1);
-  const [totalPages, setTotalPages] = useState(1);
+  // No pages (David, 2026-11-02): more people load as the list scrolls.
+  const [page, setPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [total, setTotal] = useState(0);
   const [viewCounts, setViewCounts] = useState<ViewCounts | null>(null);
   const [segments, setSegments] = useState<Segment[]>([]);
@@ -87,26 +95,16 @@ export function Customers() {
     if (fromUrl) return fromUrl;
     try { return localStorage.getItem(VIEW_STORAGE_KEY) || 'all'; } catch { return 'all'; }
   });
-  const [stageFilter, setStageFilter] = useState(searchParams.get('lifecycle_stage') || '');
-  const [sourceFilter, setSourceFilter] = useState(searchParams.get('source') || '');
-  const [ownerFilter, setOwnerFilter] = useState(searchParams.get('owner') || '');
   const [segmentId, setSegmentId] = useState(searchParams.get('segment_id') || '');
-  const [dateRange, setDateRange] = useState<DateRange | null>(
-    searchParams.get('created_from') && searchParams.get('created_to')
-      ? { from: searchParams.get('created_from')!, to: searchParams.get('created_to')! }
-      : null,
-  );
-  const [columnFilters, setColumnFilters] = useState<ColumnFilters>({
-    ref: searchParams.get('ref') || '',
-    first_name: searchParams.get('first_name') || '',
-    last_name: searchParams.get('last_name') || '',
-    email: searchParams.get('email') || '',
-    phone: searchParams.get('phone') || '',
-  });
+  // Column filters from the filter icon beside each sort icon (David, 2026-11-02).
+  const [tableFilters, setTableFilters] = useState<TableFilters>(() => readFilters(searchParams.get('cf')));
   // Columns hidden by this user (remembered on this device).
   const [hiddenColumns, setHiddenColumns] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem(COLUMNS_STORAGE_KEY) || '[]'); } catch { return []; }
+    let hidden: string[] = []; let shown: string[] = [];
+    try { hidden = JSON.parse(localStorage.getItem(COLUMNS_STORAGE_KEY) || '[]'); shown = JSON.parse(localStorage.getItem(SHOWN_STORAGE_KEY) || '[]'); } catch { /* storage unavailable */ }
+    return [...hidden, ...OFF_BY_DEFAULT.filter((k) => !shown.includes(k) && !hidden.includes(k))];
   });
+  const columnOrder = useColumnOrder();
   const [showColumns, setShowColumns] = useState(false);
 
   // Bulk actions: the people ticked on this page, or everyone matching the filters.
@@ -120,55 +118,28 @@ export function Customers() {
   const [tags, setTags] = useState<Array<{ id: string; name: string }>>([]);
   const [owners, setOwners] = useState<Array<{ id: string; first_name: string; last_name: string }>>([]);
 
-  // Debounced text-filter values actually sent to the API
-  const [debouncedFilters, setDebouncedFilters] = useState<ColumnFilters>(columnFilters);
-
   // TODO: Get from auth context
   const businessId = localStorage.getItem('business_id') || '';
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedFilters(columnFilters);
-      setPage(1);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [columnFilters]);
 
   // Reflect active filters in the URL so the view is shareable/bookmarkable.
   useEffect(() => {
     const next = new URLSearchParams();
-    if (page > 1) next.set('page', String(page));
     if (sortKey) next.set('sort', sortKey);
     if (sortOrder) next.set('order', sortOrder);
     if (view && view !== 'all') next.set('view', view);
-    if (stageFilter) next.set('lifecycle_stage', stageFilter);
-    if (sourceFilter) next.set('source', sourceFilter);
-    if (ownerFilter) next.set('owner', ownerFilter);
     if (segmentId) next.set('segment_id', segmentId);
-    if (dateRange) { next.set('created_from', dateRange.from); next.set('created_to', dateRange.to); }
-    (Object.keys(debouncedFilters) as (keyof ColumnFilters)[]).forEach((k) => {
-      if (debouncedFilters[k]) next.set(k, debouncedFilters[k]);
-    });
+    if (Object.keys(tableFilters).length) next.set('cf', JSON.stringify(tableFilters));
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, sortKey, sortOrder, view, stageFilter, sourceFilter, ownerFilter, segmentId, dateRange, debouncedFilters]);
+  }, [sortKey, sortOrder, view, segmentId, tableFilters]);
 
   const currentFilters = useCallback(() => ({
     view,
-    lifecycle_stage: stageFilter || undefined,
-    source: sourceFilter || undefined,
-    owner: ownerFilter || undefined,
     segment_id: segmentId || undefined,
-    ref: debouncedFilters.ref || undefined,
-    first_name: debouncedFilters.first_name || undefined,
-    last_name: debouncedFilters.last_name || undefined,
-    email: debouncedFilters.email || undefined,
-    phone: debouncedFilters.phone || undefined,
-    created_from: dateRange?.from,
-    created_to: dateRange?.to,
+    columns: tableFilters,
     sort: sortKey,
     order: sortOrder,
-  }), [view, stageFilter, sourceFilter, ownerFilter, segmentId, debouncedFilters, dateRange, sortKey, sortOrder]);
+  }), [view, segmentId, tableFilters, sortKey, sortOrder]);
 
   const fetchCustomers = useCallback(async () => {
     if (!businessId) {
@@ -177,22 +148,35 @@ export function Customers() {
     }
     setLoading(true);
     try {
-      const result = await customersApi.getCustomers(businessId, { ...currentFilters(), page, limit: 20 });
+      const result = await customersApi.getCustomers(businessId, { ...currentFilters(), page: 1, limit: PAGE_SIZE });
       setCustomers(result.data);
-      // A new page or filter is a new set of rows: the old ticks no longer describe it.
+      setPage(1);
+      // A new filter is a new set of rows: the old ticks no longer describe it.
       setSelectedIds([]);
       setAllMatching(false);
       setBulkConfirm(null);
-      setTotalPages(result.meta.totalPages);
       setTotal(result.meta.total);
     } catch {
       // Handle error silently for now
     } finally {
       setLoading(false);
     }
-  }, [businessId, currentFilters, page]);
+  }, [businessId, currentFilters]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
+
+  // The next people, when the end of the list scrolls into view.
+  const loadMore = useCallback(async () => {
+    if (loadingMore || customers.length >= total) return;
+    setLoadingMore(true);
+    try {
+      const result = await customersApi.getCustomers(businessId, { ...currentFilters(), page: page + 1, limit: PAGE_SIZE });
+      setCustomers((rows) => [...rows, ...result.data]);
+      setPage(page + 1);
+      setTotal(result.meta.total);
+    } catch { /* the Show more button stays to try again */ }
+    finally { setLoadingMore(false); }
+  }, [businessId, currentFilters, page, loadingMore, customers.length, total]);
 
   useEffect(() => {
     if (!businessId) return;
@@ -205,7 +189,10 @@ export function Customers() {
   function toggleColumn(key: string) {
     setHiddenColumns((hidden) => {
       const next = hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key];
-      try { localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      try {
+        localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(next.filter((k) => !OFF_BY_DEFAULT.includes(k))));
+        localStorage.setItem(SHOWN_STORAGE_KEY, JSON.stringify(OFF_BY_DEFAULT.filter((k) => !next.includes(k))));
+      } catch { /* storage unavailable */ }
       return next;
     });
   }
@@ -272,23 +259,26 @@ export function Customers() {
   function chooseView(next: string) {
     setView(next);
     // A view is a set of stages, so a stage picked in another view no longer applies.
-    setStageFilter('');
-    setPage(1);
+    setTableFilters(({ lifecycle_stage: _stage, ...rest }) => rest);
     try { localStorage.setItem(VIEW_STORAGE_KEY, next); } catch { /* storage unavailable: the view still applies */ }
-  }
-
-  function updateColumnFilter(key: keyof ColumnFilters, value: string) {
-    setColumnFilters((f) => ({ ...f, [key]: value }));
   }
 
   function handleSort(key: string, order: 'asc' | 'desc') {
     setSortKey(key);
     setSortOrder(order);
-    setPage(1);
   }
 
-  // Stages offered in the stage filter: only those of the current view.
-  const viewStages = PEOPLE_VIEWS.find((v) => v.id === view)?.stages || [...LIFECYCLE_STAGES];
+  // A column's filter list: every value among the people matching the other filters, named as the cells show them.
+  const filterOptions = useCallback(async (key: string) => {
+    const values = await customersApi.getColumnValues(businessId, key, currentFilters());
+    return values.map((v) => ({
+      value: v.value, count: v.count,
+      label: key === 'lifecycle_stage' ? lifecycleStageLabel(v.value)
+        : key === 'source' ? personSourceLabel(v.value)
+        : key === 'owner_name' ? (v.label || 'Unassigned')
+        : v.label || v.value,
+    }));
+  }, [businessId, currentFilters]);
 
   const allColumns = [
     { key: 'reference_number', header: 'Ref', width: '110px', sortable: true },
@@ -316,61 +306,27 @@ export function Customers() {
       key: 'source', header: 'Source', sortable: true,
       render: (val: string, row: Customer) => <span title={personSourceLabel(val, row.source_detail)}>{personSourceLabel(val)}</span>,
     },
-    { key: 'owner_name', header: 'Owner', sortable: true, render: (val: string | null) => val || '—' },
+    { key: 'owner_name', header: 'Staff member', sortable: true, render: (val: string | null) => val || '—' },
     {
-      key: 'last_activity_at', header: 'Last activity', sortable: true,
+      key: 'last_activity_at', header: 'Last activity', sortable: true, filter: 'date' as const,
       render: (val: string | null) => <span title={val ? new Date(val).toLocaleString() : undefined}>{relativeDay(val)}</span>,
     },
     {
-      key: 'created_at', header: 'Added', sortable: true,
+      key: 'created_at', header: 'Added', sortable: true, filter: 'date' as const,
       render: (val: string) => new Date(val).toLocaleDateString(),
     },
+    {
+      key: 'last_contacted_at', header: 'Last contacted', sortable: true, filter: false as const,
+      render: (val: string | null) => <span title={val ? new Date(val).toLocaleString() : undefined}>{relativeDay(val)}</span>,
+    },
+    {
+      key: 'next_booking_at', header: 'Next booking', sortable: true, filter: false as const,
+      render: (val: string | null) => (val ? new Date(val).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'),
+    },
+    { key: 'visits_count', header: 'Visits', sortable: true, filter: false as const, align: 'right' as const, render: (val: number | null) => val ?? 0 },
   ];
-  const columns = allColumns.filter((c) => !hiddenColumns.includes(c.key));
+  const columns = orderColumns(allColumns.filter((c) => !hiddenColumns.includes(c.key)), columnOrder, PEOPLE_CANONICAL, ['first_name', 'last_name']);
 
-  // One filter control per column, keyed like the columns so hiding a column hides its filter.
-  const textFilter = (key: keyof ColumnFilters) => (
-    <input
-      style={styles.filterInput}
-      placeholder="Filter…"
-      aria-label={`Filter by ${key.replace('_', ' ')}`}
-      value={columnFilters[key]}
-      onChange={(e) => updateColumnFilter(key, e.target.value)}
-    />
-  );
-  const filterControls: Record<string, React.ReactNode> = {
-    reference_number: textFilter('ref'),
-    first_name: textFilter('first_name'),
-    last_name: textFilter('last_name'),
-    email: textFilter('email'),
-    phone: textFilter('phone'),
-    lifecycle_stage: (
-      <select style={styles.filterInput} aria-label="Filter by stage" value={stageFilter} onChange={(e) => { setStageFilter(e.target.value); setPage(1); }}>
-        <option value="">All stages</option>
-        {viewStages.map((st) => <option key={st} value={st}>{lifecycleStageLabel(st)}</option>)}
-      </select>
-    ),
-    source: (
-      <select style={styles.filterInput} aria-label="Filter by source" value={sourceFilter} onChange={(e) => { setSourceFilter(e.target.value); setPage(1); }}>
-        <option value="">All sources</option>
-        {Object.entries(PERSON_SOURCE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-      </select>
-    ),
-    owner_name: (
-      <select style={styles.filterInput} aria-label="Filter by owner" value={ownerFilter} onChange={(e) => { setOwnerFilter(e.target.value); setPage(1); }}>
-        <option value="">Anyone</option>
-        <option value="me">Mine</option>
-        <option value="none">Unassigned</option>
-      </select>
-    ),
-    created_at: <DateRangeFilter value={dateRange} onChange={(v) => { setDateRange(v); setPage(1); }} />,
-  };
-
-  const filterRow = (
-    <>
-      {columns.map((c) => <th key={c.key} style={styles.filterCell}>{filterControls[c.key]}</th>)}
-    </>
-  );
 
   return (
     <div style={styles.page}>
@@ -380,14 +336,7 @@ export function Customers() {
           <Button variant="outline" onClick={() => navigate('/customers/segments')}>Segments</Button>
           <Button variant="outline" onClick={async () => {
             try {
-              const url = customersApi.getExportUrl(businessId, {
-                lifecycle_stage: stageFilter || undefined,
-                ...debouncedFilters,
-                created_from: dateRange?.from,
-                created_to: dateRange?.to,
-                sort: sortKey,
-                order: sortOrder,
-              });
+              const url = customersApi.getExportUrl(businessId, currentFilters());
               const res = await fetch(url, { headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` } });
               if (!res.ok) throw new Error('Export failed');
               const blob = await res.blob();
@@ -458,7 +407,7 @@ export function Customers() {
                 Select all {total} matching these filters
               </button>
             )}
-            {allMatching && <span style={styles.bulkHint}>Everyone matching these filters, on all pages.</span>}
+            {allMatching && <span style={styles.bulkHint}>Everyone matching these filters, including those not loaded yet.</span>}
             <button style={styles.linkButton} onClick={clearSelection}>Clear selection</button>
           </div>
           {bulkConfirm === null ? (
@@ -474,8 +423,8 @@ export function Customers() {
                 </select>
               )}
               {bulkAction === 'assign_owner' && (
-                <select style={styles.bulkSelect} aria-label="Owner" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
-                  <option value="">Choose an owner…</option>
+                <select style={styles.bulkSelect} aria-label="Staff member" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}>
+                  <option value="">Choose a staff member…</option>
                   <option value="none">Unassigned</option>
                   {owners.map((o) => <option key={o.id} value={o.id}>{o.first_name} {o.last_name}</option>)}
                 </select>
@@ -520,13 +469,15 @@ export function Customers() {
         loading={loading}
         onRowClick={(row) => navigate(`/customers/${row.id}`)}
         onSort={handleSort}
-        filterRow={filterRow}
+        filters={tableFilters}
+        onFiltersChange={setTableFilters}
+        filterOptions={filterOptions}
         selectable={canEditPeople}
         selectedIds={selectedIds}
         onSelectionChange={(ids) => { setSelectedIds(ids); setAllMatching(false); setBulkConfirm(null); setBulkMessage(''); }}
-        page={page}
-        totalPages={totalPages}
-        onPageChange={setPage}
+        onLoadMore={loadMore}
+        hasMore={customers.length < total}
+        loadingMore={loadingMore}
         emptyMessage="No people found"
         mobileCardMode
       />

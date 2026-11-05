@@ -1,8 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import { CopyWidgetSnippetButton } from '../components/CopyWidgetSnippetButton';
+import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
+import { TabBar } from '../design-system/components/navigation/TabBar';
+import { PackagePeople } from '../components/OfferingPeople';
+import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, useDraftList, fieldMark, checkMark, draftBox, UnsavedTag, RowTag } from '../components/unsaved/DraftSections';
+import { LeaveGuard, useGuardedNavigate } from '../components/unsaved/LeaveGuard';
+import { SaveChanges } from '../components/unsaved/SaveChanges';
 import { apiClient } from '../api/client';
 import { formatCurrency } from '../utils/currency';
 
@@ -10,11 +16,26 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
   active: 'success', paused: 'warning', archived: 'neutral',
 };
 
+// One Save for the package (David, 2026-11-02, as in Settings, Events and People): details and
+// included items wait for Save changes; Pause, Activate and Archive act straight away.
 export function PackageDetail() {
+  return (
+    <DraftSectionsProvider>
+      <PackageDetailPage />
+    </DraftSectionsProvider>
+  );
+}
+
+function PackageDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   const [pkg, setPkg] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const { dirtySections } = useDraftSections();
+  // The tab is kept in the address (?tab=), as in Settings, so Back from a profile returns to it (THE-23 remark).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTabState] = useState<'details' | 'people'>(() => (searchParams.get('tab') === 'people' ? 'people' : 'details'));
+  const setActiveTab = (tab: 'details' | 'people') => { setActiveTabState(tab); setSearchParams(tab === 'details' ? {} : { tab }, { replace: true }); };
   const businessId = localStorage.getItem('business_id') || '';
 
   useEffect(() => {
@@ -31,78 +52,73 @@ export function PackageDetail() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/offers?tab=packages')}>← Back to Offerings</button>
-      <div style={styles.headerCard}>
-        <div style={styles.headerInfo}>
-          <h1 style={styles.name}>{pkg.name}</h1>
-          <span style={styles.sub}>{pkg.expiration_type === 'none' ? 'Never expires' : `Expires ${pkg.expiration_days} ${pkg.expiration_unit || 'days'} after purchase`}</span>
+      <LeaveGuard when={dirtySections.length > 0} />
+      <StickyPageTop>
+        <button style={styles.back} onClick={() => navigate('/offers?tab=packages')}>← Back to Offerings</button>
+        <div style={styles.headerCard}>
+          <div style={styles.headerInfo}>
+            <h1 style={styles.name}>{pkg.name}</h1>
+            <span style={styles.sub}>{pkg.expiration_type === 'none' ? 'Never expires' : `Expires ${pkg.expiration_days} ${pkg.expiration_unit || 'days'} after purchase`}</span>
+          </div>
+          <div style={styles.headerRight}>
+            <div style={styles.saveRow}><SaveChanges /></div>
+            <div style={styles.saveRow}>
+              <Badge variant={STATUS_VARIANTS[pkg.status] || 'neutral'}>{pkg.status}</Badge>
+              <span style={styles.price}>{formatCurrency(pkg.price)}</span>
+              <span style={styles.sold}>{pkg.active_purchases || 0} sold</span>
+              <CopyWidgetSnippetButton
+                productId={pkg.id}
+                productName={pkg.name}
+                action="purchase"
+                enabled={pkg.status === 'active'}
+                disabledReason="Activate this package to get a widget snippet"
+              />
+            </div>
+          </div>
         </div>
-        <div style={styles.headerRight}>
-          <Badge variant={STATUS_VARIANTS[pkg.status] || 'neutral'}>{pkg.status}</Badge>
-          <span style={styles.price}>{formatCurrency(pkg.price)}</span>
-          <span style={styles.sold}>{pkg.active_purchases || 0} sold</span>
-          <CopyWidgetSnippetButton
-            productId={pkg.id}
-            productName={pkg.name}
-            action="purchase"
-            enabled={pkg.status === 'active'}
-            disabledReason="Activate this package to get a widget snippet"
-          />
-        </div>
+        <TabBar aria-label="Package sections" tabs={[{ key: 'details' as const, label: 'Details' }, { key: 'people' as const, label: 'Buyers' }].map((t) => ({ ...t, changed: dirtySections.some((s) => s.tab === t.key) }))} active={activeTab} onChange={setActiveTab} />
+      </StickyPageTop>
+      {/* Details stay mounted, so their edits survive switching tabs. */}
+      <div hidden={activeTab !== 'details'}>
+        <DraftTab tab="details">
+          <PackageForm pkg={pkg} businessId={businessId} onUpdate={setPkg} />
+          <PackageItemsCard packageId={pkg.id} />
+        </DraftTab>
       </div>
-      <PackageForm pkg={pkg} businessId={businessId} onUpdate={setPkg} />
-      <PackageItemsCard packageId={pkg.id} />
+      {activeTab === 'people' && <PackagePeople packageId={pkg.id} businessId={businessId} />}
     </div>
   );
 }
 
 function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: string; onUpdate: (p: any) => void }) {
-  const [saving, setSaving] = useState(false);
   const [statusChanging, setStatusChanging] = useState(false);
-  const [priceDisplay, setPriceDisplay] = useState((pkg.price / 100).toFixed(2));
   const [taxCategories, setTaxCategories] = useState<any[]>([]);
 
   useEffect(() => {
     apiClient.get(`/v1/services/tax-categories?business_id=${businessId}`).then((res) => setTaxCategories(res.data.data || [])).catch(() => {});
   }, [businessId]);
 
-  const [form, setForm] = useState({
-    name: pkg.name, description: pkg.description || '', short_description: pkg.short_description || '',
-    price: pkg.price, expiration_type: pkg.expiration_type || 'none',
-    expiration_days: pkg.expiration_days ? String(pkg.expiration_days) : '',
-    expiration_unit: pkg.expiration_unit || 'days',
-    is_taxable: pkg.is_taxable || false, tax_category_id: pkg.tax_category_id || '',
-    new_customers_only: pkg.new_customers_only || false,
+  const fromPkg = (p: any) => ({
+    name: p.name, description: p.description || '', short_description: p.short_description || '',
+    price: p.price, expiration_type: p.expiration_type || 'none',
+    expiration_days: p.expiration_days ? String(p.expiration_days) : '',
+    expiration_unit: p.expiration_unit || 'days',
+    is_taxable: p.is_taxable || false, tax_category_id: p.tax_category_id || '',
+    new_customers_only: p.new_customers_only || false,
   });
-
-  const isDirty = form.name !== pkg.name || form.description !== (pkg.description || '') ||
-    form.short_description !== (pkg.short_description || '') || form.price !== pkg.price ||
-    form.expiration_type !== (pkg.expiration_type || 'none') ||
-    form.expiration_days !== (pkg.expiration_days ? String(pkg.expiration_days) : '') ||
-    form.expiration_unit !== (pkg.expiration_unit || 'days') ||
-    form.is_taxable !== (pkg.is_taxable || false) || form.tax_category_id !== (pkg.tax_category_id || '') ||
-    form.new_customers_only !== (pkg.new_customers_only || false);
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const data = { ...form, expiration_days: form.expiration_days ? parseInt(form.expiration_days) : null };
-      const res = await apiClient.put(`/v1/packages/${pkg.id}?business_id=${businessId}`, data);
-      onUpdate(res.data.data);
-      setPriceDisplay((form.price / 100).toFixed(2));
-    } catch { alert('Failed to save'); }
-    finally { setSaving(false); }
-  };
-
-  const handleDiscard = () => {
-    setForm({ name: pkg.name, description: pkg.description || '', short_description: pkg.short_description || '',
-      price: pkg.price, expiration_type: pkg.expiration_type || 'none',
-      expiration_days: pkg.expiration_days ? String(pkg.expiration_days) : '',
-      expiration_unit: pkg.expiration_unit || 'days',
-      is_taxable: pkg.is_taxable || false, tax_category_id: pkg.tax_category_id || '',
-      new_customers_only: pkg.new_customers_only || false });
-    setPriceDisplay((pkg.price / 100).toFixed(2));
-  };
+  const draft = useDraft('package-details', 'Package details', fromPkg(pkg), async (form) => {
+    const data = { ...form, expiration_days: form.expiration_days ? parseInt(form.expiration_days) : null };
+    const res = await apiClient.put(`/v1/packages/${pkg.id}?business_id=${businessId}`, data);
+    const updated = { ...pkg, ...res.data.data };
+    onUpdate(updated);
+    return fromPkg(updated);
+  });
+  const form = draft.value;
+  const setForm = draft.setValue;
+  const mark = (key: keyof typeof form) => fieldMark(draft.changed((v) => v[key]));
+  const [priceDisplay, setPriceDisplay] = useState((pkg.price / 100).toFixed(2));
+  // The price box follows the stored price after a save.
+  useEffect(() => { setPriceDisplay((draft.saved.price / 100).toFixed(2)); }, [draft.saved.price]);
 
   const handleStatus = async (action: string) => {
     setStatusChanging(true);
@@ -121,28 +137,22 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
         {(pkg.status === 'paused' || pkg.status === 'archived') && <Button variant="secondary" size="sm" onClick={() => handleStatus('activate')} loading={statusChanging}>Activate</Button>}
         {pkg.status !== 'archived' && <Button variant="destructive" size="sm" onClick={() => handleStatus('archive')} loading={statusChanging}>Archive</Button>}
       </div>
-      {isDirty && (
-        <div style={styles.saveBar}>
-          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>You have unsaved changes</span>
-          <div style={{ display: 'flex', gap: '8px' }}><Button variant="outline" size="sm" onClick={handleDiscard}>Discard</Button><Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button></div>
-        </div>
-      )}
-      <div style={styles.card}>
+      <div style={{ ...styles.card, ...draftBox(draft.dirty) }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Package Details</h3>
+          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Package Details<UnsavedTag dirty={draft.dirty} /></h3>
           <Button size="sm" variant="secondary" onClick={() => {}}>Translate</Button>
         </div>
         <div style={styles.formGrid}>
-          <div style={styles.formGroup}><label style={styles.label}>Name *</label><input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+          <div style={styles.formGroup}><label style={styles.label}>Name *</label><input style={{ ...styles.input, ...mark('name') }} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Price *</label>
-            <input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay}
-              onChange={(e) => setPriceDisplay(e.target.value)}
-              onBlur={() => { const cents = Math.round(parseFloat(priceDisplay || '0') * 100); setForm({ ...form, price: cents }); setPriceDisplay((cents / 100).toFixed(2)); }} />
+            <input style={{ ...styles.input, ...mark('price') }} type="number" step="0.01" min="0" value={priceDisplay}
+              onChange={(e) => { setPriceDisplay(e.target.value); setForm({ ...form, price: Math.round(parseFloat(e.target.value || '0') * 100) || 0 }); }}
+              onBlur={() => setPriceDisplay((form.price / 100).toFixed(2))} />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Expiration</label>
-            <select style={styles.input} value={form.expiration_type} onChange={(e) => setForm({ ...form, expiration_type: e.target.value })}>
+            <select style={{ ...styles.input, ...mark('expiration_type') }} value={form.expiration_type} onChange={(e) => setForm({ ...form, expiration_type: e.target.value })}>
               <option value="none">Never expires</option>
               <option value="days_from_purchase">From purchase date</option>
             </select>
@@ -151,8 +161,8 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
             <div style={styles.formGroup}>
               <label style={styles.label}>Expires after</label>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <input style={{ ...styles.input, flex: 1 }} type="number" min="1" value={form.expiration_days} onChange={(e) => setForm({ ...form, expiration_days: e.target.value })} />
-                <select style={{ ...styles.input, width: '120px' }} value={form.expiration_unit} onChange={(e) => setForm({ ...form, expiration_unit: e.target.value })}>
+                <input style={{ ...styles.input, flex: 1, ...mark('expiration_days') }} type="number" min="1" value={form.expiration_days} onChange={(e) => setForm({ ...form, expiration_days: e.target.value })} />
+                <select style={{ ...styles.input, width: '120px', ...mark('expiration_unit') }} value={form.expiration_unit} onChange={(e) => setForm({ ...form, expiration_unit: e.target.value })}>
                   <option value="days">Days</option>
                   <option value="weeks">Weeks</option>
                   <option value="months">Months</option>
@@ -162,7 +172,7 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
           )}
           <div style={styles.formGroup}>
             <label style={styles.label}>Tax Category</label>
-            <select style={styles.input} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
+            <select style={{ ...styles.input, ...mark('tax_category_id') }} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
               <option value="">No tax</option>
               {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
             </select>
@@ -170,64 +180,82 @@ function PackageForm({ pkg, businessId, onUpdate }: { pkg: any; businessId: stri
           <div style={styles.formGroup}>
             <label style={styles.label}>&nbsp;</label>
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', cursor: 'pointer', paddingTop: '4px' }}>
-              <input type="checkbox" checked={form.new_customers_only} onChange={(e) => setForm({ ...form, new_customers_only: e.target.checked })} style={{ width: '16px', height: '16px' }} /> New customers only (intro offer)
+              <input type="checkbox" checked={form.new_customers_only} onChange={(e) => setForm({ ...form, new_customers_only: e.target.checked })} style={{ width: '16px', height: '16px', ...checkMark(draft.changed((v) => v.new_customers_only)) }} /> New customers only (intro offer)
             </label>
           </div>
-          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Short Description</label><input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} /></div>
-          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Description</label><textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Short Description</label><input style={{ ...styles.input, ...mark('short_description') }} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} /></div>
+          <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}><label style={styles.label}>Description</label><textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%', ...mark('description') }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
         </div>
       </div>
     </>
   );
 }
 
+// Included items wait for the page's Save changes.
+const itemChanges = (i: any) => ({ quantity: i.quantity, variant_id: i.redemption_type === 'minutes' ? null : (i.variant_id || null), redemption_type: i.redemption_type });
+
 function PackageItemsCard({ packageId }: { packageId: string }) {
-  const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
-  const [editingItem, setEditingItem] = useState<any>(null);
+  const [editing, setEditing] = useState<{ key?: string; item?: any } | null>(null);
+  const list = useDraftList<any>('package-items', 'Included items', {
+    create: (i) => apiClient.post(`/v1/packages/${packageId}/items`, {
+      item_type: i.item_type, service_id: i.item_type === 'service' ? i.service_id : undefined,
+      merchandise_id: i.item_type === 'merchandise' ? i.merchandise_id : undefined,
+      variant_id: i.redemption_type === 'minutes' ? undefined : (i.variant_id || undefined),
+      quantity: i.quantity,
+      redemption_type: i.redemption_type,
+    }).then((r) => ({ ...i, ...r.data.data })),
+    update: (i) => apiClient.put(`/v1/packages/${packageId}/items/${i.id}`, itemChanges(i)).then((r) => ({ ...i, ...r.data.data })),
+    remove: (i) => apiClient.delete(`/v1/packages/${packageId}/items/${i.id}`).then(() => undefined),
+  });
 
   const fetchItems = useCallback(async () => {
-    try { const res = await apiClient.get(`/v1/packages/${packageId}/items`); setItems(res.data.data || []); }
-    catch { setItems([]); } finally { setLoading(false); }
-  }, [packageId]);
+    try { const res = await apiClient.get(`/v1/packages/${packageId}/items`); list.load(res.data.data || []); }
+    catch { list.load([]); } finally { setLoading(false); }
+  }, [packageId, list.load]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
-  const handleDelete = async (itemId: string) => {
-    if (!confirm('Remove this item?')) return;
-    await apiClient.delete(`/v1/packages/${packageId}/items/${itemId}`);
-    fetchItems();
-  };
-
   return (
-    <div style={styles.card}>
+    <div style={{ ...styles.card, ...draftBox(list.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Included Items</h3>
-        <Button size="sm" variant="secondary" onClick={() => { setEditingItem(null); setShowAdd(true); }}>Add Item</Button>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Included Items<UnsavedTag dirty={list.dirty} /></h3>
+        <Button size="sm" variant="secondary" onClick={() => setEditing({})}>Add Item</Button>
       </div>
       {loading && <p style={styles.muted}>Loading...</p>}
-      {!loading && items.length === 0 && <p style={styles.muted}>No items in this package. Add services or products that the customer receives.</p>}
-      {items.length > 0 && (
+      {!loading && list.rows.length === 0 && <p style={styles.muted}>No items in this package. Add services or products that the customer receives.</p>}
+      {list.rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {items.map((item: any) => (
-            <div key={item.id} style={styles.itemRow}>
-              <div style={{ flex: 1 }}><Badge variant={item.item_type === 'service' ? 'info' : 'neutral'}>{item.item_type === 'service' ? 'Service' : 'Product'}</Badge><strong style={{ marginLeft: '8px' }}>{item.service_name || item.merchandise_name || 'Unknown'}</strong></div>
-              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{item.redemption_type === 'minutes' ? `${item.quantity} min` : `×${item.quantity}`}</span>
-              <button style={styles.editBtn} onClick={() => setEditingItem(item)} title="Edit">✏️</button>
-              <button style={styles.deleteBtn} onClick={() => handleDelete(item.id)} title="Remove">×</button>
-            </div>
-          ))}
+          {list.rows.map((r) => {
+            const item = r.item;
+            const edited = !r.isNew && !r.deleted && list.changed(r, itemChanges);
+            return (
+              <div key={r.key} style={{ ...styles.itemRow, opacity: r.deleted ? 0.6 : 1, ...(edited ? fieldMark(true) : {}) }}>
+                <div style={{ flex: 1, textDecoration: r.deleted ? 'line-through' : 'none' }}>
+                  <Badge variant={item.item_type === 'service' ? 'info' : 'neutral'}>{item.item_type === 'service' ? 'Service' : 'Product'}</Badge><strong style={{ marginLeft: '8px' }}>{item.service_name || item.merchandise_name || 'Unknown'}</strong>
+                  {r.isNew && <> <RowTag>New</RowTag></>}
+                  {edited && <> <RowTag>Changed</RowTag></>}
+                  {r.deleted && <> <RowTag>Deleted when you save</RowTag></>}
+                </div>
+                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{item.redemption_type === 'minutes' ? `${item.quantity} min` : `×${item.quantity}`}</span>
+                {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button> : <>
+                  <button style={styles.editBtn} onClick={() => setEditing({ key: r.key, item })} title="Edit">✏️</button>
+                  <button style={styles.deleteBtn} onClick={() => list.remove(r.key)} title="Remove">×</button>
+                </>}
+              </div>
+            );
+          })}
         </div>
       )}
-      {(showAdd || editingItem) && (
-        <AddEditPackageItemModal packageId={packageId} item={editingItem} onClose={() => { setShowAdd(false); setEditingItem(null); }} onSaved={() => { setShowAdd(false); setEditingItem(null); fetchItems(); }} />
+      {editing && (
+        <AddEditPackageItemModal item={editing.item || null} onClose={() => setEditing(null)}
+          onDone={(data) => { if (editing.key) list.edit(editing.key, data); else list.add(data); setEditing(null); }} />
       )}
     </div>
   );
 }
 
-function AddEditPackageItemModal({ packageId, item, onClose, onSaved }: { packageId: string; item: any; onClose: () => void; onSaved: () => void }) {
+function AddEditPackageItemModal({ item, onClose, onDone }: { item: any; onClose: () => void; onDone: (data: any) => void }) {
   const businessId = localStorage.getItem('business_id') || '';
   const [itemType, setItemType] = useState<'service' | 'merchandise'>(item?.item_type || 'service');
   const [redemptionType, setRedemptionType] = useState<'sessions' | 'minutes'>(item?.redemption_type || 'sessions');
@@ -237,7 +265,6 @@ function AddEditPackageItemModal({ packageId, item, onClose, onSaved }: { packag
   const [selectedId, setSelectedId] = useState(item?.service_id || item?.merchandise_id || '');
   const [selectedVariantId, setSelectedVariantId] = useState(item?.variant_id || '');
   const [quantity, setQuantity] = useState(item?.quantity || 1);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const isEditing = !!item;
 
@@ -253,32 +280,21 @@ function AddEditPackageItemModal({ packageId, item, onClose, onSaved }: { packag
     if (!isEditing) setSelectedVariantId('');
   }, [selectedId, itemType]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const options = itemType === 'service' ? services : merchandise;
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedId && !isEditing) { setError('Select an item'); return; }
-    setSaving(true); setError('');
-    try {
-      if (isEditing) {
-        await apiClient.put(`/v1/packages/${packageId}/items/${item.id}`, {
-          quantity,
-          variant_id: redemptionType === 'minutes' ? null : (selectedVariantId || null),
-          redemption_type: redemptionType,
-        });
-      } else {
-        await apiClient.post(`/v1/packages/${packageId}/items`, {
-          item_type: itemType, service_id: itemType === 'service' ? selectedId : undefined,
-          merchandise_id: itemType === 'merchandise' ? selectedId : undefined,
-          variant_id: redemptionType === 'minutes' ? undefined : (selectedVariantId || undefined),
-          quantity,
-          redemption_type: redemptionType,
-        });
-      }
-      onSaved();
-    } catch (err: any) { setError(err.response?.data?.error || 'Failed to save'); }
-    finally { setSaving(false); }
+    const variant_id = redemptionType === 'minutes' ? undefined : (selectedVariantId || undefined);
+    if (isEditing) { onDone({ quantity, variant_id, redemption_type: redemptionType }); return; }
+    const name = options.find((o: any) => o.id === selectedId)?.name;
+    onDone({
+      item_type: itemType, service_id: itemType === 'service' ? selectedId : undefined,
+      merchandise_id: itemType === 'merchandise' ? selectedId : undefined,
+      service_name: itemType === 'service' ? name : undefined, merchandise_name: itemType === 'merchandise' ? name : undefined,
+      variant_id, quantity, redemption_type: redemptionType,
+    });
   };
-
-  const options = itemType === 'service' ? services : merchandise;
 
   return (
     <div style={styles.overlay}>
@@ -293,13 +309,13 @@ function AddEditPackageItemModal({ packageId, item, onClose, onSaved }: { packag
           )}
           {redemptionType === 'sessions' && variants.length > 0 && (<div style={styles.formGroup}><label style={styles.label}>Variant</label><select style={styles.input} value={selectedVariantId} onChange={(e) => setSelectedVariantId(e.target.value)}><option value="">All / any</option>{variants.map((v: any) => <option key={v.id} value={v.id}>{v.name}{v.price != null ? ` — ${formatCurrency(v.price)}` : ''}</option>)}</select></div>)}
           <div style={styles.formGroup}><label style={styles.label}>{redemptionType === 'minutes' ? 'Total Minutes' : 'Quantity (sessions)'}</label><input style={styles.input} type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />{redemptionType === 'minutes' && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: '2px' }}>{quantity >= 60 ? `${Math.floor(quantity / 60)}h ${quantity % 60 > 0 ? `${quantity % 60}m` : ''}` : `${quantity}m`}</span>}</div>
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit" loading={saving}>{isEditing ? 'Save' : 'Add Item'}</Button></div>
+          <p style={{ ...styles.muted, fontSize: 'var(--font-size-xs)' }}>Saved with the page's Save changes.</p>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit">{isEditing ? 'Done' : 'Add Item'}</Button></div>
         </form>
       </div>
     </div>
   );
 }
-
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '900px', margin: '0 auto' },
   loading: { padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-text-secondary)' },
@@ -308,7 +324,8 @@ const styles: Record<string, React.CSSProperties> = {
   headerInfo: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
   name: { margin: 0, fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)' },
   sub: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
-  headerRight: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: '4px' },
+  headerRight: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: '6px' },
+  saveRow: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' },
   price: { fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)' },
   sold: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   actionsBar: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: 'var(--space-md)' },

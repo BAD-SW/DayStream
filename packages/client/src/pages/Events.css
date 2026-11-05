@@ -96,3 +96,7 @@
   font-weight: var(--card-title-weight);
   color: var(--color-text-title);
 }
+
+/* Show deleted events (David, 2026-10-28) */
+.ev-check { display: flex; align-items: center; gap: 6px; font-size: var(--font-size-sm); color: var(--color-text-secondary); cursor: pointer; }
+.ev-card__restore { margin-top: var(--space-sm); }

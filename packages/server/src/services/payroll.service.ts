@@ -308,12 +308,14 @@ export async function finalizePayroll(periodId: string, businessId: string, user
 /**
  * Get payroll entries for a period.
  */
-export async function getPayrollEntries(periodId: string) {
+export async function getPayrollEntries(periodId: string, businessId: string) {
+  // Scoped to the business: a period id alone must not expose another business's payroll.
   const { rows } = await adminPool.query(
     `SELECT pe.*, u.first_name, u.last_name FROM fin_payroll_entries pe
+     JOIN fin_pay_periods pp ON pp.id = pe.pay_period_id
      JOIN usr_users u ON u.id = pe.user_id
-     WHERE pe.pay_period_id = $1 ORDER BY u.last_name`,
-    [periodId],
+     WHERE pe.pay_period_id = $1 AND pp.business_id = $2 ORDER BY u.last_name`,
+    [periodId, businessId],
   );
   return rows;
 }

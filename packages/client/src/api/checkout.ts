@@ -7,7 +7,7 @@ import { apiClient } from './client';
 export interface OrderItem {
   id: string;
   order_id: string;
-  item_type: 'service' | 'product' | 'membership' | 'package' | 'no_show_fee' | 'gift_card';
+  item_type: 'service' | 'product' | 'membership' | 'package' | 'no_show_fee' | 'gift_card' | 'event';
   item_id: string | null;
   item_name: string;
   variant_id: string | null;
@@ -73,7 +73,8 @@ export async function createOrderFromBooking(businessId: string, bookingId: stri
 
 export async function getOrders(businessId: string, filters?: {
   status?: string; customer_id?: string; date_from?: string; date_to?: string;
-  order_number?: string; product?: string; page?: number;
+  order_number?: string; product?: string; page?: number; limit?: number;
+  columns?: Record<string, { values?: string[]; contains?: string; from?: string; to?: string }>;
 }) {
   const params = new URLSearchParams({ business_id: businessId });
   if (filters?.status) params.set('status', filters.status);
@@ -83,8 +84,19 @@ export async function getOrders(businessId: string, filters?: {
   if (filters?.order_number) params.set('order_number', filters.order_number);
   if (filters?.product) params.set('product', filters.product);
   if (filters?.page) params.set('page', String(filters.page));
+  if (filters?.limit) params.set('limit', String(filters.limit));
+  if (filters?.columns && Object.keys(filters.columns).length) params.set('cf', JSON.stringify(filters.columns));
   const res = await apiClient.get(`/v1/checkout/orders?${params}`);
   return res.data;
+}
+
+/** Every value of one orders column (with counts) among the orders matching the other filters. */
+export async function getOrderColumnValues(businessId: string, column: string, columns: Record<string, unknown>, product?: string): Promise<Array<{ value: string; label: string; count: number }>> {
+  const params = new URLSearchParams({ business_id: businessId, column });
+  if (product) params.set('product', product);
+  if (Object.keys(columns).length) params.set('cf', JSON.stringify(columns));
+  const res = await apiClient.get(`/v1/checkout/orders/column-values?${params}`);
+  return res.data.data;
 }
 
 export async function getOrder(orderId: string): Promise<Order> {
@@ -134,7 +146,7 @@ export async function completeOrder(orderId: string, businessId: string, data: {
 }
 
 /** Line types that can be refunded through the order-refund flow (mirrors the server rule). */
-export const REFUNDABLE_ITEM_TYPES: ReadonlySet<string> = new Set(['product', 'no_show_fee']);
+export const REFUNDABLE_ITEM_TYPES: ReadonlySet<string> = new Set(['product', 'no_show_fee', 'event']);
 
 export interface OneTimeChargeSession {
   providerReference: string;

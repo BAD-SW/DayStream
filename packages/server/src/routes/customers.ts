@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { parseColumnFilters } from '../utils/column-filters';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { tenantContext } from '../auth/tenant-context';
@@ -50,6 +51,11 @@ const updateCustomerSchema = Joi.object({
   avatar_url: Joi.string().uri().allow('', null),
   status: Joi.string().valid('active', 'archived'),
   lifecycle_stage: Joi.string().valid('lead', 'trial', 'active', 'at_risk', 'churned', 'winback'),
+  address_line: Joi.string().max(255).allow('', null),
+  city: Joi.string().max(100).allow('', null),
+  postal_code: Joi.string().max(20).allow('', null),
+  region: Joi.string().max(100).allow('', null),
+  home_location_id: Joi.string().uuid().allow('', null),
 }).min(1);
 
 // --- Routes ---
@@ -100,6 +106,22 @@ customersRouter.post('/', requirePermission('customers:*'), validate(createCusto
 });
 
 // GET /api/v1/customers — List/search customers
+// GET /api/v1/customers/column-values?column= — the values of one column, for its filter list.
+customersRouter.get('/column-values', requirePermission('customers:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id query parameter is required', 'VALIDATION_ERROR', 400); return; }
+    const values = await customerService.getColumnValues(businessId, String(req.query.column || ''), {
+      search: req.query.search as string,
+      ...peopleFilters(req),
+    });
+    success(res, values);
+  } catch (err: any) {
+    console.error('Failed to list column values', err?.message || err);
+    error(res, 'Failed to list column values', 'INTERNAL_ERROR', 500);
+  }
+});
+
 customersRouter.get('/', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
@@ -142,6 +164,7 @@ function peopleFilters(req: Request) {
   const q = req.query;
   const owner = q.owner as string | undefined;
   return {
+    columns: parseColumnFilters(q.cf),
     view: q.view as string | undefined,
     source: q.source as string | undefined,
     owner: owner === 'me' ? (req as AuthenticatedRequest).user.sub : owner,
@@ -191,6 +214,8 @@ const bulkFiltersSchema = Joi.object({
   owner: Joi.string(), incomplete: Joi.boolean(), segment_id: Joi.string().uuid(), include_archived: Joi.boolean(),
   ref: Joi.string(), first_name: Joi.string(), last_name: Joi.string(), email: Joi.string(), phone: Joi.string(),
   created_from: Joi.string(), created_to: Joi.string(), last_activity_from: Joi.string(), last_activity_to: Joi.string(),
+  // Column filters of the shared table (checked by parseColumnFilters).
+  columns: Joi.object().unknown(true),
 });
 
 const bulkSchema = Joi.object({
@@ -213,6 +238,7 @@ const BULK_BACKGROUND_THRESHOLD = 5000;
 function bulkTarget(req: Request) {
   const filters = req.body.filters ? { ...req.body.filters } : undefined;
   if (filters?.owner === 'me') filters.owner = (req as AuthenticatedRequest).user.sub;
+  if (filters?.columns) filters.columns = parseColumnFilters(filters.columns);
   return { ids: req.body.ids, filters };
 }
 
@@ -266,6 +292,36 @@ customersRouter.get('/lifecycle-summary', requirePermission('customers:read'), a
     console.error('Failed to get lifecycle summary', err?.message || err);
     error(res, 'Failed to get lifecycle summary', 'INTERNAL_ERROR', 500);
   }
+});
+
+// --- Column order (THE-18, David 2026-11-04: one order per business, set by the owner) ---
+// The keys of the orderable columns, in order; People, Leads and the Inbox show their own columns
+// in this order. Everyone reads it; owners and managers (settings) change it.
+customersRouter.get('/column-order', async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { rows } = await adminPool.query(`SELECT value FROM sys_business_configurations WHERE business_id = $1 AND key = 'people.column_order'`, [businessId]);
+    let order: string[] = [];
+    try { order = JSON.parse(rows[0]?.value || '[]'); } catch { order = []; }
+    success(res, { order: Array.isArray(order) ? order : [] });
+  } catch (err: any) { console.error('Failed to get column order', err?.message || err); error(res, 'Failed to get column order', 'INTERNAL_ERROR', 500); }
+});
+
+customersRouter.put('/column-order', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const order = Array.isArray(req.body?.order) ? req.body.order.filter((k: any) => typeof k === 'string' && /^[a-z_]{1,40}$/.test(k)).slice(0, 50) : null;
+    if (!order) { error(res, 'order must be a list of column keys', 'VALIDATION_ERROR', 400); return; }
+    await adminPool.query(
+      `INSERT INTO sys_business_configurations (business_id, key, value, updated_by, updated_at) VALUES ($1, 'people.column_order', $2, $3, NOW())
+       ON CONFLICT (business_id, key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+      [businessId, JSON.stringify(order), authReq.user.sub],
+    );
+    success(res, { order });
+  } catch (err: any) { console.error('Failed to save column order', err?.message || err); error(res, 'Failed to save column order', 'INTERNAL_ERROR', 500); }
 });
 
 // --- Lifecycle Config & Scheduled Jobs (must be before /:id) ---
@@ -500,7 +556,13 @@ customersRouter.get('/export', requirePermission('customers:read'), async (req: 
       return;
     }
 
+    // The list's view, segment and column filters: export exactly the people the list shows.
+    const listFilters = peopleFilters(req);
+    const ids = (req.query.cf || req.query.view || req.query.segment_id)
+      ? await customerService.resolveBulkTarget(businessId, { filters: { search: req.query.search as string, ...listFilters } })
+      : undefined;
     const csv = await exportCustomers(businessId, {
+      ids,
       lifecycle_stage: req.query.lifecycle_stage as string,
       search: req.query.search as string,
       ref: req.query.ref as string,
@@ -589,6 +651,7 @@ customersRouter.put('/:id', requirePermission('customers:*'), validate(updateCus
       return;
     }
     if (/Owner must be/.test(err?.message || '')) { error(res, err.message, 'VALIDATION_ERROR', 400); return; }
+    if (err?.code === 'INVALID_LOCATION') { error(res, err.message, err.code, 400); return; }
     error(res, 'Failed to update customer', 'INTERNAL_ERROR', 500);
   }
 });
@@ -678,7 +741,7 @@ customersRouter.post('/:id/anonymize', requirePermission('customers:*'), async (
 import * as notesService from '../services/customer-notes.service';
 
 const createNoteSchema = Joi.object({
-  category: Joi.string().min(1).max(50).required(),
+  category: Joi.string().max(50).allow('', null).optional(),
   content: Joi.string().min(1).required(),
   is_sensitive: Joi.boolean().default(false),
 });
@@ -1099,9 +1162,10 @@ const updatePreferencesSchema = Joi.object({
   sms_marketing: Joi.boolean(),
   push_notifications: Joi.boolean(),
   booking_reminders: Joi.boolean(),
+  transactional_emails: Joi.boolean(),
   // How the consent was obtained. Needed when staff switch a marketing channel ON.
   evidence: Joi.string().max(500).allow('', null),
-}).or('email_marketing', 'sms_marketing', 'push_notifications', 'booking_reminders');
+}).or('email_marketing', 'sms_marketing', 'push_notifications', 'booking_reminders', 'transactional_emails');
 
 const setConsentSchema = Joi.object({
   channel: Joi.string().valid('email', 'sms', 'whatsapp', 'in_app', 'push').required(),

@@ -15,7 +15,7 @@
  *   - Tax is never revenue; it credits 2300 Tax Payable.
  */
 
-export type SaleItemType = 'service' | 'product' | 'membership' | 'package' | 'no_show_fee';
+export type SaleItemType = 'service' | 'product' | 'membership' | 'package' | 'no_show_fee' | 'event';
 
 /** Item type → revenue account code (used when the line is recognised immediately). */
 export const REVENUE_ACCOUNT_CODES: Record<SaleItemType, string> = {
@@ -24,6 +24,7 @@ export const REVENUE_ACCOUNT_CODES: Record<SaleItemType, string> = {
   membership: '4200',   // Membership Revenue (via deferral + recognition)
   package: '4500',      // Package Revenue   (via deferral + recognition)
   no_show_fee: '4600',  // No-Show Fee Revenue (immediate)
+  event: '4700',        // Event Revenue (immediate, on the day the ticket is paid)
 };
 
 /** Item types whose revenue is deferred at point of sale (credited to 2400). */

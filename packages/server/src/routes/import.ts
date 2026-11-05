@@ -132,7 +132,7 @@ function buildRows(
   explicitMapping: Record<number, string> | null, explicitHasHeader: boolean | null,
 ): { rows: Array<Record<string, string>>; hasHeader: boolean; proposals: ColumnProposal[] } {
   const { grid } = parseFileToGrid(buffer, fileName);
-  const hasHeader = explicitHasHeader !== null ? explicitHasHeader : detectHeaderRow(grid).hasHeader;
+  const hasHeader = explicitHasHeader !== null ? explicitHasHeader : detectHeaderRow(grid, fields).hasHeader;
   const proposals = detectColumns(grid, hasHeader, fields);
   const mapping: Record<number, string> = explicitMapping ?? {};
   if (!explicitMapping) {
@@ -167,7 +167,7 @@ importRouter.post('/:kind/analyze', requirePermission('settings:*'), upload.sing
     if (!req.file) { error(res, 'A file is required', 'VALIDATION_ERROR', 400); return; }
     const { grid } = parseFileToGrid(req.file.buffer, req.file.originalname);
     if (grid.length === 0) { error(res, 'The file is empty', 'VALIDATION_ERROR', 400); return; }
-    const header = detectHeaderRow(grid);
+    const header = detectHeaderRow(grid, fieldsForKind(kind));
     const proposals = detectColumns(grid, header.hasHeader, fieldsForKind(kind));
     const sampleStart = header.hasHeader ? 1 : 0;
     const sampleRows = grid.slice(sampleStart, sampleStart + 5);

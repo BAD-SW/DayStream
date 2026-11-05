@@ -158,12 +158,14 @@ describe('Membership Engine — Plans & Enrollments', () => {
       ENROLLMENT_ID = body.data.id;
     });
 
-    it('refuses a second active membership for the same customer', async () => {
+    // A customer may hold several memberships on different plans (764002c);
+    // only a second live enrollment in the SAME plan is refused.
+    it('refuses a second live membership in the same plan', async () => {
       const { statusCode, body } = await request('POST', '/api/v1/memberships', {
-        business_id: BUSINESS_ID, customer_id: CUSTOMER_ID, plan_id: SECOND_PLAN_ID,
+        business_id: BUSINESS_ID, customer_id: CUSTOMER_ID, plan_id: PLAN_ID,
       }, ownerToken);
       expect(statusCode).toBe(409);
-      expect(body.code).toBe('ALREADY_ENROLLED');
+      expect(body.code).toBe('ALREADY_ENROLLED_IN_PLAN');
     });
 
     it('returns 404 when the plan does not exist', async () => {

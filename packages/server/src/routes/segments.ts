@@ -16,7 +16,7 @@ segmentsRouter.use(tenantContext);
 
 const ruleSchema = Joi.object({
   field: Joi.string().required(),
-  operator: Joi.string().valid('eq', 'neq', 'gt', 'lt', 'in', 'between', 'contains', 'within_days', 'older_than_days', 'never', 'is_true', 'is_false').required(),
+  operator: Joi.string().valid('eq', 'neq', 'gt', 'lt', 'gte', 'lte', 'in', 'between', 'contains', 'within_days', 'older_than_days', 'never', 'is_true', 'is_false').required(),
   // 'never', 'is_true' and 'is_false' need no value.
   value: Joi.any(),
 });

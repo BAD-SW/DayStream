@@ -49,6 +49,9 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
   { id: 'reports', phase: 17, icon: '📈', titleKey: 'Reports', descriptionKey: 'Analytics and insights', path: '/reports', personas: ['business'], permission: 'reports:read' },
 
   // Marketing
+  // Inbox (THE-18): owners, managers and front desk; customers write from "Messages".
+  { id: 'inbox', phase: 47, icon: '💬', titleKey: 'Inbox', descriptionKey: 'Messages with leads and customers', path: '/inbox', personas: ['business'], permission: 'inbox:read' },
+  { id: 'messages', phase: 47, icon: '💬', titleKey: 'Messages', descriptionKey: 'Write to the business', path: '/messages', personas: ['customer'] },
   { id: 'marketing', phase: 16, icon: '📣', titleKey: 'Marketing', descriptionKey: 'Campaigns and automation', path: '/marketing', personas: ['business'], permission: 'marketing:read' },
 
   // Offerings

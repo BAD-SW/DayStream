@@ -115,6 +115,15 @@ packagesRouter.get('/:id', requirePermission('services:read'), async (req: Reque
   } catch (err: any) { console.error('Failed to get package', err?.message || err); error(res, 'Failed to get package', 'INTERNAL_ERROR', 500); }
 });
 
+// GET /api/v1/packages/:id/purchases — who bought it (THE-23 item 1)
+packagesRouter.get('/:id/purchases', requirePermission('services:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, await packageService.getPackagePurchases(req.params.id, businessId));
+  } catch (err: any) { console.error('Failed to list package purchases', err?.message || err); error(res, 'Failed to list package purchases', 'INTERNAL_ERROR', 500); }
+});
+
 // PUT /api/v1/packages/:id
 packagesRouter.put('/:id', requirePermission('services:*'), async (req: Request, res: Response) => {
   try {

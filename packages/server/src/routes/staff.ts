@@ -521,6 +521,7 @@ staffRouter.delete('/:id/qualifications/:qid', requirePermission('staff:*'), asy
 
 staffRouter.get('/:id/availability/patterns', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
+    if (!(await staffService.getStaffById(req.params.id, (req as AuthenticatedRequest).tenantId))) { error(res, 'Staff not found', 'NOT_FOUND', 404); return; }
     const patterns = await availService.getPatterns(req.params.id);
     success(res, patterns);
   } catch (err: any) {
@@ -699,6 +700,7 @@ staffRouter.get('/:id/leave/balance', requirePermission('staff:read'), async (re
 
 staffRouter.get('/:id/services', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
+    if (!(await staffService.getStaffById(req.params.id, (req as AuthenticatedRequest).tenantId))) { error(res, 'Staff not found', 'NOT_FOUND', 404); return; }
     const assignments = await assignService.getServiceAssignments(req.params.id);
     success(res, assignments);
   } catch (err: any) {
@@ -739,6 +741,7 @@ staffRouter.delete('/:id/services/:sid', requirePermission('staff:*'), async (re
 
 staffRouter.get('/:id/locations', requirePermission('staff:read'), async (req: Request, res: Response) => {
   try {
+    if (!(await staffService.getStaffById(req.params.id, (req as AuthenticatedRequest).tenantId))) { error(res, 'Staff not found', 'NOT_FOUND', 404); return; }
     const assignments = await assignService.getLocationAssignments(req.params.id);
     success(res, assignments);
   } catch (err: any) {

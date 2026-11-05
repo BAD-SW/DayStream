@@ -113,9 +113,10 @@ app.use('/storage', async (req, res, next) => {
     const storagePath = config?.local_path || process.env.STORAGE_LOCAL_PATH || path.join(process.cwd(), 'storage');
     const filePath = path.join(storagePath, req.path);
 
-    // Prevent path traversal
+    // Prevent path traversal. private/ (customer documents, photos, data exports) is only
+    // served through authenticated API routes.
     const resolved = path.resolve(filePath);
-    if (!resolved.startsWith(path.resolve(storagePath))) {
+    if (!resolved.startsWith(path.resolve(storagePath)) || resolved.startsWith(path.resolve(storagePath, 'private'))) {
       res.status(403).json({ error: 'Forbidden' });
       return;
     }

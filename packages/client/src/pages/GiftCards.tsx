@@ -22,17 +22,17 @@ export function GiftCards() {
   const businessId = localStorage.getItem('business_id') || '';
   const [cards, setCards] = useState<payApi.GiftCard[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
   const [showIssue, setShowIssue] = useState(false);
   const [detail, setDetail] = useState<payApi.GiftCard | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setCards(await payApi.listGiftCards(businessId, statusFilter || undefined)); }
+    // Every gift card: the Status column's filter replaces the menu above the table (column filters beside the sort icon, David 2026-11-02).
+    try { setCards(await payApi.listGiftCards(businessId)); }
     catch { setCards([]); }
     finally { setLoading(false); }
-  }, [businessId, statusFilter]);
+  }, [businessId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -54,7 +54,7 @@ export function GiftCards() {
 
   const columns = [
     { key: 'code', header: 'Code', render: (_v: any, c: payApi.GiftCard) => <span style={{ fontFamily: 'var(--font-family-mono, monospace)' }}>{c.code}</span> },
-    { key: 'balance', header: 'Balance', render: (_v: any, c: payApi.GiftCard) => `${formatCurrency(c.balance_cents, c.currency)} of ${formatCurrency(c.initial_amount_cents, c.currency)}` },
+    { key: 'balance', header: 'Balance', filter: 'amount' as const, filterValue: (c: payApi.GiftCard) => c.balance_cents, render: (_v: any, c: payApi.GiftCard) => `${formatCurrency(c.balance_cents, c.currency)} of ${formatCurrency(c.initial_amount_cents, c.currency)}` },
     { key: 'recipient', header: 'Recipient', render: (_v: any, c: payApi.GiftCard) => c.recipient_name || c.recipient_email || '—' },
     { key: 'expires', header: 'Expires', render: (_v: any, c: payApi.GiftCard) => (c.expires_at ? new Date(c.expires_at).toLocaleDateString() : 'Never') },
     { key: 'status', header: 'Status', render: (_v: any, c: payApi.GiftCard) => <Badge variant={STATUS_VARIANT[c.status] || 'neutral'}>{c.status}</Badge> },
@@ -77,19 +77,7 @@ export function GiftCards() {
         <p style={{ fontSize: 'var(--font-size-sm)', color: message.toLowerCase().includes('fail') || message.toLowerCase().includes('no ') ? 'var(--color-error)' : 'var(--color-success)', marginBottom: 'var(--space-md)' }}>{message}</p>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: 'var(--space-md)' }}>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          style={{ padding: '8px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' }}
-          aria-label="Filter by status"
-        >
-          <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="depleted">Depleted</option>
-          <option value="expired">Expired</option>
-          <option value="void">Void</option>
-        </select>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px', marginBottom: 'var(--space-md)' }}>
         <Button onClick={() => setShowIssue(true)}>Issue Gift Card</Button>
       </div>
 

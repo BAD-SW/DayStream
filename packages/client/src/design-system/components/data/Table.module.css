@@ -17,3 +17,53 @@
 .rowClickable:hover .rowEditAffordance {
   opacity: 1;
 }
+
+
+/* Tables scroll with the page; the header row stays pinned under the page's title row and
+   tabs (David, 2026-11-02: no pages, one scrollbar, as in Audiobly). */
+.wrapper { overflow: visible; }
+.stickyTh {
+  position: sticky;
+  top: calc(var(--app-topbar-height, 76px) + var(--page-top-h, 0px));
+  z-index: 3;
+  background: var(--table-header-bg, var(--color-background));
+}
+/* A table wider than its place scrolls inside its own area (sideways and down) with the header
+   pinned at the top of that area, so the header still stays in view. */
+.wrapper[data-wide] {
+  overflow: auto;
+  max-height: calc(100vh - var(--app-topbar-height, 76px) - var(--page-top-h, 0px) - 24px);
+}
+.wrapper[data-wide] .stickyTh { top: 0; }
+.wrapper[data-inbox] .stickyTh { position: static; }
+
+.headIcon {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  padding: 3px;
+  border-radius: 6px;
+  color: var(--color-text-disabled, var(--color-text-secondary));
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.headIcon:hover { background: var(--color-surface-hover); color: var(--color-text); }
+.headIcon[data-on] { color: var(--color-primary); background: var(--color-surface-hover); }
+.headIcon:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+.headBadge {
+  position: absolute;
+  top: -6px;
+  right: -7px;
+  min-width: 14px;
+  padding: 1px 3px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: var(--color-text-inverse, #fff);
+  font-size: 9px;
+  line-height: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-align: center;
+}

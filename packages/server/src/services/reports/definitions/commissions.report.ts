@@ -19,10 +19,12 @@ import { computeOrderCommissionLines } from '../../commission.service';
  *                  for a percentage commission (0/— context for flat rate).
  *   - Rate       : the percentage (commission) or per-unit amount (flat rate).
  *   - Commission : the earned amount for that line.
- *   - Status     : Posted when the order falls in a FINALIZED pay period (already
- *                  paid on a payslip); otherwise Projected (earned, not yet run
- *                  through payroll). Voided/refunded orders never appear — they
- *                  earn nothing.
+ *   - Entry      : Sale (on the day of the sale) or Refund (THE-21: the commission
+ *                  on a refunded part, taken back on the day of the refund, when
+ *                  the business takes commission back).
+ *   - Status     : Posted when the line's date falls in a FINALIZED pay period
+ *                  (already paid on a payslip); otherwise Projected (earned, not
+ *                  yet run through payroll). Voided orders never appear.
  *
  * Group by Staff (the Staff column is groupable) to roll the detail up into
  * per-staff totals in the runner.
@@ -35,6 +37,7 @@ export const commissionsReport: ReportDefinition = {
   columns: [
     { key: 'order_number', header: 'Order', type: 'text', filterable: true, link: { to: 'order', idKey: 'order_id' } },
     { key: 'completed_date', header: 'Date', type: 'date', filterable: true },
+    { key: 'entry', header: 'Entry', type: 'text', filterable: true, groupable: true },
     { key: 'staff', header: 'Staff', type: 'text', filterable: true, groupable: true },
     { key: 'customer', header: 'Customer', type: 'text', filterable: true, link: { to: 'customer', idKey: 'customer_id' } },
     { key: 'item', header: 'Item', type: 'text', filterable: true },
@@ -105,6 +108,7 @@ export const commissionsReport: ReportDefinition = {
       order_number: l.order_number,
       order_id: l.order_id,
       completed_date: toDate(l.completed_at),
+      entry: l.entry,
       staff: staffById.get(l.staff_id) || '—',
       customer: l.customer_id ? (customerById.get(l.customer_id) || '—') : 'Walk-in',
       customer_id: l.customer_id,

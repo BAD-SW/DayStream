@@ -123,12 +123,13 @@ export async function deleteCategory(id: string, businessId: string) {
 
 // --- Services ---
 
-export async function getServices(businessId: string, filters?: { category_id?: string; status?: string; search?: string; page?: number }) {
+export async function getServices(businessId: string, filters?: { category_id?: string; status?: string; search?: string; page?: number; limit?: number }) {
   const params = new URLSearchParams({ business_id: businessId });
   if (filters?.category_id) params.set('category_id', filters.category_id);
   if (filters?.status) params.set('status', filters.status);
   if (filters?.search) params.set('search', filters.search);
   if (filters?.page) params.set('page', String(filters.page));
+  if (filters?.limit) params.set('limit', String(filters.limit));
   const res = await apiClient.get(`/v1/services?${params}`);
   return res.data;
 }

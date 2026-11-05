@@ -39,13 +39,15 @@ export function getPermissionsFromRole(rawRole: string): string[] {
     case 'system_admin': case 'system_support': case 'super_admin': return ['*:*'];
     case 'tenant_owner': return ['*:*'];
     case 'tenant_manager': return ['reports:read', 'settings:*'];
-    case 'business_owner': return ['services:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*', 'customers:*', 'resources:*', 'marketing:*', 'cms:*', 'integrations:*', 'checkin:*', 'events:*', 'community:*'];
-    case 'business_manager': case 'manager': return ['services:read', 'bookings:*', 'staff:read', 'reports:read', 'customers:*', 'schedule:*', 'checkin:*', 'events:read'];
+    case 'business_owner': return ['services:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*', 'customers:*', 'resources:*', 'marketing:*', 'cms:*', 'integrations:*', 'checkin:*', 'events:*', 'community:*', 'inbox:*'];
+    case 'business_manager': case 'manager': return ['services:read', 'bookings:*', 'staff:read', 'reports:read', 'customers:*', 'schedule:*', 'checkin:*', 'events:read', 'inbox:*'];
+    // Front desk: as staff, plus the Inbox (THE-18; therapists and trainers do not get it).
+    case 'reception': return ['bookings:read', 'bookings:update', 'customers:read', 'schedule:read', 'checkin:*', 'events:read', 'inbox:*'];
     // Front-line staff — including job-title roles (reception, therapist, trainer,
     // etc.) that the backend maps to the "Staff" permission set. Keep this in sync
     // with the server Staff role so the nav never shows modules the API will deny.
     case 'business_staff': case 'staff':
-    case 'reception': case 'therapist': case 'trainer':
+    case 'therapist': case 'trainer':
       return ['bookings:read', 'bookings:update', 'customers:read', 'schedule:read', 'checkin:*', 'events:read'];
     case 'customer': return ['bookings:read', 'bookings:create'];
     // Unknown role → least privilege, not owner. Granting broad rights here is a

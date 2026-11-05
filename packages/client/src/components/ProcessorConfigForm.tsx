@@ -3,6 +3,7 @@ import { loadStripe, Stripe } from '@stripe/stripe-js';
 import { Button } from '../design-system/components/actions/Button';
 import * as payApi from '../api/payments';
 import type { ProviderDefinition, SavedConfigView, MethodOwnerParams, OwnerLevel } from '../api/payments';
+import { useDraft, fieldMark, draftBox } from './unsaved/DraftSections';
 
 // Cache Stripe.js instances per publishable key (loadStripe should run once per key).
 const stripeCache = new Map<string, Promise<Stripe | null>>();
@@ -34,13 +35,27 @@ function cleanStripeError(message: string): string {
 interface Props {
   owner: { owner_level: OwnerLevel; tenant_id?: string | null; business_id?: string | null };
   onSaved?: (view: SavedConfigView) => void;
+  /** On a page with one Save for everything (business Settings): the form has no Save button of
+   *  its own, marks the fields that changed, and is saved by the page's Save changes. */
+  sharedSave?: { id: string; label: string };
 }
 
-export function ProcessorConfigForm({ owner, onSaved }: Props) {
+export function ProcessorConfigForm({ owner, onSaved, sharedSave }: Props) {
   const [schemas, setSchemas] = useState<ProviderDefinition[]>([]);
-  const [provider, setProvider] = useState<string>('');
-  const [values, setValues] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState<SavedConfigView | null>(null);
+  // The provider and its field values as edited; compared with what is stored to mark changes.
+  const draft = useDraft<{ provider: string; values: Record<string, string> }>(
+    sharedSave?.id || 'processor-config', sharedSave?.label || 'Payment processor', { provider: '', values: {} },
+    async (d) => {
+      const view = await payApi.saveProcessorConfig(owner, d.provider, d.values);
+      setSaved(view);
+      onSaved?.(view);
+      // Keep non-secret values populated; clear secret inputs (now shown as masked/stored).
+      return { provider: d.provider, values: { ...(view.config || {}) } };
+    },
+  );
+  const { provider, values } = draft.value;
+  const setValues = (next: Record<string, string>) => draft.setValue({ provider, values: next });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -57,10 +72,9 @@ export function ProcessorConfigForm({ owner, onSaved }: Props) {
       ]);
       setSchemas(defs);
       const activeProvider = current?.provider || defs[0]?.name || '';
-      setProvider(activeProvider);
       setSaved(current);
       // Seed form with saved non-secret values; secrets stay blank (shown via placeholder).
-      setValues({ ...(current?.config || {}) });
+      draft.load({ provider: activeProvider, values: { ...(current?.config || {}) } });
     } catch {
       setMessage({ ok: false, text: 'Failed to load provider configuration.' });
     } finally { setLoading(false); }
@@ -72,9 +86,8 @@ export function ProcessorConfigForm({ owner, onSaved }: Props) {
   const def = schemas.find((s) => s.name === provider);
 
   function onProviderChange(next: string) {
-    setProvider(next);
     // If switching to the already-saved provider, restore its saved config; else clear.
-    setValues(saved?.provider === next ? { ...(saved.config || {}) } : {});
+    draft.setValue({ provider: next, values: saved?.provider === next ? { ...(saved.config || {}) } : {} });
     setMessage(null);
   }
 
@@ -126,12 +139,8 @@ export function ProcessorConfigForm({ owner, onSaved }: Props) {
     if (!def) return;
     setSaving(true); setMessage(null);
     try {
-      const view = await payApi.saveProcessorConfig(owner, provider, values);
-      setSaved(view);
-      // Keep non-secret values populated; clear secret inputs (now shown as masked/stored).
-      setValues({ ...(view.config || {}) });
+      await draft.save();
       setMessage({ ok: true, text: 'Configuration saved.' });
-      onSaved?.(view);
     } catch (err: any) {
       const details = err?.response?.data?.details;
       setMessage({ ok: false, text: err?.response?.data?.error || (details ? `Missing: ${details.join(', ')}` : 'Failed to save configuration.') });
@@ -141,10 +150,10 @@ export function ProcessorConfigForm({ owner, onSaved }: Props) {
   if (loading) return <p style={styles.muted}>Loading…</p>;
 
   return (
-    <div style={styles.wrap}>
+    <div style={{ ...styles.wrap, ...(sharedSave ? draftBox(draft.dirty) : {}) }}>
       <div style={styles.field}>
         <label style={styles.label}>Provider</label>
-        <select style={styles.input} value={provider} onChange={(e) => onProviderChange(e.target.value)}>
+        <select style={{ ...styles.input, ...(sharedSave ? fieldMark(draft.changed((v) => v.provider)) : {}) }} value={provider} onChange={(e) => onProviderChange(e.target.value)}>
           {schemas.map((s) => <option key={s.name} value={s.name}>{s.label}</option>)}
         </select>
       </div>
@@ -154,6 +163,7 @@ export function ProcessorConfigForm({ owner, onSaved }: Props) {
         const placeholder = isSetSecret
           ? `${saved?.secretsMasked?.[f.key] ?? '••••'} (leave blank to keep)`
           : (f.placeholder || '');
+        const mark = sharedSave ? fieldMark((values[f.key] ?? '') !== (draft.saved.values[f.key] ?? '')) : {};
         return (
           <div key={f.key} style={styles.field}>
             <label style={styles.label}>
@@ -161,7 +171,7 @@ export function ProcessorConfigForm({ owner, onSaved }: Props) {
             </label>
             {f.type === 'select' ? (
               <select
-                style={styles.input}
+                style={{ ...styles.input, ...mark }}
                 value={values[f.key] ?? ''}
                 onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
               >
@@ -170,7 +180,7 @@ export function ProcessorConfigForm({ owner, onSaved }: Props) {
               </select>
             ) : (
               <input
-                style={styles.input}
+                style={{ ...styles.input, ...mark }}
                 type={f.type === 'password' ? 'password' : 'text'}
                 name={`pay_cfg_${f.key}`}
                 value={values[f.key] ?? ''}
@@ -194,7 +204,7 @@ export function ProcessorConfigForm({ owner, onSaved }: Props) {
 
       <div style={styles.actions}>
         <Button variant="outline" loading={testing} onClick={handleTest}>Test connection</Button>
-        <Button variant="primary" loading={saving} onClick={handleSave}>Save configuration</Button>
+        {!sharedSave && <Button variant="primary" loading={saving} onClick={handleSave}>Save configuration</Button>}
       </div>
     </div>
   );

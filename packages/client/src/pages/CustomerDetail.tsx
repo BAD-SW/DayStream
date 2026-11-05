@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Table, applyTableFilters } from '../design-system/components/data/Table';
+import type { TableFilters } from '../design-system/components/data/Table';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Tabs } from '../design-system/components/navigation/Tabs';
+import { TabBar } from '../design-system/components/navigation/TabBar';
+import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
+import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, fieldMark, checkMark, draftBox, UnsavedTag, RowTag } from '../components/unsaved/DraftSections';
+import { LeaveGuard, useGuardedNavigate } from '../components/unsaved/LeaveGuard';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import { Dropdown } from '../design-system/components/actions/Dropdown';
@@ -18,10 +23,20 @@ import type { PayTransaction, Invoice, PaymentMethod } from '../api/payments';
 import { formatCurrency } from '../utils/currency';
 import { formatDateOnly } from '../utils/date';
 import { lifecycleStageLabel, personSourceLabel } from '@daystream/shared';
+import {
+  ProfilePhoto, VisitsCreditsCard, CommunicationCard, ReferralsCard, ReviewsCard,
+  MessagesTab, TasksTab, DocumentsTab, AssignStaffDialog, PasswordResetDialog, PersonalDataDialog,
+} from './CustomerProfileParts';
 
 const LIFECYCLE_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   lead: 'neutral', trial: 'info', active: 'success', at_risk: 'warning', churned: 'error', winback: 'info',
 };
+
+const PROFILE_TABS: { key: string; label: string }[] = [
+  { key: 'overview', label: 'Overview' }, { key: 'messages', label: 'Messages' }, { key: 'timeline', label: 'Timeline' },
+  { key: 'billing', label: 'Billing' }, { key: 'notes', label: 'Notes' }, { key: 'tasks', label: 'Tasks' },
+  { key: 'documents', label: 'Documents' }, { key: 'preferences', label: 'Consent' },
+];
 
 // Stage and source names come from one shared map ('trial' is shown as "New customer").
 const formatStage = lifecycleStageLabel;
@@ -30,30 +45,61 @@ function formatWhen(value?: string | null): string {
   return value ? new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 }
 
+/** The day only, so the facts fit on one line; the time is in the tooltip. */
+function formatDay(value?: string | null): string {
+  return value ? new Date(value).toLocaleDateString(undefined, { dateStyle: 'medium' }) : '—';
+}
+
+// One Save for the profile (David, 2026-11-01, as in Settings): the contact details wait for
+// Save changes in the header; notes, tasks, documents, payments and the More actions act at once.
 export function CustomerDetail() {
+  return (
+    <DraftSectionsProvider>
+      <CustomerProfilePage />
+    </DraftSectionsProvider>
+  );
+}
+
+function CustomerProfilePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  // Leaving the profile from a button asks first too when something is unsaved.
+  const guardedNavigate = useGuardedNavigate();
   const [customer, setCustomer] = useState<Customer | null>(null);
   // Bumped after a merge so the edit form restarts from the merged record instead of
   // showing its old values as "unsaved changes".
   const [mergeCount, setMergeCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState<any[]>([]);
-  const [activities, setActivities] = useState<any[]>([]);
   const [preferences, setPreferences] = useState<any>(null);
   const [tags, setTags] = useState<any[]>([]);
+  // Staff members who can look after a person or be given a task.
+  const [staff, setStaff] = useState<Array<{ id: string; first_name: string; last_name: string }>>([]);
+  const [tab, setTab] = useState('overview');
+  const [dialog, setDialog] = useState<'payment' | 'assign' | 'reset' | 'data' | null>(null);
+  // Bumped by the header's Add task button (opens the form) and after changes (reloads the Timeline).
+  const [addTaskSignal, setAddTaskSignal] = useState(0);
+  const [timelineVersion, setTimelineVersion] = useState(0);
+  const { dirtySections, saveAll, saving } = useDraftSections();
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const dirty = dirtySections.length > 0;
+  useEffect(() => { setSaveResult((r) => (dirty ? (r?.ok ? null : r) : (r && !r.ok ? null : r))); }, [dirty]);
+  const saveChanges = async () => {
+    const { failed } = await saveAll();
+    setSaveResult(failed.length ? { ok: false, text: `Not saved: ${failed.map((f) => `${f.label} (${f.error})`).join('; ')}` } : { ok: true, text: 'All changes saved.' });
+  };
 
   const businessId = localStorage.getItem('business_id') || '';
 
   useEffect(() => {
     if (!id || !businessId) return;
     setLoading(true);
+    setTab('overview');
     Promise.all([
       customersApi.getCustomer(id, businessId),
       customersApi.getNotes(id, businessId).catch(() => []),
-      customersApi.getActivities(id, businessId).then((r) => r.data).catch(() => []),
       customersApi.getPreferences(id, businessId).catch(() => null),
-    ]).then(([cust, n, acts, prefs]) => {
+    ]).then(([cust, n, prefs]) => {
       // An old link to a record that was merged: go to the person it was merged into.
       if (cust?.status === 'merged' && cust.merged_into_id) {
         navigate(`/customers/${cust.merged_into_id}`, { replace: true });
@@ -61,82 +107,154 @@ export function CustomerDetail() {
       }
       setCustomer(cust);
       setNotes(n);
-      setActivities(acts);
       setPreferences(prefs);
       setTags((cust as any)?.tags || []);
     }).catch(() => setCustomer(null)).finally(() => setLoading(false));
   }, [id, businessId]);
+
+  useEffect(() => {
+    if (!businessId) return;
+    customersApi.getOwners(businessId).then(setStaff).catch(() => setStaff([]));
+  }, [businessId]);
 
   if (loading) return <div style={styles.loading}>Loading...</div>;
   if (!customer) return <div style={styles.loading}>Customer not found</div>;
 
   // Switching a marketing channel ON records the person's consent, so the Consent tab
   // sends how it was obtained as `evidence`.
-  const handlePreferenceChange = async (key: string, value: boolean, evidence?: string) => {
-    const payload: Record<string, any> = { [key]: value };
-    if (evidence) payload.evidence = evidence;
+  const displayName = customer.display_name || `${customer.first_name} ${customer.last_name}`.trim() || customer.email || customer.phone || 'Unknown';
+  const initials = `${(customer.first_name || displayName)[0]?.toUpperCase() || ''}${customer.last_name?.[0]?.toUpperCase() || ''}`;
+  // Reload the person (and the Timeline) after an action changed something on them.
+  const refresh = () => {
+    customersApi.getCustomer(customer.id, businessId).then(setCustomer).catch(() => {});
+    setTimelineVersion((n) => n + 1);
+  };
+
+  const handleArchive = async () => {
+    if (!confirm('Archive this customer? They will be hidden from active lists.')) return;
+    try { setCustomer(await customersApi.updateCustomer(customer.id, businessId, { status: 'archived' })); setTimelineVersion((n) => n + 1); }
+    catch { alert('Failed to archive'); }
+  };
+  const handleReactivate = async () => {
+    try { setCustomer(await customersApi.updateCustomer(customer.id, businessId, { status: 'active' })); setTimelineVersion((n) => n + 1); }
+    catch { alert('Failed to reactivate'); }
+  };
+  const handleAnonymize = async () => {
+    const confirmed = confirm(
+      '⚠️ GDPR Data Anonymization\n\n' +
+      'This will PERMANENTLY and IRREVERSIBLY anonymize all personal data for this customer including:\n' +
+      '• Name, email, phone, date of birth\n' +
+      '• Notes and activity history\n' +
+      '• All identifiable information\n\n' +
+      'This action cannot be undone. Are you sure you want to proceed?'
+    );
+    if (!confirmed) return;
+    const doubleConfirm = confirm(
+      'Final confirmation: Type OK to permanently anonymize this customer\'s data.\n\n' +
+      'Customer: ' + customer.first_name + ' ' + customer.last_name + '\n' +
+      'This is IRREVERSIBLE.'
+    );
+    if (!doubleConfirm) return;
     try {
-      const updated = await customersApi.updatePreferences(customer.id, businessId, payload);
-      setPreferences(updated);
-    } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to update preferences');
+      await customersApi.anonymizeCustomer(customer.id, businessId);
+      alert('Customer data has been anonymized successfully.');
+      window.location.reload();
+    } catch {
+      alert('Failed to anonymize customer data.');
     }
   };
 
-  const displayName = customer.display_name || `${customer.first_name} ${customer.last_name}`.trim() || customer.email || customer.phone || 'Unknown';
+  // Header actions: Contact opens Messages, Add task opens the task form; the rest are in More.
+  const moreItems = [
+    { id: 'order', label: 'New order', onClick: () => guardedNavigate(`/checkout?new=true&customer=${customer.id}`) },
+    { id: 'payment', label: 'Record payment', onClick: () => setDialog('payment') },
+    { id: 'd1', label: '', divider: true },
+    { id: 'assign', label: 'Assign staff member', onClick: () => { setTab('overview'); setTimeout(() => document.getElementById('f-staff')?.focus(), 50); } },
+    { id: 'reset', label: 'Request password reset', disabled: !customer.has_account, onClick: () => setDialog('reset') },
+    { id: 'data', label: 'Send personal data (GDPR)', disabled: !customer.email, onClick: () => setDialog('data') },
+    { id: 'd2', label: '', divider: true },
+    customer.status === 'archived'
+      ? { id: 'reactivate', label: 'Reactivate', onClick: handleReactivate }
+      : { id: 'archive', label: 'Archive', danger: true, disabled: customer.status !== 'active', onClick: handleArchive },
+    { id: 'anonymize', label: 'GDPR anonymise', danger: true, onClick: handleAnonymize },
+  ];
+
+  const facts: Array<[string, string, string?]> = [
+    ['Source', personSourceLabel(customer.source, customer.source_detail)],
+    ['Staff member', customer.owner_name || 'Unassigned'],
+    ['Home location', customer.home_location_name || '—'],
+    ['Last activity', formatDay(customer.last_activity_at), formatWhen(customer.last_activity_at)],
+    ['Last visit', formatDay(customer.last_visit_at), formatWhen(customer.last_visit_at)],
+    ['Last login', customer.has_account ? formatDay(customer.last_login_at) : 'No account', customer.has_account ? formatWhen(customer.last_login_at) : undefined],
+    ['Known since', formatDay(customer.created_at), formatWhen(customer.created_at)],
+  ];
 
   return (
     <div style={styles.page}>
-      {/* Back button */}
-      <button style={styles.back} onClick={() => navigate('/customers')}>← Back to People</button>
+      <TakePaymentModal open={dialog === 'payment'} onClose={() => { setDialog(null); setTimelineVersion((n) => n + 1); }} businessId={businessId} customerId={customer.id} />
+      <AssignStaffDialog open={dialog === 'assign'} onClose={() => setDialog(null)} customer={customer} businessId={businessId} staff={staff} onSaved={(c) => { setCustomer(c); setTimelineVersion((n) => n + 1); }} />
+      <PasswordResetDialog open={dialog === 'reset'} onClose={() => setDialog(null)} customer={customer} businessId={businessId} onSent={() => setTimelineVersion((n) => n + 1)} />
+      <PersonalDataDialog open={dialog === 'data'} onClose={() => setDialog(null)} customer={customer} businessId={businessId} onSent={() => setTimelineVersion((n) => n + 1)} />
 
-      {/* Profile Header */}
+      <LeaveGuard when={dirty} />
+      {/* Back button */}
+      <button style={styles.back} onClick={() => guardedNavigate('/customers')}>← Back to People</button>
+
+      <StickyPageTop>
+      {/* Profile header: who, the actions, and the facts on one line (THE-16) */}
       <div style={styles.profileHeader}>
-        <div style={styles.avatar}>
-          {(customer.first_name || displayName)[0]?.toUpperCase()}{customer.last_name?.[0]?.toUpperCase()}
-        </div>
-        <div style={styles.profileInfo}>
-          <h1 style={styles.name}>{displayName}</h1>
-          <span style={styles.refNum}>{customer.reference_number}</span>
-          <div style={styles.headerBadges}>
-            <Badge variant={LIFECYCLE_VARIANTS[customer.lifecycle_stage] || 'neutral'}>
-              {formatStage(customer.lifecycle_stage)}
-            </Badge>
-            {customer.incomplete && <Badge variant="warning">Incomplete</Badge>}
+        <div style={styles.headerTop}>
+          <ProfilePhoto customer={customer} businessId={businessId} initials={initials} onChanged={refresh} />
+          <div style={styles.profileInfo}>
+            <h1 style={styles.name}>{displayName}</h1>
+            <div style={styles.headerBadges}>
+              <span style={styles.refNum}>{customer.reference_number}</span>
+              <Badge variant={LIFECYCLE_VARIANTS[customer.lifecycle_stage] || 'neutral'}>
+                {formatStage(customer.lifecycle_stage)}
+              </Badge>
+              {/* The record's own status only when it is not the usual "active". */}
+              {customer.status !== 'active' && <Badge variant="neutral">{customer.status === 'anonymized' ? 'Anonymised' : customer.status === 'archived' ? 'Archived' : customer.status}</Badge>}
+              {customer.incomplete && <Badge variant="warning">Incomplete</Badge>}
+              <span style={styles.refNum}>In this stage since {formatDay(customer.lifecycle_changed_at)}</span>
+            </div>
+          </div>
+          <div style={styles.headerActions}>
+            {dirty && !(saveResult && !saveResult.ok) ? <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning-dark)' }}>You have unsaved changes.</span>
+              : saveResult && <span role={saveResult.ok ? 'status' : 'alert'} style={{ fontSize: 'var(--font-size-sm)', color: saveResult.ok ? 'var(--color-success)' : 'var(--color-error)' }}>{saveResult.text}</span>}
+            <Button size="sm" onClick={saveChanges} loading={saving} disabled={!dirty}>Save changes</Button>
+            <Button size="sm" variant="secondary" onClick={() => setTab('messages')}>Contact</Button>
+            <Button size="sm" variant="secondary" onClick={() => { setTab('tasks'); setAddTaskSignal((n) => n + 1); }}>Add task</Button>
+            <Dropdown trigger={<Button size="sm" variant="secondary">More ▾</Button>} items={moreItems} />
           </div>
         </div>
-        <div style={styles.headerActions}>
-          <Badge variant={customer.status === 'active' ? 'success' : 'neutral'}>{customer.status}</Badge>
-          <span style={styles.joinedDate}>Known since {new Date(customer.created_at).toLocaleDateString()}</span>
-        </div>
+        <dl style={styles.factStrip}>
+          {facts.map(([label, value, title]) => (
+            <div key={label} style={styles.fact}><dt style={styles.factLabel}>{label}</dt><dd style={styles.factValue} title={title}>{value}</dd></div>
+          ))}
+        </dl>
       </div>
-
-      {/* Who this person is, at a glance (Phase 46) */}
-      <dl style={styles.factStrip}>
-        <div style={styles.fact}><dt style={styles.factLabel}>Source</dt><dd style={styles.factValue}>{personSourceLabel(customer.source, customer.source_detail)}</dd></div>
-        <div style={styles.fact}><dt style={styles.factLabel}>Owner</dt><dd style={styles.factValue}>{customer.owner_name || 'Unassigned'}</dd></div>
-        <div style={styles.fact}><dt style={styles.factLabel}>Last activity</dt><dd style={styles.factValue}>{formatWhen(customer.last_activity_at)}</dd></div>
-        <div style={styles.fact}><dt style={styles.factLabel}>Last visit</dt><dd style={styles.factValue}>{formatWhen(customer.last_visit_at)}</dd></div>
-        <div style={styles.fact}><dt style={styles.factLabel}>Last login</dt><dd style={styles.factValue}>{customer.has_account ? formatWhen(customer.last_login_at) : 'No account'}</dd></div>
-        <div style={styles.fact}><dt style={styles.factLabel}>In this stage since</dt><dd style={styles.factValue}>{customer.lifecycle_changed_at ? new Date(customer.lifecycle_changed_at).toLocaleDateString() : '—'}</dd></div>
-      </dl>
 
       <DuplicateBanner customer={customer} businessId={businessId} onMerged={(c) => {
         setCustomer(c);
         setMergeCount((n) => n + 1);
-        customersApi.getActivities(c.id, businessId).then((r) => setActivities(r.data)).catch(() => {});
+        setTimelineVersion((n) => n + 1);
       }} />
 
-      {/* Tabs */}
-      <Tabs
-        items={[
-          { id: 'overview', label: 'Overview', content: <OverviewTab key={mergeCount} customer={customer} tags={tags} onUpdate={setCustomer} /> },
-          { id: 'notes', label: 'Notes', content: <NotesTab notes={notes} customerId={customer.id} businessId={businessId} onRefresh={(n) => setNotes(n)} /> },
-          { id: 'billing', label: 'Billing', content: <BillingTab customerId={customer.id} businessId={businessId} /> },
-          { id: 'preferences', label: 'Consent', content: <PreferencesTab preferences={preferences} onChange={handlePreferenceChange} customerId={customer.id} businessId={businessId} /> },
-          { id: 'timeline', label: 'Timeline', content: <TimelineTab activities={activities} customerId={customer.id} businessId={businessId} /> },
-        ]}
-      />
+      {/* Tabs (order agreed on THE-16) */}
+      <TabBar aria-label="Profile sections" tabs={PROFILE_TABS.map((t) => ({ ...t, changed: dirtySections.some((d) => d.tab === t.key) }))} active={tab} onChange={setTab} />
+      </StickyPageTop>
+      <div hidden={tab !== 'overview'}>
+        <DraftTab tab="overview">
+          <OverviewTab key={mergeCount} customer={customer} tags={tags} preferences={preferences} staff={staff} onUpdate={(c) => { setCustomer(c); setTimelineVersion((n) => n + 1); }} onOpenConsent={() => setTab('preferences')} />
+        </DraftTab>
+      </div>
+      {tab === 'messages' && <MessagesTab customer={customer} />}
+      {tab === 'timeline' && <TimelineTab key={timelineVersion} customerId={customer.id} businessId={businessId} />}
+      {tab === 'billing' && <BillingTab customerId={customer.id} businessId={businessId} />}
+      <div hidden={tab !== 'notes'}><DraftTab tab="notes"><NotesTab notes={notes} customerId={customer.id} businessId={businessId} onRefresh={(n) => setNotes(n)} /></DraftTab></div>
+      <div hidden={tab !== 'tasks'}><DraftTab tab="tasks"><TasksTab customer={customer} businessId={businessId} staff={staff} addSignal={addTaskSignal} /></DraftTab></div>
+      <div hidden={tab !== 'documents'}><DraftTab tab="documents"><DocumentsTab customerId={customer.id} businessId={businessId} /></DraftTab></div>
+      <div hidden={tab !== 'preferences'}><DraftTab tab="preferences"><PreferencesTab preferences={preferences} onSaved={(prefs) => { setPreferences(prefs); setTimelineVersion((n) => n + 1); }} customerId={customer.id} businessId={businessId} /></DraftTab></div>
     </div>
   );
 }
@@ -196,9 +314,11 @@ function dateOnly(value?: string | null): string {
   return Number.isNaN(t) ? '' : new Date(t + 12 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: any[]; onUpdate: (c: Customer) => void }) {
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
+function OverviewTab({ customer, tags, preferences, staff, onUpdate, onOpenConsent }: {
+  customer: Customer; tags: any[]; preferences: any; staff: Array<{ id: string; first_name: string; last_name: string }>;
+  onUpdate: (c: Customer) => void; onOpenConsent: () => void;
+}) {
+  const fromCustomer = () => ({
     first_name: customer.first_name,
     last_name: customer.last_name,
     email: customer.email || '',
@@ -209,158 +329,64 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
     country: customer.country || '',
     lifecycle_stage: customer.lifecycle_stage || 'lead',
     owner_user_id: customer.owner_user_id || '',
+    home_location_id: customer.home_location_id || '',
+    address_line: customer.address_line || '',
+    city: customer.city || '',
+    postal_code: customer.postal_code || '',
+    region: customer.region || '',
   });
-  const [owners, setOwners] = useState<Array<{ id: string; first_name: string; last_name: string }>>([]);
-  const [statusChanging, setStatusChanging] = useState(false);
-  const [anonymizing, setAnonymizing] = useState(false);
-  const [showPayment, setShowPayment] = useState(false);
-
   const businessId = localStorage.getItem('business_id') || '';
+  const draft = useDraft('profile-contact', 'Contact information', fromCustomer(), async (values) => {
+    const updated = await customersApi.updateCustomer(customer.id, businessId, values);
+    onUpdate(updated);
+  });
+  const form = draft.value;
+  const setForm = draft.setValue;
+  const [locations, setLocations] = useState<Array<{ id: string; name: string }>>([]);
+  // A change made elsewhere on the page (e.g. More › Assign staff member) becomes the new
+  // stored value while nothing here is being edited.
+  useEffect(() => { if (!draft.dirty) draft.load(fromCustomer()); }, [customer]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mark = (key: keyof ReturnType<typeof fromCustomer>) => fieldMark(draft.changed((v) => v[key]));
 
+  // The home location is one of the business's own active locations.
   useEffect(() => {
     if (!businessId) return;
-    customersApi.getOwners(businessId).then(setOwners).catch(() => setOwners([]));
+    apiClient.get(`/v1/locations?business_id=${businessId}&status=active`)
+      .then((r) => setLocations((r.data.data || []).filter((l: any) => l.status === 'active' || !l.status)))
+      .catch(() => setLocations([]));
   }, [businessId]);
 
-  // Detect if form has unsaved changes
-  const isDirty = form.first_name !== customer.first_name ||
-    form.last_name !== customer.last_name ||
-    form.email !== (customer.email || '') ||
-    form.owner_user_id !== (customer.owner_user_id || '') ||
-    form.phone !== (customer.phone || '') ||
-    form.date_of_birth !== dateOnly(customer.date_of_birth) ||
-    form.gender !== (customer.gender || '') ||
-    form.preferred_language !== (customer.preferred_language || 'en') ||
-    form.country !== (customer.country || '') ||
-    form.lifecycle_stage !== (customer.lifecycle_stage || 'lead');
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const updated = await customersApi.updateCustomer(customer.id, businessId, form);
-      onUpdate(updated);
-    } catch (err: any) { alert(err.response?.data?.error || 'Failed to update this person'); }
-    finally { setSaving(false); }
-  };
-
-  const handleDiscard = () => {
-    setForm({
-      first_name: customer.first_name,
-      last_name: customer.last_name,
-      email: customer.email || '',
-      phone: customer.phone || '',
-      date_of_birth: dateOnly(customer.date_of_birth),
-      gender: customer.gender || '',
-      preferred_language: customer.preferred_language || 'en',
-      country: customer.country || '',
-      lifecycle_stage: customer.lifecycle_stage || 'lead',
-      owner_user_id: customer.owner_user_id || '',
-    });
-  };
-
-  const handleArchive = async () => {
-    if (!confirm('Archive this customer? They will be hidden from active lists.')) return;
-    setStatusChanging(true);
-    try {
-      const updated = await customersApi.updateCustomer(customer.id, businessId, { status: 'archived' });
-      onUpdate(updated);
-      setStatusChanging(false);
-    } catch { alert('Failed to archive'); setStatusChanging(false); }
-  };
-
-  const handleReactivate = async () => {
-    setStatusChanging(true);
-    try {
-      const updated = await customersApi.updateCustomer(customer.id, businessId, { status: 'active' });
-      onUpdate(updated);
-      setStatusChanging(false);
-    } catch { alert('Failed to reactivate'); setStatusChanging(false); }
-  };
-
-  const handleAnonymize = async () => {
-    const confirmed = confirm(
-      '⚠️ GDPR Data Anonymization\n\n' +
-      'This will PERMANENTLY and IRREVERSIBLY anonymize all personal data for this customer including:\n' +
-      '• Name, email, phone, date of birth\n' +
-      '• Notes and activity history\n' +
-      '• All identifiable information\n\n' +
-      'This action cannot be undone. Are you sure you want to proceed?'
-    );
-    if (!confirmed) return;
-    const doubleConfirm = confirm(
-      'Final confirmation: Type OK to permanently anonymize this customer\'s data.\n\n' +
-      'Customer: ' + customer.first_name + ' ' + customer.last_name + '\n' +
-      'This is IRREVERSIBLE.'
-    );
-    if (!doubleConfirm) return;
-    setAnonymizing(true);
-    try {
-      await customersApi.anonymizeCustomer(customer.id, businessId);
-      alert('Customer data has been anonymized successfully.');
-      window.location.reload();
-    } catch {
-      alert('Failed to anonymize customer data.');
-    } finally {
-      setAnonymizing(false);
-    }
-  };
+  const text = (key: keyof typeof form, label: string, extra: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
+    <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor={`f-${key}`}>{label}</label><input id={`f-${key}`} style={{ ...styles.fieldInput, ...mark(key) }} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} {...extra} /></div>
+  );
 
   return (
     <div style={styles.tabContent}>
-      <TakePaymentModal
-        open={showPayment}
-        onClose={() => setShowPayment(false)}
-        businessId={businessId}
-        customerId={customer.id}
-      />
-      {/* Quick Actions Bar */}
-      <div style={styles.quickActionsBar}>
-        <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
-          <Button size="sm" variant="secondary" onClick={() => setShowPayment(true)}>Record Payment</Button>
-          <Button size="sm" variant="secondary" onClick={() => { /* TODO: open order flow pre-filled with customer */ }}>Place Order</Button>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          {customer.status === 'active' && <Button variant="destructive" size="sm" onClick={handleArchive} loading={statusChanging}>Archive</Button>}
-          {customer.status === 'archived' && <Button variant="primary" size="sm" onClick={handleReactivate} loading={statusChanging}>Reactivate</Button>}
-          <Button variant="destructive" size="sm" onClick={handleAnonymize} loading={anonymizing}>GDPR Anonymize</Button>
-        </div>
-      </div>
-
-      {/* Unsaved changes bar */}
-      {isDirty && (
-        <div style={styles.saveBar}>
-          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>You have unsaved changes</span>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Button variant="outline" size="sm" onClick={handleDiscard}>Discard</Button>
-            <Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button>
-          </div>
-        </div>
-      )}
 
       {/* Cards layout */}
       <div style={styles.overviewGrid}>
         {/* Contact Information Card — always editable */}
-        <div style={{ ...styles.card, gridColumn: '1 / -1' }}>
-          <h3 style={styles.cardTitle}>Contact Information</h3>
+        <div style={{ ...styles.card, gridColumn: '1 / -1', ...draftBox(draft.dirty) }}>
+          <h3 style={styles.cardTitle}>Contact Information<UnsavedTag dirty={draft.dirty} /></h3>
           <div style={styles.contactGrid}>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>First Name</label><input style={styles.fieldInput} value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} /></div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Last Name</label><input style={styles.fieldInput} value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} /></div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Email</label><input style={styles.fieldInput} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Phone</label><input style={styles.fieldInput} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Date of Birth</label><input style={styles.fieldInput} type="date" value={form.date_of_birth} onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })} /></div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Gender</label>
-              <select style={styles.fieldInput} value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+            {text('first_name', 'First Name')}
+            {text('last_name', 'Last Name')}
+            {text('email', 'Email', { type: 'email' })}
+            {text('phone', 'Phone')}
+            {text('date_of_birth', 'Date of Birth', { type: 'date' })}
+            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-gender">Gender</label>
+              <select id="f-gender" style={{ ...styles.fieldInput, ...mark('gender') }} value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
                 <option value="">Not specified</option><option value="male">Male</option><option value="female">Female</option><option value="non-binary">Non-binary</option><option value="other">Other</option>
               </select>
             </div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Language</label>
-              <select style={styles.fieldInput} value={form.preferred_language} onChange={(e) => setForm({ ...form, preferred_language: e.target.value })}>
+            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-lang">Language</label>
+              <select id="f-lang" style={{ ...styles.fieldInput, ...mark('preferred_language') }} value={form.preferred_language} onChange={(e) => setForm({ ...form, preferred_language: e.target.value })}>
                 <option value="en">English</option><option value="es">Spanish</option>
               </select>
             </div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Country</label><input style={styles.fieldInput} value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} /></div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Lifecycle Stage</label>
-              <select style={styles.fieldInput} value={form.lifecycle_stage} onChange={(e) => setForm({ ...form, lifecycle_stage: e.target.value })}>
+            {text('country', 'Country')}
+            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-stage">Lifecycle Stage</label>
+              <select id="f-stage" style={{ ...styles.fieldInput, ...mark('lifecycle_stage') }} value={form.lifecycle_stage} onChange={(e) => setForm({ ...form, lifecycle_stage: e.target.value })}>
                 <option value="lead">Lead</option>
                 <option value="trial">New customer</option>
                 <option value="active">Active</option>
@@ -369,20 +395,33 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
                 <option value="winback">Won back</option>
               </select>
             </div>
-            <div style={styles.formGroup}><label style={styles.fieldLabel}>Owner</label>
-              <select style={styles.fieldInput} value={form.owner_user_id} onChange={(e) => setForm({ ...form, owner_user_id: e.target.value })}>
+            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-staff">Staff member</label>
+              <select id="f-staff" style={{ ...styles.fieldInput, ...mark('owner_user_id') }} value={form.owner_user_id} onChange={(e) => setForm({ ...form, owner_user_id: e.target.value })}>
                 <option value="">Unassigned</option>
-                {owners.map((o) => <option key={o.id} value={o.id}>{o.first_name} {o.last_name}</option>)}
+                {staff.map((o) => <option key={o.id} value={o.id}>{o.first_name} {o.last_name}</option>)}
+              </select>
+            </div>
+            <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-home">Home location</label>
+              <select id="f-home" style={{ ...styles.fieldInput, ...mark('home_location_id') }} value={form.home_location_id} onChange={(e) => setForm({ ...form, home_location_id: e.target.value })}>
+                <option value="">Not set</option>
+                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {form.home_location_id && !locations.some((l) => l.id === form.home_location_id) && <option value={form.home_location_id}>{customer.home_location_name || 'Current location'}</option>}
               </select>
             </div>
           </div>
+          <h4 style={styles.subTitle}>Address</h4>
+          <div style={styles.contactGrid}>
+            <div style={{ gridColumn: 'span 2' }}>{text('address_line', 'Street address')}</div>
+            {text('city', 'City')}
+            {text('postal_code', 'Postal code')}
+            {text('region', 'Province / region')}
+          </div>
         </div>
 
-        {/* Financial Summary Card */}
         <FinancialSummaryCard customerId={customer.id} businessId={businessId} />
-
-        {/* Membership Card */}
         <MembershipCard customerId={customer.id} businessId={businessId} />
+        <VisitsCreditsCard customerId={customer.id} businessId={businessId} />
+        <CommunicationCard preferences={preferences} onOpenConsent={onOpenConsent} />
 
         {/* Payment Methods on File — the customer's stored, tokenized methods
             (used for one-time charges and membership renewals). The reusable
@@ -396,16 +435,18 @@ function OverviewTab({ customer, tags, onUpdate }: { customer: Customer; tags: a
         </div>
 
         {/* Tags Card */}
-        {tags.length > 0 && (
-          <div style={styles.card}>
-            <h3 style={styles.cardTitle}>Tags</h3>
-            <div style={styles.tagsList}>
-              {tags.map((tag: any) => (
-                <span key={tag.id} style={{ ...styles.tag, borderColor: tag.color }}>{tag.name}</span>
-              ))}
-            </div>
+        <div style={styles.card}>
+          <h3 style={styles.cardTitle}>Tags</h3>
+          {tags.length === 0 && <p style={styles.cardMuted}>No tags.</p>}
+          <div style={styles.tagsList}>
+            {tags.map((tag: any) => (
+              <span key={tag.id} style={{ ...styles.tag, borderColor: tag.color }}>{tag.name}</span>
+            ))}
           </div>
-        )}
+        </div>
+
+        <ReferralsCard customerId={customer.id} businessId={businessId} />
+        <ReviewsCard customer={customer} businessId={businessId} />
       </div>
     </div>
   );
@@ -429,7 +470,6 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
       .then((res) => {
         const cats = res.data.data || [];
         setCategories(cats);
-        if (cats.length > 0 && !category) setCategory(cats[0].name);
       })
       .catch(() => setCategories([]));
   }, [businessId]);
@@ -450,24 +490,33 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
 
   useEffect(() => { fetchNotes(0); }, [fetchNotes]);
 
-  const handleAddNote = async () => {
-    if (!newNote.trim() || !category) return;
-    await customersApi.createNote(customerId, businessId, { category, content: newNote });
-    setNewNote('');
+  // New notes and deletions wait for the page's Save changes (David, 2026-11-01).
+  type PendingNotes = { added: Array<{ key: string; category: string; content: string }>; removed: string[] };
+  const draft = useDraft<PendingNotes>('profile-notes', 'Notes', { added: [], removed: [] }, async (d) => {
+    const left: PendingNotes = { added: [...d.added], removed: [...d.removed] };
+    try {
+      for (const n of d.added) { await customersApi.createNote(customerId, businessId, { category: n.category, content: n.content }); left.added.shift(); }
+      for (const id of d.removed) { await customersApi.deleteNote(customerId, id, businessId); left.removed.shift(); }
+    } catch (err) { fetchNotes(0); draft.rebase({ added: [], removed: [] }, left); throw err; }
     fetchNotes(0);
+    return { added: [], removed: [] };
+  });
+  const handleAddNote = () => {
+    if (!newNote.trim()) return;
+    draft.setValue({ ...draft.value, added: [{ key: `${Date.now()}`, category, content: newNote.trim() }, ...draft.value.added] });
+    setNewNote('');
   };
-
-  const handleDelete = async (noteId: string) => {
-    if (!confirm('Delete this note? This cannot be undone.')) return;
-    await customersApi.deleteNote(customerId, noteId, businessId);
-    fetchNotes(offset);
-  };
+  const toggleDelete = (noteId: string) => draft.setValue({
+    ...draft.value,
+    removed: draft.value.removed.includes(noteId) ? draft.value.removed.filter((x) => x !== noteId) : [...draft.value.removed, noteId],
+  });
 
   const totalPages = Math.ceil(total / LIMIT);
   const currentPage = Math.floor(offset / LIMIT) + 1;
 
   return (
-    <div style={styles.tabContent}>
+    <div style={{ ...styles.tabContent, ...draftBox(draft.dirty) }}>
+      <UnsavedTag dirty={draft.dirty} />
       {/* Add note form */}
       <div style={styles.noteForm}>
         <textarea
@@ -478,16 +527,14 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
           rows={3}
         />
         <div style={styles.noteActions}>
-          {categories.length > 0 ? (
-            <select value={category} onChange={(e) => setCategory(e.target.value)} style={styles.select}>
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.name}>{cat.name}</option>
-              ))}
-            </select>
-          ) : (
-            <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>No categories defined. Add them in Settings.</span>
-          )}
-          <Button onClick={handleAddNote} disabled={categories.length === 0}>Add Note</Button>
+          {/* The category is optional (David, 2026-11-01). */}
+          <select value={category} onChange={(e) => setCategory(e.target.value)} style={styles.select} aria-label="Category">
+            <option value="">No category</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.name}>{cat.name}</option>
+            ))}
+          </select>
+          <Button onClick={handleAddNote} disabled={!newNote.trim()}>Add Note</Button>
         </div>
       </div>
 
@@ -507,18 +554,41 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
         <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginLeft: 'auto' }}>{total} note{total !== 1 ? 's' : ''}</span>
       </div>
 
-      {/* Notes list */}
-      {notesList.length === 0 && <p style={styles.empty}>No notes found</p>}
-      {notesList.map((note: any) => (
+      {/* Notes list: new ones first, then the stored ones */}
+      {draft.value.added.map((n) => (
+        <div key={n.key} style={{ ...styles.noteCard, ...fieldMark(true) }}>
+          <div style={styles.noteHeader}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {n.category && <Badge variant="neutral">{n.category}</Badge>}
+              <RowTag>New</RowTag>
+            </div>
+            <button onClick={() => draft.setValue({ ...draft.value, added: draft.value.added.filter((x) => x.key !== n.key) })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 }} title="Remove this new note">×</button>
+          </div>
+          <p style={styles.noteContent}>{n.content}</p>
+        </div>
+      ))}
+      {notesList.length === 0 && draft.value.added.length === 0 && <p style={styles.empty}>No notes found</p>}
+      {notesList.map((note: any) => draft.value.removed.includes(note.id) ? (
+        <div key={note.id} style={{ ...styles.noteCard, opacity: 0.6 }}>
+          <div style={styles.noteHeader}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {note.category && <Badge variant="neutral">{note.category}</Badge>}
+              <RowTag>Deleted when you save</RowTag>
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => toggleDelete(note.id)}>Undo</Button>
+          </div>
+          <p style={{ ...styles.noteContent, textDecoration: 'line-through' }}>{note.content || '(encrypted)'}</p>
+        </div>
+      ) : (
         <div key={note.id} style={styles.noteCard}>
           <div style={styles.noteHeader}>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <Badge variant="neutral">{note.category}</Badge>
+              {note.category && <Badge variant="neutral">{note.category}</Badge>}
               {note.is_sensitive && <Badge variant="error">Sensitive</Badge>}
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <span style={styles.noteDate}>{new Date(note.created_at).toLocaleDateString()}</span>
-              <button onClick={() => handleDelete(note.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 }} title="Delete note">×</button>
+              <button onClick={() => toggleDelete(note.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1 }} title="Delete note">×</button>
             </div>
           </div>
           <p style={styles.noteContent}>{note.content || '(encrypted)'}</p>
@@ -539,62 +609,86 @@ function NotesTab({ notes: _initialNotes, customerId, businessId }: { notes: any
   );
 }
 
-function TimelineTab({ activities, customerId, businessId }: { activities: any[]; customerId: string; businessId: string }) {
-  const [filter, setFilter] = useState('');
-  const [items, setItems] = useState(activities);
+const TIMELINE_FILTERS: Array<[customersApi.TimelineFilter, string]> = [
+  ['all', 'All'], ['booking', 'Bookings'], ['membership', 'Membership'], ['pack', 'Packs'], ['payment', 'Payments'],
+  ['lifecycle', 'Lifecycle'], ['profile_change', 'Profile changes'], ['message', 'Messages'],
+];
+const TIMELINE_KIND_LABELS: Record<string, string> = {
+  booking: 'Booking', membership: 'Membership', pack: 'Pack', payment: 'Payment', lifecycle: 'Lifecycle',
+  profile_change: 'Profile change', message: 'Message', event: 'Event', campaign: 'Campaign', note: 'Note',
+  tag: 'Tag', document: 'Document', widget_registration: 'Sign-up', identity_match: 'Matched',
+};
 
-  useEffect(() => { setItems(activities); }, [activities]);
+/**
+ * Every interaction of the person with the business in one place (THE-16): newest first,
+ * with what is still to come (future bookings, the next renewal) highlighted. A payment is
+ * one line; its receipt or invoice opens from the Billing tab or the link on the line.
+ */
+function TimelineTab({ customerId, businessId }: { customerId: string; businessId: string }) {
+  const navigate = useNavigate();
+  const [filter, setFilter] = useState<customersApi.TimelineFilter>('all');
+  const [items, setItems] = useState<customersApi.TimelineItem[] | null>(null);
+  const [failed, setFailed] = useState(false);
 
-  const handleFilter = async (type: string) => {
-    setFilter(type);
-    const result = await customersApi.getActivities(customerId, businessId, { activity_type: type || undefined });
-    setItems(result.data);
+  useEffect(() => {
+    setItems(null); setFailed(false);
+    customersApi.getTimeline(customerId, businessId, filter).then(setItems).catch(() => setFailed(true));
+  }, [customerId, businessId, filter]);
+
+  const openLink = async (link: NonNullable<customersApi.TimelineItem['link']>) => {
+    if (link.type === 'order') { navigate(`/receipt/${link.id}`); return; }
+    try {
+      const blob = await payApi.fetchReceiptPdf(link.id, businessId);
+      window.open(URL.createObjectURL(blob), '_blank');
+    } catch { alert('The receipt could not be opened.'); }
   };
 
   return (
     <div style={styles.tabContent}>
       <div style={styles.filterRow}>
-        {['', 'booking', 'payment', 'membership', 'lifecycle', 'profile_change'].map((t) => (
-          <button
-            key={t}
-            onClick={() => handleFilter(t)}
-            style={{ ...styles.filterBtn, ...(filter === t ? styles.filterBtnActive : {}) }}
-          >
-            {t || 'All'}
+        {TIMELINE_FILTERS.map(([key, label]) => (
+          <button key={key} type="button" aria-pressed={filter === key} onClick={() => setFilter(key)}
+            style={{ ...styles.filterBtn, textTransform: 'none', ...(filter === key ? styles.filterBtnActive : {}) }}>
+            {label}
           </button>
         ))}
       </div>
-      {items.length === 0 && <p style={styles.empty}>No activities</p>}
-      {items.length > 0 && (
+      <p style={{ ...styles.cardMuted, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 'var(--space-sm)' }}>
+        <span aria-hidden="true" style={{ width: '12px', height: '12px', borderRadius: '3px', background: 'var(--color-info-bg)', border: '1px solid var(--color-info)' }} />
+        Highlighted lines are still to come.
+      </p>
+      {failed && <p style={styles.empty}>The timeline could not be loaded.</p>}
+      {!failed && items === null && <p style={styles.empty}>Loading…</p>}
+      {filter === 'message' && items !== null && items.length === 0 && (
+        <p style={styles.empty}>No messages sent yet. Messages received are in the Messages tab.</p>
+      )}
+      {filter !== 'message' && items !== null && items.length === 0 && <p style={styles.empty}>Nothing here yet.</p>}
+      {items !== null && items.length > 0 && (
         <div style={styles.timelineGrid}>
           <span style={styles.timelineHeaderCell}>Type</span>
           <span style={styles.timelineHeaderCell}>Description</span>
           <span style={styles.timelineHeaderCell}>By</span>
           <span style={styles.timelineHeaderCell}>Date</span>
-          {items.map((act: any) => (
-            <div key={act.id} style={styles.timelineRow}>
-              <span style={styles.timelineCell}><Badge variant="neutral">{act.activity_type}</Badge></span>
-              <span style={styles.timelineDesc}>{act.description}</span>
-              <span style={styles.timelineActor}>{act.actor_name || 'System'}</span>
-              <span style={styles.timelineDate}>{new Date(act.created_at).toLocaleString()}</span>
-            </div>
-          ))}
+          {items.map((it) => {
+            const tint = it.upcoming ? { background: 'var(--color-info-bg)' } : {};
+            return (
+              <div key={it.id} style={styles.timelineRow}>
+                <span style={{ ...styles.timelineCell, ...tint, whiteSpace: 'nowrap' }}><Badge variant="neutral">{TIMELINE_KIND_LABELS[it.kind] || it.kind}</Badge></span>
+                <span style={{ ...styles.timelineDesc, ...tint, gap: '8px', flexWrap: 'wrap' }}>
+                  {it.description}
+                  {it.link && <button type="button" onClick={() => openLink(it.link!)} style={styles.inlineLink}>Receipt</button>}
+                </span>
+                <span style={{ ...styles.timelineActor, ...tint }}>{it.actor_name}</span>
+                <span style={{ ...styles.timelineDate, ...tint, ...(it.upcoming ? { color: 'var(--color-info-dark)', fontWeight: 700 } : {}) }}>
+                  {it.upcoming ? 'Upcoming · ' : ''}{new Date(it.at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
-}
-
-/** YYYY-MM-DD for the first day of the current month (local time). */
-function firstOfCurrentMonth(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-}
-
-/** YYYY-MM-DD for today (local time). */
-function today(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 // --- Billing tab: transaction history + outstanding invoices (Section C, task 4.10) ---
@@ -613,10 +707,19 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
   const [showIssueInvoice, setShowIssueInvoice] = useState(false);
   const [creditBalance, setCreditBalance] = useState<payApi.AccountCreditBalance | null>(null);
   const [applyingCreditTo, setApplyingCreditTo] = useState<string | null>(null);
-  // Transaction history is date-ranged (defaults to the current month) so the
-  // list stays manageable as history grows.
-  const [dateFrom, setDateFrom] = useState<string>(firstOfCurrentMonth());
-  const [dateTo, setDateTo] = useState<string>(today());
+  // The transaction history's date range is the Date column's filter (column filters beside the
+  // sort icon, David 2026-11-02); the other columns filter the loaded rows on screen. No page starts filtered (David, 2026-11-04).
+  const [txFilters, setTxFilters] = useState<TableFilters>({});
+  const dateFrom = txFilters.created_at?.from || '';
+  const dateTo = txFilters.created_at?.to || txFilters.created_at?.from || '';
+  // The history's non-date columns, filtered on screen (Date is the server range).
+  const TX_FILTER_COLUMNS = [
+    { key: 'purpose_label', kind: 'values' as const, value: (t: PayTransaction) => t.purpose_label },
+    { key: 'payment_method', kind: 'values' as const, value: (t: PayTransaction) => t.payment_method },
+    { key: 'type', kind: 'values' as const, value: (t: PayTransaction) => t.type },
+    { key: 'amount', kind: 'amount' as const, value: (t: PayTransaction) => t.amount },
+    { key: 'status', kind: 'values' as const, value: (t: PayTransaction) => displayStatus(t) },
+  ];
 
   // Transactions reload whenever the date range changes; the other panels
   // (invoices, methods, credit) are range-independent and load once.
@@ -888,90 +991,62 @@ function BillingTab({ customerId, businessId }: { customerId: string; businessId
       <div style={styles.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
           <h3 style={{ ...styles.cardTitle, margin: 0 }}>Transaction History</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)' }}>
-            <label style={{ color: 'var(--color-text-secondary)' }}>From</label>
-            <input
-              type="date"
-              value={dateFrom}
-              max={dateTo || undefined}
-              onChange={(e) => setDateFrom(e.target.value)}
-              style={{ ...refundInputStyle, padding: '6px 8px' }}
-              aria-label="Transactions from date"
-            />
-            <label style={{ color: 'var(--color-text-secondary)' }}>To</label>
-            <input
-              type="date"
-              value={dateTo}
-              min={dateFrom || undefined}
-              onChange={(e) => setDateTo(e.target.value)}
-              style={{ ...refundInputStyle, padding: '6px 8px' }}
-              aria-label="Transactions to date"
-            />
-          </div>
         </div>
-        {transactions.length === 0 ? (
-          <p style={styles.cardMuted}>No transactions in this date range.</p>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ textAlign: 'left', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', textTransform: 'uppercase' }}>
-                <th style={{ padding: '6px 8px' }}>Date</th>
-                <th style={{ padding: '6px 8px' }}>For</th>
-                <th style={{ padding: '6px 8px' }}>Method</th>
-                <th style={{ padding: '6px 8px' }}>Type</th>
-                <th style={{ padding: '6px 8px', textAlign: 'right' }}>Amount</th>
-                <th style={{ padding: '6px 8px' }}>Status</th>
-                <th style={{ padding: '6px 8px', textAlign: 'right' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.map((t) => (
-                <tr key={t.id} style={{ borderTop: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
-                  <td style={{ padding: '8px' }}>{new Date(t.created_at).toLocaleDateString()}</td>
-                  <td style={{ padding: '8px' }}>
-                    {t.purpose_link ? (
-                      <button
-                        type="button"
-                        onClick={() => openPurpose(t.purpose_link!)}
-                        style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-accent)', cursor: 'pointer', textAlign: 'left', font: 'inherit', textDecoration: 'underline' }}
-                        title={t.purpose_link.type === 'invoice' ? 'Open invoice PDF' : t.purpose_link.type === 'credit_note' ? 'Open credit note PDF' : t.purpose_link.type === 'debit_note' ? 'Open debit note PDF' : t.purpose_link.type === 'order' ? 'Open receipt' : 'Open details'}
-                      >
-                        {t.purpose_label}
-                      </button>
-                    ) : (
-                      <span>{t.purpose_label}</span>
-                    )}
-                    {t.reference_number && (
-                      <span
-                        style={{ display: 'block', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family-mono, monospace)' }}
-                        title="Payment reference (for reconciliation with the processor)"
-                      >
-                        {t.reference_number}
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: '8px' }}>{t.payment_method}</td>
-                  <td style={{ padding: '8px' }}>{t.type}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>{formatCurrency(t.amount, t.currency)}</td>
-                  <td style={{ padding: '8px' }}>{(() => { const ds = displayStatus(t); return <Badge variant={statusVariant(ds)}>{ds}</Badge>; })()}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>
-                    <Dropdown
-                      trigger={<IconButton icon={<span style={{ fontSize: '18px', lineHeight: 1 }}>⋮</span>} aria-label="Row actions" size="sm" variant="ghost" />}
-                      items={(() => {
-                        const print = printForRow(t);
-                        return [
-                          ...(refundKindOf(t) ? [{ id: 'refund', label: 'Refund', icon: '↩', onClick: () => startRefund(t) }] : []),
-                          { id: 'email', label: 'Email', icon: '✉', onClick: () => emailTxnDoc(t) },
-                          ...(print ? [{ id: 'print', label: 'Print', icon: '🖨', onClick: print }] : []),
-                        ];
-                      })()}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <Table
+          rowId={(t: PayTransaction) => t.id}
+          data={applyTableFilters(transactions, TX_FILTER_COLUMNS, { ...txFilters, created_at: {} })}
+          filterSource={transactions}
+          filters={txFilters}
+          onFiltersChange={setTxFilters}
+          emptyMessage={dateFrom ? 'No transactions in this date range.' : 'No transactions yet.'}
+          clientSort initialSort={{ key: 'created_at', order: 'desc' }}
+          columns={[
+            { key: 'created_at', header: 'Date', sortable: true, filter: 'date' as const, render: (v: string) => new Date(v).toLocaleDateString() },
+            { key: 'purpose_label', header: 'For', sortable: true, render: (_: any, t: PayTransaction) => (
+              <>
+                {t.purpose_link ? (
+                  <button
+                    type="button"
+                    onClick={() => openPurpose(t.purpose_link!)}
+                    style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-accent)', cursor: 'pointer', textAlign: 'left', font: 'inherit', textDecoration: 'underline' }}
+                    title={t.purpose_link.type === 'invoice' ? 'Open invoice PDF' : t.purpose_link.type === 'credit_note' ? 'Open credit note PDF' : t.purpose_link.type === 'debit_note' ? 'Open debit note PDF' : t.purpose_link.type === 'order' ? 'Open receipt' : 'Open details'}
+                  >
+                    {t.purpose_label}
+                  </button>
+                ) : (
+                  <span>{t.purpose_label}</span>
+                )}
+                {t.reference_number && (
+                  <span
+                    style={{ display: 'block', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family-mono, monospace)' }}
+                    title="Payment reference (for reconciliation with the processor)"
+                  >
+                    {t.reference_number}
+                  </span>
+                )}
+              </>
+            ) },
+            { key: 'payment_method', header: 'Method', sortable: true },
+            { key: 'type', header: 'Type', sortable: true },
+            { key: 'amount', header: 'Amount', align: 'right' as const, sortable: true, filter: 'amount' as const, filterLabel: (v: string) => formatCurrency(Number(v), transactions[0]?.currency), render: (v: number, t: PayTransaction) => <div style={{ textAlign: 'right' }}>{formatCurrency(v, t.currency)}</div> },
+            { key: 'status', header: 'Status', sortable: true, filterValue: (t: PayTransaction) => displayStatus(t), render: (_: any, t: PayTransaction) => { const ds = displayStatus(t); return <Badge variant={statusVariant(ds)}>{ds}</Badge>; } },
+            { key: 'actions', header: '', filter: false as const, render: (_: any, t: PayTransaction) => (
+              <div style={{ textAlign: 'right' }}>
+                <Dropdown
+                  trigger={<IconButton icon={<span style={{ fontSize: '18px', lineHeight: 1 }}>⋮</span>} aria-label="Row actions" size="sm" variant="ghost" />}
+                  items={(() => {
+                    const print = printForRow(t);
+                    return [
+                      ...(refundKindOf(t) ? [{ id: 'refund', label: 'Refund', icon: '↩', onClick: () => startRefund(t) }] : []),
+                      { id: 'email', label: 'Email', icon: '✉', onClick: () => emailTxnDoc(t) },
+                      ...(print ? [{ id: 'print', label: 'Print', icon: '🖨', onClick: print }] : []),
+                    ];
+                  })()}
+                />
+              </div>
+            ) },
+          ]}
+        />
       </div>
 
       {refundTxn && (
@@ -1264,47 +1339,58 @@ function DuplicateBanner({ customer, businessId, onMerged }: { customer: Custome
   );
 }
 
-function PreferencesTab({ preferences, onChange, customerId, businessId }: {
-  preferences: any; onChange: (key: string, val: boolean, evidence?: string) => void; customerId: string; businessId: string;
+const CONSENT_KEYS = ['email_marketing', 'sms_marketing', 'push_notifications', 'booking_reminders', 'transactional_emails'];
+// Marketing needs the person's own agreement: switching it on asks how it was given.
+const needsEvidence = (key: string) => key !== 'booking_reminders' && key !== 'transactional_emails';
+
+function PreferencesTab({ preferences, onSaved, customerId, businessId }: {
+  preferences: any; onSaved: (prefs: any) => void; customerId: string; businessId: string;
 }) {
   const [history, setHistory] = useState<customersApi.ConsentEvent[] | null>(null);
-  // The marketing channel being switched on, waiting for how the consent was given.
-  const [pendingKey, setPendingKey] = useState<string | null>(null);
-  const [evidence, setEvidence] = useState('');
+  const pick = (p: any) => Object.fromEntries(CONSENT_KEYS.map((k) => [k, !!p?.[k]]));
+  // The switches wait for the page's Save changes (David, 2026-11-01); each change is then
+  // recorded in the consent history with its evidence.
+  const draft = useDraft<{ values: Record<string, boolean>; evidence: Record<string, string> }>('profile-consent', 'Consent', { values: pick(preferences), evidence: {} }, async (d) => {
+    const before = pick(preferences);
+    let latest = preferences;
+    for (const key of CONSENT_KEYS) {
+      if (d.values[key] === before[key]) continue;
+      if (d.values[key] && needsEvidence(key) && !(d.evidence[key] || '').trim()) {
+        throw new Error(`say how the person gave consent for ${CONSENT_CHANNEL_LABELS[key] || key}`);
+      }
+      const payload: Record<string, any> = { [key]: d.values[key] };
+      if (d.values[key] && needsEvidence(key)) payload.evidence = d.evidence[key].trim();
+      latest = await customersApi.updatePreferences(customerId, businessId, payload);
+    }
+    onSaved(latest);
+    return { values: pick(latest), evidence: {} };
+  });
+  // Stored values that change elsewhere become the new starting point while nothing is edited here.
+  useEffect(() => { if (!draft.dirty && preferences) draft.load({ values: pick(preferences), evidence: {} }); }, [preferences]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggle = (key: string, checked: boolean) => {
-    if (checked && key !== 'booking_reminders') { setPendingKey(key); setEvidence(''); return; }
-    setPendingKey(null);
-    onChange(key, checked);
-  };
-  const confirmConsent = () => {
-    if (!pendingKey || !evidence.trim()) return;
-    onChange(pendingKey, true, evidence.trim());
-    setPendingKey(null);
-  };
-  const channelRow = (key: string, label: string) => (
-    <div key={key}>
-      <div style={styles.prefRow}>
-        <span>{label}</span>
-        <input type="checkbox" aria-label={label} checked={!!preferences[key] || pendingKey === key} onChange={(e) => toggle(key, e.target.checked)} style={styles.checkbox} />
-      </div>
-      {pendingKey === key && (
-        <div style={styles.consentEvidence}>
-          <label htmlFor="consent-evidence" style={styles.fieldLabel}>How did this person give their consent?</label>
-          <input
-            id="consent-evidence" autoFocus style={styles.fieldInput} value={evidence}
-            placeholder="For example: ticked the box on the sign-up form"
-            onChange={(e) => setEvidence(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') confirmConsent(); }}
-          />
-          <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end' }}>
-            <Button size="sm" variant="secondary" onClick={() => setPendingKey(null)}>Cancel</Button>
-            <Button size="sm" variant="primary" disabled={!evidence.trim()} onClick={confirmConsent}>Record consent</Button>
-          </div>
+  const toggle = (key: string, checked: boolean) => draft.setValue({ ...draft.value, values: { ...draft.value.values, [key]: checked } });
+  const channelRow = (key: string, label: string) => {
+    const changed = draft.changed((v) => v.values[key]);
+    const asking = changed && draft.value.values[key] && needsEvidence(key);
+    return (
+      <div key={key}>
+        <div style={styles.prefRow}>
+          <span>{label}</span>
+          <input type="checkbox" aria-label={label} checked={!!draft.value.values[key]} onChange={(e) => toggle(key, e.target.checked)} style={{ ...styles.checkbox, ...checkMark(changed) }} />
         </div>
-      )}
-    </div>
-  );
+        {asking && (
+          <div style={styles.consentEvidence}>
+            <label htmlFor={`consent-evidence-${key}`} style={styles.fieldLabel}>How did this person give their consent? (needed to save)</label>
+            <input
+              id={`consent-evidence-${key}`} autoFocus style={{ ...styles.fieldInput, ...fieldMark(true) }} value={draft.value.evidence[key] || ''}
+              placeholder="For example: ticked the box on the sign-up form"
+              onChange={(e) => draft.setValue({ ...draft.value, evidence: { ...draft.value.evidence, [key]: e.target.value } })}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Reload the history whenever a switch changes.
   useEffect(() => {
@@ -1314,14 +1400,16 @@ function PreferencesTab({ preferences, onChange, customerId, businessId }: {
   if (!preferences) return <p style={styles.empty}>Loading preferences...</p>;
 
   return (
-    <div style={styles.tabContent}>
+    <div style={{ ...styles.tabContent, ...draftBox(draft.dirty) }}>
+      <UnsavedTag dirty={draft.dirty} />
       <p style={styles.empty}>
-        Marketing needs the person's own agreement, channel by channel. Booking confirmations and replies to their messages are always allowed.
+        Marketing needs the person's own agreement, channel by channel. Transactional emails (confirmations, cancellations, receipts and purchases) are on unless the person asks to stop them; when off, none are sent.
       </p>
       {channelRow('email_marketing', 'Email Marketing')}
       {channelRow('sms_marketing', 'SMS Marketing')}
       {channelRow('push_notifications', 'Push Notifications')}
       {channelRow('booking_reminders', 'Booking Reminders')}
+      {channelRow('transactional_emails', 'Transactional Emails')}
 
       <h3 style={styles.cardTitle}>Consent history</h3>
       {history === null && <p style={styles.empty}>Loading…</p>}
@@ -1332,7 +1420,7 @@ function PreferencesTab({ preferences, onChange, customerId, businessId }: {
             <li key={e.id} style={styles.consentHistoryRow}>
               <span>
                 <strong>{CONSENT_CHANNEL_LABELS[e.channel] || e.channel}</strong>{' '}
-                {e.category === 'reminders' ? 'reminders' : 'marketing'}: {e.new_state ? 'given' : 'withdrawn'}
+                {e.category === 'reminders' ? 'reminders' : e.category === 'transactional' ? 'transactional emails' : 'marketing'}: {e.new_state ? 'given' : 'withdrawn'}
                 {' · '}{CONSENT_METHOD_LABELS[e.method] || e.method}{e.actor_name ? ` by ${e.actor_name}` : ''}
                 {e.evidence ? ` · "${e.evidence}"` : ''}
               </span>
@@ -1613,24 +1701,25 @@ function MembershipCard({ customerId, businessId }: { customerId: string; busine
 const membershipActionStyle: React.CSSProperties = { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' };
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { padding: 'var(--space-lg)', maxWidth: '900px', margin: '0 auto' },
+  // Full width of the content area (THE-16), so the facts fit on one line.
+  page: { padding: 'var(--space-lg)' },
   loading: { padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-text-secondary)' },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, marginBottom: 'var(--space-md)', fontFamily: 'var(--font-family)' },
-  profileHeader: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-xl)', padding: 'var(--space-lg)', background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)' },
+  profileHeader: { display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-md)', marginBottom: 'var(--space-lg)', padding: 'var(--space-lg)', background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)' },
+  headerTop: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', flexWrap: 'wrap' as const },
   avatar: { width: '56px', height: '56px', borderRadius: 'var(--radius-full)', background: 'var(--color-primary)', color: 'var(--color-primary-contrast)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-bold)' as any, flexShrink: 0 },
-  profileInfo: { display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-xs)', flex: 1 },
+  profileInfo: { display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-xs)', flex: 1, minWidth: '240px' },
   name: { margin: 0, fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)' },
   refNum: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
-  headerActions: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: 'var(--space-xs)' },
+  headerActions: { display: 'flex', gap: 'var(--space-xs)', alignItems: 'center', alignSelf: 'flex-start' },
   joinedDate: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   factStrip: {
-    display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 'var(--space-md)',
-    margin: '0 0 var(--space-lg)', padding: 'var(--space-md) var(--space-lg)',
-    background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)',
+    display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 'var(--space-md)',
+    margin: 0, padding: 'var(--space-md) 0 0', borderTop: '1px solid var(--color-divider)',
   },
   fact: { display: 'flex', flexDirection: 'column' as const, gap: '2px', minWidth: 0 },
   factLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
-  factValue: { margin: 0, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', overflowWrap: 'anywhere' as const },
+  factValue: { margin: 0, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
   duplicateBanner: {
     display: 'flex', flexDirection: 'column' as const, gap: 'var(--space-sm)',
     margin: '0 0 var(--space-lg)', padding: 'var(--space-md) var(--space-lg)',
@@ -1665,6 +1754,8 @@ const styles: Record<string, React.CSSProperties> = {
   fieldInput: { backgroundColor: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--color-text)', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)' },
   formGroup: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
   tagsSection: { marginTop: 'var(--space-lg)' },
+  subTitle: { margin: 'var(--space-lg) 0 var(--space-sm)', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)' },
+  inlineLink: { background: 'none', border: 'none', padding: 0, color: 'var(--color-accent)', cursor: 'pointer', font: 'inherit', fontSize: 'var(--font-size-xs)', fontWeight: 700 },
   sectionTitle: { fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-semibold)' as any, color: 'var(--color-text)', marginBottom: 'var(--space-sm)' },
   tagsList: { display: 'flex', gap: 'var(--space-xs)', flexWrap: 'wrap' as const },
   tag: { padding: '2px 8px', borderRadius: 'var(--radius-full)', border: '1px solid', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
@@ -1679,12 +1770,12 @@ const styles: Record<string, React.CSSProperties> = {
   empty: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', textAlign: 'center', padding: 'var(--space-lg)' },
   filterRow: { display: 'flex', gap: 'var(--space-xs)', marginBottom: 'var(--space-md)', flexWrap: 'wrap' as const },
   filterBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '4px 10px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', textTransform: 'capitalize' as const },
-  filterBtnActive: { borderColor: 'var(--color-primary)', color: 'var(--color-primary)', background: 'var(--color-surface-hover)' },
+  filterBtnActive: { border: '1px solid var(--color-primary)', color: 'var(--color-primary)', background: 'var(--color-surface-hover)' },
   activityItem: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) 0', borderBottom: '1px solid var(--color-border)' },
   activityDesc: { flex: 1, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' },
   activityActor: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' as const, fontStyle: 'italic' as const },
   activityDate: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' as const },
-  timelineGrid: { display: 'grid', gridTemplateColumns: '120px 1fr 130px 170px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
+  timelineGrid: { display: 'grid', gridTemplateColumns: 'max-content 1fr 150px 190px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
   timelineHeaderCell: { fontSize: 'var(--font-size-xs)', fontWeight: 'var(--font-weight-semibold)' as any, color: 'var(--color-text-secondary)', padding: 'var(--space-sm) var(--space-sm)', borderBottom: '2px solid var(--color-border)', background: 'var(--color-surface-hover)', textTransform: 'uppercase' as const, letterSpacing: '0.5px' },
   timelineRow: { display: 'contents' },
   timelineCell: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', padding: 'var(--space-sm) var(--space-sm)', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center' },

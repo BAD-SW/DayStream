@@ -1,4 +1,5 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
+import { getAccess } from '../api/inbox';
 import { useAuth } from '../context/AuthContext';
 import { useContextManager, getPermissionsFromRole } from '../context/ContextManager';
 import { useBusinessSettings } from '../context/BusinessSettingsContext';
@@ -12,6 +13,8 @@ interface AppLayoutProps {
 /** Sidebar icon per module id (THE-7) — replaces the emoji in moduleRegistry for the nav. */
 const NAV_ICONS: Record<string, NavIconName> = {
   dashboard: 'LayoutDashboard',
+  inbox: 'Inbox',
+  messages: 'MessageSquare',
   customers: 'Users',
   appointments: 'CalendarDays',
   schedule: 'CalendarClock',
@@ -51,7 +54,7 @@ type GroupDef = { label: string; ids: string[] };
 /** Sidebar groups per context level (THE-7 / THE-11). Unlisted modules fall into a final unlabelled group. */
 const NAV_GROUPS: Record<'business' | 'tenant' | 'system', GroupDef[]> = {
   business: [
-    { label: 'Daily work', ids: ['dashboard', 'customers', 'appointments', 'schedule', 'events'] },
+    { label: 'Daily work', ids: ['dashboard', 'inbox', 'customers', 'appointments', 'schedule', 'events'] },
     { label: 'Business', ids: ['offerings', 'accounting', 'reports', 'marketing', 'community'] },
     { label: 'Admin', ids: ['business', 'website', 'business-settings', 'clock', 'timesheets', 'my-hours'] },
   ],
@@ -80,6 +83,18 @@ export function AppLayout({ children }: AppLayoutProps) {
   // Get scheduling mode from shared context
   const { settings: businessSettings } = useBusinessSettings();
 
+  // Unread conversations, shown on the Inbox entry and kept up to date (THE-18).
+  const hasInbox = baseModules.some((m) => m.id === 'inbox');
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    if (!hasInbox) return;
+    const load = () => getAccess().then((a) => setUnread(a.unread)).catch(() => {});
+    load();
+    const t = setInterval(load, 30000);
+    window.addEventListener('inbox:changed', load);
+    return () => { clearInterval(t); window.removeEventListener('inbox:changed', load); };
+  }, [hasInbox]);
+
   const items: ShellNavItem[] = [
     { id: 'dashboard', label: 'Dashboard', path: '/dashboard', icon: NAV_ICONS.dashboard },
     ...baseModules.map((mod) => ({
@@ -88,6 +103,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       path: mod.path,
       icon: NAV_ICONS[mod.id] ?? 'Circle',
       off: mod.id === 'schedule' && businessSettings.schedulingMode !== 'schedule',
+      badge: mod.id === 'inbox' && unread > 0 ? unread : undefined,
     })),
   ];
 

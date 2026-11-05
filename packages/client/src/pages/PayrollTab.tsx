@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import { runPayroll, finalizePayroll, getPayrollEntries } from '../api/payroll';
 import { Button } from '../design-system/components/actions/Button';
+import { Table, applyTableFilters } from '../design-system/components/data/Table';
+import type { TableFilters } from '../design-system/components/data/Table';
 import { formatCurrency } from '../utils/currency';
+import { useDraft, fieldMark, checkMark, draftBox } from '../components/unsaved/DraftSections';
 import { formatDateOnly } from '../utils/date';
 
 interface PayPeriod {
@@ -51,7 +54,18 @@ export function PayrollTab() {
   const [taxProfiles, setTaxProfiles] = useState<any[]>([]);
   const [taxProfilesLoading, setTaxProfilesLoading] = useState(false);
   const [editingTaxUserId, setEditingTaxUserId] = useState<string | null>(null);
-  const [taxEditForm, setTaxEditForm] = useState({ country_code: 'US', state_code: '', filing_status: 'single', allowances: 0, additional_withholding: 0, exempt: false });
+  // The tax profile being edited: its own Save stores it, or Accounting's Save changes with the rest (decision 8).
+  const EMPTY_TAX = { user_id: '', country_code: 'US', state_code: '', filing_status: 'single', allowances: 0, additional_withholding: 0, exempt: false };
+  const taxDraft = useDraft('payroll-tax-profile', 'Tax profile', EMPTY_TAX, async ({ user_id, ...form }) => {
+    await apiClient.put(`/v1/payroll/tax-profiles/${user_id}`, { business_id: businessId, ...form });
+    setEditingTaxUserId(null);
+    await loadTaxProfiles();
+    return EMPTY_TAX;
+  });
+  const taxEditForm = taxDraft.value;
+  const setTaxEditForm = taxDraft.setValue;
+  const markTax = (k: keyof typeof EMPTY_TAX) => fieldMark(taxDraft.changed((v) => v[k]));
+  const [taxError, setTaxError] = useState('');
 
   // Load unprocessed periods
   useEffect(() => {
@@ -79,7 +93,7 @@ export function PayrollTab() {
   const loadEntries = async (periodId: string) => {
     setEntriesLoading(true);
     try {
-      const data = await getPayrollEntries(periodId);
+      const data = await getPayrollEntries(periodId, businessId);
       setEntries(data || []);
     } catch { setEntries([]); }
     finally { setEntriesLoading(false); }
@@ -124,7 +138,7 @@ export function PayrollTab() {
   useEffect(() => {
     if (!selectedHistoryId) { setHistoryEntries([]); return; }
     setHistoryEntriesLoading(true);
-    getPayrollEntries(selectedHistoryId).then(setHistoryEntries).catch(() => setHistoryEntries([])).finally(() => setHistoryEntriesLoading(false));
+    getPayrollEntries(selectedHistoryId, businessId).then(setHistoryEntries).catch(() => setHistoryEntries([])).finally(() => setHistoryEntriesLoading(false));
   }, [selectedHistoryId]);
 
   // Tax profiles
@@ -139,11 +153,8 @@ export function PayrollTab() {
 
   const handleSaveTaxProfile = async () => {
     if (!editingTaxUserId) return;
-    try {
-      await apiClient.put(`/v1/payroll/tax-profiles/${editingTaxUserId}`, { business_id: businessId, ...taxEditForm });
-      setEditingTaxUserId(null);
-      await loadTaxProfiles();
-    } catch { alert('Failed to save tax profile'); }
+    setTaxError('');
+    try { await taxDraft.save(); } catch (err: any) { setTaxError(err?.response?.data?.error || 'Failed to save tax profile'); }
   };
 
   const selectedPeriod = unprocessedPeriods.find(p => p.id === selectedPeriodId);
@@ -225,16 +236,17 @@ export function PayrollTab() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {taxProfiles.map((profile: any) => (
-                <div key={profile.user_id} style={styles.taxCard}>
+                <div key={profile.user_id} style={{ ...styles.taxCard, ...(editingTaxUserId === profile.user_id ? draftBox(taxDraft.dirty) : {}) }}>
                   {editingTaxUserId === profile.user_id ? (
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                      <div><label style={styles.label}>Country</label><select style={styles.input} value={taxEditForm.country_code} onChange={(e) => setTaxEditForm({ ...taxEditForm, country_code: e.target.value })}><option value="US">US</option><option value="ES">ES</option></select></div>
-                      <div><label style={styles.label}>State</label><input style={styles.input} value={taxEditForm.state_code} onChange={(e) => setTaxEditForm({ ...taxEditForm, state_code: e.target.value })} /></div>
-                      <div><label style={styles.label}>Filing Status</label><select style={styles.input} value={taxEditForm.filing_status} onChange={(e) => setTaxEditForm({ ...taxEditForm, filing_status: e.target.value })}><option value="single">Single</option><option value="married">Married</option><option value="head_of_household">Head of Household</option></select></div>
-                      <div><label style={styles.label}>Allowances</label><input style={styles.input} type="number" min="0" value={taxEditForm.allowances} onChange={(e) => setTaxEditForm({ ...taxEditForm, allowances: parseInt(e.target.value) || 0 })} /></div>
-                      <div><label style={styles.label}>Exempt</label><input type="checkbox" checked={taxEditForm.exempt} onChange={(e) => setTaxEditForm({ ...taxEditForm, exempt: e.target.checked })} /></div>
+                      <div><label style={styles.label}>Country</label><select style={{ ...styles.input, ...markTax('country_code') }} value={taxEditForm.country_code} onChange={(e) => setTaxEditForm({ ...taxEditForm, country_code: e.target.value })}><option value="US">US</option><option value="ES">ES</option></select></div>
+                      <div><label style={styles.label}>State</label><input style={{ ...styles.input, ...markTax('state_code') }} value={taxEditForm.state_code} onChange={(e) => setTaxEditForm({ ...taxEditForm, state_code: e.target.value })} /></div>
+                      <div><label style={styles.label}>Filing Status</label><select style={{ ...styles.input, ...markTax('filing_status') }} value={taxEditForm.filing_status} onChange={(e) => setTaxEditForm({ ...taxEditForm, filing_status: e.target.value })}><option value="single">Single</option><option value="married">Married</option><option value="head_of_household">Head of Household</option></select></div>
+                      <div><label style={styles.label}>Allowances</label><input style={{ ...styles.input, ...markTax('allowances') }} type="number" min="0" value={taxEditForm.allowances} onChange={(e) => setTaxEditForm({ ...taxEditForm, allowances: parseInt(e.target.value) || 0 })} /></div>
+                      <div><label style={styles.label}>Exempt</label><input type="checkbox" style={checkMark(taxDraft.changed((v) => v.exempt))} checked={taxEditForm.exempt} onChange={(e) => setTaxEditForm({ ...taxEditForm, exempt: e.target.checked })} /></div>
                       <Button size="sm" onClick={handleSaveTaxProfile}>Save</Button>
-                      <button style={styles.linkBtn} onClick={() => setEditingTaxUserId(null)}>Cancel</button>
+                      <button style={styles.linkBtn} onClick={() => { setEditingTaxUserId(null); taxDraft.load(EMPTY_TAX); setTaxError(''); }}>Cancel</button>
+                      {taxError && <span role="alert" style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)' }}>{taxError}</span>}
                     </div>
                   ) : (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -245,7 +257,7 @@ export function PayrollTab() {
                           {profile.exempt && ' · Exempt'}
                         </span>
                       </div>
-                      <button style={styles.linkBtn} onClick={() => { setEditingTaxUserId(profile.user_id); setTaxEditForm({ country_code: profile.country_code || 'US', state_code: profile.state_code || '', filing_status: profile.filing_status || 'single', allowances: profile.allowances || 0, additional_withholding: profile.additional_withholding || 0, exempt: profile.exempt || false }); }}>Edit</button>
+                      <button style={styles.linkBtn} onClick={() => { setEditingTaxUserId(profile.user_id); taxDraft.load({ user_id: profile.user_id, country_code: profile.country_code || 'US', state_code: profile.state_code || '', filing_status: profile.filing_status || 'single', allowances: profile.allowances || 0, additional_withholding: profile.additional_withholding || 0, exempt: profile.exempt || false }); }}>Edit</button>
                     </div>
                   )}
                 </div>
@@ -258,64 +270,68 @@ export function PayrollTab() {
   );
 }
 
-function EntriesTable({ entries, expandedId, onToggle }: { entries: any[]; expandedId: string | null; onToggle: (id: string | null) => void }) {
-  const totals = entries.reduce((acc, e) => ({ gross: acc.gross + e.gross_pay, deductions: acc.deductions + e.total_deductions, net: acc.net + e.net_pay }), { gross: 0, deductions: 0, net: 0 });
+// Payroll entries on the shared table (David, 2026-11-02, decision 1): sort and filter on every
+// column (amounts with the slider); a row opens its breakdown; totals are for the rows shown.
+const ENTRY_FILTER_COLUMNS = [
+  { key: 'employee', kind: 'values' as const, value: (e: PayrollEntry) => `${e.first_name} ${e.last_name}` },
+  { key: 'hours_worked', kind: 'number' as const, value: (e: PayrollEntry) => e.hours_worked },
+  { key: 'sessions_delivered', kind: 'number' as const, value: (e: PayrollEntry) => e.sessions_delivered },
+  { key: 'gross_pay', kind: 'amount' as const, value: (e: PayrollEntry) => e.gross_pay },
+  { key: 'total_deductions', kind: 'amount' as const, value: (e: PayrollEntry) => e.total_deductions },
+  { key: 'net_pay', kind: 'amount' as const, value: (e: PayrollEntry) => e.net_pay },
+];
+
+function EntriesTable({ entries, expandedId, onToggle }: { entries: PayrollEntry[]; expandedId: string | null; onToggle: (id: string | null) => void }) {
+  const [filters, setFilters] = useState<TableFilters>({});
+  const shown = applyTableFilters(entries, ENTRY_FILTER_COLUMNS, filters);
+  const totals = shown.reduce((acc, e) => ({ gross: acc.gross + e.gross_pay, deductions: acc.deductions + e.total_deductions, net: acc.net + e.net_pay }), { gross: 0, deductions: 0, net: 0 });
+  const right = 'right' as const;
 
   return (
-    <div>
-      <table style={styles.table}>
-        <thead>
-          <tr>
-            <th style={styles.th}>Employee</th>
-            <th style={styles.th}>Hours</th>
-            <th style={styles.th}>Sessions</th>
-            <th style={styles.th}>Gross Pay</th>
-            <th style={styles.th}>Deductions</th>
-            <th style={styles.th}>Net Pay</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((entry: any, idx: number) => (
-            <>
-              <tr key={entry.id} style={{ background: idx % 2 === 0 ? 'transparent' : 'var(--color-background)', cursor: 'pointer' }} onClick={() => onToggle(expandedId === entry.id ? null : entry.id)}>
-                <td style={styles.td}>{entry.first_name} {entry.last_name}</td>
-                <td style={styles.td}>{entry.hours_worked ?? '—'}</td>
-                <td style={styles.td}>{entry.sessions_delivered ?? '—'}</td>
-                <td style={styles.td}>{formatCurrency(entry.gross_pay)}</td>
-                <td style={styles.td}>{formatCurrency(entry.total_deductions)}</td>
-                <td style={styles.td}><strong>{formatCurrency(entry.net_pay)}</strong></td>
-              </tr>
-              {expandedId === entry.id && entry.breakdown && (
-                <tr key={`${entry.id}-bd`}>
-                  <td colSpan={6} style={{ padding: '8px 16px', background: 'var(--color-background)', fontSize: 'var(--font-size-sm)' }}>
-                    <div style={{ display: 'flex', gap: '24px' }}>
-                      <div>
-                        <strong>Compensation</strong>
-                        {(entry.breakdown.compensation || []).map((c: any, i: number) => (
-                          <div key={i}>{c.type}: {formatCurrency(c.amount)}{c.hours ? ` (${c.hours}h)` : ''}{c.sessions ? ` (${c.sessions} sessions)` : ''}</div>
-                        ))}
-                      </div>
-                      <div>
-                        <strong>Deductions</strong>
-                        {(entry.breakdown.deductions || []).map((d: any, i: number) => (
-                          <div key={i}>{d.name}: {formatCurrency(d.amount)}</div>
-                        ))}
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </>
-          ))}
-          <tr style={{ borderTop: '2px solid var(--color-border)', fontWeight: 600 }}>
-            <td style={styles.td} colSpan={3}>Totals</td>
-            <td style={styles.td}>{formatCurrency(totals.gross)}</td>
-            <td style={styles.td}>{formatCurrency(totals.deductions)}</td>
-            <td style={styles.td}>{formatCurrency(totals.net)}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <Table
+      data={shown}
+      filterSource={entries}
+      filters={filters}
+      onFiltersChange={setFilters}
+      rowId={(e) => e.id}
+      clientSort
+      onRowClick={(e) => onToggle(expandedId === e.id ? null : e.id)}
+      expandedRowId={expandedId}
+      renderExpanded={(entry) => entry.breakdown ? (
+        <div style={{ display: 'flex', gap: '24px', fontSize: 'var(--font-size-sm)' }}>
+          <div>
+            <strong>Compensation</strong>
+            {(entry.breakdown.compensation || []).map((c: any, i: number) => (
+              <div key={i}>{c.type}: {formatCurrency(c.amount)}{c.hours ? ` (${c.hours}h)` : ''}{c.sessions ? ` (${c.sessions} sessions)` : ''}</div>
+            ))}
+          </div>
+          <div>
+            <strong>Deductions</strong>
+            {(entry.breakdown.deductions || []).map((d: any, i: number) => (
+              <div key={i}>{d.name}: {formatCurrency(d.amount)}</div>
+            ))}
+          </div>
+        </div>
+      ) : <span style={styles.muted}>No breakdown for this entry.</span>}
+      columns={[
+        { key: 'employee', header: 'Employee', sortable: true, filterValue: (e) => `${e.first_name} ${e.last_name}`, render: (_: any, e: PayrollEntry) => `${e.first_name} ${e.last_name}` },
+        { key: 'hours_worked', header: 'Hours', sortable: true, align: right, filter: 'number', filterUnit: 'h', render: (v: number | null) => <div style={{ textAlign: 'right' }}>{v ?? '—'}</div> },
+        { key: 'sessions_delivered', header: 'Sessions', sortable: true, align: right, filter: 'number', render: (v: number | null) => <div style={{ textAlign: 'right' }}>{v ?? '—'}</div> },
+        { key: 'gross_pay', header: 'Gross Pay', sortable: true, align: right, filter: 'amount', render: (v: number) => <div style={{ textAlign: 'right' }}>{formatCurrency(v)}</div> },
+        { key: 'total_deductions', header: 'Deductions', sortable: true, align: right, filter: 'amount', render: (v: number) => <div style={{ textAlign: 'right' }}>{formatCurrency(v)}</div> },
+        { key: 'net_pay', header: 'Net Pay', sortable: true, align: right, filter: 'amount', render: (v: number) => <div style={{ textAlign: 'right' }}><strong>{formatCurrency(v)}</strong></div> },
+      ]}
+      footerRows={[{
+        strong: true,
+        cells: [
+          { content: shown.length === entries.length ? 'Totals' : `Totals (${shown.length} of ${entries.length} shown)` },
+          { content: '' }, { content: '' },
+          { content: formatCurrency(totals.gross), align: right },
+          { content: formatCurrency(totals.deductions), align: right },
+          { content: formatCurrency(totals.net), align: right },
+        ],
+      }]}
+    />
   );
 }
 

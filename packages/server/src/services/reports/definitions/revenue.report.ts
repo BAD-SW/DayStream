@@ -9,7 +9,7 @@ import { ReportDefinition } from '../types';
  * Recognition rules live in the posting process, not here. This report reflects
  * what has actually been posted as revenue:
  *
- *   - Service and product revenue: one row per posted order line (real date,
+ *   - Service, product and event-ticket revenue: one row per posted order line (real date,
  *     item name, and customer from the order).
  *   - Recognized membership/package revenue: one row per enrollment that has
  *     recognized revenue, attributed to its customer and plan. Amount is the
@@ -27,20 +27,23 @@ export const revenueReport: ReportDefinition = {
     { key: 'entry_date', header: 'Date', type: 'date', filterable: true },
     { key: 'revenue_type', header: 'Revenue Type', type: 'text', filterable: true, groupable: true },
     { key: 'item', header: 'Item', type: 'text', filterable: true },
+    { key: 'entry', header: 'Entry', type: 'text', filterable: true, groupable: true },
     { key: 'customer', header: 'Customer', type: 'text', filterable: true, link: { to: 'customer', idKey: 'customer_id' } },
     { key: 'amount', header: 'Amount', type: 'currency', total: true },
   ],
   run: async (ctx) => {
     const { rows } = await reportDb.query(
       `
-      -- Service & product revenue: posted order line items in range
+      -- Service, product & event-ticket revenue: posted order line items in range
       SELECT o.completed_at::date AS entry_date,
              CASE oi.item_type
                WHEN 'service' THEN 'Service Revenue'
                WHEN 'product' THEN 'Product Revenue'
+               WHEN 'event' THEN 'Event Revenue'
                ELSE INITCAP(oi.item_type) || ' Revenue'
              END AS revenue_type,
              oi.item_name AS item,
+             'Sale' AS entry,
              CASE
                WHEN c.id IS NULL THEN '—'
                ELSE TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, ''))
@@ -53,9 +56,38 @@ export const revenueReport: ReportDefinition = {
         JOIN fin_orders o ON o.id = oi.order_id
         LEFT JOIN cus_customers c ON c.id = o.customer_id
        WHERE o.business_id = $1
-         AND o.status = 'completed'
-         AND oi.item_type IN ('service', 'product')
+         AND o.status IN ('completed', 'partially_refunded', 'refunded')
+         AND oi.item_type IN ('service', 'product', 'event')
          AND o.completed_at::date BETWEEN $2::date AND $3::date
+
+      UNION ALL
+
+      -- Refunded service, product & event-ticket lines (David, D-44): the sale stays on its own
+      -- date; the refund is a negative row on the day of the refund.
+      SELECT rl.created_at::date AS entry_date,
+             CASE oi.item_type
+               WHEN 'service' THEN 'Service Revenue'
+               WHEN 'product' THEN 'Product Revenue'
+               WHEN 'event' THEN 'Event Revenue'
+               ELSE INITCAP(oi.item_type) || ' Revenue'
+             END AS revenue_type,
+             oi.item_name AS item,
+             'Refund' AS entry,
+             CASE
+               WHEN c.id IS NULL THEN '—'
+               ELSE TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, ''))
+                    || ' (' || c.reference_number || ')'
+             END AS customer,
+             c.id AS customer_id,
+             -rl.amount_cents AS amount,
+             rl.created_at AS sort_ts
+        FROM pay_order_refund_lines rl
+        JOIN fin_order_items oi ON oi.id = rl.order_item_id
+        JOIN fin_orders o ON o.id = rl.order_id
+        LEFT JOIN cus_customers c ON c.id = o.customer_id
+       WHERE rl.business_id = $1
+         AND oi.item_type IN ('service', 'product', 'event')
+         AND rl.created_at::date BETWEEN $2::date AND $3::date
 
       UNION ALL
 
@@ -63,6 +95,7 @@ export const revenueReport: ReportDefinition = {
       SELECT rr.last_recognized_date AS entry_date,
              'Membership Revenue' AS revenue_type,
              p.name AS item,
+             'Recognised' AS entry,
              TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, ''))
                || ' (' || c.reference_number || ')' AS customer,
              c.id AS customer_id,

@@ -79,7 +79,9 @@ export function Checkout() {
         // Update URL to include order ID
         window.history.replaceState(null, '', `/checkout?order=${o.id}`);
       } else if (isNewSale) {
-        const created = await checkoutApi.createOrder({ business_id: businessId });
+        // "New order" from a person's profile opens the sale with that person already chosen.
+        const forCustomer = searchParams.get('customer');
+        const created = await checkoutApi.createOrder({ business_id: businessId, ...(forCustomer ? { customer_id: forCustomer } : {}) });
         const o = await checkoutApi.getOrder(created.id);
         setOrder(o);
         window.history.replaceState(null, '', `/checkout?order=${o!.id}`);

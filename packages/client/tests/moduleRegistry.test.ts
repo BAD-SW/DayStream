@@ -104,7 +104,7 @@ describe('Module Registry', () => {
 
     it('a customer in their business context sees customer modules only, never staff ones', () => {
       const modules = getVisibleModules('customer', ['bookings:read', 'bookings:create'], {}, 'business');
-      expect(modules.map(m => m.id)).toEqual(['appointments']);
+      expect(modules.map(m => m.id)).toEqual(['appointments', 'messages']); // Messages: in-app messages to the business (THE-18)
       expect(modules.some(m => m.id === 'clock')).toBe(false);
       expect(modules.some(m => m.id === 'my-hours')).toBe(false);
     });

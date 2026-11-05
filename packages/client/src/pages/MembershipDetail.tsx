@@ -1,8 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { CopyWidgetSnippetButton } from '../components/CopyWidgetSnippetButton';
+import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
+import { TabBar } from '../design-system/components/navigation/TabBar';
+import { MembershipPeople } from '../components/OfferingPeople';
+import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, useDraftList, fieldMark, draftBox, UnsavedTag, RowTag } from '../components/unsaved/DraftSections';
+import { LeaveGuard, useGuardedNavigate } from '../components/unsaved/LeaveGuard';
+import { SaveChanges } from '../components/unsaved/SaveChanges';
 import { apiClient } from '../api/client';
 import { formatCurrency } from '../utils/currency';
 
@@ -42,11 +48,26 @@ interface PlanItem {
   merchandise_name?: string;
 }
 
+// One Save for the plan (David, 2026-11-02, as in Settings, Events and People): details and
+// included items wait for Save changes; Pause, Activate and Archive act straight away.
 export function MembershipDetail() {
+  return (
+    <DraftSectionsProvider>
+      <MembershipDetailPage />
+    </DraftSectionsProvider>
+  );
+}
+
+function MembershipDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   const [plan, setPlan] = useState<MembershipPlan | null>(null);
   const [loading, setLoading] = useState(true);
+  const { dirtySections } = useDraftSections();
+  // The tab is kept in the address (?tab=), as in Settings, so Back from a profile returns to it (THE-23 remark).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTabState] = useState<'details' | 'people'>(() => (searchParams.get('tab') === 'people' ? 'people' : 'details'));
+  const setActiveTab = (tab: 'details' | 'people') => { setActiveTabState(tab); setSearchParams(tab === 'details' ? {} : { tab }, { replace: true }); };
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -64,89 +85,80 @@ export function MembershipDetail() {
 
   return (
     <div style={styles.page}>
-      <button style={styles.back} onClick={() => navigate('/offers?tab=memberships')}>← Back to Offerings</button>
+      <LeaveGuard when={dirtySections.length > 0} />
+      <StickyPageTop>
+        <button style={styles.back} onClick={() => navigate('/offers?tab=memberships')}>← Back to Offerings</button>
 
-      {/* Header Card */}
-      <div style={styles.headerCard}>
-        <div style={styles.headerInfo}>
-          <h1 style={styles.name}>{plan.name}</h1>
-          <span style={styles.frequency}>{FREQUENCY_LABELS[plan.billing_frequency] || plan.billing_frequency}</span>
+        {/* Header Card */}
+        <div style={styles.headerCard}>
+          <div style={styles.headerInfo}>
+            <h1 style={styles.name}>{plan.name}</h1>
+            <span style={styles.frequency}>{FREQUENCY_LABELS[plan.billing_frequency] || plan.billing_frequency}</span>
+          </div>
+          <div style={styles.headerRight}>
+            <div style={styles.saveRow}><SaveChanges /></div>
+            <div style={styles.saveRow}>
+              <Badge variant={STATUS_VARIANTS[plan.status] || 'neutral'}>{plan.status}</Badge>
+              <span style={styles.price}>{formatCurrency(plan.price)}/period</span>
+              <span style={styles.enrolled}>{plan.active_enrollments} enrolled</span>
+              <CopyWidgetSnippetButton
+                productId={plan.id}
+                productName={plan.name}
+                action="purchase"
+                enabled={plan.status === 'active'}
+                disabledReason="Activate this plan to get a widget snippet"
+              />
+            </div>
+          </div>
         </div>
-        <div style={styles.headerRight}>
-          <Badge variant={STATUS_VARIANTS[plan.status] || 'neutral'}>{plan.status}</Badge>
-          <span style={styles.price}>{formatCurrency(plan.price)}/period</span>
-          <span style={styles.enrolled}>{plan.active_enrollments} enrolled</span>
-          <CopyWidgetSnippetButton
-            productId={plan.id}
-            productName={plan.name}
-            action="purchase"
-            enabled={plan.status === 'active'}
-            disabledReason="Activate this plan to get a widget snippet"
-          />
-        </div>
+        <TabBar aria-label="Membership sections" tabs={[{ key: 'details' as const, label: 'Details' }, { key: 'people' as const, label: 'Enrolled' }].map((t) => ({ ...t, changed: dirtySections.some((s) => s.tab === t.key) }))} active={activeTab} onChange={setActiveTab} />
+      </StickyPageTop>
+
+      {/* Details stay mounted, so their edits survive switching tabs. */}
+      <div hidden={activeTab !== 'details'}>
+        <DraftTab tab="details">
+          <PlanForm plan={plan} businessId={businessId} onUpdate={setPlan} />
+          <PlanItemsCard planId={plan.id} />
+        </DraftTab>
       </div>
-
-      {/* Content */}
-      <PlanForm plan={plan} businessId={businessId} onUpdate={setPlan} />
-      <PlanItemsCard planId={plan.id} />
+      {activeTab === 'people' && <MembershipPeople planId={plan.id} businessId={businessId} />}
     </div>
   );
 }
 
-// --- Plan Form (always editable with save bar) ---
+// --- Plan Form (always editable; saved with the page's Save changes) ---
 
 function PlanForm({ plan, businessId, onUpdate }: { plan: MembershipPlan; businessId: string; onUpdate: (p: MembershipPlan) => void }) {
-  const [saving, setSaving] = useState(false);
   const [statusChanging, setStatusChanging] = useState(false);
-  const [priceDisplay, setPriceDisplay] = useState((plan.price / 100).toFixed(2));
   const [taxCategories, setTaxCategories] = useState<any[]>([]);
-  const [form, setForm] = useState({
-    name: plan.name,
-    description: plan.description || '',
-    short_description: plan.short_description || '',
-    billing_frequency: plan.billing_frequency,
-    price: plan.price,
-    trial_days: plan.trial_days,
-    discount_services_pct: plan.discount_services_pct,
-    discount_merchandise_pct: plan.discount_merchandise_pct,
-    is_taxable: (plan as any).is_taxable || false,
-    tax_category_id: (plan as any).tax_category_id || '',
+  const fromPlan = (p: MembershipPlan) => ({
+    name: p.name,
+    description: p.description || '',
+    short_description: p.short_description || '',
+    billing_frequency: p.billing_frequency,
+    price: p.price,
+    trial_days: p.trial_days,
+    discount_services_pct: p.discount_services_pct,
+    discount_merchandise_pct: p.discount_merchandise_pct,
+    is_taxable: (p as any).is_taxable || false,
+    tax_category_id: (p as any).tax_category_id || '',
   });
+  const draft = useDraft('plan-details', 'Plan details', fromPlan(plan), async (form) => {
+    const res = await apiClient.put(`/v1/memberships/plans/${plan.id}?business_id=${businessId}`, form);
+    const updated = { ...plan, ...res.data.data };
+    onUpdate(updated);
+    return fromPlan(updated);
+  });
+  const form = draft.value;
+  const setForm = draft.setValue;
+  const mark = (key: keyof typeof form) => fieldMark(draft.changed((v) => v[key]));
+  const [priceDisplay, setPriceDisplay] = useState((plan.price / 100).toFixed(2));
+  // The price box follows the stored price after a save.
+  useEffect(() => { setPriceDisplay((draft.saved.price / 100).toFixed(2)); }, [draft.saved.price]);
 
   useEffect(() => {
     apiClient.get(`/v1/services/tax-categories?business_id=${businessId}`).then((r) => setTaxCategories(r.data.data || [])).catch(() => {});
   }, [businessId]);
-
-  const isDirty = form.name !== plan.name ||
-    form.description !== (plan.description || '') ||
-    form.short_description !== (plan.short_description || '') ||
-    form.billing_frequency !== plan.billing_frequency ||
-    form.price !== plan.price ||
-    form.trial_days !== plan.trial_days ||
-    form.discount_services_pct !== plan.discount_services_pct ||
-    form.discount_merchandise_pct !== plan.discount_merchandise_pct ||
-    form.is_taxable !== ((plan as any).is_taxable || false) ||
-    form.tax_category_id !== ((plan as any).tax_category_id || '');
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const res = await apiClient.put(`/v1/memberships/plans/${plan.id}?business_id=${businessId}`, form);
-      onUpdate(res.data.data);
-      setPriceDisplay((form.price / 100).toFixed(2));
-    } catch { alert('Failed to save changes'); }
-    finally { setSaving(false); }
-  };
-
-  const handleDiscard = () => {
-    setForm({
-      name: plan.name, description: plan.description || '', short_description: plan.short_description || '',
-      billing_frequency: plan.billing_frequency, price: plan.price, trial_days: plan.trial_days,
-      discount_services_pct: plan.discount_services_pct, discount_merchandise_pct: plan.discount_merchandise_pct,
-      is_taxable: (plan as any).is_taxable || false, tax_category_id: (plan as any).tax_category_id || '',
-    });
-    setPriceDisplay((plan.price / 100).toFixed(2));
-  };
 
   const handleStatusAction = async (action: string) => {
     setStatusChanging(true);
@@ -167,31 +179,20 @@ function PlanForm({ plan, businessId, onUpdate }: { plan: MembershipPlan; busine
         {plan.status !== 'archived' && <Button variant="destructive" size="sm" onClick={() => handleStatusAction('archive')} loading={statusChanging}>Archive</Button>}
       </div>
 
-      {/* Save bar */}
-      {isDirty && (
-        <div style={styles.saveBar}>
-          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>You have unsaved changes</span>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Button variant="outline" size="sm" onClick={handleDiscard}>Discard</Button>
-            <Button size="sm" onClick={handleSave} loading={saving}>Save Changes</Button>
-          </div>
-        </div>
-      )}
-
       {/* Plan Details Card */}
-      <div style={styles.card}>
+      <div style={{ ...styles.card, ...draftBox(draft.dirty) }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Plan Details</h3>
+          <h3 style={{ ...styles.cardTitle, margin: 0 }}>Plan Details<UnsavedTag dirty={draft.dirty} /></h3>
           <Button size="sm" variant="secondary" onClick={() => { /* TODO: translate */ }}>Translate</Button>
         </div>
         <div style={styles.formGrid}>
           <div style={styles.formGroup}>
             <label style={styles.label}>Name *</label>
-            <input style={styles.input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <input style={{ ...styles.input, ...mark('name') }} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Billing Frequency</label>
-            <select style={styles.input} value={form.billing_frequency} onChange={(e) => setForm({ ...form, billing_frequency: e.target.value })}>
+            <select style={{ ...styles.input, ...mark('billing_frequency') }} value={form.billing_frequency} onChange={(e) => setForm({ ...form, billing_frequency: e.target.value })}>
               <option value="weekly">Weekly</option>
               <option value="biweekly">Biweekly</option>
               <option value="monthly">Monthly</option>
@@ -201,37 +202,37 @@ function PlanForm({ plan, businessId, onUpdate }: { plan: MembershipPlan; busine
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Price per Period</label>
-            <input style={styles.input} type="number" step="0.01" min="0" value={priceDisplay}
-              onChange={(e) => setPriceDisplay(e.target.value)}
-              onBlur={() => { const cents = Math.round(parseFloat(priceDisplay || '0') * 100); setForm({ ...form, price: cents }); setPriceDisplay((cents / 100).toFixed(2)); }}
+            <input style={{ ...styles.input, ...mark('price') }} type="number" step="0.01" min="0" value={priceDisplay}
+              onChange={(e) => { setPriceDisplay(e.target.value); setForm({ ...form, price: Math.round(parseFloat(e.target.value || '0') * 100) || 0 }); }}
+              onBlur={() => setPriceDisplay((form.price / 100).toFixed(2))}
             />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Trial Days</label>
-            <input style={styles.input} type="number" min={0} value={form.trial_days} onChange={(e) => setForm({ ...form, trial_days: Number(e.target.value) })} />
+            <input style={{ ...styles.input, ...mark('trial_days') }} type="number" min={0} value={form.trial_days} onChange={(e) => setForm({ ...form, trial_days: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Discount on Services (%)</label>
-            <input style={styles.input} type="number" min={0} max={100} value={form.discount_services_pct} onChange={(e) => setForm({ ...form, discount_services_pct: Number(e.target.value) })} />
+            <input style={{ ...styles.input, ...mark('discount_services_pct') }} type="number" min={0} max={100} value={form.discount_services_pct} onChange={(e) => setForm({ ...form, discount_services_pct: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Discount on Products (%)</label>
-            <input style={styles.input} type="number" min={0} max={100} value={form.discount_merchandise_pct} onChange={(e) => setForm({ ...form, discount_merchandise_pct: Number(e.target.value) })} />
+            <input style={{ ...styles.input, ...mark('discount_merchandise_pct') }} type="number" min={0} max={100} value={form.discount_merchandise_pct} onChange={(e) => setForm({ ...form, discount_merchandise_pct: Number(e.target.value) })} />
           </div>
           <div style={styles.formGroup}>
             <label style={styles.label}>Tax Category</label>
-            <select style={styles.input} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
+            <select style={{ ...styles.input, ...mark('tax_category_id') }} value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}>
               <option value="">No tax</option>
               {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
             </select>
           </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
             <label style={styles.label}>Short Description</label>
-            <input style={styles.input} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />
+            <input style={{ ...styles.input, ...mark('short_description') }} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />
           </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
             <label style={styles.label}>Description</label>
-            <textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            <textarea style={{ ...styles.input, minHeight: '80px', resize: 'vertical', maxWidth: '100%', ...mark('description') }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
         </div>
       </div>
@@ -239,61 +240,80 @@ function PlanForm({ plan, businessId, onUpdate }: { plan: MembershipPlan; busine
   );
 }
 
-// --- Plan Items Card (included services/products per period) ---
+// --- Plan Items Card (included services/products per period; saved with the page's Save changes) ---
+
+const itemChanges = (i: PlanItem) => ({ quantity_per_period: i.quantity_per_period, variant_id: i.variant_id || null, access_frequency: i.access_frequency });
 
 function PlanItemsCard({ planId }: { planId: string }) {
-  const [items, setItems] = useState<PlanItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
-  const [editingItem, setEditingItem] = useState<PlanItem | null>(null);
+  const [editing, setEditing] = useState<{ key?: string; item?: PlanItem } | null>(null);
+  const list = useDraftList<PlanItem>('plan-items', 'Included items', {
+    create: (i) => apiClient.post(`/v1/memberships/plans/${planId}/items`, {
+      item_type: i.item_type,
+      service_id: i.item_type === 'service' ? i.service_id : undefined,
+      merchandise_id: i.item_type === 'merchandise' ? i.merchandise_id : undefined,
+      variant_id: i.variant_id || undefined,
+      quantity_per_period: i.quantity_per_period,
+      access_frequency: i.access_frequency,
+    }).then((r) => ({ ...i, ...r.data.data })),
+    // Update existing item (quantity, variant, access frequency)
+    update: (i) => apiClient.put(`/v1/memberships/plans/${planId}/items/${i.id}`, itemChanges(i)).then((r) => ({ ...i, ...r.data.data })),
+    remove: (i) => apiClient.delete(`/v1/memberships/plans/${planId}/items/${i.id}`).then(() => undefined),
+  });
 
   const fetchItems = useCallback(async () => {
     try {
       const res = await apiClient.get(`/v1/memberships/plans/${planId}/items`);
-      setItems(res.data.data || []);
-    } catch { setItems([]); }
+      list.load(res.data.data || []);
+    } catch { list.load([]); }
     finally { setLoading(false); }
-  }, [planId]);
+  }, [planId, list.load]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
-  const handleDelete = async (itemId: string) => {
-    if (!confirm('Remove this item from the plan?')) return;
-    await apiClient.delete(`/v1/memberships/plans/${planId}/items/${itemId}`);
-    fetchItems();
-  };
-
   return (
-    <div style={styles.card}>
+    <div style={{ ...styles.card, ...draftBox(list.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Included Items (per period)</h3>
-        <Button size="sm" variant="secondary" onClick={() => { setEditingItem(null); setShowAdd(true); }}>Add Item</Button>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Included Items (per period)<UnsavedTag dirty={list.dirty} /></h3>
+        <Button size="sm" variant="secondary" onClick={() => setEditing({})}>Add Item</Button>
       </div>
 
       {loading && <p style={styles.muted}>Loading...</p>}
-      {!loading && items.length === 0 && <p style={styles.muted}>No items included in this plan. Add services or products that members receive each billing period.</p>}
-      {items.length > 0 && (
+      {!loading && list.rows.length === 0 && <p style={styles.muted}>No items included in this plan. Add services or products that members receive each billing period.</p>}
+      {list.rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {items.map((item) => (
-            <div key={item.id} style={styles.itemRow}>
-              <div style={{ flex: 1 }}>
-                <Badge variant={item.item_type === 'service' ? 'info' : 'neutral'}>{item.item_type === 'service' ? 'Service' : 'Product'}</Badge>
-                <strong style={{ marginLeft: '8px' }}>{item.service_name || item.merchandise_name || 'Unknown'}</strong>
+          {list.rows.map((r) => {
+            const item = r.item;
+            const edited = !r.isNew && !r.deleted && list.changed(r, itemChanges);
+            return (
+              <div key={r.key} style={{ ...styles.itemRow, opacity: r.deleted ? 0.6 : 1, ...(edited ? fieldMark(true) : {}) }}>
+                <div style={{ flex: 1, textDecoration: r.deleted ? 'line-through' : 'none' }}>
+                  <Badge variant={item.item_type === 'service' ? 'info' : 'neutral'}>{item.item_type === 'service' ? 'Service' : 'Product'}</Badge>
+                  <strong style={{ marginLeft: '8px' }}>{item.service_name || item.merchandise_name || 'Unknown'}</strong>
+                  {r.isNew && <> <RowTag>New</RowTag></>}
+                  {edited && <> <RowTag>Changed</RowTag></>}
+                  {r.deleted && <> <RowTag>Deleted when you save</RowTag></>}
+                </div>
+                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{item.access_frequency === 'unlimited' ? 'Unlimited' : `×${item.quantity_per_period}/${item.access_frequency === 'daily' ? 'day' : item.access_frequency === 'weekly' ? 'week' : 'month'}`}</span>
+                {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button> : <>
+                  <button style={styles.editBtn} onClick={() => setEditing({ key: r.key, item })} title="Edit">✏️</button>
+                  <button style={styles.deleteBtn} onClick={() => list.remove(r.key)} title="Remove">×</button>
+                </>}
               </div>
-              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{item.access_frequency === 'unlimited' ? 'Unlimited' : `×${item.quantity_per_period}/${item.access_frequency === 'daily' ? 'day' : item.access_frequency === 'weekly' ? 'week' : 'month'}`}</span>
-              <button style={styles.editBtn} onClick={() => setEditingItem(item)} title="Edit">✏️</button>
-              <button style={styles.deleteBtn} onClick={() => handleDelete(item.id)} title="Remove">×</button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {(showAdd || editingItem) && (
+      {editing && (
         <AddEditPlanItemModal
-          planId={planId}
-          item={editingItem}
-          onClose={() => { setShowAdd(false); setEditingItem(null); }}
-          onSaved={() => { setShowAdd(false); setEditingItem(null); fetchItems(); }}
+          item={editing.item || null}
+          onClose={() => setEditing(null)}
+          onDone={(data) => {
+            if (editing.key) list.edit(editing.key, data);
+            else list.add(data as PlanItem);
+            setEditing(null);
+          }}
         />
       )}
     </div>
@@ -302,7 +322,7 @@ function PlanItemsCard({ planId }: { planId: string }) {
 
 // --- Add Plan Item Modal ---
 
-function AddEditPlanItemModal({ planId, item, onClose, onSaved }: { planId: string; item: PlanItem | null; onClose: () => void; onSaved: () => void }) {
+function AddEditPlanItemModal({ item, onClose, onDone }: { item: PlanItem | null; onClose: () => void; onDone: (data: Partial<PlanItem>) => void }) {
   const businessId = localStorage.getItem('business_id') || '';
   const [itemType, setItemType] = useState<'service' | 'merchandise'>(item?.item_type as any || 'service');
   const [services, setServices] = useState<any[]>([]);
@@ -312,7 +332,6 @@ function AddEditPlanItemModal({ planId, item, onClose, onSaved }: { planId: stri
   const [selectedVariantId, setSelectedVariantId] = useState(item?.variant_id || '');
   const [quantity, setQuantity] = useState(item?.quantity_per_period || 1);
   const [accessFrequency, setAccessFrequency] = useState(item?.access_frequency || 'monthly');
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   const isEditing = !!item;
@@ -333,35 +352,27 @@ function AddEditPlanItemModal({ planId, item, onClose, onSaved }: { planId: stri
     if (!isEditing) setSelectedVariantId('');
   }, [selectedId, itemType]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const options = itemType === 'service' ? services : merchandise;
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedId && !isEditing) { setError('Select an item'); return; }
-    setSaving(true);
-    setError('');
-    try {
-      if (isEditing) {
-        // Update existing item (quantity, variant, access frequency)
-        await apiClient.put(`/v1/memberships/plans/${planId}/items/${item!.id}`, {
-          quantity_per_period: quantity,
-          variant_id: selectedVariantId || null,
-          access_frequency: accessFrequency,
-        });
-      } else {
-        await apiClient.post(`/v1/memberships/plans/${planId}/items`, {
-          item_type: itemType,
-          service_id: itemType === 'service' ? selectedId : undefined,
-          merchandise_id: itemType === 'merchandise' ? selectedId : undefined,
-          variant_id: selectedVariantId || undefined,
-          quantity_per_period: quantity,
-          access_frequency: accessFrequency,
-        });
-      }
-      onSaved();
-    } catch (err: any) { setError(err.response?.data?.error || 'Failed to save item'); }
-    finally { setSaving(false); }
+    if (isEditing) {
+      onDone({ quantity_per_period: quantity, variant_id: selectedVariantId || undefined, access_frequency: accessFrequency });
+      return;
+    }
+    const name = options.find((o: any) => o.id === selectedId)?.name;
+    onDone({
+      item_type: itemType,
+      service_id: itemType === 'service' ? selectedId : undefined,
+      merchandise_id: itemType === 'merchandise' ? selectedId : undefined,
+      service_name: itemType === 'service' ? name : undefined,
+      merchandise_name: itemType === 'merchandise' ? name : undefined,
+      variant_id: selectedVariantId || undefined,
+      quantity_per_period: quantity,
+      access_frequency: accessFrequency,
+    });
   };
-
-  const options = itemType === 'service' ? services : merchandise;
 
   return (
     <div style={styles.overlay}>
@@ -410,16 +421,16 @@ function AddEditPlanItemModal({ planId, item, onClose, onSaved }: { planId: stri
             {accessFrequency !== 'unlimited' && <input style={styles.input} type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />}
             {accessFrequency === 'unlimited' && <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', padding: '10px 0' }}>No limit on usage</span>}
           </div>
+          <p style={{ ...styles.muted, fontSize: 'var(--font-size-xs)' }}>Saved with the page's Save changes.</p>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button type="submit" loading={saving}>{isEditing ? 'Save Changes' : 'Add Item'}</Button>
+            <Button type="submit">{isEditing ? 'Done' : 'Add Item'}</Button>
           </div>
         </form>
       </div>
     </div>
   );
 }
-
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 'var(--space-lg)', maxWidth: '900px', margin: '0 auto' },
   loading: { padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-text-secondary)' },
@@ -428,7 +439,8 @@ const styles: Record<string, React.CSSProperties> = {
   headerInfo: { display: 'flex', flexDirection: 'column' as const, gap: '4px' },
   name: { margin: 0, fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)' },
   frequency: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
-  headerRight: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: '4px' },
+  headerRight: { display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: '6px' },
+  saveRow: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' },
   price: { fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text)' },
   enrolled: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   actionsBar: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: 'var(--space-md)' },

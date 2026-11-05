@@ -229,6 +229,18 @@ const WORKER_ID = `mail-${process.pid}`;
  * Retry with backoff: a failed send goes back to 'pending' with next_attempt_at
  * pushed out (exponential), up to MAX_ATTEMPTS, then 'failed'.
  */
+/**
+ * Emails the "transactional emails" switch covers: confirmations, cancellations, receipts
+ * and purchases (David, THE-16), and reminders of a task. Booking and renewal reminders have
+ * their own switch; invoices, failed-payment notices and waitlist offers are not covered.
+ */
+const TRANSACTIONAL_TYPES: ReadonlySet<string> = new Set([
+  'booking.confirmation', 'booking.cancellation', 'booking.reschedule',
+  'payment.receipt', 'charge.succeeded', 'invoice.paid', 'payment.refund_confirmation',
+  'customer.task_reminder',
+  'event.registration_confirmed', 'event.registration_reserved', 'event.registration_cancelled',
+]);
+
 export async function processNotificationQueue(): Promise<{ sent: number; failed: number }> {
   const { getRateLimitPerHour } = await import('./email.service');
   const limit = await getRateLimitPerHour();
@@ -273,6 +285,19 @@ export async function processNotificationQueue(): Promise<{ sent: number; failed
 
   for (const notification of claimed) {
     try {
+      // A person who switched transactional emails off gets no confirmations, cancellations
+      // or receipts at all (THE-16). Checked at sending time, so a change applies to mail
+      // already in the queue. The row is kept as 'cancelled' with the reason.
+      if (notification.channel === 'email' && TRANSACTIONAL_TYPES.has(notification.type) && notification.recipient_id) {
+        const decision = await canContact(notification.recipient_id, notification.business_id, 'email', 'transactional');
+        if (decision.reason === 'transactional_off') {
+          await adminPool.query(
+            `UPDATE apt_notification_queue SET status = 'cancelled', error = $2, claimed_at = NULL, claimed_by = NULL WHERE id = $1`,
+            [notification.id, decision.message],
+          );
+          continue;
+        }
+      }
       if (notification.channel === 'email') {
         await sendEmail(notification);
       }
@@ -361,6 +386,7 @@ async function sendEmail(notification: any): Promise<void> {
       ...(rendered.replyTo ? { replyTo: rendered.replyTo } : {}),
     });
     logger.info('Branded document email sent', { type, recipient });
+    await recordInThread(notification, rendered.subject, rendered.text);
     return;
   }
 
@@ -370,6 +396,16 @@ async function sendEmail(notification: any): Promise<void> {
   const rendered = renderDefaultEmail(type, data);
   await sendEmailTransport({ to: recipient, subject: rendered.subject, html: rendered.html, text: rendered.text });
   logger.info('Default email sent', { type, recipient });
+  await recordInThread(notification, rendered.subject, rendered.text);
+}
+
+/** What the system emailed a customer goes into their Inbox thread as an automatic message (THE-18). */
+async function recordInThread(notification: any, subject: string, text: string) {
+  if (!notification.recipient_id || !notification.business_id) return;
+  const { rows } = await adminPool.query('SELECT 1 FROM cus_customers WHERE id = $1 AND business_id = $2', [notification.recipient_id, notification.business_id]);
+  if (!rows[0]) return;
+  const { recordAutomatic } = await import('./inbox.service');
+  await recordAutomatic({ businessId: notification.business_id, customerId: notification.recipient_id, channel: 'email', subject, body: text });
 }
 
 /**
@@ -385,6 +421,10 @@ function renderDefaultEmail(type: string, data: Record<string, unknown>): { subj
     'booking.reschedule': 'Your appointment has been rescheduled',
     'booking.cancellation': 'Your appointment has been cancelled',
     'booking.reminder': 'Appointment reminder',
+    'customer.task_reminder': 'A reminder from us',
+    'event.registration_confirmed': 'You are registered for the event',
+    'event.registration_reserved': 'Your place is reserved',
+    'event.registration_cancelled': 'Your event registration has been cancelled',
   };
   const subject = titles[type] || 'Notification';
   const name = esc((data.customer_name as string) || '').split(' ')[0] || 'there';
@@ -394,6 +434,16 @@ function renderDefaultEmail(type: string, data: Record<string, unknown>): { subj
   if (service) lines.push(`<p>Service: ${service}</p>`);
   if (when) lines.push(`<p>When: ${esc(when)}</p>`);
   if (data.booking_reference) lines.push(`<p>Reference: ${esc(data.booking_reference)}</p>`);
+  if (data.task_title) lines.push(`<p>${esc(data.task_title)}</p>`);
+  if (data.task_description) lines.push(`<p>${esc(data.task_description)}</p>`);
+  if (data.due_at) lines.push(`<p>Date: ${esc(new Date(String(data.due_at)).toLocaleString())}</p>`);
+  // Events (THE-20): already written in the hosting business's time zone.
+  if (data.event_title) lines.push(`<p>Event: ${esc(data.event_title)}</p>`);
+  if (data.when_text) lines.push(`<p>When: ${esc(data.when_text)}</p>`);
+  if (data.location) lines.push(`<p>Where: ${esc(data.location)}</p>`);
+  if (data.ticket_text) lines.push(`<p>Ticket: ${esc(data.ticket_text)}</p>`);
+  if (data.amount_text) lines.push(`<p>${esc(data.amount_text)}</p>`);
+  if (data.refund_text) lines.push(`<p>${esc(data.refund_text)}</p>`);
   const html = lines.join('\n');
   const text = lines.map((l) => l.replace(/<[^>]+>/g, '')).join('\n');
   return { subject, html, text };

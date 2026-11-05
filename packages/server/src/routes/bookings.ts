@@ -1,6 +1,7 @@
 import { emitEvent } from '../services/integration-webhooks.service';
 import { createActivity } from '../services/customer-activity.service';
 import { Router, Request, Response } from 'express';
+import { parseColumnFilters } from '../utils/column-filters';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { tenantContext } from '../auth/tenant-context';
@@ -375,6 +376,22 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
 });
 
 // GET /api/v1/bookings — List bookings
+// GET /api/v1/bookings/column-values?column= — the values of one column, for its filter list.
+bookingsRouter.get('/column-values', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const ownCustomerId = await ownCustomerScope(req, businessId);
+    if (ownCustomerId === null) { success(res, []); return; }
+    success(res, await bookingService.getBookingColumnValues({
+      businessId, customerId: ownCustomerId ?? undefined, columns: parseColumnFilters(req.query.cf),
+    }, String(req.query.column || '')));
+  } catch (err: any) {
+    console.error('Failed to list column values', err?.message || err);
+    error(res, 'Failed to list column values', 'INTERNAL_ERROR', 500);
+  }
+});
+
 bookingsRouter.get('/', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
@@ -397,8 +414,10 @@ bookingsRouter.get('/', requirePermission('bookings:read'), async (req: Request,
       customerSearch: ownCustomerId ? undefined : (req.query.customer_search as string),
       staffId: req.query.staff_id as string,
       serviceId: req.query.service_id as string,
+      columns: parseColumnFilters(req.query.cf),
       page,
       limit,
+      order: req.query.order === 'desc' ? 'desc' : 'asc',
     });
 
     success(res, result.bookings, {
@@ -410,6 +429,63 @@ bookingsRouter.get('/', requirePermission('bookings:read'), async (req: Request,
   } catch (err: any) {
     console.error('Failed to list bookings', err?.message || err);
     error(res, 'Failed to list bookings', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/bookings/:id/customer-cancel — a customer cancels their own appointment
+// (THE-20), within the business's appointment cancellation settings. A visit paid in
+// advance is refunded to the card or given as account credit, as the business set it.
+bookingsRouter.put('/:id/customer-cancel', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const ownCustomerId = await ownCustomerScope(req, businessId);
+    const booking = await bookingService.getBookingById(req.params.id, businessId);
+    if (!booking || !ownCustomerId || booking.customer_id !== ownCustomerId) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    if (!['pending', 'confirmed'].includes(booking.status)) { error(res, 'This appointment can no longer be cancelled', 'INVALID_TRANSITION', 409); return; }
+
+    const { getCancelSettings, customerCancelWindow } = await import('../services/customer-cancellation.service');
+    const settings = await getCancelSettings(businessId, 'appointments');
+    const window = customerCancelWindow(settings, booking.start_time);
+    if (!window.allowed) { error(res, window.reason || 'It can no longer be cancelled online', 'CANCEL_NOT_ALLOWED', 409); return; }
+
+    // Paid in advance: refund the visit's lines of its completed order first; if the refund
+    // fails, the appointment stays as it was.
+    let refund: any = null;
+    const { rows: orders } = await adminPool.query(
+      `SELECT o.id FROM fin_orders o WHERE o.booking_id = $1 AND o.business_id = $2 AND o.status IN ('completed', 'partially_refunded') LIMIT 1`,
+      [booking.id, businessId],
+    );
+    if (orders[0]) {
+      const { rows: lines } = await adminPool.query(
+        `SELECT id, quantity - refunded_quantity AS left FROM fin_order_items
+          WHERE order_id = $1 AND quantity > refunded_quantity AND (booking_id = $2 OR (booking_id IS NULL AND item_type = 'service'))`,
+        [orders[0].id, booking.id],
+      );
+      if (lines.length > 0) {
+        const { refundOrderLines } = await import('../services/order-refund.service');
+        refund = await refundOrderLines({
+          businessId, tenantId: authReq.tenantId, orderId: orders[0].id,
+          lines: lines.map((l: any) => ({ orderItemId: l.id, quantity: Number(l.left) })),
+          reason: 'Appointment cancelled by the customer', processedBy: authReq.user.sub,
+          refundTo: settings.cancel_refund_to === 'credit' ? 'account_credit' : 'original',
+          allowServiceLines: true,
+        });
+        if (refund.status === 'failed') { error(res, refund.failureReason || 'The refund failed', 'REFUND_FAILED', 502); return; }
+      }
+    }
+
+    const result = await lifecycleService.cancelBooking(req.params.id, businessId, authReq.user.sub, authReq.tenantId, 'Cancelled by the customer');
+    if (!result.success) { error(res, result.error || 'Failed to cancel', 'INVALID_TRANSITION', 409); return; }
+    emitEvent(authReq.tenantId, 'booking.cancelled', { id: req.params.id, business_id: businessId, reason: 'Cancelled by the customer' });
+    success(res, {
+      ...result.booking,
+      refund: refund ? { amount: refund.amountCents, to: settings.cancel_refund_to, status: refund.status, reference: refund.referenceNumber } : null,
+    });
+  } catch (err: any) {
+    console.error('Failed to cancel booking', err?.message || err);
+    error(res, err?.message || 'Failed to cancel booking', 'INTERNAL_ERROR', 500);
   }
 });
 

@@ -114,9 +114,24 @@ export interface HeaderDetection {
  * below. A header row reads as labels (plain text, no emails/phones/dates/money
  * in it) while the data rows below carry value-shaped cells. If row 0 looks like
  * the same kind of data as the rows below, there is no header.
+ *
+ * When the import's field definitions are given, row 0 is also a header if at least
+ * two of its cells are known column names (e.g. "Surname", "Email") and none of its
+ * cells looks like a value (email, phone, date, amount). Without this, a file whose
+ * columns are mostly free text (ids, names, tags, notes) was read as having no header
+ * row, because too few of its columns hold value-shaped data (D-57).
  */
-export function detectHeaderRow(grid: string[][]): HeaderDetection {
+export function detectHeaderRow(grid: string[][], fields?: FieldDef[]): HeaderDetection {
   if (grid.length === 0) return { hasHeader: false, confidence: 0 };
+  if (fields && fields.length) {
+    const names = new Set<string>();
+    for (const f of fields) for (const syn of f.synonyms) names.add(normalizeHeader(syn));
+    const kinds = grid[0].map((c) => classifyCell(c));
+    const known = grid[0].filter((c) => names.has(normalizeHeader(c))).length;
+    if (known >= 2 && kinds.every((k) => k === 'text' || k === 'empty')) {
+      return { hasHeader: true, confidence: 0.9 };
+    }
+  }
   if (grid.length === 1) {
     // One row only: treat as a header if it's all plain text (nothing to import
     // from a single data row anyway), else as data.

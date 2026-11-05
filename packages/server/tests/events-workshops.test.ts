@@ -50,7 +50,7 @@ describe('Events & Workshops', () => {
     await adminPool.query(`DELETE FROM evt_waitlist WHERE event_id IN (${mine})`, [TENANT_ID]);
     await adminPool.query(`DELETE FROM evt_ticket_tiers WHERE event_id IN (${mine})`, [TENANT_ID]);
     await adminPool.query(`DELETE FROM evt_events WHERE id IN (${mine})`, [TENANT_ID]);
-    await adminPool.query(`DELETE FROM evt_types WHERE tenant_id = $1 AND is_system = false AND name = 'Workshop' AND id NOT IN (SELECT event_type_id FROM evt_events WHERE event_type_id IS NOT NULL)`, [TENANT_ID]);
+    await adminPool.query(`DELETE FROM evt_types WHERE tenant_id = $1 AND is_system = false AND name = 'Events Test Workshop' AND id NOT IN (SELECT event_type_id FROM evt_events WHERE event_type_id IS NOT NULL)`, [TENANT_ID]);
 
     // Create a test customer
     const { rows: custRows } = await adminPool.query(
@@ -68,10 +68,11 @@ describe('Events & Workshops', () => {
   describe('Event Types', () => {
     it('creates an event type', async () => {
       const { statusCode, body } = await request('POST', '/api/v1/events/types', {
-        name: 'Workshop', slug: 'workshop', description: 'Hands-on workshops',
+        // Its own type: the demo tenant's own 'Workshop' type may be in use by real events.
+        name: 'Events Test Workshop', slug: 'events-test-workshop', description: 'Hands-on workshops',
       }, ownerToken);
       expect(statusCode).toBe(201);
-      expect(body.data.name).toBe('Workshop');
+      expect(body.data.name).toBe('Events Test Workshop');
       EVENT_TYPE_ID = body.data.id;
     });
 

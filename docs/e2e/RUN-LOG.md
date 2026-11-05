@@ -31,6 +31,192 @@ What was not cleaned up, if anything.
 
 ## Runs
 
+## Run 20261104-3 — suites for Bill's pull of 4 Nov (`411f334`, data migration Wave 2)
+- Commit: `82306c8` + the merge of `411f334` · Migrations at: 165 + 161_import_source · Processor mode: mock
+- Scope: the areas Bill's change touches (David, 4 Nov: no full run for a small pull). `r03` (setup), `rbill3` (SET-17 to SET-20), new `rmig2` (SET-21, SET-22); Data Migration page checked in the browser (Memberships and Packages listed, upload opens; our header, Save and separator kept). Unit tests: server 1120 of 1120, client 191 of 191; client type errors 27, the same as before the merge
+- Result: the import checks pass: memberships (columns, trial, 3 imported / 4 failed with reasons, warnings for no card and a past date, period dates, card linked, allowances, no duplicates, no email) and packages (trial, 2 imported / 1 matched / 2 failed, original date, 90-day expiry, no duplicates); customers and payment methods imports (SET-18, SET-19) pass
+- Not completed: the Enrolled / Buyers tab checks (SET-21, SET-22) and SET-17 Staff, SET-20, PAY-25 need the data the suites in between create (business access, staff, invoicing); running the suites in order was stopped when the cached test logins from the stopped full run got mixed up (environment, not product). The tabs read the same tables the imports write; to re-check in the next full run
+
+## Run 20261104-1 — full, after merging Bill's work (10 commits) and building THE-22 fixes, THE-23 items 1–3 and THE-18 (Inbox)
+- Commit: `c8e0267` plus the two date fixes below (committed after this run) · Migrations at: 165 (local only; Bill's 158–160 and ours 156–165) · Processor mode: mock
+- Scope: every runner (r00, r02, r02b, r02c, r03, r05 to r15, Bill's checks `rbill` / `rbill3`, `rprof`, `rrefund`, `rcev`, `revdel`, `rleads`, the cross-organisation sweep) and the new runner `rinbox` (INB-01, 03, 04, 06, 07, 08, CUS-40, UIX-19, EVT-20). Unit tests: server 1119 of 1120 (the one left is the queue timing test below), client 191 of 191
+- Result: all scripts pass after the fixes and corrections below (267 script checks; sweep: 9344 calls, none answered with another organisation's data)
+
+### Failures
+| Script | Step | Expected | Actual | Evidence | Verdict |
+|---|---|---|---|---|---|
+| BKG-02, BKG-12, BKG-16 | list | the bookings list filtered by `date_from` / `date_to` | 500 "cannot cast type integer to date" | `$` lost from the `date_to` placeholder in `6914a30` (2 Nov, our commit) | **product defect, fixed**: placeholder restored, test `bookings-list-dates` |
+| — (found by the same check) | People `created_to` | People filtered by "added up to" | the same lost `$` (our `aec1b2e`) | code scan of our diff | **product defect, fixed**, same test file |
+| r08 to r15 (first pass) | all | — | `fetch failed`: the API restarted during the run | API answered again minutes later; each runner passed when run again | environment |
+| CUS-33, CUS-36, SET-20, PAY-05 (first pass) | — | — | stale queue rows left "processing" by the restart; data r08 / r10 create was missing | passed when run again after r08 to r15 | environment |
+| BKG-14 | 1 | days of the script's month | the script still asked for October 2026, now past | — | script wrong: the month now moves with the shifted dates |
+| REP-08 | summary | `total_bookings` | the report answers `totalBookings` (it always did; the 28 Oct pass compared undefined with 0) | API 1 = database 1 | script wrong: reads `totalBookings` |
+
+### Unit test left failing
+| Test | What | Verdict |
+|---|---|---|
+| booking-notifications · "does not process future-scheduled notifications" | times out (60 s) only when the whole suite runs, while other files use the same queue; passes alone (8 of 8, 17 s). It failed the same way in the full suite earlier the same day, before the Inbox code | test timing, not product; to be made independent of the shared queue |
+
+### Blocked
+INB-10 to INB-13 (SMS, WhatsApp, inbound email, saved replies, snooze): not built (THE-19, spec 41).
+
+### Leftover test data
+E2E `20261104-1` records in the E2E organisation and one closed E2E conversation (James Wilson) at Transcend; the demo data (`demo-seed` 1–5) is listed in the demo manifest for `demo-cleanup`.
+
+## Run 20261028-3 — full, fresh organisation, after pulling Bill's work
+- Commit: `bf80267` (merge of Bill `619bef3` into `ac0ba19`) · Migrations at: 158 (Bill's 156 gift-card expiry and 157 data migration applied) · Processor mode: mock (and the Stripe test connection already set up)
+- Scope: every runner (r00 to r15, Bill's checks, profile, refunds, customer events, Bill's 2026-10-28 checks `rbill3`, sweep, routes). Unit tests: server 1000 of 1000. Type check: server 0, client 30 (unchanged)
+- Result: all pass except **SET-18** (one check): **D-57**, Bill's import takes a mostly-text customer file as having no header row (KI-18). Product defect, left failing until David decides who fixes it
+
+### Runs 20261028-1 and 20261028-2 (discarded: script dates)
+- Many runners had fixed dates in the week of Monday 2026-10-26, now in the past, so slots, bookings and everything built on them failed (OFF-07, BKG-01 to 03, payroll, events…). Verdict: script wrong. The runners now take those dates shifted by whole weeks to next week (`D()` in `e2e.cjs`, same weekday and spacing) and turn Madrid local times into instants with the right summer/winter offset (`madrid()`)
+- Run 2 crashed in the People runner, where the date change had landed inside a database query; fixed, and the run repeated from scratch as run 3
+
+### Script corrections made after run 3
+| Script | What changed and why |
+|---|---|
+| BKG-12 | The iCal check still held the date 2026-10-30; it now uses the shifted Friday. Checked against the iCal file of run 3 (DTSTART 16:00 UTC = 17:00 Madrid): passes |
+| CUS-33 | Failed in the run because its email waited behind the queue (the New Customer email of every created person now adds to it); passed when run again |
+| CUS-11 | Retired: its runner checks are kept as notes only (CUS-24 still uses the old import API) |
+
+## Run 20261022-1 addendum — first-time tickets and event emails
+- Scope: `rcev` (EVT-06 to EVT-14, BKG-21, REP-11), then suites 10, 12, 15, Bill's checks, CUS-29 to CUS-38 and REP-10 again. Unit tests: server 983 of 983. Type check: server 0, client 30
+- Result: all pass. Two failures on the way were test data, not the product:
+  - REP-07: EVT-13 had added a second business to the E2E organisation, and a business owner may manage organisation-wide reports only in a single-business organisation. The runner now archives that business after EVT-13; the earlier ones were archived
+  - CUS-33: its queued email waited behind about 40 emails of the suites run just before (the sender takes 50 a minute; the script waits 60 seconds); passed when run again
+
+## Run 20261022-1 — full, on a fresh organisation, after customer events (THE-20) and commission after a refund (THE-21)
+- Commit at start: `90909b6` plus the THE-20 and THE-21 changes (committed after this run) · Migrations at: 158 (local only) · Processor mode: mock for the E2E organisation
+- Scope: every runner (suites 00 and 02 to 16, Bill's checks, CUS-29 to CUS-38, REP-10) and the new runner `rcev` (EVT-06 to EVT-13, BKG-21, REP-11)
+- Unit tests: server 983 of 983 (8 new). Type check: server 0, client 30 (unchanged baseline)
+- Result: all scripts pass. A first pass re-ran the setup suites on the data of run 20261020-2; suites 06, 08, 10, 11 and 12 then failed because the earlier run had already changed passwords, roles and bookings (environment, not product). The fresh run passes
+- On screen (automation browser, signed in through the API because the sign-in form does not take typed text there): the customer's Events list, event page, online payment with the test processor, My events and My Bookings; the owner's Settings (Customer cancellations, Commission after a refund); the staff event page (Hosted at, Ticket tax, Add ticket)
+
+### Defects
+| ID | Severity | What | Fix |
+|---|---|---|---|
+| D-53 | Medium | An event's capacity counted a group registration as one place, and an expired payment hold kept its place | Places are counted by group size; a hold that ran out takes no place |
+| D-54 | Low | My Bookings showed a customer's appointment times in UTC | Shown in the business's time zone |
+| D-55 | Medium | Found in this run's first pass, before commit: Payments Received counted a refund given as account credit as money paid out | Refunds as account credit are left out, like credit notes |
+| D-56 | Medium | Staff could not add ticket types to an event on screen, so an event made on screen could not be published | Tickets tab: Add ticket (name, price, how many, everyone or members only) |
+
+### Script corrections made after this run
+| Script | What changed and why |
+|---|---|
+| OFF-06 | The "late" booking was tomorrow at 13:00, which is more than 24 hours away when the run happens before 13:00; it is now moved to start 12 hours ahead |
+| REP-10 | The Revenue cross-check now includes event-ticket lines, which the Revenue report shows as Event Revenue |
+| EVT-10 | The account-credit check now looks for the refund row of that order in Payments Received |
+
+### Leftover test data
+The E2E organisation of run 20261022-1 (with a second business "Host B" made for EVT-13). In the organisation of run 20261020-2: the CEV events and registrations of the first passes.
+
+## Run 20261020-3 — refunds in the sales reports (D-44, option A) and the Timeline Messages filter
+- Commit at start: `0572811` · Migrations at: 156 (local only) · Processor mode: mock for the E2E tenant
+- Scope: suites 08 (`rprof`, CUS-29 to CUS-38), 10 (`r10`), 12 (`r12` and the new runner `rrefund`, REP-10) and Bill's checks (`rbill`), on the data of run 20261020-2
+- Unit tests: server 975 of 975 (1 new: the Timeline Messages filter). Type check: server 0, client 30 (unchanged baseline)
+- Result: every executed script passes after the fix and the correction below. The report screens were not opened in the browser in this run (the API results were checked); the sign-in form did not take typed text in the automation browser
+
+### Defects
+| ID | Severity | What | Fix |
+|---|---|---|---|
+| D-44 | Medium | (run 20261020-1) Sales reports dropped a sale entirely once any line was refunded | Option A: the sale stays on its own day at full value; each refunded line is a negative row on the day of the refund (Sales by Item, Sales by Staff, Tax Summary, Revenue, Reconciliation, Discounts & Promotions, Staff Performance). Commissions still open (KI-17) |
+| D-52 | Medium | Payments Received and Reconciliation counted a debit note (method `account_debit`) as a negative payment with no type; credit notes were already left out | Debit notes are left out like credit notes: they move the account balance, not money |
+
+### Script corrections made after this run
+| Script | What changed and why |
+|---|---|
+| REP-04 | "Payments outside a sale" counted every non-charge row as money given back, so a debit note made by Bill's checks turned it €10 short; it now counts only payments and refunds |
+| CUS-31 | Messages is no longer empty: it is compared with the sent rows of `apt_notification_queue` and `mkt_campaign_recipients`, one line per kind, channel and day |
+
+### Leftover test data
+Four REP-10 orders (ORD-2026-0021, 0022, 0034 and 0036, one unit refunded each) in the E2E business of run 20261020-2.
+
+## Run 20261020-2 — full run after the customer profile (step B again, of the B, A, B plan)
+- Commit at start: `88b8835` (profile, THE-16) · Migrations at: 156 (local only; not yet on Neon) · Processor mode: mock for the E2E tenant, Stripe test for the seed business
+- Method: as run 20261020-1, plus the runner `rprof` (CUS-29 to CUS-38). Fresh data in tenant `E2E 20261020-2 SysTenant B`
+- Unit tests: server 974 of 974 (8 new in `customer-profile.test.ts`), client 186 of 186, shared 12 of 12. Type check: server 0, client 30 (unchanged baseline)
+- Result: every executed script passes after the fixes and corrections below
+
+### Progress
+| Suite | Result |
+|---|---|
+| 00, 03 to 15 | all pass (7, 24, 16, 16, 14, 26, 22, 18, 14, 8, 8, 13, 12) |
+| 02 Auth | all pass after two runner corrections (AUTH-04, AUTH-17) |
+| Bill's features (PAY-19 to PAY-24, SYS-18, REP-09) | 8 of 8 |
+| Customer profile (CUS-29 to CUS-38) | 10 of 10 |
+| Cross-organisation sweep | 13,622 calls: 4 leaks found (D-48 to D-51), fixed, 0 after |
+| 16 Browser tours | 57 business screens as owner (including two profiles, every profile tab and Timeline filter, and New order), 12 as platform admin, 10 as tenant owner: no failed request, no console error, no crash |
+| 01 Journeys | not run as sequences; covered by suites 05 to 15 |
+| 17 Inbox | Blocked (spec 47 not built) |
+
+### Defects
+| Id | Severity | Summary | State |
+|---|---|---|---|
+| D-48 | High | Another organisation could read a staff member's availability patterns given the staff id | Fixed |
+| D-49 | High | … the staff member's service assignments | Fixed |
+| D-50 | High | … the staff member's location assignments | Fixed |
+| D-51 | Medium | Another organisation could read a service's reviews (names, ratings, text) given the service id | Fixed |
+
+The sweep reads one record per table, so fresh data reached records earlier runs did not; all four predate this work.
+
+### Script corrections made after this run
+| Script | What changed and why |
+|---|---|
+| AUTH-04 | The refresh checks wait and retry when the login limiter answers 429 (it ran inside the same minute as other logins) |
+| AUTH-17 | The 11 attempts are sent directly: the shared login helper (changed in run 20261020-1 to retry on 429) hid the limiter's answer |
+
+### Leftover test data
+The `E2E 20261020-2 …` tenant and business; an empty open order for James Wilson in the seed business `…0002` (created by the New order check in the browser tour).
+
+
+## Run 20261020-1 — full run after pulling Bill's work (step B of the B, A, B plan)
+- Commit at start: `d5c57bf` · Migrations at: 155 (applied locally and on Neon) · Processor mode: mock for the E2E tenant, Stripe test for the seed business
+- Method: the API runners of run 20261012-6 (scratchpad `r00` … `r15`, `sweep`) plus a new runner `rbill` for Bill's features; the browser for the screen tours. Data in tenant `E2E 20261020-1 SysTenant B`, business `E2E 20261020-1 Biz B`
+- Unit tests: server 966 of 966, client 186 of 186, shared 12 of 12 (after updating one membership test to Bill's rule). Type check: server 0, client 30 (unchanged baseline)
+- Result: every executed script passes after the corrections and fixes below
+
+### Progress
+| Suite | Result |
+|---|---|
+| 00 Preflight | 7 of 7 |
+| 02 Auth, access, isolation | all pass (AUTH-04 first hit the login rate limit: environment) |
+| 03 System, 04 Tenant | 24 of 24, plus SYS-18 |
+| 05 Billing layers | 16 of 16 |
+| 06 Business setup | 16 of 16 after moving the runner's fixed test week (it had become today and the past; bookings are allowed at most 30 days ahead) |
+| 07 Offerings | 14 of 14 |
+| 08 People | 26 of 26 |
+| 09 Bookings | 22 of 22 |
+| 10 Checkout & payments | 18 of 18 after PAY-08 was rewritten for refunds from the order; new PAY-19 to PAY-24 pass |
+| 11 Accounting & payroll | 14 of 14 |
+| 12 Reports | 8 of 8 after D-43 and a REP-05 correction; REP-09 passes |
+| 13 Marketing, 14 Website, 15 Events/community | 8, 13, 12: all pass |
+| Cross-organisation sweep | 13,205 calls, 0 leaks after D-46 and D-47 |
+| 16 Browser tours | 56 business screens as owner, 13 as platform admin, 10 as tenant owner, 7 addresses as customer: no failed request, no console error, no crash; above-level addresses bounce to the dashboard. One finding: D-45 |
+| 01 Journeys | not run as sequences; their steps are covered by suites 05 to 15 |
+| 17 Inbox | Blocked (spec 47 not built) |
+
+### Defects
+| Id | Severity | Summary | State |
+|---|---|---|---|
+| D-43 | High | The dashboard's month revenue and the Payments Received report ignored orders that were partially refunded (and, in the report, refunded orders and their refunds), so they understated the money taken once refunds from the order (Bill's line refunds) were used | Fixed |
+| D-44 | Medium | Sales reports count only orders still `completed`: a sale disappears from them once any line is refunded | Open: needs a decision on how refunded lines show |
+| D-45 | Medium | Customers cannot list events: the page they reach is the staff Events screen, and their role cannot read events | Open: product gap |
+| D-46 | Critical | Another organisation's owner could read a business's payroll lines (pay, deductions) given the pay period id | Fixed: the business is required and checked |
+| D-47 | High | Another organisation could read a challenge's participants (names, progress) given the challenge id | Fixed: scoped to the tenant |
+
+### Script corrections made after this run
+| Script | What changed and why |
+|---|---|
+| PAY-08 | Rewritten: since Bill's `764002c` a sale is refunded from its order, line by line; services are not refundable, memberships and packs are cancelled |
+| REP-04 | "Money taken" now includes partially refunded and refunded sales, less every refund |
+| REP-05 | The payroll check compares with the database instead of a fixed amount from the previous run |
+| SET-* (runner) | The fixed test week moved from 19–24 October to 9–14 November |
+| Runners | Logins wait and retry on the rate limit (429); the run id comes from `RUN` |
+| Unit test | `memberships.test.ts`: a second membership in the same plan is refused (`ALREADY_ENROLLED_IN_PLAN`); other plans are allowed |
+
+### Leftover test data
+The `E2E 20261020-1 …` tenant and business, and an unused `E2E 20261020-1 …` set from the first attempt of suite 06.
+
 ## Run 20261012-6 — full run (suites 00, 02 to 16)
 - Commit at start: `2a62bc8` · Migrations at end so far: 143 · Processor mode: Stripe test (platform, seed tenant, seed business); mock for the E2E tenant
 - Method: each script is driven through the API by a repeatable script (kept in the session scratchpad: `r00`, `r02`, `r02b`, `r03`, `r05`, `r06`, `r07`, `r08`, `r09`, `r10`, `r11`, `r12`, `r13`, `r14`, `r15`, and `sweep` for the cross-organisation check), with the browser used for screens, menus and typed addresses. Data is created in a dedicated tenant `E2E 20261012-6 SysTenant` and its business `E2E 20261012-6 Biz` (time zone Europe/Madrid)

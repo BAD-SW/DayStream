@@ -6,6 +6,8 @@ interface DropdownItem {
   icon?: string;
   disabled?: boolean;
   divider?: boolean;
+  /** Shown in the error colour, for actions such as archive or delete. */
+  danger?: boolean;
   onClick?: () => void;
 }
 
@@ -53,7 +55,7 @@ export function Dropdown({ trigger, items }: DropdownProps) {
                 role="menuitem"
                 disabled={item.disabled}
                 onClick={() => { item.onClick?.(); setOpen(false); }}
-                style={{ ...styles.item, ...(item.disabled ? styles.itemDisabled : {}) }}
+                style={{ ...styles.item, ...(item.danger ? styles.itemDanger : {}), ...(item.disabled ? styles.itemDisabled : {}) }}
               >
                 {item.icon && <span style={styles.icon}>{item.icon}</span>}
                 {item.label}
@@ -94,8 +96,10 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'var(--font-family)',
     cursor: 'pointer',
     textAlign: 'left' as const,
+    whiteSpace: 'nowrap' as const,
   },
   itemDisabled: { opacity: 0.5, cursor: 'not-allowed' },
+  itemDanger: { color: 'var(--color-error)' },
   divider: { height: '1px', background: 'var(--color-border)', margin: 'var(--space-xs) 0' },
   icon: { fontSize: 'var(--font-size-base)', width: '18px', textAlign: 'center' as const },
 };

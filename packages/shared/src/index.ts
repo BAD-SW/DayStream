@@ -58,6 +58,7 @@ export type { CountryInfo } from './constants/countries';
 export {
   LIFECYCLE_STAGES, LIFECYCLE_STAGE_LABELS, lifecycleStageLabel,
   PERSON_SOURCE_LABELS, personSourceLabel, PEOPLE_VIEWS,
+  LEAD_SOURCE_LABELS, LEAD_SOURCES, DEFAULT_LEAD_STAGES,
 } from './constants/people';
 export type { LifecycleStageValue } from './constants/people';
 

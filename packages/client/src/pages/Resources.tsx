@@ -19,10 +19,6 @@ export function Resources() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
     if (!businessId) return;
@@ -33,21 +29,20 @@ export function Resources() {
     if (!businessId) return;
     setLoading(true);
     try {
-      const result = await resourcesApi.getResources({
-        business_id: businessId,
-        search: search || undefined,
-        category: categoryFilter || undefined,
-        status: statusFilter || undefined,
-        page, limit: 20,
-      });
-      setResources(result.data);
-      const meta = result.meta || {};
-      setTotalPages(meta.totalPages || Math.ceil((meta.total || 0) / 20) || 1);
+      // Every resource (100 per call until all are in): the column filters replace the menus
+      // above the table (column filters beside the sort icon, David 2026-11-02).
+      const rows: any[] = [];
+      for (let p = 1; ; p++) {
+        const result = await resourcesApi.getResources({ business_id: businessId, search: search || undefined, page: p, limit: 100 });
+        rows.push(...result.data);
+        if (result.data.length < 100 || p >= (result.meta?.totalPages || Math.ceil((result.meta?.total || 0) / 100) || 1)) break;
+      }
+      setResources(rows);
     } catch {} finally { setLoading(false); }
-  }, [businessId, search, categoryFilter, statusFilter, page]);
+  }, [businessId, search]);
 
   useEffect(() => { fetchResources(); }, [fetchResources]);
-  useEffect(() => { const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300); return () => clearTimeout(t); }, [searchInput]);
+  useEffect(() => { const t = setTimeout(() => setSearch(searchInput), 300); return () => clearTimeout(t); }, [searchInput]);
 
   const columns = [
     { key: 'name', header: 'Name', sortable: true },
@@ -73,20 +68,6 @@ export function Resources() {
     <div>
       <div style={styles.toolbar}>
         <SearchInput value={searchInput} onChange={setSearchInput} placeholder="Search resources..." />
-        <select style={styles.select} value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
-          <option value="">All Statuses</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-          <option value="maintenance">Maintenance</option>
-        </select>
-        <select style={styles.select} value={categoryFilter}
-          onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}>
-          <option value="">All Categories</option>
-          <option value="room">Rooms</option>
-          <option value="equipment">Equipment</option>
-          <option value="facility">Facilities</option>
-        </select>
         <div style={{ flex: 1 }} />
         <Button variant="secondary" onClick={() => navigate('/resources/new')}>Add Resource</Button>
       </div>
@@ -96,9 +77,6 @@ export function Resources() {
         data={resources}
         loading={loading}
         onRowClick={(row) => navigate(`/resources/${row.id}`)}
-        page={page}
-        totalPages={totalPages}
-        onPageChange={setPage}
         emptyMessage="No resources found"
         mobileCardMode
         clientSort

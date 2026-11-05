@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { parseColumnFilters } from '../utils/column-filters';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { tenantContext, isCustomerLogin, ownCustomerIds } from '../auth/tenant-context';
@@ -27,6 +28,18 @@ paymentsRouter.use(async (req: Request, res: Response, next) => {
 });
 
 // GET /api/v1/payments — List transactions
+// GET /api/v1/payments/column-values?column= — the values of one column, for its filter list.
+paymentsRouter.get('/column-values', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, await paymentService.getTransactionColumnValues(businessId, String(req.query.column || ''), parseColumnFilters(req.query.cf)));
+  } catch (err: any) {
+    console.error('Failed to list column values', err?.message || err);
+    error(res, 'Failed to list column values', 'INTERNAL_ERROR', 500);
+  }
+});
+
 paymentsRouter.get('/', requirePermission('bookings:read'), async (req: Request, res: Response) => {
   try {
     const businessId = req.query.business_id as string;
@@ -41,6 +54,7 @@ paymentsRouter.get('/', requirePermission('bookings:read'), async (req: Request,
       dateFrom: req.query.date_from as string,
       dateTo: req.query.date_to as string,
       paymentMethod: req.query.payment_method as string,
+      columns: parseColumnFilters(req.query.cf),
       page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,
     });

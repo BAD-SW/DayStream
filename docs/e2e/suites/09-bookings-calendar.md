@@ -71,6 +71,16 @@ Persona: reception unless stated. Covers spec 07 (booking engine), 15 (check-in)
 1. Set the browser to a time zone different from the business's; create a booking at 10:00.
 **Expect:** the booking is at 10:00 **business time** everywhere (list, calendar, confirmation, iCal export); it does not shift by the browser offset. A booking at 23:30 stays on the right day.
 
+### BKG-21 · Customers cancel their own appointment
+`P0` `regression` · THE-20 R15–R16 (David, 2026-10-22) · As: owner, customer · Status: Verified
+1. With cancelling off (the default), cancel an appointment from My Bookings. 2. Settings → System → Customer cancellations → Appointments: customers can cancel up to 48 hours before, money as account credit. 3. Reception takes payment for the appointment in advance (cash); the customer cancels it 4 days before. 4. Cancel one starting tomorrow; try someone else's.
+**Expect:** while off, My Bookings says to contact the business and cancelling is refused; in time the appointment is cancelled and the visit paid in advance becomes account credit (its order is refunded); after the limit it is refused; another person's appointment cannot be cancelled. My Bookings shows times in the business's time zone.
+
+### BKG-22 · Cancellation email fields
+`P2` `regression` · Bill `391505b` · As: owner · Status: Verified
+1. Cancel a future appointment of a customer, with a reason.
+**Expect:** the queued cancellation email carries the customer's name, first name and email, the service, the staff member, the time, the reference and the reason, so the Cancellation template's fields are filled. The manage link and calendar links are empty for now (not built).
+
 ---
 
 ## Smart booking flow (spec 32)

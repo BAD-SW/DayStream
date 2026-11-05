@@ -76,3 +76,9 @@ Persona: owner for the CMS (needs `settings:*`); anonymous visitor for public pa
 `P1` `regression` · Spec 38 R14, R19 · As: owner · Status: Verified
 1. In Settings → Booking Widget switch the widget on, set the allowed sites and "payment before confirmation"; copy the generated snippet. 2. Reload the public widget.
 **Expect:** the change is reflected in the widget; the snippet contains this business's id and the correct host.
+
+### WEB-14 · Page editor: Content and SEO are saved
+`P1` `regression` · THE-22 test (David 2026-11-04) · As: owner · Status: Verified
+1. Website → open a page. 2. Change **Content**, **SEO Title** and **SEO Description**; Save changes. 3. Reload.
+**Expect:** "All changes saved."; after the reload the three fields keep the new text (before, Content and SEO were silently dropped). Content is the page's text block: other blocks (hero, services) are left as they are; the SEO fields are the page's SEO settings.
+**Cross-check:** `GET /api/v1/cms/pages/{id}` has the text in the `text_section` block and `seo_config.title` / `description`.

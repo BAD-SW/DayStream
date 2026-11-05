@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { ColumnFilters, FilterableColumn, addColumnFilterConditions, columnValuesSql } from '../utils/column-filters';
 import { generateJournalEntries } from './order-journal.service';
 import { touchActivity } from './person-identity.service';
 import { validateCode, redeemCode } from './discount-codes.service';
@@ -14,7 +15,7 @@ interface CreateOrderInput {
 }
 
 interface AddItemInput {
-  itemType: 'service' | 'product' | 'membership' | 'package' | 'no_show_fee' | 'gift_card';
+  itemType: 'service' | 'product' | 'membership' | 'package' | 'no_show_fee' | 'gift_card' | 'event';
   itemId?: string;
   itemName: string;
   variantId?: string;
@@ -192,6 +193,17 @@ export async function addItem(orderId: string, input: AddItemInput) {
       : (giftBusinessId ? await computeGiftCardExpiry(giftBusinessId) : null);
   } else if (input.taxAmount !== undefined) {
     taxAmount = input.taxAmount;
+  } else if (input.itemType === 'event' && input.itemId) {
+    // An event ticket is taxed at the event's tax category, or at the selling business's
+    // default tax when the event has none (THE-20).
+    const { rows: evtRows } = await adminPool.query('SELECT tax_category_id FROM evt_events WHERE id = $1', [input.itemId]);
+    const { rows: bizRows } = await adminPool.query('SELECT business_id FROM fin_orders WHERE id = $1', [orderId]);
+    const applied = evtRows[0]?.tax_category_id
+      ? await calculateTaxOnCategory(evtRows[0].tax_category_id, netAmount)
+      : await applyDefaultTaxCategory(bizRows[0].business_id, netAmount);
+    taxAmount = applied.amount;
+    taxCategoryId = applied.taxCategoryId;
+    taxRate = applied.rate;
   } else if (input.itemId) {
     const applied = await calculateTaxOnAmount(input.itemType, input.itemId, netAmount);
     taxAmount = applied.amount;
@@ -332,10 +344,11 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   const method = input.paymentMethod === 'transfer' ? 'bank_transfer' : input.paymentMethod;
   const manual = MANUAL_METHODS.includes(method);
 
-  // Walk-in (no customer) card payment: the client confirmed a one-time
-  // PaymentIntent; finalize it here and record a customerless charge. This is the
-  // ONLY way a processed payment proceeds without a customer.
-  const isWalkinCard = !openOrder.customer_id && !manual && method === 'card' && !!input.oneTimeChargeRef;
+  // One-time card payment: the client confirmed a one-time PaymentIntent; finalize it
+  // here and record the charge. A walk-in (no customer) pays this way, and so does a
+  // customer paying an event ticket online with a card that is not saved (THE-20).
+  // This is the ONLY way a processed payment proceeds without a customer.
+  const isWalkinCard = !manual && method === 'card' && !!input.oneTimeChargeRef;
 
   if (openOrder.total_amount > 0 && isWalkinCard) {
     const { finalizeOneTimeOrderCharge } = await import('./walkin-payment.service');
@@ -380,6 +393,20 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
       `UPDATE apt_bookings SET status = 'completed' WHERE id = $1 AND status IN ('checked_in', 'in_progress')`,
       [orderRows[0].booking_id],
     );
+  }
+
+  // An event ticket paid on this order (online, or at reception through checkout)
+  // confirms the place it was holding (THE-20).
+  const { rows: paidPlaces } = await adminPool.query(
+    `UPDATE evt_registrations SET status = 'confirmed', hold_expires_at = NULL, amount_paid = $2
+      WHERE order_id = $1 AND status = 'pending' RETURNING id, pay_at`,
+    [orderId, rows[0].total_amount],
+  );
+  // Paid at reception: the customer is told the place is confirmed. (Online payments send it
+  // when the payment is finished, see the events route.)
+  if (paidPlaces.some((r: any) => r.pay_at !== 'online')) {
+    const { queueEventEmail } = await import('./customer-events.service');
+    for (const r of paidPlaces) if (r.pay_at !== 'online') await queueEventEmail(r.id, 'confirmed');
   }
 
   // Auto-generate journal entries for accounting
@@ -844,9 +871,36 @@ export async function getOrder(orderId: string) {
 /**
  * List orders for a business with filters.
  */
+// The orders list's filterable columns (keys as the table's columns).
+const ORDER_TZ = "COALESCE((SELECT bz.timezone FROM sys_businesses bz WHERE bz.id = o.business_id), 'UTC')";
+const ORDER_COLUMNS: Record<string, FilterableColumn> = {
+  order_number: { expr: 'o.order_number' },
+  completed_at: { expr: 'COALESCE(o.completed_at, o.created_at)', kind: 'date' },
+  customer_first_name: {
+    expr: 'o.customer_id',
+    label: "COALESCE((SELECT NULLIF(BTRIM(COALESCE(c2.first_name, '') || ' ' || COALESCE(c2.last_name, '')), '') FROM cus_customers c2 WHERE c2.id = o.customer_id), o.walk_in_name)",
+  },
+  item_count: { expr: '(SELECT COUNT(*) FROM fin_order_items oi2 WHERE oi2.order_id = o.id)' },
+  status: { expr: 'o.status' },
+  total_amount: { expr: 'o.total_amount', kind: 'amount' },
+};
+
+/** Every value of one orders column (with counts) among the orders matching the other filters. */
+export async function getOrderColumnValues(businessId: string, column: string, columns: ColumnFilters, product?: string) {
+  const col = ORDER_COLUMNS[column];
+  if (!col || col.kind === 'date') return [];
+  const conditions = ['o.business_id = $1']; const params: any[] = [businessId];
+  if (product?.trim()) { params.push(`%${product.trim()}%`); conditions.push(`EXISTS (SELECT 1 FROM fin_order_items oi WHERE oi.order_id = o.id AND oi.item_name ILIKE $${params.length})`); }
+  addColumnFilterConditions(columns, ORDER_COLUMNS, conditions, params, ORDER_TZ, column);
+  const { rows } = await adminPool.query(columnValuesSql(col, 'fin_orders o', conditions.join(' AND ')), params);
+  return rows as Array<{ value: string; label: string; count: number }>;
+}
+
 export async function getOrders(businessId: string, filters?: {
   status?: string; customerId?: string; dateFrom?: string; dateTo?: string;
   orderNumber?: string; product?: string; page?: number; limit?: number;
+  /** Column filters of the shared table (David, 2026-11-02). */
+  columns?: ColumnFilters;
 }) {
   const conditions = ['o.business_id = $1'];
   const params: any[] = [businessId];
@@ -863,6 +917,7 @@ export async function getOrders(businessId: string, filters?: {
     conditions.push(`EXISTS (SELECT 1 FROM fin_order_items oi WHERE oi.order_id = o.id AND oi.item_name ILIKE $${idx++})`);
     params.push(`%${filters.product.trim()}%`);
   }
+  if (filters?.columns) { addColumnFilterConditions(filters.columns, ORDER_COLUMNS, conditions, params, ORDER_TZ); idx = params.length + 1; }
 
   const where = conditions.join(' AND ');
   const limit = Math.min(filters?.limit || 20, 100);
@@ -935,7 +990,11 @@ async function calculateTaxOnAmount(itemType: string, itemId: string | null, net
   }
 
   if (!taxCategoryId) return { amount: 0, taxCategoryId: null, rate: null };
+  return calculateTaxOnCategory(taxCategoryId, netAmount);
+}
 
+async function calculateTaxOnCategory(taxCategoryId: string, netAmount: number): Promise<AppliedTax> {
+  if (netAmount <= 0) return { amount: 0, taxCategoryId: null, rate: null };
   const { rows: taxRows } = await adminPool.query('SELECT rate FROM svc_tax_categories WHERE id = $1', [taxCategoryId]);
   if (taxRows.length === 0) return { amount: 0, taxCategoryId: null, rate: null };
 

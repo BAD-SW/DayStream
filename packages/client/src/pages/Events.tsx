@@ -6,6 +6,9 @@ import { Badge } from '../design-system/components/data/Badge';
 import { ListRow, ListRows, ListRowTitle, ListRowMeta, ListEmpty } from '../design-system/components/data/ListRow';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
 import { TabBar } from '../design-system/components/navigation/TabBar';
+import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
+import { DraftSectionsProvider, DraftTab, useDraftSections, useDraftList, fieldMark, draftBox, UnsavedTag, RowTag } from '../components/unsaved/DraftSections';
+import { LeaveGuard } from '../components/unsaved/LeaveGuard';
 import * as eventsApi from '../api/events';
 import type { Event } from '../api/events';
 import './Events.css';
@@ -16,25 +19,49 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
 
 type ViewTab = 'events' | 'recurring' | 'series' | 'types';
 
+// Event types and series names wait for one Save changes (David, 2026-11-01, as in Settings).
 export function Events() {
+  return (
+    <DraftSectionsProvider>
+      <EventsPage />
+    </DraftSectionsProvider>
+  );
+}
+
+function EventsPage() {
   const navigate = useNavigate();
   const [activeView, setActiveView] = useState<ViewTab>('events');
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [showDeleted, setShowDeleted] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const { dirtySections, saveAll, saving } = useDraftSections();
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const dirty = dirtySections.length > 0;
+  useEffect(() => { setSaveResult((r) => (dirty ? (r?.ok ? null : r) : (r && !r.ok ? null : r))); }, [dirty]);
+  const saveChanges = async () => {
+    const { failed } = await saveAll();
+    setSaveResult(failed.length ? { ok: false, text: `Not saved: ${failed.map((f) => `${f.label} (${f.error})`).join('; ')}` } : { ok: true, text: 'All changes saved.' });
+  };
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
     try {
       const result = await eventsApi.getEvents({
         search: search || undefined, status: statusFilter || undefined, page, limit: 20,
+        deleted: showDeleted ? 'true' : undefined,
       });
       setEvents(result.data); setTotal(result.meta?.total || 0);
     } catch {} finally { setLoading(false); }
-  }, [search, statusFilter, page]);
+  }, [search, statusFilter, page, showDeleted]);
+
+  const restore = async (id: string) => {
+    await eventsApi.restoreEvent(id);
+    await fetchEvents();
+  };
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
@@ -51,8 +78,16 @@ export function Events() {
 
   return (
     <div>
-      <PageHeader title="Events" actions={<Button onClick={() => navigate('/events/new')}>Create Event</Button>} />
-      <TabBar aria-label="Event sections" tabs={viewTabs} active={activeView} onChange={setActiveView} />
+      <LeaveGuard when={dirty} />
+      <StickyPageTop>
+        <PageHeader title="Events" actions={<>
+          {dirty && !(saveResult && !saveResult.ok) ? <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-warning-dark)' }}>You have unsaved changes.</span>
+            : saveResult && <span role={saveResult.ok ? 'status' : 'alert'} style={{ fontSize: 'var(--font-size-sm)', color: saveResult.ok ? 'var(--color-success)' : 'var(--color-error)' }}>{saveResult.text}</span>}
+          {(dirty || activeView === 'series' || activeView === 'types') && <Button onClick={saveChanges} loading={saving} disabled={!dirty}>Save changes</Button>}
+          <Button variant={dirty ? 'outline' : 'primary'} onClick={() => navigate('/events/new')}>Create Event</Button>
+        </>} />
+        <TabBar aria-label="Event sections" tabs={viewTabs.map((t) => ({ ...t, changed: dirtySections.some((d) => d.tab === t.key) }))} active={activeView} onChange={setActiveView} />
+      </StickyPageTop>
 
       {activeView === 'events' && (
         <>
@@ -66,8 +101,12 @@ export function Events() {
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
             </select>
+            <label className="ev-check">
+              <input type="checkbox" checked={showDeleted} onChange={(e) => { setShowDeleted(e.target.checked); setPage(1); }} />
+              Show deleted events
+            </label>
           </div>
-          {loading ? <ListEmpty>Loading...</ListEmpty> : events.length === 0 ? <ListEmpty>No events found</ListEmpty> : (
+          {loading ? <ListEmpty>Loading...</ListEmpty> : events.length === 0 ? <ListEmpty>{showDeleted ? 'No deleted events' : 'No events found'}</ListEmpty> : (
             <div className="ev-grid">
               {events.map((ev) => (
                 <div key={ev.id} className="ev-card" role="button" tabIndex={0}
@@ -83,6 +122,11 @@ export function Events() {
                     <div>{ev.registrations_count} / {ev.capacity} registered</div>
                     {ev.location_name && <div>{ev.location_name}</div>}
                   </div>
+                  {ev.deleted_at && (
+                    <div className="ev-card__restore">
+                      <Button size="sm" onClick={(e) => { e.stopPropagation(); restore(ev.id); }}>Restore</Button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -98,8 +142,9 @@ export function Events() {
       )}
 
       {activeView === 'recurring' && <RecurringSection />}
-      {activeView === 'series' && <SeriesSection />}
-      {activeView === 'types' && <TypesSection />}
+      {/* Kept mounted so their unsaved edits survive switching tabs. */}
+      <div hidden={activeView !== 'series'}><DraftTab tab="series"><SeriesSection /></DraftTab></div>
+      <div hidden={activeView !== 'types'}><DraftTab tab="types"><TypesSection /></DraftTab></div>
     </div>
   );
 }
@@ -147,99 +192,72 @@ function RecurringSection() {
   );
 }
 
-/** A name that can be edited in place (used by Series and Types). */
-function EditableNameRow({ name, onSave, onDelete }: { name: string; onSave: (name: string) => Promise<void>; onDelete: () => void }) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(name);
+type Named = { id?: string; name: string };
 
-  if (editing) {
-    return (
-      <ListRow actions={<>
-        <Button size="sm" onClick={async () => { await onSave(value); setEditing(false); }}>Save</Button>
-        <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
-      </>}>
-        <input className="ev-input" aria-label="Name" value={value} onChange={(e) => setValue(e.target.value)} />
-      </ListRow>
-    );
-  }
+/** A list of names edited in place: renames, additions and deletions wait for Save changes. */
+function NameRows({ list }: { list: ReturnType<typeof useDraftList<Named>> }) {
   return (
-    <ListRow actions={<>
-      <Button size="sm" variant="ghost" onClick={() => { setValue(name); setEditing(true); }}>Edit</Button>
-      <Button size="sm" variant="destructive" onClick={onDelete}>Delete</Button>
-    </>}>
-      <ListRowTitle>{name}</ListRowTitle>
-    </ListRow>
+    <ListRows>
+      {list.rows.map((r) => r.deleted ? (
+        <ListRow key={r.key} actions={<Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button>}>
+          <ListRowTitle><s>{r.item.name}</s></ListRowTitle>
+          <RowTag>Deleted when you save</RowTag>
+        </ListRow>
+      ) : (
+        <ListRow key={r.key} actions={<Button size="sm" variant="destructive" onClick={() => list.remove(r.key)}>Delete</Button>}>
+          <input className="ev-input" aria-label="Name" value={r.item.name} style={fieldMark(!!r.isNew || list.changed(r, (x) => x.name))}
+            onChange={(e) => list.edit(r.key, { name: e.target.value })} />
+          {r.isNew && <RowTag>New</RowTag>}
+        </ListRow>
+      ))}
+    </ListRows>
   );
 }
 
 function SeriesSection() {
-  const [series, setSeries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const list = useDraftList<Named>('event-series', 'Series', {
+    update: (x) => eventsApi.updateSeries(x.id!, { name: x.name.trim() }),
+    remove: (x) => eventsApi.deleteSeries(x.id!),
+  });
 
-  useEffect(() => { eventsApi.getSeries().then(setSeries).catch(() => {}).finally(() => setLoading(false)); }, []);
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this series?')) return;
-    await eventsApi.deleteSeries(id);
-    setSeries(series.filter((s) => s.id !== id));
-  };
-  const handleSave = async (id: string, name: string) => {
-    const updated = await eventsApi.updateSeries(id, { name });
-    setSeries(series.map((s) => s.id === id ? { ...s, ...updated } : s));
-  };
+  useEffect(() => { eventsApi.getSeries().then(list.load).catch(() => {}).finally(() => setLoading(false)); }, [list.load]);
 
   if (loading) return <ListEmpty>Loading...</ListEmpty>;
   return (
-    <div>
-      <h3 className="ev-section-title">Event Series</h3>
-      {series.length === 0 ? <ListEmpty>No series defined</ListEmpty> : (
-        <ListRows>
-          {series.map((s: any) => (
-            <EditableNameRow key={s.id} name={s.name} onSave={(name) => handleSave(s.id, name)} onDelete={() => handleDelete(s.id)} />
-          ))}
-        </ListRows>
-      )}
+    <div style={draftBox(list.dirty)}>
+      <h3 className="ev-section-title">Event Series<UnsavedTag dirty={list.dirty} /></h3>
+      {list.rows.length === 0 ? <ListEmpty>No series defined</ListEmpty> : <NameRows list={list} />}
     </div>
   );
 }
 
 function TypesSection() {
-  const [types, setTypes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState('');
+  const list = useDraftList<Named>('event-types', 'Types', {
+    create: (x) => eventsApi.createEventType({ name: x.name.trim() }),
+    update: (x) => eventsApi.updateEventType(x.id!, { name: x.name.trim() }),
+    remove: (x) => eventsApi.deleteEventType(x.id!),
+  });
 
-  useEffect(() => { eventsApi.getEventTypes().then(setTypes).catch(() => {}).finally(() => setLoading(false)); }, []);
+  useEffect(() => { eventsApi.getEventTypes().then(list.load).catch(() => {}).finally(() => setLoading(false)); }, [list.load]);
 
-  const handleCreate = async () => {
-    if (!newName) return;
-    const created = await eventsApi.createEventType({ name: newName });
-    setTypes([...types, created]); setNewName('');
-  };
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this event type?')) return;
-    await eventsApi.deleteEventType(id);
-    setTypes(types.filter((t) => t.id !== id));
-  };
-  const handleSave = async (id: string, name: string) => {
-    const updated = await eventsApi.updateEventType(id, { name });
-    setTypes(types.map((t) => t.id === id ? { ...t, ...updated } : t));
+  const handleAdd = () => {
+    if (!newName.trim()) return;
+    list.add({ name: newName.trim() }); setNewName('');
   };
 
   if (loading) return <ListEmpty>Loading...</ListEmpty>;
   return (
-    <div>
-      <h3 className="ev-section-title">Event Types</h3>
+    <div style={draftBox(list.dirty)}>
+      <h3 className="ev-section-title">Event Types<UnsavedTag dirty={list.dirty} /></h3>
       <div className="ev-add-row">
-        <input className="ev-input" aria-label="New event type name" placeholder="New event type name" value={newName} onChange={(e) => setNewName(e.target.value)} />
-        <Button size="sm" onClick={handleCreate}>Add Type</Button>
+        <input className="ev-input" aria-label="New event type name" placeholder="New event type name" value={newName} onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }} />
+        <Button size="sm" onClick={handleAdd}>Add Type</Button>
       </div>
-      {types.length === 0 ? <ListEmpty>No event types</ListEmpty> : (
-        <ListRows>
-          {types.map((t: any) => (
-            <EditableNameRow key={t.id} name={t.name} onSave={(name) => handleSave(t.id, name)} onDelete={() => handleDelete(t.id)} />
-          ))}
-        </ListRows>
-      )}
+      {list.rows.length === 0 ? <ListEmpty>No event types</ListEmpty> : <NameRows list={list} />}
     </div>
   );
 }

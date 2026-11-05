@@ -109,3 +109,39 @@ Persona: owner unless stated. Covers spec 12 (staff), spec 13 (resources), locat
 3. As owner, correct the punch-out time in Timesheets and add a manual entry for yesterday; delete the manual entry.
 **Expect:** wrong PIN refused; the clock accepts only the valid next action (cannot punch out before in, cannot start a second break); corrections are saved and marked as edited.
 **Cross-check:** as therapist, `/clock/mine` shows the corrected record and nobody else's; `GET /api/v1/clock/my-hours` totals match the Timesheets total for that person; a staff member can change their own PIN but not another's.
+
+---
+
+## Data migration (spec 50, Waves 1–2)
+
+### SET-17 · Data Migration home and who may use it
+`P1` `regression` · Spec 50 R14–R16 (Bill `0921f79`) · As: owner, Staff, organisation owner · Status: Verified
+1. Business Setup → **Data Migration**: the imports in their fixed order (Customers → Payment Methods → … → Account Balances), with the later waves shown as not yet available. 2. As Staff, open it and call the import. 3. Try an import kind that is not built yet (appointments; memberships and packages arrived with Wave 2, Bill `411f334`). 4. As the organisation owner, open the business from Businesses → Data Migration and run a trial there.
+**Expect:** the tab is under Business Setup, not in the main menu; Staff is refused (no settings permission); an unbuilt kind is refused with a plain message; the organisation owner can run imports for the business, and the run history names who ran each one. People has no "Import CSV" button any more, and `/customers/import` opens this tab.
+
+### SET-18 · Import customers: detection, trial, import, run again
+`P0` `regression` · Spec 50 R1–R4, R11–R13 · As: owner · Status: Verified
+1. Upload a CSV with a header row (Customer ID, First Name, Surname, Email, Mobile, Tags, Notes, Customer Since): 2 valid rows (one with accents) and 1 with a bad email. 2. Upload a file without a header row (email, first name, last name, phone). 3. Run a trial. 4. Import. 5. Import the same file again. 6. Read the run history.
+**Expect:** the header row is recognised and the columns are matched by name and common synonyms (Surname → last name, Mobile → phone, Customer ID → old id, Customer Since → join date); the headerless file is recognised as data and the email and phone columns are found from their values; the trial writes nothing and predicts 2 imported, 1 failed, naming the row, the field and the reason; the import creates the 2 people with accents intact, keeps the old system's id, applies the tags and the join date; the second import matches them (0 new); no email is sent to imported people; every run is in the history, marked trial or import, with counts and who ran it.
+**Regression watch (D-57, fixed 2026-10-28):** a file whose columns are mostly text (ids, names, tags, notes) must still be read as having a header row when its first row holds known column names.
+
+### SET-19 · Import payment methods (processor mapping file)
+`P0` `regression` · Spec 50 R5, R11, R12 · As: owner · Status: Verified
+1. After SET-18, upload a mapping file: two cards for one old customer id, one row with an unknown id, one row without the Stripe customer id. 2. Trial, then import, then import again. 3. Open the customer's payment methods.
+**Expect:** the trial writes nothing; the import attaches the 2 cards to the customer found by the old id, the first one is the default, and the Stripe customer is recorded for off-session charges; the two bad rows fail with plain reasons and the rest go in; importing again adds nothing; the customer shows the cards masked, never the token. No card number is ever imported (the file carries only processor references).
+
+### SET-20 · Import account balances
+`P1` `regression` · Spec 50 R9, R11 · As: owner · Status: Verified
+1. Upload a balances file: a 25.00 credit for one customer, an 80.00 invoice issued 40 days ago with 30.00 paid for another, an invoice without an issue date, and a row for an unknown email. 2. Trial, then import.
+**Expect:** the trial changes no balance; the import adds 25.00 account credit and an issued invoice of 80.00 dated on its original issue date with 30.00 already paid; the undated invoice and the unknown customer fail with plain reasons.
+
+
+### SET-21 · Import memberships
+`P0` `regression` · Spec 50 Wave 2 (Bill `411f334`) · As: owner · Status: Verified
+1. After importing three people and a card for the first (SET-18, SET-19), upload a memberships file (Customer ID, Email, Membership Plan, Next Billing Date, Status, Member Since): the first person active with a billing date in 12 days and a start date; the second by email, plan name in capitals, no status, a billing date 3 days ago; the third cancelled; then rows with an unknown plan, an unknown status, an unknown old id, and an active row without a billing date. 2. Trial. 3. Import. 4. Import again. 5. Open the plan's **Enrolled** tab.
+**Expect:** the columns are matched by name; the trial writes nothing and predicts 3 imported and 4 failed, each with its row, field and a plain reason; the second person gets two warnings (no card on file, billing date in the past) but is still imported; the import writes 3 memberships marked as imported: the first active, its current period ending the day before the next billing date, the start date from the file and the card linked; the second active without a card; the third cancelled with no billing date; included items start with the full allowance; importing again adds nothing (3 matched); no email is sent; the Enrolled tab (THE-23) lists all three with their status.
+
+### SET-22 · Import packages
+`P0` `regression` · Spec 50 Wave 2 (Bill `411f334`) · As: owner · Status: Verified
+1. Upload a packages file (Email, Package, Purchase Date) for a 90-day package: the first person bought 10 days ago; the second 120 days ago (name in lower case); an unknown package; a row without a date; the first row repeated. 2. Trial. 3. Import. 4. Import again. 5. Open the package's **Buyers** tab.
+**Expect:** the trial writes nothing and predicts 2 imported, 1 matched (the repeated row) and 2 failed with plain reasons, plus a warning that the second one has already expired; the import writes 2 purchases marked as imported, dated on the original purchase day and expiring 90 days after it; importing again adds nothing; the Buyers tab (THE-23) shows the first as active and the second as expired. No email is sent.

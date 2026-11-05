@@ -6,6 +6,7 @@ import { systemConfigRouter } from './system-config';
 import { profileRouter } from './profile';
 import { usersRouter } from './users';
 import { customersRouter } from './customers';
+import { customerProfileRouter, personalDataPublicRouter } from './customer-profile';
 import { segmentsRouter } from './segments';
 import { customerPortalRouter } from './customer-portal';
 import { servicesRouter } from './services';
@@ -37,6 +38,9 @@ import { checkoutRouter } from './checkout';
 import { prospectsRouter } from './prospects';
 import { themesRouter } from './themes';
 import { widgetRouter } from './widget';
+import { cancellationSettingsRouter } from './cancellation-settings';
+import { inboxRouter } from './inbox';
+import { leadsRouter } from './leads';
 import { importRouter } from './import';
 import { authLimiter } from '../middleware/rate-limit';
 
@@ -53,6 +57,8 @@ router.use('/v1/profile', profileRouter);
 router.use('/v1/profile/customer', customerPortalRouter);
 router.use('/v1/users', usersRouter);
 router.use('/v1/customers', customersRouter);
+router.use('/v1/customers', customerProfileRouter);
+router.use('/v1/public/personal-data', personalDataPublicRouter);
 router.use('/v1/segments', segmentsRouter);
 router.use('/v1/services', servicesRouter);
 router.use('/v1/catalog', catalogRouter);
@@ -83,6 +89,9 @@ router.use('/v1/prospects', prospectsRouter);
 router.use('/v1/themes', themesRouter);
 router.use('/v1/import', importRouter);
 router.use('/v1/widget', widgetRouter);
+router.use('/v1/cancellation-settings', cancellationSettingsRouter);
+router.use('/v1/inbox', inboxRouter);
+router.use('/v1/leads', leadsRouter);
 
 // Query Editor (authentication and authorization handled within the router)
 router.use('/v1/query-editor', queryEditorRouter);

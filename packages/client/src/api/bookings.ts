@@ -140,7 +140,7 @@ export async function getBookingFilters(businessId: string): Promise<BookingFilt
   return res.data.data;
 }
 
-export async function getBookings(businessId: string, filters?: { status?: string; customer_id?: string; customer_search?: string; staff_id?: string; service_id?: string; date_from?: string; date_to?: string; page?: number }) {
+export async function getBookings(businessId: string, filters?: { status?: string; customer_id?: string; customer_search?: string; staff_id?: string; service_id?: string; date_from?: string; date_to?: string; page?: number; limit?: number; order?: 'asc' | 'desc'; columns?: Record<string, { values?: string[]; contains?: string; from?: string; to?: string }> }) {
   const params = new URLSearchParams({ business_id: businessId });
   if (filters?.status) params.set('status', filters.status);
   if (filters?.customer_id) params.set('customer_id', filters.customer_id);
@@ -150,8 +150,19 @@ export async function getBookings(businessId: string, filters?: { status?: strin
   if (filters?.date_from) params.set('date_from', filters.date_from);
   if (filters?.date_to) params.set('date_to', filters.date_to);
   if (filters?.page) params.set('page', String(filters.page));
+  if (filters?.limit) params.set('limit', String(filters.limit));
+  if (filters?.order) params.set('order', filters.order);
+  if (filters?.columns && Object.keys(filters.columns).length) params.set('cf', JSON.stringify(filters.columns));
   const res = await apiClient.get(`/v1/bookings?${params}`);
   return res.data;
+}
+
+/** Every value of one bookings column (with counts) among the bookings matching the other filters. */
+export async function getBookingColumnValues(businessId: string, column: string, columns: Record<string, unknown>): Promise<Array<{ value: string; label: string; count: number }>> {
+  const params = new URLSearchParams({ business_id: businessId, column });
+  if (Object.keys(columns).length) params.set('cf', JSON.stringify(columns));
+  const res = await apiClient.get(`/v1/bookings/column-values?${params}`);
+  return res.data.data;
 }
 
 export async function getBooking(id: string, businessId: string): Promise<Booking> {
@@ -250,4 +261,31 @@ export async function cancelRecurringSeries(seriesId: string, businessId: string
 export async function confirmWaitlistEntry(entryId: string, businessId: string) {
   const res = await apiClient.put(`/v1/bookings/waitlist/${entryId}/confirm?business_id=${businessId}`);
   return res.data.data;
+}
+
+// ── Customer cancellation (THE-20) ───────────────────────────────────────────
+
+export interface CancelSettings {
+  customer_cancel_enabled: boolean;
+  customer_cancel_hours: number;
+  cancel_refund_to: 'card' | 'credit';
+  /** Events: days to cancel for a full refund after a date, time or place change (decision 14). */
+  change_refund_days?: number;
+}
+
+/** The business's customer cancellation settings for events and appointments, and its time zone. */
+export async function getCancellationSettings(businessId: string) {
+  const res = await apiClient.get('/v1/cancellation-settings', { params: { business_id: businessId } });
+  return res.data.data as { events: CancelSettings; appointments: CancelSettings; timezone: string };
+}
+
+export async function saveCancellationSettings(businessId: string, kind: 'events' | 'appointments', values: Partial<CancelSettings>) {
+  const res = await apiClient.put('/v1/cancellation-settings', { business_id: businessId, kind, ...values });
+  return res.data.data as CancelSettings;
+}
+
+/** A customer cancels their own appointment, within the business's settings. */
+export async function customerCancelBooking(id: string, businessId: string) {
+  const res = await apiClient.put(`/v1/bookings/${id}/customer-cancel?business_id=${businessId}`);
+  return res.data.data as Booking & { refund: { amount: number; to: 'card' | 'credit'; status: string } | null };
 }

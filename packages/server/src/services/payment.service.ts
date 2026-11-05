@@ -1,4 +1,5 @@
 import { adminPool } from '../db/pool';
+import { ColumnFilters, FilterableColumn, addColumnFilterConditions, columnValuesSql } from '../utils/column-filters';
 
 interface CreateTransactionInput {
   businessId: string;
@@ -32,6 +33,8 @@ interface TransactionFilters {
   dateFrom?: string;
   dateTo?: string;
   paymentMethod?: string;
+  /** Column filters of the shared table (David, 2026-11-02). */
+  columns?: ColumnFilters;
   page?: number;
   limit?: number;
 }
@@ -76,6 +79,32 @@ export async function createTransaction(input: CreateTransactionInput) {
   return rows[0];
 }
 
+// The payments list's filterable columns (keys as the table's columns).
+const TRANSACTION_TZ = "COALESCE((SELECT bz.timezone FROM sys_businesses bz WHERE bz.id = t.business_id), 'UTC')";
+const TRANSACTION_COLUMNS: Record<string, FilterableColumn> = {
+  created_at: { expr: 't.created_at', kind: 'date' },
+  customer: {
+    expr: 't.customer_id',
+    label: "(SELECT NULLIF(BTRIM(COALESCE(c2.first_name, '') || ' ' || COALESCE(c2.last_name, '')), '') FROM cus_customers c2 WHERE c2.id = t.customer_id)",
+  },
+  type: { expr: 't.type' },
+  // Refunds count below zero, as the list shows them (amount filter, decision 7).
+  amount: { expr: "CASE WHEN t.type = 'refund' THEN -t.amount ELSE t.amount END", kind: 'amount' },
+  payment_method: { expr: 't.payment_method' },
+  reference_number: { expr: 't.reference_number' },
+  description: { expr: 't.description' },
+};
+
+/** Every value of one payments column (with counts) among the payments matching the other filters. */
+export async function getTransactionColumnValues(businessId: string, column: string, columns: ColumnFilters) {
+  const col = TRANSACTION_COLUMNS[column];
+  if (!col || col.kind === 'date') return [];
+  const conditions = ['t.business_id = $1']; const params: any[] = [businessId];
+  addColumnFilterConditions(columns, TRANSACTION_COLUMNS, conditions, params, TRANSACTION_TZ, column);
+  const { rows } = await adminPool.query(columnValuesSql(col, 'pay_transactions t', conditions.join(' AND ')), params);
+  return rows as Array<{ value: string; label: string; count: number }>;
+}
+
 export async function getTransactions(filters: TransactionFilters) {
   const conditions = ['t.business_id = $1'];
   const params: any[] = [filters.businessId];
@@ -92,6 +121,7 @@ export async function getTransactions(filters: TransactionFilters) {
     params.push(`%${filters.customerSearch}%`);
     idx++;
   }
+  if (filters.columns) { addColumnFilterConditions(filters.columns, TRANSACTION_COLUMNS, conditions, params, TRANSACTION_TZ); idx = params.length + 1; }
 
   const where = conditions.join(' AND ');
   const limit = Math.min(filters.limit || 20, 100);
@@ -170,11 +200,11 @@ const PURPOSE_SELECT = `
   fo.id                   AS purpose_order_id,
   fo.order_number         AS purpose_order_number,
   -- Units still refundable on this order across REFUNDABLE line types (product,
-  -- no_show_fee), so the history list can show/hide the Refund button exactly like
+  -- no_show_fee, event), so the history list can show/hide the Refund button exactly like
   -- the receipt without fetching each order.
   (SELECT COALESCE(SUM(oi.quantity - oi.refunded_quantity), 0)
      FROM fin_order_items oi
-     WHERE oi.order_id = fo.id AND oi.item_type IN ('product', 'no_show_fee')
+     WHERE oi.order_id = fo.id AND oi.item_type IN ('product', 'no_show_fee', 'event')
   )                        AS purpose_order_refundable_qty
 `;
 

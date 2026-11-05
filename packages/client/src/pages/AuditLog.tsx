@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Table } from '../design-system/components/data/Table';
+import type { TableFilters } from '../design-system/components/data/Table';
 import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { apiClient } from '../api/client';
@@ -27,46 +28,59 @@ export function AuditLog() {
   const limit = 25;
 
   // Filters
-  const [actionFilter, setActionFilter] = useState('');
-  const [resourceFilter, setResourceFilter] = useState('');
-  const [userFilter, setUserFilter] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  // Column filters from the icon beside each sort icon (David, 2026-11-02).
+  const [tableFilters, setTableFilters] = useState<TableFilters>({});
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Detail modal
   const [selectedEntry, setSelectedEntry] = useState<AuditEntry | null>(null);
 
+  const listParams = (p: number, size: number) => {
+    const params: Record<string, any> = { page: p, limit: size };
+    if (Object.keys(tableFilters).length) params.cf = JSON.stringify(tableFilters);
+    return params;
+  };
   const fetchEntries = useCallback(async () => {
     setLoading(true);
     try {
-      const params: Record<string, any> = { page, limit };
-      if (actionFilter) params.action = actionFilter;
-      if (resourceFilter) params.resource_type = resourceFilter;
-      if (userFilter) params.user_id = userFilter;
-      if (startDate) params.start_date = startDate;
-      if (endDate) params.end_date = endDate;
-      const res = await apiClient.get('/v1/admin/audit-log', { params });
+      const res = await apiClient.get('/v1/admin/audit-log', { params: listParams(1, limit) });
       setEntries(res.data.data || []);
+      setPage(1);
       setTotal(res.data.meta?.total || 0);
     } catch {
       setEntries([]);
     } finally {
       setLoading(false);
     }
-  }, [page, actionFilter, resourceFilter, userFilter, startDate, endDate]);
+  }, [tableFilters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchEntries(); }, [fetchEntries]);
 
-  const totalPages = Math.ceil(total / limit);
+  // No pages: more entries load as the list scrolls.
+  const loadMore = useCallback(async () => {
+    if (loadingMore || entries.length >= total) return;
+    setLoadingMore(true);
+    try {
+      const res = await apiClient.get('/v1/admin/audit-log', { params: listParams(page + 1, limit) });
+      setEntries((rows) => [...rows, ...(res.data.data || [])]);
+      setPage(page + 1);
+      setTotal(res.data.meta?.total || 0);
+    } catch { /* Show more stays to try again */ }
+    finally { setLoadingMore(false); }
+  }, [tableFilters, page, loadingMore, entries.length, total]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filterOptions = useCallback(async (key: string) => {
+    const params: Record<string, any> = { column: key };
+    if (Object.keys(tableFilters).length) params.cf = JSON.stringify(tableFilters);
+    const res = await apiClient.get('/v1/admin/audit-log/column-values', { params });
+    return (res.data.data as Array<{ value: string; label: string; count: number }>).map((v) => ({
+      value: v.value, count: v.count, label: v.label || v.value,
+    }));
+  }, [tableFilters]);
 
   const handleExportCSV = async () => {
     try {
-      const params: Record<string, any> = { limit: 10000 };
-      if (actionFilter) params.action = actionFilter;
-      if (resourceFilter) params.resource_type = resourceFilter;
-      if (startDate) params.start_date = startDate;
-      if (endDate) params.end_date = endDate;
-      const res = await apiClient.get('/v1/admin/audit-log', { params });
+      const res = await apiClient.get('/v1/admin/audit-log', { params: listParams(1, 10000) });
       const data = res.data.data || [];
       const headers = ['Date/Time', 'Action', 'Resource Type', 'Resource ID', 'User ID', 'Details'];
       const rows = data.map((e: AuditEntry) => [
@@ -105,7 +119,7 @@ export function AuditLog() {
       render: (val: string) => val || '—',
     },
     {
-      key: 'id', header: '', sortable: false,
+      key: 'id', header: '', sortable: false, filter: false as const,
       render: (_val: string, row: AuditEntry) => (
         <Button variant="ghost" size="sm" onClick={() => setSelectedEntry(row)}>Details</Button>
       ),
@@ -122,29 +136,18 @@ export function AuditLog() {
         <Button variant="outline" size="sm" onClick={handleExportCSV}>Export CSV</Button>
       </div>
 
-      {/* Filters */}
-      <div style={styles.filterRow}>
-        <input style={styles.input} placeholder="Action (e.g. tenant.created)" value={actionFilter}
-          onChange={(e) => { setActionFilter(e.target.value); setPage(1); }} />
-        <input style={styles.input} placeholder="Resource type" value={resourceFilter}
-          onChange={(e) => { setResourceFilter(e.target.value); setPage(1); }} />
-        <input style={styles.input} placeholder="User ID" value={userFilter}
-          onChange={(e) => { setUserFilter(e.target.value); setPage(1); }} />
-        <input style={styles.dateInput} type="date" value={startDate}
-          onChange={(e) => { setStartDate(e.target.value); setPage(1); }} />
-        <input style={styles.dateInput} type="date" value={endDate}
-          onChange={(e) => { setEndDate(e.target.value); setPage(1); }} />
-      </div>
-
       <Table
         columns={columns}
         data={entries}
         loading={loading}
         emptyMessage="No audit entries found."
         clientSort
-        page={totalPages > 1 ? page : undefined}
-        totalPages={totalPages > 1 ? totalPages : undefined}
-        onPageChange={totalPages > 1 ? setPage : undefined}
+        filters={tableFilters}
+        onFiltersChange={setTableFilters}
+        filterOptions={filterOptions}
+        onLoadMore={loadMore}
+        hasMore={entries.length < total}
+        loadingMore={loadingMore}
       />
 
       {/* Detail Modal */}

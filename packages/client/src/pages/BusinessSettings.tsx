@@ -1,45 +1,109 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
 import { useBusinessSettings } from '../context/BusinessSettingsContext';
 import { useContextManager } from '../context/ContextManager';
 import { ThemeGallery } from './settings/ThemeGallery';
+import { LeadStagesSettings } from './settings/LeadStagesSettings';
 import { ProcessorConfigForm } from '../components/ProcessorConfigForm';
 import { PageHeader } from '../design-system/components/layout/PageHeader';
+import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
 import { TabBar } from '../design-system/components/navigation/TabBar';
+import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, draftBox, UnsavedTag, fieldMark, checkMark, toggleMark } from '../components/unsaved/DraftSections';
+import { LeaveGuard } from '../components/unsaved/LeaveGuard';
 import * as payApi from '../api/payments';
+import * as bookingsApi from '../api/bookings';
+import { InboxSettings } from './settings/InboxSettings';
+import { PeopleListSettings } from './settings/PeopleListSettings';
 import { TIMEZONES } from '../utils/timezones';
 
-type SettingsTab = 'system' | 'lifecycle' | 'processes' | 'notifications' | 'payment-methods' | 'integrations' | 'booking-widget' | 'appearance';
+type SettingsTab = 'system' | 'lifecycle' | 'leads' | 'inbox' | 'people-lists' | 'processes' | 'notifications' | 'payment-methods' | 'integrations' | 'booking-widget' | 'appearance';
+
+const TABS: { key: SettingsTab; label: string; separatorBefore?: boolean }[] = [
+  { key: 'system', label: 'System' },
+  { key: 'lifecycle', label: 'Customer Lifecycle' },
+  { key: 'leads', label: 'Leads' },
+  { key: 'inbox', label: 'Inbox' },
+  { key: 'people-lists', label: 'People lists' },
+  { key: 'notifications', label: 'Notifications' },
+  { key: 'payment-methods', label: 'Payment Methods' },
+  { key: 'integrations', label: 'Integrations' },
+  { key: 'booking-widget', label: 'Booking Widget' },
+  // Processes and Appearance act straight away with their own buttons (David, 2026-10-28):
+  // they sit apart, after a separator, and are not part of Save changes.
+  { key: 'processes', label: 'Processes', separatorBefore: true },
+  { key: 'appearance', label: 'Appearance' },
+];
 
 export function BusinessSettings() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('system');
+  return (
+    <DraftSectionsProvider>
+      <SettingsPage />
+    </DraftSectionsProvider>
+  );
+}
 
-  const tabs: { key: SettingsTab; label: string }[] = [
-    { key: 'system', label: 'System' },
-    { key: 'lifecycle', label: 'Customer Lifecycle' },
-    { key: 'processes', label: 'Processes' },
-    { key: 'notifications', label: 'Notifications' },
-    { key: 'payment-methods', label: 'Payment Methods' },
-    { key: 'integrations', label: 'Integrations' },
-    { key: 'booking-widget', label: 'Booking Widget' },
-    { key: 'appearance', label: 'Appearance' },
-  ];
+// One Save for all of Settings (David, 2026-10-28): every tab stays mounted so its
+// edits survive switching tabs; tabs and sections with unsaved changes are marked, and
+// leaving with unsaved changes asks first.
+function SettingsPage() {
+  // The section can be opened by address (e.g. /settings?tab=leads from Marketing → Leads).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTabState] = useState<SettingsTab>(() => (searchParams.get('tab') as SettingsTab) || 'system');
+  const setActiveTab = (tab: SettingsTab) => { setActiveTabState(tab); setSearchParams(tab === 'system' ? {} : { tab }, { replace: true }); };
+  const { dirtySections, saveAll, saving } = useDraftSections();
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const dirty = dirtySections.length > 0;
+  const changedTabs = new Set(dirtySections.map((s) => s.tab));
+
+  useEffect(() => { setResult((r) => (dirty ? (r?.ok ? null : r) : (r && !r.ok ? null : r))); }, [dirty]);
+
+  const save = async () => {
+    const { failed } = await saveAll();
+    setResult(failed.length
+      ? { ok: false, text: `Not saved: ${failed.map((f) => `${f.label} (${f.error})`).join('; ')}` }
+      : { ok: true, text: 'All changes saved.' });
+  };
+
+  // A failed save says what was not saved, even while those changes are still unsaved.
+  const status = dirty && !(result && !result.ok)
+    ? <span style={{ color: 'var(--color-warning-dark)' }}>You have unsaved changes.</span>
+    : result ? <span role={result.ok ? 'status' : 'alert'} style={{ color: result.ok ? 'var(--color-success)' : 'var(--color-error)' }}>{result.text}</span> : null;
 
   return (
     <div style={styles.page}>
-      <PageHeader title="Settings" />
-      <TabBar aria-label="Settings sections" tabs={tabs} active={activeTab} onChange={setActiveTab} />
-      {activeTab === 'system' && <SystemSettings />}
-      {activeTab === 'lifecycle' && <LifecycleSettings />}
-      {activeTab === 'processes' && <ProcessesSettings />}
-      {activeTab === 'notifications' && <NotificationSettings />}
-      {activeTab === 'payment-methods' && <PaymentMethodsSettings />}
-      {activeTab === 'integrations' && <IntegrationsSettings />}
-      {activeTab === 'booking-widget' && <BookingWidgetSettings />}
-      {activeTab === 'appearance' && <AppearanceSettings />}
+      <LeaveGuard when={dirty} />
+      <StickyPageTop>
+        <PageHeader
+          title="Settings"
+          actions={<>{status && <span style={{ fontSize: 'var(--font-size-sm)' }}>{status}</span>}<Button onClick={save} loading={saving} disabled={!dirty}>Save changes</Button></>}
+        />
+        <TabBar aria-label="Settings sections" tabs={TABS.map((t) => ({ ...t, changed: changedTabs.has(t.key) }))} active={activeTab} onChange={setActiveTab} />
+      </StickyPageTop>
+      {TABS.map((t) => (
+        <div key={t.key} hidden={activeTab !== t.key}>
+          <DraftTab tab={t.key}>{renderTab(t.key)}</DraftTab>
+        </div>
+      ))}
     </div>
   );
+}
+
+function renderTab(tab: SettingsTab) {
+  switch (tab) {
+    case 'system': return <SystemSettings />;
+    case 'lifecycle': return <LifecycleSettings />;
+    case 'leads': return <LeadStagesSettings />;
+    case 'inbox': return <InboxSettings />;
+    case 'people-lists': return <PeopleListSettings />;
+    case 'processes': return <ProcessesSettings />;
+    case 'notifications': return <NotificationSettings />;
+    case 'payment-methods': return <PaymentMethodsSettings />;
+    case 'integrations': return <IntegrationsSettings />;
+    case 'booking-widget': return <BookingWidgetSettings />;
+    case 'appearance': return <AppearanceSettings />;
+  }
 }
 
 
@@ -50,39 +114,30 @@ export function BusinessSettings() {
 function SystemSettings() {
   const businessId = localStorage.getItem('business_id') || '';
   const { refresh: refreshBusinessSettings } = useBusinessSettings();
-  const [schedulingMode, setSchedulingMode] = useState<string>('availability');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const scheduling = useDraft<string>('scheduling', 'System › Scheduling', 'availability', async (mode) => {
+    await apiClient.put(`/v1/admin/businesses/${businessId}/settings`, { scheduling_mode: mode });
+    refreshBusinessSettings(); // Update sidebar and dashboard immediately
+  });
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
     apiClient.get(`/v1/admin/businesses/${businessId}/settings`)
       .then((res) => {
         const data = res.data.data;
-        if (data) setSchedulingMode(data.scheduling_mode || 'availability');
+        if (data) scheduling.load(data.scheduling_mode || 'availability');
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [businessId]);
-
-  const handleToggle = async (checked: boolean) => {
-    const newMode = checked ? 'schedule' : 'availability';
-    setSchedulingMode(newMode);
-    setSaving(true);
-    try {
-      await apiClient.put(`/v1/admin/businesses/${businessId}/settings`, { scheduling_mode: newMode });
-      refreshBusinessSettings(); // Update sidebar and dashboard immediately
-    } catch { alert('Failed to save setting'); setSchedulingMode(schedulingMode); }
-    finally { setSaving(false); }
-  };
+  }, [businessId, scheduling.load]);
 
   if (loading) return <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-base)' }}>Loading...</p>;
 
   return (
     <>
     <div style={settingStyles.section}>
-      <h3 style={settingStyles.sectionTitle}>Scheduling</h3>
-      <div style={settingStyles.settingRow}>
+      <h3 style={settingStyles.sectionTitle}>Scheduling<UnsavedTag dirty={scheduling.dirty} /></h3>
+      <div style={{ ...settingStyles.settingRow, ...draftBox(scheduling.dirty) }}>
         <div style={settingStyles.settingInfo}>
           <label style={settingStyles.settingLabel}>Use Staff Schedule</label>
           <p style={settingStyles.settingDesc}>
@@ -93,28 +148,120 @@ function SystemSettings() {
         <label style={settingStyles.toggle}>
           <input
             type="checkbox"
-            checked={schedulingMode === 'schedule'}
-            onChange={(e) => handleToggle(e.target.checked)}
-            disabled={saving}
-            style={{ width: '18px', height: '18px' }}
+            checked={scheduling.value === 'schedule'}
+            onChange={(e) => scheduling.setValue(e.target.checked ? 'schedule' : 'availability')}
+            style={{ width: '18px', height: '18px', ...checkMark(scheduling.dirty) }}
           />
           <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', marginLeft: '8px' }}>
-            {schedulingMode === 'schedule' ? 'Enabled' : 'Disabled'}
+            {scheduling.value === 'schedule' ? 'Enabled' : 'Disabled'}
           </span>
         </label>
       </div>
     </div>
+    <CustomerCancellationSettings />
     <PayrollFrequencySettings />
+    <CommissionRefundSetting />
     </>
+  );
+}
+
+// Customer cancellations (THE-20): may customers cancel, up to how long before the start,
+// and where the money of a paid cancellation goes. Set separately for events and appointments.
+function CustomerCancellationSettings() {
+  const businessId = localStorage.getItem('business_id') || '';
+  const [settings, setSettings] = useState<{ events: bookingsApi.CancelSettings; appointments: bookingsApi.CancelSettings } | null>(null);
+
+  useEffect(() => {
+    if (!businessId) return;
+    bookingsApi.getCancellationSettings(businessId).then((s) => setSettings({ events: s.events, appointments: s.appointments })).catch(() => {});
+  }, [businessId]);
+
+  if (!settings) return null;
+  return (
+    <div style={settingStyles.section}>
+      <h3 style={settingStyles.sectionTitle}>Customer cancellations</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+        <CancellationBlock kind="appointments" label="Appointments" initial={settings.appointments} businessId={businessId} />
+        <CancellationBlock kind="events" label="Events" initial={settings.events} businessId={businessId} />
+      </div>
+    </div>
+  );
+}
+
+interface CancelDraft { enabled: boolean; amount: number; unit: 'hours' | 'days'; refundTo: bookingsApi.CancelSettings['cancel_refund_to']; changeDays: number }
+
+function toCancelDraft(s: bookingsApi.CancelSettings): CancelDraft {
+  const inDays = s.customer_cancel_hours > 0 && s.customer_cancel_hours % 24 === 0;
+  return { enabled: s.customer_cancel_enabled, amount: inDays ? s.customer_cancel_hours / 24 : s.customer_cancel_hours, unit: inDays ? 'days' : 'hours', refundTo: s.cancel_refund_to, changeDays: s.change_refund_days ?? 7 };
+}
+
+function CancellationBlock({ kind, label, initial, businessId }: { kind: 'events' | 'appointments'; label: string; initial: bookingsApi.CancelSettings; businessId: string }) {
+  const draft = useDraft<CancelDraft>(`cancel-${kind}`, `System › Customer cancellations › ${label}`, toCancelDraft(initial), async (d) => {
+    await bookingsApi.saveCancellationSettings(businessId, kind, {
+      customer_cancel_enabled: d.enabled,
+      customer_cancel_hours: Math.round(Number(d.amount) || 0) * (d.unit === 'days' ? 24 : 1),
+      cancel_refund_to: d.refundTo,
+      ...(kind === 'events' ? { change_refund_days: Math.max(0, Math.round(Number(d.changeDays) || 0)) } : {}),
+    });
+  });
+  const { enabled, amount, unit, refundTo, changeDays } = draft.value;
+  const set = (patch: Partial<CancelDraft>) => draft.setValue({ ...draft.value, ...patch });
+  const noun = kind === 'events' ? 'event' : 'appointment';
+
+  const field = { padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', background: 'var(--color-surface)', color: 'var(--color-text)' };
+  return (
+    <div style={{ ...settingStyles.settingRow, flexDirection: 'column' as const, gap: '12px', ...draftBox(draft.dirty) }} data-testid={`cancel-settings-${kind}`}>
+      <div style={settingStyles.settingInfo}>
+        <label style={settingStyles.settingLabel}>{label}<UnsavedTag dirty={draft.dirty} /></label>
+        <p style={settingStyles.settingDesc}>Whether customers can cancel {kind === 'events' ? 'their own event registrations' : 'their own appointments'} online, and until when. Staff can always cancel.</p>
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+        <input type="checkbox" checked={enabled} onChange={(e) => set({ enabled: e.target.checked })} style={{ width: '18px', height: '18px', ...checkMark(draft.changed((v) => v.enabled)) }} />
+        Customers can cancel
+      </label>
+      {enabled && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' as const, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+            Up to
+            <input type="number" min={0} max={unit === 'days' ? 90 : 2160} value={amount} onChange={(e) => set({ amount: Number(e.target.value) })} style={{ ...field, width: '80px', ...fieldMark(draft.changed((v) => v.amount)) }} aria-label="How long before" />
+            <select value={unit} onChange={(e) => set({ unit: e.target.value as 'hours' | 'days' })} style={{ ...field, ...fieldMark(draft.changed((v) => v.unit)) }} aria-label="Unit">
+              <option value="hours">hours</option>
+              <option value="days">days</option>
+            </select>
+            before the {noun} starts
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: '6px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+            <span style={{ color: 'var(--color-text-secondary)' }}>When a paid {noun} is cancelled in time, the money goes:</span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input type="radio" name={`refund-${kind}`} checked={refundTo === 'card'} onChange={() => set({ refundTo: 'card' })} style={checkMark(draft.changed((v) => v.refundTo) && refundTo === 'card')} /> Back to the customer's card (refund)
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input type="radio" name={`refund-${kind}`} checked={refundTo === 'credit'} onChange={() => set({ refundTo: 'credit' })} style={checkMark(draft.changed((v) => v.refundTo) && refundTo === 'credit')} /> To the customer's account credit, to use later
+            </label>
+          </div>
+        </>
+      )}
+      {/* After a date, time or place change, registered people can cancel for a full refund (decision 14). */}
+      {kind === 'events' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' as const, fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+          When an event's date, time or place changes, the people registered can cancel for a full refund for
+          <input type="number" min={0} max={90} value={changeDays} onChange={(e) => set({ changeDays: Number(e.target.value) })} style={{ ...field, width: '70px', ...fieldMark(draft.changed((v) => v.changeDays)) }} aria-label="Days to cancel after a change" />
+          days (or until it starts, if sooner), even when they could not cancel otherwise.
+        </div>
+      )}
+    </div>
   );
 }
 
 function PayrollFrequencySettings() {
   const businessId = localStorage.getItem('business_id') || '';
-  const [payFrequency, setPayFrequency] = useState('monthly');
-  const [startDate, setStartDate] = useState('');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const draft = useDraft('payroll', 'System › Payroll', { payFrequency: 'monthly', startDate: '' }, async (d) => {
+    await apiClient.put(`/v1/payroll/settings?business_id=${businessId}`, {
+      pay_frequency: d.payFrequency,
+      pay_period_start_date: d.startDate || null,
+    });
+  });
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
@@ -122,31 +269,22 @@ function PayrollFrequencySettings() {
       .then((res) => {
         const data = res.data.data;
         if (data) {
-          setPayFrequency(data.pay_frequency || 'monthly');
-          setStartDate(data.pay_period_start_date ? data.pay_period_start_date.slice(0, 10) : '');
+          draft.load({
+            payFrequency: data.pay_frequency || 'monthly',
+            startDate: data.pay_period_start_date ? data.pay_period_start_date.slice(0, 10) : '',
+          });
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [businessId]);
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await apiClient.put(`/v1/payroll/settings?business_id=${businessId}`, {
-        pay_frequency: payFrequency,
-        pay_period_start_date: startDate || null,
-      });
-    } catch { alert('Failed to save payroll settings'); }
-    finally { setSaving(false); }
-  };
+  }, [businessId, draft.load]);
 
   if (loading) return null;
 
   return (
     <div style={settingStyles.section}>
-      <h3 style={settingStyles.sectionTitle}>Payroll</h3>
-      <div style={{ ...settingStyles.settingRow, flexDirection: 'column' as const, gap: '12px' }}>
+      <h3 style={settingStyles.sectionTitle}>Payroll<UnsavedTag dirty={draft.dirty} /></h3>
+      <div style={{ ...settingStyles.settingRow, flexDirection: 'column' as const, gap: '12px', ...draftBox(draft.dirty) }}>
         <div style={settingStyles.settingInfo}>
           <label style={settingStyles.settingLabel}>Pay Frequency</label>
           <p style={settingStyles.settingDesc}>How often employees are paid. Pay periods are automatically generated based on this setting.</p>
@@ -154,7 +292,7 @@ function PayrollFrequencySettings() {
         <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' as const }}>
           <div>
             <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Frequency</label>
-            <select value={payFrequency} onChange={(e) => setPayFrequency(e.target.value)} style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)' }}>
+            <select value={draft.value.payFrequency} onChange={(e) => draft.setValue({ ...draft.value, payFrequency: e.target.value })} style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', ...fieldMark(draft.changed((v) => v.payFrequency)) }}>
               <option value="weekly">Weekly</option>
               <option value="biweekly">Bi-weekly (every 2 weeks)</option>
               <option value="semi_monthly">Semi-monthly (1st & 16th)</option>
@@ -163,10 +301,49 @@ function PayrollFrequencySettings() {
           </div>
           <div>
             <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Period Start Reference Date</label>
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)' }} />
+            <input type="date" value={draft.value.startDate} onChange={(e) => draft.setValue({ ...draft.value, startDate: e.target.value })} style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', ...fieldMark(draft.changed((v) => v.startDate)) }} />
           </div>
-          <Button onClick={handleSave} loading={saving} size="sm">Save</Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Commission after a refund (THE-21): take the commission on the refunded part back in the
+// pay period of the refund (default), or keep it. Finalized pay periods never change.
+function CommissionRefundSetting() {
+  const businessId = localStorage.getItem('business_id') || '';
+  const [loaded, setLoaded] = useState(false);
+  const draft = useDraft<boolean>('commission-refunds', 'System › Commission after a refund', true, async (takeBack) => {
+    await apiClient.put(`/v1/payroll/settings/commission-refunds?business_id=${businessId}`, { take_back: takeBack });
+  });
+
+  useEffect(() => {
+    if (!businessId) return;
+    apiClient.get(`/v1/payroll/settings/commission-refunds?business_id=${businessId}`)
+      .then((res) => { draft.load(!!res.data.data?.take_back); setLoaded(true); })
+      .catch(() => {});
+  }, [businessId, draft.load]);
+
+  if (!loaded) return null;
+  return (
+    <div style={settingStyles.section} data-testid="commission-refund-setting">
+      <div style={{ ...settingStyles.settingRow, flexDirection: 'column' as const, gap: '10px', ...draftBox(draft.dirty) }}>
+        <div style={settingStyles.settingInfo}>
+          <label style={settingStyles.settingLabel}>Commission after a refund<UnsavedTag dirty={draft.dirty} /></label>
+          <p style={settingStyles.settingDesc}>
+            When a sale is refunded, what happens to the commission the staff member earned on it. Taken back commission
+            comes off the pay period in which the refund happens; pay periods already finalized never change.
+          </p>
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+          <input type="radio" name="commission-refunds" checked={draft.value} onChange={() => draft.setValue(true)} style={checkMark(draft.dirty && draft.value)} />
+          Take the commission back
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+          <input type="radio" name="commission-refunds" checked={!draft.value} onChange={() => draft.setValue(false)} style={checkMark(draft.dirty && !draft.value)} />
+          Keep the commission
+        </label>
       </div>
     </div>
   );
@@ -188,15 +365,17 @@ const settingStyles: Record<string, React.CSSProperties> = {
 
 function LifecycleSettings() {
   const businessId = localStorage.getItem('business_id') || '';
-  const [config, setConfig] = useState({
+  const [loading, setLoading] = useState(true);
+  const draft = useDraft('lifecycle', 'Customer Lifecycle', {
     enabled: true,
     at_risk_days: 30,
     churned_days: 60,
     run_time: '02:00',
+  }, async (config) => {
+    await apiClient.put(`/v1/customers/lifecycle-config?business_id=${businessId}`, config);
   });
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const config = draft.value;
+  const setConfig = draft.setValue;
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
@@ -204,7 +383,7 @@ function LifecycleSettings() {
       .then((res) => {
         const d = res.data.data;
         if (d) {
-          setConfig({
+          draft.load({
             enabled: d.enabled ?? true,
             at_risk_days: d.at_risk_days ?? 30,
             churned_days: d.churned_days ?? 60,
@@ -214,22 +393,13 @@ function LifecycleSettings() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [businessId]);
-
-  const handleSave = async () => {
-    setSaving(true); setMessage(null);
-    try {
-      await apiClient.put(`/v1/customers/lifecycle-config?business_id=${businessId}`, config);
-      setMessage('Lifecycle settings saved.');
-    } catch { setMessage('Failed to save.'); }
-    finally { setSaving(false); }
-  };
+  }, [businessId, draft.load]);
 
   if (loading) return <p style={styles.muted}>Loading...</p>;
 
   return (
-    <div style={styles.section}>
-      <h2 style={styles.sectionTitle}>Customer Lifecycle Automation</h2>
+    <div style={{ ...styles.section, ...draftBox(draft.dirty) }}>
+      <h2 style={styles.sectionTitle}>Customer Lifecycle Automation<UnsavedTag dirty={draft.dirty} /></h2>
       <p style={styles.description}>
         Configure how customers automatically transition between lifecycle stages based on inactivity.
         When enabled, the system will evaluate customer activity daily and move them through stages.
@@ -237,7 +407,7 @@ function LifecycleSettings() {
 
       <div style={styles.field}>
         <label style={styles.checkLabel}>
-          <input type="checkbox" checked={config.enabled} onChange={(e) => setConfig({ ...config, enabled: e.target.checked })} />
+          <input type="checkbox" checked={config.enabled} onChange={(e) => setConfig({ ...config, enabled: e.target.checked })} style={checkMark(draft.changed((v) => v.enabled))} />
           <span>Enable automatic lifecycle transitions</span>
         </label>
       </div>
@@ -247,13 +417,13 @@ function LifecycleSettings() {
           <div style={styles.fieldRow}>
             <div style={styles.field}>
               <label style={styles.label}>Days before "Active" → "At Risk"</label>
-              <input style={styles.input} type="number" min={1} value={config.at_risk_days}
+              <input style={{ ...styles.input, ...fieldMark(draft.changed((v) => v.at_risk_days)) }} type="number" min={1} value={config.at_risk_days}
                 onChange={(e) => setConfig({ ...config, at_risk_days: parseInt(e.target.value) || 30 })} />
               <span style={styles.helper}>Customer has no bookings or activity for this many days</span>
             </div>
             <div style={styles.field}>
               <label style={styles.label}>Days before "At Risk" → "Churned"</label>
-              <input style={styles.input} type="number" min={1} value={config.churned_days}
+              <input style={{ ...styles.input, ...fieldMark(draft.changed((v) => v.churned_days)) }} type="number" min={1} value={config.churned_days}
                 onChange={(e) => setConfig({ ...config, churned_days: parseInt(e.target.value) || 60 })} />
               <span style={styles.helper}>Customer remains at-risk with no activity for this many additional days</span>
             </div>
@@ -261,17 +431,12 @@ function LifecycleSettings() {
 
           <div style={styles.field}>
             <label style={styles.label}>Daily evaluation time</label>
-            <input style={styles.input} type="time" value={config.run_time}
+            <input style={{ ...styles.input, ...fieldMark(draft.changed((v) => v.run_time)) }} type="time" value={config.run_time}
               onChange={(e) => setConfig({ ...config, run_time: e.target.value })} />
             <span style={styles.helper}>Time of day when the lifecycle evaluation runs (server timezone)</span>
           </div>
         </>
       )}
-
-      {message && <p style={styles.message}>{message}</p>}
-      <div style={styles.actions}>
-        <Button onClick={handleSave} loading={saving}>Save Settings</Button>
-      </div>
     </div>
   );
 }
@@ -636,6 +801,11 @@ function NotificationSettings() {
 // Payment Methods Settings
 // ============================================================
 
+
+// ============================================================
+// Payment Methods Settings
+// ============================================================
+
 const METHOD_INFO: { method: string; label: string; description: string; integrationOnly?: boolean }[] = [
   { method: 'cash', label: 'Cash', description: 'Accept cash payments in person' },
   { method: 'card', label: 'Card', description: 'Accept credit/debit card payments' },
@@ -648,77 +818,51 @@ const METHOD_INFO: { method: string; label: string; description: string; integra
   { method: 'other', label: 'Other', description: 'Miscellaneous payment methods' },
 ];
 
+
 function PaymentMethodsSettings() {
   const businessId = localStorage.getItem('business_id') || '';
-  const [methods, setMethods] = useState<{ method: string; enabled: boolean }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  // Gift-card tax setting (C7): whether selling a gift card is taxed. Default off.
-  const [giftCardTax, setGiftCardTax] = useState(false);
-  const [savingGiftTax, setSavingGiftTax] = useState(false);
-  // Gift-card expiry setting (C7): how many days a purchased card is valid for.
-  // 0 = no expiry. Held as a string for the input; parsed on save.
-  const [giftExpiryDays, setGiftExpiryDays] = useState('0');
-  const [savingGiftExpiry, setSavingGiftExpiry] = useState(false);
+  const methodsDraft = useDraft<{ method: string; enabled: boolean }[]>('payment-methods', 'Payment Methods › Accepted methods', [], async (methods) => {
+    await payApi.setAcceptedMethods(businessId, methods);
+  });
+  // Gift cards (C7): whether selling a gift card is taxed (default off), and how many days a
+  // purchased card is valid for (0 = no expiry; held as a string for the input).
+  const giftDraft = useDraft('gift-cards', 'Payment Methods › Gift cards', { tax: false, expiryDays: '0' }, async (g) => {
+    await payApi.setGiftCardTaxEnabled(businessId, g.tax);
+    const saved = await payApi.setGiftCardExpiryDays(businessId, Math.max(0, Math.floor(Number(g.expiryDays) || 0)));
+    return { tax: g.tax, expiryDays: String(saved) };
+  });
+  const methods = methodsDraft.value;
+  const gift = giftDraft.value;
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
-    payApi.getAcceptedMethods(businessId)
-      .then((rows) => setMethods(rows || []))
-      .catch(() => {
+    Promise.all([
+      payApi.getAcceptedMethods(businessId).then((rows) => rows || [])
         // Default all manual methods to enabled if API fails
-        setMethods(METHOD_INFO.map((m) => ({ method: m.method, enabled: !m.integrationOnly })));
-      })
-      .finally(() => setLoading(false));
-    payApi.getGiftCardTaxEnabled(businessId).then(setGiftCardTax).catch(() => setGiftCardTax(false));
-    payApi.getGiftCardExpiryDays(businessId).then((d) => setGiftExpiryDays(String(d))).catch(() => setGiftExpiryDays('0'));
-  }, [businessId]);
-
-  const toggleGiftCardTax = async (next: boolean) => {
-    setGiftCardTax(next); setSavingGiftTax(true);
-    try { await payApi.setGiftCardTaxEnabled(businessId, next); }
-    catch { setGiftCardTax(!next); setMessage('Failed to update gift-card tax setting.'); }
-    finally { setSavingGiftTax(false); }
-  };
-
-  const saveGiftExpiry = async () => {
-    const parsed = Math.max(0, Math.floor(Number(giftExpiryDays) || 0));
-    setSavingGiftExpiry(true);
-    try {
-      const saved = await payApi.setGiftCardExpiryDays(businessId, parsed);
-      setGiftExpiryDays(String(saved));
-      setMessage('Gift-card expiry updated.');
-    } catch {
-      setMessage('Failed to update gift-card expiry setting.');
-    } finally {
-      setSavingGiftExpiry(false);
-    }
-  };
+        .catch(() => METHOD_INFO.map((m) => ({ method: m.method, enabled: !m.integrationOnly }))),
+      payApi.getGiftCardTaxEnabled(businessId).catch(() => false),
+      payApi.getGiftCardExpiryDays(businessId).then((d) => String(d)).catch(() => '0'),
+    ]).then(([rows, tax, expiryDays]) => {
+      methodsDraft.load(rows);
+      giftDraft.load({ tax, expiryDays });
+    }).finally(() => setLoading(false));
+  }, [businessId, methodsDraft.load, giftDraft.load]);
 
   const toggleMethod = (method: string) => {
-    setMethods(methods.map((m) => m.method === method ? { ...m, enabled: !m.enabled } : m));
-    setMessage(null);
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    setMessage(null);
-    try {
-      await payApi.setAcceptedMethods(businessId, methods);
-      setMessage('Payment methods saved.');
-    } catch {
-      setMessage('Failed to save payment methods.');
-    } finally {
-      setSaving(false);
-    }
+    const known = methods.some((m) => m.method === method);
+    const info = METHOD_INFO.find((m) => m.method === method);
+    methodsDraft.setValue(known
+      ? methods.map((m) => m.method === method ? { ...m, enabled: !m.enabled } : m)
+      : [...methods, { method, enabled: !!info?.integrationOnly }]);
   };
 
   if (loading) return <p style={styles.muted}>Loading...</p>;
 
   return (
     <div style={styles.section}>
-      <h2 style={styles.sectionTitle}>Accepted Payment Methods</h2>
+      <div style={draftBox(methodsDraft.dirty || giftDraft.dirty)}>
+      <h2 style={styles.sectionTitle}>Accepted Payment Methods<UnsavedTag dirty={methodsDraft.dirty || giftDraft.dirty} /></h2>
       <p style={styles.description}>
         Choose which payment methods your business accepts. Disabled methods will not appear as options when recording payments.
       </p>
@@ -727,6 +871,8 @@ function PaymentMethodsSettings() {
         {METHOD_INFO.map((info) => {
           const current = methods.find((m) => m.method === info.method);
           const enabled = current?.enabled ?? !info.integrationOnly;
+          const savedRow = methodsDraft.saved.find((m) => m.method === info.method);
+          const switchChanged = enabled !== (savedRow?.enabled ?? !info.integrationOnly);
           return (
             <div key={info.method} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: enabled ? 'var(--color-surface)' : 'var(--color-background)' }}>
               <div>
@@ -736,7 +882,7 @@ function PaymentMethodsSettings() {
                 {info.method === 'gift_card' && (
                   <>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={giftCardTax} disabled={savingGiftTax} onChange={(e) => toggleGiftCardTax(e.target.checked)} />
+                      <input type="checkbox" checked={gift.tax} onChange={(e) => giftDraft.setValue({ ...gift, tax: e.target.checked })} style={checkMark(giftDraft.changed((v) => v.tax))} />
                       Apply tax to gift card sales (at the default tax rate) — depends on your jurisdiction
                     </label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', flexWrap: 'wrap' }}>
@@ -745,11 +891,9 @@ function PaymentMethodsSettings() {
                         id="gift-expiry-days"
                         type="number"
                         min={0}
-                        value={giftExpiryDays}
-                        disabled={savingGiftExpiry}
-                        onChange={(e) => setGiftExpiryDays(e.target.value)}
-                        onBlur={saveGiftExpiry}
-                        style={{ width: '72px', padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm, 4px)', background: 'var(--color-background)', color: 'var(--color-text)' }}
+                        value={gift.expiryDays}
+                        onChange={(e) => giftDraft.setValue({ ...gift, expiryDays: e.target.value })}
+                        style={{ width: '72px', padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm, 4px)', background: 'var(--color-background)', color: 'var(--color-text)', ...fieldMark(giftDraft.changed((v) => v.expiryDays)) }}
                       />
                       <span>days from purchase (0 = no expiry) — depends on your jurisdiction</span>
                     </div>
@@ -762,7 +906,7 @@ function PaymentMethodsSettings() {
                 <span style={{
                   position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
                   backgroundColor: enabled ? 'var(--color-primary)' : 'var(--color-border)',
-                  borderRadius: '12px', transition: 'background-color 0.2s',
+                  borderRadius: '12px', transition: 'background-color 0.2s', ...toggleMark(switchChanged),
                 }} />
                 <span style={{
                   position: 'absolute', top: '2px', left: enabled ? '22px' : '2px',
@@ -774,10 +918,6 @@ function PaymentMethodsSettings() {
           );
         })}
       </div>
-
-      {message && <p style={{ fontSize: 'var(--font-size-sm)', color: message.includes('Failed') ? 'var(--color-error)' : 'var(--color-success)', marginBottom: '12px' }}>{message}</p>}
-      <div style={styles.actions}>
-        <Button onClick={handleSave} loading={saving}>Save Payment Methods</Button>
       </div>
 
       <div style={{ borderTop: '1px solid var(--color-border)', margin: '32px 0 0', paddingTop: '24px' }}>
@@ -793,74 +933,61 @@ function PaymentMethodsSettings() {
 
 // --- Invoicing on/off (C5.1) ---
 function InvoicingSetting({ businessId }: { businessId: string }) {
-  const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const draft = useDraft<boolean>('invoicing', 'Payment Methods › Invoicing', false, async (on) => {
+    await payApi.setInvoicingEnabled(businessId, on);
+  });
+  const enabled = draft.value;
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
-    payApi.getInvoicingEnabled(businessId).then(setEnabled).catch(() => {}).finally(() => setLoading(false));
-  }, [businessId]);
-
-  const toggle = async (next: boolean) => {
-    setEnabled(next); setSaving(true);
-    try { await payApi.setInvoicingEnabled(businessId, next); }
-    catch { setEnabled(!next); alert('Failed to update invoicing setting'); }
-    finally { setSaving(false); }
-  };
+    payApi.getInvoicingEnabled(businessId).then(draft.load).catch(() => {}).finally(() => setLoading(false));
+  }, [businessId, draft.load]);
 
   if (loading) return null;
   return (
-    <>
-      <h2 style={styles.sectionTitle}>Invoicing</h2>
+    <div style={draftBox(draft.dirty)}>
+      <h2 style={styles.sectionTitle}>Invoicing<UnsavedTag dirty={draft.dirty} /></h2>
       <p style={styles.description}>
         When enabled, you can issue payable invoices to customers (e.g. corporate clients) that they can settle online.
         When off, you simply take payment at the time of service.
       </p>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface)', maxWidth: '480px' }}>
         <span style={{ fontWeight: 600, fontSize: 'var(--font-size-base)', color: 'var(--color-text)' }}>Enable invoicing</span>
-        <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px', cursor: saving ? 'wait' : 'pointer' }}>
-          <input type="checkbox" checked={enabled} disabled={saving} onChange={(e) => toggle(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
-          <span style={{ position: 'absolute', inset: 0, backgroundColor: enabled ? 'var(--color-primary)' : 'var(--color-border)', borderRadius: '12px', transition: 'background-color 0.2s' }} />
+        <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px', cursor: 'pointer' }}>
+          <input type="checkbox" checked={enabled} onChange={(e) => draft.setValue(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+          <span style={{ position: 'absolute', inset: 0, backgroundColor: enabled ? 'var(--color-primary)' : 'var(--color-border)', borderRadius: '12px', transition: 'background-color 0.2s', ...toggleMark(draft.dirty) }} />
           <span style={{ position: 'absolute', top: '2px', left: enabled ? '22px' : '2px', width: '20px', height: '20px', backgroundColor: '#fff', borderRadius: '50%', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
         </label>
       </div>
-    </>
+    </div>
   );
 }
 
 // --- Recurring-billing run time (C6a) ---
 function BillingRunTimeSetting({ businessId }: { businessId: string }) {
   const [schedule, setSchedule] = useState<payApi.BusinessBillingSchedule | null>(null);
-  const [time, setTime] = useState('02:00');
-  const [tz, setTz] = useState('UTC');
-  const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const draft = useDraft('billing-run', 'Payment Methods › Recurring billing run', { time: '02:00', tz: 'UTC', enabled: true }, async (d) => {
+    const s = await payApi.saveBusinessBillingSchedule(businessId, d.time, d.tz, d.enabled);
+    setSchedule(s);
+  });
+  const { time, tz, enabled } = draft.value;
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
     payApi.getBusinessBillingSchedule(businessId)
       .then((s) => {
         setSchedule(s);
-        if (s) { setTime(s.scheduleTime); setTz(s.scheduleTimezone); setEnabled(s.enabled); }
+        if (s) draft.load({ time: s.scheduleTime, tz: s.scheduleTimezone, enabled: s.enabled });
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [businessId]);
+  }, [businessId, draft.load]);
 
-  const save = async () => {
-    setSaving(true); setMessage(null);
-    try {
-      const s = await payApi.saveBusinessBillingSchedule(businessId, time, tz, enabled);
-      setSchedule(s);
-      setMessage('Billing run time saved.');
-    } catch { setMessage('Failed to save billing run time.'); }
-    finally { setSaving(false); }
-  };
-
+  // Running the billing now is an action, not a setting: it has its own button.
   const runNow = async () => {
     setRunning(true); setMessage(null);
     try { await payApi.runBusinessBillingNow(businessId); setMessage('Billing run started.'); }
@@ -870,24 +997,24 @@ function BillingRunTimeSetting({ businessId }: { businessId: string }) {
 
   if (loading) return null;
   return (
-    <>
-      <h2 style={styles.sectionTitle}>Recurring Billing Run</h2>
+    <div style={draftBox(draft.dirty)}>
+      <h2 style={styles.sectionTitle}>Recurring Billing Run<UnsavedTag dirty={draft.dirty} /></h2>
       <p style={styles.description}>
         Membership renewals and payment retries run automatically each day at this time, in your chosen timezone.
       </p>
       <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '12px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Run time</label>
-          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={settingInputStyle} />
+          <input type="time" value={time} onChange={(e) => draft.setValue({ ...draft.value, time: e.target.value })} style={{ ...settingInputStyle, ...fieldMark(draft.changed((v) => v.time)) }} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '220px' }}>
           <label style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Timezone</label>
-          <select value={tz} onChange={(e) => setTz(e.target.value)} style={settingInputStyle}>
+          <select value={tz} onChange={(e) => draft.setValue({ ...draft.value, tz: e.target.value })} style={{ ...settingInputStyle, ...fieldMark(draft.changed((v) => v.tz)) }}>
             {TIMEZONES.map((z) => <option key={z.value} value={z.value}>{z.label}</option>)}
           </select>
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enabled
+          <input type="checkbox" checked={enabled} onChange={(e) => draft.setValue({ ...draft.value, enabled: e.target.checked })} style={checkMark(draft.changed((v) => v.enabled))} /> Enabled
         </label>
       </div>
       {schedule?.nextRunAt && (
@@ -895,10 +1022,9 @@ function BillingRunTimeSetting({ businessId }: { businessId: string }) {
       )}
       {message && <p style={{ fontSize: 'var(--font-size-sm)', color: message.includes('Failed') ? 'var(--color-error)' : 'var(--color-success)', marginBottom: '12px' }}>{message}</p>}
       <div style={{ display: 'flex', gap: '8px' }}>
-        <Button onClick={save} loading={saving}>Save Run Time</Button>
         <Button variant="secondary" onClick={runNow} loading={running}>Run Now</Button>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -919,12 +1045,18 @@ const settingInputStyle: React.CSSProperties = {
 function BookingWidgetSettings() {
   const { activeContext } = useContextManager();
   const businessId = activeContext.businessId;
-  const [enabled, setEnabled] = useState(false);
-  const [requirePayment, setRequirePayment] = useState(true);
-  const [origins, setOrigins] = useState('');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const draft = useDraft('booking-widget', 'Booking Widget', { enabled: false, requirePayment: true, origins: '' }, async (d) => {
+    const res = await apiClient.put(`/v1/admin/businesses/${businessId}/widget-config`, {
+      is_enabled: d.enabled,
+      require_payment_before_confirmation: d.requirePayment,
+      allowed_origins: d.origins.split(/[\n,]+/).map((o) => o.trim()).filter(Boolean),
+    });
+    return { ...d, origins: (res.data.data.allowed_origins || []).join('\n') };
+  });
+  const { enabled, requirePayment, origins } = draft.value;
+  const set = (patch: Partial<typeof draft.value>) => draft.setValue({ ...draft.value, ...patch });
 
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
@@ -932,32 +1064,15 @@ function BookingWidgetSettings() {
     apiClient.get(`/v1/admin/businesses/${businessId}/widget-config`)
       .then((res) => {
         const data = res.data.data;
-        setEnabled(!!data.is_enabled);
-        setRequirePayment(!!data.require_payment_before_confirmation);
-        setOrigins((data.allowed_origins || []).join('\n'));
+        draft.load({
+          enabled: !!data.is_enabled,
+          requirePayment: !!data.require_payment_before_confirmation,
+          origins: (data.allowed_origins || []).join('\n'),
+        });
       })
-      .catch(() => setMessage({ ok: false, text: 'The widget settings could not be loaded.' }))
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
-  }, [businessId]);
-
-  const save = async () => {
-    if (!businessId) return;
-    setSaving(true);
-    setMessage(null);
-    try {
-      const res = await apiClient.put(`/v1/admin/businesses/${businessId}/widget-config`, {
-        is_enabled: enabled,
-        require_payment_before_confirmation: requirePayment,
-        allowed_origins: origins.split(/[\n,]+/).map((o) => o.trim()).filter(Boolean),
-      });
-      setOrigins((res.data.data.allowed_origins || []).join('\n'));
-      setMessage({ ok: true, text: 'Saved.' });
-    } catch (err: any) {
-      setMessage({ ok: false, text: err.response?.data?.error || 'The widget settings could not be saved.' });
-    } finally {
-      setSaving(false);
-    }
-  };
+  }, [businessId, draft.load]);
 
   if (!businessId) return <div style={styles.section}><p style={styles.muted}>Select a business to configure its booking widget.</p></div>;
   if (loading) return <div style={styles.section}><p style={styles.muted}>Loading…</p></div>;
@@ -969,17 +1084,19 @@ function BookingWidgetSettings() {
 
   return (
     <div style={styles.section}>
-      <h2 style={styles.sectionTitle}>Booking Widget</h2>
+      <div style={draftBox(draft.dirty)}>
+      <h2 style={styles.sectionTitle}>Booking Widget<UnsavedTag dirty={draft.dirty} /></h2>
       <p style={styles.description}>
         The booking widget lets visitors book from your own website. While it is off, the widget shows nothing and takes no bookings.
       </p>
+      {loadError && <p role="alert" style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-error, #b42318)' }}>The widget settings could not be loaded.</p>}
 
       <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', margin: 'var(--space-md) 0', color: 'var(--color-text)' }}>
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        <input type="checkbox" checked={enabled} onChange={(e) => set({ enabled: e.target.checked })} style={checkMark(draft.changed((v) => v.enabled))} />
         Booking widget is on
       </label>
       <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', margin: 'var(--space-md) 0', color: 'var(--color-text)' }}>
-        <input type="checkbox" checked={requirePayment} onChange={(e) => setRequirePayment(e.target.checked)} />
+        <input type="checkbox" checked={requirePayment} onChange={(e) => set({ requirePayment: e.target.checked })} style={checkMark(draft.changed((v) => v.requirePayment))} />
         A booking is confirmed only after it is paid
       </label>
 
@@ -988,16 +1105,12 @@ function BookingWidgetSettings() {
           Websites allowed to show the widget
         </label>
         <textarea
-          id="widget-origins" rows={3} value={origins} onChange={(e) => setOrigins(e.target.value)}
+          id="widget-origins" rows={3} value={origins} onChange={(e) => set({ origins: e.target.value })}
           placeholder="https://www.example.com"
-          style={{ width: '100%', maxWidth: '520px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' }}
+          style={{ width: '100%', maxWidth: '520px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', ...fieldMark(draft.changed((v) => v.origins)) }}
         />
         <p style={styles.muted}>One address per line. Leave empty to allow any website.</p>
       </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-        <Button onClick={save} loading={saving}>Save</Button>
-        {message && <span role={message.ok ? 'status' : 'alert'} style={{ fontSize: 'var(--font-size-sm)', color: message.ok ? 'var(--color-text)' : 'var(--color-error, #b42318)' }}>{message.text}</span>}
       </div>
 
       <div style={{ marginTop: 'var(--space-lg)' }}>
@@ -1028,7 +1141,7 @@ function IntegrationsSettings() {
           payments settle into.
         </p>
         {businessId ? (
-          <ProcessorConfigForm owner={{ owner_level: 'business', business_id: businessId }} />
+          <ProcessorConfigForm owner={{ owner_level: 'business', business_id: businessId }} sharedSave={{ id: 'processor', label: 'Integrations › Payment processor' }} />
         ) : (
           <p style={styles.muted}>Select a business to configure its payment processor.</p>
         )}
@@ -1055,7 +1168,7 @@ function AppearanceSettings() {
 // ============================================================
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { padding: 'var(--space-lg)', maxWidth: '1600px', margin: '0 auto' },
+  page: { padding: '0 var(--space-lg) var(--space-lg)', maxWidth: '1600px', margin: '0 auto' },
   tab: { background: 'none', border: 'none', borderBottom: '2px solid transparent', padding: '10px 16px', fontSize: 'var(--font-size-base)', fontWeight: 500, color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
   tabActive: { color: 'var(--color-primary)', borderBottomColor: 'var(--color-primary)' },
   section: { marginBottom: '32px' },
