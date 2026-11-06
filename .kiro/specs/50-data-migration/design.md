@@ -113,7 +113,8 @@ Delegated to the Identity Service for customers; a natural key per entity for th
   - transaction: customer + date + amount + external reference
   - membership: customer + plan
   - package purchase: customer + package + purchase date
-  - account credit / invoice: customer + source reference (or amount + date) 
+  - account credit / invoice: customer + source reference (or amount + date)
+  - note: customer + note date + the note text (notes carry no external reference, so a content-based key is the honest choice; two genuinely distinct notes with the same customer, date, and identical text collapse to one — an accepted, conservative limitation)
 
 ---
 
@@ -134,6 +135,7 @@ Where each committed row goes, and the live-vs-history line.
   - *Outstanding invoice* → an issued `pay_invoices` row via an **import-aware extension** of `issueInvoice` that accepts the original `issue_date` and an already-paid amount (the stock call forces today and 0 paid). Live, a real receivable.
   - Because these are live financial state, the UI makes the ledger effect explicit so a business doing opening-balance journal entries in accounting doesn't double-count.
 - **Transaction history** → `cus_activities` only (activityType `payment`, `imported: true` in metadata). **NOT** `pay_transactions`, GL, revenue recognition, or reporting. History, not accounting.
+- **Notes** → `cus_activities` only (activityType `note`, `imported: true`), backdated to the note's date when given. Its own file (one row per note) because notes are one-to-many — a customer may have none or hundreds — so they don't fit as fields on the customer record. Lands on the Timeline rather than the encrypted `cus_notes` store, because a migration file can't supply the per-business note category and field-level encryption `cus_notes` requires (same reasoning as the single-note path in the customer import). The customer import keeps one optional notes column for the common single-note case; this import is for the full history. No schema change — reuses `cus_activities`.
 
 ---
 
@@ -142,13 +144,14 @@ Where each committed row goes, and the live-vs-history line.
 Locked sequence (documented for tenant owners):
 
 ```
-Setup (configured) → Customers → Payment Methods → Memberships → Packages → Appointments → Account Balances → Transaction History
+Setup (configured) → Customers → Payment Methods → Memberships → Packages → Appointments → Account Balances → Transaction History → Notes
 ```
 
 - **Hard dependencies**: Payment Methods before Memberships (default method to auto-link); Packages before Appointments (so appointment import derives fulfillment).
 - **Everything else** is a chosen-and-locked order (memberships ahead of packages/appointments by business priority), not a technical chain.
 - **Skippable**: any step nothing downstream needs. Skip Packages → appointment import simply finds no package to fulfill. Skip Payment Methods → memberships import active-but-not-auto-charged.
 - Customers is always first (everything attaches to a customer).
+- **Notes** depend only on Customers (a note attaches to a person), so they can run any time after customers; placed last as customer-attached history alongside Transaction History.
 
 ---
 
@@ -205,7 +208,7 @@ POST /v1/import/:kind/commit     (writes → { runId, total, imported, matched, 
 GET  /v1/import/runs?business_id=…        (recent runs, all kinds, trial+committed each flagged)
 GET  /v1/import/runs/:id?business_id=…    (one run)
 
-:kind ∈ customers | payment_methods | memberships | packages | appointments | account_balances | transactions
+:kind ∈ customers | payment_methods | memberships | packages | appointments | account_balances | transactions | notes
 ```
 
 `trial` and `commit` share the pipeline (validation + reference matching + per-entity landing), differing only in writing. Reference resolution runs in `trial` so unmatched refs appear before commit. Legacy `/v1/customers/import[/validate]` aliases to `customers` (`/validate`→trial, `/import`→commit) until the page replaces them.

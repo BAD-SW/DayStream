@@ -194,8 +194,33 @@ Delivered in two stages: **Stage A — engine** (done), **Stage B — three-tab 
 - [x] ✅ Committing the Mapped set imports only those (2 created); re-committing the same set reports `matched` not duplicated (0 imported / 2 matched) — record-level dedup (Requirement 12) verified live; test rows cleaned up
 - [x] ✅ No persisted partial state; server tsc 0 errors, client (touched files) tsc clean; 20/20 engine tests pass
 
+#### 22. Extended headerless detection (from live testing)
+- [x] ✅ Gender by token dictionary (incl. abbreviations); language by name + locale code; country by ISO alpha-2 set + names; tags by separated-label shape; notes by free-text fallback (last). All `likely`, foreign-header-guarded
+- [x] ✅ First/last name BY ELIMINATION (leftover name-shaped columns) when the dictionaries don't recognise diverse names
+- [x] ✅ Legacy id BY ELIMINATION via uniqueness (any id format — alpha-numeric, mixed), not just patterned/bare-number
+- [x] ✅ tags-vs-notes disambiguation (tags demoted without a separator so a short-notes column isn't mistaken for tags); 25/25 engine tests pass; verified live on jumbled 50-record files with varied date/gender/language/country formats
+
 ---
-**Status**: 🟡 In Progress — Waves 1-3 built and verified live (entity imports). Wave 4 **Stage A (engine)** and **Stage B (three-tab staging UI)** both built, unit-tested, and verified live against the real sample (9-row majority canonical, lone country row → Error; shift-and-accept moves it to Mapped; commit imports only the Mapped set; re-commit reports matched not duplicated). 20/20 engine tests pass; server tsc 0 errors; client touched files clean. Outstanding follow-ups from earlier waves: a renewal run against an imported membership enrolment not yet exercised; account-balance import has no idempotency (design §6); a per-balance-import ledger-double-count warning in the UI.
+## Notes Import (new entity — planned)
+
+Implements Requirement 18 and design.md §6-§8. Notes are one-to-many (a customer may have none or hundreds), so they are their own import, not fields on the customer file. No schema change — reuses `cus_activities`.
+
+### 23. Notes import service
+- [x] ✅ `runNotesImport`: rows = customer (unified match) + note text (required) + optional date, author, category
+- [x] ✅ Lands each note on the Timeline (`cus_activities`, activityType `note`, `imported: true`), backdated to the note date (noon UTC) when present, else now; never the encrypted `cus_notes` store
+- [x] ✅ Unmatched customer → failed with reason; missing text → failed; partial success
+- [x] ✅ Idempotent per (customer + note date + normalized text, stored as `metadata.note_key`); re-run reports matched, not duplicated
+
+### 24. Wire + client
+- [x] ✅ Added `notes` to `ImportKind`, `SUPPORTED_KINDS`, `fieldsForKind` (synonyms: note/comment/remark/text/body; date; author/createdby/staff; category/type), and `dispatch`
+- [x] ✅ Client: `ImportKind` union, a Notes entry in `KINDS` (prereq: import customers first), `fieldsForKind`, `FIELD_LABELS`
+
+### 25. Notes verification
+- [x] ✅ A customer with many notes imports all of them as separate timeline entries (verified live: 3 notes on one customer); re-run → matched, no duplicates (5 created → recommit 0 imported / 5 matched)
+- [x] ✅ Backdating confirmed (note dates preserved; undated → now); optional author/category carried; trial writes nothing; unmatched-customer and empty-text rows fail with reasons; server + client (touched files) tsc clean
+
+---
+**Status**: 🟡 In Progress — Waves 1-3 built and verified live (entity imports). Wave 4 **Stage A (engine)** and **Stage B (three-tab staging UI)** both built, unit-tested, and verified live; extended headerless detection added from live testing (gender/language/country/tags/notes + name & id by elimination), 25/25 engine tests pass. **Notes Import** (Requirement 18, new entity) built and verified live (multiple notes per customer, backdated, idempotent re-run). Server tsc 0, client touched files clean. Outstanding follow-ups from earlier waves: a renewal run against an imported membership enrolment not yet exercised; account-balance import has no idempotency (design §6); a per-balance-import ledger-double-count warning in the UI.
 **Dependencies**: Phase 46, Phase 05, Phase 10, Phase 08, packages, business setup
 
 

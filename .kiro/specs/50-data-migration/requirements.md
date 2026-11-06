@@ -219,7 +219,7 @@ A key distinction runs through these requirements: **live state vs. history.** M
 
 #### Acceptance Criteria
 
-1. THE system SHALL define and document a single locked import order: Setup (configured, not imported) → Customers → Payment Methods → Memberships → Packages → Appointments → Account Balances → Transaction History.
+1. THE system SHALL define and document a single locked import order: Setup (configured, not imported) → Customers → Payment Methods → Memberships → Packages → Appointments → Account Balances → Transaction History → Notes. (Notes depend only on Customers and so may be run any time after them; they are placed last as customer-attached history alongside Transaction History.)
 2. THE system SHALL enforce the two hard dependencies: Payment Methods before Memberships (so a default method can auto-link), and Packages before Appointments (so appointment import can derive package fulfillment).
 3. THE system SHALL allow a business to skip any step it does not need, provided nothing later in the order depends on it (e.g. skipping Packages simply means no package fulfillment is derived during appointment import).
 4. THE system SHALL make the order and the skippable rule clear in the Data Migration page and in the tenant-owner migration documentation.
@@ -269,6 +269,23 @@ This requirement deepens the automatic detection of Requirement 2 (which establi
 9. THE system SHALL present an imported file as three groups the owner works between: ALL records, the MAPPED records that fit the canonical structure (the "good" set), and the ERROR records that do not; and SHALL let the owner correct an Error record in the application — including shifting its values left or right into the correct columns — and, on acceptance, move it from Error to Mapped.
 10. THE system SHALL import ONLY the Mapped records, and ONLY when the owner initiates it; it SHALL let the owner commit the Mapped set (and continue working the remaining Error records afterward) or clear it, so a file can be imported in parts as records are fixed. Record-level duplicate safety (per Requirement 12) SHALL make committing the Mapped set repeatedly, or re-importing overlapping records, report the repeats as matched rather than creating duplicates.
 11. THE system SHALL leave a column it cannot identify by profile, pattern, or dictionary unmapped and flagged (consistent with Requirement 2.5), rather than forcing a guess; an unmodelled column (e.g. a legacy balance the entity does not import) is simply left unmapped.
+
+### Requirement 18: Notes Import
+
+**User Story:** As a business owner, I want to bring my customers' notes across as their own file, so that a customer with many notes keeps all of them, each on the right person, without me trying to cram them into the customer record.
+
+A note is a one-to-many relationship — a customer may have no notes or hundreds — so notes are their own import (like appointments and transaction history), not fields on the customer file. The customer import keeps a single optional notes column for the common "one note alongside the customer" case; this import is for the full note history. Imported notes land on the customer Timeline (`cus_activities`), the same home as imported appointment and transaction history.
+
+#### Acceptance Criteria
+
+1. THE system SHALL let a business owner import customer notes as their own Source File, separate from the customer import, where each row is one note.
+2. THE system SHALL import, per note row, at least: the customer (matched) and the note text (required); and WHERE present, the note's date, its author, and a category/type.
+3. THE system SHALL resolve each note's customer using the unified Customer Matching rule (Requirement 11) — Legacy Customer ID when present, else email, then unique phone — and SHALL fail a row with a clear reason where no customer matches, continuing with the rest (partial success).
+4. THE system SHALL record each imported note on the customer's Timeline (`cus_activities`, activity type `note`, marked `imported: true`), backdated to the note's date when one is provided, consistent with how imported appointment and transaction history land.
+5. THE system SHALL NOT require a note category or field-level encryption the Source File cannot supply (the reason imported notes land on the Timeline rather than in the encrypted `cus_notes` store).
+6. THE system SHALL make the note import idempotent so re-running the same file does not duplicate notes, using a natural key of customer + note date + the note text (so the same note on the same day for the same customer is brought in once); WHERE two genuinely distinct notes share a customer, date, and identical text, THE system MAY treat them as one (an accepted, conservative limitation, since notes carry no external reference).
+7. THE system SHALL treat the customer import as a prerequisite for the note import (a note must attach to an existing customer), consistent with the locked Migration Order (Requirement 14); the note import otherwise depends on nothing else and may run any time after customers.
+8. THE system SHALL apply the same forgiving, trial, detection, and staging behavior as the other imports (Requirements 2–4, 17): a trial writes nothing, bad rows fail with reasons, and columns are auto-detected with the owner confirming.
 
 ---
 
