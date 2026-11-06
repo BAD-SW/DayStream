@@ -6,7 +6,7 @@ import { requirePermission } from '../auth/permissions';
 import { success, error } from '../utils/response';
 import {
   parseFileToGrid, detectHeaderRow, detectColumns, applyMapping,
-  repairRows, RepairSummary,
+  repairRows, RepairSummary, canonicalProfiles, realignRowTail, rowFits, ColumnProfile,
   CUSTOMER_FIELDS, FieldDef, ColumnProposal,
 } from '../services/migration/import-engine';
 import {
@@ -19,6 +19,7 @@ import { runMembershipImport } from '../services/migration/membership-import';
 import { runPackageImport } from '../services/migration/package-import';
 import { runAppointmentImport } from '../services/migration/appointment-import';
 import { runTransactionImport } from '../services/migration/transaction-import';
+import { runNotesImport } from '../services/migration/notes-import';
 
 /**
  * Data migration import routes (spec 50, Waves 1-3). One shape across entity kinds:
@@ -42,7 +43,7 @@ importRouter.use(tenantContext);
 // Kinds with a handler. Full locked order: customers → payment_methods → memberships →
 // packages → appointments → account_balances → transactions (spec 50 §Sequence).
 const SUPPORTED_KINDS: ImportKind[] = [
-  'customers', 'payment_methods', 'memberships', 'packages', 'appointments', 'account_balances', 'transactions',
+  'customers', 'payment_methods', 'memberships', 'packages', 'appointments', 'account_balances', 'transactions', 'notes',
 ];
 
 /** Field definitions per kind that drive auto-detection. Waves 1-3. */
@@ -115,6 +116,16 @@ function fieldsForKind(kind: ImportKind): FieldDef[] {
         { field: 'description', synonyms: ['description', 'memo', 'note', 'details', 'item'] },
         { field: 'method', synonyms: ['method', 'paymentmethod', 'paymenttype', 'tender', 'via'] },
         { field: 'reference', synonyms: ['reference', 'ref', 'transactionid', 'receipt', 'receiptnumber', 'invoice', 'invoicenumber'] },
+      ];
+    case 'notes':
+      return [
+        { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid'] },
+        { field: 'email', synonyms: ['email', 'emailaddress'], valueKinds: ['email'] },
+        { field: 'phone', synonyms: ['phone', 'mobile'], valueKinds: ['phone'] },
+        { field: 'note', synonyms: ['note', 'notes', 'comment', 'comments', 'remark', 'remarks', 'text', 'body', 'detail', 'details'] },
+        { field: 'date', synonyms: ['date', 'notedate', 'createddate', 'created', 'createdon', 'timestamp'], valueKinds: ['date'] },
+        { field: 'author', synonyms: ['author', 'createdby', 'staff', 'staffmember', 'user', 'enteredby', 'by'] },
+        { field: 'category', synonyms: ['category', 'type', 'notetype', 'kind', 'tag'] },
       ];
     default:
       return [];
@@ -200,6 +211,9 @@ importRouter.post('/:kind/analyze', requirePermission('settings:*'), upload.sing
     const dataGrid = grid.slice(sampleStart);
     const width = Math.max(...grid.map((r) => r.length), 0);
     const repair = repairRows(dataGrid, width);
+    // The canonical column profiles — returned so the client can ask us to re-align a single row
+    // (per-cell shift) without re-uploading the file (POST /realign-row).
+    const profiles = canonicalProfiles(dataGrid, width).profiles;
 
     success(res, {
       hasHeader: header.hasHeader,
@@ -207,6 +221,7 @@ importRouter.post('/:kind/analyze', requirePermission('settings:*'), upload.sing
       proposedMapping: proposals,
       sampleRows,
       width,
+      profiles,
       repair: {
         repaired: repair.repaired,
         unresolved: repair.unresolved,
@@ -234,6 +249,7 @@ async function dispatch(
     case 'appointments': return runAppointmentImport({ businessId, tenantId, userId, rows, commit });
     case 'account_balances': return runAccountBalanceImport({ businessId, tenantId, userId, rows, commit });
     case 'transactions': return runTransactionImport({ businessId, tenantId, userId, rows, commit });
+    case 'notes': return runNotesImport({ businessId, tenantId, userId, rows, commit });
     default: throw new Error(`No handler for kind ${kind}`);
   }
 }
@@ -310,12 +326,31 @@ async function runRowsEndpoint(req: Request, res: Response, commit: boolean): Pr
   });
 
   const result = await dispatch(kind, businessId, authReq.tenantId!, authReq.user.sub, rows, commit);
+  // Batched commits ask us not to record a run per batch; the client records ONE summary run at the end.
+  if (req.body?.defer_record === true) { success(res, result); return; }
   const recorded = await recordRun({
     tenantId: authReq.tenantId!, businessId, entity: kind,
     fileName: (req.body?.file_name || null), isTrial: !commit, performedBy: authReq.user.sub, result,
   });
   success(res, recorded);
 }
+
+// POST /v1/import/:kind/record-run — one summary run for a batched commit (see defer_record above).
+importRouter.post('/:kind/record-run', requirePermission('settings:*'), async (req, res) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const kind = parseKind(req.params.kind, res); if (!kind) return;
+    const businessId = (req.body?.business_id || '').toString();
+    if (!businessId) { error(res, 'business_id is required', 'VALIDATION_ERROR', 400); return; }
+    const n = (v: unknown) => Math.max(0, Math.floor(Number(v) || 0));
+    const result = { runId: null, total: n(req.body?.total), imported: n(req.body?.imported), matched: n(req.body?.matched), failed: n(req.body?.failed), failures: [], warnings: [] };
+    const recorded = await recordRun({
+      tenantId: authReq.tenantId!, businessId, entity: kind,
+      fileName: (req.body?.file_name || null), isTrial: false, performedBy: authReq.user.sub, result,
+    });
+    success(res, recorded);
+  } catch (e: any) { console.error('Import record-run failed', e?.message || e); error(res, 'Failed to record the import', 'INTERNAL_ERROR', 500); }
+});
 
 importRouter.post('/:kind/trial-rows', requirePermission('settings:*'), async (req, res) => {
   try { await runRowsEndpoint(req, res, false); }
@@ -325,6 +360,42 @@ importRouter.post('/:kind/trial-rows', requirePermission('settings:*'), async (r
 importRouter.post('/:kind/commit-rows', requirePermission('settings:*'), async (req, res) => {
   try { await runRowsEndpoint(req, res, true); }
   catch (e: any) { console.error('Import commit-rows failed', e?.message || e); error(res, 'Failed to run the import', 'INTERNAL_ERROR', 500); }
+});
+
+/**
+ * POST /v1/import/:kind/realign-row — the engine behind the per-cell shift arrows (spec 50 UI).
+ * The user shifts one cell (the hint): the value at `index` belongs to the right (direction
+ * 'right') or into the empty slot to its left (direction 'left'). Columns before the shift point
+ * stay fixed; the engine intelligently re-positions the REMAINING values by profile-fit. JSON:
+ *   { cells: string[], profiles: ColumnProfile[], index: number, direction: 'left'|'right' }
+ * Returns { cells, aligned }. Stateless, one row — the profiles came from the analyze response.
+ */
+importRouter.post('/:kind/realign-row', requirePermission('settings:*'), (req: Request, res: Response) => {
+  try {
+    const kind = parseKind(req.params.kind, res); if (!kind) return;
+    const cells: string[] = Array.isArray(req.body?.cells) ? req.body.cells.map((c: unknown) => String(c ?? '')) : [];
+    const profiles: ColumnProfile[] = Array.isArray(req.body?.profiles) ? req.body.profiles : [];
+    const index = Number(req.body?.index);
+    // 'check' = the user hand-edited a cell: nothing moves, the row is just re-checked.
+    if (req.body?.direction === 'check') {
+      if (profiles.length === 0) { error(res, 'cells and profiles are required', 'VALIDATION_ERROR', 400); return; }
+      success(res, rowFits(cells, profiles));
+      return;
+    }
+    const direction = req.body?.direction === 'left' ? 'left' : 'right';
+    if (profiles.length === 0 || !Number.isInteger(index) || index < 0) {
+      error(res, 'cells, profiles and a valid index are required', 'VALIDATION_ERROR', 400); return;
+    }
+    // Right shift: re-fit from the shifted column, forcing its value to move right (leading gap).
+    // Left shift: the value moves into the empty slot to its left, so re-fit from index-1.
+    const result = direction === 'right'
+      ? realignRowTail(cells, profiles, index, true)
+      : realignRowTail(cells, profiles, Math.max(0, index - 1), false);
+    success(res, result);
+  } catch (e: any) {
+    console.error('Import realign-row failed', e?.message || e);
+    error(res, 'Failed to realign the row', 'INTERNAL_ERROR', 500);
+  }
 });
 
 // GET /v1/import/runs — recent runs for a business.

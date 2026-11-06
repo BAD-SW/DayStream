@@ -7,7 +7,7 @@ export type Confidence = 'certain' | 'likely' | 'unknown';
 
 export type ImportKind =
   | 'customers' | 'payment_methods' | 'memberships' | 'packages'
-  | 'appointments' | 'account_balances' | 'transactions';
+  | 'appointments' | 'account_balances' | 'transactions' | 'notes';
 
 export interface ColumnProposal {
   index: number;
@@ -44,14 +44,25 @@ export interface AnalyzedRow {
   reason?: string;        // present when unresolved
 }
 
+/** Opaque column-profile blob from analyze, passed back to realignRow (shape mirrors the engine). */
+export type ColumnProfile = Record<string, unknown>;
+
 export interface AnalyzeResult {
   hasHeader: boolean;
   columns: string[];
   proposedMapping: ColumnProposal[];
   sampleRows: string[][];
-  width: number;          // canonical column count (for the Error-tab shift editor)
+  width: number;          // canonical column count (for the per-cell shift editor)
+  profiles: ColumnProfile[]; // canonical profiles, passed back to realignRow
   repair?: RepairInfo;
   rows: AnalyzedRow[];    // every data row with its bucket + cells
+}
+
+export interface RealignResult {
+  cells: string[];
+  aligned: boolean;
+  /** When not aligned: what's wrong, naming the column. */
+  reason?: string;
 }
 
 export interface RowFailure {
@@ -139,6 +150,37 @@ export function trialRows(kind: ImportKind, businessId: string, mapping: Record<
 }
 export function commitRows(kind: ImportKind, businessId: string, mapping: Record<number, string>, rows: string[][], fileName: string | null) {
   return runRows(kind, true, businessId, mapping, rows, fileName);
+}
+
+/** Commit one batch of a larger import without recording a run (call recordRun once at the end). */
+export async function commitRowsBatch(
+  kind: ImportKind, businessId: string, mapping: Record<number, string>, rows: string[][], fileName: string | null,
+): Promise<ImportResult> {
+  const res = await apiClient.post(`/v1/import/${kind}/commit-rows`, {
+    business_id: businessId, mapping, rows, file_name: fileName, defer_record: true,
+  });
+  return res.data.data;
+}
+
+/** Record a single summary run for a batched commit. */
+export async function recordRun(
+  kind: ImportKind, businessId: string, fileName: string | null,
+  totals: { total: number; imported: number; matched: number; failed: number },
+): Promise<void> {
+  await apiClient.post(`/v1/import/${kind}/record-run`, { business_id: businessId, file_name: fileName, ...totals });
+}
+
+/**
+ * Re-align one row after a per-cell shift (the ← / → arrows). `index` is the shifted column and
+ * `direction` the arrow used; the server holds the columns before the shift fixed and
+ * intelligently re-positions the remaining values by profile-fit. Returns the settled cells and
+ * whether the row now fully lines up.
+ */
+export async function realignRow(
+  kind: ImportKind, cells: string[], profiles: ColumnProfile[], index: number, direction: 'left' | 'right' | 'check',
+): Promise<RealignResult> {
+  const res = await apiClient.post(`/v1/import/${kind}/realign-row`, { cells, profiles, index, direction });
+  return res.data.data;
 }
 
 export async function listRuns(businessId: string): Promise<ImportRun[]> {

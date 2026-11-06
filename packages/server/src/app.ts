@@ -92,6 +92,10 @@ app.use(cookieParser());
 // webhook path BEFORE the global JSON parser so express.json() doesn't consume it.
 app.use('/api/v1/pay/webhooks', express.raw({ type: '*/*', limit: '1mb' }));
 
+// Data-migration row commits carry the whole accepted file as JSON (10k+ rows), so the import
+// routes get a larger body limit. Mounted BEFORE the global parser, which skips an already-parsed body.
+app.use('/api/v1/import', express.json({ limit: '25mb' }));
+
 // Body parsing
 app.use(express.json({ limit: '1mb' }));
 

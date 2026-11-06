@@ -9,7 +9,7 @@ import { logAudit } from '../audit.service';
 
 export type ImportKind =
   | 'customers' | 'payment_methods' | 'memberships'
-  | 'packages' | 'appointments' | 'account_balances' | 'transactions';
+  | 'packages' | 'appointments' | 'account_balances' | 'transactions' | 'notes';
 
 export type RowOutcome = 'imported' | 'matched' | 'failed';
 

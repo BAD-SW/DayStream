@@ -1,8 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Button } from '../../design-system/components/actions/Button';
 import { Alert } from '../../design-system/components/feedback/Alert';
 import { Badge } from '../../design-system/components/data/Badge';
-import { Tabs } from '../../design-system/components/navigation/Tabs';
 import * as api from '../../api/dataMigration';
 
 /**
@@ -18,7 +17,7 @@ import * as api from '../../api/dataMigration';
  * Packages, Appointments, Account Balances, Transaction History.
  */
 
-type Step = 'pick' | 'upload' | 'review' | 'stage' | 'done';
+type Step = 'pick' | 'upload' | 'review';
 
 interface KindInfo {
   kind: api.ImportKind;
@@ -35,6 +34,7 @@ const KINDS: KindInfo[] = [
   { kind: 'appointments', label: 'Appointments', blurb: 'Appointment history and upcoming bookings. Future dates become live bookings; past dates go on the customer timeline.', prereq: 'Import customers and packages first, and set up your services and staff.' },
   { kind: 'account_balances', label: 'Account Balances', blurb: 'Account credits and outstanding invoices.', prereq: 'Import customers first.' },
   { kind: 'transactions', label: 'Transaction History', blurb: 'Past payments shown on the customer timeline only — never added to your books or reports.', prereq: 'Import customers first.' },
+  { kind: 'notes', label: 'Notes', blurb: 'Customer notes as their own file — each row is one note, added to the customer timeline. A customer can have as many as you have.', prereq: 'Import customers first.' },
 ];
 
 // Friendly field labels for the mapping review.
@@ -50,7 +50,26 @@ const FIELD_LABELS: Record<string, string> = {
   package: 'Package', purchase_date: 'Purchase Date',
   service: 'Service', staff: 'Staff Member', date: 'Date', time: 'Time', duration: 'Duration (min)',
   method: 'Payment Method', reference: 'Reference',
+  note: 'Note', author: 'Author', category: 'Category',
 };
+
+/**
+ * Customers need a first name and an email or phone (mirrors the server's validateRow). Returns a
+ * plain-language problem for a row that's missing them, or null. Other kinds are validated on import.
+ */
+function missingRequired(kind: api.ImportKind, cells: string[], mapping: Record<number, string>): string | null {
+  if (kind !== 'customers') return null;
+  const val = (field: string): string => {
+    for (const [idx, f] of Object.entries(mapping)) if (f === field) return (cells[Number(idx)] ?? '').trim();
+    return '';
+  };
+  const noName = val('first_name') === '';
+  const noContact = val('email') === '' && val('phone') === '';
+  if (noName && noContact) return 'Missing a first name, and an email or phone number';
+  if (noName) return 'Missing a first name';
+  if (noContact) return 'Missing an email or phone number';
+  return null;
+}
 
 function downloadRows(rows: api.RowFailure[], fileName: string) {
   const grid = [['Row', 'Field', 'Reason'], ...rows.map((f) => [String(f.row), f.field, f.message])];
@@ -73,6 +92,7 @@ export function DataMigration({ businessId }: { businessId: string }) {
   const [hasHeader, setHasHeader] = useState(true);
   const [mapping, setMapping] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
+  const [fileVersion, setFileVersion] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [runs, setRuns] = useState<api.ImportRun[]>([]);
 
@@ -89,6 +109,7 @@ export function DataMigration({ businessId }: { businessId: string }) {
     if (kind === 'packages') return ['', 'legacy_customer_id', 'email', 'phone', 'package', 'purchase_date'];
     if (kind === 'appointments') return ['', 'legacy_customer_id', 'email', 'phone', 'service', 'staff', 'date', 'time', 'duration', 'status'];
     if (kind === 'transactions') return ['', 'legacy_customer_id', 'email', 'phone', 'date', 'amount', 'description', 'method', 'reference'];
+    if (kind === 'notes') return ['', 'legacy_customer_id', 'email', 'phone', 'note', 'date', 'author', 'category'];
     return ['', 'legacy_customer_id', 'email', 'phone', 'type', 'amount', 'amount_paid', 'description', 'issue_date', 'due_date'];
   };
 
@@ -107,6 +128,7 @@ export function DataMigration({ businessId }: { businessId: string }) {
       const m: Record<number, string> = {};
       for (const p of a.proposedMapping) if (p.field) m[p.index] = p.field;
       setMapping(m);
+      setFileVersion((v) => v + 1); // remount the table so it re-initialises from the new file
       setStep('review');
     } catch (e: any) {
       setErr(e?.response?.data?.message || e?.response?.data?.error || 'Could not read the file.');
@@ -116,8 +138,8 @@ export function DataMigration({ businessId }: { businessId: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
       <p style={{ color: 'var(--color-text-secondary)', margin: 0 }}>
-        Bring your existing data into DayStream from a CSV or Excel file. Upload, review what we found, run a trial to see
-        exactly what would happen, then import. Nothing is sent to your customers.
+        Bring your existing data into DayStream from a CSV or Excel file. Upload it, check the column mapping and the rows,
+        fix any that don&apos;t line up, then import. Nothing is sent to your customers.
       </p>
 
       {err && <Alert variant="error">{err}</Alert>}
@@ -151,77 +173,22 @@ export function DataMigration({ businessId }: { businessId: string }) {
         </div>
       )}
 
-      {/* Step: review + trial */}
-      {step === 'review' && analysis && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--font-size-sm)' }}>
-            <input type="checkbox" checked={hasHeader} onChange={(e) => setHasHeader(e.target.checked)} />
-            The first row contains column names (uncheck if the first row is already data)
-          </label>
-          {analysis.proposedMapping.some((p) => p.confidence === 'likely' && (mapping[p.index] || '') === (p.field || '')) && (
-            <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
-              We filled in the mappings we were sure of. Columns outlined and marked
-              <span style={{ color: 'var(--color-warning)', fontWeight: 600 }}> "Guessed — please confirm" </span>
-              are our best guess — check them before importing, and change any that are wrong.
-            </div>
-          )}
-
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 'var(--font-size-sm)' }}>
-              <thead>
-                <tr>
-                  {analysis.columns.map((c, i) => {
-                    const proposal = analysis.proposedMapping.find((p) => p.index === i);
-                    // A "likely" auto-mapping is a guess worth a glance: pre-selected, but flagged
-                    // for confirmation while the user hasn't changed it away from the proposal.
-                    const needsConfirm = proposal?.confidence === 'likely'
-                      && (mapping[i] || '') === (proposal.field || '');
-                    return (
-                    <th key={i} style={th}>
-                      <div style={{ marginBottom: 4 }}>{hasHeader ? c : `Column ${i + 1}`}</div>
-                      <select
-                        value={mapping[i] || ''}
-                        onChange={(e) => setMapping({ ...mapping, [i]: e.target.value })}
-                        style={needsConfirm ? { ...sel, borderColor: 'var(--color-warning)', borderWidth: 2 } : sel}
-                      >
-                        {fieldsForKind().map((f) => <option key={f} value={f}>{f ? (FIELD_LABELS[f] || f) : '— Skip —'}</option>)}
-                      </select>
-                      {needsConfirm && (
-                        <div style={{ marginTop: 2, fontSize: 'var(--font-size-xs)', color: 'var(--color-warning)' }}>
-                          Guessed — please confirm
-                        </div>
-                      )}
-                    </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {analysis.sampleRows.map((row, ri) => (
-                  <tr key={ri}>{analysis.columns.map((_, ci) => <td key={ci} style={td}>{row[ci] ?? ''}</td>)}</tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {analysis.repair && <RepairPanel repair={analysis.repair} />}
-
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Button variant="outline" size="sm" onClick={reset}>Cancel</Button>
-            <Button size="sm" onClick={() => setStep('stage')}>Continue to records →</Button>
-          </div>
-        </div>
-      )}
-
-      {/* Step: three-tab staging (All / Mapped / Error) */}
-      {step === 'stage' && kind && analysis && (
-        <StagingTabs
+      {/* Step: one table — map columns in the header, correct/shift rows inline, import. */}
+      {step === 'review' && kind && analysis && (
+        <MappingTable
+          key={fileVersion}
+          onReplaceFile={onFile}
+          replacing={busy}
           kind={kind}
           businessId={businessId}
           fileName={file?.name ?? null}
           analysis={analysis}
           mapping={mapping}
-          onBack={() => setStep('review')}
+          setMapping={setMapping}
+          hasHeader={hasHeader}
+          setHasHeader={setHasHeader}
+          fieldOptions={fieldsForKind()}
+          onCancel={reset}
           onDone={() => { loadRuns(); reset(); }}
         />
       )}
@@ -271,35 +238,6 @@ function WarningList({ warnings }: { warnings: api.RowFailure[] }) {
   );
 }
 
-/**
- * Rows the engine realigned (and any it couldn't). Pre-select-but-confirm: the repairs are
- * applied for the import, but shown here as before/after so the owner can eyeball them first.
- */
-function RepairPanel({ repair }: { repair: api.RepairInfo }) {
-  if (repair.repaired === 0 && repair.unresolved === 0) return null;
-  return (
-    <Alert variant={repair.unresolved > 0 ? 'warning' : 'info'}>
-      {repair.repaired > 0 && (
-        <div style={{ fontWeight: 600, marginBottom: 4 }}>
-          {repair.repaired} row{repair.repaired === 1 ? '' : 's'} looked misaligned and {repair.repaired === 1 ? 'was' : 'were'} auto-corrected — please review
-        </div>
-      )}
-      {repair.unresolved > 0 && (
-        <div style={{ fontWeight: 600, marginBottom: 4 }}>
-          {repair.unresolved} row{repair.unresolved === 1 ? '' : 's'} could not be lined up and {repair.unresolved === 1 ? 'was' : 'were'} skipped — fix {repair.unresolved === 1 ? 'it' : 'them'} in your file and re-import
-        </div>
-      )}
-      {repair.samples.slice(0, 5).map((s) => (
-        <div key={s.row} style={{ fontSize: 'var(--font-size-xs)', marginTop: 6 }}>
-          <div style={{ fontWeight: 600 }}>Row {s.row}</div>
-          <div style={{ color: 'var(--color-text-secondary)' }}>before: {s.before.join(' | ')}</div>
-          <div style={{ color: 'var(--color-text)' }}>after:&nbsp; {s.after.join(' | ')}</div>
-        </div>
-      ))}
-    </Alert>
-  );
-}
-
 function FailureList({ failures }: { failures: api.RowFailure[] }) {
   const shown = failures.slice(0, 20);
   return (
@@ -326,177 +264,197 @@ const th: React.CSSProperties = { textAlign: 'left', padding: '6px 8px', borderB
 const td: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' };
 const sel: React.CSSProperties = { padding: '4px 6px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm, 4px)', background: 'var(--color-background)', color: 'var(--color-text)', fontSize: 'var(--font-size-xs)' };
 
+// Sticky header + sticky first column for the scrollable mapping table (needs an opaque bg so
+// scrolled cells don't show through; the corner cell layers above both on z-index).
+const stickyHead: React.CSSProperties = {
+  ...th, position: 'sticky', top: 0, zIndex: 2, background: 'var(--color-background)',
+};
+const stickyHeadRow: React.CSSProperties = { // top-left corner: sticky both ways
+  ...th, position: 'sticky', top: 0, left: 0, zIndex: 3, background: 'var(--color-background)', minWidth: 92,
+};
+const stickyCol: React.CSSProperties = { // the Row column: sticky on horizontal scroll
+  ...td, position: 'sticky', left: 0, zIndex: 1, whiteSpace: 'nowrap', minWidth: 92,
+  borderRight: '1px solid var(--color-border)',
+};
+
 // ---------------------------------------------------------------------------
-// Stage B — three-tab staging (All / Mapped / Error)
+// Mapping + row-correction, one table (spec 50 Wave 4, Stage B)
 // ---------------------------------------------------------------------------
 
-type Bucket = 'mapped' | 'error';
-
-interface StageRow {
+interface WorkRow {
   row: number;            // 1-based source row number
-  cells: string[];        // current (possibly user-shifted) cells
-  bucket: Bucket;
-  reason?: string;        // why it's in Error (from the engine, or after a manual shift)
-  autoMapped: boolean;    // true if the engine placed it in Mapped (ok/repaired); false if hand-accepted
-}
-
-/** Field label for a mapped column index, for the aligned preview. */
-function labelForColumn(mapping: Record<number, string>, idx: number): string | null {
-  const field = mapping[idx];
-  if (!field) return null;
-  return FIELD_LABELS[field] || field;
+  cells: string[];        // current (possibly user-shifted) cells, padded to width
+  aligned: boolean;       // true = lines up with the columns (importable); false = needs fixing
+  fixed: boolean;         // true once the user has shifted/accepted a previously-misaligned row
+  reason?: string;        // why it needs fixing (from the engine), shown on the flagged row
 }
 
 /**
- * The three-tab staging surface. Owns the working set in browser state only — nothing is
- * persisted until the owner commits the Mapped bucket. Committing imports ONLY the Mapped rows
- * (record-level dedup keeps repeated commits safe), after which committed rows leave the set and
- * the owner can keep working the Error tab.
+ * ONE screen: the column mapping lives in the table header (a dropdown per column), and every
+ * data row is shown beneath it. A row whose values don't line up with the columns is flagged and
+ * gets inline ← / → controls to shift its cells into place. Only rows that line up are imported,
+ * and only when the owner clicks Import. Nothing is written until then; record-level dedup
+ * (Requirement 12) makes re-importing overlapping rows safe. No separate staging screen.
  */
-function StagingTabs({
-  kind, businessId, fileName, analysis, mapping, onBack, onDone,
+function MappingTable({
+  kind, businessId, fileName, analysis, mapping, setMapping, hasHeader, setHasHeader, fieldOptions, onCancel, onDone, onReplaceFile, replacing,
 }: {
   kind: api.ImportKind;
   businessId: string;
   fileName: string | null;
   analysis: api.AnalyzeResult;
   mapping: Record<number, string>;
-  onBack: () => void;
+  setMapping: (m: Record<number, string>) => void;
+  hasHeader: boolean;
+  setHasHeader: (b: boolean) => void;
+  fieldOptions: string[];
+  onCancel: () => void;
   onDone: () => void;
+  onReplaceFile: (f: File) => void;
+  replacing: boolean;
 }) {
   const width = analysis.width;
-  const [rows, setRows] = useState<StageRow[]>(() => analysis.rows.map((r) => ({
+  const pad = (cells: string[]): string[] => { const c = cells.slice(0, width); while (c.length < width) c.push(''); return c; };
+
+  const [rows, setRows] = useState<WorkRow[]>(() => analysis.rows.map((r) => ({
     row: r.row,
-    cells: padTo(r.cells, width),
-    bucket: r.alignment === 'unresolved' ? 'error' : 'mapped',
+    cells: pad(r.cells),
+    aligned: r.alignment !== 'unresolved',
+    fixed: false,
     reason: r.reason,
-    autoMapped: r.alignment !== 'unresolved',
   })));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<api.ImportResult | null>(null);
+  const [onlyErrors, setOnlyErrors] = useState(false);
+  const [hover, setHover] = useState<{ row: number; col: number } | null>(null);
+  // The cell currently being hand-edited (click a value to correct it in place).
+  const [editing, setEditing] = useState<{ row: number; col: number; value: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const cancelEdit = useRef(false); // Escape pressed: the following blur must not save
 
-  const mapped = rows.filter((r) => r.bucket === 'mapped');
-  const errored = rows.filter((r) => r.bucket === 'error');
+  // Rows missing data the import requires are flagged up front (same rule the server enforces),
+  // recomputed whenever the mapping or a cell changes, so nothing "ready" fails at the end.
+  const effective = useMemo(() => rows.map((r) => {
+    const problem = missingRequired(kind, r.cells, mapping);
+    return problem ? { ...r, aligned: false, reason: problem } : r;
+  }), [rows, kind, mapping]);
+  const aligned = effective.filter((r) => r.aligned);
+  const errored = effective.filter((r) => !r.aligned);
+  const visible = onlyErrors ? errored : effective;
 
-  // The mapped column indexes in order, for a readable aligned preview.
-  const mappedCols = Object.keys(mapping).map(Number).filter((i) => mapping[i]).sort((a, b) => a - b);
+  // --- Row virtualization (windowing) ---
+  // Rendering every row (10k × 13 cells = ~130k nodes) makes each interaction re-layout the whole
+  // table and lag by seconds. Instead render only the rows in (and just around) the scroll viewport.
+  const ROW_H = 56;        // fixed row height (px) — matches the two-line Row cell
+  const OVERSCAN = 8;      // extra rows above/below so fast scrolling doesn't flash blank
+  const VIEWPORT_H = Math.round(window.innerHeight * 0.6); // matches the 60vh container
+  const [scrollTop, setScrollTop] = useState(0);
+  const total = visible.length;
+  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
+  const endIndex = Math.min(total, Math.ceil((scrollTop + VIEWPORT_H) / ROW_H) + OVERSCAN);
+  const windowRows = visible.slice(startIndex, endIndex);
+  const padTop = startIndex * ROW_H;
+  const padBottom = Math.max(0, (total - endIndex) * ROW_H);
 
-  const shift = (rowNum: number, dir: -1 | 1) => {
-    setRows((prev) => prev.map((r) => {
-      if (r.row !== rowNum) return r;
-      const cells = r.cells.slice();
-      if (dir === 1) { cells.unshift(''); cells.pop(); }           // shift right: prepend a blank
-      else { cells.shift(); cells.push(''); }                      // shift left: drop the leading cell
-      return { ...r, cells };
-    }));
+  // Per-cell shift: the user asserts the value at column `index` belongs to the right (or into the
+  // empty slot to its left). The server holds the columns before the shift fixed and intelligently
+  // re-positions the remaining values by profile-fit; we replace the row with the result and let
+  // its aligned flag recompute. The row stays flagged if it still doesn't fully line up.
+  const shiftCell = async (rowNum: number, index: number, direction: 'left' | 'right') => {
+    const target = rows.find((r) => r.row === rowNum);
+    if (!target) return;
+    try {
+      const res = await api.realignRow(kind, target.cells, analysis.profiles, index, direction);
+      setRows((prev) => prev.map((r) => (r.row === rowNum
+        ? { ...r, cells: res.cells, aligned: res.aligned, fixed: true, reason: res.aligned ? undefined : r.reason } : r)));
+    } catch { /* leave the row as-is on a transient failure; the user can retry */ }
   };
 
-  const acceptToMapped = (rowNum: number) => {
-    setRows((prev) => prev.map((r) => (r.row === rowNum ? { ...r, bucket: 'mapped', reason: undefined } : r)));
-  };
-  const sendToError = (rowNum: number) => {
-    setRows((prev) => prev.map((r) => (r.row === rowNum ? { ...r, bucket: 'error', reason: 'Moved back for correction' } : r)));
+  // Hand-edit a single value (e.g. remove the stray space from an email). Nothing else moves: the
+  // cell is updated immediately, then the row is re-checked on the server so its flag clears —
+  // or updates its reason — once the corrected value fits the column.
+  const commitEdit = async (rowNum: number, col: number, value: string) => {
+    setEditing(null);
+    const target = rows.find((r) => r.row === rowNum);
+    if (!target || (target.cells[col] ?? '') === value) return;
+    const cells = target.cells.slice();
+    cells[col] = value;
+    setRows((prev) => prev.map((r) => (r.row === rowNum ? { ...r, cells } : r)));
+    try {
+      const res = await api.realignRow(kind, cells, analysis.profiles, col, 'check');
+      setRows((prev) => prev.map((r) => (r.row === rowNum
+        ? { ...r, aligned: res.aligned, fixed: res.aligned || r.fixed, reason: res.aligned ? undefined : (res.reason ?? r.reason) } : r)));
+    } catch { /* keep the edited value; the row's flag simply doesn't update this time */ }
   };
 
-  const commitMapped = async () => {
-    if (mapped.length === 0) return;
+  const runImport = async () => {
+    if (aligned.length === 0) return;
     setBusy(true); setErr(null);
     try {
-      const res = await api.commitRows(kind, businessId, mapping, mapped.map((r) => r.cells), fileName);
+      // Send in batches so the owner sees progress on big files. Re-sending is safe (idempotent),
+      // and failure/warning row numbers are mapped back to the Row numbers shown in the table.
+      const batch = 100;
+      const toSend = aligned.slice();
+      const res: api.ImportResult = { runId: null, total: toSend.length, imported: 0, matched: 0, failed: 0, failures: [], warnings: [] };
+      setProgress({ done: 0, total: toSend.length });
+      for (let start = 0; start < toSend.length; start += batch) {
+        const slice = toSend.slice(start, start + batch);
+        const part = await api.commitRowsBatch(kind, businessId, mapping, slice.map((r) => r.cells), fileName);
+        const tableRow = (n: number) => slice[n - 1]?.row ?? n;
+        res.runId = part.runId ?? res.runId;
+        res.imported += part.imported; res.matched += part.matched; res.failed += part.failed;
+        res.failures.push(...part.failures.map((f) => ({ ...f, row: tableRow(f.row) })));
+        res.warnings!.push(...(part.warnings ?? []).map((f) => ({ ...f, row: tableRow(f.row) })));
+        setProgress({ done: Math.min(start + batch, toSend.length), total: toSend.length });
+      }
+      await api.recordRun(kind, businessId, fileName, { total: res.total, imported: res.imported, matched: res.matched, failed: res.failed }).catch(() => {});
       setResult(res);
-      // Committed rows leave the working set; any Error rows stay so the owner can keep going.
-      const committedRowNums = new Set(mapped.map((r) => r.row));
-      setRows((prev) => prev.filter((r) => !committedRowNums.has(r.row)));
+      const done = new Set(aligned.map((r) => r.row));
+      setRows((prev) => prev.filter((r) => !done.has(r.row))); // imported rows leave; errors stay
     } catch (e: any) {
       setErr(e?.response?.data?.message || e?.response?.data?.error || 'Import failed.');
-    } finally { setBusy(false); }
+    } finally { setBusy(false); setProgress(null); }
   };
 
-  const clearMapped = () => {
-    // Only clears the AUTO-mapped rows that haven't been committed; hand-accepted rows stay put
-    // unless explicitly sent back. Simplest honest behaviour: drop everything currently in Mapped.
-    const mappedRowNums = new Set(mapped.map((r) => r.row));
-    setRows((prev) => prev.filter((r) => !mappedRowNums.has(r.row)));
-  };
-
-  const renderRow = (r: StageRow) => (
-    <div key={r.row} style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 10px', marginBottom: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <span style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>Row {r.row}</span>
-        {r.bucket === 'error' && <Badge variant="warning">needs fixing</Badge>}
-        {r.bucket === 'mapped' && !r.autoMapped && <Badge variant="success">fixed</Badge>}
-      </div>
-      {r.reason && r.bucket === 'error' && (
-        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-warning)', marginBottom: 6 }}>{r.reason}</div>
-      )}
-      {/* Aligned preview: the mapped columns and the value currently landing in each. */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
-        {mappedCols.map((ci) => (
-          <span key={ci} style={{ fontSize: 'var(--font-size-xs)' }}>
-            <span style={{ color: 'var(--color-text-secondary)' }}>{labelForColumn(mapping, ci)}:</span>{' '}
-            <span style={{ color: 'var(--color-text)' }}>{r.cells[ci] || <em style={{ color: 'var(--color-text-muted)' }}>(blank)</em>}</span>
-          </span>
-        ))}
-      </div>
-      {r.bucket === 'error' && (
-        <div style={{ display: 'flex', gap: 6 }}>
-          <Button variant="outline" size="sm" onClick={() => shift(r.row, -1)}>← shift left</Button>
-          <Button variant="outline" size="sm" onClick={() => shift(r.row, 1)}>shift right →</Button>
-          <Button size="sm" onClick={() => acceptToMapped(r.row)}>Accept into Mapped</Button>
-        </div>
-      )}
-      {r.bucket === 'mapped' && !r.autoMapped && (
-        <div><Button variant="ghost" size="sm" onClick={() => sendToError(r.row)}>Send back to fix</Button></div>
-      )}
-    </div>
-  );
-
-  const tabs = [
-    {
-      id: 'all', label: `All (${rows.length})`,
-      content: <div>{rows.length === 0 ? <Empty /> : rows.map(renderRow)}</div>,
-    },
-    {
-      id: 'mapped', label: `Mapped (${mapped.length})`,
-      content: (
-        <div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-            <Button size="sm" loading={busy} disabled={mapped.length === 0} onClick={commitMapped}>
-              Import {mapped.length} mapped record{mapped.length === 1 ? '' : 's'}
-            </Button>
-            <Button variant="outline" size="sm" disabled={mapped.length === 0} onClick={clearMapped}>Clear mapped</Button>
-          </div>
-          {mapped.length === 0 ? <Empty /> : mapped.map(renderRow)}
-        </div>
-      ),
-    },
-    {
-      id: 'error', label: `Error (${errored.length})`,
-      content: (
-        <div>
-          {errored.length === 0
-            ? <Alert variant="success">No problem records. Everything lines up.</Alert>
-            : (<>
-                <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 10 }}>
-                  These records don&apos;t line up with the other rows. Nudge each one left or right until the values sit
-                  under the right labels, then accept it — it moves to the Mapped tab.
-                </div>
-                {errored.map(renderRow)}
-              </>)}
-        </div>
-      ),
-    },
-  ];
+  const mappedColCount = Object.values(mapping).filter(Boolean).length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--font-size-sm)' }}>
+          <input type="checkbox" checked={hasHeader} onChange={(e) => setHasHeader(e.target.checked)} />
+          First row is column names (uncheck if it&apos;s already data)
+        </label>
+        <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+          Set each column&apos;s field in the header. {errored.length > 0
+            ? `${errored.length} row${errored.length === 1 ? '' : 's'} need fixing — shift values with ← / →, or click a cell to type the missing value. Rows left unfixed are skipped.`
+            : 'All rows line up.'}
+        </div>
+      </div>
+
       {err && <Alert variant="error">{err}</Alert>}
+      {progress && (
+        <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 'var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)' }}>
+          <div style={{ fontWeight: 600 }}>
+            Importing {progress.done.toLocaleString()} of {progress.total.toLocaleString()} rows…
+          </div>
+          <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+            {progress.total > 1000
+              ? `Large files take a while (roughly ${Math.max(1, Math.round(progress.total / 2700))} minute${Math.round(progress.total / 2700) <= 1 ? '' : 's'} for this one). Please keep this page open.`
+              : 'This should only take a moment.'}
+          </div>
+          <div style={{ height: 8, borderRadius: 4, background: 'var(--color-border)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%`, background: 'var(--color-primary)', transition: 'width 0.3s' }} />
+          </div>
+        </div>
+      )}
       {result && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <Alert variant={result.failed === 0 ? 'success' : 'warning'}>
             Imported {result.imported}, matched {result.matched} already in the system, {result.failed} failed.
-            {errored.length > 0 && ` ${errored.length} record${errored.length === 1 ? '' : 's'} still need fixing on the Error tab.`}
+            {errored.length > 0 && ` ${errored.length} row${errored.length === 1 ? '' : 's'} still need fixing.`}
           </Alert>
           {result.failures.length > 0 && (
             <>
@@ -508,23 +466,146 @@ function StagingTabs({
         </div>
       )}
 
-      <Tabs items={tabs} defaultTab={errored.length > 0 ? 'error' : 'mapped'} />
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--font-size-sm)' }}>
+        <input type="checkbox" checked={onlyErrors} onChange={(e) => setOnlyErrors(e.target.checked)} />
+        Show only rows that need fixing ({errored.length})
+      </label>
 
-      <div style={{ display: 'flex', gap: 8 }}>
-        <Button variant="outline" size="sm" onClick={onBack}>← Back to mapping</Button>
-        <Button variant="ghost" size="sm" onClick={onDone}>Done</Button>
+      {/* Fixed-size viewport: header row stays put on vertical scroll, the Row column stays put on
+          horizontal scroll, so the mapping dropdowns and the shift controls are always reachable. */}
+      <div
+        onScroll={(e) => setScrollTop((e.target as HTMLDivElement).scrollTop)}
+        style={{ maxHeight: '60vh', maxWidth: '100%', overflow: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}
+      >
+        <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 'var(--font-size-sm)' }}>
+          <thead>
+            <tr>
+              <th style={stickyHeadRow}>Row</th>
+              {Array.from({ length: width }).map((_, i) => (
+                <th key={i} style={stickyHead}>
+                  <div style={{ marginBottom: 4, color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)', whiteSpace: 'nowrap' }}>
+                    {hasHeader ? (analysis.columns[i] ?? `Column ${i + 1}`) : `Column ${i + 1}`}
+                  </div>
+                  <select value={mapping[i] || ''} onChange={(e) => setMapping({ ...mapping, [i]: e.target.value })} style={sel}>
+                    {fieldOptions.map((f) => <option key={f} value={f}>{f ? (FIELD_LABELS[f] || f) : '— Skip —'}</option>)}
+                  </select>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {/* Top spacer preserves the scroll height for the rows above the window. */}
+            {padTop > 0 && <tr style={{ height: padTop }}><td colSpan={width + 1} style={{ padding: 0, border: 'none' }} /></tr>}
+            {windowRows.map((r) => {
+              const rowBg = r.aligned ? 'var(--color-surface)' : 'var(--color-warning-surface, #fff7ed)';
+              return (
+              <tr key={r.row} style={{ height: ROW_H }}>
+                <td style={{ ...stickyCol, background: rowBg, maxWidth: 240, whiteSpace: 'normal' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontWeight: 600 }}>{r.row}</span>
+                    {!r.aligned && <Badge variant="warning">fix</Badge>}
+                    {r.aligned && r.fixed && <Badge variant="success">fixed</Badge>}
+                  </div>
+                  {!r.aligned && r.reason && (
+                    <div style={{ marginTop: 2, fontSize: 'var(--font-size-xs)', color: 'var(--color-warning)', lineHeight: 1.3 }}>
+                      {r.reason}
+                    </div>
+                  )}
+                </td>
+                {Array.from({ length: width }).map((_, ci) => {
+                  const value = r.cells[ci] ?? '';
+                  const leftEmpty = ci === 0 || (r.cells[ci - 1] ?? '').trim() === '';
+                  const hovered = hover?.row === r.row && hover.col === ci;
+                  return (
+                    <td
+                      key={ci}
+                      onMouseEnter={() => setHover({ row: r.row, col: ci })}
+                      onMouseLeave={() => setHover((h) => (h?.row === r.row && h.col === ci ? null : h))}
+                      style={{ ...td, background: rowBg, color: mapping[ci] ? 'var(--color-text)' : 'var(--color-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 240, position: 'relative' }}
+                    >
+                      {editing?.row === r.row && editing.col === ci ? (
+                        <input
+                          autoFocus
+                          onFocus={() => { cancelEdit.current = false; }}
+                          aria-label={`Edit row ${r.row}, column ${ci + 1}`}
+                          value={editing.value}
+                          onChange={(e) => setEditing({ row: r.row, col: ci, value: e.target.value })}
+                          onBlur={() => { if (cancelEdit.current) { cancelEdit.current = false; return; } commitEdit(r.row, ci, editing.value); }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitEdit(r.row, ci, editing.value);
+                            else if (e.key === 'Escape') { cancelEdit.current = true; setEditing(null); }
+                          }}
+                          style={{ width: '100%', minWidth: 160, boxSizing: 'border-box', padding: '2px 6px', font: 'inherit', color: 'var(--color-text)', background: 'var(--color-background)', border: '1px solid var(--color-primary)', borderRadius: 'var(--radius-sm, 4px)' }}
+                        />
+                      ) : (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          title="Click to edit"
+                          onClick={() => setEditing({ row: r.row, col: ci, value })}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setEditing({ row: r.row, col: ci, value }); } }}
+                          style={{ cursor: 'text', display: 'inline-block', minWidth: 24, minHeight: '1.2em' }}
+                        >{value}</span>
+                      )}
+                      {/* Hover arrows: → always (push this value right & re-fit the rest);
+                          ← only when the cell to the left is empty (pull this value left). */}
+                      {hovered && !(editing?.row === r.row && editing.col === ci) && (value.trim() !== '' || !leftEmpty) && (
+                        <span style={{ position: 'absolute', right: 2, top: '50%', transform: 'translateY(-50%)', display: 'flex', gap: 2 }}>
+                          {leftEmpty && value.trim() !== '' && (
+                            <button type="button" title="move this value one column left" onClick={() => shiftCell(r.row, ci, 'left')} style={shiftBtn}>←</button>
+                          )}
+                          <button type="button" title="move this value one column right (and re-fit the rest)" onClick={() => shiftCell(r.row, ci, 'right')} style={shiftBtn}>→</button>
+                        </span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+              );
+            })}
+            {/* Bottom spacer for the rows below the window. */}
+            {padBottom > 0 && <tr style={{ height: padBottom }}><td colSpan={width + 1} style={{ padding: 0, border: 'none' }} /></tr>}
+          </tbody>
+        </table>
+      </div>
+      {onlyErrors && errored.length === 0 && (
+        <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+          No rows need fixing. Uncheck the box above to see all rows.
+        </div>
+      )}
+      {total > windowRows.length && (
+        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+          Showing {total.toLocaleString()} rows (scroll to view more).
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <Button variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,.xlsx,.xls"
+          style={{ display: 'none' }}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onReplaceFile(f); e.target.value = ''; }}
+        />
+        <Button variant="outline" size="sm" loading={replacing} disabled={busy} onClick={() => fileInputRef.current?.click()}>
+          Choose different file
+        </Button>
+        <Button
+          size="sm"
+          loading={busy}
+          disabled={aligned.length === 0 || mappedColCount === 0}
+          onClick={runImport}
+        >
+          Import {aligned.length} row{aligned.length === 1 ? '' : 's'}
+        </Button>
+        {result && <Button variant="ghost" size="sm" onClick={onDone}>Done</Button>}
       </div>
     </div>
   );
 }
 
-function Empty() {
-  return <div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', padding: '8px 0' }}>No records here.</div>;
-}
-
-/** Pad/truncate a row to exactly `width` cells (for a stable aligned preview). */
-function padTo(cells: string[], width: number): string[] {
-  const c = cells.slice(0, width);
-  while (c.length < width) c.push('');
-  return c;
-}
+const shiftBtn: React.CSSProperties = {
+  border: '1px solid var(--color-border)', background: 'var(--color-background)', color: 'var(--color-text)',
+  borderRadius: 'var(--radius-sm, 4px)', cursor: 'pointer', padding: '0 6px', fontSize: 'var(--font-size-sm)', lineHeight: '1.6',
+};
