@@ -220,7 +220,29 @@ Implements Requirement 18 and design.md §6-§8. Notes are one-to-many (a custom
 - [x] ✅ Backdating confirmed (note dates preserved; undated → now); optional author/category carried; trial writes nothing; unmatched-customer and empty-text rows fail with reasons; server + client (touched files) tsc clean
 
 ---
-**Status**: 🟡 In Progress — Waves 1-3 built and verified live (entity imports). Wave 4 **Stage A (engine)** and **Stage B (three-tab staging UI)** both built, unit-tested, and verified live; extended headerless detection added from live testing (gender/language/country/tags/notes + name & id by elimination), 25/25 engine tests pass. **Notes Import** (Requirement 18, new entity) built and verified live (multiple notes per customer, backdated, idempotent re-run). Server tsc 0, client touched files clean. Outstanding follow-ups from earlier waves: a renewal run against an imported membership enrolment not yet exercised; account-balance import has no idempotency (design §6); a per-balance-import ledger-double-count warning in the UI.
+## Import Review Screen Polish (from live testing)
+### 26. Single-screen table: editing, replacing, progress
+- [x] ✅ Click-to-edit cells in the mapping table (Enter or blur saves, Escape cancels); the row is re-checked on the server (`rowFits` via `realign-row` with direction `check`) and its flag clears once the value fits
+- [x] ✅ Per-row reasons name the column and value ("column 3 expects an email but has ...")
+- [x] ✅ "Choose different file" button re-analyzes a new file and replaces the table and mapping; a failed read keeps the current table
+- [x] ✅ "Show only rows that need fixing" is always visible, with an empty-state note when nothing needs fixing
+- [x] ✅ Commit sends rows in batches of 100 with a progress panel (count, bar, large-file notice); one summary run is recorded at the end (`defer_record` + `record-run`); failure and warning row numbers map back to table Row numbers
+- [x] ✅ Import routes accept bodies up to 25 MB so 10,000-row commits are not rejected
+### 27. Required-data check up front
+- [x] ✅ Customer rows missing a first name, or both email and phone, are flagged "fix" when the file loads and as the mapping or cells change, so they are not shown as ready and then fail at commit
+- [x] ✅ Legacy-id and short-row classification fixes: bare 7-9 digit numbers are not phones; a short row that already fits is padded and treated as aligned
+### 28. Customer field normalization
+- [x] ✅ Language names and codes resolve to the supported set (English, Spanish, French, German); anything else is left blank and reported as a warning instead of failing the customer
+- [x] ✅ Verified live: 15, 50 and 10,000-row files (10,000 rows processed in under 4 minutes; 818 rows missing required data rejected as expected)
+### 29. Test-data cleanup (temporary)
+- [x] ✅ People page bulk action "Delete permanently" (confirmation, background above 5,000, skips people with linked bookings or payments)
+- [ ] Remove the temporary Delete action when test-data cleanup is no longer needed
+### 30. Open follow-ups
+- [ ] Up-front required-data check for the non-customer import types
+- [ ] Faster customer commit (batch writes or background job runner) if 10,000+ rows need to be quicker
+- [ ] Import errors that name the failing field instead of a generic database message
+---
+**Status**: 🟡 In Progress — Waves 1-3 built and verified live (entity imports). Wave 4 **Stage A (engine)** and **Stage B (three-tab staging UI)** both built, unit-tested, and verified live; extended headerless detection added from live testing (gender/language/country/tags/notes + name & id by elimination), 25/25 engine tests pass. **Notes Import** (Requirement 18, new entity) built and verified live (multiple notes per customer, backdated, idempotent re-run). Server tsc 0, client touched files clean. Customer import verified end to end on 10,000 rows (cell editing, replace file, batched progress, up-front required-data flags, language normalization). Outstanding follow-ups from earlier waves: a renewal run against an imported membership enrolment not yet exercised; account-balance import has no idempotency (design §6); a per-balance-import ledger-double-count warning in the UI.
 **Dependencies**: Phase 46, Phase 05, Phase 10, Phase 08, packages, business setup
 
 
