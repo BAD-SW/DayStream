@@ -73,6 +73,8 @@ A key distinction runs through these requirements: **live state vs. history.** M
 5. WHERE a column cannot be confidently identified by header name or by its values, THE system SHALL leave it unmapped and draw attention to it, rather than guessing.
 6. THE system SHALL only require the owner's attention on what it is unsure about; confident detections are pre-filled.
 
+> Requirement 17 deepens this with profile-based detection, dictionary-based name and date-role inference, confidence levels, and realignment of shifted rows — all under the same confirm-not-configure, never-guess-silently principles.
+
 ### Requirement 3: Forgiving, Partial-Success Import
 
 **User Story:** As a business owner, I want the good rows to come in even if a few rows have problems, so that one bad cell does not block my whole migration.
@@ -248,6 +250,26 @@ A key distinction runs through these requirements: **live state vs. history.** M
 2. THE system SHALL present failure reasons in plain language sufficient for a tenant owner to tell the business owner how to fix a row (including unmatched customer/service/staff/plan/package values), without inspecting the database.
 3. THE system SHALL attribute each Import Run to the user who performed it (business owner or tenant owner) in the run history.
 
+### Requirement 17: Intelligent Column Detection & Row Repair
+
+**User Story:** As a business owner whose legacy export is imperfect — no header, ambiguous name columns, two date columns, and rows where a value was dropped so the rest shifted — I want the system to work out what each column really is and realign broken rows the way a careful person would, so that I am not left hand-fixing a file or silently importing shifted data into the wrong fields.
+
+This requirement deepens the automatic detection of Requirement 2 (which establishes header detection, name/value mapping, flag-don't-guess, and confirm-not-configure). Everything here is additive to that: a stronger set of signals for detection, plus a new row-alignment safeguard. The confirm-not-configure principle (Requirement 2.4, 2.6) and the never-guess-silently principle (Requirement 2.5) continue to govern — the system does more of the thinking, but the owner still sees and confirms anything inferred rather than certain.
+
+#### Acceptance Criteria
+
+1. THE system SHALL build a per-column profile from the distribution of values across rows (not a single cell), AND SHALL derive the canonical column structure from the MAJORITY row shape — the largest group of rows that share a consistent alignment of their shaped (email/phone/date/amount) values — so that a cluster of misaligned rows cannot distort the detected structure. A legitimately blank optional field (e.g. a missing date of birth or gender in some rows) SHALL NOT, by itself, make a row an outlier; only a misalignment of its values does.
+2. THE system SHALL propose a legacy/external identifier column so an id column can map even when the file has no header, recognising both a patterned id (e.g. a prefix-and-number form such as `LEG-10001`) with reasonable confidence AND a bare-number id by profile signals — principally that an id column's values are unique on every row (unlike a balance, points, or count), are plain integers (no decimals, currency, or negatives), and are often the leading column. WHERE the id is a bare number indistinguishable by value from another numeric column, THE system SHALL propose the best-fitting column at low confidence for the owner to confirm, and SHALL NOT assert it or guess between two equally id-shaped columns.
+3. THE system SHALL distinguish a first-name column from a last-name column by scoring each candidate column against dictionaries of common given names and common surnames, and SHALL infer the paired column once one side is identified; where the evidence is weak it SHALL mark the mapping as low-confidence rather than assert it.
+4. WHERE a file has two or more date columns (e.g. date of birth and a join date), THE system SHALL assign each to its field using the distribution of the dates (a birth-date column skews across decades into the past; a join/created column clusters recent), rather than leaving both ambiguous.
+5. THE system SHALL attach a confidence level to each proposed column mapping, distinguishing a certain match (e.g. email by value shape, a known header name) from an inferred one (e.g. first vs last name by dictionary), so the review step can show which proposals warrant a human glance.
+6. THE system SHALL, by default, pre-select its inferred mappings and row repairs AND require the owner to confirm them in the review step before a commit — it SHALL NOT apply an inferred mapping or a row repair silently.
+7. THE system SHALL detect a row whose values do not fit the canonical column structure — INCLUDING a row that still has the expected number of columns because a dropped value was compensated by a trailing empty cell (the field-shift case) — not only rows whose raw column count differs.
+8. WHERE a non-conforming row can be realigned to the canonical structure unambiguously (the fix is a shift left or right that makes its values line up), THE system SHALL realign it and present it as corrected for the owner to confirm; WHERE the correct alignment is genuinely ambiguous (no shift fits, or more than one fits equally), THE system SHALL NOT guess, leaving the row for the owner to resolve with a plain-language reason naming the mismatch.
+9. THE system SHALL present an imported file as three groups the owner works between: ALL records, the MAPPED records that fit the canonical structure (the "good" set), and the ERROR records that do not; and SHALL let the owner correct an Error record in the application — including shifting its values left or right into the correct columns — and, on acceptance, move it from Error to Mapped.
+10. THE system SHALL import ONLY the Mapped records, and ONLY when the owner initiates it; it SHALL let the owner commit the Mapped set (and continue working the remaining Error records afterward) or clear it, so a file can be imported in parts as records are fixed. Record-level duplicate safety (per Requirement 12) SHALL make committing the Mapped set repeatedly, or re-importing overlapping records, report the repeats as matched rather than creating duplicates.
+11. THE system SHALL leave a column it cannot identify by profile, pattern, or dictionary unmapped and flagged (consistent with Requirement 2.5), rather than forcing a guess; an unmodelled column (e.g. a legacy balance the entity does not import) is simply left unmapped.
+
 ---
 
 ## Dependencies
@@ -292,6 +314,6 @@ A key distinction runs through these requirements: **live state vs. history.** M
 
 ---
 
-**Status**: 📋 Planned
+**Status**: 🟡 In Progress — Waves 1-3 built (entity imports); Wave 4 (Requirement 17: intelligent detection & row repair) in design/build
 **Dependencies**: Phase 46, Phase 05, Phase 10, Phase 08, packages, business setup
 **Next Phase**: TBD (deeper transaction history; competitor API migration; unlinked legacy refunds in Phase 10)

@@ -30,6 +30,7 @@ The central safety line: **live state vs. history.** Memberships, account balanc
 12. [Frontend: The Data Migration Page](#12-frontend-the-data-migration-page)
 13. [Scale & Responsiveness](#13-scale--responsiveness)
 14. [What We Deliberately Do Not Build](#14-what-we-deliberately-do-not-build)
+15. [Intelligent Detection & Row Repair (Wave 4)](#15-intelligent-detection--row-repair-wave-4)
 
 ---
 
@@ -243,3 +244,71 @@ Occasional, setup-level — no permanent sidebar slot. Lives under Business Setu
 - No competitor API-to-API migration — file upload only.
 
 These boundaries keep the flows simple. None may be allowed to make the core imports more complicated.
+
+---
+
+## 15. Intelligent Detection & Row Repair (Wave 4)
+
+Wave 4 deepens §4's automatic detection and adds a row-alignment safeguard, driven by one idea: **profile the whole column, then judge each row against those profiles** — the way a person scans a column to recognise it and spots the row that doesn't line up. It implements Requirement 17. Everything stays a pure function of the grid (no DB/IO), so it is unit-testable, and everything inferred is pre-selected-but-confirmed, never applied silently.
+
+Motivating real data (the sample customer file): 12 columns — `legacy_id, email, first, last, <legacy balance>, dob, gender, language, country, notes, tags, joined`. Two traps: (a) headerless files where `first`/`last`/`legacy_id` are plain text with no value shape, so §4b leaves them unmapped; and (b) rows where `country` was dropped mid-record and a trailing empty cell was appended — so the row still has 12 cells but `notes` sits in the `country` slot and the join date sits one slot early. A raw column-count check sees "12 = 12, consistent" and maps by position, silently shifting nine rows. Only profiling catches it.
+
+### 15.1 Column profiling — the MAJORITY defines the structure
+
+A pass over the data rows produces, per column, a profile: the distribution of value kinds (reusing `classifyCell`), plus the new signals below. A column's identity comes from its dominant profile, not any single cell.
+
+**Profile from the majority, not from every row.** Profiling naively across *all* rows fails on a real file: in the sample, 9 of 10 rows dropped the `country` value (join date in slot 10, trailing empty), and only 1 row kept it (join date in slot 11). Profiling all 10 together poisons the `country` column into looking like free text and erases the join-date column, because the shifted rows are the majority. The fix (`canonicalProfiles`): group rows by a **shape signature** — the sequence of `(position, hard value kind)` for each row's email/phone/date/money cells (text and bare numbers are too generic to anchor, and a legitimately blank optional field like a missing DOB or gender does NOT change the signature, so sparse-but-consistent rows group together). The **largest cohort** of matching signatures defines the canonical structure, and the profiles are built from that cohort alone. In the sample the 9 "no-country" rows win, so the canonical layout has the join date in slot 10 and the 1 row with country becomes the outlier — exactly how a person reads it: the shape the records mostly follow *is* the intended structure, and the deviant records are the ones to fix.
+
+Per-column signals layered on top of the canonical profile:
+
+New signals added to the classifier/profiler:
+- **Identifier column** — giving `legacy_customer_id` a value signal so an id column can map without a header. The reliability depends entirely on what the id looks like, and the engine must not overstate it:
+  - *Patterned id* (a consistent prefix-separator-number shape such as `LEG-10001`, `L-1`, `CUST000123`) — distinctive enough to propose with reasonable confidence.
+  - *Bare-number id* (just `48217`, `1002`, …) — the common/probable real case, and **indistinguishable by value from any other integer column** (a legacy balance, loyalty points, a visit count, an age). Value shape alone cannot identify it. The engine instead leans on soft, profile-level signals: **uniqueness** (an id is almost always distinct on every row, whereas a balance/points/count repeats), plain-**integer shape** (no decimals, currency symbol, or negatives — which, e.g., excludes the sample file's negative-balance column), and **position** (legacy exports usually put the id first) as a weak tie-breaker. A leading, all-unique, plain-integer column is proposed as `legacy_customer_id` at **low confidence** (`likely`), pre-selected but flagged for confirmation — never asserted. Where two columns are equally id-shaped (e.g. two bare-integer columns) and nothing separates them, the engine proposes the better-fitting one and leaves the other unmapped-and-flagged rather than guess which is which.
+  - The header name (`CustomerID`, `AccountNo`, `ID`, …) remains by far the most reliable id signal and is already handled by name matching (§4b); the value-based path above only matters for headerless files or unrecognised headers.
+- **Given-name / surname dictionaries** — a column is scored by what fraction of its values hit a common-first-name list vs a common-surname list. The higher-scoring side wins; its neighbour is inferred as the other. Dictionaries are modest, bundled lists (not exhaustive) — enough to separate the two columns by rate, which is all the decision needs. Diverse/initial/mononym values lower the score, which is why the result is confidence-scored (below), not asserted.
+- **Date role** — when two columns both profile as dates, their value *distributions* disambiguate: a birth-date column spreads across decades and skews well into the past; a join/created column clusters in recent years. Assign DOB vs joined by that skew instead of leaving both ambiguous.
+
+### 15.2 Confidence on every proposal
+
+`ColumnProposal` gains a confidence level (e.g. `certain` | `likely` | `unknown`). Certain = a known header name, or a decisive value shape (email, phone, id pattern, a lone date mapped by shape). Likely = an inference (first vs last by dictionary, DOB vs joined by distribution, a value-shape match under a header that didn't name-match). Unknown = left unmapped and flagged. The review UI renders `likely` distinctly (a "please confirm" affordance) from `certain` (settled), so the owner's attention goes only to what was inferred. This realises Requirement 17.5–17.6 and sharpens §4's existing `confident` boolean into a graded signal.
+
+### 15.3 Row-alignment repair (against the canonical layout)
+
+Each row is scored against the **canonical** column profiles (§15.1):
+- A row whose values line up with the canonical columns passes unchanged (it's in the majority, or sparsely-but-consistently so).
+- A row that misfits (a sentence in a shaped slot; a date one slot early; a value where the canonical column expects another shape) is a **candidate for realignment** — *including when its cell count equals the canonical width*, because a dropped value plus a trailing empty preserves the count (Requirement 17.7). The detector is profile-fit, not column-count.
+- **Repair search**: the fix is almost always a **shift** (left or right), so the candidates are the small set of plausible shifts — insert an empty where a value looks dropped, drop a trailing empty, or re-join an over-split free-text field. Each candidate is scored by a **hard** fit (do shaped values land in their shaped columns) and a **soft** tiebreak (does a text value's sub-kind — a sentence vs a short country code vs a locale code vs a tag list — match the column's dominant text sub-kind). The soft tiebreak is what places a dropped value in the right free-text slot when the shaped columns alone can't tell (e.g. "Interested in recovery." reads as a *sentence* → notes, not the *shortcode* → country slot).
+  - Exactly one alignment wins on hard-then-soft score → **repair** the row to it, record a before/after.
+  - Zero clean fits, or a genuine tie → **do not guess**: the row is left for the owner to resolve, with a plain-language reason (Requirement 17.9).
+
+Scoring against the *canonical* (majority) profiles is what makes "which layout is correct" well-defined: the majority is the target, and a deviant row is realigned toward it (or flagged). When the file is internally split with no clear majority, rows that don't match stay unresolved for the human — the engine never invents a structure that the data doesn't support.
+
+### 15.4 The three-tab staging review (how the owner works the file)
+
+The review surface for an imported file is three buckets the owner works between, entirely client-side until they choose to commit:
+
+- **All** — every record from the file.
+- **Mapped** — the records that fit the canonical structure (the majority, plus any the owner has fixed). This is the "good" bucket; **only Mapped records are ever committed**, and only when the owner initiates it.
+- **Error** — records that don't line up with the canonical columns (the outliers). The owner corrects them here.
+
+Flow: the owner opens the Error tab, where each problem row shows its values against the canonical columns with **shift controls** (nudge the row's cells left/right) so they can realign it by hand; on **accept**, the row moves Error → Mapped. They work the Error list down at their own pace. At any point they can **commit the Mapped bucket** (import the good records now) or **clear** it. Because committing imports only the accepted Mapped rows, the owner can import a batch, keep fixing the rest, and import again — a natural "do the 20 that are ready, then work the last 10" rhythm.
+
+**No persisted partial state.** The staging lives in the browser for the session; the only thing that touches the database is the owner-initiated commit of the Mapped bucket, which is the existing `commit` path. There is no draft/resume table — leaving the page and re-uploading is the reset. This keeps the backend a plain file-in / result-out call and avoids a stateful multi-pass import protocol.
+
+**Record-level duplicate safety (not file-level).** We do not fingerprint the file; we care whether the *data records* already exist. That is already guaranteed by each entity's natural-key idempotency (Requirement 12, built in Waves 1–3): customers by email/legacy-id via the Identity Service, memberships by customer+plan, packages by customer+package+date, and so on. So committing the Mapped bucket more than once — or re-uploading a file whose records overlap a previous import — reports the repeats as `matched`, never duplicated. The staging model relies on this rather than adding its own dedup.
+
+Server surfacing that feeds the tabs: `analyze` (and the trial/commit result) carry the counts of canonical-fit, repaired, and unresolved rows plus before/after samples; unresolved rows also appear in the per-row failure report with a `structure` field. Nothing is written in a trial or in analyze.
+
+### 15.5 Boundaries
+
+- **Pre-select, never silent.** Every inferred mapping and every row repair is shown and confirmable before commit. The engine does the work; the owner keeps the final glance. This is the deliberate trade-off for operating on a business's real customer records.
+- **Dictionaries are heuristics, not truth.** Name detection is a confidence-scored suggestion; an owner can override it in one click. We do not chase exhaustive name coverage — just enough to separate the columns by rate.
+- **Still never guess the unknowable.** A genuinely ambiguous column stays unmapped-and-flagged; a genuinely ambiguous row fails with a reason. Wave 4 widens what the engine can confidently resolve; it does not lower the bar for what counts as confident.
+- Pure and testable: profiling, confidence scoring, and the repair search are all functions of the grid, unit-tested alongside §4's existing detection tests.
+
+### 15.6 Delivery split (A then B)
+
+Wave 4 ships in two stages so the engine value lands before the richer UI:
+- **Stage A — Engine (built).** Majority-defined canonical profiling (`canonicalProfiles`), id/name/date detection with graded confidence, and shift-based row realignment against the canonical layout classifying each row as fits / repaired / unresolved. Surfaced through `analyze` and the trial/commit result (repaired + unresolved counts, before/after samples, `structure` failures). Pure, unit-tested against the real sample (the 9-row majority is canonical; the lone country row is the outlier).
+- **Stage B — Three-tab staging UI (planned).** The All / Mapped / Error tabs, the in-Error shift editor, Error → Mapped accept, owner-initiated commit of the Mapped bucket with accept/clear, and explicit verification of record-level dedup across repeated commits. Client-side staging only; no new persistence. A first-pass server-fed repair panel exists today; Stage B replaces it with the full interactive surface.

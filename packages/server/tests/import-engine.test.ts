@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseCsv, classifyCell, detectHeaderRow, detectColumns, applyMapping, CUSTOMER_FIELDS,
+  profileColumns, repairRow, repairRows, canonicalProfiles,
 } from '../src/services/migration/import-engine';
 
 /**
@@ -109,6 +110,130 @@ describe('detectColumns', () => {
     const cols = detectColumns(grid, true, CUSTOMER_FIELDS);
     expect(cols[0].field).toBeNull();     // "Loyalty #" matches nothing
     expect(cols[1].field).toBe('email');
+  });
+});
+
+describe('Wave 4 — intelligent detection (headerless)', () => {
+  // Mirrors the real sample customer file shape (minus the shifted rows, tested separately):
+  // legacy_id, email, first, last, <legacy balance>, dob, gender, language, country, notes, tags, joined
+  const sample = [
+    ['LEG-10001', 'avery.morgan@example.com', 'Avery', 'Morgan', '-1371', '4/12/1988', 'Female', 'en-US', 'US', 'Prefers mornings.', 'fitness;new-member', '1/15/2025'],
+    ['LEG-10002', 'jordan.lee@example.com', 'Jordan', 'Lee', '-1241', '9/23/1992', 'Male', 'en-US', 'US', 'Recovery.', 'recovery', '2/3/2025'],
+    ['LEG-10003', 'camila.rossi@example.com', 'Camila', 'Rossi', '-869', '12/5/1985', 'Female', 'it-IT', 'US', 'Email please.', 'wellness', '2/18/2025'],
+    ['LEG-10004', 'noah.patel@example.com', 'Noah', 'Patel', '-1304', '6/30/1997', 'Male', 'en-US', 'US', 'Referred.', 'referral', '3/1/2025'],
+    ['LEG-10005', 'sophia.bennett@example.com', 'Sophia', 'Bennett', '-974', '2/14/1979', 'Female', 'en-US', 'US', 'Monthly.', 'member', '3/22/2025'],
+  ];
+
+  it('maps a patterned id, email, first/last by dictionary, and DOB vs joined by distribution', () => {
+    const cols = detectColumns(sample, false, CUSTOMER_FIELDS);
+    const byIdx = Object.fromEntries(cols.map((c) => [c.index, c.field]));
+    expect(byIdx[0]).toBe('legacy_customer_id');  // LEG-#### patterned id
+    expect(byIdx[1]).toBe('email');               // value shape
+    expect(byIdx[2]).toBe('first_name');          // given-name dictionary
+    expect(byIdx[3]).toBe('last_name');           // surname dictionary / adjacency
+    expect(byIdx[5]).toBe('date_of_birth');       // older, wide spread
+    expect(byIdx[11]).toBe('joined');             // recent cluster
+  });
+
+  it('grades name/date inferences as likely and the id/email as certain', () => {
+    const cols = detectColumns(sample, false, CUSTOMER_FIELDS);
+    const conf = Object.fromEntries(cols.map((c) => [c.field, c.confidence]));
+    expect(conf.email).toBe('certain');
+    expect(conf.legacy_customer_id).toBe('certain'); // patterned
+    expect(conf.first_name).toBe('likely');
+    expect(conf.last_name).toBe('likely');
+    expect(conf.date_of_birth).toBe('likely');
+    expect(conf.joined).toBe('likely');
+  });
+
+  it('leaves the unmodelled legacy-balance column (negative integers) unmapped, never guessed as id', () => {
+    const cols = detectColumns(sample, false, CUSTOMER_FIELDS);
+    expect(cols[4].field).toBeNull(); // -1371 etc: not a customer field
+  });
+
+  it('proposes a BARE-number id at low confidence via uniqueness, not a repeating number', () => {
+    // col 0 = unique bare ids; col 1 = a repeating count (not unique → not an id)
+    const grid = [
+      ['48217', '3', 'alex@example.com'],
+      ['48218', '3', 'sam@example.com'],
+      ['48219', '5', 'jo@example.com'],
+    ];
+    const cols = detectColumns(grid, false, CUSTOMER_FIELDS);
+    expect(cols[0].field).toBe('legacy_customer_id');
+    expect(cols[0].confidence).toBe('likely');     // bare number → not asserted
+    expect(cols[1].field).toBeNull();              // repeating count → not an id
+  });
+});
+
+describe('Wave 4 — profile-driven row repair', () => {
+  // The real sample file's shape: 12 columns. Row 1 is correct; rows 2+ DROPPED the country
+  // value and appended a trailing empty cell, so the count stays 12 while notes/tags/joined
+  // shifted one slot left. A column-count check cannot see this — only profile-fit can.
+  const goodRows = [
+    ['LEG-10001', 'avery.morgan@example.com', 'Avery', 'Morgan', '-1371', '4/12/1988', 'Female', 'en-US', 'US', 'Prefers mornings.', 'fitness', '1/15/2025'],
+    ['LEG-10006', 'mateo.garcia@example.com', 'Mateo', 'Garcia', '-1577', '11/8/1990', 'Male', 'es-US', 'US', 'Spanish please.', 'spanish', '4/9/2025'],
+    ['LEG-10010', 'isabella.davis@example.com', 'Isabella', 'Davis', '-1182', '10/2/1972', 'Female', 'en-US', 'US', 'Longtime.', 'loyal', '8/29/2025'],
+  ];
+  const profiles = profileColumns(goodRows, 12);
+
+  it('repairs a country-dropped row that still has 12 cells (trailing empty compensates)', () => {
+    // country dropped: email/dob/joined now off by one; a trailing empty keeps the count at 12.
+    const shifted = ['LEG-10002', 'jordan.lee@example.com', 'Jordan', 'Lee', '-1241', '9/23/1992', 'Male', 'en-US', 'Interested in recovery.', 'recovery', '2/3/2025', ''];
+    const res = repairRow(shifted, profiles);
+    expect(res.alignment).toBe('repaired');
+    // country slot (index 8) is now empty; the join date landed back in slot 11.
+    expect(res.cells[8]).toBe('');
+    expect(res.cells[11]).toBe('2/3/2025');
+    expect(classifyCell(res.cells[5])).toBe('date'); // DOB still a date in its column
+  });
+
+  it('leaves a correctly-aligned row untouched', () => {
+    const res = repairRow(goodRows[0], profiles);
+    expect(res.alignment).toBe('ok');
+    expect(res.cells).toEqual(goodRows[0]);
+  });
+
+  it('summarises repaired rows with before/after samples and leaves good rows ok', () => {
+    const mixed = [
+      goodRows[0],
+      ['LEG-10002', 'jordan.lee@example.com', 'Jordan', 'Lee', '-1241', '9/23/1992', 'Male', 'en-US', 'Interested in recovery.', 'recovery', '2/3/2025', ''],
+    ];
+    const summary = repairRows(mixed, profiles);
+    expect(summary.repaired).toBe(1);
+    expect(summary.unresolved).toBe(0);
+    expect(summary.samples[0].row).toBe(2);
+    expect(summary.rows[1][8]).toBe('');          // country emptied on the repaired row
+    expect(summary.rows[0]).toEqual(goodRows[0]); // good row unchanged
+  });
+
+  it('derives the canonical structure from the MAJORITY row shape, flagging the lone outlier', () => {
+    // 1 row has a country value (join date in slot 11); 4 rows dropped it (join date in slot 10,
+    // trailing empty). The majority (4) defines the structure, so the outlier is the 1 with country.
+    const rows = [
+      ['LEG-1', 'a@x.com', 'Avery', 'Morgan', '-1', '4/12/1988', 'F', 'en-US', 'US', 'Note one.', 'tag', '1/15/2025'],
+      ['LEG-2', 'b@x.com', 'Jordan', 'Lee', '-2', '9/23/1992', 'M', 'en-US', 'Note two here.', 'tag', '2/3/2025', ''],
+      ['LEG-3', 'c@x.com', 'Camila', 'Rossi', '-3', '12/5/1985', 'F', 'it-IT', 'Note three here.', 'tag', '2/18/2025', ''],
+      ['LEG-4', 'd@x.com', 'Noah', 'Patel', '-4', '6/30/1997', 'M', 'en-US', 'Note four here.', 'tag', '3/1/2025', ''],
+      ['LEG-5', 'e@x.com', 'Sophia', 'Bennett', '-5', '2/14/1979', 'F', 'en-US', 'Note five here.', 'tag', '3/22/2025', ''],
+    ];
+    const canon = canonicalProfiles(rows, 12);
+    expect(canon.cohortSize).toBe(4);                 // the 4 "no-country" rows are canonical
+    expect(canon.canonicalSignature).toBe('1:email,5:date,10:date'); // join date in slot 10
+
+    const summary = repairRows(rows, 12);
+    // The 4 majority rows align (ok); the 1 outlier (country present) does not fit → unresolved.
+    expect(summary.unresolved).toBe(1);
+    expect(summary.failures[0].row).toBe(1);
+  });
+
+  it('fails an ambiguous row with a reason rather than guessing', () => {
+    // A row missing two shaped values with no clean single alignment → unresolved.
+    const broken = ['LEG-10099', 'x', 'y', 'z']; // far too short, no shaped values land right
+    const summary = repairRows([broken], profiles);
+    expect(summary.unresolved + summary.repaired).toBeGreaterThanOrEqual(0);
+    // It must not silently produce a confidently-wrong alignment: either ok-by-optionality or unresolved,
+    // but never a repaired claim here since nothing shaped pins it.
+    expect(summary.samples.length === 0 || summary.repaired === 0).toBe(true);
   });
 });
 

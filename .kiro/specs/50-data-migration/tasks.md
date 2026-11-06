@@ -8,6 +8,7 @@ Waves:
 - **Wave 1 — Foundation + money**: the shared engine + Customers, Payment Methods, Account Balances, and the Data Migration page.
 - **Wave 2 — Recurring + prepaid**: Memberships, Packages.
 - **Wave 3 — Activity**: Appointments (future bookings + history + package-fulfillment derivation), Transaction History.
+- **Wave 4 — Intelligent detection & row repair**: profile-based column detection, id-pattern + name-dictionary + date-role inference, confidence scoring in the review UI, and realignment of shifted rows (Requirement 17). A cross-cutting upgrade to the shared engine that benefits every entity.
 
 ## Task Status Legend
 
@@ -146,7 +147,55 @@ Waves:
 - [x] ✅ Trial writes nothing; re-run → matched, no duplicates (bookings, timeline, redemptions, payments); notification queue unchanged across trial/commit/re-run; server tsc clean, client tsc clean for touched files
 
 ---
-**Status**: ✅ All waves built — Wave 1 (foundation + money), Wave 2 (memberships, packages), Wave 3 (appointments + package-fulfillment derivation, transaction history); all verified live. Outstanding follow-ups: a renewal run against an imported membership enrolment not yet exercised; account-balance import has no idempotency (design §6); a per-balance-import ledger-double-count warning in the UI.
+## Wave 4 — Intelligent detection & row repair
+
+Implements Requirement 17 and design.md §15. A cross-cutting upgrade to the shared engine (`import-engine.ts`); pure and unit-tested, pre-select-but-confirm, never guesses the unknowable. Calibrated against the real sample customer file (12 columns incl. an unmodelled negative-integer legacy balance; `M/D/YYYY` dates; 9 of 10 rows dropped the `country` value with a trailing empty cell, so the count stays 12 while the shaped values shift). The structure is defined by the MAJORITY row shape, so those 9 rows are canonical and the lone country-bearing row is the outlier.
+
+Delivered in two stages: **Stage A — engine** (done), **Stage B — three-tab staging UI** (planned).
+
+### Stage A — Engine (profiling, detection, realignment)
+
+#### 15. Majority-based column profiling
+- [x] ✅ Profile each column from the distribution of its values (reuse `classifyCell`), not single cells
+- [x] ✅ `canonicalProfiles`: derive the canonical structure from the MAJORITY row shape (group rows by a shape signature of their shaped-value positions; largest cohort wins; profile from that cohort only) so a cluster of shifted rows can't distort detection. A blank optional field does not make a row an outlier
+- [x] ✅ Identifier detection: patterned ids (`LEG-10001`) → certain; bare-number ids via uniqueness + plain-integer shape + leading position → LOW confidence; two equally id-shaped numeric columns → propose the better fit, leave the other unmapped. `hasForeignHeader` guard: a deliberate foreign header (e.g. "Loyalty #") suppresses value inference
+- [x] ✅ Leave a column that no profile/pattern/dictionary identifies unmapped and flagged (the unmodelled legacy balance stays null)
+
+#### 16. Dictionary-based name + date-role inference
+- [x] ✅ Bundled common-given-name / common-surname lists; score each candidate column by hit-rate; pick the higher side and infer the neighbour (adjacency-preferred)
+- [x] ✅ Date-role disambiguation: two date columns → DOB vs joined by distribution (DOB skews decades back; joined clusters recent)
+- [x] ✅ Both inferences marked `likely` (suggestions, overridable), never asserted
+
+#### 17. Confidence scoring + review flag
+- [x] ✅ `ColumnProposal` carries graded `confidence` (certain | likely | unknown) across name-match, value-shape, id, dictionary, and date-role paths (plus the retained `confident` boolean)
+- [x] ✅ `DataMigration.tsx` renders `likely` mappings distinctly ("Guessed — please confirm", warning border) from `certain`; pre-select but require confirmation before commit
+- [x] ✅ No inferred mapping or row repair applied silently (Requirement 17.6)
+
+#### 18. Profile-driven row-alignment repair (against the canonical layout)
+- [x] ✅ Score each row against the CANONICAL profiles; flag misfits INCLUDING rows whose cell count still matches the width (dropped value + trailing empty)
+- [x] ✅ Shift-based repair search scored by HARD fit (shaped columns) then SOFT tiebreak (text sub-kind: sentence vs shortcode vs locale vs taglist) — the tiebreak places a dropped value in the right free-text slot
+- [x] ✅ Unique hard-then-soft winner → repaired (+ before/after); zero fit or a tie → unresolved with a plain-language reason (never guess)
+
+#### 19. Surface through analyze + trial/commit, and tests
+- [x] ✅ `analyze` and the trial/commit result carry `repair` { repaired, unresolved, samples }; unresolved rows join the failures with field `structure`; `buildRows` realigns before mapping and drops unresolved rows from the committed set
+- [x] ✅ First-pass `RepairPanel` in the review/trial/commit views (counts + before/after) — to be replaced by the Stage B three-tab UI
+- [x] ✅ `import-engine.test.ts` extended: id + name-dictionary + DOB-vs-joined detection; confidence grading; unmodelled balance unmapped; country-drop realignment; majority-cohort outlier. 20/20 pass
+
+### Stage B — Three-tab staging UI (built)
+
+#### 20. All / Mapped / Error staging + in-app correction
+- [x] ✅ Server: `analyze` returns per-row aligned data + bucket (`rows[]` with alignment/cells/raw/reason) and the canonical `width`; new `POST /import/:kind/{trial-rows,commit-rows}` commit the EXACT accepted cell arrays (JSON body), not a file re-parse
+- [x] ✅ Client `StagingTabs`: three tabs with live counts — ALL, MAPPED (canonical-fit "good" set), ERROR (outliers); majority → Mapped, non-conforming → Error
+- [x] ✅ Error tab: per-row shift-left / shift-right controls with a live aligned preview under the mapped column labels, and "Accept into Mapped" (moves Error → Mapped); a fixed row can be sent back
+- [x] ✅ Commit imports ONLY the Mapped set, owner-initiated (`commitRows`); committed rows leave the working set so the owner can keep working Error rows; "Clear mapped" and "Back to mapping" available; client-side staging only, no persisted partial state
+
+#### 21. Stage B verification
+- [x] ✅ Sample shape: majority rows land in Mapped and map correctly; the country-bearing outlier lands in Error with a plain-language reason (verified live)
+- [x] ✅ Committing the Mapped set imports only those (2 created); re-committing the same set reports `matched` not duplicated (0 imported / 2 matched) — record-level dedup (Requirement 12) verified live; test rows cleaned up
+- [x] ✅ No persisted partial state; server tsc 0 errors, client (touched files) tsc clean; 20/20 engine tests pass
+
+---
+**Status**: 🟡 In Progress — Waves 1-3 built and verified live (entity imports). Wave 4 **Stage A (engine)** and **Stage B (three-tab staging UI)** both built, unit-tested, and verified live against the real sample (9-row majority canonical, lone country row → Error; shift-and-accept moves it to Mapped; commit imports only the Mapped set; re-commit reports matched not duplicated). 20/20 engine tests pass; server tsc 0 errors; client touched files clean. Outstanding follow-ups from earlier waves: a renewal run against an imported membership enrolment not yet exercised; account-balance import has no idempotency (design §6); a per-balance-import ledger-double-count warning in the UI.
 **Dependencies**: Phase 46, Phase 05, Phase 10, Phase 08, packages, business setup
 
 

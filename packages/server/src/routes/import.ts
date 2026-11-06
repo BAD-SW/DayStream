@@ -6,6 +6,7 @@ import { requirePermission } from '../auth/permissions';
 import { success, error } from '../utils/response';
 import {
   parseFileToGrid, detectHeaderRow, detectColumns, applyMapping,
+  repairRows, RepairSummary,
   CUSTOMER_FIELDS, FieldDef, ColumnProposal,
 } from '../services/migration/import-engine';
 import {
@@ -126,11 +127,21 @@ function parseKind(raw: string, res: Response): ImportKind | null {
   return null;
 }
 
-/** Turn an uploaded file + optional explicit mapping into mapped rows. */
+/**
+ * Turn an uploaded file + optional explicit mapping into mapped rows, FIRST realigning rows
+ * whose values don't fit the column profiles (Wave 4 — spec 50 §15.3). Repaired rows are mapped
+ * normally; rows that can't be unambiguously realigned are dropped from the import set and
+ * reported as `structure` failures keyed to their original 1-based source row number.
+ */
 function buildRows(
   buffer: Buffer, fileName: string, fields: FieldDef[],
   explicitMapping: Record<number, string> | null, explicitHasHeader: boolean | null,
-): { rows: Array<Record<string, string>>; hasHeader: boolean; proposals: ColumnProposal[] } {
+): {
+  rows: Array<Record<string, string>>;
+  hasHeader: boolean;
+  proposals: ColumnProposal[];
+  repair: RepairSummary;
+} {
   const { grid } = parseFileToGrid(buffer, fileName);
   const hasHeader = explicitHasHeader !== null ? explicitHasHeader : detectHeaderRow(grid, fields).hasHeader;
   const proposals = detectColumns(grid, hasHeader, fields);
@@ -138,8 +149,20 @@ function buildRows(
   if (!explicitMapping) {
     for (const p of proposals) if (p.field) mapping[p.index] = p.field;
   }
-  const rows = applyMapping(grid, hasHeader, mapping);
-  return { rows, hasHeader, proposals };
+
+  // Realign the DATA rows (header excluded). The engine derives the canonical structure from the
+  // MAJORITY row shape, so a cluster of shifted rows can't pollute alignment detection.
+  const dataGrid = hasHeader ? grid.slice(1) : grid;
+  const width = Math.max(...grid.map((r) => r.length), 0);
+  const repair = repairRows(dataGrid, width);
+
+  // Map only the rows that aligned (ok or repaired); unresolved rows become structure failures.
+  const unresolvedRowNums = new Set(repair.failures.map((f) => f.row)); // 1-based data-row index
+  const alignedGrid = repair.rows.filter((_, i) => !unresolvedRowNums.has(i + 1));
+  // Rebuild a grid the mapper understands (prepend a header placeholder when hasHeader).
+  const mapGrid = hasHeader ? [grid[0] ?? [], ...alignedGrid] : alignedGrid;
+  const rows = applyMapping(mapGrid, hasHeader, mapping);
+  return { rows, hasHeader, proposals, repair };
 }
 
 /** Parse the optional mapping/hasHeader fields that ride alongside the upload. */
@@ -171,11 +194,27 @@ importRouter.post('/:kind/analyze', requirePermission('settings:*'), upload.sing
     const proposals = detectColumns(grid, header.hasHeader, fieldsForKind(kind));
     const sampleStart = header.hasHeader ? 1 : 0;
     const sampleRows = grid.slice(sampleStart, sampleStart + 5);
+
+    // Preview row-alignment repair so the owner sees up front how many rows will be auto-corrected
+    // or flagged (Wave 4 — spec 50 §15.4). Nothing is written; this is detection only.
+    const dataGrid = grid.slice(sampleStart);
+    const width = Math.max(...grid.map((r) => r.length), 0);
+    const repair = repairRows(dataGrid, width);
+
     success(res, {
       hasHeader: header.hasHeader,
       columns: proposals.map((p) => p.column),
       proposedMapping: proposals,
       sampleRows,
+      width,
+      repair: {
+        repaired: repair.repaired,
+        unresolved: repair.unresolved,
+        samples: repair.samples,
+        failures: repair.failures,
+      },
+      // Per-row aligned data + bucket for the three-tab staging UI (Stage B, spec 50 §15.4).
+      rows: repair.perRow,
     });
   } catch (e: any) {
     console.error('Import analyze failed', e?.message || e);
@@ -208,14 +247,26 @@ async function runEndpoint(req: Request, res: Response, commit: boolean): Promis
   if (!req.file) { error(res, 'A file is required', 'VALIDATION_ERROR', 400); return; }
 
   const { mapping, hasHeader } = readMappingFromBody(req);
-  const { rows } = buildRows(req.file.buffer, req.file.originalname, fieldsForKind(kind), mapping, hasHeader);
+  const { rows, repair } = buildRows(req.file.buffer, req.file.originalname, fieldsForKind(kind), mapping, hasHeader);
 
   const result = await dispatch(kind, businessId, authReq.tenantId!, authReq.user.sub, rows, commit);
+
+  // Fold row-alignment outcomes into the result: rows we couldn't realign are structure
+  // failures (never imported); repaired rows imported, but the owner should review them. The
+  // entity importer counted only the aligned rows it received, so add the structure failures on
+  // top and expose the repair summary for the before/after review (Wave 4 — spec 50 §15.4).
+  for (const f of repair.failures) {
+    result.failures.push({ row: f.row, field: 'structure', message: f.reason });
+  }
+  result.failed += repair.failures.length;
+  result.total += repair.failures.length;
+  const withRepair = { ...result, repair: { repaired: repair.repaired, unresolved: repair.unresolved, samples: repair.samples } };
+
   const recorded = await recordRun({
     tenantId: authReq.tenantId!, businessId, entity: kind,
     fileName: req.file.originalname, isTrial: !commit, performedBy: authReq.user.sub, result,
   });
-  success(res, recorded);
+  success(res, { ...recorded, repair: withRepair.repair });
 }
 
 importRouter.post('/:kind/trial', requirePermission('settings:*'), upload.single('file'), async (req, res) => {
@@ -226,6 +277,54 @@ importRouter.post('/:kind/trial', requirePermission('settings:*'), upload.single
 importRouter.post('/:kind/commit', requirePermission('settings:*'), upload.single('file'), async (req, res) => {
   try { await runEndpoint(req, res, true); }
   catch (e: any) { console.error('Import commit failed', e?.message || e); error(res, 'Failed to run the import', 'INTERNAL_ERROR', 500); }
+});
+
+/**
+ * POST /v1/import/:kind/commit-rows and /trial-rows — Stage B (three-tab staging). The client has
+ * already classified and (for Error rows) hand-aligned the rows in the browser, so here we commit
+ * the EXACT cell arrays it sends (the accepted "Mapped" set), not a re-parse of the file. JSON body:
+ *   { business_id, mapping: {colIndex: field}, rows: string[][], file_name? }
+ * Mapping is applied to each supplied aligned row, then dispatched to the entity importer. Record-
+ * level idempotency (Requirement 12) makes repeated commits of overlapping rows report `matched`,
+ * never duplicate — which is what lets the owner import the Mapped set in parts.
+ */
+async function runRowsEndpoint(req: Request, res: Response, commit: boolean): Promise<void> {
+  const authReq = req as AuthenticatedRequest;
+  const kind = parseKind(req.params.kind, res); if (!kind) return;
+  const businessId = (req.body?.business_id || '').toString();
+  if (!businessId) { error(res, 'business_id is required', 'VALIDATION_ERROR', 400); return; }
+
+  const rawRows = req.body?.rows;
+  const rawMapping = req.body?.mapping;
+  if (!Array.isArray(rawRows)) { error(res, 'rows[] is required', 'VALIDATION_ERROR', 400); return; }
+  if (!rawMapping || typeof rawMapping !== 'object') { error(res, 'mapping is required', 'VALIDATION_ERROR', 400); return; }
+
+  // Map each aligned cell-array to a field-keyed object using the confirmed mapping.
+  const mapping: Record<number, string> = {};
+  for (const [k, v] of Object.entries(rawMapping)) if (v) mapping[Number(k)] = String(v);
+  const rows: Array<Record<string, string>> = (rawRows as unknown[]).map((r) => {
+    const cells = Array.isArray(r) ? (r as unknown[]).map((c) => String(c ?? '')) : [];
+    const obj: Record<string, string> = {};
+    for (const [idxStr, field] of Object.entries(mapping)) obj[field] = (cells[Number(idxStr)] ?? '').trim();
+    return obj;
+  });
+
+  const result = await dispatch(kind, businessId, authReq.tenantId!, authReq.user.sub, rows, commit);
+  const recorded = await recordRun({
+    tenantId: authReq.tenantId!, businessId, entity: kind,
+    fileName: (req.body?.file_name || null), isTrial: !commit, performedBy: authReq.user.sub, result,
+  });
+  success(res, recorded);
+}
+
+importRouter.post('/:kind/trial-rows', requirePermission('settings:*'), async (req, res) => {
+  try { await runRowsEndpoint(req, res, false); }
+  catch (e: any) { console.error('Import trial-rows failed', e?.message || e); error(res, 'Failed to run the trial', 'INTERNAL_ERROR', 500); }
+});
+
+importRouter.post('/:kind/commit-rows', requirePermission('settings:*'), async (req, res) => {
+  try { await runRowsEndpoint(req, res, true); }
+  catch (e: any) { console.error('Import commit-rows failed', e?.message || e); error(res, 'Failed to run the import', 'INTERNAL_ERROR', 500); }
 });
 
 // GET /v1/import/runs — recent runs for a business.
