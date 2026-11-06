@@ -13,12 +13,12 @@ interface TableActionButtonProps {
 
 const VARIANT_STYLES: Record<ActionVariant, { color: string; borderColor: string; background: string }> = {
   default: { color: 'var(--color-text-secondary)', borderColor: 'var(--color-border)', background: 'transparent' },
-  edit: { color: '#fff', borderColor: 'var(--color-text-secondary)', background: 'var(--color-text-secondary)' },
-  archive: { color: '#fff', borderColor: 'var(--color-success, #2E7D32)', background: 'var(--color-success, #2E7D32)' },
-  restore: { color: '#fff', borderColor: 'var(--color-error, #D32F2F)', background: 'var(--color-error, #D32F2F)' },
-  delete: { color: '#fff', borderColor: 'var(--color-error, #D32F2F)', background: 'var(--color-error, #D32F2F)' },
-  activate: { color: '#fff', borderColor: 'var(--color-success, #2E7D32)', background: 'var(--color-success, #2E7D32)' },
-  pause: { color: '#fff', borderColor: 'var(--color-warning-dark, #C49000)', background: 'var(--color-warning-dark, #C49000)' },
+  edit: { color: '#fff', borderColor: 'var(--color-neutral-solid, var(--color-text-secondary))', background: 'var(--color-neutral-solid, var(--color-text-secondary))' },
+  archive: { color: '#fff', borderColor: 'var(--color-success-solid, var(--color-success, #2E7D32))', background: 'var(--color-success-solid, var(--color-success, #2E7D32))' },
+  restore: { color: '#fff', borderColor: 'var(--color-error-solid, var(--color-error, #D32F2F))', background: 'var(--color-error-solid, var(--color-error, #D32F2F))' },
+  delete: { color: '#fff', borderColor: 'var(--color-error-solid, var(--color-error, #D32F2F))', background: 'var(--color-error-solid, var(--color-error, #D32F2F))' },
+  activate: { color: '#fff', borderColor: 'var(--color-success-solid, var(--color-success, #2E7D32))', background: 'var(--color-success-solid, var(--color-success, #2E7D32))' },
+  pause: { color: '#fff', borderColor: 'var(--color-warning-solid, var(--color-warning-dark, #C49000))', background: 'var(--color-warning-solid, var(--color-warning-dark, #C49000))' },
 };
 
 export function TableActionButton({ label, variant = 'default', onClick, disabled, title }: TableActionButtonProps) {

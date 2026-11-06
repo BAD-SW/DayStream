@@ -170,7 +170,7 @@ export const BUILT_IN_TOKENS: Record<BuiltInThemeId, Record<ConfigurableTokenKey
     '--color-secondary-contrast': '#FFFFFF',
     '--color-background':         '#F4F6FA',
     '--color-surface':            '#FFFFFF',
-    '--color-border':             '#CFD4DF',
+    '--color-border':             '#878FA2',
     '--color-divider':            '#E1E5EE',
     '--color-sidebar-bg':         '#0F1F5C',
     '--color-header-bg':          '#FFFFFF',

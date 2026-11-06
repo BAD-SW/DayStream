@@ -339,7 +339,7 @@ const styles: Record<string, React.CSSProperties> = {
   muted: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' },
   select: { padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', background: 'var(--color-background)' },
   viewBtn: { padding: '6px 14px', fontSize: 'var(--font-size-sm)', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', background: 'transparent', color: 'var(--color-text)', cursor: 'pointer', minHeight: 'var(--button-height-sm)' },
-  viewBtnActive: { background: 'var(--color-primary)', color: '#fff', borderColor: 'var(--color-primary)', borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
+  viewBtnActive: { background: 'var(--color-primary)', color: 'var(--color-primary-contrast, #fff)', borderColor: 'var(--color-primary)', borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
   table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: 'var(--font-size-sm)' },
   th: { textAlign: 'left' as const, padding: '8px 12px', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)', borderBottom: '2px solid var(--color-border)' },
   td: { padding: '8px 12px', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)' },

@@ -337,7 +337,7 @@ const styles: Record<string, React.CSSProperties> = {
   contactLabel: { fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-medium)' as any, color: 'var(--color-text)' },
   contactSelect: { padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md, 8px)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)', background: 'var(--color-background)', fontFamily: 'var(--font-family)' },
   chip: { padding: '4px 12px', fontSize: 'var(--font-size-sm)', borderRadius: '16px', cursor: 'pointer', border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
-  chipOn: { background: 'var(--color-primary)', color: '#fff', borderColor: 'var(--color-primary)' },
+  chipOn: { background: 'var(--color-primary)', color: 'var(--color-primary-contrast, #fff)', borderColor: 'var(--color-primary)' },
   actions: { display: 'flex', gap: 'var(--space-sm)', alignItems: 'center', marginTop: '4px' },
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 },
   modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-xl)', width: '95vw', maxWidth: '1200px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px var(--color-border)' },

@@ -7,7 +7,11 @@
  *
  * Keep in sync with BUILT_IN_TOKENS.navy in packages/server/src/services/themeTokens.ts.
  * WCAG AA verified: #141B2D on #F4F6FA = 15.9:1, #FFFFFF on #0F1F5C = 15.3:1,
- * #AEBBE8 on #0F1F5C = 8.1:1, #4F596D on #F4F6FA = 6.5:1, #FFFFFF on #0066CC = 5.6:1.
+ * #AEBBE8 on #0F1F5C = 8.1:1, #4F596D on #F4F6FA = 6.5:1, #FFFFFF on #0066CC = 5.6:1,
+ * control border #878FA2 on #FFFFFF = 3.2:1.
+ *
+ * Dark Navy (THE-12, option B "Navy on slate", David 6 Nov): the block after the light one,
+ * under [data-theme='dark']. The sidebar keeps the light navy; the working area turns slate.
  */
 
 [data-base-theme='navy'] {
@@ -39,8 +43,8 @@
   --color-text-muted: #5F687B;
 
   /* Border */
-  --color-border: #CFD4DF;
-  --color-border-hover: #AEB6C6;
+  --color-border: #878FA2;        /* 3.2:1 on white: form controls need 3:1 (David, 6 Nov) */
+  --color-border-hover: #6E7890;
   --color-border-focus: #0066CC;
   --color-divider: #E1E5EE;
 
@@ -135,6 +139,123 @@
   --font-weight-medium: 600;
   --font-weight-semibold: 700;
   --font-weight-bold: 800;
+}
+
+/* Dark Navy — option B "Navy on slate" (THE-12, chosen by David on 6 November 2026).
+ * The moon icon sets [data-theme='dark']; two attributes outrank both the light Navy block and
+ * the Classic dark values. Every colour token of the block above is redefined here.
+ * WCAG AA: #E6EAF2 on #111827 = 15.0:1, on #1A2335 = 13.3:1; #AAB4C6 on #1A2335 = 7.6:1;
+ * #95A0B5 on #1A2335 = 6.0:1; #0A1226 on #4D8DFF = 5.6:1; #6FA8FF on #1A2335 = 6.5:1;
+ * control border #68778F on #1A2335 = 3.2:1; every pill and alert pair >= 7:1. */
+[data-base-theme='navy'][data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Primary */
+  --color-primary: #4D8DFF;
+  --color-primary-hover: #74A6FF;
+  --color-primary-active: #3A78E8;
+  --color-primary-contrast: #0A1226;
+
+  /* Background & surface */
+  --color-background: #111827;
+  --color-background-gradient: none;
+  --color-surface: #1A2335;
+  --color-surface-hover: #222D42;
+  --color-surface-active: #243049;
+  --color-surface-elevated: #1E283C;
+  --color-surface-modal: #1A2335;
+  --row-hover-bg: #222D42;
+
+  /* Text */
+  --color-text: #E6EAF2;
+  --color-text-secondary: #AAB4C6;
+  --color-text-disabled: #6B7588;
+  --color-text-inverse: #0A1226;
+  --color-text-title: #E6EAF2;
+  --color-text-body: #E6EAF2;
+  --color-text-muted: #95A0B5;
+
+  /* Border */
+  --color-border: #68778F;
+  --color-border-hover: #8090A8;
+  --color-border-focus: #6FA8FF;
+  --color-divider: #29344A;
+
+  /* Accent / secondary */
+  --color-accent: #6FA8FF;
+  --color-accent-hover: #93BEFF;
+  --color-accent-contrast: #0A1226;
+  --color-secondary: #6FA8FF;
+  --color-secondary-hover: #93BEFF;
+  --color-secondary-contrast: #0A1226;
+
+  /* Semantic: "-dark" is the text colour on the "-bg" tint, so it is the light one here */
+  --color-success: #5CC78E;
+  --color-success-light: #80DBA8;
+  --color-success-dark: #80DBA8;
+  --color-success-bg: #14332A;
+  --color-warning: #E3A54A;
+  --color-warning-light: #F2BC6B;
+  --color-warning-dark: #F5CC8A;
+  --color-warning-bg: #33280F;
+  --color-error: #F07068;
+  --color-error-light: #F59A93;
+  --color-error-dark: #FFB4AD;
+  --color-error-bg: #3A1C20;
+  --color-info: #6FA8FF;
+  --color-info-light: #93BEFF;
+  --color-info-dark: #8EC2FF;
+  --color-info-bg: #162E50;
+  --color-capacity-override: #A98BFF;
+  --color-capacity-override-bg: #2A2148;
+
+  /* Lifecycle stage pills */
+  --stage-lead-bg: #2A3448;
+  --stage-lead-fg: #CBD3E2;
+  --stage-trial-bg: #162E50;
+  --stage-trial-fg: #8EC2FF;
+  --stage-active-bg: #14332A;
+  --stage-active-fg: #80DBA8;
+  --stage-at-risk-bg: #3A2A12;
+  --stage-at-risk-fg: #F2BC6B;
+  --stage-churned-bg: #3A1C20;
+  --stage-churned-fg: #FFB4AD;
+  --stage-winback-bg: #2A2148;
+  --stage-winback-fg: #C4B1FF;
+
+  /* Sidebar keeps the light Navy (the brand looks the same in both modes); header turns slate */
+  --color-sidebar-bg: #0F1F5C;
+  --color-sidebar-border: #0F1F5C;
+  --color-sidebar-text: #FFFFFF;
+  --color-sidebar-text-muted: #AEBBE8;
+  --color-sidebar-hover-bg: rgba(255, 255, 255, 0.09);
+  --color-sidebar-brand: #FFFFFF;
+  --color-sidebar-brand-text: #FFFFFF;
+  --color-header-bg: #161F30;
+  --color-nav-active-bg: #FFFFFF;
+  --color-nav-active-text: #0F1F5C;
+
+  --color-overlay: rgba(0, 0, 0, 0.6);
+
+  /* Calendar service colours stay as in light Navy: they carry white text on the block */
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
+
+  --badge-warning-fg: #F2BC6B;
+
+  /* Solid fills that carry white text (action buttons, toasts): deeper than the text colours
+   * above, which must read on the dark surface. White on each >= 4.5:1. */
+  --color-success-solid: #1D7A4C;
+  --color-error-solid: #C2362C;
+  --color-warning-solid: #9A5200;
+  --color-info-solid: #2563C9;
+  --color-neutral-solid: #4B5870;
+
+  /* Schedule grid: available slots lighter than unavailable ones, both above the page */
+  --schedule-available-bg: #243049;
+  --schedule-unavailable-bg: #161F30;
 }
 
 /* Component tokens (THE-8) — defaults live in tokens/components.css */

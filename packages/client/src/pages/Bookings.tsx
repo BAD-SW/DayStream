@@ -238,5 +238,5 @@ const styles: Record<string, React.CSSProperties> = {
   modalFooter: { display: 'flex', justifyContent: 'space-between', gap: 'var(--space-sm)' },
   seriesItem: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) 0', borderBottom: '1px solid var(--color-border)', fontSize: 'var(--font-size-sm)' },
   seriesRef: { color: 'var(--color-text-disabled)', fontSize: 'var(--font-size-xs)', marginLeft: 'auto' },
-  cancelSeriesBtn: { background: 'var(--color-error-light)', border: '1px solid var(--color-error-light)', borderRadius: 'var(--radius-md)', padding: '8px 16px', color: 'white', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-medium)' as any },
+  cancelSeriesBtn: { background: 'var(--color-error-solid, var(--color-error-light))', border: '1px solid var(--color-error-solid, var(--color-error-light))', borderRadius: 'var(--radius-md)', padding: '8px 16px', color: 'white', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-medium)' as any },
 };

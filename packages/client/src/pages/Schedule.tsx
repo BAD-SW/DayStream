@@ -479,8 +479,8 @@ export function Schedule() {
                     const isClickable = isAvailable && !!selectedStaffId;
 
                     let bg = 'var(--color-background)'; // non-business hours (gray/beige)
-                    if (isBizHour && !isAvailable) bg = '#f0ebe0'; // business hours but staff unavailable
-                    if (isAvailable) bg = '#FFFFFF'; // available for scheduling
+                    if (isBizHour && !isAvailable) bg = 'var(--schedule-unavailable-bg, #f0ebe0)'; // business hours but staff unavailable
+                    if (isAvailable) bg = 'var(--schedule-available-bg, #FFFFFF)'; // available for scheduling
 
                     return (
                       <div
@@ -579,7 +579,7 @@ const styles: Record<string, React.CSSProperties> = {
   grid: { display: 'grid', minWidth: '600px' },
   timeHeader: { padding: '8px', borderBottom: '1px solid var(--color-border)', borderRight: '1px solid var(--color-border)', background: 'var(--color-surface)' },
   dayHeader: { padding: '8px', textAlign: 'center' as const, borderBottom: '1px solid var(--color-border)', borderRight: '1px solid var(--color-border)', background: 'var(--color-surface)' },
-  todayHeader: { background: 'var(--color-primary)', color: '#fff' },
+  todayHeader: { background: 'var(--color-primary)', color: 'var(--color-primary-contrast, #fff)' },
   dayName: { fontSize: 'var(--font-size-xs)', textTransform: 'uppercase' as const, fontWeight: 600 },
   dayDate: { fontSize: 'var(--font-size-md)', fontWeight: 700 },
   timeColumn: { borderRight: '1px solid var(--color-border)' },

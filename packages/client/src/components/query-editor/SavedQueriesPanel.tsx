@@ -409,7 +409,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '4px 10px',
     fontSize: 'var(--font-size-xs)',
     color: '#fff',
-    backgroundColor: 'var(--color-error, #dc2626)',
+    backgroundColor: 'var(--color-error-solid, var(--color-error, #dc2626))',
     border: 'none',
     borderRadius: '3px',
     cursor: 'pointer',

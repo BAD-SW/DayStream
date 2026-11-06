@@ -480,7 +480,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '6px 14px',
     fontSize: 'var(--font-size-sm)',
     fontWeight: 600,
-    color: '#fff',
+    color: 'var(--color-primary-contrast, #fff)',
     backgroundColor: 'var(--color-primary, #C9A96E)',
     border: 'none',
     borderRadius: '4px',

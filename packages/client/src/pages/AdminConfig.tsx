@@ -184,7 +184,7 @@ function ProspectSettingsPanel() {
           <option value={6}>6 — ~7km edge (city-level, precise borders)</option>
           <option value={7}>7 — ~2.6km edge (neighborhood, most calls)</option>
         </select>
-        <button onClick={handleSave} disabled={saving} style={{ padding: '6px 16px', background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: 'var(--font-size-sm)' }}>
+        <button onClick={handleSave} disabled={saving} style={{ padding: '6px 16px', background: 'var(--color-primary)', color: 'var(--color-primary-contrast, #fff)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: 'var(--font-size-sm)' }}>
           {saving ? 'Saving...' : 'Save'}
         </button>
       </div>
@@ -402,7 +402,7 @@ function ApiKeysPanel() {
         <button
           onClick={handleSave}
           disabled={saving}
-          style={{ padding: '8px 20px', background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 600 }}
+          style={{ padding: '8px 20px', background: 'var(--color-primary)', color: 'var(--color-primary-contrast, #fff)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 600 }}
         >
           {saving ? 'Saving...' : 'Save API Keys'}
         </button>
@@ -461,7 +461,7 @@ function ApiKeysPanel() {
           <button
             onClick={handleSaveGoogleCloud}
             disabled={gcSaving}
-            style={{ padding: '8px 20px', background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 600 }}
+            style={{ padding: '8px 20px', background: 'var(--color-primary)', color: 'var(--color-primary-contrast, #fff)', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontWeight: 600 }}
           >
             {gcSaving ? 'Saving...' : 'Save Google Cloud Settings'}
           </button>

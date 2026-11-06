@@ -1215,5 +1215,5 @@ const styles: Record<string, React.CSSProperties> = {
   monthCell: { minHeight: '80px', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '4px 6px', display: 'flex', flexDirection: 'column' as const, gap: '2px' },
   monthCellToday: { background: 'rgba(201, 169, 110, 0.1)', borderColor: 'var(--color-accent, #C9A96E)' },
   monthCellDay: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)' },
-  monthCellCount: { fontSize: 'var(--font-size-xs)', color: '#fff', fontWeight: 600, background: 'var(--color-accent, #C9A96E)', borderRadius: '4px', padding: '2px 6px', alignSelf: 'flex-start' },
+  monthCellCount: { fontSize: 'var(--font-size-xs)', color: 'var(--color-accent-contrast, #fff)', fontWeight: 600, background: 'var(--color-accent, #C9A96E)', borderRadius: '4px', padding: '2px 6px', alignSelf: 'flex-start' },
 };
