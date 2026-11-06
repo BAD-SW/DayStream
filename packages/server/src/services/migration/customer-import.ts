@@ -16,6 +16,34 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface MappedRow { [field: string]: string }
 
+// preferred_language is VARCHAR(5) (a locale code such as "en" or "en-US"), but legacy exports
+// usually carry the language name ("English"). Convert names to codes; unknown values are dropped
+// rather than failing the whole customer.
+const LANGUAGE_CODES: Record<string, string> = {
+  english: 'en', spanish: 'es', french: 'fr', german: 'de', italian: 'it', portuguese: 'pt', dutch: 'nl',
+  russian: 'ru', arabic: 'ar', chinese: 'zh', mandarin: 'zh', cantonese: 'yue', japanese: 'ja', korean: 'ko',
+  hindi: 'hi', bengali: 'bn', turkish: 'tr', polish: 'pl', swedish: 'sv', norwegian: 'no', danish: 'da',
+  finnish: 'fi', greek: 'el', czech: 'cs', hungarian: 'hu', romanian: 'ro', ukrainian: 'uk', hebrew: 'he',
+  thai: 'th', vietnamese: 'vi', indonesian: 'id', malay: 'ms', tagalog: 'tl', catalan: 'ca', basque: 'eu',
+  galician: 'gl',
+};
+
+// The languages DayStream's language dropdown offers (CustomerCreate / CustomerDetail).
+const SUPPORTED_LANGUAGES = new Set(['en', 'es', 'fr', 'de']);
+
+/**
+ * Resolve a legacy language value ("English", "es", "en-US") to a supported base code.
+ * Returns `code: null` for blank or unsupported values; `unsupported` is true when a value was
+ * given but couldn't be resolved, so the caller can warn instead of silently dropping it.
+ */
+export function normalizeLanguage(raw: string | undefined): { code: string | null; unsupported: boolean } {
+  const v = (raw || '').trim();
+  if (!v) return { code: null, unsupported: false };
+  const lower = v.toLowerCase().replace('_', '-');
+  const code = LANGUAGE_CODES[lower] ?? lower.split('-')[0];
+  return SUPPORTED_LANGUAGES.has(code) ? { code, unsupported: false } : { code: null, unsupported: true };
+}
+
 function validateRow(r: MappedRow, rowNum: number): RowFailure[] {
   const failures: RowFailure[] = [];
   const first = (r.first_name || '').trim();
@@ -40,6 +68,8 @@ export async function runCustomerImport(args: {
   const { businessId, tenantId, userId, rows, commit } = args;
   const result = emptyResult();
   result.total = rows.length;
+  const warnings: RowFailure[] = [];
+  result.warnings = warnings;
 
   for (let i = 0; i < rows.length; i++) {
     const rowNum = i + 1;
@@ -59,6 +89,14 @@ export async function runCustomerImport(args: {
       continue;
     }
 
+    const lang = normalizeLanguage(r.preferred_language);
+    if (lang.unsupported) {
+      warnings.push({
+        row: rowNum, field: 'preferred_language',
+        message: `Language "${r.preferred_language.trim()}" isn't one DayStream supports (English, Spanish, French, German), so it was left blank`,
+      });
+    }
+
     try {
       const res = await findOrCreatePerson({
         businessId,
@@ -69,7 +107,7 @@ export async function runCustomerImport(args: {
         lastName: r.last_name || null,
         dateOfBirth: r.date_of_birth || null,
         gender: r.gender || null,
-        preferredLanguage: r.preferred_language || null,
+        preferredLanguage: lang.code,
         country: r.country || null,
         source: 'import',
         sourceDetail: 'data migration',

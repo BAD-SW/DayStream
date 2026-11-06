@@ -80,13 +80,28 @@ function parseCsvLine(line: string): string[] {
 // ---------------------------------------------------------------------------
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-// Phone: 7-15 digits, allowing +, spaces, (), -, . separators.
+// Phone shape overall (digits with +, spaces, (), -, . separators).
 const PHONE_RE = /^\+?[\d][\d\s().-]{5,}$/;
 const DATE_RE = /^\d{4}[-/]\d{1,2}[-/]\d{1,2}$|^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$/;
 const NUMBER_RE = /^-?\d+(?:[.,]\d+)?$/;
 const MONEY_RE = /^[-+]?[$€£]?\s?\d{1,3}(?:[,.\s]?\d{3})*(?:[.,]\d{1,2})?$/;
+// Phone formatting that disambiguates a phone from a bare integer: a leading + or any of the
+// usual separators. A plain run of digits with NONE of these is ambiguous (id / count / number),
+// so it is only treated as a phone when it's long enough to actually be one (10+ digits).
+const PHONE_FORMATTING_RE = /[+\s().-]/;
 
 export type CellKind = 'email' | 'phone' | 'date' | 'number' | 'money' | 'empty' | 'text';
+
+/** Does a value look like a phone number (not just any digit run)? */
+function looksLikePhone(v: string): boolean {
+  if (!PHONE_RE.test(v)) return false;
+  const digits = v.replace(/\D/g, '').length;
+  if (digits < 7 || digits > 15) return false;
+  // A bare integer (no +, space, (), -, .) is NOT a phone unless it's a full 10+ digit number —
+  // a 7–9 digit bare integer (e.g. a legacy customer id like 10492831) is a `number`, not a phone.
+  if (!PHONE_FORMATTING_RE.test(v)) return digits >= 10;
+  return true;
+}
 
 /** Classify a single cell by what it looks like. */
 export function classifyCell(value: string): CellKind {
@@ -94,7 +109,7 @@ export function classifyCell(value: string): CellKind {
   if (v === '') return 'empty';
   if (EMAIL_RE.test(v)) return 'email';
   if (DATE_RE.test(v)) return 'date';
-  if (PHONE_RE.test(v) && (v.replace(/\D/g, '').length >= 7)) return 'phone';
+  if (looksLikePhone(v)) return 'phone';
   if (NUMBER_RE.test(v)) return 'number';
   if (MONEY_RE.test(v)) return 'money';
   return 'text';
@@ -121,6 +136,24 @@ export function looksLikePatternedId(value: string): boolean {
   return PATTERNED_ID_RE.test((value ?? '').trim());
 }
 
+/**
+ * Fraction of values shaped like an identifier token in ANY format a legacy system might use:
+ * a single run of letters/digits (plus - _ / .), containing at least one digit, no spaces,
+ * reasonable length. This is deliberately broad — `NX104928`, `DS83749`, `RE9284A`, `CA57204`,
+ * `ME4729B`, `48217`, `LEG-10001` all qualify — because an id's defining trait isn't its format,
+ * it's that it's unique per row (checked separately via the profile's `allUnique`).
+ */
+export function idShapeScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim()).filter((v) => v !== '');
+  if (vals.length === 0) return 0;
+  const hits = vals.filter((v) =>
+    v.length >= 3 && v.length <= 40
+    && /^[A-Za-z0-9][A-Za-z0-9_/.-]*$/.test(v)
+    && /\d/.test(v), // must contain a digit — a pure word is a name/label, not an id
+  ).length;
+  return hits / vals.length;
+}
+
 // Modest bundled name dictionaries (NOT exhaustive by design — spec 50 §15.5). The decision
 // is which of two adjacent text columns scores higher as given-names vs surnames, so a
 // representative sample that separates the columns by rate is all that's needed; unknown names
@@ -143,6 +176,122 @@ const COMMON_SURNAMES = new Set([
   'morgan', 'rossi', 'patel', 'bennett', 'kim', 'wilson', 'davis', 'nunez', 'russo', 'ferrari',
   'bianchi', 'romano', 'colombo', 'ricci', 'marino', 'greco', 'bruno', 'gallo', 'conti', 'costa',
 ]);
+
+// Recognised gender tokens (lowercased). Covers the common spellings a legacy export uses;
+// a column dominated by these is proposed as `gender`. Deliberately small and inclusive.
+const GENDER_TOKENS = new Set([
+  'male', 'female', 'non-binary', 'nonbinary', 'non binary', 'nb', 'enby',
+  'm', 'f', 'other', 'prefer not to say', 'unspecified', 'none', 'man', 'woman',
+  'trans', 'transgender', 'genderqueer', 'genderfluid', 'intersex', 'x',
+]);
+
+/** Fraction of a column's non-empty values that are recognised gender tokens. */
+export function genderTokenScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim().toLowerCase()).filter((v) => v !== '');
+  if (vals.length === 0) return 0;
+  const hits = vals.filter((v) => GENDER_TOKENS.has(v)).length;
+  return hits / vals.length;
+}
+
+// Common language names a legacy export is likely to use (lowercased). Not exhaustive — enough
+// to recognise a language column by rate. A locale code (en-US) is matched by pattern instead.
+const LANGUAGE_NAMES = new Set([
+  'english', 'spanish', 'french', 'german', 'italian', 'portuguese', 'dutch', 'russian', 'arabic',
+  'chinese', 'mandarin', 'cantonese', 'japanese', 'korean', 'hindi', 'bengali', 'turkish', 'polish',
+  'swedish', 'norwegian', 'danish', 'finnish', 'greek', 'czech', 'hungarian', 'romanian', 'ukrainian',
+  'hebrew', 'thai', 'vietnamese', 'indonesian', 'malay', 'tagalog', 'catalan', 'basque', 'galician',
+]);
+const LOCALE_RE = /^[a-z]{2,3}([-_][A-Za-z]{2,4})?$/; // en, en-US, zh-Hant, pt_BR
+
+/** Fraction of values that are a recognised language name or a locale code. */
+export function languageScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim()).filter((v) => v !== '');
+  if (vals.length === 0) return 0;
+  const hits = vals.filter((v) => LANGUAGE_NAMES.has(v.toLowerCase()) || LOCALE_RE.test(v)).length;
+  return hits / vals.length;
+}
+
+// ISO-3166 alpha-2 country codes (the real set — so an arbitrary 2-letter text column doesn't
+// get mistaken for a country). Plus a short list of common full country names.
+const ISO_COUNTRY_CODES = new Set([
+  'ad', 'ae', 'af', 'ag', 'ai', 'al', 'am', 'ao', 'ar', 'at', 'au', 'az', 'ba', 'bb', 'bd', 'be',
+  'bg', 'bh', 'bo', 'br', 'bs', 'by', 'bz', 'ca', 'cd', 'ch', 'cl', 'cm', 'cn', 'co', 'cr', 'cu',
+  'cy', 'cz', 'de', 'dk', 'do', 'dz', 'ec', 'ee', 'eg', 'es', 'et', 'fi', 'fj', 'fr', 'gb', 'ge',
+  'gh', 'gr', 'gt', 'hk', 'hn', 'hr', 'hu', 'id', 'ie', 'il', 'in', 'iq', 'ir', 'is', 'it', 'jm',
+  'jo', 'jp', 'ke', 'kr', 'kw', 'kz', 'lb', 'lk', 'lt', 'lu', 'lv', 'ly', 'ma', 'mt', 'mx', 'my',
+  'ng', 'nl', 'no', 'nz', 'om', 'pa', 'pe', 'ph', 'pk', 'pl', 'pt', 'py', 'qa', 'ro', 'rs', 'ru',
+  'sa', 'se', 'sg', 'si', 'sk', 'sv', 'th', 'tn', 'tr', 'tw', 'ua', 'ug', 'us', 'uy', 've', 'vn',
+  'za', 'zm', 'zw',
+]);
+const COUNTRY_NAMES = new Set([
+  'united states', 'usa', 'united kingdom', 'uk', 'canada', 'australia', 'spain', 'france', 'germany',
+  'italy', 'portugal', 'netherlands', 'russia', 'china', 'japan', 'india', 'brazil', 'mexico', 'ireland',
+  'sweden', 'norway', 'denmark', 'finland', 'poland', 'greece', 'turkey', 'egypt', 'saudi arabia',
+  'united arab emirates', 'uae', 'new zealand', 'south africa', 'switzerland', 'belgium', 'austria',
+]);
+
+/** Fraction of values that are an ISO alpha-2 country code or a known country name. */
+export function countryScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim()).filter((v) => v !== '');
+  if (vals.length === 0) return 0;
+  const hits = vals.filter((v) => {
+    const low = v.toLowerCase();
+    return (v.length === 2 && ISO_COUNTRY_CODES.has(low)) || COUNTRY_NAMES.has(low);
+  }).length;
+  return hits / vals.length;
+}
+
+/**
+ * Fraction of values that look like a tag/label rather than prose: short, often containing a
+ * `,` or `;` separator or a hyphen-joined label (VIP, Sports-Therapy, Elite-Tier), and NOT a
+ * sentence. Deliberately excludes long free text so it doesn't steal the notes column.
+ */
+export function tagsScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim()).filter((v) => v !== '');
+  if (vals.length === 0) return 0;
+  const isTagish = (v: string): boolean => {
+    if (v.length > 40) return false;                 // too long → prose
+    if (/[.!?]$/.test(v)) return false;              // ends like a sentence
+    if (/[,;]/.test(v)) return true;                 // a separated list → clearly tags
+    // A single label: one or two words joined by a hyphen/slash (Elite-Tier, Cryo-Only, VIP),
+    // but NOT a short free-text phrase (Prefers Room 2, Evening only) which belongs to notes.
+    if (/\s/.test(v)) return false;                  // a space with no separator → treat as prose
+    return /^[A-Za-z][\w&'./-]*$/.test(v);
+  };
+  // Require a meaningful share to look like tags AND at least one value to carry a separator —
+  // this is what distinguishes a tags column (VIP,Sports-Therapy / Elite-Tier) from a short-notes
+  // column (Prefers Room 2 / Evening only) that would otherwise pass the per-value test.
+  const hits = vals.filter(isTagish).length;
+  const anySeparator = vals.some((v) => /[,;]/.test(v));
+  const ratio = hits / vals.length;
+  return anySeparator ? ratio : ratio * 0.5; // without a separator, demote (ambiguous vs notes)
+}
+
+/** Fraction of values that read as free-text prose (a space and some length) — the notes signal. */
+export function freeTextScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim()).filter((v) => v !== '');
+  if (vals.length === 0) return 0;
+  const hits = vals.filter((v) => /\s/.test(v) && v.length >= 10).length;
+  return hits / vals.length;
+}
+
+/**
+ * Fraction of values that are shaped like a person's name part: a single word (optionally with
+ * an internal hyphen/apostrophe, e.g. O'Brien, Jean-Luc), alphabetic, no digits, 2–30 chars, not
+ * a tag list. This is the signal used to resolve first/last name BY ELIMINATION when the name
+ * dictionaries don't recognise the specific (often non-Anglo) names — a leftover name-shaped
+ * text column, with the other fields already identified, is almost certainly a name.
+ */
+export function nameShapeScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim()).filter((v) => v !== '');
+  if (vals.length === 0) return 0;
+  const hits = vals.filter((v) =>
+    v.length >= 2 && v.length <= 30
+    && !/[,;]/.test(v)
+    && /^[\p{L}][\p{L}'’-]*$/u.test(v), // one alphabetic token (incl. accents, hyphen, apostrophe)
+  ).length;
+  return hits / vals.length;
+}
 
 /** Fraction of a column's non-empty single-token values present in a name dictionary. */
 export function nameDictionaryScore(values: string[], dict: Set<string>): number {
@@ -317,6 +466,17 @@ export interface ColumnProfile {
   /** Name-dictionary scores (0..1). */
   firstNameScore: number;
   lastNameScore: number;
+  /** Fraction of values that are recognised gender tokens (0..1). */
+  genderScore: number;
+  /** Value-shape scores (0..1) for the softer customer fields. */
+  languageScore: number;
+  countryScore: number;
+  tagsScore: number;
+  freeTextScore: number;
+  /** Fraction of values shaped like a single name token (for name-by-elimination). */
+  nameShapeScore: number;
+  /** Fraction of values shaped like an identifier token, any format (for id-by-elimination). */
+  idShapeScore: number;
   /** Birth-date likeness (0..1) when the column is date-dominant. */
   birthLikeness: number;
   /** Dominant soft sub-kind of a text column (locale/shortcode/taglist/sentence/word), for repair tiebreaks. */
@@ -356,6 +516,13 @@ export function profileColumns(dataRows: string[][], width: number): ColumnProfi
       hasNegativeOrDecimal: nonEmptyCells.some((v) => /[.-]/.test(v)),
       firstNameScore: nameDictionaryScore(nonEmptyCells, COMMON_FIRST_NAMES),
       lastNameScore: nameDictionaryScore(nonEmptyCells, COMMON_SURNAMES),
+      genderScore: genderTokenScore(nonEmptyCells),
+      languageScore: languageScore(nonEmptyCells),
+      countryScore: countryScore(nonEmptyCells),
+      tagsScore: tagsScore(nonEmptyCells),
+      freeTextScore: freeTextScore(nonEmptyCells),
+      nameShapeScore: nameShapeScore(nonEmptyCells),
+      idShapeScore: idShapeScore(nonEmptyCells),
       birthLikeness: dominantKind === 'date' ? birthDateLikeness(nonEmptyCells) : 0,
       dominantTextSubKind: dominantTextSubKindOf(nonEmptyCells),
     });
@@ -506,10 +673,66 @@ export function detectColumns(
     if (idCandidates.length) claim(idCandidates[0].index, 'legacy_customer_id', 'likely');
   }
 
-  // --- Pass 4: name dictionaries + date-role → LIKELY (inferred, worth a glance). ---
+  // --- Pass 4: name dictionaries + date-role + gender tokens → LIKELY (inferred). ---
   // Inference is suppressed on columns with a deliberate foreign header.
   assignNamesByDictionary(profiles, result, used, fieldSet, claim, hasForeignHeader);
   assignDateRoles(profiles, result, used, fieldSet, claim, hasForeignHeader);
+  if (fieldSet.has('gender') && !used.has('gender')) {
+    const g = profiles
+      .filter((p) => !result[p.index].field && !hasForeignHeader(p.index) && p.nonEmpty > 0 && p.genderScore >= 0.6)
+      .sort((a, b) => b.genderScore - a.genderScore)[0];
+    if (g) claim(g.index, 'gender', 'likely');
+  }
+
+  // --- Pass 5: softer value-shape fields, most distinctive first → LIKELY. ---
+  // Language and country have bounded value sets (names / ISO codes), so they're matched first and
+  // confidently; tags is a soft label-shape signal; notes is the last-resort free-text fallback so
+  // the distinctive fields get first claim on any column. All suppressed by a foreign header.
+  const claimByScore = (field: string, score: (p: ColumnProfile) => number, floor: number) => {
+    if (!fieldSet.has(field) || used.has(field)) return;
+    const c = profiles
+      .filter((p) => !result[p.index].field && !hasForeignHeader(p.index) && p.nonEmpty > 0 && score(p) >= floor)
+      .sort((a, b) => score(b) - score(a))[0];
+    if (c) claim(c.index, field, 'likely');
+  };
+  claimByScore('preferred_language', (p) => p.languageScore, 0.6);
+  claimByScore('country', (p) => p.countryScore, 0.6);
+  claimByScore('tags', (p) => p.tagsScore, 0.6);
+  // Notes last: any remaining free-text column is claimed as a best-shot (user can override).
+  claimByScore('notes', (p) => p.freeTextScore, 0.5);
+
+  // --- Pass 6: identifier + first/last name BY ELIMINATION → LIKELY (last resort). ---
+  // The user's own reasoning: once the other columns are identified, a leftover column that looks
+  // like an identifier (any format) AND is unique on every row is almost certainly the legacy id —
+  // a legacy system may assign ids in any shape (NX104928, RE9284A, 48217), so uniqueness, not
+  // format, is the signal. Resolved before names (a name column isn't unique, so it won't collide).
+  if (fieldSet.has('legacy_customer_id') && !used.has('legacy_customer_id')) {
+    const idCol = profiles
+      .filter((p) => !result[p.index].field && !hasForeignHeader(p.index) && p.nonEmpty > 0
+        && p.idShapeScore >= 0.8 && p.allUnique)
+      .sort((a, b) => a.index - b.index)[0];
+    if (idCol) claim(idCol.index, 'legacy_customer_id', 'likely');
+  }
+
+  // When the dictionaries didn't recognise the names (diverse/non-Anglo files), fall back to the
+  // user's own reasoning: with the other columns identified, a leftover name-shaped text column is
+  // almost certainly a name. Best-shot, overridable. Leftmost → first name, the other → last name.
+  const wantFirst = fieldSet.has('first_name') && !used.has('first_name');
+  const wantLast = fieldSet.has('last_name') && !used.has('last_name');
+  if (wantFirst || wantLast) {
+    const leftovers = profiles
+      .filter((p) => !result[p.index].field && !hasForeignHeader(p.index) && p.nonEmpty > 0 && p.nameShapeScore >= 0.8)
+      .sort((a, b) => a.index - b.index); // left-to-right: first name usually precedes last
+    if (wantFirst && wantLast && leftovers.length >= 2) {
+      claim(leftovers[0].index, 'first_name', 'likely');
+      claim(leftovers[1].index, 'last_name', 'likely');
+    } else if (wantFirst && leftovers.length >= 1) {
+      claim(leftovers[0].index, 'first_name', 'likely');
+      if (wantLast && leftovers.length >= 2) claim(leftovers[1].index, 'last_name', 'likely');
+    } else if (wantLast && leftovers.length >= 1) {
+      claim(leftovers[0].index, 'last_name', 'likely');
+    }
+  }
 
   // --- Assemble proposals. ---
   const proposals: ColumnProposal[] = [];
@@ -709,7 +932,11 @@ export function repairRow(row: string[], profiles: ColumnProfile[]): RowRepairRe
   const expected = expectedKinds(profiles);
   const width = expected.length;
   const asIs = misfitScore(padOrTrimless(row, width), expected);
-  if (asIs === 0 && row.length === width) return { cells: row.slice(), alignment: 'ok' };
+  // Already lines up AND has no extra cells → accept. A row SHORTER than the canonical width is
+  // just a record that didn't fill its trailing optional column(s) (e.g. no legacy id in the last
+  // column) — pad it with empties and accept; it is NOT a misalignment to repair. Only a too-long
+  // row (extra cells) or a genuine misfit needs the repair search below.
+  if (asIs === 0 && row.length <= width) return { cells: padOrTrimless(row, width), alignment: 'ok' };
 
   // Build candidate alignments (each normalised to `width` cells for scoring).
   const candidates: string[][] = [];
@@ -754,10 +981,10 @@ export function repairRow(row: string[], profiles: ColumnProfile[]): RowRepairRe
     c, hard: misfitScore(c, expected), soft: softMisfit(c, profiles),
   }));
   if (scored.length === 0) {
-    return unresolved(row, asIs);
+    return unresolved(padOrTrimless(row, width), expected);
   }
   const minHard = Math.min(...scored.map((s) => s.hard));
-  if (minHard > 0) return unresolved(row, asIs); // nothing lines the shaped columns up cleanly
+  if (minHard > 0) return unresolved(padOrTrimless(row, width), expected); // nothing lines the shaped columns up cleanly
   const hardWinners = scored.filter((s) => s.hard === minHard);
   const minSoft = Math.min(...hardWinners.map((s) => s.soft));
   const best = hardWinners.filter((s) => s.soft === minSoft);
@@ -766,16 +993,48 @@ export function repairRow(row: string[], profiles: ColumnProfile[]): RowRepairRe
     return { cells: best[0].c, alignment: 'repaired', before: row.slice() };
   }
   if (asIs === 0) return { cells: padOrTrimless(row, width), alignment: 'ok' };
-  return unresolved(row, asIs, best.length > 1);
+  return unresolved(padOrTrimless(row, width), expected, best.length > 1);
 }
 
-function unresolved(row: string[], _asIs: number, tie = false): RowRepairResult {
+/** Human names for the shape a column expects, for a readable mismatch reason. */
+const KIND_LABEL: Record<CellKind, string> = {
+  email: 'an email', phone: 'a phone number', date: 'a date', money: 'an amount',
+  number: 'a number', text: 'text', empty: 'nothing',
+};
+
+/**
+ * Build an unresolved result with a reason that NAMES the specific mismatch, so a flagged row
+ * explains itself instead of a generic "something is off". Finds the first shaped column whose
+ * value violates its expected shape (or is empty while that shape sits elsewhere) and describes it.
+ */
+function unresolved(row: string[], expected: CellKind[], tie = false): RowRepairResult {
+  let detail = '';
+  for (let c = 0; c < expected.length; c++) {
+    const want = expected[c];
+    if (want === 'text') continue;
+    const v = (row[c] ?? '').trim();
+    if (v === '') {
+      // Empty shaped column, with a value of that shape sitting elsewhere → a shift happened.
+      const misplacedAt = row.findIndex((cell, idx) => {
+        const cv = (cell ?? '').trim();
+        return cv !== '' && idx !== c && expected[idx] !== want && classifyCell(cv) === want;
+      });
+      if (misplacedAt >= 0) {
+        detail = `column ${c + 1} expects ${KIND_LABEL[want]} but is empty (it looks like it landed in column ${misplacedAt + 1})`;
+        break;
+      }
+    } else if (!cellFits(v, want)) {
+      detail = `column ${c + 1} expects ${KIND_LABEL[want]} but has "${v.length > 24 ? v.slice(0, 24) + '…' : v}"`;
+      break;
+    }
+  }
+  const base = detail
+    ? `This row doesn't line up: ${detail}.`
+    : 'This row doesn\u2019t line up with the columns — a value may be missing or an extra separator split a field.';
   return {
     cells: row.slice(),
     alignment: 'unresolved',
-    reason: tie
-      ? 'the row lines up more than one way — a value is probably missing; fix the row and re-import'
-      : 'the row\u2019s values do not line up with the columns — a value may be missing or an extra separator split a field',
+    reason: tie ? `${base} It could line up more than one way — check it.` : base,
   };
 }
 
@@ -804,6 +1063,83 @@ function padOrTrimless(row: string[], width: number): string[] {
   const c = row.slice();
   while (c.length < width) c.push('');
   return c;
+}
+
+export interface RealignResult {
+  cells: string[];           // the full row after re-fitting the tail
+  aligned: boolean;          // true when the result fully fits the column profiles
+  /** When not aligned: a plain-language description of the first mismatch (names the column). */
+  reason?: string;
+}
+
+/**
+ * Does this row line up with the column profiles AS-IS? Used after the user edits a single cell
+ * by hand: nothing is moved, the row is simply re-checked so its flag clears (or updates its
+ * reason) once the value fits. Reuses the same shaped-column fit rules as detection.
+ */
+export function rowFits(row: string[], profiles: ColumnProfile[]): RealignResult {
+  const expected = expectedKinds(profiles);
+  const padded = padOrTrimless(row, expected.length);
+  if (misfitScore(padded, expected) === 0) return { cells: padded, aligned: true };
+  return { cells: padded, aligned: false, reason: unresolved(padded, expected).reason };
+}
+
+/**
+ * Re-fit the TAIL of a row from `fromIndex` onward against the column profiles, holding columns
+ * [0, fromIndex) fixed. This is the engine behind the UI's per-cell shift: the user asserts "the
+ * value in this column actually belongs one column to the right", which both (a) locks the head
+ * as correct and (b) says the tail is misplaced — so we take the remaining non-empty values, keep
+ * their left-to-right order (never scramble a person's data), and find the best placement of them
+ * across the open columns [fromIndex, width) by the same hard-then-soft profile-fit scoring used
+ * for detection. Reuses `misfitScore` + `softMisfit` so the result is consistent with analysis.
+ *
+ * `fromIndex` is the shift point: the user shifted the value AT `fromIndex` to the right, so the
+ * tail begins there. Candidate placements interleave the needed empty gaps among the tail values;
+ * the unique best-scoring placement wins. `aligned` reflects whether the whole row then fits.
+ */
+export function realignRowTail(
+  row: string[], profiles: ColumnProfile[], fromIndex: number, forceLeadingGap = false,
+): RealignResult {
+  const expected = expectedKinds(profiles);
+  const width = expected.length;
+  const head = row.slice(0, fromIndex).map((c) => (c ?? ''));
+  const tailValues = row.slice(fromIndex).map((c) => (c ?? '').trim()).filter((v) => v !== '');
+  // A right-shift forces the value out of `fromIndex`: the first open slot must be a gap, so the
+  // tail re-fits into fromIndex+1 onward. A left-shift opens the empty slot to the left and lets
+  // the tail start at fromIndex.
+  const firstOpen = forceLeadingGap ? fromIndex + 1 : fromIndex;
+  const headFull = forceLeadingGap ? [...head, ''] : head;
+  const slots = width - firstOpen;               // open columns to place the tail values into
+  if (tailValues.length > slots) {
+    // More values than open columns — can't place without losing data; leave as-is, flag it.
+    return { cells: padOrTrimless(row, width), aligned: false };
+  }
+
+  // Enumerate every way to place `tailValues` (in order) into `slots` positions, i.e. choose
+  // which positions hold a value vs a gap. For a modest number of columns this is small.
+  const results: string[][] = [];
+  const place = (vals: string[], openSlots: number, acc: string[]) => {
+    if (vals.length === 0) { results.push([...acc, ...Array(openSlots).fill('')]); return; }
+    if (vals.length > openSlots) return;
+    // Option 1: put the next value here.
+    place(vals.slice(1), openSlots - 1, [...acc, vals[0]]);
+    // Option 2: leave a gap here (only if enough slots remain for the rest).
+    if (openSlots - 1 >= vals.length) place(vals, openSlots - 1, [...acc, '']);
+  };
+  place(tailValues, slots, []);
+
+  // Score each full-row candidate (frozen head + candidate tail) by hard then soft fit.
+  const candidates = results.map((tail) => headFull.concat(tail));
+  const scored = candidates.map((c) => ({ c, hard: misfitScore(c, expected), soft: softMisfit(c, profiles) }));
+  const minHard = Math.min(...scored.map((s) => s.hard));
+  const hardWinners = scored.filter((s) => s.hard === minHard);
+  const minSoft = Math.min(...hardWinners.map((s) => s.soft));
+  const best = hardWinners.filter((s) => s.soft === minSoft);
+
+  // Prefer the unique best; on a tie, take the first (values stay in order, gaps earliest) so the
+  // result is deterministic. The row is "aligned" only when the chosen placement fully fits.
+  const chosen = best[0].c;
+  return { cells: chosen, aligned: misfitScore(chosen, expected) === 0 };
 }
 
 export interface RepairSummary {
