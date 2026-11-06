@@ -357,7 +357,7 @@ export async function getAudienceSummary(segmentId: string, businessId: string, 
 
 // --- Bulk actions ---
 
-export type BulkAction = 'add_tag' | 'remove_tag' | 'assign_owner' | 'change_stage' | 'add_to_list' | 'archive';
+export type BulkAction = 'add_tag' | 'remove_tag' | 'assign_owner' | 'change_stage' | 'add_to_list' | 'archive' | 'delete';
 /** Either the people ticked on screen, or everyone matching the list's filters. */
 export interface BulkTarget { ids?: string[]; filters?: Record<string, any> }
 export interface BulkPayload { tag_id?: string; owner_user_id?: string | null; stage?: string; segment_id?: string }
@@ -378,7 +378,7 @@ export async function previewBulk(businessId: string, target: BulkTarget): Promi
 }
 
 /** `background` is true when the change is too large to wait for; `count` is then how many people it covers. */
-export async function runBulk(businessId: string, target: BulkTarget, action: BulkAction, payload: BulkPayload): Promise<{ affected: number | null; background?: boolean; count?: number }> {
+export async function runBulk(businessId: string, target: BulkTarget, action: BulkAction, payload: BulkPayload): Promise<{ affected: number | null; skipped?: number; background?: boolean; count?: number }> {
   const res = await apiClient.post('/v1/customers/bulk', { ...bulkBody(businessId, target), action, payload });
   return res.data.data;
 }

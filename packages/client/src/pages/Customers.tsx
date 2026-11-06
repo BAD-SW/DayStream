@@ -52,6 +52,7 @@ const BULK_ACTIONS: Array<{ id: customersApi.BulkAction; label: string }> = [
   { id: 'change_stage', label: 'Change stage' },
   { id: 'add_to_list', label: 'Add to a fixed list' },
   { id: 'archive', label: 'Archive' },
+  { id: 'delete', label: 'Delete permanently' }, // TEMPORARY: test-data cleanup; remove later
 ];
 
 const PAGE_SIZE = 50;
@@ -198,7 +199,7 @@ export function Customers() {
   }
 
   const fixedLists = segments.filter((seg) => seg.kind === 'static');
-  const bulkNeedsValue = bulkAction !== '' && bulkAction !== 'archive';
+  const bulkNeedsValue = bulkAction !== '' && bulkAction !== 'archive' && bulkAction !== 'delete';
   const bulkReady = bulkAction !== '' && (!bulkNeedsValue || bulkValue !== '');
   const selectedCount = allMatching ? total : selectedIds.length;
 
@@ -241,7 +242,7 @@ export function Customers() {
       customersApi.getViewCounts(businessId).then(setViewCounts).catch(() => {});
       setBulkMessage(result.background
         ? `${label}: ${result.count} people are being changed in the background. Reload the list in a minute to see the result.`
-        : `${label}: ${result.affected} ${result.affected === 1 ? 'person' : 'people'} changed.`);
+        : `${label}: ${result.affected} ${result.affected === 1 ? 'person' : 'people'} changed.${result.skipped ? ` ${result.skipped} could not be deleted because they have bookings, payments or memberships.` : ''}`);
     } catch (err: any) {
       setBulkConfirm(null);
       setBulkMessage(err.response?.data?.error || 'The change could not be applied');
@@ -448,6 +449,7 @@ export function Customers() {
               <span>
                 {BULK_ACTIONS.find((a) => a.id === bulkAction)?.label} for <strong>{bulkConfirm} {bulkConfirm === 1 ? 'person' : 'people'}</strong>?
                 {bulkAction === 'archive' ? ' They will be hidden from the list.' : ''}
+                {bulkAction === 'delete' ? ' This permanently deletes them and their tags and timeline. It cannot be undone.' : ''}
               </span>
               <Button size="sm" variant="secondary" onClick={() => setBulkConfirm(null)}>Back</Button>
               <Button size="sm" loading={bulkBusy} onClick={applyBulk}>Confirm</Button>

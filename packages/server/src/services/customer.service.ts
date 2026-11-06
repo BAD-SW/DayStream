@@ -319,7 +319,7 @@ export async function getViewCounts(businessId: string): Promise<Record<string, 
 
 // --- Bulk actions (Phase 46 R8) ---
 
-export type BulkAction = 'add_tag' | 'remove_tag' | 'assign_owner' | 'change_stage' | 'add_to_list' | 'archive';
+export type BulkAction = 'add_tag' | 'remove_tag' | 'assign_owner' | 'change_stage' | 'add_to_list' | 'archive' | 'delete';
 
 export interface BulkTarget { ids?: string[]; filters?: CustomerFilters }
 
@@ -344,7 +344,7 @@ export async function runBulkAction(
   action: BulkAction,
   payload: { tag_id?: string; owner_user_id?: string | null; stage?: LifecycleStage; segment_id?: string },
   userId: string,
-): Promise<{ affected: number }> {
+): Promise<{ affected: number; skipped?: number }> {
   const ids = await resolveBulkTarget(businessId, target);
   if (ids.length === 0) return { affected: 0 };
   let affected = ids.length;
@@ -395,6 +395,28 @@ export async function runBulkAction(
     );
     await logBulk(rows.map((r) => r.id), businessId, 'profile_change', 'Archived', userId);
     affected = rows.length;
+  } else if (action === 'delete') {
+    // TEMPORARY test-data cleanup: permanently removes people (tags, timeline etc. cascade). A person
+    // still referenced by bookings, payments, memberships etc. cannot be deleted; those are skipped.
+    affected = 0;
+    let skipped = 0;
+    const CHUNK = 500;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const chunk = ids.slice(i, i + CHUNK);
+      try {
+        const r = await adminPool.query('DELETE FROM cus_customers WHERE business_id = $2 AND id = ANY($1::uuid[])', [chunk, businessId]);
+        affected += r.rowCount ?? 0;
+      } catch {
+        for (const id of chunk) { // something in this chunk is still referenced: find out which
+          try {
+            const r = await adminPool.query('DELETE FROM cus_customers WHERE business_id = $2 AND id = $1', [id, businessId]);
+            affected += r.rowCount ?? 0;
+          } catch { skipped += 1; }
+        }
+      }
+    }
+    await logAudit({ tenantId, userId, action: 'customer.bulk_delete', resourceType: 'customer', details: { businessId, selected: ids.length, affected, skipped } });
+    return { affected, skipped };
   } else {
     throw new Error('Unknown action');
   }

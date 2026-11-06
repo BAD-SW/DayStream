@@ -223,7 +223,7 @@ const bulkSchema = Joi.object({
   // Either the people ticked on screen, or "everyone matching these filters".
   ids: Joi.array().items(Joi.string().uuid()).max(5000),
   filters: bulkFiltersSchema,
-  action: Joi.string().valid('add_tag', 'remove_tag', 'assign_owner', 'change_stage', 'add_to_list', 'archive'),
+  action: Joi.string().valid('add_tag', 'remove_tag', 'assign_owner', 'change_stage', 'add_to_list', 'archive', 'delete'),
   payload: Joi.object({
     tag_id: Joi.string().uuid(),
     owner_user_id: Joi.string().uuid().allow(null),
