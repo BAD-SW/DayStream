@@ -31,6 +31,7 @@ The central safety line: **live state vs. history.** Memberships, account balanc
 13. [Scale & Responsiveness](#13-scale--responsiveness)
 14. [What We Deliberately Do Not Build](#14-what-we-deliberately-do-not-build)
 15. [Intelligent Detection & Row Repair (Wave 4)](#15-intelligent-detection--row-repair-wave-4)
+16. [Source Systems & Processor Customer Matching](#16-source-systems--processor-customer-matching)
 
 ---
 
@@ -315,3 +316,62 @@ Server surfacing that feeds the tabs: `analyze` (and the trial/commit result) ca
 Wave 4 ships in two stages so the engine value lands before the richer UI:
 - **Stage A — Engine (built).** Majority-defined canonical profiling (`canonicalProfiles`), id/name/date detection with graded confidence, and shift-based row realignment against the canonical layout classifying each row as fits / repaired / unresolved. Surfaced through `analyze` and the trial/commit result (repaired + unresolved counts, before/after samples, `structure` failures). Pure, unit-tested against the real sample (the 9-row majority is canonical; the lone country row is the outlier).
 - **Stage B — Three-tab staging UI (planned).** The All / Mapped / Error tabs, the in-Error shift editor, Error → Mapped accept, owner-initiated commit of the Mapped bucket with accept/clear, and explicit verification of record-level dedup across repeated commits. Client-side staging only; no new persistence. A first-pass server-fed repair panel exists today; Stage B replaces it with the full interactive surface.
+
+---
+
+## 16. Source Systems & Processor Customer Matching
+
+Implements Requirement 19.
+
+### 16.1 Source System presets
+
+The upload screen shows a **Source system** dropdown before the file picker, for any import with at least one known layout (today: Payment Methods). The choice is sent with the file to `POST /import/:kind/analyze` as `source` (`auto` by default); an id not valid for the import kind is rejected with 400.
+
+The owner picks only the **system** ("Stripe"), never a file type. A system can produce several file layouts; the server recognises which one was uploaded. Systems live in `services/migration/import-sources.ts` (`SOURCE_SYSTEMS`); the client lists one option per system in `SOURCE_OPTIONS`. Adding a system means one entry on each side; adding a layout to an existing system is server-only.
+
+```ts
+type ImportSourceId = 'auto' | 'stripe';
+interface SourceSystem { id: 'stripe'; kinds: string[]; layouts: SourceLayout[] }
+interface SourceLayout {
+  label: string;                            // shown once recognised, e.g. "Stripe account copy file"
+  headers: Record<string, string | null>;   // normalised header → field, or null = leave unmapped
+  positions?: Array<string | null>;         // known order, for a header-less file of exactly this width
+}
+```
+
+**Recognising the layout** (`recognizeLayout`): with a header row, the layout naming the most columns wins, and it must name at least 2 (so one shared name such as `customer_id` in a custom file doesn't count). Without a header, the layout whose known width equals the file's width. Stripe's two files share no column names and differ in width (4 vs 9), so they can't be confused.
+
+**Applying it** (`applySourcePreset`, after automatic detection): a column the layout names gets its field (`certain`) or is deliberately left unmapped; a field the layout assigns is removed from any other column; every other column keeps its automatic proposal. If no layout fits, the automatic mapping is returned unchanged.
+
+The analyze response adds `sourceLayout` (the recognised layout's label, or null) and `sourceRecognized` (null when automatic was chosen, false when a system was chosen but no layout fit). The review screen shows "Recognized as a Stripe account copy file…" or a warning that the file was detected automatically.
+
+| Stripe layout | File (per Stripe's guides) | Mapping |
+|---|---|---|
+| Account copy | `customer_id_old, source_id_old, customer_id_new, source_id_new` | old customer → previous processor id; old source → unmapped; new customer → Stripe Customer ID; new source → Payment Token |
+| Import from another processor | `old_customer_id, customer_id, old_card_id, card_id, card_fingerprint, card_last4, card_exp_month, card_exp_year, card_brand` (Payment Method imports: `old_payment_method_id, payment_method_id`) | old customer → previous processor id; `customer_id` → Stripe Customer ID; `card_id` / `payment_method_id` → Payment Token; old ids and fingerprint → unmapped; last4 / expiry / brand mapped |
+
+Without the Stripe choice, automatic detection reads `old_customer_id` as a Legacy Customer ID, which is the wrong key, and the exact processor-id match is lost.
+
+### 16.2 Processor customer id
+
+- **Schema** (migration 166): `cus_customers.processor_customer_id VARCHAR(255)`, indexed on `(business_id, processor_customer_id)`.
+- **Customer import**: new optional field `processor_customer_id` (header synonyms such as Stripe Customer ID, Processor Customer ID; a `cus_` column is also found by value). Stored fill-empty, like the legacy id.
+- **Why not `pay_customer_refs`**: that table holds the id DayStream charges through. Before the cards are copied, a legacy system's processor id belongs to the previous system's processor account, and reusing it as a charging reference would make saving a new card fail. The payment-method import writes `pay_customer_refs` itself once it imports the card.
+
+### 16.3 Customer matching order
+
+`matchCustomer` (import-core) tries, strongest first, and resolves only when exactly one customer matches:
+
+1. Processor customer id: the row's previous processor id, then its Stripe Customer ID (a Stripe-to-Stripe copy keeps customer ids unchanged)
+2. Legacy Customer ID
+3. Email (case-insensitive)
+4. Phone
+
+A key that matches several customers (a shared email or phone) is skipped. When nothing resolves, the row fails with a reason naming every key tried. `noCustomerReason` accepts either the match input or a field-mapped row.
+
+### 16.4 Not yet built
+
+- Looking up a Stripe customer in the business's connected Stripe account to find its email and phone when a row has no other key.
+- Name agreement as a second check on email and phone matches.
+- Choosing the customer by hand in the review table for unmatched or ambiguous rows.
+- JSON mapping files (Stripe offers CSV or JSON; ask for CSV).

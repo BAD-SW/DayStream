@@ -237,7 +237,33 @@ Implements Requirement 18 and design.md §6-§8. Notes are one-to-many (a custom
 ### 29. Test-data cleanup (temporary)
 - [x] ✅ People page bulk action "Delete permanently" (confirmation, background above 5,000, skips people with linked bookings or payments)
 - [ ] Remove the temporary Delete action when test-data cleanup is no longer needed
+### 31. Payment methods: cards and bank accounts
+- [x] ✅ New optional Method Type column on the payment methods import; SEPA, ACH and Bacs rows are stored as `bank_draw`, cards as `card`
+- [x] ✅ Type is taken from the column, else from the brand text ("SEPA Direct Debit"), else card; an unrecognised type fails the row instead of being guessed
+- [x] ✅ Bank accounts store no expiry and show the scheme as their brand; last 4 is trimmed to the 4 characters the column holds
+- [x] ✅ Headerless payment files map by value: `cus_` → Stripe Customer ID and `pm_`/`card_`/`src_`/`ba_` → Payment Token (certain); method type, brand, last 4, expiry month/year and default flag (likely); the repeating customer id by leftmost id-shaped column
+- [x] ✅ Last 4 vs expiry year (both 4 digits) told apart by position next to the expiry month and the 20xx range
+- [x] ✅ Variable payment layouts: combined expiry ("09/28", new Expiry field, split on import), two-digit years, masked last 4 ("**** 4242"), partial header names ("Card Exp Month"), more header synonyms, and header rows recognised by contrast with payment values
+- [x] ✅ Stripe-style old/new mapping files: the NEW customer id and payment token are taken (a "new" header wins, an "old" header never matches; headerless → rightmost); the old token is left unmapped
+- [x] ✅ Payment field definitions moved to the engine (`PAYMENT_METHOD_FIELDS`); 8 layout regression tests + `parseExpiry` tests
+- [x] ✅ Text files are parsed with the delimiter detected from the file (comma, tab, semicolon or pipe); upload accepts .csv, .tsv, .txt, .xlsx, .xls
+- [x] ✅ Payment rows missing a token, a Stripe customer ID, or any way to find the customer are flagged "fix" at analysis
+- [ ] Confirm with Stripe whether migrated SEPA and ACH accounts carry their mandates, and what happens if they do not
+- [ ] Verify live with a mixed card and SEPA file, then a renewal against an imported SEPA method
+### 32. Source systems & processor customer matching (Requirement 19)
+- [x] ✅ Source system dropdown on the upload screen, before the file picker (Payment Methods: Other / custom file, Stripe); sent with analyze and validated per import kind
+- [x] ✅ One "Stripe" choice; the server recognises which Stripe file it is (account copy or import from another processor) by header (at least 2 known names) or, header-less, by width; unknown layouts keep automatic detection
+- [x] ✅ Review screen says which layout was recognised, or warns the file matched none and was detected automatically
+- [x] ✅ Migration 166: `cus_customers.processor_customer_id`; customer import captures it (by header or `cus_` values), fill-empty; not written to `pay_customer_refs`
+- [x] ✅ `matchCustomer` tries processor ids first (previous processor id, then Stripe Customer ID), then legacy id, email, phone; every key needs exactly one match
+- [x] ✅ Failure reasons name every key tried; fixed `noCustomerReason` ignoring snake_case row keys in every importer
+- [x] ✅ Tests: preset mapping for both Stripe files, header-less known order, unknown layout fallback, source validation, `cus_` customer column; live trial matched by processor id and failed an unknown id with a reason
+- [ ] Look up a Stripe customer in the connected account (email, phone, metadata) when a row has no other key
+- [ ] Name agreement as a second check on email and phone matches
+- [ ] Pick the customer by hand in the review table for unmatched or ambiguous rows
+- [ ] JSON mapping files
 ### 30. Open follow-ups
+- [ ] Deferred: "Import from Stripe" via API (only helps when the business owns its Stripe account; the main competitors own the card accounts, so the file import from Stripe's card-copy mapping file stays the primary path)
 - [ ] Up-front required-data check for the non-customer import types
 - [ ] Faster customer commit (batch writes or background job runner) if 10,000+ rows need to be quicker
 - [ ] Import errors that name the failing field instead of a generic database message

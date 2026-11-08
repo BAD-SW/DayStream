@@ -287,6 +287,23 @@ A note is a one-to-many relationship — a customer may have no notes or hundred
 7. THE system SHALL treat the customer import as a prerequisite for the note import (a note must attach to an existing customer), consistent with the locked Migration Order (Requirement 14); the note import otherwise depends on nothing else and may run any time after customers.
 8. THE system SHALL apply the same forgiving, trial, detection, and staging behavior as the other imports (Requirements 2–4, 17): a trial writes nothing, bad rows fail with reasons, and columns are auto-detected with the owner confirming.
 
+#### Requirement 19: Source System Selection & Processor Customer Matching
+
+**User Story**: As a business owner moving my saved cards and bank accounts to DayStream, I want to say where my file came from before I upload it, and have each payment method land on the right customer, so that a processor's own file imports correctly without me rearranging it and no card is ever attached to the wrong person.
+
+Saved payment methods only work in DayStream once they sit in the business's own processor account, and the processor that put them there produces the file (for example Stripe's mapping file after an account copy or an import from another processor). Those files have fixed, known layouts, but their column names are ambiguous to automatic detection (Stripe's `customer_id` is the new Stripe customer, not the business's client number), and they carry no email or client number to find the customer. Knowing the source in advance resolves the layout; a processor customer id captured during the customer import resolves the customer.
+
+##### Acceptance Criteria
+
+1. THE system SHALL let the owner choose the Source System on the upload screen BEFORE choosing the file, for every import that has at least one known source layout, with "Other / custom file" (automatic detection) as the default.
+2. WHEN a known Source System is chosen, THE system SHALL map the file's columns using that system's known headers (and, for a header-less file of exactly the known width, its known column order), SHALL leave the system's known non-importable columns unmapped (such as an old, uncharged payment id), and SHALL fall back to automatic detection for any column the layout does not name.
+3. WHEN the file does not match the chosen system's layout, THE system SHALL keep the automatic mapping rather than force a wrong one, and the owner SHALL still be able to change any column before importing.
+4. THE system SHALL offer each source system as a single choice (at minimum "Stripe" for the Payment Methods import) and SHALL itself recognise which of that system's file layouts was uploaded (for Stripe: the account-to-account copy file or the import-from-another-processor file), so the owner never has to know which kind of file they hold; THE system SHALL tell the owner which layout it recognised, or that the file matched none and was detected automatically.
+5. THE system SHALL be extendable with further source systems, and further layouts for an existing system, without changing the import flow.
+6. THE system SHALL let the customer import capture a Processor Customer ID (the client's customer id at the previous system's payment processor) and SHALL store it on the customer without treating it as the id DayStream charges through.
+7. THE system SHALL match a payment-method row to a customer using, in order: the processor customer id (the previous processor's id, then the processor customer id on the row), the Legacy Customer ID, the email, then the phone.
+8. THE system SHALL resolve a row by any key only when exactly one customer matches; WHERE a key matches several customers (such as a shared email or phone), THE system SHALL NOT use it, and SHALL fail the row with a reason naming what was tried when no key resolves.
+
 ---
 
 ## Dependencies
