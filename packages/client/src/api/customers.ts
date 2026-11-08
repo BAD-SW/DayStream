@@ -65,6 +65,8 @@ export interface CustomerFilters {
   owner?: string;
   incomplete?: boolean;
   segment_id?: string;
+  /** Include archived people (hidden by default). */
+  include_archived?: boolean;
   /** Column filters of the shared table. */
   columns?: Record<string, { values?: string[]; contains?: string; from?: string; to?: string }>;
 }
@@ -137,6 +139,7 @@ export async function getCustomers(businessId: string, filters: CustomerFilters 
   if (filters.owner) params.set('owner', filters.owner);
   if (filters.incomplete) params.set('incomplete', 'true');
   if (filters.segment_id) params.set('segment_id', filters.segment_id);
+  if (filters.include_archived) params.set('include_archived', 'true');
   if (filters.columns && Object.keys(filters.columns).length) params.set('cf', JSON.stringify(filters.columns));
 
   const res = await apiClient.get(`/v1/customers?${params}`);

@@ -97,6 +97,8 @@ export function Customers() {
     try { return localStorage.getItem(VIEW_STORAGE_KEY) || 'all'; } catch { return 'all'; }
   });
   const [segmentId, setSegmentId] = useState(searchParams.get('segment_id') || '');
+  // Archived people are hidden unless asked for (they still count as existing during an import).
+  const [showArchived, setShowArchived] = useState(searchParams.get('archived') === '1');
   // Column filters from the filter icon beside each sort icon (David, 2026-11-02).
   const [tableFilters, setTableFilters] = useState<TableFilters>(() => readFilters(searchParams.get('cf')));
   // Columns hidden by this user (remembered on this device).
@@ -129,18 +131,20 @@ export function Customers() {
     if (sortOrder) next.set('order', sortOrder);
     if (view && view !== 'all') next.set('view', view);
     if (segmentId) next.set('segment_id', segmentId);
+    if (showArchived) next.set('archived', '1');
     if (Object.keys(tableFilters).length) next.set('cf', JSON.stringify(tableFilters));
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortKey, sortOrder, view, segmentId, tableFilters]);
+  }, [sortKey, sortOrder, view, segmentId, showArchived, tableFilters]);
 
   const currentFilters = useCallback(() => ({
     view,
     segment_id: segmentId || undefined,
+    include_archived: showArchived || undefined,
     columns: tableFilters,
     sort: sortKey,
     order: sortOrder,
-  }), [view, segmentId, tableFilters, sortKey, sortOrder]);
+  }), [view, segmentId, showArchived, tableFilters, sortKey, sortOrder]);
 
   const fetchCustomers = useCallback(async () => {
     if (!businessId) {
@@ -290,6 +294,7 @@ export function Customers() {
         <span style={styles.nameCell}>
           {val || (!row.last_name ? (row.email || row.phone || '—') : '')}
           {row.incomplete && <Badge variant="warning">Incomplete</Badge>}
+          {row.status === 'archived' && <Badge variant="neutral">Archived</Badge>}
         </span>
       ),
     },
@@ -381,6 +386,10 @@ export function Customers() {
 
       <div style={styles.listToolbar}>
         <p style={styles.resultCount} aria-live="polite">{loading ? ' ' : `${total} ${total === 1 ? 'person' : 'people'}`}</p>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--font-size-sm)' }}>
+          <input type="checkbox" checked={showArchived} onChange={(e) => { setShowArchived(e.target.checked); setPage(1); }} />
+          Show archived
+        </label>
         <div style={styles.columnsWrap}>
           <button style={styles.columnsButton} aria-expanded={showColumns} onClick={() => setShowColumns((v) => !v)}>Columns</button>
           {showColumns && (
