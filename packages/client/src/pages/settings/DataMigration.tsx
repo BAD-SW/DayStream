@@ -37,13 +37,24 @@ const KINDS: KindInfo[] = [
   { kind: 'notes', label: 'Notes', blurb: 'Customer notes as their own file — each row is one note, added to the customer timeline. A customer can have as many as you have.', prereq: 'Import customers first.' },
 ];
 
+// Source systems offered per import, chosen before the file is picked (server presets:
+// services/migration/import-sources.ts). Add an entry as each system's layout is coded.
+// The dropdown only shows when an import has more than the automatic option.
+const SOURCE_OPTIONS: Partial<Record<api.ImportKind, Array<{ id: api.ImportSource; label: string; help: string }>>> = {
+  payment_methods: [
+    { id: 'auto', label: 'Other / custom file', help: 'Columns are detected automatically. You can change any column before importing.' },
+    { id: 'stripe', label: 'Stripe', help: "The mapping file Stripe gives you after moving your customers' saved cards and bank accounts. Upload it exactly as Stripe provides it (CSV)." },
+  ],
+};
+
 // Friendly field labels for the mapping review.
 const FIELD_LABELS: Record<string, string> = {
   legacy_customer_id: 'Legacy Customer ID', email: 'Email', first_name: 'First Name', last_name: 'Last Name',
   phone: 'Phone', date_of_birth: 'Date of Birth', gender: 'Gender', preferred_language: 'Language', country: 'Country',
   notes: 'Notes', tags: 'Tags', joined: 'Joined Date',
-  stripe_customer_id: 'Stripe Customer ID', payment_method_token: 'Payment Token', brand: 'Card Brand', last4: 'Last 4',
-  exp_month: 'Exp Month', exp_year: 'Exp Year', is_default: 'Default?',
+  processor_customer_id: 'Processor Customer ID (e.g. Stripe cus_…)', previous_processor_customer_id: 'Previous Processor Customer ID',
+  stripe_customer_id: 'Stripe Customer ID', payment_method_token: 'Payment Token', method_type: 'Method Type (card / SEPA / ACH)', brand: 'Card Brand', last4: 'Last 4',
+  expiry: 'Expiry (MM/YY)', exp_month: 'Exp Month', exp_year: 'Exp Year', is_default: 'Default?',
   type: 'Type (credit/invoice)', amount: 'Amount', amount_paid: 'Amount Paid', description: 'Description',
   issue_date: 'Issue Date', due_date: 'Due Date',
   plan: 'Membership Plan', next_billing_date: 'Next Billing Date', status: 'Status', start_date: 'Start Date',
@@ -58,11 +69,20 @@ const FIELD_LABELS: Record<string, string> = {
  * plain-language problem for a row that's missing them, or null. Other kinds are validated on import.
  */
 function missingRequired(kind: api.ImportKind, cells: string[], mapping: Record<number, string>): string | null {
-  if (kind !== 'customers') return null;
   const val = (field: string): string => {
     for (const [idx, f] of Object.entries(mapping)) if (f === field) return (cells[Number(idx)] ?? '').trim();
     return '';
   };
+  if (kind === 'payment_methods') {
+    const gaps: string[] = [];
+    if (val('payment_method_token') === '') gaps.push('a payment token');
+    if (val('stripe_customer_id') === '') gaps.push('a Stripe customer ID');
+    // The Stripe customer id is itself a match key (against the processor id captured by the
+    // customer import), so a row with one always has something to match on; whether it matches
+    // is only known on the server, which reports unmatched rows.
+    return gaps.length ? `Missing ${gaps.join(' and ')}` : null;
+  }
+  if (kind !== 'customers') return null;
   const noName = val('first_name') === '';
   const noContact = val('email') === '' && val('phone') === '';
   if (noName && noContact) return 'Missing a first name, and an email or phone number';
@@ -89,6 +109,8 @@ export function DataMigration({ businessId }: { businessId: string }) {
   const [kind, setKind] = useState<api.ImportKind | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [analysis, setAnalysis] = useState<api.AnalyzeResult | null>(null);
+  // Chosen before the file, so the mapping can use that system's known layout.
+  const [source, setSource] = useState<api.ImportSource>('auto');
   const [hasHeader, setHasHeader] = useState(true);
   const [mapping, setMapping] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
@@ -103,8 +125,8 @@ export function DataMigration({ businessId }: { businessId: string }) {
   useEffect(() => { loadRuns(); }, [loadRuns]);
 
   const fieldsForKind = (): string[] => {
-    if (kind === 'customers') return ['', 'legacy_customer_id', 'email', 'first_name', 'last_name', 'phone', 'date_of_birth', 'gender', 'preferred_language', 'country', 'notes', 'tags', 'joined'];
-    if (kind === 'payment_methods') return ['', 'legacy_customer_id', 'stripe_customer_id', 'payment_method_token', 'email', 'phone', 'brand', 'last4', 'exp_month', 'exp_year', 'is_default'];
+    if (kind === 'customers') return ['', 'legacy_customer_id', 'processor_customer_id', 'email', 'first_name', 'last_name', 'phone', 'date_of_birth', 'gender', 'preferred_language', 'country', 'notes', 'tags', 'joined'];
+    if (kind === 'payment_methods') return ['', 'legacy_customer_id', 'previous_processor_customer_id', 'stripe_customer_id', 'payment_method_token', 'email', 'phone', 'method_type', 'brand', 'last4', 'expiry', 'exp_month', 'exp_year', 'is_default'];
     if (kind === 'memberships') return ['', 'legacy_customer_id', 'email', 'phone', 'plan', 'next_billing_date', 'status', 'start_date'];
     if (kind === 'packages') return ['', 'legacy_customer_id', 'email', 'phone', 'package', 'purchase_date'];
     if (kind === 'appointments') return ['', 'legacy_customer_id', 'email', 'phone', 'service', 'staff', 'date', 'time', 'duration', 'status'];
@@ -114,7 +136,7 @@ export function DataMigration({ businessId }: { businessId: string }) {
   };
 
   const reset = () => {
-    setStep('pick'); setKind(null); setFile(null); setAnalysis(null);
+    setStep('pick'); setKind(null); setFile(null); setAnalysis(null); setSource('auto');
     setMapping({}); setErr(null); setHasHeader(true);
   };
 
@@ -122,7 +144,7 @@ export function DataMigration({ businessId }: { businessId: string }) {
     if (!kind) return;
     setFile(f); setBusy(true); setErr(null);
     try {
-      const a = await api.analyze(kind, f);
+      const a = await api.analyze(kind, f, source);
       setAnalysis(a);
       setHasHeader(a.hasHeader);
       const m: Record<number, string> = {};
@@ -166,7 +188,20 @@ export function DataMigration({ businessId }: { businessId: string }) {
         <div style={card}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
             <div style={{ fontWeight: 600 }}>Upload your {KINDS.find((k) => k.kind === kind)!.label} file</div>
-            <input type="file" accept=".csv,.xlsx,.xls" disabled={busy}
+            {(SOURCE_OPTIONS[kind]?.length ?? 0) > 1 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 480 }}>
+                <label htmlFor="import-source" style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600 }}>Source system</label>
+                <select id="import-source" value={source} disabled={busy} style={{ ...sel, fontSize: 'var(--font-size-sm)', padding: '6px 8px', alignSelf: 'flex-start', minWidth: 220 }}
+                  onChange={(e) => setSource(e.target.value as api.ImportSource)}>
+                  {SOURCE_OPTIONS[kind]!.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                </select>
+                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                  {SOURCE_OPTIONS[kind]!.find((o) => o.id === source)?.help}
+                </div>
+              </div>
+            )}
+            <input type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" disabled={busy}
+              aria-label={`${KINDS.find((k) => k.kind === kind)!.label} file`}
               onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
             <div><Button variant="outline" size="sm" onClick={reset}>Back</Button></div>
           </div>
@@ -435,6 +470,14 @@ function MappingTable({
       </div>
 
       {err && <Alert variant="error">{err}</Alert>}
+      {analysis.sourceRecognized === true && (
+        <Alert variant="info">Recognized as a {analysis.sourceLayout}. Its columns are mapped for you.</Alert>
+      )}
+      {analysis.sourceRecognized === false && (
+        <Alert variant="warning">
+          This file doesn&apos;t match a layout we know for the chosen source system, so its columns were detected automatically. Check the mapping before importing.
+        </Alert>
+      )}
       {progress && (
         <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 'var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)' }}>
           <div style={{ fontWeight: 600 }}>
@@ -584,7 +627,7 @@ function MappingTable({
         <input
           ref={fileInputRef}
           type="file"
-          accept=".csv,.xlsx,.xls"
+          accept=".csv,.tsv,.txt,.xlsx,.xls"
           style={{ display: 'none' }}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) onReplaceFile(f); e.target.value = ''; }}
         />

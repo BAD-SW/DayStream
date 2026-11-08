@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseCsv, classifyCell, detectHeaderRow, detectColumns, applyMapping, CUSTOMER_FIELDS,
-  profileColumns, repairRow, repairRows, canonicalProfiles, realignRowTail, rowFits,
+  profileColumns, repairRow, repairRows, canonicalProfiles, realignRowTail, rowFits, PAYMENT_METHOD_FIELDS,
 } from '../src/services/migration/import-engine';
 
 /**
@@ -298,6 +298,185 @@ describe('realignRowTail — per-cell shift re-fits the remaining columns by pro
     expect(r1.reason).toMatch(/column 2/);
     const r2 = rowFits([bad[0], 'l.lopez@bawellness.ar', ...bad.slice(2)], profiles);
     expect(r2.aligned).toBe(true);
+  });
+});
+
+describe('parseCsv — delimiter detection', () => {
+  it('parses tab-delimited files', () => {
+    const g = parseCsv('LEG-1\tcus_A1\tpm_a1\tVisa\nLEG-2\tcus_B2\tpm_b2\tMastercard\n');
+    expect(g).toEqual([['LEG-1', 'cus_A1', 'pm_a1', 'Visa'], ['LEG-2', 'cus_B2', 'pm_b2', 'Mastercard']]);
+  });
+  it('parses semicolon- and pipe-delimited files', () => {
+    expect(parseCsv('a;b;c\n1;2;3')).toEqual([['a', 'b', 'c'], ['1', '2', '3']]);
+    expect(parseCsv('a|b|c\n1|2|3')).toEqual([['a', 'b', 'c'], ['1', '2', '3']]);
+  });
+  it('keeps tabs as the delimiter when values contain commas', () => {
+    const g = parseCsv('LEG-1\tMassage-Only,New-User\tDK\nLEG-2\tFrequent\tSE\nLEG-3\tVIP,Elite\tNO');
+    expect(g[0]).toEqual(['LEG-1', 'Massage-Only,New-User', 'DK']);
+    expect(g[1]).toEqual(['LEG-2', 'Frequent', 'SE']);
+  });
+  it('still parses comma files, including quoted commas', () => {
+    expect(parseCsv('"Smith, J",a@x.com,1\n"Lee, K",b@x.com,2')).toEqual([['Smith, J', 'a@x.com', '1'], ['Lee, K', 'b@x.com', '2']]);
+  });
+});
+
+describe('payment-method files — headerless detection by value', () => {
+  // Header detection runs first, exactly as the analyze endpoint does.
+  const mapOf = (grid: string[][]) => {
+    const hasHeader = detectHeaderRow(grid, PAYMENT_METHOD_FIELDS).hasHeader;
+    const m: Record<string, number> = {};
+    for (const p of detectColumns(grid, hasHeader, PAYMENT_METHOD_FIELDS)) if (p.field) m[p.field] = p.index;
+    return m;
+  };
+
+  it('maps shuffled columns by value, not position', () => {
+    const m = mapOf([
+      ['pm_1Nx0aBcDeFgHiJkL', 'card', '4242', 'Visa', '9284', 'cus_Qa1B2c3D4e5F', '2028', '9', 'yes'],
+      ['pm_1Ny5kLmNoPqRsTuV', 'card', '1111', 'Mastercard', '58291', 'cus_Qb9Z8y7X6w5V', '2027', '12', 'no'],
+      ['pm_1Nz7wXyZaBcDeFgH', 'ACH', '1024', 'ACH', '619304', 'cus_Qc4T3s2R1q0P', '', '', 'yes'],
+      ['pm_1Nz7wXyZaBcDeFgZ', 'SEPA', '8821', 'SEPA', '9301842', 'cus_Qd4T3s2R1q0P', '', '', 'no'],
+    ]);
+    expect(m).toEqual({
+      payment_method_token: 0, method_type: 1, last4: 2, brand: 3, legacy_customer_id: 4,
+      stripe_customer_id: 5, exp_year: 6, exp_month: 7, is_default: 8,
+    });
+  });
+
+  it('reads a combined expiry (09/28) and matches by email when there is no customer id', () => {
+    const m = mapOf([
+      ['m_santos@saopaulo.br', 'cus_Qa1B2c3D4e5F', 'pm_1Nx0aBcDeFgHiJkL', 'Visa', '4242', '09/28'],
+      ['h_tan@singaporewell.sg', 'cus_Qb9Z8y7X6w5V', 'pm_1Ny5kLmNoPqRsTuV', 'Mastercard', '1111', '12/27'],
+      ['k_lin@taipeisports.tw', 'cus_Qc4T3s2R1q0P', 'pm_1Nz7wXyZaBcDeFgH', 'Amex', '0005', '03/2030'],
+    ]);
+    expect(m).toEqual({ email: 0, stripe_customer_id: 1, payment_method_token: 2, brand: 3, last4: 4, expiry: 5 });
+  });
+
+  it('reads a two-digit expiry year and ignores extra columns', () => {
+    const m = mapOf([
+      ['9284', 'Arthur Morgan', 'cus_Qa1B2c3D4e5F', 'pm_1Nx0aBcDeFgHiJkL', 'visa', '4242', '9', '28', 'Xt5EWLLDS7FJjR1c', '2024-03-01'],
+      ['58291', 'Ian Reid', 'cus_Qb9Z8y7X6w5V', 'pm_1Ny5kLmNoPqRsTuV', 'mastercard', '1111', '12', '27', 'Ab3EWLLDS7FJjR9q', '2023-11-12'],
+      ['619304', 'Hannah Tan', 'cus_Qc4T3s2R1q0P', 'pm_1Nz7wXyZaBcDeFgH', 'amex', '0005', '3', '30', 'Zz9EWLLDS7FJjR2w', '2025-01-09'],
+    ]);
+    expect(m.legacy_customer_id).toBe(0);
+    expect(m.brand).toBe(4);
+    expect(m.last4).toBe(5);
+    expect(m.exp_month).toBe(6);
+    expect(m.exp_year).toBe(7);
+    expect(Object.values(m)).not.toContain(1); // the name column stays unmapped
+  });
+
+  it('takes the NEW ids from a Stripe-style old/new mapping file (with header)', () => {
+    const m = mapOf([
+      ['old_customer_id', 'new_customer_id', 'old_payment_method_id', 'new_payment_method_id', 'card_brand', 'card_last4', 'card_exp_month', 'card_exp_year'],
+      ['cus_OLD111aaa', 'cus_NEW111aaa', 'card_OLD111aaa', 'pm_NEW111aaa', 'visa', '4242', '9', '2028'],
+      ['cus_OLD222bbb', 'cus_NEW222bbb', 'card_OLD222bbb', 'pm_NEW222bbb', 'mastercard', '1111', '12', '2027'],
+    ]);
+    expect(m.stripe_customer_id).toBe(1);
+    expect(m.payment_method_token).toBe(3);
+    expect(m.brand).toBe(4);
+    expect(m.last4).toBe(5);
+    expect(m.exp_month).toBe(6);
+    expect(m.exp_year).toBe(7);
+    expect(Object.values(m)).not.toContain(2); // the old token is never mapped
+  });
+
+  it("maps Stripe's actual copy mapping file (customer_id_old, source_id_old, customer_id_new, source_id_new)", () => {
+    const m = mapOf([
+      ['customer_id_old', 'source_id_old', 'customer_id_new', 'source_id_new'],
+      ['cus_AAA111', 'card_OLD111aaa', 'cus_AAA111', 'pm_NEW111aaa'],
+      ['cus_BBB222', 'pm_OLD222bbb', 'cus_BBB222', 'pm_NEW222bbb'],
+    ]);
+    expect(m.stripe_customer_id).toBe(2);
+    expect(m.payment_method_token).toBe(3);
+    expect(Object.values(m)).not.toContain(1); // old payment id never mapped
+  });
+
+  it('takes the rightmost (new) ids from a headerless old/new mapping file', () => {
+    const m = mapOf([
+      ['cus_OLD111aaa', 'cus_NEW111aaa', 'card_OLD111aaa', 'pm_NEW111aaa', 'visa', '4242', '9', '2028'],
+      ['cus_OLD222bbb', 'cus_NEW222bbb', 'card_OLD222bbb', 'pm_NEW222bbb', 'mastercard', '1111', '12', '2027'],
+    ]);
+    expect(m.stripe_customer_id).toBe(1);
+    expect(m.payment_method_token).toBe(3);
+    expect(Object.values(m)).not.toContain(2);
+  });
+
+  it('recognises a header with unfamiliar names and maps it', () => {
+    const grid = [
+      ['Client #', 'Stripe Customer', 'Payment Method', 'Card Type', 'Last Four Digits', 'Expiration', 'Primary'],
+      ['9284', 'cus_Qa1B2c3D4e5F', 'pm_1Nx0aBcDeFgHiJkL', 'Visa', '4242', '09/2028', 'Y'],
+      ['58291', 'cus_Qb9Z8y7X6w5V', 'pm_1Ny5kLmNoPqRsTuV', 'Mastercard', '1111', '12/2027', 'N'],
+    ];
+    expect(detectHeaderRow(grid, PAYMENT_METHOD_FIELDS).hasHeader).toBe(true);
+    expect(mapOf(grid)).toEqual({
+      legacy_customer_id: 0, stripe_customer_id: 1, payment_method_token: 2, brand: 3, last4: 4, expiry: 5, is_default: 6,
+    });
+  });
+
+  it('recognises a header by contrast with payment values even when no name is known', () => {
+    const grid = [
+      ['Ref', 'Acct', 'Instrument', 'Network', 'Ending', 'Valid'],
+      ['LEG-1', 'cus_Qa1B2c3D4e5F', 'pm_1Nx0aBcDeFgHiJkL', 'Visa', '**** 4242', '09/28'],
+      ['LEG-2', 'cus_Qb9Z8y7X6w5V', 'pm_1Ny5kLmNoPqRsTuV', 'Mastercard', '**** 1111', '12/27'],
+    ];
+    expect(detectHeaderRow(grid, PAYMENT_METHOD_FIELDS).hasHeader).toBe(true);
+    const m = mapOf(grid);
+    expect(m.stripe_customer_id).toBe(1);
+    expect(m.payment_method_token).toBe(2);
+    expect(m.brand).toBe(3);
+    expect(m.last4).toBe(4);
+    expect(m.expiry).toBe(5);
+  });
+
+  it('reads masked card numbers as last 4 and a 1/0 default flag', () => {
+    const m = mapOf([
+      ['LEG-1', 'cus_Qa1B2c3D4e5F', 'pm_1Nx0aBcDeFgHiJkL', 'Visa', '**** 4242', '9', '2028', '1'],
+      ['LEG-2', 'cus_Qb9Z8y7X6w5V', 'pm_1Ny5kLmNoPqRsTuV', 'Mastercard', '•••• 1111', '12', '2027', '0'],
+      ['LEG-3', 'cus_Qc4T3s2R1q0P', 'pm_1Nz7wXyZaBcDeFgH', 'Visa', 'xxxx1024', '3', '2030', '0'],
+    ]);
+    expect(m).toEqual({
+      legacy_customer_id: 0, stripe_customer_id: 1, payment_method_token: 2, brand: 3, last4: 4,
+      exp_month: 5, exp_year: 6, is_default: 7,
+    });
+  });
+
+  it('maps a full headerless file (card + SEPA + ACH rows)', () => {
+    const m = mapOf([
+      ['LEG-10001', 'cus_Qa1B2c3D4e5F', 'pm_1Nx0aBcDeFgHiJkL', 'card', 'Visa', '4242', '9', '2028', 'yes'],
+      ['LEG-10001', 'cus_Qa1B2c3D4e5F', 'pm_1Nx0mNoPqRsTuVwX', 'SEPA', 'SEPA Direct Debit', '3001', '', '', ''],
+      ['LEG-10002', 'cus_Qb9Z8y7X6w5V', 'pm_1Ny5kLmNoPqRsTuV', 'card', 'Mastercard', '5100', '12', '2027', ''],
+      ['LEG-10003', 'cus_Qc4T3s2R1q0P', 'pm_1Nz7wXyZaBcDeFgH', 'ACH', 'ACH Direct Debit', '6789', '', '', 'yes'],
+    ]);
+    expect(m).toEqual({
+      legacy_customer_id: 0, stripe_customer_id: 1, payment_method_token: 2, method_type: 3,
+      brand: 4, last4: 5, exp_month: 6, exp_year: 7, is_default: 8,
+    });
+  });
+
+  it('detects a brand column that mixes card brands with bank schemes (Visa, Mastercard, ACH, SEPA)', () => {
+    const m = mapOf([
+      ['LEG-1', 'cus_A1', 'pm_aaaaaa1', 'card', 'Visa', '4242', '9', '2028'],
+      ['LEG-2', 'cus_B2', 'pm_bbbbbb1', 'card', 'Mastercard', '1111', '12', '2027'],
+      ['LEG-3', 'cus_C3', 'pm_cccccc1', 'us_bank_account', 'ACH', '1024', '', ''],
+      ['LEG-4', 'cus_D4', 'pm_dddddd1', 'sepa_debit', 'SEPA', '8821', '', ''],
+    ]);
+    expect(m.method_type).toBe(3);
+    expect(m.brand).toBe(4);
+    expect(m.last4).toBe(5);
+  });
+
+  it('finds a repeated bare-number customer id and tells last 4 from expiry year', () => {
+    const m = mapOf([
+      ['9284', 'cus_A1', 'pm_aaaaaa1', 'Visa', '2024', '3', '2029'],
+      ['9284', 'cus_A1', 'pm_aaaaaa2', 'Visa', '2031', '11', '2027'],
+      ['58291', 'cus_B2', 'pm_bbbbbb1', 'Mastercard', '4444', '7', '2030'],
+    ]);
+    expect(m.legacy_customer_id).toBe(0);
+    expect(m.stripe_customer_id).toBe(1);
+    expect(m.payment_method_token).toBe(2);
+    expect(m.last4).toBe(4);
+    expect(m.exp_month).toBe(5);
+    expect(m.exp_year).toBe(6);
   });
 });
 

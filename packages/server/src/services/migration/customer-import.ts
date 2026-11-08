@@ -124,6 +124,16 @@ export async function runCustomerImport(args: {
         );
       }
 
+      // Capture the previous processor's customer id (fill-empty) — the exact key the payment-method
+      // import matches on. Not a charging reference; see migration 166.
+      if ((r.processor_customer_id || '').trim()) {
+        await adminPool.query(
+          `UPDATE cus_customers SET processor_customer_id = $1, updated_at = NOW()
+           WHERE id = $2 AND (processor_customer_id IS NULL OR processor_customer_id = '')`,
+          [r.processor_customer_id.trim(), res.person.id],
+        );
+      }
+
       if ((r.tags || '').trim()) await applyTags(businessId, res.person.id, r.tags, userId);
       if ((r.notes || '').trim()) await applyNote(businessId, res.person.id, r.notes, userId);
       if ((r.joined || '').trim()) await applyJoinedDate(res.person.id, r.joined);

@@ -7,8 +7,9 @@ import { success, error } from '../utils/response';
 import {
   parseFileToGrid, detectHeaderRow, detectColumns, applyMapping,
   repairRows, RepairSummary, canonicalProfiles, realignRowTail, rowFits, ColumnProfile,
-  CUSTOMER_FIELDS, FieldDef, ColumnProposal,
+  CUSTOMER_FIELDS, PAYMENT_METHOD_FIELDS, FieldDef, ColumnProposal,
 } from '../services/migration/import-engine';
+import { applySourcePreset, isValidSource } from '../services/migration/import-sources';
 import {
   ImportKind, ImportResult, recordRun, listRuns, getRun,
 } from '../services/migration/import-core';
@@ -52,18 +53,7 @@ function fieldsForKind(kind: ImportKind): FieldDef[] {
     case 'customers':
       return CUSTOMER_FIELDS;
     case 'payment_methods':
-      return [
-        { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid'] },
-        { field: 'stripe_customer_id', synonyms: ['stripecustomerid', 'providercustomerid', 'customerref', 'newcustomerid'] },
-        { field: 'payment_method_token', synonyms: ['paymentmethodtoken', 'token', 'paymentmethodid', 'newtoken', 'pm'] },
-        { field: 'email', synonyms: ['email', 'emailaddress'], valueKinds: ['email'] },
-        { field: 'phone', synonyms: ['phone', 'mobile'], valueKinds: ['phone'] },
-        { field: 'brand', synonyms: ['brand', 'cardbrand'] },
-        { field: 'last4', synonyms: ['last4', 'lastfour', 'cardlast4'] },
-        { field: 'exp_month', synonyms: ['expmonth', 'expirymonth'] },
-        { field: 'exp_year', synonyms: ['expyear', 'expiryyear'] },
-        { field: 'is_default', synonyms: ['isdefault', 'default'] },
-      ];
+      return PAYMENT_METHOD_FIELDS;
     case 'memberships':
       return [
         { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid'] },
@@ -201,8 +191,14 @@ importRouter.post('/:kind/analyze', requirePermission('settings:*'), upload.sing
     if (!req.file) { error(res, 'A file is required', 'VALIDATION_ERROR', 400); return; }
     const { grid } = parseFileToGrid(req.file.buffer, req.file.originalname);
     if (grid.length === 0) { error(res, 'The file is empty', 'VALIDATION_ERROR', 400); return; }
+    // The source system chosen before upload (Requirement 19): its known layout overrides guessing.
+    const source = (req.body?.source || 'auto').toString();
+    if (!isValidSource(source, kind)) { error(res, `Unknown source system "${source}" for this import`, 'VALIDATION_ERROR', 400); return; }
     const header = detectHeaderRow(grid, fieldsForKind(kind));
-    const proposals = detectColumns(grid, header.hasHeader, fieldsForKind(kind));
+    // The owner picks only the system; which of its file layouts this is gets recognised here.
+    const { proposals, layout: sourceLayout } = applySourcePreset(
+      detectColumns(grid, header.hasHeader, fieldsForKind(kind)), grid[0] ?? [], header.hasHeader, source,
+    );
     const sampleStart = header.hasHeader ? 1 : 0;
     const sampleRows = grid.slice(sampleStart, sampleStart + 5);
 
@@ -217,6 +213,9 @@ importRouter.post('/:kind/analyze', requirePermission('settings:*'), upload.sing
 
     success(res, {
       hasHeader: header.hasHeader,
+      // Which of the chosen system's layouts was recognised (null for automatic, or no match).
+      sourceLayout,
+      sourceRecognized: source === 'auto' ? null : sourceLayout !== null,
       columns: proposals.map((p) => p.column),
       proposedMapping: proposals,
       sampleRows,

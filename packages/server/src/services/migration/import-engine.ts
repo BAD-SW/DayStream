@@ -47,15 +47,52 @@ function parseExcel(buffer: Buffer): string[][] {
   return rows.map((r) => (Array.isArray(r) ? r.map((c) => String(c ?? '').trim()) : []));
 }
 
-/** CSV parse into a grid (handles quoted fields and escaped quotes). */
+/**
+ * Delimited-text parse into a grid (handles quoted fields and escaped quotes). The delimiter is
+ * detected from the file: comma, tab, semicolon (common in European Excel exports) or pipe.
+ */
 export function parseCsv(text: string): string[][] {
   const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
   // Drop a trailing empty line (common when files end with a newline).
   while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop();
-  return lines.map(parseCsvLine);
+  const delimiter = detectDelimiter(lines);
+  return lines.map((l) => parseCsvLine(l, delimiter));
 }
 
-function parseCsvLine(line: string): string[] {
+const CANDIDATE_DELIMITERS = [',', '\t', ';', '|'];
+
+/** Count a character on a line, ignoring any inside double quotes. */
+function countOutsideQuotes(line: string, ch: string): number {
+  let n = 0; let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '"') inQuotes = !inQuotes;
+    else if (line[i] === ch && !inQuotes) n++;
+  }
+  return n;
+}
+
+/**
+ * Pick the delimiter that splits the sample lines most consistently: the one whose per-line count
+ * is non-zero and the same on the most lines, ties broken by the higher count. Falls back to comma.
+ */
+export function detectDelimiter(lines: string[]): string {
+  const sample = lines.filter((l) => l.trim() !== '').slice(0, 20);
+  if (sample.length === 0) return ',';
+  let best = ','; let bestScore = -1;
+  for (const d of CANDIDATE_DELIMITERS) {
+    const counts = sample.map((l) => countOutsideQuotes(l, d));
+    const freq = new Map<number, number>();
+    for (const c of counts) if (c > 0) freq.set(c, (freq.get(c) ?? 0) + 1);
+    let modeCount = 0; let modeLines = 0;
+    for (const [c, n] of freq) if (n > modeLines || (n === modeLines && c > modeCount)) { modeCount = c; modeLines = n; }
+    if (modeLines === 0) continue;
+    const score = (modeLines / sample.length) * 1000 + modeCount; // consistency first, then width
+    if (score > bestScore) { bestScore = score; best = d; }
+  }
+  return best;
+}
+
+function parseCsvLine(line: string, delimiter = ','): string[] {
   const result: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -64,7 +101,7 @@ function parseCsvLine(line: string): string[] {
     if (ch === '"') {
       if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
       else inQuotes = !inQuotes;
-    } else if (ch === ',' && !inQuotes) {
+    } else if (ch === delimiter && !inQuotes) {
       result.push(current.trim());
       current = '';
     } else {
@@ -303,6 +340,67 @@ export function nameDictionaryScore(values: string[], dict: Set<string>): number
   return hits / tokens.length;
 }
 
+// ---------------------------------------------------------------------------
+// Payment-method file value shapes (spec 50, Payment Methods import). A Stripe migration mapping
+// file has very distinctive values, so a headerless file can be mapped by value alone.
+// ---------------------------------------------------------------------------
+
+const nonEmptyTrimmed = (values: string[]): string[] => values.map((v) => (v ?? '').trim()).filter((v) => v !== '');
+const fractionOf = (values: string[], test: (v: string) => boolean): number => {
+  const vals = nonEmptyTrimmed(values);
+  return vals.length === 0 ? 0 : vals.filter(test).length / vals.length;
+};
+
+/** Stripe Customer ids (cus_...). */
+export const stripeCustomerScore = (values: string[]): number => fractionOf(values, (v) => /^cus_[A-Za-z0-9]+$/.test(v));
+/** Stripe payment-method / card / source / bank-account tokens (pm_..., card_..., src_..., ba_...). */
+export const paymentTokenScore = (values: string[]): number => fractionOf(values, (v) => /^(pm|card|src|ba|tok|btok)_[A-Za-z0-9_]+$/.test(v));
+
+const METHOD_TYPE_VALUES = new Set([
+  'card', 'credit card', 'debit card', 'credit', 'sepa', 'sepa_debit', 'sepa debit', 'ach', 'ach_debit', 'us_bank_account',
+  'bacs', 'bacs_debit', 'bank', 'bank account', 'bank_account', 'direct debit',
+]);
+const CARD_BRAND_VALUES = new Set([
+  'visa', 'mastercard', 'master card', 'amex', 'american express', 'discover', 'diners', 'diners club', 'jcb', 'unionpay', 'maestro',
+]);
+/** Values that name the instrument kind (card / SEPA / ACH / Bacs / bank). */
+export const methodTypeScore = (values: string[]): number => fractionOf(values, (v) => METHOD_TYPE_VALUES.has(v.toLowerCase()));
+// In a brand column, bank-account rows carry the scheme instead of a card brand ("SEPA", "ACH").
+const BANK_SCHEME_BRANDS = new Set(['sepa', 'ach', 'bacs', 'sepa debit', 'ach debit', 'bacs debit', 'bank', 'bank account']);
+/** Card brand names, or a bank scheme as the brand of a bank-account row ("SEPA", "SEPA Direct Debit"). */
+export const cardBrandScore = (values: string[]): number =>
+  fractionOf(values, (v) => CARD_BRAND_VALUES.has(v.toLowerCase()) || BANK_SCHEME_BRANDS.has(v.toLowerCase()) || /direct debit/i.test(v));
+/** A masked card number ("**** 4242", "•••• 1111", "xxxx1024"): mask characters, then 4 digits. */
+const MASKED_LAST4_RE = /^[\s*•·xX#.\-]+\d{4}$/;
+/** Last 4: four digits, plain or behind a mask. */
+export const last4Score = (values: string[]): number => fractionOf(values, (v) => /^\d{4}$/.test(v) || MASKED_LAST4_RE.test(v));
+/** Masked card numbers only (unambiguous: a year is never written behind a mask). */
+export const maskedLast4Score = (values: string[]): number => fractionOf(values, (v) => MASKED_LAST4_RE.test(v));
+export const expMonthScore = (values: string[]): number => fractionOf(values, (v) => /^\d{1,2}$/.test(v) && +v >= 1 && +v <= 12);
+export const expYearScore = (values: string[]): number => fractionOf(values, (v) => /^20\d{2}$/.test(v));
+/** A two-digit value ("28") — an expiry year when it sits right after the expiry month. */
+export const twoDigitScore = (values: string[]): number => fractionOf(values, (v) => /^\d{2}$/.test(v));
+/** Month and year in one cell: 09/28, 9/2028, 09-28, 09.2028. */
+export const EXPIRY_RE = /^(0?[1-9]|1[0-2])\s*[/\-.]\s*(\d{2}|\d{4})$/;
+export const expiryScore = (values: string[]): number => fractionOf(values, (v) => EXPIRY_RE.test(v));
+
+/**
+ * True when a single cell carries a recognisable payment value (Stripe id, brand, method type,
+ * expiry, masked card number). Used by header detection: these values are plain text to
+ * classifyCell, so without this a payment file's header row couldn't be told from its data.
+ */
+export function isPaymentShaped(value: string): boolean {
+  const v = (value ?? '').trim();
+  if (!v) return false;
+  const lower = v.toLowerCase();
+  return /^(cus|pm|card|src|ba|tok|btok)_[A-Za-z0-9_]+$/.test(v)
+    || CARD_BRAND_VALUES.has(lower) || BANK_SCHEME_BRANDS.has(lower) || METHOD_TYPE_VALUES.has(lower)
+    || EXPIRY_RE.test(v) || MASKED_LAST4_RE.test(v);
+}
+/** Yes/no style flags (the "default method" column). Bare 0/1 is handled separately. */
+export const defaultFlagScore = (values: string[]): number =>
+  fractionOf(values, (v) => ['yes', 'no', 'true', 'false', 'y', 'n', 't', 'f', 'default'].includes(v.toLowerCase()));
+
 /** Parse a cell to a Date for distribution analysis (reuses the engine's date shapes), or null. */
 function parseDateLoose(value: string): Date | null {
   const s = (value ?? '').trim();
@@ -391,16 +489,19 @@ export function detectHeaderRow(grid: string[][], fields?: FieldDef[]): HeaderDe
   // Per column, does the body carry value-shaped cells while the header cell is text?
   let columnsWhereHeaderIsLabelOverData = 0;
   let columnsConsidered = 0;
+  // A cell is "value-shaped" when classifyCell sees a value (email/phone/date/number/money) or it is
+  // a recognisable payment value (cus_/pm_ id, card brand, expiry, masked card number).
+  const shaped = (v: string) => { const k = classifyCell(v); return (k !== 'text' && k !== 'empty') || isPaymentShaped(v); };
   for (let c = 0; c < header.length; c++) {
-    const headerKind = classifyCell(header[c]);
-    const bodyKinds = sample.map((r) => classifyCell(r[c] ?? ''));
-    const bodyValueShaped = bodyKinds.filter((k) => k !== 'text' && k !== 'empty').length;
-    const bodyNonEmpty = bodyKinds.filter((k) => k !== 'empty').length;
+    const headerShaped = shaped(header[c] ?? '');
+    const bodyCells = sample.map((r) => r[c] ?? '');
+    const bodyValueShaped = bodyCells.filter(shaped).length;
+    const bodyNonEmpty = bodyCells.filter((v) => v.trim() !== '').length;
     if (bodyNonEmpty === 0) continue; // nothing to judge in this column
     columnsConsidered++;
     // Header looks like a label (text) AND the body is mostly value-shaped → a
     // telltale header-over-data column.
-    if ((headerKind === 'text' || headerKind === 'empty') && bodyValueShaped >= Math.ceil(bodyNonEmpty / 2)) {
+    if (!headerShaped && bodyValueShaped >= Math.ceil(bodyNonEmpty / 2)) {
       columnsWhereHeaderIsLabelOverData++;
     }
   }
@@ -477,6 +578,20 @@ export interface ColumnProfile {
   nameShapeScore: number;
   /** Fraction of values shaped like an identifier token, any format (for id-by-elimination). */
   idShapeScore: number;
+  /** Payment-file value-shape scores (0..1). */
+  stripeCustomerScore: number;
+  paymentTokenScore: number;
+  methodTypeScore: number;
+  cardBrandScore: number;
+  last4Score: number;
+  expMonthScore: number;
+  expYearScore: number;
+  defaultFlagScore: number;
+  maskedLast4Score: number;
+  twoDigitScore: number;
+  expiryScore: number;
+  /** True when every non-empty value is 0 or 1 (a bare boolean flag, e.g. is_default). */
+  allZeroOne: boolean;
   /** Birth-date likeness (0..1) when the column is date-dominant. */
   birthLikeness: number;
   /** Dominant soft sub-kind of a text column (locale/shortcode/taglist/sentence/word), for repair tiebreaks. */
@@ -523,6 +638,18 @@ export function profileColumns(dataRows: string[][], width: number): ColumnProfi
       freeTextScore: freeTextScore(nonEmptyCells),
       nameShapeScore: nameShapeScore(nonEmptyCells),
       idShapeScore: idShapeScore(nonEmptyCells),
+      stripeCustomerScore: stripeCustomerScore(nonEmptyCells),
+      paymentTokenScore: paymentTokenScore(nonEmptyCells),
+      methodTypeScore: methodTypeScore(nonEmptyCells),
+      cardBrandScore: cardBrandScore(nonEmptyCells),
+      last4Score: last4Score(nonEmptyCells),
+      expMonthScore: expMonthScore(nonEmptyCells),
+      expYearScore: expYearScore(nonEmptyCells),
+      defaultFlagScore: defaultFlagScore(nonEmptyCells),
+      maskedLast4Score: maskedLast4Score(nonEmptyCells),
+      twoDigitScore: twoDigitScore(nonEmptyCells),
+      expiryScore: expiryScore(nonEmptyCells),
+      allZeroOne: nonEmptyCells.length > 0 && nonEmptyCells.every((v) => v === '0' || v === '1'),
       birthLikeness: dominantKind === 'date' ? birthDateLikeness(nonEmptyCells) : 0,
       dominantTextSubKind: dominantTextSubKindOf(nonEmptyCells),
     });
@@ -632,13 +759,63 @@ export function detectColumns(
     return h !== '' && !byName.has(h);
   };
 
+  // Header words that mark a column as the "before" or "after" side of a migration mapping file
+  // (Stripe's card copy lists the old and new ids side by side).
+  const isPaymentFile = fieldSet.has('payment_method_token');
+  const headerText = (c: number) => (hasHeader ? normalizeHeader(headerRow[c] ?? '') : '');
+  // Whole words of a header ("old_payment_method_id", "NewCustomerId" → old/payment/method/id).
+  const headerWords = (c: number): string[] => (hasHeader
+    ? (headerRow[c] ?? '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+    : []);
+  const OLD_WORDS = new Set(['old', 'original', 'previous', 'prior', 'legacy', 'former']);
+  const NEW_WORDS = new Set(['new', 'migrated', 'destination', 'target', 'current']);
+  const isOldSide = (c: number) => headerWords(c).some((w) => OLD_WORDS.has(w));
+  const isNewSide = (c: number) => headerWords(c).some((w) => NEW_WORDS.has(w));
+
   // --- Pass 1: header name match → CERTAIN (only when there's a header). ---
   if (hasHeader) {
     for (let c = 0; c < width; c++) {
       const named = byName.get(normalizeHeader(headerRow[c] ?? ''));
       if (named) claim(c, named, 'certain');
     }
+    // Payment files: a header that CONTAINS a known name ("Card Exp Month" → exp month,
+    // "Last Four Digits" → last 4) is a likely match. Longest name wins; an "old"-side header is
+    // never matched this way, so "old_payment_method_id" can't be taken as the new token.
+    if (isPaymentFile) {
+      const synonyms = fields.flatMap((f) => f.synonyms.map((s) => ({ field: f.field, s: normalizeHeader(s) })))
+        .filter((x) => x.s.length >= 5)
+        .sort((a, b) => b.s.length - a.s.length);
+      for (let c = 0; c < width; c++) {
+        if (result[c].field) continue;
+        const h = headerText(c);
+        if (!h || isOldSide(c)) continue;
+        // Columns holding Stripe ids are decided by their values in Pass 1b, never by a partial
+        // name: Stripe's own "customer_id_new" contains "customerid" but is NOT a legacy id.
+        if (profiles[c].stripeCustomerScore >= 0.8 || profiles[c].paymentTokenScore >= 0.8) continue;
+        const hit = synonyms.find((x) => h.includes(x.s) && !used.has(x.field));
+        if (hit) claim(c, hit.field, 'likely');
+      }
+    }
   }
+
+  // --- Pass 1b: Stripe ids → CERTAIN. cus_... and pm_... values are unmistakable, so they are
+  // claimed from the values alone (even over a header we don't recognise) and before any
+  // generic id inference can mistake them for a legacy customer id. When a migration mapping
+  // file has BOTH an old and a new column of the same kind, the new one is what DayStream can
+  // charge: a "new"-side header wins, an "old"-side header loses, and with no header the
+  // rightmost column wins (mapping files list old then new). ---
+  const claimIdShape = (field: string, score: (p: ColumnProfile) => number) => {
+    if (!fieldSet.has(field) || used.has(field)) return;
+    const candidates = profiles.filter((p) => !result[p.index].field && p.nonEmpty > 0 && score(p) >= 0.8);
+    if (candidates.length === 0) return;
+    const rank = (p: ColumnProfile) => (isNewSide(p.index) ? 1 : 0) - (isOldSide(p.index) ? 1 : 0);
+    const c = candidates.sort((a, b) => rank(b) - rank(a) || b.index - a.index)[0];
+    claim(c.index, field, 'certain');
+  };
+  claimIdShape('stripe_customer_id', (p) => p.stripeCustomerScore);
+  claimIdShape('payment_method_token', (p) => p.paymentTokenScore);
+  // Customer files: a cus_ column is the client's processor customer id.
+  claimIdShape('processor_customer_id', (p) => p.stripeCustomerScore);
 
   // --- Pass 2: decisive value shapes → CERTAIN (email, phone, money; and a patterned id). ---
   // These are self-evident from the values regardless of header.
@@ -665,12 +842,68 @@ export function detectColumns(
   // --- Pass 3: bare-number identifier → LIKELY (uniqueness + integer shape + leading position). ---
   // A bare number is indistinguishable by value from a balance/points/count, so this is a
   // low-confidence proposal, never asserted; of equally id-shaped columns, the leftmost wins.
-  if (fieldSet.has('legacy_customer_id') && !used.has('legacy_customer_id')) {
+  // (Skipped for payment files: there the customer id REPEATS per row, and a unique integer
+  // column is a last-4 or similar; Pass 3b finds the customer id for those files instead.)
+  if (fieldSet.has('legacy_customer_id') && !used.has('legacy_customer_id') && !fieldSet.has('payment_method_token')) {
     const idCandidates = profiles
       .filter((p) => !result[p.index].field && p.nonEmpty > 0 && p.allPlainInteger && p.allUnique
         && !p.hasNegativeOrDecimal && !hasForeignHeader(p.index))
       .sort((a, b) => a.index - b.index); // position tie-breaker: leftmost
     if (idCandidates.length) claim(idCandidates[0].index, 'legacy_customer_id', 'likely');
+  }
+
+  // --- Pass 3b: payment-file card details → LIKELY. Method type, brand, last 4, expiry and the
+  // default flag all have bounded value shapes. Last 4 and expiry year are both 4 digits, so they
+  // are told apart by position (last 4 sits just before the expiry month) and by the 20xx range. ---
+  if (isPaymentFile) {
+    const free = (p: ColumnProfile) => !result[p.index].field && !hasForeignHeader(p.index) && p.nonEmpty > 0;
+    // Distinctive values (brand names, method types, "09/28", "**** 4242") are claimed even under a
+    // header we don't recognise ("Card Type", "Expiration"); a payment file rarely has an unrelated
+    // column holding Visa / SEPA / masked card numbers.
+    const freeAnyHeader = (p: ColumnProfile) => !result[p.index].field && p.nonEmpty > 0;
+    const best = (score: (p: ColumnProfile) => number, floor: number, ok: (p: ColumnProfile) => boolean = free) =>
+      profiles.filter((p) => ok(p) && score(p) >= floor).sort((a, b) => score(b) - score(a) || a.index - b.index)[0];
+
+    const type = best((p) => p.methodTypeScore, 0.8, freeAnyHeader);
+    if (type) claim(type.index, 'method_type', 'likely');
+    const brand = best((p) => p.cardBrandScore, 0.6, freeAnyHeader);
+    if (brand) claim(brand.index, 'brand', 'likely');
+    const flag = best((p) => p.defaultFlagScore, 0.8);
+    if (flag) claim(flag.index, 'is_default', 'likely');
+
+    // Expiry in one cell ("09/28") — claimed before the separate month/year and before the
+    // customer id fallback below, which would otherwise take it as an id-shaped column.
+    const expiry = best((p) => p.expiryScore, 0.8, freeAnyHeader);
+    if (expiry) claim(expiry.index, 'expiry', 'likely');
+    // A masked card number ("**** 4242") is unambiguous, so it's last 4 under any header.
+    const masked = best((p) => p.maskedLast4Score, 0.8, freeAnyHeader);
+    if (masked) claim(masked.index, 'last4', 'likely');
+
+    const month = used.has('expiry') ? undefined : best((p) => (p.allZeroOne ? 0 : p.expMonthScore), 0.8);
+    if (month) claim(month.index, 'exp_month', 'likely');
+    // Expiry year: the column right after the month (4-digit or 2-digit), else the best 20xx column.
+    const afterMonth = month ? profiles[month.index + 1] : undefined;
+    const yearAfterMonth = afterMonth && free(afterMonth)
+      && (afterMonth.last4Score >= 0.8 || afterMonth.twoDigitScore >= 0.8) ? afterMonth : undefined;
+    const year = used.has('expiry') ? undefined : (yearAfterMonth ?? best((p) => p.expYearScore, 0.8));
+    if (year) claim(year.index, 'exp_year', 'likely');
+    // Last 4: the 4-digit column just before the month, else just after the brand, else the rightmost left.
+    const fourDigit = profiles.filter((p) => free(p) && p.last4Score >= 0.8);
+    const beforeMonth = month ? fourDigit.find((p) => p.index === month.index - 1) : undefined;
+    const afterBrand = brand ? fourDigit.find((p) => p.index === brand.index + 1) : undefined;
+    const last4 = beforeMonth ?? afterBrand ?? fourDigit.sort((a, b) => b.index - a.index)[0];
+    if (last4) claim(last4.index, 'last4', 'likely');
+    // A bare 0/1 column is the default flag only when nothing else claimed it (it also fits a month of 1).
+    if (!used.has('is_default')) {
+      const bit = profiles.filter((p) => free(p) && p.allZeroOne).sort((a, b) => b.index - a.index)[0];
+      if (bit) claim(bit.index, 'is_default', 'likely');
+    }
+    // The customer reference repeats across rows (one per method), so uniqueness can't find it:
+    // the leftmost leftover id-shaped column is the legacy customer id.
+    if (fieldSet.has('legacy_customer_id') && !used.has('legacy_customer_id')) {
+      const idCol = profiles.filter((p) => free(p) && p.idShapeScore >= 0.8).sort((a, b) => a.index - b.index)[0];
+      if (idCol) claim(idCol.index, 'legacy_customer_id', 'likely');
+    }
   }
 
   // --- Pass 4: name dictionaries + date-role + gender tokens → LIKELY (inferred). ---
@@ -1214,9 +1447,34 @@ export function applyMapping(
   });
 }
 
+/**
+ * The Payment Methods import fields (a processor migration mapping file). Header synonyms cover
+ * common export names; headerless files are mapped by value (see detectColumns, Pass 1b / 3b).
+ */
+export const PAYMENT_METHOD_FIELDS: FieldDef[] = [
+  { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid', 'client', 'clientid', 'clientnumber', 'customernumber', 'memberid'] },
+  { field: 'stripe_customer_id', synonyms: ['stripecustomerid', 'providercustomerid', 'customerref', 'newcustomerid', 'stripecustomer', 'newstripecustomerid'] },
+  // The customer's id at the PREVIOUS processor (Stripe's processor-import file: old_customer_id).
+  // Matched exactly against the processor customer id captured by the customer import.
+  { field: 'previous_processor_customer_id', synonyms: ['previousprocessorcustomerid', 'oldprocessorcustomerid', 'oldstripecustomerid'] },
+  { field: 'payment_method_token', synonyms: ['paymentmethodtoken', 'token', 'paymentmethodid', 'newtoken', 'pm', 'newpaymentmethodid', 'newsourceid', 'newcardid'] },
+  { field: 'email', synonyms: ['email', 'emailaddress'], valueKinds: ['email'] },
+  { field: 'phone', synonyms: ['phone', 'mobile'], valueKinds: ['phone'] },
+  { field: 'method_type', synonyms: ['methodtype', 'type', 'paymenttype', 'instrumenttype', 'scheme', 'kind', 'paymentmethodtype'] },
+  { field: 'brand', synonyms: ['brand', 'cardbrand', 'cardtype', 'network', 'cardnetwork'] },
+  { field: 'last4', synonyms: ['last4', 'lastfour', 'cardlast4', 'lastfourdigits', 'last4digits', 'cardnumber', 'maskednumber'] },
+  { field: 'expiry', synonyms: ['expiry', 'expiration', 'expirationdate', 'expirydate', 'expdate', 'exp', 'cardexpiry', 'validthru'] },
+  { field: 'exp_month', synonyms: ['expmonth', 'expirymonth', 'expirationmonth', 'cardexpmonth'] },
+  { field: 'exp_year', synonyms: ['expyear', 'expiryyear', 'expirationyear', 'cardexpyear'] },
+  { field: 'is_default', synonyms: ['isdefault', 'default', 'primary', 'isprimary', 'defaultmethod'] },
+];
+
 /** The customer-field definitions shared by the Customers import. */
 export const CUSTOMER_FIELDS: FieldDef[] = [
   { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'externalid', 'oldid', 'customerid', 'id'] },
+  // The client's customer id at the previous system's payment processor (e.g. Stripe cus_...).
+  // A cus_ column is also found by value (detectColumns Pass 1b).
+  { field: 'processor_customer_id', synonyms: ['processorcustomerid', 'stripecustomerid', 'stripeid', 'stripecustomer', 'paymentcustomerid', 'squarecustomerid', 'braintreecustomerid', 'gatewaycustomerid'] },
   { field: 'email', synonyms: ['email', 'emailaddress', 'mail'], valueKinds: ['email'] },
   { field: 'first_name', synonyms: ['firstname', 'first', 'givenname', 'fname'] },
   { field: 'last_name', synonyms: ['lastname', 'last', 'surname', 'familyname', 'lname'] },

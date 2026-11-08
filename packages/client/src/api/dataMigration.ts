@@ -49,6 +49,10 @@ export type ColumnProfile = Record<string, unknown>;
 
 export interface AnalyzeResult {
   hasHeader: boolean;
+  /** The chosen source system's file layout that was recognised, e.g. "Stripe account copy file". */
+  sourceLayout?: string | null;
+  /** null = automatic detection was chosen; false = a source was chosen but the file didn't match it. */
+  sourceRecognized?: boolean | null;
   columns: string[];
   proposedMapping: ColumnProposal[];
   sampleRows: string[][];
@@ -98,9 +102,13 @@ export interface ImportRun {
 }
 
 /** Analyze an uploaded file: detect header + columns and propose a mapping. */
-export async function analyze(kind: ImportKind, file: File): Promise<AnalyzeResult> {
+/** Where an import file came from (server: services/migration/import-sources.ts). */
+export type ImportSource = 'auto' | 'stripe';
+
+export async function analyze(kind: ImportKind, file: File, source: ImportSource = 'auto'): Promise<AnalyzeResult> {
   const form = new FormData();
   form.append('file', file);
+  form.append('source', source);
   const res = await apiClient.post(`/v1/import/${kind}/analyze`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });

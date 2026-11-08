@@ -103,6 +103,8 @@ export function parseDateCell(value: string | null | undefined): string | null {
 // ---------------------------------------------------------------------------
 
 export interface CustomerMatchInput {
+  /** Processor customer ids from the file (e.g. Stripe's old and new cus_ ids), tried first. */
+  processorCustomerIds?: Array<string | null | undefined>;
   legacyCustomerId?: string | null;
   email?: string | null;
   phone?: string | null;
@@ -110,16 +112,28 @@ export interface CustomerMatchInput {
 
 export interface CustomerMatch {
   customerId: string | null;
-  matchedBy: 'legacy_id' | 'email' | 'phone' | null;
+  matchedBy: 'processor_id' | 'legacy_id' | 'email' | 'phone' | null;
 }
 
 /**
- * Resolve the DayStream customer a row belongs to. Preferred key is the legacy
- * customer id captured at customer import (exact, unambiguous); falls back to
- * email (case-insensitive) then a unique phone. Returns a null id when nothing
- * resolves, so the caller can fail the row with a clear reason.
+ * Resolve the DayStream customer a row belongs to. Keys, strongest first: the processor
+ * customer id captured at customer import (exact), the legacy customer id (exact), then email
+ * (case-insensitive) and a unique phone. Every key resolves only when EXACTLY ONE customer
+ * matches — a shared email or phone never attaches a row to the wrong person; it falls through,
+ * and with nothing left the caller fails the row with a clear reason.
  */
 export async function matchCustomer(businessId: string, input: CustomerMatchInput): Promise<CustomerMatch> {
+  const processorIds = [...new Set((input.processorCustomerIds ?? []).map((v) => (v || '').trim()).filter(Boolean))];
+  if (processorIds.length > 0) {
+    const { rows } = await adminPool.query(
+      `SELECT id FROM cus_customers
+       WHERE business_id = $1 AND processor_customer_id = ANY($2::text[]) AND status <> 'merged'
+       LIMIT 2`,
+      [businessId, processorIds],
+    );
+    if (rows.length === 1) return { customerId: rows[0].id, matchedBy: 'processor_id' };
+  }
+
   const legacy = (input.legacyCustomerId || '').trim();
   if (legacy) {
     const { rows } = await adminPool.query(
@@ -157,14 +171,22 @@ export async function matchCustomer(businessId: string, input: CustomerMatchInpu
   return { customerId: null, matchedBy: null };
 }
 
-/** A plain-language "no customer" failure reason naming what was looked for. */
-export function noCustomerReason(input: CustomerMatchInput): string {
+/**
+ * A plain-language "no customer" failure reason naming what was looked for. Accepts either the
+ * match input or a field-mapped file row (snake_case keys such as legacy_customer_id) — most
+ * importers pass the row, and reading only the camelCase keys made every reason say "no
+ * identifier on the row" even when the row had one.
+ */
+export function noCustomerReason(input: CustomerMatchInput & { legacy_customer_id?: string }): string {
   const tried: string[] = [];
-  if ((input.legacyCustomerId || '').trim()) tried.push(`legacy id "${input.legacyCustomerId}"`);
+  const processorIds = [...new Set((input.processorCustomerIds ?? []).map((v) => (v || '').trim()).filter(Boolean))];
+  if (processorIds.length) tried.push(`processor customer id "${processorIds.join('" / "')}"`);
+  const legacy = (input.legacyCustomerId || input.legacy_customer_id || '').trim();
+  if (legacy) tried.push(`legacy id "${legacy}"`);
   if ((input.email || '').trim()) tried.push(`email "${input.email}"`);
   if ((input.phone || '').trim()) tried.push(`phone "${input.phone}"`);
   if (tried.length === 0) return 'No customer identifier on the row (need a legacy id, email, or phone)';
-  return `No matching customer for ${tried.join(' / ')} — import customers first, or fix the identifier`;
+  return `No single matching customer for ${tried.join(' / ')} — import customers first, or fix the identifier (a shared email or phone matching several customers is not used)`;
 }
 
 // ---------------------------------------------------------------------------
