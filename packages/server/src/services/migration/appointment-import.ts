@@ -1,8 +1,9 @@
 import { adminPool } from '../../db/pool';
 import {
   ImportResult, RowFailure, emptyResult, matchCustomer, noCustomerReason,
-  matchByName, parseDateCell,
+  matchByName, parseDateCell, fileDateOrder, customerMatchInput, DateOrder,
 } from './import-core';
+import { localToUtc } from '../../utils/business-time';
 
 /**
  * Appointment import (spec 50, Wave 3). Brings across a customer's appointment history and
@@ -65,11 +66,34 @@ function parseTimeOfDay(value: string | null | undefined): number | null {
   return null;
 }
 
-/** Build a UTC Date from a YYYY-MM-DD date and optional minutes-past-midnight (default noon). */
-function combine(dateStr: string, minutes: number | null): Date {
-  const base = new Date(`${dateStr}T00:00:00Z`);
-  base.setUTCMinutes(minutes ?? 12 * 60);
-  return base;
+/**
+ * The appointment's start instant: the file's date and time are the business's own wall-clock
+ * time (what the legacy calendar showed), so they're read in the business's time zone. Reading
+ * them as UTC put a Madrid 14:30 booking at 15:30 or 16:30 local. Blank time = noon local.
+ */
+export function appointmentStart(dateStr: string, minutes: number | null, timeZone: string | null | undefined): Date {
+  const m = minutes ?? 12 * 60;
+  const hhmm = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  return localToUtc(dateStr, hhmm, timeZone || 'UTC');
+}
+
+/**
+ * Statuses meaning the appointment did not / will not happen. A FUTURE row with one of these is
+ * not a live booking: it's recorded on the timeline as history instead of being booked.
+ */
+const NOT_HAPPENING = new Set([
+  'cancelled', 'canceled', 'cancel', 'late cancel', 'late cancelled', 'late cancellation',
+  'no show', 'noshow', 'missed', 'declined', 'rejected', 'void', 'voided',
+]);
+
+/** Normalise a status word: lowercase, underscores and hyphens as spaces, single spaces. */
+export function normalizeStatus(raw: string | null | undefined): string {
+  return (raw || '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+}
+
+/** True when a status says the appointment did not or will not happen. */
+export function isNotHappening(raw: string | null | undefined): boolean {
+  return NOT_HAPPENING.has(normalizeStatus(raw));
 }
 
 export async function runAppointmentImport(args: {
@@ -78,6 +102,7 @@ export async function runAppointmentImport(args: {
   userId: string;
   rows: MappedRow[];
   commit: boolean;
+  dateOrder?: DateOrder | null;
 }): Promise<ImportResult> {
   const { businessId, userId, rows, commit } = args;
   const result = emptyResult();
@@ -98,6 +123,11 @@ export async function runAppointmentImport(args: {
   const staffCandidates: StaffRow[] = staff.map((s) => ({ name: `${s.first_name} ${s.last_name}`, user_id: s.user_id }));
 
   const now = new Date();
+  const { rows: biz } = await adminPool.query<{ timezone: string | null }>(
+    'SELECT timezone FROM sys_businesses WHERE id = $1', [businessId],
+  );
+  const timeZone = biz[0]?.timezone || 'UTC';
+  const dateOrder = await fileDateOrder(businessId, rows, ['date'], args.dateOrder);
   // (customer|service|startISO) already handled in THIS file, so a trial matches the commit.
   const seen = new Set<string>();
 
@@ -119,18 +149,21 @@ export async function runAppointmentImport(args: {
     }
 
     // --- date/time ---
-    const dateStr = parseDateCell(r.date);
+    const dateStr = parseDateCell(r.date, dateOrder);
     if (!dateStr) {
       fail('date', (r.date || '').trim() ? `"${r.date}" is not a valid date` : 'An appointment date is required');
       continue;
     }
-    const startTime = combine(dateStr, parseTimeOfDay(r.time));
+    if ((r.time || '').trim() && parseTimeOfDay(r.time) === null) {
+      fail('time', `"${r.time}" is not a time (use something like 14:30, 2:30 PM or 1430)`);
+      continue;
+    }
+    const startTime = appointmentStart(dateStr, parseTimeOfDay(r.time), timeZone);
 
     // --- customer ---
-    const match = await matchCustomer(businessId, {
-      legacyCustomerId: r.legacy_customer_id, email: r.email, phone: r.phone,
-    });
-    if (!match.customerId) { fail('customer', noCustomerReason(r)); continue; }
+    const matchInput = customerMatchInput(r);
+    const match = await matchCustomer(businessId, matchInput);
+    if (!match.customerId) { fail('customer', noCustomerReason(matchInput)); continue; }
     const customerId = match.customerId;
 
     // --- staff (optional) ---
@@ -155,13 +188,16 @@ export async function runAppointmentImport(args: {
     const variant = (wantedDuration > 0 && variants.find((v) => v.duration === wantedDuration)) || variants[0];
     const endTime = new Date(startTime.getTime() + variant.duration * 60000);
 
+    // A live booking is a FUTURE appointment that is still going to happen. A future row marked
+    // cancelled / no-show is history: it goes on the timeline, never into the calendar.
     const isFuture = startTime.getTime() > now.getTime();
+    const isLiveBooking = isFuture && !isNotHappening(r.status);
     const startISO = startTime.toISOString();
 
     // --- idempotency: customer + service + start time ---
     const key = `${customerId}|${service.id}|${startISO}`;
     if (seen.has(key)) { result.matched += 1; continue; }
-    const existing = isFuture
+    const existing = isLiveBooking
       ? await adminPool.query(
         `SELECT 1 FROM apt_bookings WHERE business_id = $1 AND customer_id = $2 AND service_id = $3 AND start_time = $4 LIMIT 1`,
         [businessId, customerId, service.id, startISO])
@@ -177,7 +213,7 @@ export async function runAppointmentImport(args: {
     const client = await adminPool.connect();
     try {
       await client.query('BEGIN');
-      if (isFuture) {
+      if (isLiveBooking) {
         // Direct insert — bypasses createBooking's rules and notifications entirely.
         const { rows: refRow } = await client.query(`SELECT generate_booking_reference($1) AS ref`, [businessId]);
         await client.query(
@@ -205,8 +241,10 @@ export async function runAppointmentImport(args: {
             userId || null, startISO],
         );
 
-        // Package-fulfillment derivation for attended past appointments.
-        const attended = ATTENDED.has(statusRaw.toLowerCase()) || !statusRaw; // blank → treat as attended
+        // Package-fulfillment derivation for attended PAST appointments ("checked in", "checked-in"
+        // and "checked_in" all count). A future cancelled row never uses up a session.
+        const attended = !isFuture
+          && (!statusRaw || ATTENDED.has(normalizeStatus(statusRaw).replace(/ /g, '_')));
         if (attended) {
           const w = await deriveFulfillment(client, { businessId, customerId, service, variant, startISO, rowNum });
           if (w) warnings.push(w);

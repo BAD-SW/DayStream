@@ -76,24 +76,104 @@ export function matchByName<T extends { name: string }>(
   return { match: null, reason: `No ${label} named "${value}" — create it in setup first, or fix the name` };
 }
 
-/** Parse a date cell (YYYY-MM-DD, M/D/YYYY, or any Date-parseable string) to YYYY-MM-DD, or null. */
-export function parseDateCell(value: string | null | undefined): string | null {
+// ---------------------------------------------------------------------------
+// Dates: day-first vs month-first
+// ---------------------------------------------------------------------------
+
+/** Order of a numeric date's first two parts: month/day (US) or day/month (most of the world). */
+export type DateOrder = 'mdy' | 'dmy';
+
+/** A numeric date with separators: 15/03/2026, 3-15-26, 15.03.2026. */
+const NUMERIC_DATE_RE = /^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2}|\d{4})$/;
+
+/** A two-digit year: up to 10 years ahead is this century (a booking or expiry), else last (a birth). */
+function expandYear(y: number): number {
+  if (y >= 100) return y;
+  const thisYY = new Date().getUTCFullYear() % 100;
+  return y <= thisYY + 10 ? 2000 + y : 1900 + y;
+}
+
+function ymd(y: number, m: number, d: number): string | null {
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (isNaN(dt.getTime()) || dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+  return dt.toISOString().slice(0, 10);
+}
+
+/**
+ * Parse a date cell to YYYY-MM-DD, or null. Accepts ISO (2026-03-15), numeric dates with /, - or .
+ * separators and 2- or 4-digit years, read in `order` (month-first by default), and finally any
+ * string the JavaScript date parser understands ("15 March 2026", "Mar 15, 2026").
+ */
+export function parseDateCell(value: string | null | undefined, order: DateOrder = 'mdy'): string | null {
   const s = (value || '').trim();
   if (!s) return null;
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) {
-    const d = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
-    return isNaN(d.getTime()) || d.getUTCMonth() !== Number(iso[2]) - 1 ? null : `${iso[1]}-${iso[2]}-${iso[3]}`;
-  }
-  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (us) {
-    const m = Number(us[1]); const day = Number(us[2]); const y = Number(us[3]);
-    const d = new Date(Date.UTC(y, m - 1, day));
-    if (isNaN(d.getTime()) || d.getUTCMonth() !== m - 1 || d.getUTCDate() !== day) return null;
-    return d.toISOString().slice(0, 10);
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return ymd(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+  const num = s.match(NUMERIC_DATE_RE);
+  if (num) {
+    const a = Number(num[1]); const b = Number(num[2]); const y = expandYear(Number(num[3]));
+    return order === 'dmy' ? ymd(y, b, a) : ymd(y, a, b);
   }
   const d = new Date(s);
   return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+/**
+ * Work out a file's date order from its values: a first part over 12 can only be a day (day-first),
+ * a second part over 12 can only be a day (month-first). Returns null when the values can't tell
+ * (every part is 12 or under) or contradict each other.
+ */
+export function detectDateOrder(values: Array<string | null | undefined>): DateOrder | null {
+  let dayFirst = 0; let monthFirst = 0;
+  for (const v of values) {
+    const m = (v || '').trim().match(NUMERIC_DATE_RE);
+    if (!m) continue;
+    if (Number(m[1]) > 12) dayFirst++;
+    if (Number(m[2]) > 12) monthFirst++;
+  }
+  if (dayFirst > 0 && monthFirst === 0) return 'dmy';
+  if (monthFirst > 0 && dayFirst === 0) return 'mdy';
+  return null;
+}
+
+/** Countries that write dates month-first. Everywhere else is day-first. */
+const MONTH_FIRST_COUNTRIES = new Set(['US', 'PR', 'GU', 'VI', 'AS', 'MP', 'UM', 'PH', 'FM', 'MH', 'PW']);
+
+/**
+ * The business's own date order, for files whose values can't tell: from its location's country,
+ * else the country of its phone number. Month-first when neither is known (the previous behavior).
+ */
+export async function businessDateOrder(businessId: string): Promise<DateOrder> {
+  const { rows } = await adminPool.query(
+    `SELECT l.country AS location_country, b.phone
+     FROM sys_businesses b
+     LEFT JOIN LATERAL (
+       SELECT country FROM sys_locations WHERE business_id = b.id AND country IS NOT NULL ORDER BY created_at LIMIT 1
+     ) l ON true
+     WHERE b.id = $1`,
+    [businessId],
+  ).catch(() => ({ rows: [] as Array<{ location_country: string | null; phone: string | null }> }));
+  let country = (rows[0]?.location_country || '').toUpperCase();
+  if (!country && rows[0]?.phone) {
+    const { parsePhoneNumberFromString } = await import('libphonenumber-js');
+    country = (parsePhoneNumberFromString(String(rows[0].phone))?.country || '').toUpperCase();
+  }
+  if (!country) return 'mdy';
+  return MONTH_FIRST_COUNTRIES.has(country) ? 'mdy' : 'dmy';
+}
+
+/**
+ * The date order for one import file: read from all of its date columns together (one export uses
+ * one format), else the business's own order.
+ */
+export async function fileDateOrder(
+  businessId: string, rows: Array<Record<string, string>>, dateFields: string[], known?: DateOrder | null,
+): Promise<DateOrder> {
+  // The order detected over the WHOLE file at analyze time wins: a file is committed in batches,
+  // and each batch working out its own order could read 05/04 differently from the next.
+  if (known) return known;
+  const values = rows.flatMap((r) => dateFields.map((f) => r[f]));
+  return detectDateOrder(values) ?? (await businessDateOrder(businessId));
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +249,17 @@ export async function matchCustomer(businessId: string, input: CustomerMatchInpu
   }
 
   return { customerId: null, matchedBy: null };
+}
+
+/**
+ * The customer keys of a field-mapped row, for matchCustomer and noCustomerReason. Every
+ * customer-linked import uses this so they all match the same way (Requirement 19).
+ */
+export function customerMatchInput(r: Record<string, string | undefined>): CustomerMatchInput {
+  return {
+    processorCustomerIds: [r.processor_customer_id],
+    legacyCustomerId: r.legacy_customer_id, email: r.email, phone: r.phone,
+  };
 }
 
 /**

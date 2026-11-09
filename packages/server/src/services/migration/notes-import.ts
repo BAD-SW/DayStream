@@ -1,6 +1,7 @@
 import { adminPool } from '../../db/pool';
 import {
   ImportResult, RowFailure, emptyResult, matchCustomer, noCustomerReason, parseDateCell,
+  fileDateOrder, customerMatchInput, DateOrder,
 } from './import-core';
 
 /**
@@ -32,11 +33,13 @@ export async function runNotesImport(args: {
   userId: string;
   rows: MappedRow[];
   commit: boolean;
+  dateOrder?: DateOrder | null;
 }): Promise<ImportResult> {
   const { businessId, userId, rows, commit } = args;
   const result = emptyResult();
   result.total = rows.length;
 
+  const dateOrder = await fileDateOrder(businessId, rows, ['date'], args.dateOrder);
   // (customer|date|normalized-text) already handled in THIS file → trial matches commit.
   const seen = new Set<string>();
 
@@ -54,14 +57,13 @@ export async function runNotesImport(args: {
     // Date is optional; if a value is present it must parse.
     let dateStr: string | null = null;
     if ((r.date || '').trim()) {
-      dateStr = parseDateCell(r.date);
+      dateStr = parseDateCell(r.date, dateOrder);
       if (!dateStr) { fail('date', `"${r.date}" is not a valid date`); continue; }
     }
 
-    const match = await matchCustomer(businessId, {
-      legacyCustomerId: r.legacy_customer_id, email: r.email, phone: r.phone,
-    });
-    if (!match.customerId) { fail('customer', noCustomerReason(r)); continue; }
+    const matchInput = customerMatchInput(r);
+    const match = await matchCustomer(businessId, matchInput);
+    if (!match.customerId) { fail('customer', noCustomerReason(matchInput)); continue; }
     const customerId = match.customerId;
 
     const author = (r.author || '').trim();

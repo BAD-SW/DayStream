@@ -1,6 +1,7 @@
 import { adminPool } from '../../db/pool';
 import {
   ImportResult, RowFailure, emptyResult, matchCustomer, noCustomerReason, parseDateCell,
+  fileDateOrder, customerMatchInput, DateOrder,
 } from './import-core';
 
 /**
@@ -35,11 +36,13 @@ export async function runTransactionImport(args: {
   userId: string;
   rows: MappedRow[];
   commit: boolean;
+  dateOrder?: DateOrder | null;
 }): Promise<ImportResult> {
   const { businessId, userId, rows, commit } = args;
   const result = emptyResult();
   result.total = rows.length;
 
+  const dateOrder = await fileDateOrder(businessId, rows, ['date'], args.dateOrder);
   // (customer|date|cents|reference) already handled in THIS file → trial matches commit.
   const seen = new Set<string>();
 
@@ -51,7 +54,7 @@ export async function runTransactionImport(args: {
       result.failures.push({ row: rowNum, field, message } as RowFailure);
     };
 
-    const dateStr = parseDateCell(r.date);
+    const dateStr = parseDateCell(r.date, dateOrder);
     if (!dateStr) {
       fail('date', (r.date || '').trim() ? `"${r.date}" is not a valid date` : 'A transaction date is required');
       continue;
@@ -63,10 +66,9 @@ export async function runTransactionImport(args: {
       continue;
     }
 
-    const match = await matchCustomer(businessId, {
-      legacyCustomerId: r.legacy_customer_id, email: r.email, phone: r.phone,
-    });
-    if (!match.customerId) { fail('customer', noCustomerReason(r)); continue; }
+    const matchInput = customerMatchInput(r);
+    const match = await matchCustomer(businessId, matchInput);
+    if (!match.customerId) { fail('customer', noCustomerReason(matchInput)); continue; }
     const customerId = match.customerId;
 
     const reference = (r.reference || '').trim();

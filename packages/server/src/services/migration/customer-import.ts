@@ -1,6 +1,6 @@
 import { adminPool } from '../../db/pool';
 import { findOrCreatePerson } from '../person-identity.service';
-import { ImportResult, RowFailure, emptyResult } from './import-core';
+import { ImportResult, RowFailure, emptyResult, DateOrder, parseDateCell, fileDateOrder } from './import-core';
 
 /**
  * Customers import (spec 50, Wave 1). Routes each mapped row through the Phase 46
@@ -44,7 +44,7 @@ export function normalizeLanguage(raw: string | undefined): { code: string | nul
   return SUPPORTED_LANGUAGES.has(code) ? { code, unsupported: false } : { code: null, unsupported: true };
 }
 
-function validateRow(r: MappedRow, rowNum: number): RowFailure[] {
+function validateRow(r: MappedRow, rowNum: number, dateOrder: DateOrder): RowFailure[] {
   const failures: RowFailure[] = [];
   const first = (r.first_name || '').trim();
   const email = (r.email || '').trim();
@@ -52,8 +52,11 @@ function validateRow(r: MappedRow, rowNum: number): RowFailure[] {
   if (!first) failures.push({ row: rowNum, field: 'first_name', message: 'First name is required' });
   if (!email && !phone) failures.push({ row: rowNum, field: 'email', message: 'An email or a phone number is required' });
   if (email && !EMAIL_RE.test(email)) failures.push({ row: rowNum, field: 'email', message: `"${email}" is not a valid email address` });
-  if (r.date_of_birth && isNaN(new Date(r.date_of_birth).getTime())) {
+  if ((r.date_of_birth || '').trim() && !parseDateCell(r.date_of_birth, dateOrder)) {
     failures.push({ row: rowNum, field: 'date_of_birth', message: `"${r.date_of_birth}" is not a valid date` });
+  }
+  if ((r.joined || '').trim() && !parseDateCell(r.joined, dateOrder)) {
+    failures.push({ row: rowNum, field: 'joined', message: `"${r.joined}" is not a valid date` });
   }
   return failures;
 }
@@ -64,17 +67,20 @@ export async function runCustomerImport(args: {
   userId: string;
   rows: MappedRow[];
   commit: boolean;
+  dateOrder?: DateOrder | null;
 }): Promise<ImportResult> {
   const { businessId, tenantId, userId, rows, commit } = args;
   const result = emptyResult();
   result.total = rows.length;
   const warnings: RowFailure[] = [];
   result.warnings = warnings;
+  // Day-first or month-first, read from the file's own dates (else the business's country).
+  const dateOrder = await fileDateOrder(businessId, rows, ['date_of_birth', 'joined'], args.dateOrder);
 
   for (let i = 0; i < rows.length; i++) {
     const rowNum = i + 1;
     const r = rows[i];
-    const rowFailures = validateRow(r, rowNum);
+    const rowFailures = validateRow(r, rowNum, dateOrder);
     if (rowFailures.length > 0) {
       result.failed += 1;
       result.failures.push(...rowFailures);
@@ -105,7 +111,7 @@ export async function runCustomerImport(args: {
         phone: r.phone || null,
         firstName: r.first_name || null,
         lastName: r.last_name || null,
-        dateOfBirth: r.date_of_birth || null,
+        dateOfBirth: parseDateCell(r.date_of_birth, dateOrder),
         gender: r.gender || null,
         preferredLanguage: lang.code,
         country: r.country || null,
@@ -136,7 +142,8 @@ export async function runCustomerImport(args: {
 
       if ((r.tags || '').trim()) await applyTags(businessId, res.person.id, r.tags, userId);
       if ((r.notes || '').trim()) await applyNote(businessId, res.person.id, r.notes, userId);
-      if ((r.joined || '').trim()) await applyJoinedDate(res.person.id, r.joined);
+      const joined = parseDateCell(r.joined, dateOrder);
+      if (joined) await applyJoinedDate(res.person.id, joined);
 
       if (res.created) result.imported += 1; else result.matched += 1;
     } catch (e: any) {
@@ -207,12 +214,10 @@ async function applyNote(businessId: string, customerId: string, note: string, u
   }).catch(() => undefined);
 }
 
-/** Preserve the legacy join date as the customer's created_at where provided. */
+/** Preserve the legacy join date (YYYY-MM-DD) as the customer's created_at, at noon UTC. */
 async function applyJoinedDate(customerId: string, joined: string): Promise<void> {
-  const d = new Date(joined);
-  if (isNaN(d.getTime())) return;
   await adminPool.query(
     `UPDATE cus_customers SET created_at = $1 WHERE id = $2`,
-    [d.toISOString(), customerId],
+    [`${joined}T12:00:00Z`, customerId],
   );
 }

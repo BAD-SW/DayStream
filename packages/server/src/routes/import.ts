@@ -11,7 +11,7 @@ import {
 } from '../services/migration/import-engine';
 import { applySourcePreset, isValidSource } from '../services/migration/import-sources';
 import {
-  ImportKind, ImportResult, recordRun, listRuns, getRun,
+  ImportKind, ImportResult, recordRun, listRuns, getRun, DateOrder, detectDateOrder,
 } from '../services/migration/import-core';
 import { runCustomerImport } from '../services/migration/customer-import';
 import { runPaymentMethodImport } from '../services/migration/payment-method-import';
@@ -47,6 +47,13 @@ const SUPPORTED_KINDS: ImportKind[] = [
   'customers', 'payment_methods', 'memberships', 'packages', 'appointments', 'account_balances', 'transactions', 'notes',
 ];
 
+/**
+ * The customer's id at the previous payment processor (Requirement 19), offered on every
+ * customer-linked import as an exact match key against the id captured by the customer import.
+ * A cus_ column is also found by value (detectColumns Pass 1b).
+ */
+const PROCESSOR_CUSTOMER_ID_FIELD: FieldDef = CUSTOMER_FIELDS.find((f) => f.field === 'processor_customer_id')!;
+
 /** Field definitions per kind that drive auto-detection. Waves 1-3. */
 function fieldsForKind(kind: ImportKind): FieldDef[] {
   switch (kind) {
@@ -57,6 +64,7 @@ function fieldsForKind(kind: ImportKind): FieldDef[] {
     case 'memberships':
       return [
         { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid'] },
+        PROCESSOR_CUSTOMER_ID_FIELD,
         { field: 'email', synonyms: ['email', 'emailaddress'], valueKinds: ['email'] },
         { field: 'phone', synonyms: ['phone', 'mobile'], valueKinds: ['phone'] },
         { field: 'plan', synonyms: ['plan', 'planname', 'membership', 'membershipplan', 'membershiplevel', 'membershipname', 'level', 'tier'] },
@@ -67,6 +75,7 @@ function fieldsForKind(kind: ImportKind): FieldDef[] {
     case 'packages':
       return [
         { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid'] },
+        PROCESSOR_CUSTOMER_ID_FIELD,
         { field: 'email', synonyms: ['email', 'emailaddress'], valueKinds: ['email'] },
         { field: 'phone', synonyms: ['phone', 'mobile'], valueKinds: ['phone'] },
         { field: 'package', synonyms: ['package', 'packagename', 'pkg', 'bundle', 'packagepurchased', 'pack'] },
@@ -75,6 +84,7 @@ function fieldsForKind(kind: ImportKind): FieldDef[] {
     case 'appointments':
       return [
         { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid'] },
+        PROCESSOR_CUSTOMER_ID_FIELD,
         { field: 'email', synonyms: ['email', 'emailaddress'], valueKinds: ['email'] },
         { field: 'phone', synonyms: ['phone', 'mobile'], valueKinds: ['phone'] },
         { field: 'service', synonyms: ['service', 'servicename', 'treatment', 'session', 'appointmenttype', 'type'] },
@@ -87,6 +97,7 @@ function fieldsForKind(kind: ImportKind): FieldDef[] {
     case 'account_balances':
       return [
         { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid'] },
+        PROCESSOR_CUSTOMER_ID_FIELD,
         { field: 'email', synonyms: ['email', 'emailaddress'], valueKinds: ['email'] },
         { field: 'phone', synonyms: ['phone', 'mobile'], valueKinds: ['phone'] },
         { field: 'type', synonyms: ['type', 'kind', 'balancetype'] },
@@ -99,6 +110,7 @@ function fieldsForKind(kind: ImportKind): FieldDef[] {
     case 'transactions':
       return [
         { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid'] },
+        PROCESSOR_CUSTOMER_ID_FIELD,
         { field: 'email', synonyms: ['email', 'emailaddress'], valueKinds: ['email'] },
         { field: 'phone', synonyms: ['phone', 'mobile'], valueKinds: ['phone'] },
         { field: 'date', synonyms: ['date', 'transactiondate', 'paymentdate', 'paid', 'paidon'], valueKinds: ['date'] },
@@ -110,6 +122,7 @@ function fieldsForKind(kind: ImportKind): FieldDef[] {
     case 'notes':
       return [
         { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid'] },
+        PROCESSOR_CUSTOMER_ID_FIELD,
         { field: 'email', synonyms: ['email', 'emailaddress'], valueKinds: ['email'] },
         { field: 'phone', synonyms: ['phone', 'mobile'], valueKinds: ['phone'] },
         { field: 'note', synonyms: ['note', 'notes', 'comment', 'comments', 'remark', 'remarks', 'text', 'body', 'detail', 'details'] },
@@ -215,6 +228,9 @@ importRouter.post('/:kind/analyze', requirePermission('settings:*'), upload.sing
       hasHeader: header.hasHeader,
       // Which of the chosen system's layouts was recognised (null for automatic, or no match).
       sourceLayout,
+      // Day-first or month-first, read from every date in the file (one export, one format); null
+      // when the file can't tell, so the import uses the business's own order. Sent back on commit.
+      dateOrder: detectDateOrder(dataGrid.flat()),
       sourceRecognized: source === 'auto' ? null : sourceLayout !== null,
       columns: proposals.map((p) => p.column),
       proposedMapping: proposals,
@@ -236,19 +252,25 @@ importRouter.post('/:kind/analyze', requirePermission('settings:*'), upload.sing
   }
 });
 
+/**
+ * Run one import. `dateOrder` is the whole file's date order from analyze: a file committed in
+ * batches must read every batch's dates the same way. Null lets the importer work it out itself
+ * (the whole-file endpoints, where it sees every row).
+ */
 async function dispatch(
   kind: ImportKind, businessId: string, tenantId: string, userId: string,
-  rows: Array<Record<string, string>>, commit: boolean,
+  rows: Array<Record<string, string>>, commit: boolean, dateOrder: DateOrder | null = null,
 ): Promise<ImportResult> {
+  const args = { businessId, tenantId, userId, rows, commit, dateOrder };
   switch (kind) {
-    case 'customers': return runCustomerImport({ businessId, tenantId, userId, rows, commit });
-    case 'payment_methods': return runPaymentMethodImport({ businessId, tenantId, userId, rows, commit });
-    case 'memberships': return runMembershipImport({ businessId, tenantId, userId, rows, commit });
-    case 'packages': return runPackageImport({ businessId, tenantId, userId, rows, commit });
-    case 'appointments': return runAppointmentImport({ businessId, tenantId, userId, rows, commit });
-    case 'account_balances': return runAccountBalanceImport({ businessId, tenantId, userId, rows, commit });
-    case 'transactions': return runTransactionImport({ businessId, tenantId, userId, rows, commit });
-    case 'notes': return runNotesImport({ businessId, tenantId, userId, rows, commit });
+    case 'customers': return runCustomerImport(args);
+    case 'payment_methods': return runPaymentMethodImport(args);
+    case 'memberships': return runMembershipImport(args);
+    case 'packages': return runPackageImport(args);
+    case 'appointments': return runAppointmentImport(args);
+    case 'account_balances': return runAccountBalanceImport(args);
+    case 'transactions': return runTransactionImport(args);
+    case 'notes': return runNotesImport(args);
     default: throw new Error(`No handler for kind ${kind}`);
   }
 }
@@ -324,7 +346,9 @@ async function runRowsEndpoint(req: Request, res: Response, commit: boolean): Pr
     return obj;
   });
 
-  const result = await dispatch(kind, businessId, authReq.tenantId!, authReq.user.sub, rows, commit);
+  const rawOrder = req.body?.date_order;
+  const dateOrder: DateOrder | null = rawOrder === 'dmy' || rawOrder === 'mdy' ? rawOrder : null;
+  const result = await dispatch(kind, businessId, authReq.tenantId!, authReq.user.sub, rows, commit, dateOrder);
   // Batched commits ask us not to record a run per batch; the client records ONE summary run at the end.
   if (req.body?.defer_record === true) { success(res, result); return; }
   const recorded = await recordRun({

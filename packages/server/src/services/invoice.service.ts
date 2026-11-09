@@ -161,6 +161,8 @@ export interface IssueImportedInvoiceInput extends IssueInvoiceInput {
   issueDate: string;
   /** How much of the invoice was already paid in the legacy system (cents). */
   amountPaidCents?: number;
+  /** The source row's key, so a re-import is detected instead of duplicated (migration 167). */
+  importKey?: string | null;
 }
 
 /**
@@ -221,12 +223,13 @@ export async function issueImportedInvoice(input: IssueImportedInvoiceInput): Pr
     const { rows: invRows } = await client.query(
       `INSERT INTO pay_invoices
          (tenant_id, business_id, customer_id, invoice_number, issue_date, due_date, currency,
-          subtotal_cents, tax_cents, total_cents, amount_paid_cents, status, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+          subtotal_cents, tax_cents, total_cents, amount_paid_cents, status, notes, created_by, import_key)
+       VALUES ($1,$2,$3,$4,$5::date,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        RETURNING *`,
       [
         input.tenantId, input.businessId, input.customerId, invoiceNumber, input.issueDate, input.dueDate, currency,
         subtotalCents, taxCents, totalCents, amountPaid, status, input.notes ?? null, input.createdBy,
+        input.importKey ?? null,
       ],
     );
     const invoice = invRows[0];

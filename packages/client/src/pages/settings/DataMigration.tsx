@@ -47,6 +47,177 @@ const SOURCE_OPTIONS: Partial<Record<api.ImportKind, Array<{ id: api.ImportSourc
   ],
 };
 
+/**
+ * The field reference shown on the upload screen, so owners know what a file can contain before
+ * they pick one. Each entry must describe what the import actually does (server:
+ * services/migration/*-import.ts). Imports without an entry show no table yet.
+ */
+interface FieldGuideRow { field: string; required: string; notes: string }
+interface FieldGuide { rows: FieldGuideRow[]; notes: string[] }
+
+// How every customer-linked import finds the customer (import-core matchCustomer).
+const FIND_CUSTOMER_ROWS: FieldGuideRow[] = [
+  { field: 'Processor Customer ID', required: 'One of these four', notes: 'The customer\u2019s ID at your old payment processor (such as a Stripe ID starting with cus_), if the Customers import captured it. An exact match, tried first.' },
+  { field: 'Legacy Customer ID', required: 'One of these four', notes: 'Best choice: the same customer number you used in the Customers import.' },
+  { field: 'Email', required: 'One of these four', notes: 'Used when the IDs are missing or don\u2019t match.' },
+  { field: 'Phone', required: 'One of these four', notes: 'Used when none of the above matches.' },
+];
+// Shared closing points for the customer-linked imports.
+const FIND_CUSTOMER_NOTE = 'Each row must match exactly one customer already in DayStream, so import customers first. An email or phone shared by several customers is not used; those rows are reported so you can fix them.';
+const DATES_NOTE = 'Dates can be written as 2026-03-15, 15/03/2026 or 3/15/2026 (also with - or . between the parts). Whether the day or the month comes first is worked out from the file; if every date could be read either way, your business\u2019s country decides.';
+const HEADER_NOTE = 'Include a header row with column names: columns are matched by name (email, phone and date columns are also recognised by their values). You can change any column before importing.';
+const NO_EMAIL_NOTE = 'No emails or messages are sent to your customers.';
+
+const FIELD_GUIDE: Partial<Record<api.ImportKind, FieldGuide>> = {
+  customers: {
+    rows: [
+      { field: 'First Name', required: 'Yes', notes: 'Rows without a first name are flagged for fixing.' },
+      { field: 'Last Name', required: 'No', notes: '' },
+      { field: 'Email', required: 'Email or phone', notes: 'Each row needs an email, a phone number, or both. Must be a valid address (no spaces).' },
+      { field: 'Phone', required: 'Email or phone', notes: "Numbers without a country code are read using the row's Country, or your business's country if there is none." },
+      { field: 'Legacy Customer ID', required: 'No', notes: "The customer's number in your old system. Recommended: later imports (memberships, packages, appointments) use it to find the right customer." },
+      { field: 'Processor Customer ID', required: 'No', notes: "The customer's ID at your old payment processor, e.g. a Stripe ID starting with cus_. Lets the payment methods import match cards to customers exactly." },
+      { field: 'Date of Birth', required: 'No', notes: 'Any common date format.' },
+      { field: 'Gender', required: 'No', notes: 'For example Male, Female, M, F.' },
+      { field: 'Language', required: 'No', notes: 'English, Spanish, French or German, as a name or code (en, es, fr, de). Other languages are left blank with a warning. Blank means English.' },
+      { field: 'Country', required: 'No', notes: 'Country name or two-letter code (US, ES).' },
+      { field: 'Tags', required: 'No', notes: 'Separate several tags with commas or semicolons. Tags that don\u2019t exist yet are created.' },
+      { field: 'Notes', required: 'No', notes: "One note per customer, added to their timeline. For several notes per customer, use the Notes import." },
+      { field: 'Joined Date', required: 'No', notes: 'When they became a customer. Kept as the date they were added.' },
+    ],
+    notes: [
+      'Columns can be in any order, and a header row is optional: columns are recognised by their values and you can change any of them before importing.',
+      'CSV, tab-delimited text and Excel files are accepted.',
+      'A customer who already exists (same email or phone) is not duplicated. Only their empty details are filled in; nothing is overwritten. Re-importing the same file is safe.',
+      'No emails or messages are sent to your customers.',
+    ],
+  },
+
+  payment_methods: {
+    rows: [
+      { field: 'Payment Token', required: 'Yes', notes: 'The saved card or bank account at Stripe, starting with pm_ (older files: card_, src_ or ba_).' },
+      { field: 'Stripe Customer ID', required: 'Yes', notes: 'The Stripe customer it belongs to, starting with cus_. Needed so renewals can charge it.' },
+      { field: 'Previous Processor Customer ID', required: 'No', notes: 'The customer\u2019s ID at the old processor, found in Stripe\u2019s mapping file. Matched exactly against the Processor Customer ID from the Customers import.' },
+      { field: 'Legacy Customer ID', required: 'One way to find the customer', notes: 'Customers are found by processor ID first, then legacy ID, then email, then phone.' },
+      { field: 'Email', required: 'One way to find the customer', notes: '' },
+      { field: 'Phone', required: 'One way to find the customer', notes: '' },
+      { field: 'Method Type', required: 'No', notes: 'Card, or a bank account: SEPA, ACH or Bacs. Blank means card, unless the brand says otherwise.' },
+      { field: 'Card Brand', required: 'No', notes: 'For example Visa or Mastercard. Bank accounts show their scheme instead (SEPA Direct Debit).' },
+      { field: 'Last 4', required: 'No', notes: 'Shown so staff can recognise the card. Masked numbers such as **** 4242 work.' },
+      { field: 'Expiry (MM/YY)', required: 'No', notes: 'Month and year in one column, such as 09/28. Cards only.' },
+      { field: 'Exp Month / Exp Year', required: 'No', notes: 'Or as two separate columns. Two-digit years are read as 20xx. Cards only.' },
+      { field: 'Default?', required: 'No', notes: 'Yes, true or 1 makes it the customer\u2019s default. A customer\u2019s first imported method is the default anyway.' },
+    ],
+    notes: [
+      'Choose Stripe as the source system to upload Stripe\u2019s mapping file exactly as Stripe gives it; its columns are mapped for you.',
+      'Card numbers are never in this file, only the tokens your processor returns.',
+      'Columns can be in any order and a header row is optional: Stripe IDs, brands, expiry dates and card endings are recognised by their values.',
+      'Import customers first. A payment method already imported for that customer is not duplicated, so re-importing is safe.',
+      NO_EMAIL_NOTE,
+    ],
+  },
+
+  memberships: {
+    rows: [
+      ...FIND_CUSTOMER_ROWS,
+      { field: 'Membership Plan', required: 'Yes', notes: 'Must match the name of an active plan already set up in DayStream (capitals and spacing don\u2019t matter). Price and billing frequency come from that plan.' },
+      { field: 'Next Billing Date', required: 'Yes, if active', notes: 'When the next charge is due. The current billing period is worked out from it. A date in the past is billed at the next renewal run.' },
+      { field: 'Status', required: 'No', notes: 'Active, paused or cancelled (also current, on hold, frozen, ended, expired). Blank means active.' },
+      { field: 'Start Date', required: 'No', notes: 'When they first joined. If blank, the start of the current billing period is used.' },
+    ],
+    notes: [
+      'Set up your membership plans before importing, and import payment methods first: each membership is linked to the customer\u2019s default saved card or bank account.',
+      'An active paid membership with no saved payment method still imports, with a warning: its first renewal will fail until a card is added.',
+      'One live membership per customer and plan: re-importing the same file is safe.',
+      'Nothing is charged by the import.',
+      FIND_CUSTOMER_NOTE, DATES_NOTE, HEADER_NOTE, NO_EMAIL_NOTE,
+    ],
+  },
+
+  packages: {
+    rows: [
+      ...FIND_CUSTOMER_ROWS,
+      { field: 'Package', required: 'Yes', notes: 'Must match the name of a package already set up in DayStream (capitals and spacing don\u2019t matter). Archived packages are accepted.' },
+      { field: 'Purchase Date', required: 'Yes', notes: 'The original purchase date. The expiry is counted from it using the package\u2019s own expiry rule; a package that has already expired is imported with a warning.' },
+    ],
+    notes: [
+      'Remaining sessions are not part of this file. They are worked out when you import past appointments: each attended appointment covered by the package uses one up.',
+      'Import packages before appointments so that history can be counted against them.',
+      'The same customer, package and purchase date is imported once: re-importing the same file is safe.',
+      FIND_CUSTOMER_NOTE, DATES_NOTE, HEADER_NOTE, NO_EMAIL_NOTE,
+    ],
+  },
+
+  appointments: {
+    rows: [
+      ...FIND_CUSTOMER_ROWS,
+      { field: 'Service', required: 'Yes', notes: 'Must match the name of a service already set up in DayStream (capitals and spacing don\u2019t matter), with at least one bookable option.' },
+      { field: 'Date', required: 'Yes', notes: 'Future dates become live bookings. Past dates are added to the customer\u2019s timeline as history.' },
+      { field: 'Time', required: 'No', notes: 'Start time in your business\u2019s time zone, such as 14:30, 2:30 PM or 1430. Blank means noon.' },
+      { field: 'Staff Member', required: 'No', notes: 'Must match the full name of an active staff member. A name that doesn\u2019t match fails the row.' },
+      { field: 'Duration (min)', required: 'No', notes: 'Picks the service option with that length. Otherwise the service\u2019s first option is used.' },
+      { field: 'Status', required: 'No', notes: 'A future appointment marked cancelled or no-show is added to the timeline as history, not booked. For past appointments, completed, checked in or attended (or blank) counts as attended and uses up a package session if one covers the service.' },
+    ],
+    notes: [
+      'Future bookings are added as confirmed, without checking availability, staff hours or conflicts, and no confirmation is sent.',
+      'Dates and times are read as your business\u2019s own local time, set in Business Setup.',
+      'Past appointments only appear on the timeline; they don\u2019t affect availability or reports.',
+      'Import customers, then packages, before appointments.',
+      'The same customer, service and start time is imported once: re-importing the same file is safe.',
+      FIND_CUSTOMER_NOTE, DATES_NOTE, HEADER_NOTE, NO_EMAIL_NOTE,
+    ],
+  },
+
+  account_balances: {
+    rows: [
+      ...FIND_CUSTOMER_ROWS,
+      { field: 'Type (credit/invoice)', required: 'Recommended', notes: 'Credit = money the customer has on account to spend. Invoice = money the customer owes. If blank, a row with a due date is an invoice; otherwise a credit.' },
+      { field: 'Amount', required: 'Yes', notes: 'A positive amount, such as 45.00 or \u20ac45,00.' },
+      { field: 'Amount Paid', required: 'No', notes: 'Invoices only: how much of it is already paid.' },
+      { field: 'Description', required: 'No', notes: 'Shown on the credit or invoice.' },
+      { field: 'Issue Date', required: 'Yes, for invoices', notes: 'The original invoice date.' },
+      { field: 'Due Date', required: 'No', notes: 'Invoices only. If blank, the issue date is used.' },
+    ],
+    notes: [
+      'These become real credits and invoices in your accounts, so they count in your balances and reports.',
+      'A credit or invoice already imported (same customer, amounts, dates and description) is not created again, so re-importing the same file is safe. Credits and invoices your staff created in DayStream are never mistaken for imported ones.',
+      'Invoices need invoicing turned on for your business.',
+      FIND_CUSTOMER_NOTE, DATES_NOTE, HEADER_NOTE, NO_EMAIL_NOTE,
+    ],
+  },
+
+  transactions: {
+    rows: [
+      ...FIND_CUSTOMER_ROWS,
+      { field: 'Date', required: 'Yes', notes: 'When the payment was made.' },
+      { field: 'Amount', required: 'Yes', notes: 'Such as 45.00 or \u20ac45,00. Negative amounts (refunds) are accepted.' },
+      { field: 'Description', required: 'No', notes: 'What it was for. If blank, the amount, method and reference are shown instead.' },
+      { field: 'Payment Method', required: 'No', notes: 'For example cash, card or transfer.' },
+      { field: 'Reference', required: 'No', notes: 'A receipt or transaction number. Also used to tell apart two payments of the same amount on the same day.' },
+    ],
+    notes: [
+      'History only: payments appear on the customer\u2019s timeline and are never added to your books or reports. Bring in what customers owe or hold on account with the Account Balances import.',
+      'The same customer, date, amount and reference is imported once: re-importing the same file is safe.',
+      FIND_CUSTOMER_NOTE, DATES_NOTE, HEADER_NOTE, NO_EMAIL_NOTE,
+    ],
+  },
+
+  notes: {
+    rows: [
+      ...FIND_CUSTOMER_ROWS,
+      { field: 'Note', required: 'Yes', notes: 'The note text. Each row is one note, so a customer can have as many as you like.' },
+      { field: 'Date', required: 'No', notes: 'When the note was written; it is placed at that date on the timeline. If blank, the import date is used.' },
+      { field: 'Author', required: 'No', notes: 'Who wrote it. Kept with the note.' },
+      { field: 'Category', required: 'No', notes: 'For example Medical or Preferences. Kept with the note.' },
+    ],
+    notes: [
+      'Notes are added to the customer\u2019s timeline.',
+      'The same note text, on the same date, for the same customer is imported once: re-importing the same file is safe.',
+      FIND_CUSTOMER_NOTE, DATES_NOTE, HEADER_NOTE, NO_EMAIL_NOTE,
+    ],
+  },
+};
+
 // Friendly field labels for the mapping review.
 const FIELD_LABELS: Record<string, string> = {
   legacy_customer_id: 'Legacy Customer ID', email: 'Email', first_name: 'First Name', last_name: 'Last Name',
@@ -127,12 +298,12 @@ export function DataMigration({ businessId }: { businessId: string }) {
   const fieldsForKind = (): string[] => {
     if (kind === 'customers') return ['', 'legacy_customer_id', 'processor_customer_id', 'email', 'first_name', 'last_name', 'phone', 'date_of_birth', 'gender', 'preferred_language', 'country', 'notes', 'tags', 'joined'];
     if (kind === 'payment_methods') return ['', 'legacy_customer_id', 'previous_processor_customer_id', 'stripe_customer_id', 'payment_method_token', 'email', 'phone', 'method_type', 'brand', 'last4', 'expiry', 'exp_month', 'exp_year', 'is_default'];
-    if (kind === 'memberships') return ['', 'legacy_customer_id', 'email', 'phone', 'plan', 'next_billing_date', 'status', 'start_date'];
-    if (kind === 'packages') return ['', 'legacy_customer_id', 'email', 'phone', 'package', 'purchase_date'];
-    if (kind === 'appointments') return ['', 'legacy_customer_id', 'email', 'phone', 'service', 'staff', 'date', 'time', 'duration', 'status'];
-    if (kind === 'transactions') return ['', 'legacy_customer_id', 'email', 'phone', 'date', 'amount', 'description', 'method', 'reference'];
-    if (kind === 'notes') return ['', 'legacy_customer_id', 'email', 'phone', 'note', 'date', 'author', 'category'];
-    return ['', 'legacy_customer_id', 'email', 'phone', 'type', 'amount', 'amount_paid', 'description', 'issue_date', 'due_date'];
+    if (kind === 'memberships') return ['', 'legacy_customer_id', 'processor_customer_id', 'email', 'phone', 'plan', 'next_billing_date', 'status', 'start_date'];
+    if (kind === 'packages') return ['', 'legacy_customer_id', 'processor_customer_id', 'email', 'phone', 'package', 'purchase_date'];
+    if (kind === 'appointments') return ['', 'legacy_customer_id', 'processor_customer_id', 'email', 'phone', 'service', 'staff', 'date', 'time', 'duration', 'status'];
+    if (kind === 'transactions') return ['', 'legacy_customer_id', 'processor_customer_id', 'email', 'phone', 'date', 'amount', 'description', 'method', 'reference'];
+    if (kind === 'notes') return ['', 'legacy_customer_id', 'processor_customer_id', 'email', 'phone', 'note', 'date', 'author', 'category'];
+    return ['', 'legacy_customer_id', 'processor_customer_id', 'email', 'phone', 'type', 'amount', 'amount_paid', 'description', 'issue_date', 'due_date'];
   };
 
   const reset = () => {
@@ -204,6 +375,7 @@ export function DataMigration({ businessId }: { businessId: string }) {
               aria-label={`${KINDS.find((k) => k.kind === kind)!.label} file`}
               onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
             <div><Button variant="outline" size="sm" onClick={reset}>Back</Button></div>
+            {FIELD_GUIDE[kind] && <FieldGuideTable guide={FIELD_GUIDE[kind]!} label={KINDS.find((k) => k.kind === kind)!.label} />}
           </div>
         </div>
       )}
@@ -436,7 +608,7 @@ function MappingTable({
       setProgress({ done: 0, total: toSend.length });
       for (let start = 0; start < toSend.length; start += batch) {
         const slice = toSend.slice(start, start + batch);
-        const part = await api.commitRowsBatch(kind, businessId, mapping, slice.map((r) => r.cells), fileName);
+        const part = await api.commitRowsBatch(kind, businessId, mapping, slice.map((r) => r.cells), fileName, analysis.dateOrder ?? null);
         const tableRow = (n: number) => slice[n - 1]?.row ?? n;
         res.runId = part.runId ?? res.runId;
         res.imported += part.imported; res.matched += part.matched; res.failed += part.failed;
@@ -645,6 +817,40 @@ function MappingTable({
         {result && <Button variant="ghost" size="sm" onClick={onDone}>Done</Button>}
       </div>
     </div>
+  );
+}
+
+/** What a file for this import can contain: field, whether it's required, and how it's handled. */
+function FieldGuideTable({ guide, label }: { guide: FieldGuide; label: string }) {
+  return (
+    <section aria-labelledby="field-guide-heading" style={{ marginTop: 'var(--space-md)', display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+      <h3 id="field-guide-heading" style={{ fontSize: 'var(--font-size-base)', fontWeight: 600, margin: 0 }}>
+        What your {label} file can include
+      </h3>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' }}>
+        <thead>
+          <tr>
+            <th scope="col" style={{ ...th, width: '22%' }}>Field</th>
+            <th scope="col" style={{ ...th, width: '14%' }}>Required</th>
+            <th scope="col" style={th}>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {guide.rows.map((r) => (
+            <tr key={r.field}>
+              <td style={{ ...td, color: 'var(--color-text)', fontWeight: 600 }}>{r.field}</td>
+              <td style={{ ...td, color: r.required === 'No' ? 'var(--color-text-secondary)' : 'var(--color-text)' }}>{r.required}</td>
+              <td style={td}>{r.notes || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {guide.notes.length > 0 && (
+        <ul style={{ margin: 0, paddingLeft: 'var(--space-lg)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {guide.notes.map((n) => <li key={n}>{n}</li>)}
+        </ul>
+      )}
+    </section>
   );
 }
 

@@ -1,6 +1,7 @@
 import { adminPool } from '../../db/pool';
 import {
   ImportResult, RowFailure, emptyResult, matchCustomer, noCustomerReason, matchByName, parseDateCell,
+  fileDateOrder, customerMatchInput, DateOrder,
 } from './import-core';
 
 /**
@@ -52,6 +53,7 @@ export async function runPackageImport(args: {
   userId: string;
   rows: MappedRow[];
   commit: boolean;
+  dateOrder?: DateOrder | null;
 }): Promise<ImportResult> {
   const { businessId, rows, commit } = args;
   const result = emptyResult();
@@ -65,6 +67,7 @@ export async function runPackageImport(args: {
     [businessId],
   );
   const now = new Date();
+  const dateOrder = await fileDateOrder(businessId, rows, ['purchase_date'], args.dateOrder);
   // (customer|package|date) already handled in THIS file — keeps a trial faithful to the commit.
   const seen = new Set<string>();
 
@@ -80,7 +83,7 @@ export async function runPackageImport(args: {
     if (!pkgMatch.match) { fail('package', pkgMatch.reason!); continue; }
     const pkg = pkgMatch.match;
 
-    const purchaseDate = parseDateCell(r.purchase_date);
+    const purchaseDate = parseDateCell(r.purchase_date, dateOrder);
     if (!purchaseDate) {
       fail('purchase_date', (r.purchase_date || '').trim()
         ? `"${r.purchase_date}" is not a valid date`
@@ -88,10 +91,9 @@ export async function runPackageImport(args: {
       continue;
     }
 
-    const match = await matchCustomer(businessId, {
-      legacyCustomerId: r.legacy_customer_id, email: r.email, phone: r.phone,
-    });
-    if (!match.customerId) { fail('customer', noCustomerReason(r)); continue; }
+    const matchInput = customerMatchInput(r);
+    const match = await matchCustomer(businessId, matchInput);
+    if (!match.customerId) { fail('customer', noCustomerReason(matchInput)); continue; }
     const customerId = match.customerId;
 
     // Idempotency: customer + package + purchase date (calendar day, UTC).

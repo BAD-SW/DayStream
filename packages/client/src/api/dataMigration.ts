@@ -53,6 +53,8 @@ export interface AnalyzeResult {
   sourceLayout?: string | null;
   /** null = automatic detection was chosen; false = a source was chosen but the file didn't match it. */
   sourceRecognized?: boolean | null;
+  /** The file's date order (day-first / month-first), or null when its dates can't tell. */
+  dateOrder?: DateOrder | null;
   columns: string[];
   proposedMapping: ColumnProposal[];
   sampleRows: string[][];
@@ -102,6 +104,9 @@ export interface ImportRun {
 }
 
 /** Analyze an uploaded file: detect header + columns and propose a mapping. */
+/** Order of a numeric date's day and month: month-first (3/15/2026) or day-first (15/03/2026). */
+export type DateOrder = 'mdy' | 'dmy';
+
 /** Where an import file came from (server: services/migration/import-sources.ts). */
 export type ImportSource = 'auto' | 'stripe';
 
@@ -160,12 +165,16 @@ export function commitRows(kind: ImportKind, businessId: string, mapping: Record
   return runRows(kind, true, businessId, mapping, rows, fileName);
 }
 
-/** Commit one batch of a larger import without recording a run (call recordRun once at the end). */
+/**
+ * Commit one batch of a larger import without recording a run (call recordRun once at the end).
+ * `dateOrder` is the whole file's date order from analyze, so every batch reads dates the same way.
+ */
 export async function commitRowsBatch(
   kind: ImportKind, businessId: string, mapping: Record<number, string>, rows: string[][], fileName: string | null,
+  dateOrder: DateOrder | null = null,
 ): Promise<ImportResult> {
   const res = await apiClient.post(`/v1/import/${kind}/commit-rows`, {
-    business_id: businessId, mapping, rows, file_name: fileName, defer_record: true,
+    business_id: businessId, mapping, rows, file_name: fileName, defer_record: true, date_order: dateOrder,
   });
   return res.data.data;
 }
