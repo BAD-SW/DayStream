@@ -719,10 +719,90 @@ export function normalizeHeader(h: string): string {
  * value-based inference when the header doesn't match (or there is no header).
  * `sampleRows` are the data rows (already excluding the header row).
  */
+/**
+ * Values DayStream already holds for a field, used to recognise that field's column by value
+ * (e.g. the legacy customer ids stored by the customer import, the business's plan names). The
+ * engine stays pure: the caller loads the values and says how to normalise a cell for comparison.
+ */
+export interface ReferenceValues {
+  values: Set<string>;
+  normalize: (v: string) => string;
+}
+export type ReferenceSet = Record<string, ReferenceValues>;
+
+/** How well a column's values match a reference set: share of non-empty cells found, and distinct hits. */
+export function referenceMatch(cells: string[], ref: ReferenceValues): { share: number; distinctHits: number } {
+  const vals = cells.map((c) => (c ?? '').trim()).filter((c) => c !== '');
+  if (vals.length === 0 || ref.values.size === 0) return { share: 0, distinctHits: 0 };
+  const hits = new Set<string>();
+  let n = 0;
+  for (const v of vals) {
+    const k = ref.normalize(v);
+    if (k && ref.values.has(k)) { n++; hits.add(k); }
+  }
+  return { share: n / vals.length, distinctHits: hits.size };
+}
+
+/** Status words used by membership and appointment files (see mapMembershipStatus, NOT_HAPPENING). */
+const STATUS_WORDS = new Set([
+  'active', 'current', 'live', 'ongoing', 'good standing', 'paused', 'on hold', 'hold', 'frozen', 'freeze',
+  'suspended', 'cancelled', 'canceled', 'terminated', 'ended', 'expired', 'inactive', 'closed',
+  'completed', 'complete', 'confirmed', 'booked', 'pending', 'checked in', 'attended', 'no show', 'noshow',
+  'missed', 'late cancel', 'declined', 'done', 'fulfilled', 'scheduled',
+]);
+/** Fraction of a column's values that are recognised status words. */
+export function statusWordScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ')).filter(Boolean);
+  if (vals.length === 0) return 0;
+  return vals.filter((v) => STATUS_WORDS.has(v)).length / vals.length;
+}
+
+/** A time of day with a colon or am/pm (14:30, 9:05, 2:30 PM, 9am). Bare "1430" is too like a year or last-4. */
+const TIME_OF_DAY_RE = /^(?:([01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:\s*[ap]\.?m\.?)?|(1[0-2]|0?[1-9])\s*[ap]\.?m\.?)$/i;
+export const timeOfDayScore = (values: string[]): number => {
+  const vals = values.map((v) => (v ?? '').trim()).filter(Boolean);
+  return vals.length ? vals.filter((v) => TIME_OF_DAY_RE.test(v)).length / vals.length : 0;
+};
+
+/** An amount: two decimals (45.00, 1.234,50, -12.50) or a currency sign (€45, $1,200). */
+const AMOUNT_RE = /^[-+]?(?:[$€£]\s?\d[\d.,\s]*|\d{1,3}(?:[.,\s]?\d{3})*[.,]\d{2})$/;
+export const amountShapeScore = (values: string[]): number => {
+  const vals = values.map((v) => (v ?? '').trim()).filter(Boolean);
+  return vals.length ? vals.filter((v) => AMOUNT_RE.test(v)).length / vals.length : 0;
+};
+
+/** Account-balance kind words (see account-balance-import rowKind). */
+const BALANCE_TYPE_WORDS = new Set(['credit', 'account credit', 'account_credit', 'invoice', 'outstanding', 'debit', 'owed', 'balance due']);
+export const balanceTypeScore = (values: string[]): number => {
+  const vals = values.map((v) => (v ?? '').trim().toLowerCase()).filter(Boolean);
+  return vals.length ? vals.filter((v) => BALANCE_TYPE_WORDS.has(v)).length / vals.length : 0;
+};
+
+/** Share of rows (with both dates) where column A's date is on or before column B's. */
+export function onOrBeforeShare(a: string[], b: string[]): number {
+  let both = 0; let before = 0;
+  for (let i = 0; i < a.length; i++) {
+    const da = parseDateLoose(a[i] ?? ''); const db = parseDateLoose(b[i] ?? '');
+    if (!da || !db) continue;
+    both++;
+    if (da.getTime() <= db.getTime()) before++;
+  }
+  return both ? before / both : 0;
+}
+
+/** Fraction of a column's parseable dates that fall after today (UTC). */
+export function futureDateShare(values: string[], today: Date = new Date()): number {
+  const t = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const dates = values.map(parseDateLoose).filter((d): d is Date => d !== null);
+  if (dates.length === 0) return 0;
+  return dates.filter((d) => d.getTime() > t).length / dates.length;
+}
+
 export function detectColumns(
   grid: string[][],
   hasHeader: boolean,
   fields: FieldDef[],
+  references: ReferenceSet = {},
 ): ColumnProposal[] {
   if (grid.length === 0) return [];
   const headerRow = grid[0] ?? [];
@@ -817,6 +897,70 @@ export function detectColumns(
   // Customer files: a cus_ column is the client's processor customer id.
   claimIdShape('processor_customer_id', (p) => p.stripeCustomerScore);
 
+  // --- Pass 1c: values DayStream already holds → CERTAIN / LIKELY. A column whose values are
+  // mostly legacy customer ids the customer import stored, or the business's own plan names, is
+  // that field whatever its header says. Of several matching columns, the one with the most
+  // DISTINCT hits wins: a duration column holding only "60" and "90" can't beat a real id column
+  // just because ids 60 and 90 exist. ---
+  for (const [field, ref] of Object.entries(references)) {
+    if (!fieldSet.has(field) || used.has(field)) continue;
+    const scored = profiles
+      .filter((p) => !result[p.index].field && p.nonEmpty > 0)
+      .map((p) => ({ p, ...referenceMatch(dataRows.map((r) => r[p.index] ?? ''), ref) }))
+      .filter((x) => x.share >= 0.5)
+      .sort((a, b) => b.distinctHits - a.distinctHits || b.share - a.share || a.p.index - b.p.index);
+    if (scored[0]) claim(scored[0].p.index, field, scored[0].share >= 0.8 ? 'certain' : 'likely');
+  }
+
+  // --- Pass 1d: membership dates → LIKELY. A next billing date is (almost always) in the future and
+  // a start date in the past, so the majority of each column decides; a few exceptions don't. ---
+  if (fieldSet.has('next_billing_date') && fieldSet.has('start_date')) {
+    const dateCols = profiles
+      .filter((p) => !result[p.index].field && p.dominantKind === 'date' && p.dominance >= 0.8)
+      .map((p) => ({ p, future: futureDateShare(dataRows.map((r) => r[p.index] ?? '')) }));
+    const next = [...dateCols].sort((a, b) => b.future - a.future)[0];
+    if (next && next.future > 0.5 && !used.has('next_billing_date')) claim(next.p.index, 'next_billing_date', 'likely');
+    const start = dateCols.filter((d) => !result[d.p.index].field).sort((a, b) => a.future - b.future)[0];
+    if (start && start.future < 0.5 && !used.has('start_date')) claim(start.p.index, 'start_date', 'likely');
+  }
+
+  // --- Pass 1d (balances): issue date vs due date. A due date falls on or after its issue date, so
+  // of two date columns, the one that is earlier in most rows is the issue date. ---
+  if (fieldSet.has('issue_date') && fieldSet.has('due_date') && !used.has('issue_date') && !used.has('due_date')) {
+    const dateCols = profiles.filter((p) => !result[p.index].field && p.dominantKind === 'date' && p.dominance >= 0.8);
+    if (dateCols.length === 2) {
+      const [a, b] = dateCols;
+      const share = onOrBeforeShare(dataRows.map((r) => r[a.index] ?? ''), dataRows.map((r) => r[b.index] ?? ''));
+      const [issue, due] = share >= 0.5 ? [a, b] : [b, a];
+      claim(issue.index, 'issue_date', 'likely');
+      claim(due.index, 'due_date', 'likely');
+    }
+  }
+
+  // --- Pass 1f: shapes and words with no setup to check against: a time of day, and the
+  // credit / invoice type of an account balance. ---
+  const claimBestScore = (field: string, score: (cells: string[]) => number, floor: number) => {
+    if (!fieldSet.has(field) || used.has(field)) return;
+    const best = profiles
+      .filter((p) => !result[p.index].field && p.nonEmpty > 0)
+      .map((p) => ({ p, s: score(dataRows.map((r) => r[p.index] ?? '')) }))
+      .filter((x) => x.s >= floor)
+      .sort((x, y) => y.s - x.s || x.p.index - y.p.index)[0];
+    if (best) claim(best.p.index, field, 'likely');
+  };
+  claimBestScore('time', timeOfDayScore, 0.8);
+  claimBestScore('type', balanceTypeScore, 0.8);
+
+  // --- Pass 1e: a status column, by its words (active / paused / cancelled, completed / no show). ---
+  if (fieldSet.has('status') && !used.has('status')) {
+    const s = profiles
+      .filter((p) => !result[p.index].field && p.nonEmpty > 0)
+      .map((p) => ({ p, score: statusWordScore(dataRows.map((r) => r[p.index] ?? '')) }))
+      .filter((x) => x.score >= 0.8)
+      .sort((a, b) => b.score - a.score)[0];
+    if (s) claim(s.p.index, 'status', 'likely');
+  }
+
   // --- Pass 2: decisive value shapes → CERTAIN (email, phone, money; and a patterned id). ---
   // These are self-evident from the values regardless of header.
   for (let c = 0; c < width; c++) {
@@ -837,6 +981,18 @@ export function detectColumns(
       // it, but a deliberate foreign header (e.g. "Loyalty #") suppresses the inference entirely.
       claim(c, 'legacy_customer_id', 'certain');
     }
+  }
+
+  // --- Pass 2b: amounts without a currency sign. "45.00" classifies as a plain number, so a money
+  // field also takes a column whose values mostly carry two decimals (or a currency sign). Whole
+  // numbers alone aren't enough: they're indistinguishable from ids and counts. Fields are filled
+  // in their declared order (amount before amount paid), leftmost column first. ---
+  for (const f of fields) {
+    if (!f.valueKinds?.includes('money') || used.has(f.field)) continue;
+    const col = profiles
+      .filter((p) => !result[p.index].field && p.nonEmpty > 0 && amountShapeScore(dataRows.map((r) => r[p.index] ?? '')) >= 0.8)
+      .sort((a, b) => a.index - b.index)[0];
+    if (col) claim(col.index, f.field, 'likely');
   }
 
   // --- Pass 3: bare-number identifier → LIKELY (uniqueness + integer shape + leading position). ---
@@ -933,12 +1089,24 @@ export function detectColumns(
   claimByScore('tags', (p) => p.tagsScore, 0.6);
   // Notes last: any remaining free-text column is claimed as a best-shot (user can override).
   claimByScore('notes', (p) => p.freeTextScore, 0.5);
+  // The same free-text fallback for the Notes import's note text and a balance / payment description.
+  claimByScore('note', (p) => p.freeTextScore, 0.5);
+  claimByScore('description', (p) => p.freeTextScore, 0.5);
 
   // --- Pass 6: identifier + first/last name BY ELIMINATION → LIKELY (last resort). ---
   // The user's own reasoning: once the other columns are identified, a leftover column that looks
   // like an identifier (any format) AND is unique on every row is almost certainly the legacy id —
   // a legacy system may assign ids in any shape (NX104928, RE9284A, 48217), so uniqueness, not
   // format, is the signal. Resolved before names (a name column isn't unique, so it won't collide).
+  // A file with a transaction reference (receipt / transaction number) is one row per payment: the
+  // customer repeats, the reference doesn't. So there, a unique id-shaped column is the reference.
+  if (fieldSet.has('reference') && !used.has('reference')) {
+    const refCol = profiles
+      .filter((p) => !result[p.index].field && !hasForeignHeader(p.index) && p.nonEmpty > 0
+        && p.idShapeScore >= 0.8 && p.allUnique)
+      .sort((a, b) => b.index - a.index)[0]; // rightmost: references usually follow the customer
+    if (refCol) claim(refCol.index, 'reference', 'likely');
+  }
   if (fieldSet.has('legacy_customer_id') && !used.has('legacy_customer_id')) {
     const idCol = profiles
       .filter((p) => !result[p.index].field && !hasForeignHeader(p.index) && p.nonEmpty > 0

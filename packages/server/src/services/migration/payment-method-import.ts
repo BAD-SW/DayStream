@@ -102,7 +102,7 @@ export async function runPaymentMethodImport(args: {
       legacyCustomerId: r.legacy_customer_id, email: r.email, phone: r.phone,
     };
     const match = await matchCustomer(businessId, matchInput);
-    if (!match.customerId) { fail('customer', noCustomerReason(matchInput)); continue; }
+    if (!match.customerId) { fail('customer', match.conflict ?? noCustomerReason(matchInput)); continue; }
 
     // Idempotency: is this token already stored for this customer?
     const existing = await adminPool.query(

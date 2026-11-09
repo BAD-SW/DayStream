@@ -163,7 +163,7 @@ export async function runAppointmentImport(args: {
     // --- customer ---
     const matchInput = customerMatchInput(r);
     const match = await matchCustomer(businessId, matchInput);
-    if (!match.customerId) { fail('customer', noCustomerReason(matchInput)); continue; }
+    if (!match.customerId) { fail('customer', match.conflict ?? noCustomerReason(matchInput)); continue; }
     const customerId = match.customerId;
 
     // --- staff (optional) ---

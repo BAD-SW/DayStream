@@ -100,7 +100,7 @@ export async function runAccountBalanceImport(args: {
 
     const matchInput = customerMatchInput(r);
     const match = await matchCustomer(businessId, matchInput);
-    if (!match.customerId) { fail('customer', noCustomerReason(matchInput)); continue; }
+    if (!match.customerId) { fail('customer', match.conflict ?? noCustomerReason(matchInput)); continue; }
 
     if (kind === 'invoice') {
       const issueRaw = (r.issue_date || r.date || '').trim();

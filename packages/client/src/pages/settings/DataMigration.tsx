@@ -57,15 +57,14 @@ interface FieldGuide { rows: FieldGuideRow[]; notes: string[] }
 
 // How every customer-linked import finds the customer (import-core matchCustomer).
 const FIND_CUSTOMER_ROWS: FieldGuideRow[] = [
-  { field: 'Processor Customer ID', required: 'One of these four', notes: 'The customer\u2019s ID at your old payment processor (such as a Stripe ID starting with cus_), if the Customers import captured it. An exact match, tried first.' },
-  { field: 'Legacy Customer ID', required: 'One of these four', notes: 'Best choice: the same customer number you used in the Customers import.' },
-  { field: 'Email', required: 'One of these four', notes: 'Used when the IDs are missing or don\u2019t match.' },
-  { field: 'Phone', required: 'One of these four', notes: 'Used when none of the above matches.' },
+  { field: 'Processor Customer ID', required: 'At least one', notes: 'The customer\u2019s ID at your old payment processor (such as a Stripe ID starting with cus_), if the Customers import captured it.' },
+  { field: 'Legacy Customer ID', required: 'At least one', notes: 'Best choice: the same customer number you used in the Customers import.' },
+  { field: 'Email', required: 'At least one', notes: '' },
+  { field: 'Phone', required: 'At least one', notes: '' },
 ];
 // Shared closing points for the customer-linked imports.
-const FIND_CUSTOMER_NOTE = 'Each row must match exactly one customer already in DayStream, so import customers first. An email or phone shared by several customers is not used; those rows are reported so you can fix them.';
+const FIND_CUSTOMER_NOTE = 'Each row must match exactly one customer already in DayStream, so import customers first. Include as many of the four customer columns as you have: every one is checked, and if they point to different customers (say the legacy ID is Ana\u2019s but the email is Maria\u2019s) the row is not imported and the reason names both, so you can fix it. An email or phone shared by several customers is not used.';
 const DATES_NOTE = 'Dates can be written as 2026-03-15, 15/03/2026 or 3/15/2026 (also with - or . between the parts). Whether the day or the month comes first is worked out from the file; if every date could be read either way, your business\u2019s country decides.';
-const HEADER_NOTE = 'Include a header row with column names: columns are matched by name (email, phone and date columns are also recognised by their values). You can change any column before importing.';
 const NO_EMAIL_NOTE = 'No emails or messages are sent to your customers.';
 
 const FIELD_GUIDE: Partial<Record<api.ImportKind, FieldGuide>> = {
@@ -98,7 +97,7 @@ const FIELD_GUIDE: Partial<Record<api.ImportKind, FieldGuide>> = {
       { field: 'Payment Token', required: 'Yes', notes: 'The saved card or bank account at Stripe, starting with pm_ (older files: card_, src_ or ba_).' },
       { field: 'Stripe Customer ID', required: 'Yes', notes: 'The Stripe customer it belongs to, starting with cus_. Needed so renewals can charge it.' },
       { field: 'Previous Processor Customer ID', required: 'No', notes: 'The customer\u2019s ID at the old processor, found in Stripe\u2019s mapping file. Matched exactly against the Processor Customer ID from the Customers import.' },
-      { field: 'Legacy Customer ID', required: 'One way to find the customer', notes: 'Customers are found by processor ID first, then legacy ID, then email, then phone.' },
+      { field: 'Legacy Customer ID', required: 'One way to find the customer', notes: 'The processor ID, legacy ID, email and phone are all checked; if they point to different customers the row is not imported and the reason names both.' },
       { field: 'Email', required: 'One way to find the customer', notes: '' },
       { field: 'Phone', required: 'One way to find the customer', notes: '' },
       { field: 'Method Type', required: 'No', notes: 'Card, or a bank account: SEPA, ACH or Bacs. Blank means card, unless the brand says otherwise.' },
@@ -130,7 +129,8 @@ const FIELD_GUIDE: Partial<Record<api.ImportKind, FieldGuide>> = {
       'An active paid membership with no saved payment method still imports, with a warning: its first renewal will fail until a card is added.',
       'One live membership per customer and plan: re-importing the same file is safe.',
       'Nothing is charged by the import.',
-      FIND_CUSTOMER_NOTE, DATES_NOTE, HEADER_NOTE, NO_EMAIL_NOTE,
+      'Columns can be in any order and a header row is optional: customer IDs and plan names are recognised by matching what\u2019s already in DayStream, the next billing date by being mostly in the future and the start date by being mostly in the past, and status by its words. You can change any column before importing.',
+      FIND_CUSTOMER_NOTE, DATES_NOTE, NO_EMAIL_NOTE,
     ],
   },
 
@@ -144,7 +144,8 @@ const FIELD_GUIDE: Partial<Record<api.ImportKind, FieldGuide>> = {
       'Remaining sessions are not part of this file. They are worked out when you import past appointments: each attended appointment covered by the package uses one up.',
       'Import packages before appointments so that history can be counted against them.',
       'The same customer, package and purchase date is imported once: re-importing the same file is safe.',
-      FIND_CUSTOMER_NOTE, DATES_NOTE, HEADER_NOTE, NO_EMAIL_NOTE,
+      'Columns can be in any order and a header row is optional: customer IDs and package names are recognised by matching what\u2019s already in DayStream. You can change any column before importing.',
+      FIND_CUSTOMER_NOTE, DATES_NOTE, NO_EMAIL_NOTE,
     ],
   },
 
@@ -164,7 +165,8 @@ const FIELD_GUIDE: Partial<Record<api.ImportKind, FieldGuide>> = {
       'Past appointments only appear on the timeline; they don\u2019t affect availability or reports.',
       'Import customers, then packages, before appointments.',
       'The same customer, service and start time is imported once: re-importing the same file is safe.',
-      FIND_CUSTOMER_NOTE, DATES_NOTE, HEADER_NOTE, NO_EMAIL_NOTE,
+      'Columns can be in any order and a header row is optional: customer IDs, services, staff and service lengths are recognised by matching your setup in DayStream, times by their format (14:30, 2:30 PM) and status by its words. You can change any column before importing.',
+      FIND_CUSTOMER_NOTE, DATES_NOTE, NO_EMAIL_NOTE,
     ],
   },
 
@@ -182,7 +184,8 @@ const FIELD_GUIDE: Partial<Record<api.ImportKind, FieldGuide>> = {
       'These become real credits and invoices in your accounts, so they count in your balances and reports.',
       'A credit or invoice already imported (same customer, amounts, dates and description) is not created again, so re-importing the same file is safe. Credits and invoices your staff created in DayStream are never mistaken for imported ones.',
       'Invoices need invoicing turned on for your business.',
-      FIND_CUSTOMER_NOTE, DATES_NOTE, HEADER_NOTE, NO_EMAIL_NOTE,
+      'Columns can be in any order and a header row is optional: customer IDs are recognised by matching customers already in DayStream, the type by its words (credit, invoice), amounts by their format (45.00, \u20ac45), and the issue date as the earlier of two dates. Use a header for the amount paid, since it looks like the amount. You can change any column before importing.',
+      FIND_CUSTOMER_NOTE, DATES_NOTE, NO_EMAIL_NOTE,
     ],
   },
 
@@ -198,7 +201,8 @@ const FIELD_GUIDE: Partial<Record<api.ImportKind, FieldGuide>> = {
     notes: [
       'History only: payments appear on the customer\u2019s timeline and are never added to your books or reports. Bring in what customers owe or hold on account with the Account Balances import.',
       'The same customer, date, amount and reference is imported once: re-importing the same file is safe.',
-      FIND_CUSTOMER_NOTE, DATES_NOTE, HEADER_NOTE, NO_EMAIL_NOTE,
+      'Columns can be in any order and a header row is optional: customer IDs are recognised by matching customers already in DayStream, the payment method by matching the methods you accept, amounts by their format (45.00, \u20ac45), and the reference as the column that is different on every row. You can change any column before importing.',
+      FIND_CUSTOMER_NOTE, DATES_NOTE, NO_EMAIL_NOTE,
     ],
   },
 
@@ -213,7 +217,8 @@ const FIELD_GUIDE: Partial<Record<api.ImportKind, FieldGuide>> = {
     notes: [
       'Notes are added to the customer\u2019s timeline.',
       'The same note text, on the same date, for the same customer is imported once: re-importing the same file is safe.',
-      FIND_CUSTOMER_NOTE, DATES_NOTE, HEADER_NOTE, NO_EMAIL_NOTE,
+      'Columns can be in any order and a header row is optional: customer IDs are recognised by matching customers already in DayStream, the author by matching your staff, the category by matching your note categories, and the note as the column of sentences. You can change any column before importing.',
+      FIND_CUSTOMER_NOTE, DATES_NOTE, NO_EMAIL_NOTE,
     ],
   },
 };
@@ -315,7 +320,7 @@ export function DataMigration({ businessId }: { businessId: string }) {
     if (!kind) return;
     setFile(f); setBusy(true); setErr(null);
     try {
-      const a = await api.analyze(kind, f, source);
+      const a = await api.analyze(kind, f, businessId, source);
       setAnalysis(a);
       setHasHeader(a.hasHeader);
       const m: Record<number, string> = {};

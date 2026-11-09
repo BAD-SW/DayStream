@@ -1,17 +1,18 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
-import { tenantContext } from '../auth/tenant-context';
+import { tenantContext, canReachBusiness } from '../auth/tenant-context';
 import { requirePermission } from '../auth/permissions';
 import { success, error } from '../utils/response';
 import {
   parseFileToGrid, detectHeaderRow, detectColumns, applyMapping,
   repairRows, RepairSummary, canonicalProfiles, realignRowTail, rowFits, ColumnProfile,
-  CUSTOMER_FIELDS, PAYMENT_METHOD_FIELDS, FieldDef, ColumnProposal,
+  CUSTOMER_FIELDS, PAYMENT_METHOD_FIELDS, FieldDef, ColumnProposal, ReferenceSet,
 } from '../services/migration/import-engine';
+import { adminPool } from '../db/pool';
 import { applySourcePreset, isValidSource } from '../services/migration/import-sources';
 import {
-  ImportKind, ImportResult, recordRun, listRuns, getRun, DateOrder, detectDateOrder,
+  ImportKind, ImportResult, recordRun, listRuns, getRun, DateOrder, detectDateOrder, normalizeRefName,
 } from '../services/migration/import-core';
 import { runCustomerImport } from '../services/migration/customer-import';
 import { runPaymentMethodImport } from '../services/migration/payment-method-import';
@@ -179,6 +180,98 @@ function buildRows(
   return { rows, hasHeader, proposals, repair };
 }
 
+/**
+ * Values the business already holds, for recognising columns by value (detectColumns Pass 1c):
+ * the legacy customer ids stored by the customer import (every import), and the business's
+ * membership plan names (memberships). Read-only; nothing here is written.
+ */
+/**
+ * Payment-method words a legacy file may use, keyed by DayStream's accepted-method code
+ * (pay_accepted_methods.method). Only the methods the business accepts are offered as matches.
+ */
+const METHOD_WORDS: Record<string, string[]> = {
+  cash: ['cash'],
+  card: ['card', 'credit card', 'debit card', 'credit', 'debit', 'visa', 'mastercard', 'master card', 'amex', 'american express', 'discover', 'maestro', 'card payment'],
+  bank_transfer: ['bank transfer', 'transfer', 'wire', 'wire transfer', 'bank'],
+  check: ['check', 'cheque'],
+  gift_card: ['gift card', 'giftcard', 'voucher', 'gift voucher', 'gift certificate'],
+  bank_draw: ['direct debit', 'sepa', 'ach', 'bacs', 'bank draw'],
+  google_pay: ['google pay', 'gpay'],
+  apple_pay: ['apple pay'],
+  other: ['other'],
+};
+
+/**
+ * Values the business already holds, for recognising columns by value (detectColumns Pass 1c).
+ * For every import: the legacy and processor customer ids stored by the customer import. Then
+ * per import, the setup it refers to: plan names (memberships), package names (packages), service
+ * names, staff names and service lengths (appointments), accepted payment methods (transactions),
+ * staff names and note categories (notes). Read-only.
+ */
+async function loadReferenceValues(kind: ImportKind, businessId: string): Promise<ReferenceSet> {
+  const refs: ReferenceSet = {};
+  const idNorm = (v: string) => v.trim().toLowerCase();
+  const nameRef = (names: string[]): ReferenceSet[string] | undefined => {
+    const values = new Set(names.map(normalizeRefName).filter(Boolean));
+    return values.size ? { values, normalize: normalizeRefName } : undefined;
+  };
+  const setRef = (field: string, ref: ReferenceSet[string] | undefined) => { if (ref) refs[field] = ref; };
+  const q = async <T extends Record<string, unknown>>(sql: string): Promise<T[]> =>
+    (await adminPool.query<T>(sql, [businessId])).rows;
+
+  const ids = await q<{ legacy: string | null; processor: string | null }>(
+    `SELECT legacy_customer_id AS legacy, processor_customer_id AS processor FROM cus_customers
+     WHERE business_id = $1 AND status <> 'merged' AND (legacy_customer_id <> '' OR processor_customer_id <> '')`,
+  );
+  const legacy = new Set(ids.map((r) => r.legacy).filter((v): v is string => !!v).map(idNorm));
+  const processor = new Set(ids.map((r) => r.processor).filter((v): v is string => !!v).map(idNorm));
+  if (legacy.size) refs.legacy_customer_id = { values: legacy, normalize: idNorm };
+  if (processor.size) refs.processor_customer_id = { values: processor, normalize: idNorm };
+
+  const staffNames = async (withFirstNames: boolean) => {
+    const staff = await q<{ first_name: string; last_name: string }>(
+      `SELECT sp.first_name, sp.last_name FROM stf_profiles sp JOIN usr_users u ON u.id = sp.user_id
+       WHERE u.business_id = $1 AND sp.status = 'active'`,
+    );
+    return staff.flatMap((s) => [`${s.first_name} ${s.last_name}`, ...(withFirstNames ? [s.first_name] : [])]);
+  };
+
+  switch (kind) {
+    case 'memberships':
+      setRef('plan', nameRef((await q<{ name: string }>('SELECT name FROM mbr_plans WHERE business_id = $1')).map((r) => r.name)));
+      break;
+    case 'packages':
+      // Archived packages are accepted by the import, so they count here too.
+      setRef('package', nameRef((await q<{ name: string }>('SELECT name FROM pkg_packages WHERE business_id = $1')).map((r) => r.name)));
+      break;
+    case 'appointments': {
+      setRef('service', nameRef((await q<{ name: string }>(`SELECT name FROM svc_services WHERE business_id = $1 AND status <> 'archived'`)).map((r) => r.name)));
+      // The appointment import matches staff by full name, so only full names count.
+      setRef('staff', nameRef(await staffNames(false)));
+      const durations = await q<{ duration: number }>(
+        `SELECT DISTINCT v.duration FROM svc_variants v JOIN svc_services s ON s.id = v.service_id
+         WHERE s.business_id = $1 AND v.status = 'active'`,
+      );
+      if (durations.length) refs.duration = { values: new Set(durations.map((d) => String(d.duration))), normalize: (v) => String(Number(v.trim())) };
+      break;
+    }
+    case 'transactions': {
+      const accepted = await q<{ method: string }>('SELECT method FROM pay_accepted_methods WHERE business_id = $1 AND enabled = true');
+      const words = accepted.flatMap((a) => [a.method.replace(/_/g, ' '), ...(METHOD_WORDS[a.method] ?? [])]);
+      setRef('method', nameRef(words));
+      break;
+    }
+    case 'notes':
+      // Author is only kept with the note, so a first name alone counts.
+      setRef('author', nameRef(await staffNames(true)));
+      setRef('category', nameRef((await q<{ name: string }>('SELECT name FROM cus_note_categories WHERE business_id = $1')).map((r) => r.name)));
+      break;
+    default:
+      break;
+  }
+  return refs;
+}
+
 /** Parse the optional mapping/hasHeader fields that ride alongside the upload. */
 function readMappingFromBody(req: Request): { mapping: Record<number, string> | null; hasHeader: boolean | null } {
   let mapping: Record<number, string> | null = null;
@@ -208,9 +301,15 @@ importRouter.post('/:kind/analyze', requirePermission('settings:*'), upload.sing
     const source = (req.body?.source || 'auto').toString();
     if (!isValidSource(source, kind)) { error(res, `Unknown source system "${source}" for this import`, 'VALIDATION_ERROR', 400); return; }
     const header = detectHeaderRow(grid, fieldsForKind(kind));
+    // Values this business already holds, so columns can be recognised by matching them.
+    const businessId = (req.query.business_id || req.body?.business_id || '').toString();
+    if (!businessId) { error(res, 'business_id is required', 'VALIDATION_ERROR', 400); return; }
+    // A multipart body is parsed after tenantContext, so its business_id was never checked there.
+    if (!(await canReachBusiness(req, businessId))) { error(res, 'You do not have access to this business', 'BUSINESS_FORBIDDEN', 403); return; }
+    const references = await loadReferenceValues(kind, businessId);
     // The owner picks only the system; which of its file layouts this is gets recognised here.
     const { proposals, layout: sourceLayout } = applySourcePreset(
-      detectColumns(grid, header.hasHeader, fieldsForKind(kind)), grid[0] ?? [], header.hasHeader, source,
+      detectColumns(grid, header.hasHeader, fieldsForKind(kind), references), grid[0] ?? [], header.hasHeader, source,
     );
     const sampleStart = header.hasHeader ? 1 : 0;
     const sampleRows = grid.slice(sampleStart, sampleStart + 5);
@@ -281,6 +380,8 @@ async function runEndpoint(req: Request, res: Response, commit: boolean): Promis
   const kind = parseKind(req.params.kind, res); if (!kind) return;
   const businessId = (req.body?.business_id || '').toString();
   if (!businessId) { error(res, 'business_id is required', 'VALIDATION_ERROR', 400); return; }
+  // A multipart body is parsed after tenantContext, so its business_id was never checked there.
+  if (!(await canReachBusiness(req, businessId))) { error(res, 'You do not have access to this business', 'BUSINESS_FORBIDDEN', 403); return; }
   if (!req.file) { error(res, 'A file is required', 'VALIDATION_ERROR', 400); return; }
 
   const { mapping, hasHeader } = readMappingFromBody(req);

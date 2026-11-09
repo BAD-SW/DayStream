@@ -110,9 +110,14 @@ export type DateOrder = 'mdy' | 'dmy';
 /** Where an import file came from (server: services/migration/import-sources.ts). */
 export type ImportSource = 'auto' | 'stripe';
 
-export async function analyze(kind: ImportKind, file: File, source: ImportSource = 'auto'): Promise<AnalyzeResult> {
+/**
+ * `businessId` is required: columns are also recognised by matching the business's own data
+ * (stored customer ids, plan names).
+ */
+export async function analyze(kind: ImportKind, file: File, businessId: string, source: ImportSource = 'auto'): Promise<AnalyzeResult> {
   const form = new FormData();
   form.append('file', file);
+  form.append('business_id', businessId);
   form.append('source', source);
   const res = await apiClient.post(`/v1/import/${kind}/analyze`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },

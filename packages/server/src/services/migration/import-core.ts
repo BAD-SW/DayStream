@@ -190,65 +190,105 @@ export interface CustomerMatchInput {
   phone?: string | null;
 }
 
+export type MatchKey = 'processor_id' | 'legacy_id' | 'email' | 'phone';
+
 export interface CustomerMatch {
   customerId: string | null;
-  matchedBy: 'processor_id' | 'legacy_id' | 'email' | 'phone' | null;
+  matchedBy: MatchKey | null;
+  /**
+   * Set when the row's keys point to DIFFERENT customers (e.g. the legacy id is Ana's but the email
+   * is Maria's). The row is not attached to anyone; this is the plain-language reason to show.
+   */
+  conflict?: string;
+}
+
+/** A customer found by at least one of the row's keys, and which keys found it. */
+export interface MatchCandidate {
+  id: string;
+  name: string;
+  byProcessor: boolean;
+  byLegacy: boolean;
+  byEmail: boolean;
+  byPhone: boolean;
+}
+
+const KEY_ORDER: Array<{ key: MatchKey; flag: keyof Pick<MatchCandidate, 'byProcessor' | 'byLegacy' | 'byEmail' | 'byPhone'> }> = [
+  { key: 'processor_id', flag: 'byProcessor' },
+  { key: 'legacy_id', flag: 'byLegacy' },
+  { key: 'email', flag: 'byEmail' },
+  { key: 'phone', flag: 'byPhone' },
+];
+
+/** How a key and its value read in a reason ("legacy ID "RE9284A""). */
+function describeKey(key: MatchKey, input: CustomerMatchInput): string {
+  switch (key) {
+    case 'processor_id': return `processor customer ID "${(input.processorCustomerIds ?? []).filter((v) => (v || '').trim()).join('" / "')}"`;
+    case 'legacy_id': return `legacy ID "${(input.legacyCustomerId || '').trim()}"`;
+    case 'email': return `email "${(input.email || '').trim()}"`;
+    default: return `phone "${(input.phone || '').trim()}"`;
+  }
 }
 
 /**
- * Resolve the DayStream customer a row belongs to. Keys, strongest first: the processor
- * customer id captured at customer import (exact), the legacy customer id (exact), then email
- * (case-insensitive) and a unique phone. Every key resolves only when EXACTLY ONE customer
- * matches — a shared email or phone never attaches a row to the wrong person; it falls through,
- * and with nothing left the caller fails the row with a clear reason.
+ * Decide the customer from every customer any key found (pure, so it can be tested without a
+ * database). Each key counts only when it found EXACTLY ONE customer: a shared email or phone is
+ * ignored rather than guessed. When the counting keys agree, the strongest key is reported as the
+ * match; when they point to different customers, nothing is attached and the conflict is explained.
+ */
+export function resolveCustomerMatch(candidates: MatchCandidate[], input: CustomerMatchInput): CustomerMatch {
+  const resolved: Array<{ key: MatchKey; customer: MatchCandidate }> = [];
+  for (const { key, flag } of KEY_ORDER) {
+    const hits = candidates.filter((c) => c[flag]);
+    if (hits.length === 1) resolved.push({ key, customer: hits[0] });
+  }
+  if (resolved.length === 0) return { customerId: null, matchedBy: null };
+
+  const distinct = [...new Map(resolved.map((r) => [r.customer.id, r])).values()];
+  if (distinct.length > 1) {
+    const parts = distinct.map((d) => `the ${describeKey(d.key, input)} matches ${d.customer.name}`);
+    return {
+      customerId: null, matchedBy: null,
+      conflict: `This row points to different customers: ${parts.join(', but ')}. Fix the row so its details belong to the same customer`,
+    };
+  }
+  return { customerId: resolved[0].customer.id, matchedBy: resolved[0].key };
+}
+
+/**
+ * Resolve the DayStream customer a row belongs to, checking EVERY key the row has (processor
+ * customer id, legacy customer id, email, phone) in one query, then deciding with
+ * resolveCustomerMatch: keys that agree resolve the customer; keys that disagree fail the row with
+ * a conflict reason instead of silently picking one. With no key resolving, the caller fails the
+ * row with noCustomerReason.
  */
 export async function matchCustomer(businessId: string, input: CustomerMatchInput): Promise<CustomerMatch> {
   const processorIds = [...new Set((input.processorCustomerIds ?? []).map((v) => (v || '').trim()).filter(Boolean))];
-  if (processorIds.length > 0) {
-    const { rows } = await adminPool.query(
-      `SELECT id FROM cus_customers
-       WHERE business_id = $1 AND processor_customer_id = ANY($2::text[]) AND status <> 'merged'
-       LIMIT 2`,
-      [businessId, processorIds],
-    );
-    if (rows.length === 1) return { customerId: rows[0].id, matchedBy: 'processor_id' };
-  }
+  const legacy = (input.legacyCustomerId || '').trim() || null;
+  const email = (input.email || '').trim().toLowerCase() || null;
+  const phone = (input.phone || '').trim() || null;
+  if (processorIds.length === 0 && !legacy && !email && !phone) return { customerId: null, matchedBy: null };
 
-  const legacy = (input.legacyCustomerId || '').trim();
-  if (legacy) {
-    const { rows } = await adminPool.query(
-      `SELECT id FROM cus_customers
-       WHERE business_id = $1 AND legacy_customer_id = $2 AND status <> 'merged'
-       LIMIT 2`,
-      [businessId, legacy],
-    );
-    if (rows.length === 1) return { customerId: rows[0].id, matchedBy: 'legacy_id' };
-    // 0 → fall through to email/phone; 2+ → ambiguous legacy id, also fall through.
-  }
-
-  const email = (input.email || '').trim().toLowerCase();
-  if (email) {
-    const { rows } = await adminPool.query(
-      `SELECT id FROM cus_customers
-       WHERE business_id = $1 AND LOWER(email) = $2 AND status <> 'merged'
-       LIMIT 2`,
-      [businessId, email],
-    );
-    if (rows.length === 1) return { customerId: rows[0].id, matchedBy: 'email' };
-  }
-
-  const phone = (input.phone || '').trim();
-  if (phone) {
-    const { rows } = await adminPool.query(
-      `SELECT id FROM cus_customers
-       WHERE business_id = $1 AND (phone = $2 OR phone_e164 = $2) AND status <> 'merged'
-       LIMIT 2`,
-      [businessId, phone],
-    );
-    if (rows.length === 1) return { customerId: rows[0].id, matchedBy: 'phone' };
-  }
-
-  return { customerId: null, matchedBy: null };
+  const { rows } = await adminPool.query<{
+    id: string; first_name: string | null; last_name: string | null; email: string | null;
+    by_processor: boolean; by_legacy: boolean; by_email: boolean; by_phone: boolean;
+  }>(
+    `SELECT id, first_name, last_name, email,
+            COALESCE(processor_customer_id = ANY($2::text[]), false) AS by_processor,
+            COALESCE(legacy_customer_id = $3, false) AS by_legacy,
+            COALESCE(LOWER(email) = $4, false) AS by_email,
+            COALESCE(phone = $5 OR phone_e164 = $5, false) AS by_phone
+     FROM cus_customers
+     WHERE business_id = $1 AND status <> 'merged'
+       AND (processor_customer_id = ANY($2::text[]) OR legacy_customer_id = $3
+            OR LOWER(email) = $4 OR phone = $5 OR phone_e164 = $5)
+     LIMIT 20`,
+    [businessId, processorIds, legacy, email, phone],
+  );
+  return resolveCustomerMatch(rows.map((r) => ({
+    id: r.id,
+    name: [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || r.email || 'a customer with no name',
+    byProcessor: r.by_processor, byLegacy: r.by_legacy, byEmail: r.by_email, byPhone: r.by_phone,
+  })), input);
 }
 
 /**
