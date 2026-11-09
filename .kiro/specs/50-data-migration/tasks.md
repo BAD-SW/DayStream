@@ -262,13 +262,22 @@ Implements Requirement 18 and design.md §6-§8. Notes are one-to-many (a custom
 - [ ] Name agreement as a second check on email and phone matches
 - [ ] Pick the customer by hand in the review table for unmatched or ambiguous rows
 - [ ] JSON mapping files
+### 33. Field reference tables and import correctness fixes
+- [x] ✅ Field reference table (Field / Required / Notes, plus general notes) on the upload screen for all eight imports, written from what each importer actually does
+- [x] ✅ Appointment date and time read in the business's time zone (`localToUtc`), not UTC; an unreadable time fails the row instead of becoming noon
+- [x] ✅ A future appointment marked cancelled / no-show / missed goes on the timeline as history, never into the calendar, and never uses a package session
+- [x] ✅ Day-first dates: `parseDateCell` takes a date order; accepts / - . separators and two-digit years; the order is detected over the whole file at analyze and sent with every commit batch, else the business's country (location, then phone) decides; applied to every import including customer date of birth and joined date
+- [x] ✅ Account balances safe to re-run: migration 167 `import_key` on credit notes and invoices; a repeated balance reports matched; staff-created balances are never matched
+- [x] ✅ Processor Customer ID offered on every customer-linked import and tried first (`customerMatchInput`)
+- [x] ✅ Tests: dates both orders, separators, two-digit years, detection; Madrid summer/winter and New York times; not-happening statuses; balance key; live trial on Transcend Health (date order dmy, repeated credit matched, day-first transactions read)
+- [ ] Verify live: a committed account-balance re-run, and future/past appointments in the calendar and timeline
 ### 30. Open follow-ups
 - [ ] Deferred: "Import from Stripe" via API (only helps when the business owns its Stripe account; the main competitors own the card accounts, so the file import from Stripe's card-copy mapping file stays the primary path)
 - [ ] Up-front required-data check for the non-customer import types
 - [ ] Faster customer commit (batch writes or background job runner) if 10,000+ rows need to be quicker
 - [ ] Import errors that name the failing field instead of a generic database message
 ---
-**Status**: 🟡 In Progress — Waves 1-3 built and verified live (entity imports). Wave 4 **Stage A (engine)** and **Stage B (three-tab staging UI)** both built, unit-tested, and verified live; extended headerless detection added from live testing (gender/language/country/tags/notes + name & id by elimination), 25/25 engine tests pass. **Notes Import** (Requirement 18, new entity) built and verified live (multiple notes per customer, backdated, idempotent re-run). Server tsc 0, client touched files clean. Customer import verified end to end on 10,000 rows (cell editing, replace file, batched progress, up-front required-data flags, language normalization). Outstanding follow-ups from earlier waves: a renewal run against an imported membership enrolment not yet exercised; account-balance import has no idempotency (design §6); a per-balance-import ledger-double-count warning in the UI.
+**Status**: 🟡 In Progress — Waves 1-3 built and verified live (entity imports). Wave 4 **Stage A (engine)** and **Stage B (three-tab staging UI)** both built, unit-tested, and verified live; extended headerless detection added from live testing (gender/language/country/tags/notes + name & id by elimination), 25/25 engine tests pass. **Notes Import** (Requirement 18, new entity) built and verified live (multiple notes per customer, backdated, idempotent re-run). Server tsc 0, client touched files clean. Customer import verified end to end on 10,000 rows (cell editing, replace file, batched progress, up-front required-data flags, language normalization). Outstanding follow-ups from earlier waves: a renewal run against an imported membership enrolment not yet exercised; a per-balance-import ledger-double-count warning in the UI.
 **Dependencies**: Phase 46, Phase 05, Phase 10, Phase 08, packages, business setup
 
 

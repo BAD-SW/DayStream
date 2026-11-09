@@ -32,6 +32,7 @@ The central safety line: **live state vs. history.** Memberships, account balanc
 14. [What We Deliberately Do Not Build](#14-what-we-deliberately-do-not-build)
 15. [Intelligent Detection & Row Repair (Wave 4)](#15-intelligent-detection--row-repair-wave-4)
 16. [Source Systems & Processor Customer Matching](#16-source-systems--processor-customer-matching)
+17. [Dates, Times, Statuses & Balance Re-runs](#17-dates-times-statuses--balance-re-runs)
 
 ---
 
@@ -375,3 +376,37 @@ A key that matches several customers (a shared email or phone) is skipped. When 
 - Name agreement as a second check on email and phone matches.
 - Choosing the customer by hand in the review table for unmatched or ambiguous rows.
 - JSON mapping files (Stripe offers CSV or JSON; ask for CSV).
+
+---
+
+## 17. Dates, Times, Statuses & Balance Re-runs
+
+Correctness fixes found while writing the upload-screen field reference.
+
+### 17.1 Date order
+
+`parseDateCell(value, order)` (import-core) reads ISO dates, numeric dates with `/`, `-` or `.` and 2- or 4-digit years in the given order (`mdy` or `dmy`), then anything the JavaScript date parser understands. Two-digit years up to ten years ahead are 20xx, otherwise 19xx (birth dates).
+
+The order is a property of the **file**, not the row (one export, one format):
+
+1. `analyze` runs `detectDateOrder` over every cell of the file: a first part over 12 means day-first, a second part over 12 means month-first; none, or both, gives null. It returns `dateOrder`.
+2. The client sends `date_order` with every `commit-rows` batch, so all batches read dates the same way.
+3. When it's null, `businessDateOrder` uses the business's country: its first location's country, else its phone number's country. Month-first for the US and its territories, the Philippines and a few Pacific states; day-first elsewhere; month-first when nothing is known.
+
+Every import uses it, including the customer import's date of birth and joined date (previously passed to the JavaScript parser as-is).
+
+### 17.2 Appointment times
+
+The file's date and time are the business's wall-clock time. `appointmentStart` converts them with `localToUtc` in `sys_businesses.timezone`; a blank time is local noon; a time that can't be read fails the row.
+
+### 17.3 Appointment statuses
+
+A future row whose status means it won't happen (cancelled, no-show, late cancel, missed, declined, void) is not a live booking: it's written to the timeline as history and never uses a package session. Statuses are normalised (case, `_`, `-`, spaces) before comparison, so "checked in", "checked-in" and "checked_in" all count as attended for past rows.
+
+### 17.4 Account balances re-run
+
+Migration 167 adds `import_key` to `pay_credit_notes` and `pay_invoices` (unique per business where set). `balanceImportKey` hashes kind + customer + amount + paid amount + dates + normalised description. The import checks it (and a per-file set) before issuing; a hit is reported as matched. `issueCreditNote` and `issueImportedInvoice` take an optional `importKey`; nothing else sets it, so staff-created balances are never matched. Two identical balances for one customer in one file collapse to one, an accepted limitation since balances carry no external reference.
+
+### 17.5 Customer matching
+
+`customerMatchInput(row)` builds the match keys for every customer-linked import, so each tries the processor customer id first (§16.3). Every import's field list offers Processor Customer ID.
