@@ -286,6 +286,9 @@ Implements Requirement 18 and design.md §6-§8. Notes are one-to-many (a custom
 - [x] ✅ `resolveCustomerMatch`: keys that agree resolve the customer; keys pointing to different customers fail the row with a reason naming each key and customer; shared emails / phones are ignored, not conflicts
 - [x] ✅ All seven customer-linked importers report the conflict reason; field tables explain it
 - [x] ✅ Tests: agree, single key, conflict, shared key ignored, only shared keys, processor-vs-email conflict; live on Transcend Health (agreeing keys matched, a legacy-id / email mismatch reported with both names)
+### 36. Header row: indicator instead of a checkbox
+- [x] ✅ Removed the "First row is column names" checkbox: it only relabelled the columns and never changed which rows were imported
+- [x] ✅ When row 1 is detected as a header, the review screen says so and names the first columns; "It's data, include it" re-analyzes the file with row 1 as data (`has_header=false` on analyze). No header found shows nothing: a header misread as data appears as a flagged row
 ### 30. Open follow-ups
 - [ ] Deferred: "Import from Stripe" via API (only helps when the business owns its Stripe account; the main competitors own the card accounts, so the file import from Stripe's card-copy mapping file stays the primary path)
 - [ ] Up-front required-data check for the non-customer import types
