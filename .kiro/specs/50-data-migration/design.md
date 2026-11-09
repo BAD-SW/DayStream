@@ -361,14 +361,14 @@ Without the Stripe choice, automatic detection reads `old_customer_id` as a Lega
 
 ### 16.3 Customer matching order
 
-`matchCustomer` (import-core) tries, strongest first, and resolves only when exactly one customer matches:
+`matchCustomer` (import-core) checks **every** key the row has in one query, with a flag per key for each customer found:
 
-1. Processor customer id: the row's previous processor id, then its Stripe Customer ID (a Stripe-to-Stripe copy keeps customer ids unchanged)
+1. Processor customer id: the row's previous processor id and its Stripe Customer ID (a Stripe-to-Stripe copy keeps customer ids unchanged)
 2. Legacy Customer ID
 3. Email (case-insensitive)
-4. Phone
+4. Phone (raw or E.164)
 
-A key that matches several customers (a shared email or phone) is skipped. When nothing resolves, the row fails with a reason naming every key tried. `noCustomerReason` accepts either the match input or a field-mapped row.
+`resolveCustomerMatch` (pure) then decides. A key counts only when it found exactly one customer; a key that found several (a shared email or phone) is ignored, never guessed. If the counting keys all point to the same customer, it's the match and the strongest key is reported. If they point to different customers, the row is not imported: `conflict` names each key, its value and the customer it matched ("the legacy ID "DS83749" matches James Miller, but the email "…" matches Arthur Morgan"), and every importer reports it instead of the no-match reason. When no key resolves, the row fails with `noCustomerReason`, naming every key tried.
 
 ### 16.4 Not yet built
 
@@ -410,3 +410,26 @@ Migration 167 adds `import_key` to `pay_credit_notes` and `pay_invoices` (unique
 ### 17.5 Customer matching
 
 `customerMatchInput(row)` builds the match keys for every customer-linked import, so each tries the processor customer id first (§16.3). Every import's field list offers Processor Customer ID.
+
+### 17.6 Recognising columns by the business's own data
+
+`detectColumns(grid, hasHeader, fields, references)` takes an optional `ReferenceSet`: per field, the values the business already holds and how to normalise a cell for comparison. The engine stays pure; `loadReferenceValues` in the import route loads them at analyze (stored legacy customer ids for every import; plan names for memberships), which is why analyze now requires `business_id`.
+
+- **Pass 1c (references)**: per field, each unclaimed column is scored by the share of its non-empty cells found in the set and its count of distinct hits. Columns under 50% are ignored; the most distinct hits wins, then the higher share. `certain` at 80%+, else `likely`. Distinct hits keep a low-variety column (a 60/90 duration) from beating a real id column when ids 60 and 90 happen to exist.
+- **Pass 1d (membership dates)**: of the date columns, the one with the largest share of future dates (over half) is the next billing date and the one with the largest share of past dates (over half) is the start date; a few exceptions in either don't change it.
+- **Pass 1e (status)**: a column of 80%+ recognised status words (active / paused / cancelled, completed / no show …) is the status.
+
+Reference sets loaded per import (`loadReferenceValues`):
+
+| Import | Fields checked against the business's data |
+|---|---|
+| All | `legacy_customer_id`, `processor_customer_id` (stored on customers) |
+| Memberships | `plan` (plan names) |
+| Packages | `package` (package names, archived included, as the import accepts them) |
+| Appointments | `service` (non-archived service names), `staff` (active staff full names, as the import matches them), `duration` (active service option lengths) |
+| Transactions | `method` (accepted payment methods, plus common wording: Visa / credit card → card, cheque → check, transfer → bank transfer …) |
+| Notes | `author` (active staff full and first names), `category` (note categories) |
+
+Where nothing in setup applies: `time` by a colon / am-pm format (bare "1430" is too like a year or last-4); `type` by credit / invoice words; `issue_date` vs `due_date` as the earlier vs later of two date columns in most rows (`onOrBeforeShare`); money fields also take a column of two-decimal or currency-signed amounts (`amountShapeScore`, Pass 2b: "45.00" classifies as a plain number), filled in declared order so `amount` comes before `amount_paid`; `reference` as a unique id-shaped column, claimed before the legacy-id-by-uniqueness rule (in a payment file the customer repeats, the reference doesn't); `note` / `description` by the free-text fallback.
+
+Both multipart endpoints (analyze and the file trial/commit) now check business access explicitly with `canReachBusiness`: their body `business_id` is parsed by multer after `tenantContext` runs, so the middleware never saw it.

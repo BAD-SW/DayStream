@@ -271,6 +271,21 @@ Implements Requirement 18 and design.md §6-§8. Notes are one-to-many (a custom
 - [x] ✅ Processor Customer ID offered on every customer-linked import and tried first (`customerMatchInput`)
 - [x] ✅ Tests: dates both orders, separators, two-digit years, detection; Madrid summer/winter and New York times; not-happening statuses; balance key; live trial on Transcend Health (date order dmy, repeated credit matched, day-first transactions read)
 - [ ] Verify live: a committed account-balance re-run, and future/past appointments in the calendar and timeline
+### 34. Header-less detection by matching the business's own data
+- [x] ✅ Engine Pass 1c: a column whose values match values the business already holds is that field; most distinct hits wins (so a 60/90 duration can't pass for ids); certain at 80%+, likely at 50%+
+- [x] ✅ Reference values loaded at analyze: stored legacy customer ids (every import), plan names (memberships); analyze now requires business_id
+- [x] ✅ Memberships: next billing date = the mostly-future date column, start date = the mostly-past one (a single past-only date column is the start date); status recognised by its words (memberships and appointments)
+- [x] ✅ Explicit business access check on the two multipart endpoints (analyze, file trial/commit), whose body business_id is parsed after tenantContext
+- [x] ✅ Tests: header-less memberships, dates either order with exceptions, repeating customer ids, the duration decoy; live on Transcend Health (ids like RE9284A and plans Recover / Optimize recognised, dates told apart)
+- [x] ✅ Every import after customers / payment methods checks columns against the business's setup: stored legacy and processor customer ids (all), package names (packages), service names, staff full names and service lengths (appointments), accepted payment methods with common wording such as Visa / cheque (transactions), staff names incl. first names and note categories (notes)
+- [x] ✅ Where there is no setup to check: time by format, credit / invoice by words, issue date = the earlier of two dates, amounts with two decimals or a currency sign, a unique id column as the transaction reference, the leftover free-text column as note / description
+- [x] ✅ Field tables say a header is optional for each of these imports and what is recognised how
+- [x] ✅ Tests: header-less packages, appointments, transactions, account balances and notes files; live reference lookups on Transcend Health (8 customer ids, 3 plans, 29 packages, 6 services, 4 staff, 6 service lengths, accepted methods, 3 note categories)
+### 35. Customer keys that disagree
+- [x] ✅ `matchCustomer` checks every key (processor id, legacy id, email, phone) in one query instead of stopping at the first match
+- [x] ✅ `resolveCustomerMatch`: keys that agree resolve the customer; keys pointing to different customers fail the row with a reason naming each key and customer; shared emails / phones are ignored, not conflicts
+- [x] ✅ All seven customer-linked importers report the conflict reason; field tables explain it
+- [x] ✅ Tests: agree, single key, conflict, shared key ignored, only shared keys, processor-vs-email conflict; live on Transcend Health (agreeing keys matched, a legacy-id / email mismatch reported with both names)
 ### 30. Open follow-ups
 - [ ] Deferred: "Import from Stripe" via API (only helps when the business owns its Stripe account; the main competitors own the card accounts, so the file import from Stripe's card-copy mapping file stays the primary path)
 - [ ] Up-front required-data check for the non-customer import types
