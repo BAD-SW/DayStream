@@ -114,11 +114,16 @@ export type ImportSource = 'auto' | 'stripe';
  * `businessId` is required: columns are also recognised by matching the business's own data
  * (stored customer ids, plan names).
  */
-export async function analyze(kind: ImportKind, file: File, businessId: string, source: ImportSource = 'auto'): Promise<AnalyzeResult> {
+export async function analyze(
+  kind: ImportKind, file: File, businessId: string, source: ImportSource = 'auto',
+  opts: { firstRowIsData?: boolean } = {},
+): Promise<AnalyzeResult> {
   const form = new FormData();
   form.append('file', file);
   form.append('business_id', businessId);
   form.append('source', source);
+  // The header row was detected wrongly: read row 1 as data instead.
+  if (opts.firstRowIsData) form.append('has_header', 'false');
   const res = await apiClient.post(`/v1/import/${kind}/analyze`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });

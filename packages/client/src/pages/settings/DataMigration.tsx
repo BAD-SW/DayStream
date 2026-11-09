@@ -287,7 +287,6 @@ export function DataMigration({ businessId }: { businessId: string }) {
   const [analysis, setAnalysis] = useState<api.AnalyzeResult | null>(null);
   // Chosen before the file, so the mapping can use that system's known layout.
   const [source, setSource] = useState<api.ImportSource>('auto');
-  const [hasHeader, setHasHeader] = useState(true);
   const [mapping, setMapping] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
   const [fileVersion, setFileVersion] = useState(0);
@@ -313,16 +312,15 @@ export function DataMigration({ businessId }: { businessId: string }) {
 
   const reset = () => {
     setStep('pick'); setKind(null); setFile(null); setAnalysis(null); setSource('auto');
-    setMapping({}); setErr(null); setHasHeader(true);
+    setMapping({}); setErr(null);
   };
 
-  const onFile = async (f: File) => {
+  const onFile = async (f: File, opts: { firstRowIsData?: boolean } = {}) => {
     if (!kind) return;
     setFile(f); setBusy(true); setErr(null);
     try {
-      const a = await api.analyze(kind, f, businessId, source);
+      const a = await api.analyze(kind, f, businessId, source, opts);
       setAnalysis(a);
-      setHasHeader(a.hasHeader);
       const m: Record<number, string> = {};
       for (const p of a.proposedMapping) if (p.field) m[p.index] = p.field;
       setMapping(m);
@@ -397,8 +395,7 @@ export function DataMigration({ businessId }: { businessId: string }) {
           analysis={analysis}
           mapping={mapping}
           setMapping={setMapping}
-          hasHeader={hasHeader}
-          setHasHeader={setHasHeader}
+          onFirstRowIsData={() => { if (file) onFile(file, { firstRowIsData: true }); }}
           fieldOptions={fieldsForKind()}
           onCancel={reset}
           onDone={() => { loadRuns(); reset(); }}
@@ -509,7 +506,7 @@ interface WorkRow {
  * (Requirement 12) makes re-importing overlapping rows safe. No separate staging screen.
  */
 function MappingTable({
-  kind, businessId, fileName, analysis, mapping, setMapping, hasHeader, setHasHeader, fieldOptions, onCancel, onDone, onReplaceFile, replacing,
+  kind, businessId, fileName, analysis, mapping, setMapping, onFirstRowIsData, fieldOptions, onCancel, onDone, onReplaceFile, replacing,
 }: {
   kind: api.ImportKind;
   businessId: string;
@@ -517,8 +514,8 @@ function MappingTable({
   analysis: api.AnalyzeResult;
   mapping: Record<number, string>;
   setMapping: (m: Record<number, string>) => void;
-  hasHeader: boolean;
-  setHasHeader: (b: boolean) => void;
+  /** Re-analyze the file reading row 1 as data (the header was detected wrongly). */
+  onFirstRowIsData: () => void;
   fieldOptions: string[];
   onCancel: () => void;
   onDone: () => void;
@@ -634,11 +631,23 @@ function MappingTable({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--font-size-sm)' }}>
-          <input type="checkbox" checked={hasHeader} onChange={(e) => setHasHeader(e.target.checked)} />
-          First row is column names (uncheck if it&apos;s already data)
-        </label>
+      {/* Status lines, stacked and left-aligned so they read top to bottom with the intro above. */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-xs)' }}>
+        {/* Shown only when row 1 was read as column names: says which, with one way out if that's
+            wrong. No header found needs no control: a header misread as data shows up as a flagged row. */}
+        {analysis.hasHeader && (
+          <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+            Row 1 was read as column names ({headerPreview(analysis.columns)}).{' '}
+            <button
+              type="button"
+              onClick={onFirstRowIsData}
+              disabled={replacing}
+              style={{ border: 'none', background: 'none', padding: 0, color: 'var(--color-primary)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit' }}
+            >
+              It&apos;s data, include it
+            </button>
+          </div>
+        )}
         <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
           Set each column&apos;s field in the header. {errored.length > 0
             ? `${errored.length} row${errored.length === 1 ? '' : 's'} need fixing — shift values with ← / →, or click a cell to type the missing value. Rows left unfixed are skipped.`
@@ -704,7 +713,7 @@ function MappingTable({
               {Array.from({ length: width }).map((_, i) => (
                 <th key={i} style={stickyHead}>
                   <div style={{ marginBottom: 4, color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)', whiteSpace: 'nowrap' }}>
-                    {hasHeader ? (analysis.columns[i] ?? `Column ${i + 1}`) : `Column ${i + 1}`}
+                    {analysis.hasHeader ? (analysis.columns[i] || `Column ${i + 1}`) : `Column ${i + 1}`}
                   </div>
                   <select value={mapping[i] || ''} onChange={(e) => setMapping({ ...mapping, [i]: e.target.value })} style={sel}>
                     {fieldOptions.map((f) => <option key={f} value={f}>{f ? (FIELD_LABELS[f] || f) : '— Skip —'}</option>)}
@@ -823,6 +832,13 @@ function MappingTable({
       </div>
     </div>
   );
+}
+
+/** The first few header names, for the "Row 1 was read as column names" indicator. */
+function headerPreview(columns: string[]): string {
+  const names = columns.map((c) => (c || '').trim()).filter(Boolean);
+  const shown = names.slice(0, 4).join(', ');
+  return names.length > 4 ? `${shown}\u2026` : shown;
 }
 
 /** What a file for this import can contain: field, whether it's required, and how it's handled. */

@@ -300,7 +300,10 @@ importRouter.post('/:kind/analyze', requirePermission('settings:*'), upload.sing
     // The source system chosen before upload (Requirement 19): its known layout overrides guessing.
     const source = (req.body?.source || 'auto').toString();
     if (!isValidSource(source, kind)) { error(res, `Unknown source system "${source}" for this import`, 'VALIDATION_ERROR', 400); return; }
-    const header = detectHeaderRow(grid, fieldsForKind(kind));
+    // Row 1 is a header when it reads as labels over the data below. The owner can say "it's data"
+    // (has_header=false) when that guess is wrong; the file is then re-analyzed with row 1 as data.
+    const detected = detectHeaderRow(grid, fieldsForKind(kind));
+    const header = req.body?.has_header === 'false' ? { ...detected, hasHeader: false } : detected;
     // Values this business already holds, so columns can be recognised by matching them.
     const businessId = (req.query.business_id || req.body?.business_id || '').toString();
     if (!businessId) { error(res, 'business_id is required', 'VALIDATION_ERROR', 400); return; }
