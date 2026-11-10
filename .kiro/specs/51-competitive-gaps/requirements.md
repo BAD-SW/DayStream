@@ -65,6 +65,14 @@ The acceptance criteria below set the capability each gap must reach. They are r
 3. THE system SHALL let staff send the waiting customer a "ready for you" message on the customer's channel.
 4. THE system SHALL tell a customer who checks themselves in (on the kiosk, by QR code, or from their phone) which forms they still have to complete for the booking, and let them complete those forms there and then.
 5. THE system SHALL NOT stop a customer from checking themselves in because a form is outstanding; staff still see the outstanding forms for that customer in the waiting list and at the desk.
+6. THE system SHALL identify a customer at the front-desk kiosk by the phone number or email address on their booking, or by scanning their booking's QR code, and SHALL NOT identify anyone by name.
+7. THE system SHALL refuse to guess when more than one person matches the phone number or email address, and SHALL send the customer to the front desk instead.
+8. THE system SHALL show the customer a list of all the forms that apply to their visit, with a tick beside each completed form and a button beside each form still to complete.
+9. THE system SHALL put a personal check-in link in each appointment reminder email, so a customer can check in and complete forms from their own phone without a login.
+10. THE system SHALL let staff copy the same personal check-in link for any appointment.
+11. WHEN nothing is scheduled for a customer today but they have other appointments in the next 60 days, THE system SHALL say so at the kiosk, list those appointments by service and date and time, and send the customer to the front desk, because an appointment may have been moved without the calendar being updated.
+12. THE system SHALL let staff register, list, switch off, switch back on and delete kiosks from the business Settings, and show a registered kiosk's link again whenever they need it.
+13. THE system SHALL keep a switched-off kiosk's key on its tablet, so the tablet works again as soon as it is switched back on.
 
 ### Messaging and booking
 

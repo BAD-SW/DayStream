@@ -169,7 +169,7 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
 
   // Enforce lead time (unless staff override)
   if (!input.overrideRules && !input.skipLeadTime) {
-    const minAdvanceMs = (service.min_advance_booking_hours || 2) * 60 * 60 * 1000;
+    const minAdvanceMs = (service.min_advance_booking_hours ?? 2) * 60 * 60 * 1000;
     if (startTime.getTime() - Date.now() < minAdvanceMs) {
       throw new Error('Booking is within the minimum advance booking window');
     }

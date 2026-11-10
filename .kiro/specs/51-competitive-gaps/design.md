@@ -299,6 +299,26 @@ All business routes require `business_id` (Critical Rule 3) and use the existing
 
 Every endpoint has its UI: the Templates tab, the customer profile, booking detail, check-in and the public form page.
 
+### 1.11a Forms at self check-in (Requirement 3, criteria 4 to 10)
+
+A customer checks in on the front-desk kiosk or from their own phone. Either way, check-in comes first and is never held back by a form; then the customer sees every form that applies to the visit and completes what is missing.
+
+- **Kiosk screen (`/kiosk`).**
+  - A public full-screen page for a tablet. It authenticates with the kiosk device's existing token. Staff register the tablet once under **Settings > Check-In Kiosk** (it acts straight away, like Processes), then open the link shown there, `/kiosk?token=…`, on the tablet; the page keeps the token in the browser and removes it from the address. The same tab lists the kiosks and switches one off.
+  - The customer types a phone number or email address, or scans their booking QR code with a scanner that types the code. A name is never used.
+  - A phone number matches a customer on its digits (with or without the country code); an email address matches exactly. Only people with a confirmed or already checked-in booking today are found, and if more than one person matches nothing is guessed: "Please see the front desk."
+  - The page then shows a greeting, the visit, and the list of forms with ticks and **Fill in** buttons, then **Done**, which returns to the start. It also returns to the start after a period of inactivity.
+  - If nothing is scheduled today under that phone number or email address, but the person has other confirmed or pending appointments from today to 60 days ahead (at most five), the kiosk says "Nothing is scheduled for today", lists them by service and date and time, and sends the person to the front desk. Nothing else about the person or the appointment is shown. If two people match, or the person has no upcoming appointments, the message is the plain "could not find an appointment" one.
+- **Phone page (`/check-in/:code`).**
+  - The code is a long random code on the booking (64 bits or more), carried in the link. It is a different code from the short booking QR code, which is too easy to guess for a public link.
+  - The page shows the visit and an **I'm here** button, then the same list of forms. If the customer opens it before check-in opens, it says so. It works for a booking that is already checked in, to complete forms.
+  - The link is added to each appointment reminder email, and staff can copy it from the booking page.
+- **Forms.**
+  - **Fill in** starts a device form request for that customer, booking and form (one use, valid for 1 hour) and opens the existing `/forms/:token` page. A `next` address brings the customer back to the kiosk or phone page afterwards, where the list shows the new tick. `next` is limited to the kiosk and check-in pages.
+  - Requests are created when the customer taps **Fill in**, not when the list is shown, so showing the list never cancels a form someone is filling in.
+- **Kiosk session.** After identifying a customer the server returns an encrypted, short-lived (30 minutes) session that names the booking. The kiosk sends it back to list forms and start one, so the customer is not asked again and the kiosk never holds anything but that session.
+- **Security.** The public routes are rate limited. Responses carry only the first name, the service and time, and the forms; no contact details or ids. Every lookup is scoped to the kiosk's business or the code's booking.
+
 ### 1.12 Security
 
 - **Link tokens:** 32 random bytes. Only their SHA-256 is stored. They expire after 1 hour (device) or 7 days (link), work once, and are cancelled when replaced.

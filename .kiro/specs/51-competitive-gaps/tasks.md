@@ -46,7 +46,15 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 
 ## 3. Virtual waiting room (Requirement 3)
 - [ ] Confirm current state and agree requirements (including forms at self check-in: criteria 4 and 5)
-- [ ] Self check-in (kiosk, QR and phone) shows the customer's outstanding forms and lets them complete them, reusing the public form page and the same outstanding-forms lookup staff check-in uses
+- Self check-in with forms (design.md §1.11a)
+  - [x] ✅ Kiosk identifies by phone, email or QR code (never name), refuses when ambiguous
+  - [x] ✅ Server: self check-in service, kiosk session, kiosk and phone routes, long personal check-in code
+  - [x] ✅ Kiosk screen `/kiosk` with forms list; kiosk setup in Settings > Check-In Kiosk (fixes device registration); the separate Check-In page, menu entry and dashboard tile removed
+  - [x] ✅ Kiosk lists the customer's other upcoming appointments when nothing is scheduled today
+  - [x] ✅ Phone page `/check-in/:code`; link in reminder emails; staff can copy the link
+  - [x] ✅ Form page returns the customer to the kiosk or phone page afterwards
+  - [x] ✅ First-visit forms stay outstanding until the first visit is completed (a checked-in visit is not yet completed)
+  - [ ] Verify live with the owner: register a kiosk, check in by phone and email, complete a form, open the phone link
 - [ ] Design
 - [ ] Build
 - [ ] Verify live and close with the owner

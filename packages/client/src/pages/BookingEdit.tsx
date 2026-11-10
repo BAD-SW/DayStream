@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { FormsNeededNotice } from '../components/forms/FormsNeededNotice';
+import { getSelfCheckInLink } from '../api/selfCheckIn';
 import { Button } from '../design-system/components/actions/Button';
 import { Alert } from '../design-system/components/feedback/Alert';
 import * as bookingsApi from '../api/bookings';
@@ -114,6 +115,18 @@ export function BookingEdit() {
     }).catch(() => setLoadError('Failed to load booking'))
       .finally(() => setPageLoading(false));
   }, [businessId, id]);
+
+  // The customer's personal link to check in from their phone (also in their reminder emails).
+  const [linkMessage, setLinkMessage] = useState<string | null>(null);
+  const copyCheckInLink = async () => {
+    if (!id) return;
+    setLinkMessage(null);
+    try {
+      const url = await getSelfCheckInLink(businessId, id);
+      await navigator.clipboard.writeText(url);
+      setLinkMessage('Copied.');
+    } catch { setLinkMessage('The link could not be copied.'); }
+  };
 
   // Customer search with debounce
   useEffect(() => {
@@ -350,6 +363,15 @@ export function BookingEdit() {
       <h1 style={styles.title}>Edit Booking</h1>
       <p style={styles.subtitle}>Ref: {booking.booking_reference}</p>
       {booking.customer_id && <FormsNeededNotice customerId={booking.customer_id} businessId={businessId} bookingId={id} />}
+      {booking.customer_id && booking.status === 'confirmed' && (
+        <p style={styles.hint}>
+          Customer's phone check-in link:{' '}
+          <button type="button" onClick={copyCheckInLink} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-accent)', cursor: 'pointer', font: 'inherit', fontWeight: 700 }}>
+            Copy link
+          </button>
+          {linkMessage && <span role="status"> {linkMessage}</span>}
+        </p>
+      )}
       {error && <Alert variant="error">{error}</Alert>}
 
       <form onSubmit={handleSubmit} style={styles.form}>

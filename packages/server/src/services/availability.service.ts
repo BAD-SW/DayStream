@@ -10,6 +10,12 @@ interface AvailabilityQuery {
   staffId?: string;      // optional: pre-filter to specific staff
   locationId?: string;   // optional: pre-filter to specific location
   variantId?: string;    // optional: override duration from variant
+  /**
+   * Staff booking for a customer: the service's minimum notice does not apply (it is there to stop
+   * customers booking at the last minute). Opening hours, the service's own windows, staff hours,
+   * resources and clashes still apply, and a slot must still be in the future.
+   */
+  skipLeadTime?: boolean;
 }
 
 export interface AvailableSlotCombo {
@@ -79,7 +85,7 @@ export async function getAvailableSlots(query: AvailabilityQuery): Promise<Avail
  * This is the rich endpoint used by the new multi-filter booking UI.
  */
 export async function getAvailabilityCombinations(query: AvailabilityQuery): Promise<AvailabilityResponse> {
-  const { serviceId, businessId, dateFrom, dateTo, staffId, locationId, variantId } = query;
+  const { serviceId, businessId, dateFrom, dateTo, staffId, locationId, variantId, skipLeadTime } = query;
 
   // 1. Load service config and business timezone
   const { rows: svcRows } = await adminPool.query(
@@ -100,7 +106,8 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
   const bufferAfter = service.buffer_after || 0;
   const capacity = service.max_capacity || 1;
   const bookingType = service.booking_type;
-  const minAdvanceHours = service.min_advance_booking_hours || 2;
+  // 0 means "no minimum notice"; only a missing value falls back to 2 hours.
+  const minAdvanceHours = service.min_advance_booking_hours ?? 2;
   const maxAdvanceDays = service.max_advance_booking_days || 30;
 
   // 2. Load service availability rules (with scoping)
@@ -158,7 +165,7 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
 
   // 5. Calculate date boundaries
   const now = new Date();
-  const earliestSlot = new Date(now.getTime() + minAdvanceHours * 60 * 60 * 1000);
+  const earliestSlot = new Date(now.getTime() + (skipLeadTime ? 0 : minAdvanceHours) * 60 * 60 * 1000);
   const latestDate = new Date(now.getTime() + maxAdvanceDays * 24 * 60 * 60 * 1000);
 
   // 6. Load existing bookings

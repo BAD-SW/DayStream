@@ -21,7 +21,10 @@ export interface FormGroupRules {
 }
 
 export interface StatusContext {
-  /** The customer already has a completed (or checked-in) visit. */
+  /**
+   * The customer already has a completed visit. A visit that is only checked in is not completed
+   * yet, so a first-visit form stays outstanding while the first visit is under way.
+   */
   hasVisited: boolean;
   /** Services of the booking being looked at, or of the customer's upcoming bookings. */
   serviceIds: ReadonlySet<string>;
@@ -107,7 +110,7 @@ export async function getCustomerFormStatus(
 
   const [{ rows: visits }, { rows: subs }] = await Promise.all([
     adminPool.query(
-      `SELECT 1 FROM apt_bookings WHERE customer_id = $1 AND status IN ('completed', 'checked_in') LIMIT 1`,
+      `SELECT 1 FROM apt_bookings WHERE customer_id = $1 AND status = 'completed' LIMIT 1`,
       [customerId],
     ),
     adminPool.query(
@@ -179,7 +182,7 @@ export async function countOutstandingForBookings(
   const [{ rows: visited }, { rows: subs }] = await Promise.all([
     adminPool.query(
       `SELECT DISTINCT customer_id FROM apt_bookings
-        WHERE customer_id = ANY($1::uuid[]) AND status IN ('completed', 'checked_in')`,
+        WHERE customer_id = ANY($1::uuid[]) AND status = 'completed'`,
       [customerIds],
     ),
     adminPool.query(

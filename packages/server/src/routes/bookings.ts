@@ -107,6 +107,7 @@ bookingsRouter.get('/availability/combinations', requirePermission('bookings:rea
       staffId: req.query.staff_id as string,
       locationId: req.query.location_id as string,
       variantId: req.query.variant_id as string,
+      skipLeadTime: !isCustomerRole(req),   // staff may book short notice; a customer's own booking keeps the minimum notice
     });
 
     success(res, result);
@@ -197,6 +198,7 @@ bookingsRouter.get('/availability/days', requirePermission('bookings:read'), asy
     for (const day of days) {
       const availability = await availabilityService.getAvailabilityCombinations({
         serviceId, businessId, variantId, dateFrom: day, dateTo: day,
+        skipLeadTime: !isCustomerRole(req),
       });
       timezone = availability.timezone;
 
@@ -351,6 +353,9 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
       tenantId: authReq.tenantId,
       overrideRules: req.body.override_rules,
       participantCount: req.body.participant_count,
+      // An appointment made by staff is not held to the service's minimum notice (that is for
+      // customers booking themselves). Hours, staff, resources and clashes still apply.
+      skipLeadTime: !isCustomerRole(req),
     });
 
     emitEvent(authReq.tenantId, 'booking.created', {

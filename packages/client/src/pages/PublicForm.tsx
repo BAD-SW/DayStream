@@ -49,6 +49,18 @@ export function PublicForm() {
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(false);
 
+  // From self check-in, the customer is sent back to the kiosk or phone page afterwards. Only those
+  // pages are allowed, so the address cannot be used to send anyone elsewhere.
+  const next = useMemo(() => {
+    const n = new URLSearchParams(window.location.search).get('next');
+    return n && /^\/(kiosk|check-in\/DSCI-[0-9a-f]{20,})$/.test(n) ? n : null;
+  }, []);
+  useEffect(() => {
+    if (!done || !next) return;
+    const timer = window.setTimeout(() => window.location.assign(next), 2500);
+    return () => window.clearTimeout(timer);
+  }, [done, next]);
+
   useEffect(() => {
     let cancelled = false;
     axios.get(`${API}/${encodeURIComponent(token)}`)
@@ -118,7 +130,9 @@ export function PublicForm() {
         <div style={s.center} role="status">
           <h1 style={s.title}>{t.thanks}</h1>
           <p style={s.text}>{t.received}</p>
-          {data?.channel === 'device' && <p style={s.text}>{t.device}</p>}
+          {next
+            ? <button type="button" style={{ ...s.button, marginTop: 'var(--space-md)' }} onClick={() => window.location.assign(next)}>Continue</button>
+            : data?.channel === 'device' && <p style={s.text}>{t.device}</p>}
         </div>
       </Shell>
     );

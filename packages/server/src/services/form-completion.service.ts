@@ -105,7 +105,7 @@ const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', 
 
 export async function createRequest(input: {
   businessId: string; customerId: string; groupId: string; channel: RequestChannel;
-  bookingId?: string | null; createdBy: string;
+  bookingId?: string | null; createdBy: string | null;
 }): Promise<CreatedRequest> {
   const customer = await loadCustomer(input.businessId, input.customerId);
   const versions = await activeVersions(input.businessId, input.groupId);
