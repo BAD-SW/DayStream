@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Joi from 'joi';
+import { SUPPORTED_LANGUAGES } from '@daystream/shared';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { tenantContext } from '../auth/tenant-context';
 import { validate } from '../middleware/validate';
@@ -39,7 +40,7 @@ async function resolveCustomer(req: Request): Promise<any | null> {
 const updateProfileSchema = Joi.object({
   email: Joi.string().email({ tlds: false }),
   phone: Joi.string().max(50).allow('', null),
-  preferred_language: Joi.string().max(5),
+  preferred_language: Joi.string().valid(...SUPPORTED_LANGUAGES),
   country: Joi.string().max(100).allow('', null),
 }).min(1);
 

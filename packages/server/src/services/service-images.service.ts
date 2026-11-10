@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import { adminPool } from '../db/pool';
 import { storage } from './storage.service';
 import { logger } from '../middleware/logger';
+import { storagePaths, tenantOfBusiness } from '../utils/storage-paths';
 
 const MAX_IMAGES_PER_SERVICE = 10;
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -25,8 +26,9 @@ const SIZES: ImageSizes = {
 /**
  * Build the storage path for a service image.
  */
-function buildBasePath(tenantId: string, businessId: string, serviceId: string): string {
-  return `services/${businessId}/${serviceId}`;
+async function buildBasePath(_tenantId: string, businessId: string, serviceId: string): Promise<string> {
+  // The tenant is looked up from the business, so files always land under the business's own tenant.
+  return storagePaths.serviceImageFolder(await tenantOfBusiness(businessId), businessId, serviceId);
 }
 
 /**
@@ -79,7 +81,7 @@ export async function uploadImage(
   // Generate unique filename
   const fileId = crypto.randomUUID();
   const ext = file.mimetype === 'image/png' ? 'png' : file.mimetype === 'image/webp' ? 'webp' : 'jpg';
-  const basePath = buildBasePath(tenantId, businessId, serviceId);
+  const basePath = await buildBasePath(tenantId, businessId, serviceId);
 
   // Save original
   const originalPath = `${basePath}/original/${fileId}.${ext}`;

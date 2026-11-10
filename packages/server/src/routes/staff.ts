@@ -15,6 +15,7 @@ import * as capacityService from '../services/staff-capacity.service';
 import * as calendarService from '../services/staff-calendar.service';
 import * as notifService from '../services/staff-notifications.service';
 import { storage } from '../services/storage.service';
+import { storagePaths, pathFromReference } from '../utils/storage-paths';
 
 export const staffRouter = Router();
 
@@ -450,10 +451,14 @@ staffRouter.post('/:id/photo', requirePermission('staff:*'), upload.single('phot
     if (!staff) { error(res, 'Staff not found', 'NOT_FOUND', 404); return; }
 
     const ext = req.file.originalname.split('.').pop() || 'jpg';
-    const relativePath = `staff/${authReq.tenantId}/${req.params.id}-photo.${ext}`;
+    // Staff belong to the tenant (they can work across its businesses), so their photos do too.
+    const relativePath = storagePaths.staffPhoto(authReq.tenantId, req.params.id, ext);
     await storage.save(relativePath, req.file.buffer);
 
     const updated = await staffService.updateProfilePhoto(req.params.id, authReq.tenantId, relativePath);
+    // The replaced photo is removed (with any folder it leaves empty).
+    const oldPath = pathFromReference(staff.profile_photo_path);
+    if (oldPath && oldPath !== relativePath) await storage.delete(oldPath).catch(() => {});
     success(res, updated);
   } catch (err: any) {
     console.error('Failed to upload photo', err?.message || err);

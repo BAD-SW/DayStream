@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { FormsNeededNotice } from '../components/forms/FormsNeededNotice';
 import { Button } from '../design-system/components/actions/Button';
 import { Alert } from '../design-system/components/feedback/Alert';
 import * as bookingsApi from '../api/bookings';
@@ -348,6 +349,7 @@ export function BookingEdit() {
     <div style={styles.page}>
       <h1 style={styles.title}>Edit Booking</h1>
       <p style={styles.subtitle}>Ref: {booking.booking_reference}</p>
+      {booking.customer_id && <FormsNeededNotice customerId={booking.customer_id} businessId={businessId} bookingId={id} />}
       {error && <Alert variant="error">{error}</Alert>}
 
       <form onSubmit={handleSubmit} style={styles.form}>

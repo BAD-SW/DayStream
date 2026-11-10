@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { LanguageSelect } from '../components/LanguageSelect';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
@@ -425,10 +426,7 @@ function BusinessFormFields({ form, setForm, saving, onSave, onCancel, isCreate 
       <div style={styles.formRow}>
         <div style={styles.formGroup}>
           <label style={styles.label}>Language</label>
-          <select style={styles.input} value={form.default_language} onChange={(e) => setForm({ ...form, default_language: e.target.value })}>
-            <option value="en">English</option>
-            <option value="es">Spanish</option>
-          </select>
+          <LanguageSelect style={styles.input} value={form.default_language} onChange={(v) => setForm({ ...form, default_language: v })} />
         </div>
         <div style={styles.formGroup}>
           <label style={styles.label}>Currency</label>

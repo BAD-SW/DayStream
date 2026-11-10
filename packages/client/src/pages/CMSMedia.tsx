@@ -28,7 +28,7 @@ export function CMSMedia() {
               {item.url || item.file_path ? (
                 <div style={styles.preview}>
                   <img
-                    src={item.url || item.file_path}
+                    src={item.url || (/^(https?:)?\//.test(item.file_path) ? item.file_path : `/storage/${item.file_path}`)}
                     alt={item.alt_text || item.filename || 'Media'}
                     style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'var(--radius-sm)' }}
                     onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}

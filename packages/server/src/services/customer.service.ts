@@ -7,6 +7,8 @@ import { createActivity } from './customer-activity.service';
 import { transitionLifecycle, LIFECYCLE_STAGES, LifecycleStage } from './customer-lifecycle.service';
 import * as segmentsService from './customer-segments.service';
 import { getCustomerCreditBalance } from './account-credit.service';
+import { deleteCustomerFolders } from './storage-cleanup.service';
+import { DEFAULT_LANGUAGE } from '@daystream/shared';
 
 interface CreateCustomerInput {
   businessId: string;
@@ -401,20 +403,25 @@ export async function runBulkAction(
     affected = 0;
     let skipped = 0;
     const CHUNK = 500;
+    const deletedIds: string[] = [];
     for (let i = 0; i < ids.length; i += CHUNK) {
       const chunk = ids.slice(i, i + CHUNK);
       try {
-        const r = await adminPool.query('DELETE FROM cus_customers WHERE business_id = $2 AND id = ANY($1::uuid[])', [chunk, businessId]);
+        const r = await adminPool.query('DELETE FROM cus_customers WHERE business_id = $2 AND id = ANY($1::uuid[]) RETURNING id', [chunk, businessId]);
         affected += r.rowCount ?? 0;
+        deletedIds.push(...r.rows.map((x: { id: string }) => x.id));
       } catch {
         for (const id of chunk) { // something in this chunk is still referenced: find out which
           try {
-            const r = await adminPool.query('DELETE FROM cus_customers WHERE business_id = $2 AND id = $1', [id, businessId]);
+            const r = await adminPool.query('DELETE FROM cus_customers WHERE business_id = $2 AND id = $1 RETURNING id', [id, businessId]);
             affected += r.rowCount ?? 0;
+            deletedIds.push(...r.rows.map((x: { id: string }) => x.id));
           } catch { skipped += 1; }
         }
       }
     }
+    // Their files go with them: each deleted person's whole folder (queued for retry if storage is down).
+    await deleteCustomerFolders(businessId, deletedIds, 'customer deleted');
     await logAudit({ tenantId, userId, action: 'customer.bulk_delete', resourceType: 'customer', details: { businessId, selected: ids.length, affected, skipped } });
     return { affected, skipped };
   } else {
@@ -582,17 +589,45 @@ export async function anonymizeCustomer(id: string, businessId: string, userId: 
   const customer = await getCustomerById(id, businessId);
   if (!customer) return null;
 
-  await adminPool.query(
-    `UPDATE cus_customers SET
-       first_name = '[deleted]', last_name = '[deleted]', email = $3,
-       phone = NULL, date_of_birth = NULL, gender = NULL, country = NULL, avatar_url = NULL,
-       status = 'anonymized', anonymized_at = NOW(), anonymized_by = $4, updated_at = NOW()
-     WHERE id = $1 AND business_id = $2`,
-    [id, businessId, `anonymized-${id}@deleted.local`, userId],
-  );
+  // Everything in the database changes together, or nothing does.
+  const client = await adminPool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE cus_customers SET
+         first_name = '[deleted]', last_name = '[deleted]', email = $3,
+         phone = NULL, phone_e164 = NULL, date_of_birth = NULL, gender = NULL, country = NULL, avatar_url = NULL,
+         address_line = NULL, city = NULL, postal_code = NULL, region = NULL,
+         photo_path = NULL, preferred_language = $5, user_id = NULL,
+         status = 'anonymized', anonymized_at = NOW(), anonymized_by = $4, updated_at = NOW()
+       WHERE id = $1 AND business_id = $2`,
+      [id, businessId, `anonymized-${id}@deleted.local`, userId, DEFAULT_LANGUAGE],
+    );
 
-  // Delete notes content
-  await adminPool.query('DELETE FROM cus_notes WHERE customer_id = $1', [id]);
+    // Notes, the forms and documents they completed or uploaded, and their data exports.
+    await client.query('DELETE FROM cus_notes WHERE customer_id = $1', [id]);
+    await client.query('DELETE FROM frm_submissions WHERE customer_id = $1', [id]);
+    await client.query('DELETE FROM frm_requests WHERE customer_id = $1', [id]);
+    await client.query('DELETE FROM cus_documents WHERE customer_id = $1', [id]);
+    await client.query('DELETE FROM cus_data_exports WHERE customer_id = $1', [id]);
+
+    // The timeline keeps its dates and types, but not what it said about the person.
+    await client.query(
+      `UPDATE cus_activities SET description = 'Removed when the customer was anonymised', metadata = NULL
+        WHERE customer_id = $1`,
+      [id],
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  // The files go once the database says they are gone: the whole customer folder, so no files,
+  // no empty folders. If storage is unreachable the folder is queued and a job retries it.
+  await deleteCustomerFolders(businessId, [id], 'customer anonymised');
 
   // Log
   await logAudit({ tenantId, userId, action: 'customer.anonymized', resourceType: 'customer', resourceId: id });

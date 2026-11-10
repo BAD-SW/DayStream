@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { LanguageSelect } from '../components/LanguageSelect';
 import { Table } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
@@ -426,15 +427,12 @@ export function Tenants() {
                 <div style={styles.formRow}>
                   <div style={styles.formGroup}>
                     <label style={styles.label} htmlFor="edit-language">Language</label>
-                    <select
+                    <LanguageSelect
                       id="edit-language"
                       style={styles.input}
                       value={editForm.default_language}
-                      onChange={(e) => setEditForm({ ...editForm, default_language: e.target.value })}
-                    >
-                      <option value="en">English</option>
-                      <option value="es">Spanish</option>
-                    </select>
+                      onChange={(v) => setEditForm({ ...editForm, default_language: v })}
+                    />
                   </div>
                   <div style={styles.formGroup}>
                     <label style={styles.label} htmlFor="edit-currency">Currency</label>
@@ -710,15 +708,12 @@ export function Tenants() {
               <div style={styles.formRow}>
                 <div style={styles.formGroup}>
                   <label style={styles.label} htmlFor="tenant-language">Language</label>
-                  <select
+                  <LanguageSelect
                     id="tenant-language"
                     style={styles.input}
                     value={createForm.default_language}
-                    onChange={(e) => setCreateForm({ ...createForm, default_language: e.target.value })}
-                  >
-                    <option value="en">English</option>
-                    <option value="es">Spanish</option>
-                  </select>
+                    onChange={(v) => setCreateForm({ ...createForm, default_language: v })}
+                  />
                 </div>
                 <div style={styles.formGroup}>
                   <label style={styles.label} htmlFor="tenant-currency">Currency</label>

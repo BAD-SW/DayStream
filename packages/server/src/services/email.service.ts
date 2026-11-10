@@ -136,6 +136,8 @@ export interface EmailOptions {
   from?: string;
   /** Optional Reply-To, e.g. a business's branded reply-to address. */
   replyTo?: string;
+  /** Optional file attachments, e.g. a completed form as a PDF. */
+  attachments?: { filename: string; content: Buffer; contentType?: string }[];
 }
 
 /**
@@ -168,6 +170,7 @@ export async function sendEmail(options: EmailOptions): Promise<{ messageId: str
     text: options.text,
     html: options.html,
     ...(options.replyTo ? { replyTo: options.replyTo } : {}),
+    ...(options.attachments?.length ? { attachments: options.attachments } : {}),
   });
 
   const previewUrl = nodemailer.getTestMessageUrl(info) || undefined;

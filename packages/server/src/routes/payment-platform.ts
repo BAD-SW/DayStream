@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Joi from 'joi';
+import { SUPPORTED_LANGUAGES } from '@daystream/shared';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { tenantContext, isCustomerLogin, ownCustomerIds } from '../auth/tenant-context';
 import { requirePermission, requireTenantLevel } from '../auth/permissions';
@@ -1346,7 +1347,7 @@ const createDocBrandingSchema = Joi.object({
   business_id: Joi.string().uuid().required(),
   artifact_type: Joi.string().max(40).required(),
   name: Joi.string().max(120),
-  language: Joi.string().max(10).allow(null, ''),
+  language: Joi.string().valid(...SUPPORTED_LANGUAGES).allow(null, ''),
   is_active: Joi.boolean(),
   selection_rules: Joi.object().unknown(true),
   logo_url: Joi.string().uri().allow(null, ''),
@@ -1392,7 +1393,7 @@ paymentPlatformRouter.post('/document-branding', requirePermission('settings:*')
 const updateDocBrandingSchema = Joi.object({
   business_id: Joi.string().uuid().required(),
   name: Joi.string().max(120),
-  language: Joi.string().max(10).allow(null, ''),
+  language: Joi.string().valid(...SUPPORTED_LANGUAGES).allow(null, ''),
   is_active: Joi.boolean(),
   selection_rules: Joi.object().unknown(true),
   logo_url: Joi.string().uri().allow(null, ''),

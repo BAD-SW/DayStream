@@ -1,5 +1,5 @@
 import { isValidPhoneNumber } from 'libphonenumber-js';
-import { countryNameToIso2 } from '@daystream/shared';
+import { countryNameToIso2, languageFromText, DEFAULT_LANGUAGE } from '@daystream/shared';
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
 import { logger } from '../middleware/logger';
@@ -232,7 +232,7 @@ export async function executeImport(
         lastName: mapped.last_name,
         dateOfBirth: mapped.date_of_birth || null,
         gender: mapped.gender || null,
-        preferredLanguage: mapped.preferred_language || 'en',
+        preferredLanguage: languageFromText(mapped.preferred_language) ?? DEFAULT_LANGUAGE,
         country: mapped.country || null,
         source: 'import',
         sourceDetail: fileName || null,

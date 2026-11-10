@@ -3,6 +3,7 @@ import { Button } from '../../design-system/components/actions/Button';
 import { Alert } from '../../design-system/components/feedback/Alert';
 import { Badge } from '../../design-system/components/data/Badge';
 import * as api from '../../api/dataMigration';
+import { SUPPORTED_LANGUAGES, LANGUAGE_LABELS, DEFAULT_LANGUAGE, supportedLanguagesText } from '@daystream/shared';
 
 /**
  * Data Migration (spec 50, Waves 1-2) — one shared component scoped to a business,
@@ -78,7 +79,7 @@ const FIELD_GUIDE: Partial<Record<api.ImportKind, FieldGuide>> = {
       { field: 'Processor Customer ID', required: 'No', notes: "The customer's ID at your old payment processor, e.g. a Stripe ID starting with cus_. Lets the payment methods import match cards to customers exactly." },
       { field: 'Date of Birth', required: 'No', notes: 'Any common date format.' },
       { field: 'Gender', required: 'No', notes: 'For example Male, Female, M, F.' },
-      { field: 'Language', required: 'No', notes: 'English, Spanish, French or German, as a name or code (en, es, fr, de). Other languages are left blank with a warning. Blank means English.' },
+      { field: 'Language', required: 'No', notes: `${supportedLanguagesText()}, as a name or code (${SUPPORTED_LANGUAGES.join(', ')}). Other languages are left blank with a warning. Blank means ${LANGUAGE_LABELS[DEFAULT_LANGUAGE]}.` },
       { field: 'Country', required: 'No', notes: 'Country name or two-letter code (US, ES).' },
       { field: 'Tags', required: 'No', notes: 'Separate several tags with commas or semicolons. Tags that don\u2019t exist yet are created.' },
       { field: 'Notes', required: 'No', notes: "One note per customer, added to their timeline. For several notes per customer, use the Notes import." },

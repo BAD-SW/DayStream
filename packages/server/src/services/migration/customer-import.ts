@@ -1,3 +1,4 @@
+import { languageFromText, isSupportedLanguage, supportedLanguagesText } from '@daystream/shared';
 import { adminPool } from '../../db/pool';
 import { findOrCreatePerson } from '../person-identity.service';
 import { ImportResult, RowFailure, emptyResult, DateOrder, parseDateCell, fileDateOrder } from './import-core';
@@ -28,20 +29,20 @@ const LANGUAGE_CODES: Record<string, string> = {
   galician: 'gl',
 };
 
-// The languages DayStream's language dropdown offers (CustomerCreate / CustomerDetail).
-const SUPPORTED_LANGUAGES = new Set(['en', 'es', 'fr', 'de']);
-
 /**
- * Resolve a legacy language value ("English", "es", "en-US") to a supported base code.
- * Returns `code: null` for blank or unsupported values; `unsupported` is true when a value was
- * given but couldn't be resolved, so the caller can warn instead of silently dropping it.
+ * Resolve a legacy language value ("English", "es", "en-US") to a supported language code.
+ * Which languages are supported comes from the one shared list. Returns `code: null` for blank
+ * or unsupported values; `unsupported` is true when a value was given but couldn't be resolved,
+ * so the caller can warn instead of silently dropping it.
  */
 export function normalizeLanguage(raw: string | undefined): { code: string | null; unsupported: boolean } {
   const v = (raw || '').trim();
   if (!v) return { code: null, unsupported: false };
+  // Other languages' names are recognised only so a legacy "Spanish" is read as a language and not
+  // as an error; whether it is supported is decided by the shared list.
   const lower = v.toLowerCase().replace('_', '-');
-  const code = LANGUAGE_CODES[lower] ?? lower.split('-')[0];
-  return SUPPORTED_LANGUAGES.has(code) ? { code, unsupported: false } : { code: null, unsupported: true };
+  const code = languageFromText(v) ?? LANGUAGE_CODES[lower] ?? lower.split('-')[0];
+  return isSupportedLanguage(code) ? { code, unsupported: false } : { code: null, unsupported: true };
 }
 
 function validateRow(r: MappedRow, rowNum: number, dateOrder: DateOrder): RowFailure[] {
@@ -99,7 +100,7 @@ export async function runCustomerImport(args: {
     if (lang.unsupported) {
       warnings.push({
         row: rowNum, field: 'preferred_language',
-        message: `Language "${r.preferred_language.trim()}" isn't one DayStream supports (English, Spanish, French, German), so it was left blank`,
+        message: `Language "${r.preferred_language.trim()}" isn't one DayStream supports (${supportedLanguagesText()}), so it was left blank`,
       });
     }
 

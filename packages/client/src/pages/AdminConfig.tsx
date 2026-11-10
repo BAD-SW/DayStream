@@ -696,8 +696,12 @@ function StoragePanel() {
                 <option value="us-east-2">US East (Ohio)</option>
                 <option value="us-west-1">US West (N. California)</option>
                 <option value="us-west-2">US West (Oregon)</option>
+                <option value="eu-south-2">EU (Spain)</option>
                 <option value="eu-west-1">EU (Ireland)</option>
+                <option value="eu-west-2">EU (London)</option>
+                <option value="eu-west-3">EU (Paris)</option>
                 <option value="eu-central-1">EU (Frankfurt)</option>
+                <option value="eu-south-1">EU (Milan)</option>
                 <option value="ap-southeast-1">Asia Pacific (Singapore)</option>
                 <option value="ap-northeast-1">Asia Pacific (Tokyo)</option>
               </select>
@@ -712,10 +716,14 @@ function StoragePanel() {
               <label style={styles.label}>Secret Access Key</label>
               <div style={{ position: 'relative' }}>
                 <input style={styles.input} type={showSecret ? 'text' : 'password'} value={form.s3_secret_key} onChange={(e) => setForm({ ...form, s3_secret_key: e.target.value })} placeholder="••••••••" />
-                <button type="button" style={styles.eyeBtn} onClick={() => setShowSecret(!showSecret)}>{showSecret ? '🙈' : '👁️'}</button>
+                <button type="button" style={styles.eyeBtn} aria-label={showSecret ? 'Hide secret key' : 'Show secret key'} onClick={() => setShowSecret(!showSecret)}>{showSecret ? '🙈' : '👁️'}</button>
               </div>
             </div>
           </div>
+          <span style={styles.helper}>
+            A saved secret key is stored encrypted and never shown again; leave the field as it is to keep it.
+            On AWS, leave both keys blank to use the server&apos;s IAM role instead of stored keys.
+          </span>
         </div>
       )}
 

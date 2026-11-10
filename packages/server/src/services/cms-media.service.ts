@@ -79,10 +79,17 @@ export async function uploadMedia(tenantId: string, input: {
  * Delete a media file record.
  */
 export async function deleteMedia(id: string, tenantId: string) {
-  const { rowCount } = await adminPool.query(
-    `DELETE FROM web_media_files WHERE id = $1 AND tenant_id = $2`,
+  const { rows, rowCount } = await adminPool.query(
+    `DELETE FROM web_media_files WHERE id = $1 AND tenant_id = $2
+     RETURNING file_path, thumbnail_path, medium_path, large_path`,
     [id, tenantId],
   );
+
+  // Remove the stored files too (and any folder they leave empty), so nothing is left orphaned.
+  const { storage } = await import('./storage.service');
+  for (const p of [rows[0]?.file_path, rows[0]?.thumbnail_path, rows[0]?.medium_path, rows[0]?.large_path]) {
+    if (p) await storage.delete(p).catch(() => {});
+  }
 
   if ((rowCount ?? 0) > 0) {
     await logAudit({

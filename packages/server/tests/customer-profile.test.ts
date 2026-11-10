@@ -103,14 +103,14 @@ describe('Customer profile (THE-16)', () => {
   });
 
   it('lists the Timeline newest first and refuses an unknown filter', async () => {
-    await request('PUT', `/api/v1/customers/${CUSTOMER_ID}?business_id=${BUSINESS_ID}`, { preferred_language: 'es' }, ownerToken);
+    await request('PUT', `/api/v1/customers/${CUSTOMER_ID}?business_id=${BUSINESS_ID}`, { country: 'Portugal' }, ownerToken);
     const all = await request('GET', url('/timeline'), undefined, readerToken);
     expect(all.statusCode).toBe(200);
     const at = all.body.data.map((i: any) => i.at);
     expect([...at].sort().reverse()).toEqual(at);
 
     const changes = await request('GET', `${url('/timeline')}&kind=profile_change`, undefined, readerToken);
-    expect(changes.body.data.some((i: any) => /Language/i.test(i.description))).toBe(true);
+    expect(changes.body.data.some((i: any) => /Country/i.test(i.description))).toBe(true);
 
     const messages = await request('GET', `${url('/timeline')}&kind=message`, undefined, readerToken);
     expect(messages.body.data).toEqual([]);

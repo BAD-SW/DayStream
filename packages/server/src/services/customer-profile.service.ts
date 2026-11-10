@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
 import { storage } from './storage.service';
+import { storagePaths } from '../utils/storage-paths';
 import { createActivity } from './customer-activity.service';
 import { canContact } from './contactability.service';
 import { queueNotification } from './booking-notifications.service';
@@ -431,7 +432,7 @@ export async function uploadDocument(customerId: string, businessId: string, fil
   const ext = DOCUMENT_TYPES[file.mimetype];
   if (!ext || !looksLike(file.mimetype, file.buffer)) throw new ProfileError('Only PDF, JPG and PNG files can be uploaded', 'INVALID_FILE_TYPE');
   if (file.size > MAX_DOCUMENT_BYTES) throw new ProfileError('The file is larger than 10 MB', 'FILE_TOO_LARGE');
-  const storagePath = `private/customer-documents/${businessId}/${customerId}/${crypto.randomUUID()}.${ext}`;
+  const storagePath = storagePaths.customerDocument(p.tenant_id, businessId, customerId, ext);
   await storage.save(storagePath, file.buffer);
   const { rows } = await adminPool.query(
     `INSERT INTO cus_documents (tenant_id, business_id, customer_id, file_name, mime_type, size_bytes, storage_path, uploaded_by)
@@ -466,12 +467,12 @@ export async function deleteDocument(customerId: string, businessId: string, doc
 }
 
 export async function savePhoto(customerId: string, businessId: string, file: { mimetype: string; size: number; buffer: Buffer }, userId: string) {
-  await person(customerId, businessId);
+  const p = await person(customerId, businessId);
   const ext = PHOTO_TYPES[file.mimetype];
   if (!ext || !looksLike(file.mimetype, file.buffer)) throw new ProfileError('The photo must be a JPG, PNG or WebP image', 'INVALID_FILE_TYPE');
   if (file.size > MAX_PHOTO_BYTES) throw new ProfileError('The photo is larger than 5 MB', 'FILE_TOO_LARGE');
   const { rows: old } = await adminPool.query('SELECT photo_path FROM cus_customers WHERE id = $1', [customerId]);
-  const storagePath = `private/customer-photos/${businessId}/${customerId}/${crypto.randomUUID()}.${ext}`;
+  const storagePath = storagePaths.customerPhoto(p.tenant_id, businessId, customerId, ext);
   await storage.save(storagePath, file.buffer);
   await adminPool.query('UPDATE cus_customers SET photo_path = $2, updated_at = NOW() WHERE id = $1', [customerId, storagePath]);
   if (old[0]?.photo_path) await storage.delete(old[0].photo_path).catch(() => {});
@@ -546,6 +547,8 @@ async function gatherPersonalData(customerId: string, businessId: string) {
                            WHERE e.customer_id = $1 AND e.business_id = $2 ORDER BY e.start_date DESC`),
     documents: await q(`SELECT file_name, created_at FROM cus_documents WHERE customer_id = $1 AND business_id = $2 AND deleted_at IS NULL ORDER BY created_at DESC`),
     tasks: await q(`SELECT title, status, due_at, created_at FROM cus_tasks WHERE customer_id = $1 AND business_id = $2 ORDER BY created_at DESC`),
+    // Completed forms and waivers (spec 51): which form, when, and which version.
+    forms: await q(`SELECT form_name, form_version, completed_via, signed, created_at FROM frm_submissions WHERE customer_id = $1 AND business_id = $2 ORDER BY created_at DESC`),
   };
 }
 
@@ -597,7 +600,7 @@ export async function sendPersonalData(customerId: string, businessId: string, u
   const { rows: biz } = await adminPool.query('SELECT name FROM sys_businesses WHERE id = $1', [businessId]);
   const password = newPassword();
   const pdf = await renderPersonalDataPdf(await gatherPersonalData(customerId, businessId), biz[0]?.name || 'DayStream', password);
-  const storagePath = `private/data-exports/${businessId}/${crypto.randomUUID()}.pdf`;
+  const storagePath = storagePaths.customerDataExport(p.tenant_id, businessId, customerId);
   await storage.save(storagePath, pdf);
   const token = crypto.randomBytes(32).toString('hex');
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');

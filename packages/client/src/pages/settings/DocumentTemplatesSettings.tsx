@@ -4,7 +4,9 @@ import { Modal } from '../../design-system/components/feedback/Modal';
 import { RichTextEditor, RichTextEditorHandle, sanitizeRichText } from '../../design-system/components/forms/RichTextEditor';
 import { BrandedDocumentView } from '../../components/BrandedDocumentView';
 import { DETAILS_TABLE_TOKEN } from '@daystream/shared';
+import { LanguageSelect } from '../../components/LanguageSelect';
 import { useContextManager } from '../../context/ContextManager';
+import { FormsTemplates } from './FormsTemplates';
 import * as payApi from '../../api/payments';
 import type {
   DocumentArtifactType,
@@ -33,6 +35,9 @@ import type {
  * Primary/secondary colors are the document's brand accents (header bar + headings
  * / footer rule) — the Preview makes this visible.
  */
+
+/** The Document Type dropdown's extra entry for the business's forms (spec 51); not a branded artifact. */
+const FORMS_TYPE = 'forms';
 
 /** The editable fields; mirrors the server DocumentBrandingInput (snake_case). */
 interface EditForm {
@@ -181,7 +186,7 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
   }, []);
 
   const loadTemplates = useCallback(() => {
-    if (!businessId || !artifactType) return;
+    if (!businessId || !artifactType || artifactType === FORMS_TYPE) return;
     payApi.listDocumentTemplates(businessId, artifactType)
       .then(setTemplates)
       .catch(() => setError('Failed to load templates.'));
@@ -305,10 +310,14 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
           {catalog.map((c) => (
             <option key={c.key} value={c.key}>{c.label}</option>
           ))}
+          <option value={FORMS_TYPE}>Forms</option>
         </select>
         {selectedType && <span style={s.helper}>{selectedType.description}</span>}
       </div>
 
+      {artifactType === FORMS_TYPE ? (
+        <FormsTemplates businessId={businessId} onDirtyChange={onDirtyChange} />
+      ) : (<>
       {/* Template list */}
       <div style={s.listHeader}>
         <h3 style={s.subTitle}>Templates</h3>
@@ -351,8 +360,8 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
             </div>
             <div style={s.field}>
               <label style={s.label} htmlFor="tmpl-lang">Language</label>
-              <input id="tmpl-lang" style={s.input} placeholder="e.g. en, es (blank = default)"
-                value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })} />
+              <LanguageSelect id="tmpl-lang" style={s.input} value={form.language}
+                onChange={(v) => setForm({ ...form, language: v })} blankLabel="Default (no language)" />
             </div>
           </div>
 
@@ -490,6 +499,7 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
           }} />
         </Modal>
       )}
+      </>)}
     </div>
   );
 }

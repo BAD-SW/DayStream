@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { FormsNeededNotice } from '../components/forms/FormsNeededNotice';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../design-system/components/actions/Button';
 import { Alert } from '../design-system/components/feedback/Alert';
@@ -372,6 +373,11 @@ export function BookingCreate() {
             {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
+
+        {/* Forms this customer still has to complete for this service (information only; never blocks booking). */}
+        {!isWalkIn && selectedCustomer?.id && (
+          <FormsNeededNotice customerId={selectedCustomer.id} businessId={businessId} serviceId={selectedService || undefined} />
+        )}
 
         {/* Variant */}
         {variants.length > 0 && (

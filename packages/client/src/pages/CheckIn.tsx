@@ -7,6 +7,10 @@ import { ListRow, ListRows, ListRowTitle, ListRowMeta, ListEmpty } from '../desi
 import { PageHeader } from '../design-system/components/layout/PageHeader';
 import { TabBar } from '../design-system/components/navigation/TabBar';
 import * as checkInApi from '../api/check-in';
+import { useNavigate } from 'react-router-dom';
+import { getOutstandingForms } from '../api/forms';
+import { useCheckInFormsPrompt } from '../components/forms/useCheckInFormsPrompt';
+import type { OutstandingForms } from '../api/forms';
 import './CheckIn.css';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
@@ -20,21 +24,38 @@ export function CheckIn() {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'kiosk' | 'no-shows' | 'walk-ins'>('dashboard');
 
+  // Forms each booking's customer still needs: a small badge, never a block on checking in.
+  const [outstanding, setOutstanding] = useState<Record<string, OutstandingForms>>({});
+  const navigate = useNavigate();
+
   const fetchDashboard = useCallback(async () => {
     try {
       const data = await checkInApi.getDashboard();
       setDashboard(data);
+      const businessId = localStorage.getItem('business_id') || '';
+      const ids: string[] = [...data.upcoming, ...data.awaiting, ...data.checked_in, ...data.in_progress].map((b: any) => b.id);
+      if (businessId && ids.length > 0) {
+        getOutstandingForms(businessId, ids).then(setOutstanding).catch(() => setOutstanding({}));
+      } else {
+        setOutstanding({});
+      }
     } catch {} finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchDashboard(); const i = setInterval(fetchDashboard, 15000); return () => clearInterval(i); }, [fetchDashboard]);
 
-  const handleCheckIn = async (bookingId: string) => {
+  const businessIdForForms = localStorage.getItem('business_id') || '';
+  const { requestCheckIn, prompt: formsPrompt } = useCheckInFormsPrompt(businessIdForForms);
+
+  const doCheckIn = async (bookingId: string) => {
     try {
       await checkInApi.checkInReception(bookingId);
       fetchDashboard();
     } catch (err: any) { alert(err.response?.data?.error || 'Check-in failed'); }
   };
+  // Forms the customer still has to complete are shown first; staff can always check in anyway.
+  const handleCheckIn = (b: { id: string; customer_id?: string | null }) =>
+    requestCheckIn(b, () => doCheckIn(b.id));
 
   const tabs = [
     { key: 'dashboard' as const, label: 'Dashboard' },
@@ -54,6 +75,8 @@ export function CheckIn() {
     ...dashboard.no_show.map((b: any) => ({ ...b, category: 'no_show' })),
   ] : [];
 
+  const formsNeededCount = Object.values(outstanding).filter((o) => o.count > 0).length;
+
   const filtered = search
     ? allBookings.filter((b: any) => b.customer_name?.toLowerCase().includes(search.toLowerCase()))
     : allBookings;
@@ -67,6 +90,7 @@ export function CheckIn() {
             <Badge variant="success">{`${dashboard?.checked_in.length || 0} checked in`}</Badge>
             <Badge variant="warning">{`${dashboard?.awaiting.length || 0} awaiting`}</Badge>
             <Badge variant="error">{`${dashboard?.no_show.length || 0} no-show`}</Badge>
+            {formsNeededCount > 0 && <Badge variant="warning">{`${formsNeededCount} need forms`}</Badge>}
           </div>
         }
       />
@@ -80,9 +104,17 @@ export function CheckIn() {
           <ListRows>
             {filtered.map((b: any, i: number) => (
               <ListRow key={`${b.id}-${i}`} actions={<>
+                {(outstanding[b.id]?.count ?? 0) > 0 && (
+                  <>
+                    <Badge variant="warning">{`Forms needed: ${outstanding[b.id].forms.map((f) => f.name).join(', ')}`}</Badge>
+                    {b.customer_id && (
+                      <Button size="sm" variant="secondary" onClick={() => navigate(`/customers/${b.customer_id}?tab=forms`)}>Open forms</Button>
+                    )}
+                  </>
+                )}
                 <Badge variant={STATUS_VARIANTS[b.category] || 'neutral'}>{b.category.replace('_', ' ')}</Badge>
                 {(b.category === 'upcoming' || b.category === 'awaiting') && (
-                  <Button size="sm" onClick={() => handleCheckIn(b.id)}>Check In</Button>
+                  <Button size="sm" onClick={() => handleCheckIn(b)}>Check In</Button>
                 )}
               </>}>
                 <ListRowTitle>{b.customer_name}</ListRowTitle>
@@ -95,6 +127,7 @@ export function CheckIn() {
         </>
       )}
 
+      {formsPrompt}
       {activeTab === 'kiosk' && <KioskSection />}
       {activeTab === 'no-shows' && <NoShowsSection />}
       {activeTab === 'walk-ins' && <WalkInReportSection />}

@@ -1,4 +1,5 @@
 import i18n from 'i18next';
+import { isSupportedLanguage, DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES } from '@daystream/shared';
 import { initReactI18next } from 'react-i18next';
 
 import enCommon from './locales/en/common.json';
@@ -13,21 +14,24 @@ const resources = {
   es: { common: esCommon, auth: esAuth, errors: esErrors },
 };
 
-// Detect language: browser → fallback 'en'
+// Which languages are offered is decided by the shared supported list. The translations loaded
+// above for a language that is not on that list (Spanish) stay unused until it is added.
+// Detect language: remembered choice → browser → default.
 function detectLanguage(): string {
   const stored = localStorage.getItem('language');
-  if (stored && ['en', 'es'].includes(stored)) return stored;
+  if (isSupportedLanguage(stored)) return stored;
 
   const browser = navigator.language.split('-')[0];
-  if (['en', 'es'].includes(browser)) return browser;
+  if (isSupportedLanguage(browser)) return browser;
 
-  return 'en';
+  return DEFAULT_LANGUAGE;
 }
 
 i18n.use(initReactI18next).init({
   resources,
   lng: detectLanguage(),
-  fallbackLng: 'en',
+  fallbackLng: DEFAULT_LANGUAGE,
+  supportedLngs: [...SUPPORTED_LANGUAGES],
   ns: ['common', 'auth', 'errors'],
   defaultNS: 'common',
   interpolation: { escapeValue: false },
