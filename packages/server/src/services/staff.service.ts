@@ -1,6 +1,6 @@
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
-import { hashPassword } from './auth.service';
+import { hashPassword, revokeAllUserTokens } from './auth.service';
 
 interface CreateStaffInput {
   tenantId: string;
@@ -31,6 +31,18 @@ interface StaffFilters {
   search?: string;
   page?: number;
   limit?: number;
+}
+
+/**
+ * The job roles a staff login can have (stored on the user record). Owner and manager have their own
+ * permission sets; staff, reception and technician share the Staff permission set, and
+ * differ in what they are admitted to by job title (for example treatment charts: technician).
+ */
+export const STAFF_JOB_ROLES = ['business_owner', 'business_manager', 'reception', 'technician'] as const;
+
+/** The retired general "staff" role is now a technician. */
+function canonicalRole(role: string | undefined | null): string {
+  return !role || role === 'business_staff' || role === 'staff' ? 'technician' : role;
 }
 
 /** The tenant role (usr_roles) that carries the permissions for a staff job title. */
@@ -109,7 +121,7 @@ export async function createStaff(input: CreateStaffInput) {
         throw new Error('Password is required when creating a new staff member');
       }
       const passwordHash = await hashPassword(input.password);
-      const role = input.role || 'business_staff';
+      const role = canonicalRole(input.role);
 
       const { rows: userRows } = await adminPool.query(
         `INSERT INTO usr_users (tenant_id, business_id, email, first_name, last_name, password_hash, role, persona, status)
@@ -311,6 +323,65 @@ export async function updateStaff(id: string, tenantId: string, updates: Record<
 }
 
 /**
+ * Change a staff member's role: the job role on their login and the permission set it carries.
+ * Refused for your own login (nobody promotes or demotes themselves) and for the last owner of a
+ * business. Their sessions are ended so the new permissions apply at the next sign-in.
+ */
+export async function changeStaffRole(staffId: string, tenantId: string, role: string, actorUserId: string) {
+  const coded = (message: string, code: string) => Object.assign(new Error(message), { code });
+  const staff = await getStaffById(staffId, tenantId);
+  if (!staff) throw coded('Staff not found', 'NOT_FOUND');
+  if (!staff.user_id) throw coded('This staff member has no login, so there is no role to change.', 'NO_LOGIN');
+  if (staff.user_id === actorUserId) throw coded('You cannot change your own role.', 'OWN_ROLE');
+
+  const { rows: users } = await adminPool.query(
+    'SELECT id, role, business_id FROM usr_users WHERE id = $1 AND tenant_id = $2', [staff.user_id, tenantId],
+  );
+  if (!users[0]) throw coded('Staff not found', 'NOT_FOUND');
+  const before = users[0].role as string;
+  if (before === role) return getStaffById(staffId, tenantId);
+
+  if (before === 'business_owner') {
+    const { rows: owners } = await adminPool.query(
+      `SELECT COUNT(*)::int AS n FROM usr_users
+        WHERE tenant_id = $1 AND business_id IS NOT DISTINCT FROM $2 AND role = 'business_owner' AND status = 'active' AND id <> $3`,
+      [tenantId, users[0].business_id, staff.user_id],
+    );
+    if (owners[0].n === 0) throw coded('A business needs at least one owner. Make someone else an owner first.', 'LAST_OWNER');
+  }
+
+  // The permission role must exist before anything is changed: a login without one is treated as a customer.
+  const { rows: target } = await adminPool.query(
+    'SELECT id FROM usr_roles WHERE name = $2 AND (tenant_id = $1 OR tenant_id IS NULL) ORDER BY (tenant_id IS NULL), created_at LIMIT 1',
+    [tenantId, roleNameFor(role)],
+  );
+  if (!target[0]) throw new Error(`Permission role ${roleNameFor(role)} not found`);
+
+  const client = await adminPool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('UPDATE usr_users SET role = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3', [role, staff.user_id, tenantId]);
+    await client.query(
+      `DELETE FROM usr_user_roles WHERE user_id = $1
+         AND role_id IN (SELECT id FROM usr_roles WHERE name IN ('Business Owner', 'Manager', 'Staff'))`,
+      [staff.user_id],
+    );
+    await client.query('INSERT INTO usr_user_roles (user_id, role_id, tenant_id) VALUES ($1, $2, $3)', [staff.user_id, target[0].id, tenantId]);
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+  await revokeAllUserTokens(staff.user_id);
+  await logAudit({
+    tenantId, userId: actorUserId, action: 'staff.role_changed', resourceType: 'staff_profile', resourceId: staffId,
+    details: { from: before, to: role, loginUserId: staff.user_id },
+  });
+  return getStaffById(staffId, tenantId);
+}
+/**
  * Deactivate a staff member (soft-delete).
  */
 export async function deactivateStaff(id: string, tenantId: string, userId: string) {
@@ -357,7 +428,8 @@ export async function updateProfilePhoto(id: string, tenantId: string, photoPath
  * Create/link a user account for a staff profile that doesn't have one.
  * Used to retroactively give login access to staff created without email.
  */
-export async function linkUserAccount(staffId: string, tenantId: string, email: string, role: string, password: string, businessId?: string): Promise<any> {
+export async function linkUserAccount(staffId: string, tenantId: string, email: string, roleInput: string, password: string, businessId?: string): Promise<any> {
+  const role = canonicalRole(roleInput);
   const staff = await getStaffById(staffId, tenantId);
   if (!staff) throw new Error('Staff not found');
   if (staff.user_id) throw new Error('Staff already has a linked user account');

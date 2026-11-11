@@ -3,6 +3,7 @@ import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { tenantContext } from '../auth/tenant-context';
 import { requirePermission } from '../auth/permissions';
+import { hasClinicalAccess } from '../auth/clinical';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
@@ -51,7 +52,12 @@ formsRouter.get('/', requirePermission('customers:read'), async (req: Request, r
     const businessId = req.query.business_id as string;
     if (!businessId || !UUID_RE.test(businessId)) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     if (!(await ownBusiness(req, businessId))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
-    success(res, await forms.listForms(businessId));
+    // Chart templates are clinical: listed only for roles that may use charts.
+    const kind = req.query.kind === 'chart' ? 'chart' : 'form';
+    if (kind === 'chart' && !(await hasClinicalAccess((req as AuthenticatedRequest).user))) {
+      error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return;
+    }
+    success(res, await forms.listForms(businessId, kind));
   } catch (e) { fail(res, e, 'Failed to list forms'); }
 });
 
@@ -96,6 +102,7 @@ const baseFields = {
 
 const createSchema = Joi.object({
   business_id: Joi.string().uuid().required(),
+  kind: Joi.string().valid('form', 'chart'),
   ...baseFields,
   name: Joi.string().max(200).required(),
   definition: Joi.object().unknown(true).required(),
@@ -111,6 +118,7 @@ formsRouter.post('/', requirePermission('settings:*'), validate(createSchema), a
       tenantId: authReq.tenantId,
       businessId: b.business_id,
       createdBy: authReq.user.sub,
+      kind: b.kind,
       name: b.name,
       language: b.language,
       definition: b.definition,

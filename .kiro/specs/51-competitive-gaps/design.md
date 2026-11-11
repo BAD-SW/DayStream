@@ -30,6 +30,7 @@ Requirements: requirements.md, Requirement 1 (criteria 1-11).
    - [1.11 API](#111-api)
    - [1.12 Security](#112-security)
    - [1.13 Build order](#113-build-order)
+2. [Gap 2: Treatment charting](#2-gap-2-treatment-charting)
 
 ---
 
@@ -351,3 +352,71 @@ A customer checks in on the front-desk kiosk or from their own phone. Either way
    - The move.
    - Anonymisation and deletion removing every file and folder.
    - No empty folders after deleting a single file.
+---
+
+## 2. Gap 2: Treatment charting
+
+### 2.1 Approach
+
+A chart is a form that staff fill in about a customer, not one the customer fills in. It reuses the form definition, the form builder and the PDF drawing from gap 1. What is new is that the answers are kept (encrypted), the chart belongs to a booking or a customer, it is restricted to clinical roles, every touch is audited, and it locks on sign-off with amendments afterwards.
+
+### 2.2 Permission
+
+- One new permission, `clinical:*`, covering both reading and writing (the permission check does not treat write as including read, so one permission avoids a half-access state). Migration 171 adds it to the system roles Tenant Owner, Business Owner and Manager (additive, like migration 135), and the tenant seed list gives it to new tenants.
+- Therapist and trainer share the "Staff" role with reception, and there is no role editor. So the Staff role is not given the permission. Instead the job title decides: `hasClinicalAccess(user)` (`auth/clinical.ts`) returns true for a user holding `clinical:*`, or whose role on the user record is therapist or trainer. Reception never gets it. The charts routes use it as a guard before every route.
+- The client `getPermissionsFromRole` is kept in step and the chart UI hides itself without access. The server is the authority.
+
+### 2.3 Data model
+
+Migration 171 (with the permission). Tables carry `tenant_id` and `business_id`. Like the forms tables, isolation is in the application (every query is scoped by `business_id`, and the route checks the business belongs to the caller's tenant); there are no database row-level policies on these tables.
+
+- `frm_forms` gains `kind TEXT NOT NULL DEFAULT 'form'` (`form` or `chart`). Chart templates are listed on Business Setup > Templates under a new type **Charts** (shown to clinical roles only). The forms lists, outstanding-forms status and public form requests all ignore `kind = 'chart'`. The validator rejects `agree` and `signature` items in a chart (sign-off is the practitioner's click).
+- `svc_services` gains `default_chart_group_id UUID NULL` (the group of the chart template suggested for the service; a group id because a template's id changes per version row).
+- `chr_charts`: `id`, `tenant_id`, `business_id`, `customer_id`, `booking_id` (nullable), `form_id`, `form_name`, `form_version`, `definition_encrypted` (the template as it was when started, so later template edits change nothing), `answers_encrypted`, `status` (`draft` or `signed`), `created_by`, `created_at`, `updated_at`, `signed_by`, `signed_at`, `pdf_path`, `pdf_sha256`.
+- `chr_amendments`: `id`, `tenant_id`, `business_id`, `chart_id`, `content_encrypted`, `created_by`, `created_at`. Append only.
+
+Encryption uses `utils/encryption`, as customer notes do.
+
+### 2.4 Lifecycle
+
+- **Draft:** created from a template, against a booking or standalone. Answers are saved as the practitioner types and can be changed freely. Only drafts can be deleted, and only by their author or a manager.
+- **Sign off:** one action by a user with `clinical:write`. It checks the answers with the shared validator, records name and time, draws the PDF with the existing PDF code (headed "Treatment chart", with the practitioner's name and the sign-off time), stores it in `{customer folder}/charts/`, then locks the chart. If the PDF cannot be stored, the chart stays a draft.
+- **Locked:** the answers can no longer change by any route.
+- **PDF:** the stored sign-off PDF is never replaced. Downloading a chart that has amendments draws a fresh PDF that includes them.
+- **Amend:** any user with chart access adds a dated note to a signed chart. The original and the amendments are shown together, amendments below, oldest first.
+
+### 2.5 Audit
+
+Each of these writes to `usr_audit_log` with `logAuditStrict`, so the action is refused if the entry cannot be written: `chart.viewed` (opening one chart, and listing a customer's charts), `chart.created`, `chart.updated` (draft saves are written once per session of edits, not per keystroke), `chart.signed`, `chart.amended`, `chart.deleted`, `chart.pdf_downloaded`.
+
+### 2.6 Where it appears
+
+- **Booking edit/detail:** a Chart panel (clinical roles only). It offers the service's default template, or a choice of templates, and shows the booking's chart.
+- **Customer profile:** a **Charts** tab listing the customer's charts newest first, with the previous chart's key answers shown when a new one is started. Standalone charts are started here.
+- Customers never see charts, and the customer portal has no route to them.
+
+### 2.7 Anonymisation, merge and export
+
+- `anonymizeCustomer` deletes the customer's `chr_charts` and `chr_amendments` in its transaction, queues the chart PDFs for cleanup, and `deleteCustomerFolders` removes the `charts` folder.
+- `customer-duplicates.service.ts` finds every table that references a customer, so charts move to the surviving customer on merge without a list entry; only its preview label (`Treatment charts`) is added.
+- The personal-data export lists charts by date and template name, without the content.
+- Existing customer notes are left alone.
+
+### 2.8 API
+
+All routes require `business_id` and clinical access.
+
+- `GET /charts/customer/:customerId`, `GET /charts/booking/:bookingId`, `GET /charts/:id`
+- `POST /charts` (customer, optional booking, template), `PUT /charts/:id` (draft only), `DELETE /charts/:id` (draft only; the author, or an owner or manager)
+- `POST /charts/:id/sign`, `POST /charts/:id/amendments`, `GET /charts/:id/pdf`
+- Chart templates reuse the form template routes with `kind=chart` (listing them needs clinical access; building them needs `settings:*`). `PUT /services/:id` accepts `default_chart_group_id`.
+
+### 2.9 Build order
+
+1. Migration 171, permission helper, shared validator change.
+2. Chart service and routes with audit, then tests for access, locking and amendments.
+3. Charts type on the Templates tab and the service default.
+4. Customer Charts tab and booking Chart panel.
+5. Sign-off PDF.
+6. Anonymise, merge and export hooks.
+7. Verification: access refused for reception, audit rows written, locked chart cannot change, anonymise removes rows and files.

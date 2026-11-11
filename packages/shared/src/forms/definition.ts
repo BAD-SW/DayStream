@@ -75,7 +75,7 @@ function nonEmpty(v: unknown): v is string {
 }
 
 /** Validates a form definition. Returns an empty list when it is valid. */
-export function validateFormDefinition(input: unknown): FormValidationIssue[] {
+export function validateFormDefinition(input: unknown, kind: 'form' | 'chart' = 'form'): FormValidationIssue[] {
   const issues: FormValidationIssue[] = [];
   if (!isRecord(input) || !Array.isArray(input.items)) {
     return [{ itemId: null, message: 'The form must have a list of items.' }];
@@ -141,6 +141,10 @@ export function validateFormDefinition(input: unknown): FormValidationIssue[] {
     if (type === 'signature') signature += 1;
   }
 
+  if (kind === 'chart' && (agree > 0 || signature > 0)) {
+    issues.push({ itemId: null, message: 'A chart is signed off by the practitioner, so it cannot have an "I agree" box or a signature line.' });
+    return issues;
+  }
   if (agree > 1) issues.push({ itemId: null, message: 'A form can have only one "I agree" box.' });
   if (signature > 1) issues.push({ itemId: null, message: 'A form can have only one signature line.' });
   if (agree !== signature) {

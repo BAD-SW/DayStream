@@ -174,7 +174,7 @@ function getPermissionsFromRole(role: string): string[] {
     case 'tenant_manager': return ['reports:read', 'settings:*'];
     case 'business_owner': return ['services:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*', 'customers:*'];
     case 'business_manager': case 'manager': return ['services:read', 'bookings:*', 'staff:read', 'reports:read', 'customers:*', 'schedule:*'];
-    case 'business_staff': case 'staff': case 'reception': case 'therapist': case 'trainer': return ['bookings:read', 'bookings:update', 'customers:read', 'schedule:read'];
+    case 'business_staff': case 'staff': case 'reception': case 'technician': case 'therapist': case 'trainer': return ['bookings:read', 'bookings:update', 'customers:read', 'schedule:read'];
     case 'customer': return ['bookings:read', 'bookings:create'];
     default: return ['services:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*', 'customers:*'];
   }

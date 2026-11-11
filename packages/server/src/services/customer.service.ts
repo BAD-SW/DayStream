@@ -608,6 +608,8 @@ export async function anonymizeCustomer(id: string, businessId: string, userId: 
     await client.query('DELETE FROM cus_notes WHERE customer_id = $1', [id]);
     await client.query('DELETE FROM frm_submissions WHERE customer_id = $1', [id]);
     await client.query('DELETE FROM frm_requests WHERE customer_id = $1', [id]);
+    // Treatment charts and their amendments (the files go with the customer's folder below).
+    await client.query('DELETE FROM chr_charts WHERE customer_id = $1', [id]);
     await client.query('DELETE FROM cus_documents WHERE customer_id = $1', [id]);
     await client.query('DELETE FROM cus_data_exports WHERE customer_id = $1', [id]);
 

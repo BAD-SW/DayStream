@@ -33,6 +33,8 @@ export interface FormPdfInput {
   completedVia: 'device' | 'link' | 'staff';
   /** The staff member who filled it in for the customer, when completedVia is 'staff'. */
   completedByName: string | null;
+  /** Set for a treatment chart (spec 51, gap 2): drawn as a record signed off by a practitioner. */
+  chart?: { practitioner: string; signedAt: Date; amendments: { at: Date; by: string; text: string }[] };
 }
 
 const WORDS: Record<string, Record<string, string>> = {
@@ -175,6 +177,28 @@ export function renderFormPdf(input: FormPdfInput): Promise<Buffer> {
       }
     }
 
+    if (input.chart) {
+      // Sign-off block and amendments of a treatment chart.
+      const chart = input.chart;
+      ensure(90);
+      doc.y += 8;
+      doc.moveTo(pad, doc.y).lineTo(pageWidth - pad, doc.y).lineWidth(1).strokeColor('#dddddd').stroke();
+      doc.y += 8;
+      doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(10)
+        .text(`Signed off by ${chart.practitioner}, ${formatInZone(chart.signedAt, input.timezone, input.language)}`, pad, doc.y + 1, { width: contentWidth });
+      doc.fillColor('#666666').font('Helvetica').fontSize(8.5)
+        .text(`Reference: ${input.reference}  |  Template version: ${input.formVersion}`, pad, doc.y + 2, { width: contentWidth });
+      if (chart.amendments.length > 0) {
+        doc.moveDown(0.8);
+        doc.fillColor(primary).font('Helvetica-Bold').fontSize(12).text('Amendments', pad, doc.y, { width: contentWidth });
+        for (const a of chart.amendments) {
+          ensure(50);
+          doc.fillColor('#666666').font('Helvetica').fontSize(8.5)
+            .text(`Added by ${a.by}, ${formatInZone(a.at, input.timezone, input.language)}`, pad, doc.y + 4, { width: contentWidth });
+          doc.fillColor('#1a1a1a').font('Helvetica').fontSize(10).text(a.text, pad, doc.y + 1, { width: contentWidth, lineGap: 2 });
+        }
+      }
+    } else {
     // Evidence block
     ensure(110);
     doc.y += 8;
@@ -192,6 +216,7 @@ export function renderFormPdf(input: FormPdfInput): Promise<Buffer> {
     if (input.ipAddress) lines.push(`${w.ip}: ${input.ipAddress}`);
     if (input.userAgent) lines.push(`${w.dev}: ${input.userAgent.slice(0, 140)}`);
     for (const l of lines) doc.text(l, pad, doc.y + 1, { width: contentWidth });
+    }
 
     // Page numbers
     const range = doc.bufferedPageRange();

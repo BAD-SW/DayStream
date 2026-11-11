@@ -72,18 +72,22 @@ interface Props {
   onSaved: () => void;
   onCancel: () => void;
   onDirtyChange?: (dirty: boolean) => void;
+  /** 'chart' builds a clinical chart template: no language, no when-needed rules, no customer signature. */
+  kind?: 'form' | 'chart';
 }
 
-export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirtyChange }: Props) {
+export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirtyChange, kind: templateKind = 'form' }: Props) {
+  const isChart = templateKind === 'chart';
+  const noun = isChart ? 'chart template' : 'form';
   const initial = useMemo(() => ({
-    name: form?.name ?? 'New form',
+    name: form?.name ?? (isChart ? 'New chart template' : 'New form'),
     language: form?.language ?? '',
     isActive: form?.isActive ?? true,
     renewMonths: form?.renewAfterMonths ? String(form.renewAfterMonths) : '',
     firstVisit: !!form?.applies.first_visit,
     serviceIds: form?.applies.service_ids ?? [],
     items: toBlocks(form?.definition.items ?? ([] as FormItem[])).flat(),
-  }), [form]);
+  }), [form, isChart]);
 
   const [name, setName] = useState(initial.name);
   const [language, setLanguage] = useState(initial.language);
@@ -154,9 +158,9 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
       }
       return it;
     });
-    const found = validateFormDefinition({ items: cleaned });
+    const found = validateFormDefinition({ items: cleaned }, templateKind);
     setIssues(found);
-    if (!name.trim()) { setError('The form needs a name.'); return; }
+    if (!name.trim()) { setError(`The ${noun} needs a name.`); return; }
     if (found.length > 0) { setError('Fix the items marked below, then save again.'); return; }
     const months = renewMonths.trim() === '' ? null : Number(renewMonths);
     if (months !== null && (!Number.isInteger(months) || months < 1)) {
@@ -164,24 +168,24 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
     }
     const input = {
       name: name.trim(),
-      language: language || null,
+      language: isChart ? null : (language || null),
       definition: { items: cleaned },
-      applies: {
+      applies: isChart ? {} : {
         ...(firstVisit ? { first_visit: true } : {}),
         ...(serviceIds.length > 0 ? { service_ids: serviceIds } : {}),
       },
-      renew_after_months: months,
+      renew_after_months: isChart ? null : months,
       is_active: isActive,
     };
     setSaving(true);
     try {
       if (form) await formsApi.updateForm(businessId, form.id, input);
-      else await formsApi.createForm(businessId, input);
+      else await formsApi.createForm(businessId, { ...input, kind: templateKind });
       onDirtyChange?.(false);
       onSaved();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { error?: string } }; message?: string };
-      setError(err.response?.data?.error || err.message || 'Could not save the form.');
+      setError(err.response?.data?.error || err.message || `Could not save the ${noun}.`);
     } finally {
       setSaving(false);
     }
@@ -192,7 +196,7 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
   return (
     <div style={s.editor}>
       <h3 style={s.subTitle}>
-        {form ? `Edit form${form.language ? ` (${form.language})` : ''}` : 'New form'}
+        {form ? `Edit ${noun}${form.language ? ` (${form.language})` : ''}` : `New ${noun}`}
       </h3>
       {error && <p style={s.error} role="alert">{error}</p>}
 
@@ -201,19 +205,22 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
           <label style={s.label} htmlFor="frm-name">Name<span style={s.req}>*</span></label>
           <input id="frm-name" style={s.input} value={name} maxLength={200} onChange={(e) => setName(e.target.value)} />
         </div>
-        <div style={s.field}>
-          <label style={s.label} htmlFor="frm-lang">Language</label>
-          <LanguageSelect id="frm-lang" style={s.input} value={language} onChange={setLanguage} blankLabel="Default (no language)" />
-        </div>
+        {!isChart && (
+          <div style={s.field}>
+            <label style={s.label} htmlFor="frm-lang">Language</label>
+            <LanguageSelect id="frm-lang" style={s.input} value={language} onChange={setLanguage} blankLabel="Default (no language)" />
+          </div>
+        )}
       </div>
 
       <div style={s.field}>
         <label style={s.checkLabel}>
           <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
-          <span>Active (inactive forms are drafts and are not offered)</span>
+          <span>Active (inactive {noun}s are drafts and are not offered)</span>
         </label>
       </div>
 
+      {!isChart && (
       <div style={s.box}>
         <h4 style={s.boxTitle}>When this form is needed</h4>
         <p style={s.helper}>
@@ -236,6 +243,7 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
           <span style={s.helper}>Leave blank if it never needs signing again.</span>
         </div>
       </div>
+      )}
 
       <h4 style={s.boxTitle}>Items</h4>
       {generalIssues.map((i, n) => <p key={n} style={s.error} role="alert">{i.message}</p>)}
@@ -337,6 +345,7 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
         ))}
       </div>
 
+      {!isChart && (
       <div style={s.box}>
         <h4 style={s.boxTitle}>Agreement and signature</h4>
         <p style={s.helper}>
@@ -347,9 +356,10 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
           ? <p style={s.helper}>This form is signed. The agreement and signature are one block in the list above; move or remove them together there.</p>
           : <Button size="sm" variant="secondary" onClick={addSigned}>Add agreement and signature</Button>}
       </div>
+      )}
 
       <div style={s.actions}>
-        <Button onClick={handleSave} loading={saving}>{form ? 'Save changes' : 'Create form'}</Button>
+        <Button onClick={handleSave} loading={saving}>{form ? 'Save changes' : `Create ${noun}`}</Button>
         <Button variant="secondary" onClick={() => { setPreviewAnswers({}); setPreviewOpen(true); }} disabled={saving || items.length === 0}>
           Preview
         </Button>
@@ -357,7 +367,7 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
       </div>
 
       <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title={`Preview: ${name}`} size="lg">
-        <p style={s.helper}>This is how the customer sees the form. Nothing you enter here is saved.</p>
+        <p style={s.helper}>{isChart ? 'This is how the practitioner sees the chart.' : 'This is how the customer sees the form.'} Nothing you enter here is saved.</p>
         <FormRenderer definition={{ items }} idPrefix="preview"
           answers={previewAnswers}
           onChange={(id, v) => setPreviewAnswers((a) => ({ ...a, [id]: v }))} />

@@ -11,8 +11,10 @@ import type { Form } from '../../api/forms';
  * The "Forms" type on the Templates tab (spec 51, gap 1): the business's forms in the same list
  * style as the other templates, with Edit, Duplicate, Add language and Delete (archive).
  */
-export function FormsTemplates({ businessId, onDirtyChange }: {
+export function FormsTemplates({ businessId, onDirtyChange, kind = 'form' }: {
   businessId: string;
+  /** 'chart' lists the clinical chart templates (spec 51, gap 2) instead of forms. */
+  kind?: 'form' | 'chart';
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [forms, setForms] = useState<Form[]>([]);
@@ -24,12 +26,15 @@ export function FormsTemplates({ businessId, onDirtyChange }: {
   const [newLang, setNewLang] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const isChart = kind === 'chart';
+  const noun = isChart ? 'chart template' : 'form';
+
   const load = useCallback(() => {
-    formsApi.listForms(businessId)
+    formsApi.listForms(businessId, kind)
       .then(setForms)
-      .catch(() => setError('Could not load the forms.'))
+      .catch(() => setError(`Could not load the ${noun}s.`))
       .finally(() => setLoading(false));
-  }, [businessId]);
+  }, [businessId, kind, noun]);
   useEffect(() => { load(); }, [load]);
 
   const fail = (e: unknown) => {
@@ -44,7 +49,9 @@ export function FormsTemplates({ businessId, onDirtyChange }: {
 
   const handleDelete = async (f: Form) => {
     const label = f.language ? `${f.name} (${f.language})` : f.name;
-    if (!confirm(`Delete form "${label}"? Forms customers already completed are kept.`)) return;
+    if (!confirm(isChart
+      ? `Delete chart template "${label}"? Charts already written from it are kept.`
+      : `Delete form "${label}"? Forms customers already completed are kept.`)) return;
     setError(null);
     try { await formsApi.deleteForm(businessId, f.id); if (editing && editing !== 'new' && editing.id === f.id) setEditing(null); load(); } catch (e) { fail(e); }
   };
@@ -77,19 +84,31 @@ export function FormsTemplates({ businessId, onDirtyChange }: {
   return (
     <div>
       <p style={s.description}>
-        Build the forms and waivers your customers complete: intake questions, health history, or a
-        waiver with an "I agree" box and signature. Each form can have a version per language.
-        Completed forms are saved as a PDF in the customer's folder.
+        {isChart ? (
+          <>
+            Build the chart templates your practitioners fill in about a customer, for example SOAP notes or a
+            treatment record. Charts are private to staff who work with clients, are stored encrypted, and
+            are locked when a practitioner signs them off.
+          </>
+        ) : (
+          <>
+            Build the forms and waivers your customers complete: intake questions, health history, or a
+            waiver with an "I agree" box and signature. Each form can have a version per language.
+            Completed forms are saved as a PDF in the customer's folder.
+          </>
+        )}
       </p>
       {error && <p style={s.error} role="alert">{error}</p>}
 
       <div style={s.listHeader}>
-        <h3 style={s.subTitle}>Forms</h3>
-        <Button size="sm" onClick={() => setEditing('new')} disabled={editing !== null}>New form</Button>
+        <h3 style={s.subTitle}>{isChart ? 'Charts' : 'Forms'}</h3>
+        <Button size="sm" onClick={() => setEditing('new')} disabled={editing !== null}>{isChart ? 'New chart template' : 'New form'}</Button>
       </div>
 
       {forms.length === 0 ? (
-        <p style={s.muted}>No forms yet. Create one to start collecting waivers and intake answers.</p>
+        <p style={s.muted}>{isChart
+          ? 'No chart templates yet. Create one to start recording treatments.'
+          : 'No forms yet. Create one to start collecting waivers and intake answers.'}</p>
       ) : (
         <div style={s.list}>
           {forms.map((f) => (
@@ -97,7 +116,7 @@ export function FormsTemplates({ businessId, onDirtyChange }: {
               <div style={s.listInfo}>
                 <span style={s.listName}>{f.name}</span>
                 {f.language && <span style={s.tag}>{f.language}</span>}
-                {f.signed && <span style={s.tag}>Signed</span>}
+                {!isChart && f.signed && <span style={s.tag}>Signed</span>}
                 <span style={{ ...s.statusTag, color: f.isActive ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
                   {f.isActive ? '● Active' : '○ Inactive'}
                 </span>
@@ -105,7 +124,7 @@ export function FormsTemplates({ businessId, onDirtyChange }: {
               <div style={s.listActions}>
                 <Button size="sm" variant="secondary" onClick={() => setEditing(f)} disabled={editing !== null}>Edit</Button>
                 <Button size="sm" variant="ghost" onClick={() => handleDuplicate(f)}>Duplicate</Button>
-                <Button size="sm" variant="ghost" onClick={() => openLanguage(f)}>Add language</Button>
+                {!isChart && <Button size="sm" variant="ghost" onClick={() => openLanguage(f)}>Add language</Button>}
                 <Button size="sm" variant="ghost" onClick={() => handleDelete(f)}>Delete</Button>
               </div>
             </div>
@@ -118,6 +137,7 @@ export function FormsTemplates({ businessId, onDirtyChange }: {
           key={editing === 'new' ? 'new' : editing.id}
           businessId={businessId}
           form={editing === 'new' ? null : editing}
+          kind={kind}
           onSaved={() => { setEditing(null); load(); }}
           onCancel={() => setEditing(null)}
           onDirtyChange={onDirtyChange}

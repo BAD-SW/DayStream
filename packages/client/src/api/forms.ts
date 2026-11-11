@@ -6,6 +6,7 @@ export interface Form {
   id: string;
   businessId: string;
   groupId: string;
+  kind: 'form' | 'chart';
   name: string;
   language: string | null;
   definition: FormDefinition;
@@ -20,6 +21,7 @@ export interface Form {
 }
 
 export interface FormInput {
+  kind?: 'form' | 'chart';
   name?: string;
   language?: string | null;
   definition?: FormDefinition;
@@ -28,8 +30,8 @@ export interface FormInput {
   is_active?: boolean;
 }
 
-export async function listForms(businessId: string): Promise<Form[]> {
-  const res = await apiClient.get('/v1/forms', { params: { business_id: businessId } });
+export async function listForms(businessId: string, kind: 'form' | 'chart' = 'form'): Promise<Form[]> {
+  const res = await apiClient.get('/v1/forms', { params: { business_id: businessId, kind } });
   return res.data.data;
 }
 
@@ -63,6 +65,7 @@ export type FormStatus = 'optional' | 'not_needed' | 'done' | 'missing' | 'out_o
 
 export interface CustomerFormStatus {
   groupId: string;
+  kind: 'form' | 'chart';
   name: string;
   signed: boolean;
   languages: (string | null)[];

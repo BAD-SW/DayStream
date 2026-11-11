@@ -7,6 +7,7 @@ import { DETAILS_TABLE_TOKEN } from '@daystream/shared';
 import { LanguageSelect } from '../../components/LanguageSelect';
 import { useContextManager } from '../../context/ContextManager';
 import { FormsTemplates } from './FormsTemplates';
+import { useClinicalAccess } from '../../utils/useClinicalAccess';
 import * as payApi from '../../api/payments';
 import type {
   DocumentArtifactType,
@@ -38,6 +39,8 @@ import type {
 
 /** The Document Type dropdown's extra entry for the business's forms (spec 51); not a branded artifact. */
 const FORMS_TYPE = 'forms';
+/** The extra entry for clinical chart templates (spec 51, gap 2); only offered to clinical roles. */
+const CHARTS_TYPE = 'charts';
 
 /** The editable fields; mirrors the server DocumentBrandingInput (snake_case). */
 interface EditForm {
@@ -144,6 +147,7 @@ const SAMPLE_DETAILS_TABLE = {
  */
 export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void } = {}) {
   const businessId = useContextManager().activeContext.businessId || '';
+  const canUseCharts = useClinicalAccess();
 
   const [catalog, setCatalog] = useState<DocumentArtifactType[]>([]);
   const [artifactType, setArtifactType] = useState<string>('');
@@ -186,7 +190,7 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
   }, []);
 
   const loadTemplates = useCallback(() => {
-    if (!businessId || !artifactType || artifactType === FORMS_TYPE) return;
+    if (!businessId || !artifactType || artifactType === FORMS_TYPE || artifactType === CHARTS_TYPE) return;
     payApi.listDocumentTemplates(businessId, artifactType)
       .then(setTemplates)
       .catch(() => setError('Failed to load templates.'));
@@ -311,12 +315,14 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
             <option key={c.key} value={c.key}>{c.label}</option>
           ))}
           <option value={FORMS_TYPE}>Forms</option>
+          {canUseCharts && <option value={CHARTS_TYPE}>Charts</option>}
         </select>
         {selectedType && <span style={s.helper}>{selectedType.description}</span>}
       </div>
 
-      {artifactType === FORMS_TYPE ? (
-        <FormsTemplates businessId={businessId} onDirtyChange={onDirtyChange} />
+      {artifactType === FORMS_TYPE || artifactType === CHARTS_TYPE ? (
+        <FormsTemplates key={artifactType} businessId={businessId} onDirtyChange={onDirtyChange}
+          kind={artifactType === CHARTS_TYPE ? 'chart' : 'form'} />
       ) : (<>
       {/* Template list */}
       <div style={s.listHeader}>

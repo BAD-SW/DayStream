@@ -36,13 +36,22 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
   - [x] ✅ Missing and out-of-date status on profile, booking and check-in
   - [x] ✅ View, print and email a copy
   - [x] ✅ Anonymise and delete remove forms, files and folders; cleanup retry job
-- [ ] Verify live and close with the owner
+- [x] ✅ Verify live and close with the owner (form completed at the kiosk, stored in the customer's folder, anonymise removes it)
 
 ## 2. Treatment charting (Requirement 2)
-- [ ] Confirm current state and agree requirements (builds on forms)
-- [ ] Design
-- [ ] Build
-- [ ] Verify live and close with the owner
+- [x] ✅ Confirm current state and agree requirements (criteria 1-11, from the owner's answers)
+- [x] ✅ Design (design.md section 2)
+- Build
+  - [x] Migration 171: clinical permissions, `frm_forms.kind`, `svc_services.default_chart_group_id`, `chr_charts`, `chr_amendments`
+  - [x] Clinical access helper (roles plus Therapist/Trainer job titles) and client permission mapping
+  - [x] Shared validator: charts reject agree and signature items
+  - [x] Chart service and routes with strict audit (view, create, update, sign, amend, delete, PDF)
+  - [x] Charts type on the Templates tab and default chart on the service
+  - [x] Customer Charts tab and booking Chart panel, with the previous chart shown
+  - [x] Sign-off PDF stored in the customer's charts folder
+  - [x] Anonymise, delete, merge and export hooks
+  - [x] Checked with live scripts (service and HTTP): reception refused, locking, amendments, audit rows, anonymise removes charts and files
+- [x] ✅ Verify live and close with the owner
 
 ## 3. Virtual waiting room (Requirement 3)
 - [ ] Confirm current state and agree requirements (including forms at self check-in: criteria 4 and 5)
@@ -54,7 +63,8 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
   - [x] ✅ Phone page `/check-in/:code`; link in reminder emails; staff can copy the link
   - [x] ✅ Form page returns the customer to the kiosk or phone page afterwards
   - [x] ✅ First-visit forms stay outstanding until the first visit is completed (a checked-in visit is not yet completed)
-  - [ ] Verify live with the owner: register a kiosk, check in by phone and email, complete a form, open the phone link
+  - [x] ✅ Verified live with the owner: kiosk registered, appointment made for today, checked in at the kiosk and a pending form completed
+  - [ ] Phone link check-in not yet tried live (the rest of the virtual waiting room, gap 3, is still to do)
 - [ ] Design
 - [ ] Build
 - [ ] Verify live and close with the owner

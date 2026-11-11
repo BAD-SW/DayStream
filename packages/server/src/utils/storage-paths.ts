@@ -44,6 +44,7 @@ export const storagePaths = {
   customerDocument: (t: string, b: string, c: string, fileExt: string) => `${storagePaths.customerFolder(t, b, c)}/documents/${rid()}.${ext(fileExt)}`,
   customerPhoto: (t: string, b: string, c: string, fileExt: string) => `${storagePaths.customerFolder(t, b, c)}/photos/${rid()}.${ext(fileExt)}`,
   customerForm: (t: string, b: string, c: string, submissionId: string) => `${storagePaths.customerFolder(t, b, c)}/forms/${seg(submissionId, 'submission id')}.pdf`,
+  customerChart: (t: string, b: string, c: string, chartId: string) => `${storagePaths.customerFolder(t, b, c)}/charts/${seg(chartId, 'chart id')}.pdf`,
   customerDataExport: (t: string, b: string, c: string) => `${storagePaths.customerFolder(t, b, c)}/data-exports/${rid()}.pdf`,
 
   // --- Business files (public) ---

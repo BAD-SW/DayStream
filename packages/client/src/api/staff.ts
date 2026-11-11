@@ -1,9 +1,27 @@
 import { apiClient } from './client';
 
+/** The roles a staff login can have, in the order they are offered. The value is what the server stores. */
+export const STAFF_ROLE_OPTIONS: { value: string; label: string; hint: string }[] = [
+  { value: 'business_owner', label: 'Owner', hint: 'Full access to the business.' },
+  { value: 'business_manager', label: 'Manager', hint: 'Runs the business day to day, including charts.' },
+  { value: 'reception', label: 'Reception', hint: 'Front desk: bookings, customers and check-in. No treatment charts.' },
+  { value: 'technician', label: 'Technician', hint: 'Hands-on service provider (therapist, trainer, mechanic, detailer). As staff, plus service charts.' },
+];
+
+/** Older records use shorter names (manager, staff); map them to the option values. */
+export function normalizeStaffRole(role: string | null | undefined): string {
+  if (role === 'manager') return 'business_manager';
+  if (role === 'staff' || role === 'business_staff') return 'technician';
+  if (role === 'therapist' || role === 'trainer') return 'technician';
+  return role || '';
+}
+
 export interface StaffProfile {
   id: string;
   tenant_id: string;
   user_id: string | null;
+  /** The role on the staff member's login, when they have one. */
+  user_role?: string | null;
   staff_ref: string;
   first_name: string;
   last_name: string;
@@ -89,6 +107,11 @@ export async function getStaff(id: string) {
 
 export async function updateStaff(id: string, data: Record<string, any>) {
   const res = await apiClient.put(`/v1/staff/${id}`, data);
+  return res.data.data;
+}
+
+export async function changeStaffRole(id: string, role: string): Promise<StaffProfile> {
+  const res = await apiClient.put(`/v1/staff/${id}/role`, { role });
   return res.data.data;
 }
 

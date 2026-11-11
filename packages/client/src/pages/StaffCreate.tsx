@@ -13,7 +13,7 @@ export function StaffCreate() {
     password: '',
     mobile_phone: '',
     employment_type: 'full_time',
-    role: 'business_staff',
+    role: 'technician',
     hire_date: '',
     bio: '',
     languages: '',
@@ -104,10 +104,11 @@ export function StaffCreate() {
               <label style={styles.label}>Role</label>
               <select style={styles.input} value={form.role}
                 onChange={(e) => updateField('role', e.target.value)}>
-                <option value="business_staff">Staff</option>
-                <option value="business_manager">Manager</option>
-                <option value="business_owner">Owner</option>
+                {staffApi.STAFF_ROLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
+              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                {staffApi.STAFF_ROLE_OPTIONS.find((o) => o.value === form.role)?.hint}
+              </span>
             </div>
             <div style={styles.formGroup}>
               <label style={styles.label}>Employment Type</label>

@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { FormsNeededNotice } from '../components/forms/FormsNeededNotice';
+import { ChartsPanel } from '../components/charts/ChartsPanel';
+import { useClinicalAccess } from '../utils/useClinicalAccess';
 import { getSelfCheckInLink } from '../api/selfCheckIn';
 import { Button } from '../design-system/components/actions/Button';
 import { Alert } from '../design-system/components/feedback/Alert';
@@ -31,6 +33,7 @@ export function BookingEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const businessId = localStorage.getItem('business_id') || '';
+  const canCharts = useClinicalAccess();
 
   const [booking, setBooking] = useState<bookingsApi.Booking | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
@@ -371,6 +374,13 @@ export function BookingEdit() {
           </button>
           {linkMessage && <span role="status"> {linkMessage}</span>}
         </p>
+      )}
+      {canCharts && booking.customer_id && id && (
+        <section aria-labelledby="booking-charts-title" style={{ margin: 'var(--space-md) 0', padding: 'var(--space-md)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md, 8px)', background: 'var(--color-surface)' }}>
+          <h2 id="booking-charts-title" style={{ margin: '0 0 var(--space-sm) 0', fontSize: 'var(--font-size-h4, 1.125rem)', fontWeight: 600, color: 'var(--color-text)' }}>Treatment chart</h2>
+          <ChartsPanel businessId={businessId} customerId={booking.customer_id} bookingId={id}
+            defaultChartGroupId={services.find((x) => x.id === booking.service_id)?.default_chart_group_id ?? null} />
+        </section>
       )}
       {error && <Alert variant="error">{error}</Alert>}
 

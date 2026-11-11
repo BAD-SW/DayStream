@@ -59,7 +59,7 @@ async function activeVersions(businessId: string, groupId: string): Promise<Form
   const { rows } = await adminPool.query(
     `SELECT id, group_id, name, language, definition, version
        FROM frm_forms
-      WHERE business_id = $1 AND group_id = $2 AND status = 'active' AND is_active = true
+      WHERE business_id = $1 AND group_id = $2 AND status = 'active' AND kind = 'form' AND is_active = true
       ORDER BY (language IS NOT NULL), language`,
     [businessId, groupId],
   );

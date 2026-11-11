@@ -81,7 +81,7 @@ async function loadGroups(businessId: string): Promise<Group[]> {
   const { rows } = await adminPool.query(
     `SELECT group_id, name, language, definition, applies, renew_after_months
        FROM frm_forms
-      WHERE business_id = $1 AND status = 'active' AND is_active = true
+      WHERE business_id = $1 AND status = 'active' AND kind = 'form' AND is_active = true
       ORDER BY (language IS NOT NULL), language, name`,
     [businessId],
   );

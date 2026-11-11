@@ -107,7 +107,7 @@ const TABLE_LABELS: Record<string, string> = {
   fin_orders: 'Orders', pay_invoices: 'Invoices', pay_transactions: 'Payments',
   pay_payment_methods: 'Stored payment methods', pay_account_credits: 'Account credit', pay_gift_cards: 'Gift cards',
   evt_registrations: 'Event registrations', evt_waitlist: 'Event waitlist entries',
-  cus_notes: 'Notes', cus_customer_tags: 'Tags', cus_activities: 'Timeline entries', cus_custom_fields: 'Custom fields',
+  cus_notes: 'Notes', chr_charts: 'Treatment charts', cus_customer_tags: 'Tags', cus_activities: 'Timeline entries', cus_custom_fields: 'Custom fields',
   mkt_campaign_recipients: 'Campaigns received', mkt_sequence_enrollments: 'Sequences', mkt_sequence_history: 'Sequence history',
   web_form_submissions: 'Website form submissions', wgt_widget_transactions: 'Widget payments',
   cus_consent_events: 'Consent history', mkt_communication_preferences: 'Consent settings',

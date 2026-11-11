@@ -112,15 +112,22 @@ function ProfileTab({ staff, onUpdate }: { staff: StaffProfile; onUpdate: (s: St
     languages: s.languages || '',
     bio: s.bio || '',
     show_on_directory: s.show_on_directory,
+    // The login's role (empty when the person has no login).
+    role: staffApi.normalizeStaffRole(s.user_role),
   });
   const draft = useDraft('staff-profile', 'Profile', fromStaff(staff), async (form) => {
-    const updated = await staffApi.updateStaff(staff.id, {
-      ...form,
+    const { role, ...profile } = form;
+    let updated = { ...staff, ...(await staffApi.updateStaff(staff.id, {
+      ...profile,
       hire_date: form.hire_date || null,
       mobile_phone: form.mobile_phone || null,
       languages: form.languages || null,
       bio: form.bio || null,
-    });
+    })) };
+    // The role is saved with the profile; it is a separate call because it changes permissions.
+    if (staff.user_id && role && role !== staffApi.normalizeStaffRole(staff.user_role)) {
+      updated = { ...updated, ...(await staffApi.changeStaffRole(staff.id, role)) };
+    }
     onUpdate(updated);
     return fromStaff(updated);
   });
@@ -128,7 +135,6 @@ function ProfileTab({ staff, onUpdate }: { staff: StaffProfile; onUpdate: (s: St
   const setForm = draft.setValue;
   const mark = (key: keyof typeof form) => fieldMark(draft.changed((v) => v[key]));
   const [error, setError] = useState('');
-
   const handleDeactivate = async () => {
     if (!confirm('Deactivate this staff member? They will no longer be bookable.')) return;
     setError('');
@@ -141,7 +147,7 @@ function ProfileTab({ staff, onUpdate }: { staff: StaffProfile; onUpdate: (s: St
   return (
     <>
       {error && <Alert variant="error">{error}</Alert>}
-      <div style={{ ...styles.card, ...draftBox(draft.changed((v) => [v.first_name, v.last_name, v.email, v.mobile_phone, v.languages])) }}>
+      <div style={{ ...styles.card, ...draftBox(draft.changed((v) => [v.first_name, v.last_name, v.email, v.mobile_phone, v.languages, v.role])) }}>
         <h3 style={styles.cardTitle}>Personal Information</h3>
         <div style={styles.formGrid}>
           <div style={styles.formGroup}>
@@ -164,6 +170,15 @@ function ProfileTab({ staff, onUpdate }: { staff: StaffProfile; onUpdate: (s: St
             <label style={styles.label}>Languages</label>
             <input style={{ ...styles.input, ...mark('languages') }} value={form.languages} onChange={(e) => setForm({ ...form, languages: e.target.value })} placeholder="e.g., English, Spanish" />
           </div>
+          {staff.user_id && (
+            <div style={styles.formGroup}>
+              <label style={styles.label} htmlFor="staff-role">Role</label>
+              <select id="staff-role" style={{ ...styles.input, ...mark('role') }} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                {!staffApi.STAFF_ROLE_OPTIONS.some((o) => o.value === form.role) && <option value={form.role}>{form.role || 'Not set'}</option>}
+                {staffApi.STAFF_ROLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 

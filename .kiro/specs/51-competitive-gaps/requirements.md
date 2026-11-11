@@ -43,14 +43,21 @@ The acceptance criteria below set the capability each gap must reach. They are r
 
 **User Story**: As a therapist or practitioner, I want structured treatment notes per session, so that I can record what was done and see the customer's history at the next visit.
 
-**Current state**: Not started. Notes are free text with an optional category.
+**Current state**: Not started. Customer notes are encrypted free text with an optional category. They can be added and deleted but not edited, are not linked to a booking, delete permanently without an audit entry, and show "sensitive" notes only to the business owner and manager (a fixed list of role names, not a permission). Nothing in the system records a clinical session, a sign-off or an amendment. Reception, therapist and trainer share one "Staff" permission set, and there is no screen to change a role's permissions. The only read that is audited today is a sensitive note.
 
 ##### Acceptance Criteria
 
-1. THE system SHALL let a business define chart templates (for example SOAP or a treatment record) built from the same field types as forms.
-2. THE system SHALL let staff complete a chart against a booking, and SHALL show the customer's previous charts at the next visit.
-3. THE system SHALL restrict charts to roles allowed to see clinical information, and SHALL log every view and change.
-4. THE system SHALL lock a chart once signed off, with later corrections recorded as amendments.
+1. THE system SHALL let a business define chart templates (for example SOAP or a treatment record) built from the same field types as forms (headings, write-in answers, yes/no, choices, checkbox tables and dates).
+2. THE system SHALL let staff complete a chart against a booking, or standalone from the customer profile, and SHALL show the customer's previous charts at the next visit.
+3. THE system SHALL let a service name a default chart template, which is suggested when staff open a booking for that service.
+4. THE system SHALL restrict charts to roles holding a clinical permission (business owner, manager, therapist and trainer by default, not reception), and SHALL refuse access to every other role.
+5. THE system SHALL log every view, creation, sign-off and amendment of a chart, and SHALL refuse the action if the log entry cannot be written.
+6. THE system SHALL store a chart's answers encrypted so they can be shown in the app, and SHALL produce a PDF when the chart is signed off.
+7. THE system SHALL let the practitioner sign off a chart with one action that records their name and the time, and SHALL lock the chart from then on.
+8. THE system SHALL let any user with chart access add a dated amendment to a signed-off chart, keeping the original visible and unchanged.
+9. THE system SHALL keep charts out of the customer's own view.
+10. THE system SHALL remove a customer's charts when the customer is anonymised or deleted, as it does for forms.
+11. THE system SHALL leave existing customer notes unchanged by this requirement.
 
 #### Requirement 3: Virtual Waiting Room
 

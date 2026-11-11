@@ -30,6 +30,8 @@ import {
 } from './CustomerProfileParts';
 import { CustomerFormsTab } from './CustomerFormsTab';
 import { FormsNeededNotice } from '../components/forms/FormsNeededNotice';
+import { ChartsPanel } from '../components/charts/ChartsPanel';
+import { useClinicalAccess } from '../utils/useClinicalAccess';
 
 const LIFECYCLE_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   lead: 'neutral', trial: 'info', active: 'success', at_risk: 'warning', churned: 'error', winback: 'info',
@@ -38,7 +40,7 @@ const LIFECYCLE_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info
 const PROFILE_TABS: { key: string; label: string }[] = [
   { key: 'overview', label: 'Overview' }, { key: 'messages', label: 'Messages' }, { key: 'timeline', label: 'Timeline' },
   { key: 'billing', label: 'Billing' }, { key: 'notes', label: 'Notes' }, { key: 'tasks', label: 'Tasks' },
-  { key: 'documents', label: 'Documents' }, { key: 'forms', label: 'Forms' }, { key: 'preferences', label: 'Consent' },
+  { key: 'documents', label: 'Documents' }, { key: 'forms', label: 'Forms' }, { key: 'charts', label: 'Charts' }, { key: 'preferences', label: 'Consent' },
 ];
 
 // Stage and source names come from one shared map ('trial' is shown as "New customer").
@@ -64,6 +66,8 @@ export function CustomerDetail() {
 }
 
 function CustomerProfilePage() {
+  // Treatment charts are only for clinical roles (spec 51, gap 2); other roles don't see the tab.
+  const canCharts = useClinicalAccess();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   // Leaving the profile from a button asks first too when something is unsaved.
@@ -250,7 +254,7 @@ function CustomerProfilePage() {
       }} />
 
       {/* Tabs (order agreed on THE-16) */}
-      <TabBar aria-label="Profile sections" tabs={PROFILE_TABS.map((t) => ({ ...t, changed: dirtySections.some((d) => d.tab === t.key) }))} active={tab} onChange={setTab} />
+      <TabBar aria-label="Profile sections" tabs={PROFILE_TABS.filter((t) => t.key !== 'charts' || canCharts).map((t) => ({ ...t, changed: dirtySections.some((d) => d.tab === t.key) }))} active={tab} onChange={setTab} />
       </StickyPageTop>
       {/* Forms still to complete: shown on every tab, so staff see it as soon as they open the person. */}
       <FormsNeededNotice customerId={customer.id} businessId={businessId} refreshKey={formsRefresh} onOpenForms={() => setTab('forms')} />
@@ -265,6 +269,7 @@ function CustomerProfilePage() {
       <div hidden={tab !== 'notes'}><DraftTab tab="notes"><NotesTab notes={notes} customerId={customer.id} businessId={businessId} onRefresh={(n) => setNotes(n)} /></DraftTab></div>
       <div hidden={tab !== 'tasks'}><DraftTab tab="tasks"><TasksTab customer={customer} businessId={businessId} staff={staff} addSignal={addTaskSignal} /></DraftTab></div>
       <div hidden={tab !== 'documents'}><DraftTab tab="documents"><DocumentsTab customerId={customer.id} businessId={businessId} /></DraftTab></div>
+      {tab === 'charts' && canCharts && <ChartsPanel customerId={customer.id} businessId={businessId} />}
       {tab === 'forms' && <CustomerFormsTab customerId={customer.id} businessId={businessId} customerEmail={customer.email} onChanged={() => setFormsRefresh((n) => n + 1)} />}
       <div hidden={tab !== 'preferences'}><DraftTab tab="preferences"><PreferencesTab preferences={preferences} onSaved={(prefs) => { setPreferences(prefs); setTimelineVersion((n) => n + 1); }} customerId={customer.id} businessId={businessId} /></DraftTab></div>
     </div>

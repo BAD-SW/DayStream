@@ -547,6 +547,8 @@ async function gatherPersonalData(customerId: string, businessId: string) {
                            WHERE e.customer_id = $1 AND e.business_id = $2 ORDER BY e.start_date DESC`),
     documents: await q(`SELECT file_name, created_at FROM cus_documents WHERE customer_id = $1 AND business_id = $2 AND deleted_at IS NULL ORDER BY created_at DESC`),
     tasks: await q(`SELECT title, status, due_at, created_at FROM cus_tasks WHERE customer_id = $1 AND business_id = $2 ORDER BY created_at DESC`),
+    // Treatment charts are listed by date and template only, never their content.
+    charts: await q(`SELECT form_name, status, created_at, signed_at FROM chr_charts WHERE customer_id = $1 AND business_id = $2 ORDER BY created_at DESC`),
     // Completed forms and waivers (spec 51): which form, when, and which version.
     forms: await q(`SELECT form_name, form_version, completed_via, signed, created_at FROM frm_submissions WHERE customer_id = $1 AND business_id = $2 ORDER BY created_at DESC`),
   };

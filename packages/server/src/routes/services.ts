@@ -394,6 +394,7 @@ const updateServiceSchema = Joi.object({
   is_taxable: Joi.boolean(),
   tax_category_id: Joi.string().uuid().allow('', null),
   cancellation_policy_id: Joi.string().uuid().allow('', null),
+  default_chart_group_id: Joi.string().uuid().allow('', null),
 }).min(1);
 
 // POST /api/v1/services — Create service

@@ -29,6 +29,7 @@ export interface Form {
   tenantId: string;
   businessId: string;
   groupId: string;
+  kind: 'form' | 'chart';
   name: string;
   language: string | null;
   definition: FormDefinition;
@@ -43,6 +44,7 @@ export interface Form {
 }
 
 export interface FormInput {
+  kind?: 'form' | 'chart';
   name?: string;
   language?: string | null;
   definition?: FormDefinition;
@@ -59,6 +61,7 @@ function mapRow(r: any): Form {
     tenantId: r.tenant_id,
     businessId: r.business_id,
     groupId: r.group_id,
+    kind: r.kind,
     name: r.name,
     language: r.language,
     definition,
@@ -74,7 +77,7 @@ function mapRow(r: any): Form {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-const COLS = `id, tenant_id, business_id, group_id, name, language, definition, version, applies,
+const COLS = `id, tenant_id, business_id, group_id, kind, name, language, definition, version, applies,
   renew_after_months, is_active, status, created_at, updated_at`;
 
 /** A form's language must be one the app supports; blank means the default version. */
@@ -92,8 +95,8 @@ function cleanName(name: string | undefined): string {
   return v;
 }
 
-function checkDefinition(def: unknown): FormDefinition {
-  const issues = validateFormDefinition(def);
+function checkDefinition(def: unknown, kind: 'form' | 'chart' = 'form'): FormDefinition {
+  const issues = validateFormDefinition(def, kind);
   if (issues.length > 0) throw new FormsError(issues.map((i) => i.message).join(' '), 'INVALID_DEFINITION');
   return def as FormDefinition;
 }
@@ -113,13 +116,13 @@ function cleanRenew(months: number | null | undefined): number | null {
   return months;
 }
 
-/** All of a business's forms that are not archived, grouped order: default version first. */
-export async function listForms(businessId: string): Promise<Form[]> {
+/** All of a business's forms (or chart templates) that are not archived, default version first. */
+export async function listForms(businessId: string, kind: 'form' | 'chart' = 'form'): Promise<Form[]> {
   const { rows } = await adminPool.query(
     `SELECT ${COLS} FROM frm_forms
-      WHERE business_id = $1 AND status = 'active'
+      WHERE business_id = $1 AND status = 'active' AND kind = $2
       ORDER BY name ASC, group_id, (language IS NOT NULL), language`,
-    [businessId],
+    [businessId, kind],
   );
   return rows.map(mapRow);
 }
@@ -141,16 +144,17 @@ export interface CreateFormInput extends FormInput {
 export async function createForm(input: CreateFormInput): Promise<Form> {
   const name = cleanName(input.name);
   const language = cleanLanguage(input.language);
-  const definition = checkDefinition(input.definition);
+  const kind = input.kind ?? 'form';
+  const definition = checkDefinition(input.definition, kind);
   const { rows } = await adminPool.query(
     `INSERT INTO frm_forms (tenant_id, business_id, group_id, name, language, definition, applies,
-                            renew_after_months, is_active, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                            renew_after_months, is_active, created_by, kind)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING ${COLS}`,
     [
       input.tenantId, input.businessId, randomUUID(), name, language,
       JSON.stringify(definition), JSON.stringify(cleanApplies(input.applies)),
-      cleanRenew(input.renewAfterMonths), input.isActive ?? true, input.createdBy,
+      cleanRenew(input.renewAfterMonths), input.isActive ?? true, input.createdBy, kind,
     ],
   );
   const created = mapRow(rows[0]);
@@ -174,7 +178,7 @@ export async function updateForm(
     if (name !== existing.name) { set('name', name); contentChanged = true; }
   }
   if (input.definition !== undefined) {
-    const definition = checkDefinition(input.definition);
+    const definition = checkDefinition(input.definition, existing.kind);
     if (JSON.stringify(definition) !== JSON.stringify(existing.definition)) {
       set('definition', JSON.stringify(definition));
       contentChanged = true;
@@ -240,6 +244,7 @@ export async function duplicateForm(businessId: string, id: string, userId: stri
   if (!src || src.status === 'archived') throw new FormsError('Form not found', 'NOT_FOUND');
   return createForm({
     tenantId, businessId, createdBy: userId,
+    kind: src.kind,
     name: `${src.name} (Copy)`.slice(0, 200),
     language: src.language,
     definition: src.definition,
