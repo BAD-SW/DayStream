@@ -209,6 +209,38 @@ The acceptance criteria below set the capability each gap must reach. They are r
 2. THE system SHALL log each call on the customer's timeline, with missed calls shown to staff.
 3. THE system SHALL let a missed call be answered by text.
 
+### Payments
+
+#### Requirement 14: Tips
+
+**User Story**: As a business owner whose staff are tipped, I want customers to be able to add a tip when they pay, so that the tip reaches the staff member and is kept separate from the sale.
+
+**Current state**: Not started. Nothing in the system knows about tips. An order's total is the sum of its item lines, with no order-level amount, and that total is what the card is charged, what the receipt prints, what the ledger books as cash received and what the payments report sums. Commission is worked out from the item lines only, so it would be unaffected by a tip. Payroll has no pay component for tips and no liability account for tips owed. Refunds work line by line and say nothing about a tip. Staff checkout (card, cash, transfer, check, gift card) is the only path that takes payment through orders; the booking widget's payment step is a simulation, and there is no card-terminal or kiosk payment.
+
+##### Acceptance Criteria
+
+1. THE system SHALL let a tip be added to an order at checkout, as a percentage of the sale or a typed amount, and SHALL let the business choose the suggested percentages.
+2. THE system SHALL charge the sale and the tip together in one payment, and SHALL show the tip as its own line on the receipt.
+3. THE system SHALL record a tip as money owed to staff, separate from revenue, tax and commission, and SHALL keep it out of sales and profit reports.
+4. THE system SHALL attribute each tip to the staff member who served the customer, and SHALL let staff change that attribution or split it between staff.
+5. THE system SHALL show each business the tips collected and owed to each staff member for a period, and SHALL let the business record paying them out or add them to a pay run.
+6. THE system SHALL let a business switch tipping off, and SHALL let it decide whether a tip may be added on cash and other manual payments.
+7. THE system SHALL state what happens to a tip when an order is refunded.
+#### Requirement 15: Service and Product Add-Ons
+
+**User Story**: As a business owner, I want customers and staff to be able to add extras to a booking, such as a longer session, an upgrade or a product, so that I earn more per visit and the extra time is reserved.
+
+**Current state**: Not started. A booking is one service and variant, and an order is a list of item lines, so an extra can only be sold today as a separate line at checkout, after the visit. Nothing links an extra to the service it goes with, adds its time to the booking, or offers it while booking. The only trace of the idea is an unused "free add-on" membership benefit type.
+
+##### Acceptance Criteria
+
+1. THE system SHALL let a business define add-ons, each with a name, a price, an optional extra duration and an optional product it uses, and attach them to the services they can be added to.
+2. THE system SHALL offer a service's add-ons when it is booked, by staff and online, and SHALL let one or several be chosen.
+3. THE system SHALL add an add-on's duration to the booking, checking staff and resource availability for the longer time.
+4. THE system SHALL put each add-on on the order as its own line, with the price, tax and staff credit rules of any other line.
+5. THE system SHALL let staff add or remove an add-on on an existing booking, and SHALL show the add-ons on the calendar, the booking and the receipt.
+6. THE system SHALL let a membership benefit make named add-ons free.
+
 ---
 
 ## Dependencies
@@ -219,7 +251,8 @@ The acceptance criteria below set the capability each gap must reach. They are r
 - Phase 28 (Products and Services): products and variants for inventory
 - Phase 19 (Mobile App): the app foundation for the staff app
 - Phase 22 (Community): on-demand video and courses
-- Phase 12 (Staff Management): pay runs for payout
+- Phase 12 (Staff Management): pay runs for payout (also tip payout)
+- Checkout and payments (orders, payment transactions, the ledger): where tips are added and recorded
 - Phase 21 (AI Features) and Phase 44 (Language Support): where those gaps are finished
 
 ## Success Criteria

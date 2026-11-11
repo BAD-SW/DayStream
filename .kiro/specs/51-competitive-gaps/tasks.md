@@ -124,6 +124,22 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 - [ ] Build
 - [ ] Verify live and close with the owner
 
+## 14. Tips (Requirement 14)
+
+- [ ] Confirm current state (done: no tip support; order total, charge, receipt, ledger, commission, payroll and refunds all recorded in requirements.md)
+- [ ] Agree requirements with the owner (who gets the tip, when it is offered, cash tips, payout, refunds)
+- [ ] Design
+- [ ] Build
+- [ ] Verify live and close with the owner
+
+## 15. Service and product add-ons (Requirement 15)
+
+- [x] ✅ Confirm current state (no add-on support; extras are sold only as separate checkout lines)
+- [ ] Agree requirements with the owner
+- [ ] Design
+- [ ] Build
+- [ ] Verify live and close with the owner
+
 ---
 
 **Status**: 🟡 In Progress — gap register complete; working top to bottom, starting with section 1
