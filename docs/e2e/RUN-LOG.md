@@ -31,6 +31,79 @@ What was not cleaned up, if anything.
 
 ## Runs
 
+## Run 20261111-8 — THE-23 4.2 / 4.3, location filter, payment step (local, not committed)
+
+- 4.2: boxes side by side across overlaps; numbers on every row (hub capNow: staff free = working that day and not busy then; shared = people then; group = latest session); the 2/14 vs 2/15 was a staff member busy with Cold Plunge 15:00–15:30 (now in the hover text). 4.3: Week numbers with one service; (1) for multi-person services; Month Grid bigger; month capacity with no hours set up = 08:00–21:00 (hub). Past days in Month faded (David: yes).
+- Location: migration 175 `apt_bookings.location_id` (backfilled with the primary location), create / update store it, calendar API `location_id` (bookings, hours, staff of the location via sys_location_staff, month), Location select, popup / window preselect. e2e-loc 8 pass (temporary second location, inactive after).
+- Payment step (PAY-1 A): components/booking/PaymentStep.tsx, server booking-payment.service (quote on a scratch order without order number; pay: package session redeemed, membership included / member price, code, account credit when it covers all, card on file / card form / cash with change / transfer / gift card / other / later). e2e-pay 7 pass; UI: step 4 opened from More options, Pay later confirmed (booking cancelled after). Defect found and fixed: cancel with a refund choice on a €0 order was refused.
+- Not built, waiting for a design decision: tips (PAY-3 yes) and deposits (PAY-4 yes). Split (PAY-2) and terminal (PAY-5) later as decided.
+- Client 159, server 1133 pass; change rules 16, CAL-5 8 pass.
+
+### Leftover test data
+None: bookings cancelled, test credit withdrawn, package sessions given back, test location inactive.
+
+## Run 20261111-7 — calendar rebuilt on the hub mock's own classes (local, not committed)
+
+- David: booking text was centred and cut at the top; the + was centred instead of the agreed blue + at the right. Both were my own departures from the hub. Fixed by rebuilding the calendar with the hub's classes and values (components/booking/Calendar.css copied from the mock: ctb, seg, nav, lab, btn, ctb2, spills/spill/spg, cpg, cal2/hd/tm/c2, cnew, capn, bk2.sc/bk2.more, gh, nowl, c2.off/nocap, mon/mday/mnum/mplus/cnt/svl/mmore/mpop, mx/mxt/mxs/mxd/mxc).
+- Now as in the hub: + = small blue circled + at the right of the cell, on hover (the number hides), visible beside a booking; boxes start 2 px below the cell top, leave 36 px at the right, text from the top (cut only at the bottom); 11.5 px grid, 30 px rows, times centred; toolbar 13 px buttons and 15 px date; week headers “Mon 9 Nov”, no today underline, not clickable; Month days with “N bookings” in blue, + top right, today outlined; Month Grid with a Bookings row, two-letter weekdays, coloured cells; dashed preview “New · Service option / 10:00–11:00”.
+- Not as in the hub, needs a decision: one location at a time (bookings store no location).
+- Client 159 pass.
+
+## Run 20261111-6 — CAL-5 and CAL-11 (local, not committed)
+
+- CAL-5: edit window Cancel appointment (reason, fee preview, refund choice when paid) / Mark as no-show (started). Server: `GET /bookings/:id/cancel-preview`, `refund_to` on staff cancel (refund first; refusal = 409 with reason). e2e-cal5: 8 pass (one defect found and fixed in the run: credit for a walk-in answered 500). Browser: panel on a real future booking, Keep appointment.
+- CAL-11: migration 174 `svc_services.calendar_color` (174 because Bill's unmerged commits use 170–173); service PUT accepts it (#rrggbb or null); filters return it; calendar uses it everywhere; Offerings → service → Calendar colour with Use the default. Checked Float Tank pink in Week, then reset.
+- Client 158, server 1133 pass.
+
+### Leftover test data
+Test bookings cancelled or no-show; the €90.75 test account credit for Olivia Cano was withdrawn (status refunded, remaining 0).
+
+## Run 20261111-5 — THE-23 4.1: round 8 window, popup, sticky header, search (local, not committed)
+
+- Built: New / Edit Appointment round 8 (components/booking/AppointmentWindow.tsx) as a window over the calendar (+ New appointment, More options, booking click; View appointment for read-only) and as the /bookings/new and /bookings/:id/edit pages (old BookingCreate / BookingEdit pages and their tests removed); popup with the round 8 customer search, service boxes, option chips, participants, free Location then Staff (dropdown above 6); sticky header, Calendar | List switch (calendar and list), no Appointments list link, hours grid fits the screen and scrolls inside.
+- Server: customers `search_mode=booking` (name, surname, email before @, phone digits); availability days returns `free_times` and takes staff_id / location_id; availability with a staff member chosen for a service with no staff assigned no longer returns nothing (defect found in this run, fixed).
+- Checked from the sidebar: popup (search “test” → only Test Verify; olivia → 2), More options → window prefilled, Confirm booking (created, then cancelled), Edit (own time kept, staff month colours), View only (no-show), List switch, /bookings/new page. Client 158 pass (4 new), server 1133; change-rule E2E 16 pass; e2e-caldesign 12 pass (with temporary hours, removed after).
+
+## Run 20261111-4 — THE-23 §4: calendar look = hub screenshot (local, not committed)
+
+- Compared David's two screenshots (hub vs localhost) element by element and changed: toolbar buttons (square 8 px, white), date “Wednesday 11 November · today”, segmented controls (navy active, white rest), BY label, + New appointment (blue), pills (white, round dot, All solid navy), column pager with dots, column headers (grey band, round dot, “N staff working”), light grid lines, 30-minute rows 30 px, 24 h labels, booking boxes (tint, coloured edge, bold dark text, centred, 80 % wide), green numbers at the right, no inner scrollbar.
+- “N staff working” now = staff working that day (new server staff-working.service: same day rules as availability — shifts / patterns / day off — plus anyone booked); By Staff columns use it too.
+- Checked from the sidebar with temporary opening hours (removed after). e2e-caldesign 12 pass; client 165, server 1133.
+- Differences left, by decision or data: the page title and the Appointments list link (app-wide page header); no Location selector (one location in this business); names / counts are the local data (15 staff incl. 11 “E2E Reset”); payment status only in the box tooltip (the hub box shows none).
+
+## Run 20261111-3 — BKG-26 and the calendar look (local, not committed)
+
+- Defect found by David: Bookings/Orders (sidebar → `/bookings`) still opened the old Appointments table; the new calendar lived only at `/bookings/calendar`, and earlier runs opened that address directly. Fixed: `/bookings` = calendar (today, Day) for staff, the table moved to `/bookings/list`; customers keep their list.
+- Look matched to the hub mock: tinted booking boxes with service-colour edge and dark text (payment status = small dot), 24 h times, grid at least 08:00–21:00, weeks Monday–Sunday (server week range too), Month Monday first, centred column headers, Week at most 3 boxes per time then +N (opens the day).
+- Checked from the sidebar in the browser: Day today, Week, Month, grey hours (temporary hours, removed after). e2e-caldesign 12 pass (one check corrected for Monday weeks); client 165, server calendar 10 pass.
+
+## Run 20261111-2 — suites: BKG-17, BKG-18, BKG-19, BKG-24, BKG-25 (calendar 11 Nov design, local, not committed)
+
+- API run (localhost:3001, owner@transcend.test), e2e-caldesign: 12 checks pass — `hours_set_up` / `day_hours` (Sunday closed, holiday override with its label, Saturday 09:00–14:00, every day of the month); month staff services get a capacity when no staff are assigned (all active staff, same rule as availability); Day `slot_capacity`: booking Cold Plunge at 11:00 moves 0 booked / 13 free to 1 / 12; `day_staff` includes the booked staff member; nothing before opening; Sunday closed.
+- Change-rule checks (run 20261111-1 script) rerun: all pass once the temporary hours were removed (with them, the script's 01:00 “started” booking is refused as outside opening hours: environment).
+- Browser (localhost:3000): toolbar Today ‹ › · Day/Week/Month · By Service/Staff · Calendar/Grid · + New appointment; pills paged with All at the left, column pages on the same line; Day by Service columns paged (Services 1–6 of 8); 1/10 group and 1/13 staff numbers; stripes before availability starts; grey hours, closed Sunday and holiday in Week, Day and Month; popup from Day (created a booking for Adrián Sánchez, then cancelled it), Month (+ on a day lists free times), More options → New Booking prefilled (service, option, day, 11:00, location).
+- Unit tests: client `BookingCalendar.test.tsx` 30 pass (tests for the replaced Day/Week code removed, 8 new); client 165, server 1133 pass.
+- Environment notes: the browser extension's mouse clicks did not reach the page in this session, so clicks were sent with JavaScript (no app error). The local data has 11 staff named “E2E Reset” (left by earlier runs) who are offered for every service.
+- Product note (known, not chased): resource-only services (Fire & Ice) are offered by availability on closed days; the calendar still shows those days closed.
+
+### Leftover test data
+None: temporary location hours and the holiday override were deleted; the two test bookings were cancelled.
+
+## Run 20261111-1 — suites: BKG-19, BKG-21, BKG-22, BKG-23 (calendar and change rules, local, not committed)
+
+- API run against localhost:3001 as owner@transcend.test: 15 checks pass (change rules: future, paid, started, cancelled; reschedule into the past refused; notes; month `services` / `capacity_days`).
+- Shared room: dummy service “E2E Shared Room CAL-17” (6 places) created, tested (4 at 10:00, 3 at 10:30 refused, 2 at 10:30 saved), then archived; bookings cancelled.
+- Browser (localhost:3000): pills paged with All at the left (Week, Month); no Week Summary switch; Month Calendar / Grid (Grid fits the width); cancelled booking opens as View appointment with Close only.
+- Unit tests: server `booking-change-rules.test.ts` 11 pass; client `BookingCalendar.test.tsx` 58 pass.
+- Not covered: month capacity numbers (the local primary location has no weekly hours, so capacity is null and only booked shows).
+
+| Script | What changed and why |
+|---|---|
+| BKG-19 | Filters are pills with pages; Week Summary dropped (CAL-14, CAL-23) |
+| BKG-21 | New: month Calendar / Grid per service (CAL-15, CAL-16) |
+| BKG-22 | New: change rules (CAL-19, CAL-22) |
+| BKG-23 | New: shared room capacity at the same moment (CAL-17) |
+
 ## Run 20261105-1 — full, after the push of 4 Nov (main at `4e43a22`, Bill's `411f334` merged)
 - Commit: `4e43a22` · Migrations at: 165 + 161_import_source · Processor mode: mock
 - Scope: every runner (`fullrun.sh`), including `rmig2` (SET-21, SET-22) and `rinbox`. Unit tests (with the Navy default change made after the run): server 1121 of 1122, client 191 of 191

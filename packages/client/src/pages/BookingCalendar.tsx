@@ -1,6 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as bookingsApi from '../api/bookings';
+import { AppointmentWindow, CustomerPicker, ServicePicker, OptionChips, ParticipantsField, useBookableServices, useCombos } from '../components/booking/AppointmentWindow';
+import type { AppointmentPrefill, SvcItem } from '../components/booking/AppointmentWindow';
+import { dayLabel, initials } from '../utils/zonedTime';
+import '../components/booking/AppointmentWindow.css';
+import '../components/booking/Calendar.css';
 
 // ============================================================
 // Time axis — reflects the business's real operating hours (item 1: a business open 9am-10pm
@@ -61,6 +66,9 @@ interface ServiceRef {
  * Services are sorted alphabetically by name so assignment is deterministic
  * within a session; wraps (modulo 8) when there are more than 8 services.
  */
+/** A colour-map value as CSS: a palette variable name (--cal-service-color-N) or a colour the owner chose (#rrggbb, CAL-11). */
+export const cv = (v: string) => (v.startsWith('--') ? `var(${v})` : v);
+
 export function buildServiceColorMap(services: ServiceRef[]): Map<string, string> {
   const sorted = [...services].sort((a, b) => a.name.localeCompare(b.name));
   const map = new Map<string, string>();
@@ -98,17 +106,39 @@ export function isServiceVisible(selection: ServiceFilterSelection, serviceId: s
   return selection === 'all' || selection.has(serviceId);
 }
 
-/** Toggling the last remaining deselected service back on collapses the selection back to 'all'. */
+/**
+ * Pills (CAL-23, 11 Nov 2026): while All is on, clicking a service shows only that service; further
+ * clicks add or remove services; removing the last one, or selecting every one, goes back to All.
+ */
 export function toggleServiceFilter(selection: ServiceFilterSelection, allServices: ServiceRef[], serviceId: string): ServiceFilterSelection {
-  if (selection === 'all') {
-    const next = new Set(allServices.map((s) => s.id));
-    next.delete(serviceId);
-    return next;
-  }
+  if (selection === 'all') return allServices.length <= 1 ? 'all' : new Set([serviceId]);
   const next = new Set(selection);
   if (next.has(serviceId)) next.delete(serviceId); else next.add(serviceId);
-  if (next.size === allServices.length) return 'all';
+  if (next.size === 0 || next.size === allServices.length) return 'all';
   return next;
+}
+
+/** Estimated pill width from its name (swatch, padding, ~7 px per character). */
+export const pillWidth = (name: string) => 48 + Math.ceil(name.length * 7.6);
+
+/**
+ * Pages of pills that fit on one line: All, then (when there is more than one page) the arrows,
+ * then as many pills as fit, filled greedily so long names don't get cut off.
+ */
+export function pillPages(width: number, names: string[]): number[][] {
+  const idx = names.map((_, i) => i);
+  if (!width || names.length === 0) return [idx];
+  const gap = 8, all = 60 + gap;
+  if (all + names.reduce((x, n) => x + pillWidth(n) + gap, 0) <= width) return [idx];
+  const room = width - all - 110;
+  const pages: number[][] = []; let cur: number[] = []; let used = 0;
+  for (const i of idx) {
+    const w = pillWidth(names[i]) + gap;
+    if (cur.length && used + w > room) { pages.push(cur); cur = []; used = 0; }
+    cur.push(i); used += w;
+  }
+  if (cur.length) pages.push(cur);
+  return pages;
 }
 
 export function QuickFilterBar({
@@ -119,61 +149,43 @@ export function QuickFilterBar({
   onChange: (next: ServiceFilterSelection) => void;
   colorMap: Map<string, string>;
 }) {
+  // One line of pills: All always at the left, then as many services as fit, paged with ‹ › (CAL-23)
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    const measure = () => setWidth(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure); ro.observe(el);
+    return () => ro.disconnect();
+  }, [services.length > 0]); // the bar only exists once there are services
   if (services.length === 0) return null;
+  const chunks = pillPages(width, services.map((s) => s.name));
+  const pages = chunks.length;
+  const pg = Math.min(page, pages - 1);
+  const shown = chunks[pg].map((i) => services[i]);
+  const hiddenSelected = selected === 'all' ? 0 : [...selected].filter((id) => !shown.some((s) => s.id === id)).length;
   return (
-    <div style={styles.quickFilterBar} role="group" aria-label="Filter by service">
-      <button
-        type="button"
-        style={{ ...styles.quickFilterChip, ...(selected === 'all' ? styles.quickFilterChipActive : {}) }}
-        onClick={() => onChange('all')}
-      >
-        All Services
-      </button>
-      {services.map((svc) => {
-        const active = isServiceVisible(selected, svc.id);
-        const colorVar = colorMap.get(svc.id) || SERVICE_COLOR_VARS[0];
-        return (
-          <button
-            key={svc.id}
-            type="button"
-            style={{ ...styles.quickFilterChip, ...(active ? { ...styles.quickFilterChipActive, borderColor: `var(${colorVar})` } : {}) }}
-            onClick={() => onChange(toggleServiceFilter(selected, services, svc.id))}
-            aria-pressed={active}
-          >
-            <span style={{ ...styles.legendSwatch, background: `var(${colorVar})` }} />
-            {svc.name}
-          </button>
-        );
-      })}
+    <div ref={ref} className="spills" role="group" aria-label="Filter by service">
+      <button type="button" className="spill" onClick={() => onChange('all')} aria-pressed={selected === 'all'}>All</button>
+      {pages > 1 && (
+        <span className="spg">
+          <button type="button" className="nav" disabled={pg === 0} onClick={() => setPage(pg - 1)} aria-label="Previous services">‹</button>
+          <small>{pg + 1}/{pages}</small>
+          <button type="button" className="nav" disabled={pg >= pages - 1} onClick={() => setPage(pg + 1)} aria-label="Next services">›</button>
+        </span>
+      )}
+      {shown.map((svc) => (
+        <button key={svc.id} type="button" className="spill" onClick={() => onChange(toggleServiceFilter(selected, services, svc.id))} aria-pressed={selected !== 'all' && selected.has(svc.id)}>
+          <span className="sdot" style={{ ['--sc' as any]: cv(colorMap.get(svc.id) || SERVICE_COLOR_VARS[0]) }} />{svc.name}
+        </button>
+      ))}
+      {hiddenSelected > 0 && <small className="mk-hint">+{hiddenSelected} selected on other pages</small>}
     </div>
   );
 }
-
-// ============================================================
-// Capacity Badge (feature 31: capacity-aware-calendar)
-// ============================================================
-
-export type FillState = 'available' | 'almost-full' | 'full' | 'over-capacity';
-
-/**
- * count > capacity       → over-capacity (admin override pushed a resource past its limit)
- * count === capacity     → full
- * count === capacity - 1 → almost-full
- * count < capacity - 1   → available
- */
-export function getFillState(count: number, capacity: number): FillState {
-  if (count > capacity) return 'over-capacity';
-  if (count === capacity) return 'full';
-  if (count === capacity - 1) return 'almost-full';
-  return 'available';
-}
-
-const FILL_STATE_COLOR_VAR: Record<FillState, string> = {
-  available: 'var(--color-success)',
-  'almost-full': 'var(--color-warning)',
-  full: 'var(--color-error)',
-  'over-capacity': 'var(--color-capacity-override)',
-};
 
 /** Shows a booking's own participant count — never a shared/aggregate resource figure. Only
  *  rendered for bookings on a multi-capacity resource, where "how many of this booking" is
@@ -191,43 +203,16 @@ export function ParticipantCountBadge({ count, capacity }: { count: number | nul
 
 export type PaymentStatus = 'paid' | 'partial' | 'unpaid';
 
-const PAYMENT_STATUS_COLOR_VAR: Record<PaymentStatus, string> = {
-  paid: 'var(--color-success)',
-  partial: 'var(--color-warning)',
-  unpaid: 'var(--color-error)',
-};
-
 const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
   paid: 'Paid',
   partial: 'Partially paid',
   unpaid: 'Unpaid',
 };
 
-// ============================================================
-// Capacity Timeline Strip (fixes: per-booking capacity badges are ambiguous once bookings
-// overlap non-uniformly — a resource's true utilization is a property of TIME, not of any one
-// booking. Segments come from the server's checkpoint-sweep computation, already correct.)
-// ============================================================
-
-interface CapacitySegment {
-  start_time: string;
-  end_time: string;
-  booked: number;
-  capacity: number;
-}
-
 interface ResourceBlock {
   start_time: string;
   end_time: string;
   reason: string | null;
-}
-
-/** Segments whose start falls on the given calendar day, in the given timezone. */
-export function filterSegmentsToDay(segments: CapacitySegment[], dateStr: string, timezone: string): CapacitySegment[] {
-  return segments.filter((seg) => {
-    const segDate = new Date(seg.start_time).toLocaleDateString('sv-SE', { timeZone: timezone });
-    return segDate === dateStr;
-  });
 }
 
 /** Resource blocks whose start falls on the given calendar day, in the given timezone. */
@@ -259,116 +244,139 @@ export function ResourceBlockOverlay({ blocks, timezone, hourRange = DEFAULT_HOU
   );
 }
 
-export interface CapacityLane { id: string; kind: 'resource' | 'staff'; label?: string }
+// ============================================================
+// Calendar page (11 Nov 2026 design, DayStream Hub → Designs → Calendar)
+// - One toolbar: Today ‹ › date · Day/Week/Month · By Service/Staff (Day) · Calendar/Grid (Month) · + New appointment
+// - Second line: the service pills (shared by every view, CAL-12 / CAL-23) and, in Day, the column pages (CAL-20)
+// - White / grey follows the business hours, closing days and holidays; all white when not set up (CAL-hours)
+// - Day by Service: booked / what that time can take now, only where there is a booking and room left (CAL-7 b);
+//   light stripes where nobody can take an empty time (CAL-21)
+// - + in any free time (Day, Week) or day (Month) opens the same New booking popup, prefilled (CAL-book, CAL-4a)
+// ============================================================
 
-/** One capacity lane per distinct resource AND per distinct staff member referenced by a set of
- *  bookings — a service can be linked to a resource, a staff member, or both, and each needs its
- *  own strip: two staff members running the same service at the same time have independent
- *  capacity, not a shared one. */
-export function buildCapacityLanes(bookings: Array<{ resource_id?: string | null; staff_id?: string | null; staff_name?: string }>): CapacityLane[] {
-  const resourceIds = [...new Set(bookings.map((bk) => bk.resource_id).filter(Boolean))] as string[];
-  const staffIds = [...new Set(bookings.map((bk) => bk.staff_id).filter(Boolean))] as string[];
-  const staffNameById = new Map<string, string>();
-  for (const bk of bookings) {
-    if (bk.staff_id && bk.staff_name && !staffNameById.has(bk.staff_id)) staffNameById.set(bk.staff_id, bk.staff_name);
-  }
-  return [
-    ...resourceIds.map((id) => ({ id, kind: 'resource' as const })),
-    ...staffIds.map((id) => ({ id, kind: 'staff' as const, label: staffNameById.get(id) })),
-  ];
+const ROWH = 30; // px per 30 minutes (hub)
+const COL_MIN = 170; // px, narrowest Day column
+const COL_MAX = 6; // Day columns per page (CAL-20)
+
+type DayHoursEntry = { open: string; close: string } | { closed: true; reason: string };
+type SlotCap = { booked: number; left: number; free_staff?: string[]; busy_other?: string[] };
+type DaySvc = { id: string; name: string; booking_type: string; max_capacity: number | null; variant_id: string | null; staff_count: number };
+
+const toMin = (hm: string) => { const [h, m] = hm.split(':').map(Number); return h * 60 + (m || 0); };
+const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+/** Local date and minutes of an instant in a timezone. */
+export function zonedParts(d: Date, timezone: string): { date: string; minutes: number } {
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d);
+  const g = (t: string) => p.find((x) => x.type === t)?.value || '00';
+  return { date: `${g('year')}-${g('month')}-${g('day')}`, minutes: (Number(g('hour')) % 24) * 60 + Number(g('minute')) };
 }
 
-const CAPACITY_STRIP_WIDTH = 30; // px, reserved lane width per resource/staff member — wide enough for a "2/3" label
-
-/** entityLabel names whose strip this is (a resource or staff member's name) — prefixed onto the
- *  hover tooltip so multiple side-by-side lanes are distinguishable, per the reported ambiguity
- *  ("two red lines on the left" with no way to tell whose capacity each one represented). */
-export function CapacityStrip({ segments, timezone, hourRange = DEFAULT_HOUR_RANGE, entityLabel }: { segments: CapacitySegment[]; timezone: string; hourRange?: HourRange; entityLabel?: string }) {
-  if (segments.length === 0) return null;
-  return (
-    <div style={styles.capacityStripLane}>
-      {segments.map((seg) => {
-        const pos = getTimeRangePosition(seg.start_time, seg.end_time, timezone, hourRange);
-        if (!pos) return null;
-        const state = getFillState(seg.booked, seg.capacity);
-        const over = seg.booked > seg.capacity;
-        const filledPct = over ? 100 : Math.min((seg.booked / seg.capacity) * 100, 100);
-        const prefix = entityLabel ? `${entityLabel}: ` : '';
-        const title = `${prefix}${formatTime(seg.start_time, timezone)}–${formatTime(seg.end_time, timezone)}: ${seg.booked}/${seg.capacity} booked`;
-        return (
-          <div key={seg.start_time} style={{ ...styles.capacitySegment, top: `${pos.top}%`, height: `${pos.height}%` }} title={title}>
-            {/* Width (not height) encodes booked-vs-available — this row's height already encodes
-                its own time duration, so re-using height here would conflate the two dimensions. */}
-            <div style={{ ...styles.capacitySegmentFill, width: `${filledPct}%`, background: FILL_STATE_COLOR_VAR[state] }} />
-            {!over && <div style={{ ...styles.capacitySegmentAvailable, width: `${100 - filledPct}%` }} />}
-            {/* The colour alone isn't enough of a first-glance signal — the raw booked/capacity
-                numbers (1/3, 3/3, 4/3 when overbooked) must be readable directly on the strip. */}
-            <span style={styles.capacitySegmentLabel}>{seg.booked}/{seg.capacity}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
+/** UTC ISO instant of a local wall-clock date + "HH:MM" in a timezone. */
+export function zonedToIso(date: string, time: string, timezone: string): string {
+  const guess = new Date(`${date}T${time}:00Z`);
+  const inTz = new Date(guess.toLocaleString('en-US', { timeZone: timezone }));
+  const inUtc = new Date(guess.toLocaleString('en-US', { timeZone: 'UTC' }));
+  return new Date(guess.getTime() + (inUtc.getTime() - inTz.getTime())).toISOString();
 }
+
+/** Is a 30-minute cell outside the business hours of that day? Not set up (no entry): never. */
+export function isOffHours(entry: DayHoursEntry | undefined, minutes: number): boolean {
+  if (!entry) return false;
+  if ('closed' in entry) return true;
+  return minutes < toMin(entry.open) || minutes >= toMin(entry.close);
+}
+
+/**
+ * What a Day-by-Service cell shows (CAL-7 b, 11 Nov 2026): the number only where there is a booking
+ * and room for more (booked / booked + left); "full" when nothing more fits; "none" when nobody can
+ * take an empty time (light stripes, CAL-21). A service for one at a time never shows 1/1: full.
+ */
+export function slotView(cap: SlotCap | undefined): { label: string | null; full: boolean; none: boolean } {
+  const booked = cap?.booked || 0; const left = cap?.left || 0;
+  if (booked > 0 && left > 0) return { label: `${booked}/${booked + left}`, full: false, none: false };
+  if (booked > 0) return { label: null, full: true, none: false };
+  return { label: null, full: false, none: left <= 0 };
+}
+
+/** Day columns per page: as many as fit at COL_MIN px, at most COL_MAX (CAL-20). */
+export const columnsPerPage = (width: number) => Math.max(1, Math.min(COL_MAX, Math.floor(((width || 1100) - 60) / COL_MIN)));
+
+interface NewBookingDraft { date: string; time: string | null; serviceId?: string; staffId?: string; colKey?: string; x: number; y: number; left?: number }
 
 export function BookingCalendar() {
   const navigate = useNavigate();
-  const [view, setView] = useState<'day' | 'week' | 'month'>('week');
+  const [view, setView] = useState<'day' | 'week' | 'month'>('day'); // opens on today's Day view
+  const [by, setBy] = useState<'service' | 'staff'>('service');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [calendarData, setCalendarData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [businessTimezone, setBusinessTimezone] = useState('UTC');
+  const [reload, setReload] = useState(0);
+  const [toast, setToast] = useState('');
 
   const businessId = localStorage.getItem('business_id') || '';
 
-  // Distinct services referenced by the currently loaded bookings, and their assigned colours.
-  const calendarServices = useMemo<ServiceRef[]>(() => deriveServiceColumns(calendarData?.bookings || []), [calendarData]);
-  const serviceColorMap = useMemo(() => buildServiceColorMap(calendarServices), [calendarServices]);
-
-  // Week view's service filter and detail/summary mode are lifted up here (rather than local
-  // WeekView state) because the page unmounts WeekView during every `loading` flicker on
-  // navigation — local state would be lost on each week change, silently breaking the "persists
-  // across week navigation" requirement.
-  const [weekSelectedServices, setWeekSelectedServices] = useState<ServiceFilterSelection>('all');
-  const [weekViewMode, setWeekViewMode] = useState<WeekViewMode>('detail');
-
-  // Month view has no bookings of its own to derive a service list from (the server only returns
-  // per-day counts there), so its quick filter is backed by the business's full active service
-  // list instead, fetched once, and the selection is sent to the server to re-scope the counts.
+  // One services filter for every view (CAL-12), backed by the business's active services.
   const [allServices, setAllServices] = useState<ServiceRef[]>([]);
-  const [monthSelectedServices, setMonthSelectedServices] = useState<ServiceFilterSelection>('all');
-  const allServicesColorMap = useMemo(() => buildServiceColorMap(allServices), [allServices]);
+  const [selected, setSelected] = useState<ServiceFilterSelection>('all');
+  const [monthLayout, setMonthLayout] = useState<'calendar' | 'grid'>('calendar');
+  // A colour per service by default; the owner's own colour when set (CAL-11)
+  const [customColors, setCustomColors] = useState<Record<string, string>>({});
+  const colorMap = useMemo(() => { const m = buildServiceColorMap(allServices); for (const [id, col] of Object.entries(customColors)) if (m.has(id)) m.set(id, col); return m; }, [allServices, customColors]);
+  // The grid runs at least 08:00–21:00 so hours outside the opening hours show grey (hub design)
+  const [hourRange, setHourRange] = useState<HourRange>({ start: 8, end: 21 });
+  // One location at a time when there are several (hub: LOCATION select in the toolbar)
+  const [locations, setLocations] = useState<Array<{ id: string; name: string }>>([]);
+  const [loc, setLoc] = useState('');
 
-  // The visible time axis reflects the business's real operating hours (item 1) rather than a
-  // fixed window — e.g. a business open 9am-10pm shows 9am-10pm, not a hardcoded 7am-9pm that
-  // clips early/late bookings. Falls back to the default range until hours are loaded/configured.
-  const [hourRange, setHourRange] = useState<HourRange>(DEFAULT_HOUR_RANGE);
+  // Day columns: pages that fit the width (CAL-20)
+  const pageRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  const [colPage, setColPage] = useState(0);
+  useEffect(() => {
+    const el = pageRef.current; if (!el) return;
+    const measure = () => setWidth(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure); ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
-  // Load the business timezone, the primary location's operating hours (to size the time axis)
-  // and the active service list (for the month view's quick filter). All three come from the
-  // booking filters endpoint, which every business role can read: the businesses, locations and
-  // services endpoints need permissions that reception and providers do not have.
+  const [draft, setDraft] = useState<NewBookingDraft | null>(null);
+  const [ghostLen, setGhostLen] = useState(30);
+  const [ghostLabel, setGhostLabel] = useState('');
+  // The New / Edit Appointment window (round 8) over the calendar: + New appointment, More options, a booking clicked
+  const [win, setWin] = useState<{ mode: 'new' | 'edit'; bookingId?: string; prefill?: AppointmentPrefill } | null>(null);
+  const bookable = useBookableServices(businessId);
+
   useEffect(() => {
     if (!businessId) return;
     bookingsApi.getBookingFilters(businessId).then((f) => {
       if (f.timezone) setBusinessTimezone(f.timezone);
-      if (f.location_hours && f.location_hours.length > 0) setHourRange(computeHourRangeFromLocationHours(f.location_hours));
-      setAllServices((f.services || []).filter((s) => !s.status || s.status === 'active').map((s) => ({ id: s.id, name: s.name })));
+      if (f.location_hours && f.location_hours.length > 0) { const r = computeHourRangeFromLocationHours(f.location_hours); setHourRange({ start: Math.min(8, r.start), end: Math.max(21, r.end) }); }
+      setAllServices((f.services || []).filter((s) => !s.status || s.status === 'active').map((s) => ({ id: s.id, name: s.name })).sort((a, b) => a.name.localeCompare(b.name)));
+      const ls = f.locations || []; setLocations(ls); setLoc((cur) => cur || ls[0]?.id || '');
+      setCustomColors(Object.fromEntries((f.services || []).filter((s) => s.calendar_color).map((s) => [s.id, s.calendar_color as string])));
     }).catch(() => {});
   }, [businessId]);
 
-  // Fetch calendar data
   useEffect(() => {
     if (!businessId) { setLoading(false); return; }
     setLoading(true);
-    const serviceIds = view === 'month' && monthSelectedServices !== 'all' ? [...monthSelectedServices] : undefined;
-    bookingsApi.getCalendar(businessId, view, date, serviceIds ? { service_ids: serviceIds } : undefined)
+    // Month: counts for the services filtered; Week with one service: its numbers per 30 minutes (THE-23 4.3)
+    const serviceIds = view === 'month' && selected !== 'all' ? [...selected] : view === 'week' && selected !== 'all' && selected.size === 1 ? [...selected] : undefined;
+    bookingsApi.getCalendar(businessId, view, date, { ...(serviceIds ? { service_ids: serviceIds } : {}), ...(locations.length > 1 && loc ? { location_id: loc } : {}) })
       .then(setCalendarData)
       .catch(() => setCalendarData(null))
       .finally(() => setLoading(false));
-  }, [businessId, view, date, monthSelectedServices]);
+  }, [businessId, view, date, selected, reload, loc, locations.length]);
+
+  useEffect(() => { setColPage(0); }, [view, by, date, selected]);
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(''), 4000); return () => clearTimeout(t); }, [toast]);
 
   const navigateDate = (direction: number) => {
+    setDraft(null);
     const d = new Date(date + 'T12:00:00Z');
     if (view === 'day') d.setUTCDate(d.getUTCDate() + direction);
     else if (view === 'week') d.setUTCDate(d.getUTCDate() + 7 * direction);
@@ -378,434 +386,564 @@ export function BookingCalendar() {
 
   const dateLabel = useMemo(() => {
     const d = new Date(date + 'T12:00:00Z');
-    if (view === 'day') return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    const fmt = (x: Date, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-GB', { ...o, timeZone: 'UTC' }).format(x);
+    if (view === 'day') return `${fmt(d, { weekday: 'long', day: 'numeric', month: 'long' })}${date === new Date().toISOString().slice(0, 10) ? ' · today' : ''}`;
     if (view === 'week') {
       const start = getWeekStart(date);
       const end = new Date(start.getTime() + 6 * 24 * 60 * 60 * 1000);
-      return `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })} – ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`;
+      return `${fmt(start, { day: 'numeric', month: 'short' })} – ${fmt(end, { day: 'numeric', month: 'short', year: 'numeric' })}`;
     }
     return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
   }, [date, view]);
 
+  const dayHours: Record<string, DayHoursEntry> = calendarData?.day_hours || {};
+  const bookings: any[] = calendarData?.bookings || [];
+  const visibleBookings = selected === 'all' ? bookings : bookings.filter((b) => isServiceVisible(selected, b.service_id));
+  const singleService = selected !== 'all' && selected.size === 1 ? [...selected][0] : undefined;
+
+  // Day columns
+  const daySvcs: DaySvc[] = calendarData?.day_services || [];
+  type DayCol = { key: string; label: string; sub?: string; serviceId?: string; staffId?: string };
+  const allDayCols = useMemo<DayCol[]>(() => {
+    if (view !== 'day') return [];
+    if (by === 'staff') {
+      const staff: Array<{ id: string; name: string }> = calendarData?.day_staff || [];
+      return staff.map((s) => ({ key: 'st:' + s.id, label: s.name, staffId: s.id }));
+    }
+    const list = daySvcs.length ? daySvcs : allServices.map((s) => ({ ...s, booking_type: '', max_capacity: null, variant_id: null, staff_count: 0 }));
+    return list.filter((s) => isServiceVisible(selected, s.id)).map((s) => ({
+      key: 'sv:' + s.id, label: s.name, serviceId: s.id,
+      sub: s.booking_type === 'shared' ? `shared room · ${s.max_capacity} places` : s.booking_type === 'group' ? `group · ${s.max_capacity} places` : s.booking_type === 'resource' ? 'room or device' : (s as any).staff_working != null ? `${(s as any).staff_working} staff working` : s.staff_count ? `${s.staff_count} staff` : undefined,
+    }));
+  }, [view, by, calendarData, daySvcs, allServices, selected]);
+  const per = columnsPerPage(width);
+  const colPages = Math.max(1, Math.ceil(allDayCols.length / per));
+  const cp = Math.min(colPage, colPages - 1);
+  const dayCols = allDayCols.slice(cp * per, cp * per + per);
+
+  // The popup opens beside what was clicked (its column or day), so the dashed preview stays visible
+  const openDraft = (d: Omit<NewBookingDraft, 'x' | 'y' | 'left'>, e?: React.MouseEvent) => {
+    setGhostLen(30);
+    const el = (e?.currentTarget as HTMLElement | undefined)?.closest('[data-col], .dsc-mday, td') as HTMLElement | null;
+    const r = el ? el.getBoundingClientRect() : null;
+    setDraft({ ...d, serviceId: d.serviceId || singleService, x: r ? r.right : e?.clientX ?? window.innerWidth / 2, left: r ? r.left : undefined, y: e?.clientY ?? 160 });
+  };
+
+  // (n) people on the box when the service takes more than one, also (1) (THE-23 4.3); never for one-person services
+  const people = (bk: any) => ((bk.service_max_capacity ?? bk.resource_capacity ?? 1) > 1 ? ` (${bk.participant_count || 1})` : '');
+
+  const seg = (_key: string, value: string, opts: Array<[string, string]>, onPick: (v: string) => void, aria: string) => (
+    <div className="seg" role="group" aria-label={aria}>
+      {opts.map(([v, l]) => <button key={v} type="button" aria-pressed={value === v} onClick={() => onPick(v)}>{l}</button>)}
+    </div>
+  );
+  const ghost = draft && draft.time ? { colKey: draft.colKey || '', date: draft.date, start: toMin(draft.time), len: ghostLen, label: ghostLabel } : null;
+
   return (
-    <div style={styles.page}>
+    <div className="dsa dsc" style={styles.page} ref={pageRef}>
       <div style={styles.header}>
-        <button style={styles.back} onClick={() => navigate('/bookings')}>← Booking List</button>
         <h1 style={styles.title}>Calendar</h1>
       </div>
 
-      <div style={styles.controls}>
-        <div style={styles.viewToggle}>
-          {(['day', 'week', 'month'] as const).map((v) => (
-            <button key={v} style={{ ...styles.viewBtn, ...(view === v ? styles.viewBtnActive : {}) }} onClick={() => setView(v)}>
-              {v.charAt(0).toUpperCase() + v.slice(1)}
-            </button>
-          ))}
+      <div className="ctb">
+        <div className="ctb-l">
+          <button type="button" className="nav" onClick={() => { setDraft(null); setDate(zonedParts(new Date(), businessTimezone).date); }}>Today</button>
+          <button type="button" className="nav" onClick={() => navigateDate(-1)} aria-label="Previous">‹</button>
+          <button type="button" className="nav" onClick={() => navigateDate(1)} aria-label="Next">›</button>
+          <b>{dateLabel}</b>
         </div>
-        <div style={styles.dateNav}>
-          <button style={styles.navBtn} onClick={() => navigateDate(-1)}>←</button>
-          <span style={styles.dateLabel}>{dateLabel}</span>
-          <button style={styles.navBtn} onClick={() => navigateDate(1)}>→</button>
-          <button style={styles.todayBtn} onClick={() => setDate(new Date().toISOString().slice(0, 10))}>Today</button>
+        <div className="ctb-r">
+          {locations.length > 1 && (
+            <label className="lab">Location <select value={loc} onChange={(e) => { setDraft(null); setLoc(e.target.value); }} aria-label="Location">
+              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select></label>
+          )}
+          {seg('mode', 'calendar', [['calendar', 'Calendar'], ['list', 'List']], (v) => { if (v === 'list') navigate('/bookings/list'); }, 'Calendar or list')}
+          {seg('view', view, [['day', 'Day'], ['week', 'Week'], ['month', 'Month']], (v) => { setDraft(null); setView(v as any); }, 'View')}
+          {view === 'day' && <><span className="lab">By</span>{seg('by', by, [['service', 'Service'], ['staff', 'Staff']], (v) => { setDraft(null); setBy(v as any); }, 'Columns')}</>}
+          {view === 'month' && seg('mo', monthLayout, [['calendar', 'Calendar'], ['grid', 'Grid']], (v) => setMonthLayout(v as any), 'Month layout')}
+          <button type="button" className="btn" onClick={() => { setDraft(null); setWin({ mode: 'new', prefill: { date: date < zonedParts(new Date(), businessTimezone).date ? undefined : date, serviceId: singleService, locationId: locations.length > 1 ? loc : undefined } }); }}>+ New appointment</button>
         </div>
+      </div>
+
+      <div className="ctb2">
+        <QuickFilterBar services={allServices} selected={selected} onChange={(s) => { setDraft(null); setSelected(s); }} colorMap={colorMap} />
+        {view === 'day' && allDayCols.length > per && (
+          <div className="cpg">
+            <button type="button" className="nav" disabled={cp === 0} onClick={() => setColPage(cp - 1)} aria-label={by === 'service' ? 'Previous services' : 'Previous staff'}>‹</button>
+            <span><b>{by === 'service' ? 'Services' : 'Staff'} {cp * per + 1}–{Math.min(allDayCols.length, cp * per + per)}</b> of {allDayCols.length}</span>
+            <span className="cpg-dots">{Array.from({ length: colPages }, (_, i) => <button key={i} type="button" aria-label={`Page ${i + 1}`} aria-pressed={i === cp} onClick={() => setColPage(i)} />)}</span>
+            <button type="button" className="nav" disabled={cp >= colPages - 1} onClick={() => setColPage(cp + 1)} aria-label={by === 'service' ? 'Next services' : 'Next staff'}>›</button>
+          </div>
+        )}
       </div>
 
       {loading && <p style={styles.empty}>Loading...</p>}
 
-      {!loading && view === 'day' && (
-        <DayView
-          bookings={calendarData?.bookings || []}
-          resourceTimelines={calendarData?.resourceTimelines || {}}
-          staffTimelines={calendarData?.staffTimelines || {}}
-          resourceBlocks={calendarData?.resourceBlocks || {}}
-          date={date}
+      {!loading && view === 'day' && (() => {
+        const h = dayHours[date];
+        if (h && 'closed' in h) return <p className="q-empty">{h.reason}.</p>;
+        if (dayCols.length === 0) return <p className="q-empty">{by === 'staff' ? 'No staff working on this day.' : 'No service chosen in the services filter.'}</p>;
+        return (
+          <TimeGrid
+            hourRange={hourRange}
+            timezone={businessTimezone}
+            columns={dayCols.map((c) => {
+              const colBks = visibleBookings.filter((b) => (c.serviceId ? b.service_id === c.serviceId : b.staff_id === c.staffId));
+              const caps: Record<string, SlotCap> | undefined = c.serviceId ? calendarData?.slot_capacity?.[c.serviceId] : undefined;
+              const svcName = c.label;
+              return {
+                key: c.key, date,
+                header: (
+                  <>
+                    {c.serviceId ? <span className="sdot" style={{ ['--sc' as any]: cv(colorMap.get(c.serviceId) || SERVICE_COLOR_VARS[0]) }} /> : <span className="hav">{initials(c.label)}</span>}
+                    {c.label}
+                    {c.sub && <small>{c.sub}</small>}
+                  </>
+                ),
+                bookings: colBks,
+                slot: caps ? (m: number) => {
+                  const cap = caps[hhmm(m)]; const v = slotView(cap);
+                  const left = cap?.left || 0; const booked = cap?.booked || 0;
+                  const tip = v.label ? (cap?.free_staff ? `${svcName}: ${booked} booked, ${left} more possible (${cap.free_staff.join(', ')} free)${cap.busy_other?.length ? '; busy with other services: ' + cap.busy_other.join(', ') : ''}` : `${svcName}: ${booked} of ${booked + left} places booked, ${left} left`)
+                    : v.none ? `${svcName}: nobody can take ${hhmm(m)} (no staff, room or place free)` : '';
+                  return { label: v.label, full: v.full, none: v.none, tip };
+                } : undefined,
+                onNew: (m: number, e: React.MouseEvent) => openDraft({ date, time: hhmm(m), serviceId: c.serviceId, staffId: c.staffId, colKey: c.key }, e),
+                label: (bk: any) => (c.serviceId ? `${bk.customer_name}${people(bk)}${bk.staff_name ? ' · ' + bk.staff_name : ''}` : `${bk.customer_name} · ${bk.service_name}`),
+              };
+            })}
+            dayHours={dayHours}
+            colorMap={colorMap}
+            onBookingClick={(id) => { setDraft(null); setWin({ mode: 'edit', bookingId: id }); }}
+            ghost={ghost}
+          />
+        );
+      })()}
+
+      {!loading && view === 'week' && (() => {
+        const ws = getWeekStart(date);
+        const days = Array.from({ length: 7 }, (_, i) => new Date(ws.getTime() + i * 864e5).toISOString().slice(0, 10));
+        return (
+          <TimeGrid
+            hourRange={hourRange}
+            timezone={businessTimezone}
+            columns={days.map((d) => {
+              const h = dayHours[d]; const closed = !!h && 'closed' in h;
+              return {
+                key: 'd:' + d, date: d, closed,
+                header: <span data-testid="week-day-header" data-date={d}>{dayLabel(d, { weekday: 'short', day: 'numeric', month: 'short' })}{closed && <small>closed</small>}</span>,
+                bookings: visibleBookings.filter((b) => zonedParts(new Date(b.start_time), businessTimezone).date === d),
+                slot: singleService && calendarData?.week_slot_capacity?.[d] ? (m: number) => {
+                  const cap: SlotCap | undefined = calendarData.week_slot_capacity[d][hhmm(m)]; const v = slotView(cap);
+                  const nm = allServices.find((x) => x.id === singleService)?.name || '';
+                  const left = cap?.left || 0; const booked = cap?.booked || 0;
+                  const tip = v.label ? (cap?.free_staff ? `${nm}: ${booked} booked, ${left} more possible (${cap.free_staff.join(', ')} free)${cap.busy_other?.length ? '; busy with other services: ' + cap.busy_other.join(', ') : ''}` : `${nm}: ${booked} of ${booked + left} places booked, ${left} left`) : v.none ? `${nm}: nobody can take ${hhmm(m)}` : '';
+                  return { label: v.label, full: v.full, none: v.none, tip };
+                } : undefined,
+                onNew: (m: number, e: React.MouseEvent) => openDraft({ date: d, time: hhmm(m), colKey: 'd:' + d }, e),
+                label: (bk: any) => `${bk.service_name}${people(bk)}${bk.staff_name ? ' · ' + bk.staff_name.split(' ')[0] : ''}`,
+              };
+            })}
+            dayHours={dayHours}
+            colorMap={colorMap}
+            onBookingClick={(id) => { setDraft(null); setWin({ mode: 'edit', bookingId: id }); }}
+            ghost={ghost}
+            maxPerTime={3}
+            onMore={(d) => { setDraft(null); setDate(d); setView('day'); }}
+          />
+        );
+      })()}
+
+      {!loading && view === 'month' && <div style={styles.fitBody}>{monthLayout === 'calendar'
+        ? <MonthView days={calendarData?.days || []} capacityDays={calendarData?.capacity_days || {}} services={calendarData?.services || []} colorMap={colorMap} date={date} dayHours={dayHours} timezone={businessTimezone} onDayClick={(d) => { setDraft(null); setDate(d); setView('day'); }} onNew={(d, e) => openDraft({ date: d, time: null }, e)} picked={draft && !draft.time ? draft.date : null} />
+        : <MonthGrid capacityDays={calendarData?.capacity_days || {}} services={calendarData?.services || []} days={calendarData?.days || []} colorMap={colorMap} date={date} dayHours={dayHours} timezone={businessTimezone} onDayClick={(d) => { setDraft(null); setDate(d); setView('day'); }} onNew={(d, sid, e) => openDraft({ date: d, time: null, serviceId: sid }, e)} />}</div>}
+
+      {draft && (
+        <NewBookingPopup
+          key={`${draft.date}|${draft.time}|${draft.serviceId}|${draft.staffId}`}
+          businessId={businessId}
           timezone={businessTimezone}
-          onBookingClick={(id) => navigate(`/bookings/${id}/edit`)}
-          serviceColorMap={serviceColorMap}
-          hourRange={hourRange}
+          draft={draft}
+          services={bookable}
+          locationId={locations.length > 1 ? loc : ''}
+          staffServices={draft.staffId ? (calendarData?.day_staff || []).find((x: any) => x.id === draft.staffId) : null}
+          onLength={setGhostLen}
+          onLabel={setGhostLabel}
+          onClose={() => setDraft(null)}
+          onCreated={(msg) => { setDraft(null); setToast(msg); setReload((n) => n + 1); }}
+          onMore={(p) => { setDraft(null); setWin({ mode: 'new', prefill: p }); }}
         />
       )}
-
-      {!loading && view === 'week' && (
-        <WeekView
-          bookings={calendarData?.bookings || []}
-          resourceTimelines={calendarData?.resourceTimelines || {}}
-          staffTimelines={calendarData?.staffTimelines || {}}
-          resourceBlocks={calendarData?.resourceBlocks || {}}
-          date={date}
+      {win && (
+        <AppointmentWindow
+          businessId={businessId}
           timezone={businessTimezone}
-          hourRange={hourRange}
-          onBookingClick={(id) => navigate(`/bookings/${id}/edit`)}
-          serviceColorMap={serviceColorMap}
-          selectedServices={weekSelectedServices}
-          onSelectedServicesChange={setWeekSelectedServices}
-          mode={weekViewMode}
-          onModeChange={setWeekViewMode}
-          onDayClick={(d) => { setDate(d); setView('day'); }}
+          mode={win.mode}
+          bookingId={win.bookingId}
+          prefill={win.prefill}
+          inWindow
+          onClose={() => setWin(null)}
+          onSaved={(msg) => { setWin(null); setToast(msg); setReload((n) => n + 1); }}
         />
       )}
-
-      {!loading && view === 'month' && (
-        <>
-          <QuickFilterBar services={allServices} selected={monthSelectedServices} onChange={setMonthSelectedServices} colorMap={allServicesColorMap} />
-          <MonthView days={calendarData?.days || []} date={date} onDayClick={(d) => { setDate(d); setView('day'); }} />
-        </>
-      )}
+      {toast && <div role="status" style={styles.toast}>{toast}</div>}
     </div>
   );
 }
 
-// ============================================================
-// Day View — per-service columns with a visibility toggle
-// ============================================================
-
-// Day view lays out capacity by booking WIDTH (item 3c-c) rather than the side-lane strips used
-// elsewhere — resourceTimelines/staffTimelines aren't needed here, but stay in the prop type so
-// the parent can pass the same calendar data to every view uniformly.
-export function DayView({ bookings, resourceBlocks = {}, date, timezone, onBookingClick, serviceColorMap, hourRange = DEFAULT_HOUR_RANGE }: { bookings: any[]; resourceTimelines?: Record<string, CapacitySegment[]>; staffTimelines?: Record<string, CapacitySegment[]>; resourceBlocks?: Record<string, ResourceBlock[]>; date: string; timezone: string; onBookingClick: (id: string) => void; serviceColorMap: Map<string, string>; hourRange?: HourRange }) {
-  const serviceColumns = useMemo(() => deriveServiceColumns(bookings), [bookings]);
-  const [selectedServices, setSelectedServices] = useState<ServiceFilterSelection>('all');
-  const hours = useMemo(() => buildHoursArray(hourRange), [hourRange]);
-
-  const visibleColumns = getVisibleServiceColumns(serviceColumns, selectedServices);
-  const bookingsByService = useMemo(() => {
-    const map = new Map<string, any[]>();
-    for (const bk of bookings) {
-      if (!map.has(bk.service_id)) map.set(bk.service_id, []);
-      map.get(bk.service_id)!.push(bk);
-    }
-    return map;
-  }, [bookings]);
-
-  return (
-    <div>
-      <QuickFilterBar services={serviceColumns} selected={selectedServices} onChange={setSelectedServices} colorMap={serviceColorMap} />
-      <div style={{ ...styles.dayGridContainer, gridTemplateColumns: `60px repeat(${Math.max(visibleColumns.length, 1)}, 1fr)` }}>
-        {/* Time axis */}
-        <div style={styles.dayTimeAxis}>
-          <div style={styles.dayColHeaderSpacer} />
-          {hours.map((h) => (
-            <div key={h} style={styles.dayTimeAxisLabel}>{formatHour(h)}</div>
-          ))}
-        </div>
-
-        {visibleColumns.length === 0 && (
-          <div style={styles.empty}>No services with bookings on this day</div>
-        )}
-
-        {visibleColumns.map((col) => {
-          const colorVar = serviceColorMap.get(col.id) || SERVICE_COLOR_VARS[0];
-          const colBookings = bookingsByService.get(col.id) || [];
-          const subcolumns = buildServiceSubcolumns(colBookings);
-          const subWidth = 100 / subcolumns.length;
-          return (
-            <div key={col.id} data-testid="service-column" data-service-id={col.id} style={styles.dayServiceCol}>
-              <div style={{ ...styles.dayColHeader, borderTopColor: `var(${colorVar})` }}>
-                <span style={{ ...styles.legendSwatch, background: `var(${colorVar})` }} />
-                {col.name}
-              </div>
-              <div style={{ ...styles.dayColBody, minHeight: `${hours.length * 60}px` }}>
-                {hours.map((h) => <div key={h} style={styles.hourRow} />)}
-                {subcolumns.map((sub, i) => {
-                  const capacity = capacityForSubcolumn(sub);
-                  const { blocks, availableBlocks } = layoutCapacityChannel(sub.bookings, capacity, timezone, hourRange);
-                  return (
-                    <div
-                      key={sub.key}
-                      data-testid="service-subcolumn"
-                      data-subcolumn-key={sub.key}
-                      style={{
-                        position: 'absolute', top: 0, bottom: 0,
-                        left: `${i * subWidth}%`, width: `${subWidth}%`,
-                        ...(i > 0 ? styles.daySubcolumnDivider : {}),
-                      }}
-                    >
-                      {subcolumns.length > 1 && sub.label && (
-                        <span style={styles.daySubcolumnLabel} title={sub.label}>{sub.label}</span>
-                      )}
-                      {sub.key === 'all' && sub.bookings[0]?.resource_id && (
-                        <ResourceBlockOverlay blocks={resourceBlocks[sub.bookings[0].resource_id] || []} timezone={timezone} hourRange={hourRange} />
-                      )}
-                      {availableBlocks.map((ab, j) => (
-                        <div key={j} style={{ ...styles.availableCapacityBlock, top: `${ab.top}%`, height: `${ab.height}%`, left: `${ab.left}%`, width: `${ab.width}%` }} />
-                      ))}
-                      {blocks.map(({ booking: bk, top, height, left, width }) => (
-                        <div
-                          key={bk.id}
-                          data-service-id={bk.service_id}
-                          style={{
-                            ...styles.bookingBlock,
-                            top: `${top}%`,
-                            height: `${height}%`,
-                            left: `${left}%`,
-                            width: `${width}%`,
-                            background: `var(${colorVar})`,
-                            borderLeftColor: PAYMENT_STATUS_COLOR_VAR[bk.payment_status as PaymentStatus] || PAYMENT_STATUS_COLOR_VAR.unpaid,
-                            cursor: 'pointer',
-                          }}
-                          onClick={() => onBookingClick(bk.id)}
-                          title={`${bk.service_name} — ${bk.customer_name} (${bk.staff_name || 'unassigned'}) — ${PAYMENT_STATUS_LABEL[bk.payment_status as PaymentStatus] || PAYMENT_STATUS_LABEL.unpaid}`}
-                        >
-                          <span style={styles.blockTime}>{formatTime(bk.start_time, timezone)}</span>
-                          <span style={styles.blockTitle}>{bk.service_name}</span>
-                          <span style={styles.blockSub}>{bk.customer_name}</span>
-                          {bk.staff_name && <span style={styles.blockSub}>{bk.staff_name}</span>}
-                          <ParticipantCountBadge count={bk.participant_count} capacity={capacity} />
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
-// Week View — 7 columns with time grid + service filter
-// ============================================================
-
-export type WeekViewMode = 'detail' | 'summary';
-
-/** Detail (today's full per-booking view) vs Summary (one subcolumn per service, just the
- *  booked hour-ranges, no staff/headcount/time-of-day detail — see it in Day view instead). */
-export function WeekModeToggle({ mode, onChange }: { mode: WeekViewMode; onChange: (next: WeekViewMode) => void }) {
-  return (
-    <div style={styles.viewToggle}>
-      {(['detail', 'summary'] as const).map((m) => (
-        <button
-          key={m}
-          type="button"
-          style={{ ...styles.viewBtn, ...(mode === m ? styles.viewBtnActive : {}) }}
-          onClick={() => onChange(m)}
-        >
-          {m.charAt(0).toUpperCase() + m.slice(1)}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-export function WeekView({
-  bookings, resourceTimelines, staffTimelines = {}, resourceBlocks = {}, date, timezone, onBookingClick, serviceColorMap, selectedServices, onSelectedServicesChange, hourRange = DEFAULT_HOUR_RANGE,
-  mode = 'detail', onModeChange, onDayClick,
-}: {
-  bookings: any[];
-  resourceTimelines: Record<string, CapacitySegment[]>;
-  staffTimelines?: Record<string, CapacitySegment[]>;
-  resourceBlocks?: Record<string, ResourceBlock[]>;
+interface GridColumn {
+  key: string;
   date: string;
-  timezone: string;
-  onBookingClick: (id: string) => void;
-  serviceColorMap: Map<string, string>;
-  selectedServices: ServiceFilterSelection;
-  onSelectedServicesChange: (next: ServiceFilterSelection) => void;
-  hourRange?: HourRange;
-  mode?: WeekViewMode;
-  onModeChange?: (next: WeekViewMode) => void;
-  onDayClick?: (date: string) => void;
-}) {
-  const weekStart = getWeekStart(date);
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart.getTime() + i * 24 * 60 * 60 * 1000);
-    return d.toISOString().slice(0, 10);
-  });
-  const hours = useMemo(() => buildHoursArray(hourRange), [hourRange]);
+  header: React.ReactNode;
+  closed?: boolean;
+  bookings: any[];
+  slot?: (m: number) => { label: string | null; full: boolean; none: boolean; tip: string };
+  onNew: (m: number, e: React.MouseEvent) => void;
+  label: (bk: any) => string;
+  newLabel?: string;
+}
 
-  const weekServices = useMemo(() => deriveServiceColumns(bookings), [bookings]);
-  const visibleServices = getVisibleServiceColumns(weekServices, selectedServices);
-  const visibleBookings = selectedServices === 'all' ? bookings : bookings.filter((b) => isServiceVisible(selectedServices, b.service_id));
-
-  // Group visible bookings by day
-  const bookingsByDay = new Map<string, any[]>();
-  for (const bk of visibleBookings) {
-    const bkDate = new Date(bk.start_time).toLocaleDateString('sv-SE', { timeZone: timezone }); // YYYY-MM-DD format
-    if (!bookingsByDay.has(bkDate)) bookingsByDay.set(bkDate, []);
-    bookingsByDay.get(bkDate)!.push(bk);
+/**
+ * Boxes side by side wherever bookings overlap in time (THE-23 4.2): each booking gets a place in its group of
+ * overlapping bookings; the group is as wide as its most crowded moment. More than `max` places: the last place
+ * shows "+N" (CAL-9), the rest are counted there.
+ */
+export function sideBySide(bookings: any[], date: string, local: (iso: string) => { date: string; minutes: number }, startMin: number, endMin: number, max: number) {
+  const items = bookings.map((bk) => { const p = local(bk.start_time); const q = local(bk.end_time); return { bk, st: p.date < date ? startMin : p.minutes, en: q.date > date ? endMin : Math.max(q.minutes, (p.date < date ? startMin : p.minutes) + 1), col: 0, n: 1 }; })
+    .sort((a, b) => a.st - b.st || a.bk.start_time.localeCompare(b.bk.start_time) || String(a.bk.id).localeCompare(String(b.bk.id)));
+  const groups: Array<typeof items> = []; let cur: typeof items = []; let curEnd = -1;
+  for (const it of items) { if (cur.length && it.st >= curEnd) { groups.push(cur); cur = []; curEnd = -1; } cur.push(it); curEnd = Math.max(curEnd, it.en); }
+  if (cur.length) groups.push(cur);
+  const shown: typeof items = []; const more: Array<{ st: number; col: number; n: number; count: number }> = [];
+  for (const g of groups) {
+    const colEnd: number[] = [];
+    for (const it of g) { let c = colEnd.findIndex((e) => e <= it.st); if (c < 0) { c = colEnd.length; colEnd.push(0); } colEnd[c] = it.en; it.col = c; }
+    const n = colEnd.length;
+    if (n <= max) { for (const it of g) { it.n = n; shown.push(it); } continue; }
+    const hidden = new Map<number, number>();
+    for (const it of g) { it.n = max; if (it.col < max - 1) shown.push(it); else hidden.set(it.st, (hidden.get(it.st) || 0) + 1); }
+    for (const [st, count] of hidden) more.push({ st, col: max - 1, n: max, count });
   }
+  return { shown, more };
+}
 
+/**
+ * Day and Week body, as in the hub (calTimeGrid): one grid, a 50 px time column, one 30-minute cell per
+ * column and time. A booking is a box in the cell where it starts, as tall as it lasts, its text at the top;
+ * boxes leave the right edge free for the number and the blue + (cnew). At most `max` boxes at one time:
+ * then "+N" opens the day (CAL-9). Grey = outside business hours; stripes = nobody can take it (CAL-21).
+ */
+export function TimeGrid({ columns, hourRange, timezone, dayHours, colorMap, onBookingClick, ghost, maxPerTime = 6, onMore }: {
+  columns: GridColumn[]; hourRange: HourRange; timezone: string; dayHours: Record<string, DayHoursEntry>; colorMap: Map<string, string>;
+  onBookingClick: (id: string) => void; ghost: { colKey: string; date: string; start: number; len: number; label: string } | null;
+  maxPerTime?: number; onMore?: (date: string) => void;
+}) {
+  const startMin = hourRange.start * 60; const endMin = hourRange.end * 60;
+  const cells = Array.from({ length: Math.max(0, (endMin - startMin) / 30) }, (_, i) => startMin + i * 30);
+  const now = zonedParts(new Date(), timezone);
+  const isPast = (d: string, m: number) => d < now.date || (d === now.date && m + 30 <= now.minutes);
+  const local = (iso: string) => zonedParts(new Date(iso), timezone);
+  const layouts = new Map<string, ReturnType<typeof sideBySide>>();
   return (
-    <>
-      <div style={styles.weekModeRow}>
-        <WeekModeToggle mode={mode} onChange={(next) => onModeChange?.(next)} />
-        <QuickFilterBar services={weekServices} selected={selectedServices} onChange={onSelectedServicesChange} colorMap={serviceColorMap} />
-      </div>
-    <div style={styles.weekContainer}>
-      <div style={styles.weekBodyScroll}>
-        {/* Header row (inside scroll container so columns align) */}
-        <div style={{ ...styles.weekRow, height: 'auto', position: 'sticky' as const, top: 0, zIndex: 2, background: 'var(--color-background, #FFF)' }}>
-          <div style={styles.weekHeaderTimeCell} />
-          {days.map((d) => (
-            <div key={d} data-testid="week-day-header" data-date={d} style={{ ...styles.weekDayHeader, ...(d === new Date().toISOString().slice(0, 10) ? styles.todayHeader : {}) }}>
-              <span style={styles.weekDayName}>{new Date(d + 'T12:00:00Z').toLocaleDateString(undefined, { weekday: 'short', timeZone: 'UTC' })}</span>
-              <span style={styles.weekDayNum}>{new Date(d + 'T12:00:00Z').getUTCDate()}</span>
-            </div>
-          ))}
-        </div>
-        {/* Time rows + booking overlay wrapper */}
-        <div style={{ position: 'relative' as const }}>
-          {/* Time rows */}
-          {hours.map((h) => (
-            <div key={h} style={styles.weekRow}>
-              <div style={styles.weekTimeLabel}>{formatHour(h)}</div>
-              {days.map((d) => (
-                <div key={d} style={styles.weekCell} />
-              ))}
-            </div>
-          ))}
-          {/* Booking overlays per day */}
-          <div style={{ ...styles.weekOverlay, top: 0, height: `${hours.length * 60}px` }}>
-            <div style={styles.weekOverlaySpacer} />
-          {days.map((d) => {
-            const dayBookings = bookingsByDay.get(d) || [];
-
-            if (mode === 'summary') {
-              const subWidth = 100 / Math.max(visibleServices.length, 1);
+    <div className="cal2-wrap">
+      <div className="cal2" style={{ gridTemplateColumns: `50px repeat(${columns.length}, minmax(0, 1fr))` }}>
+        <div className="hd" />
+        {columns.map((c) => <div key={c.key} className={`hd${c.closed ? ' closed' : ''}`} data-testid="service-column-header">{c.header}</div>)}
+        {(() => { layouts.clear(); for (const c of columns) layouts.set(c.key, sideBySide(c.bookings, c.date, local, startMin, endMin, maxPerTime)); return null; })()}
+        {cells.map((m) => (
+          <Fragment key={m}>
+            <div className="tm">{m % 60 ? '' : hhmm(m)}</div>
+            {columns.map((c) => {
+              const off = c.closed || isOffHours(dayHours[c.date], m);
+              const past = isPast(c.date, m);
+              const s = !off && !past && c.slot ? c.slot(m) : null;
+              const lay = layouts.get(c.key)!;
+              const startsHere = lay.shown.filter((x) => x.st >= m && x.st < m + 30 || (m === startMin && x.st < startMin));
+              const moreHere = lay.more.filter((x) => x.st >= m && x.st < m + 30 || (m === startMin && x.st < startMin));
+              const running = c.bookings.some((b) => { const p = local(b.start_time); const q = local(b.end_time); return (p.date < c.date || p.minutes <= m) && (q.date > c.date || q.minutes > m); });
+              const none = !!s && s.none && !running;
+              const canNew = !off && !past && !(s && s.full);
+              const pos = (j: number, n: number): React.CSSProperties => ({ left: `calc(2px + (100% - 36px) * ${j} / ${n})`, width: `calc((100% - 36px) / ${n} - 3px)` });
+              const g = ghost && ghost.colKey === c.key && ghost.date === c.date && ghost.start >= m && ghost.start < m + 30 ? ghost : null;
+              const nowHere = c.date === now.date && now.minutes >= m && now.minutes < m + 30;
               return (
-                <div key={d} data-testid="week-day-summary" style={styles.weekDayOverlay} onClick={() => onDayClick?.(d)}>
-                  {visibleServices.map((svc, i) => {
-                    const colorVar = serviceColorMap.get(svc.id) || SERVICE_COLOR_VARS[0];
-                    const svcBookings = dayBookings.filter((bk) => bk.service_id === svc.id);
-                    const ranges = mergeBookingRanges(svcBookings, timezone, hourRange);
+                <div key={c.key} className={`c2${off ? ' off' : ''}${none ? ' nocap' : ''}`} title={none ? s!.tip : off ? 'Outside business hours' : undefined} data-col={c.key} data-m={m}>
+                  {nowHere && <span className="nowl" style={{ top: ((now.minutes - m) / 30) * ROWH - 1 }} title="Now" />}
+                  {canNew && !none && <button type="button" className="cnew" aria-label={`New booking: ${c.date} ${hhmm(m)}`} onClick={(e) => c.onNew(m, e)}><span>+</span></button>}
+                  {s && s.label && <span className="capn cp-ok" title={s.tip}>{s.label}</span>}
+                  {startsHere.map(({ bk, st, en, col, n }) => {
+                    const top = 2 + ((Math.max(st, m) - m) / 30) * ROWH;
+                    const height = Math.max(ROWH - 4, ((Math.min(en, endMin) - Math.max(st, startMin)) / 30) * ROWH - 4);
+                    const label = c.label(bk);
                     return (
-                      <div
-                        key={svc.id}
-                        data-testid="week-summary-subcolumn"
-                        data-service-id={svc.id}
-                        style={{ position: 'absolute' as const, top: 0, bottom: 0, left: `${i * subWidth}%`, width: `${subWidth}%`, ...(i > 0 ? styles.daySubcolumnDivider : {}) }}
-                      >
-                        {ranges.map((r, j) => (
-                          <div
-                            key={j}
-                            style={{ ...styles.weekSummaryBar, top: `${r.top}%`, height: `${Math.max(r.height, 2)}%`, background: `var(${colorVar})` }}
-                            title={`${svc.name}: ${svcBookings.length} booking${svcBookings.length === 1 ? '' : 's'}`}
-                          />
-                        ))}
-                      </div>
+                      <button key={bk.id} type="button" className="bk2 sc" data-service-id={bk.service_id}
+                        style={{ ['--sc' as any]: cv(colorMap.get(bk.service_id) || SERVICE_COLOR_VARS[0]), top, height, ...pos(col, n) }}
+                        onClick={() => onBookingClick(bk.id)}
+                        title={`Edit: ${bk.customer_name} · ${bk.service_name}${bk.participant_count > 1 ? ` (${bk.participant_count} people)` : ''}${bk.staff_name ? ' · ' + bk.staff_name : ''}, ${hhmm(st)}–${hhmm(en)} · ${PAYMENT_STATUS_LABEL[bk.payment_status as PaymentStatus] || PAYMENT_STATUS_LABEL.unpaid}`}>
+                        <span>{label}</span>
+                      </button>
                     );
                   })}
+                  {moreHere.map((mo) => <button key={'more' + mo.st} type="button" className="bk2 more" style={{ top: 2 + ((mo.st - m) / 30) * ROWH, height: ROWH - 4, ...pos(mo.col, mo.n) }} onClick={() => onMore?.(c.date)} title={`${mo.count} more bookings at ${hhmm(mo.st)}: open the day`}>+{mo.count}</button>)}
+                  {g && <div className="gh" style={{ top: 2 + ((g.start - m) / 30) * ROWH, height: Math.ceil(g.len / 30) * ROWH - 4 }}>{g.label ? `New · ${g.label}` : 'New booking'}<br />{hhmm(g.start)}–{hhmm(g.start + g.len)}</div>}
                 </div>
               );
-            }
-
-            const positioned = layoutBookings(dayBookings, timezone, hourRange);
-            const lanes = buildCapacityLanes(dayBookings);
-            const stripInset = lanes.length * CAPACITY_STRIP_WIDTH;
-            return (
-              <div key={d} style={styles.weekDayOverlay}>
-                {lanes.map((lane, i) => (
-                  <div key={`${lane.kind}-${lane.id}`} style={{ position: 'absolute', top: 0, bottom: 0, left: `${i * CAPACITY_STRIP_WIDTH}px`, width: `${CAPACITY_STRIP_WIDTH}px` }}>
-                    {lane.kind === 'resource' && (
-                      <ResourceBlockOverlay blocks={filterBlocksToDay(resourceBlocks[lane.id] || [], d, timezone)} timezone={timezone} hourRange={hourRange} />
-                    )}
-                    <CapacityStrip
-                      segments={filterSegmentsToDay((lane.kind === 'resource' ? resourceTimelines : staffTimelines)[lane.id] || [], d, timezone)}
-                      timezone={timezone}
-                      hourRange={hourRange}
-                      entityLabel={lane.label}
-                    />
-                  </div>
-                ))}
-                <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${stripInset}px`, right: 0 }}>
-                {positioned.map((bk) => {
-                  const colorVar = serviceColorMap.get(bk.service_id) || SERVICE_COLOR_VARS[0];
-                  return (
-                    <div
-                      key={bk.id}
-                      data-service-id={bk.service_id}
-                      style={{
-                        ...styles.bookingBlock,
-                        top: `${bk.top}%`,
-                        height: `${Math.max(bk.height, 3)}%`,
-                        left: `${bk.left}%`,
-                        width: `${bk.width}%`,
-                        background: `var(${colorVar})`,
-                        borderLeftColor: PAYMENT_STATUS_COLOR_VAR[bk.payment_status as PaymentStatus] || PAYMENT_STATUS_COLOR_VAR.unpaid,
-                        cursor: 'pointer',
-                      }}
-                      onClick={() => onBookingClick(bk.id)}
-                      title={`${bk.service_name} — ${bk.customer_name} — ${PAYMENT_STATUS_LABEL[bk.payment_status as PaymentStatus] || PAYMENT_STATUS_LABEL.unpaid}`}
-                    >
-                      <span style={styles.blockTime}>{formatTime(bk.start_time, timezone)}</span>
-                      <span style={styles.blockTitle}>{bk.service_name}</span>
-                      <ParticipantCountBadge count={bk.participant_count} capacity={bk.resource_capacity} />
-                    </div>
-                  );
-                })}
-                </div>
-              </div>
-            );
-          })}
-          </div>
-        </div>
+            })}
+          </Fragment>
+        ))}
       </div>
     </div>
-    </>
   );
 }
 
 // ============================================================
-// Month View — calendar grid with booking counts
+// New booking popup (CAL-book; NA-8, NA-10; round 8 parts, 11 Nov 2026): the same small window from Day,
+// Week and Month, next to what was clicked, prefilled with the day, time, service or staff column and the
+// filter (one service filtered = that service). Customer search and service boxes as in New Appointment
+// round 8; only what is free at that time is listed, Location before Staff (buttons up to 6, a dropdown
+// above). More options opens the full New Appointment window over the calendar, prefilled.
 // ============================================================
 
-function MonthView({ days, date, onDayClick }: { days: any[]; date: string; onDayClick: (date: string) => void }) {
-  const d = new Date(date + 'T12:00:00Z');
-  const year = d.getUTCFullYear();
-  const month = d.getUTCMonth();
+function NewBookingPopup({ businessId, timezone, draft, services, locationId: calLoc, staffServices, onLength, onLabel, onClose, onCreated, onMore }: {
+  businessId: string; timezone: string; draft: NewBookingDraft; services: SvcItem[]; locationId: string; staffServices: { name: string; service_ids: string[] } | null;
+  onLength: (min: number) => void; onLabel: (label: string) => void; onClose: () => void; onCreated: (msg: string) => void; onMore: (p: AppointmentPrefill) => void;
+}) {
+  const [serviceId, setServiceId] = useState(draft.serviceId || '');
+  const [variantId, setVariantId] = useState('');
+  const [parts, setParts] = useState(1);
+  const [ovr, setOvr] = useState(false);
+  const [time, setTime] = useState<string | null>(draft.time);
+  // the calendar's location is chosen (hub: loc = calendar location)
+  const [locationId, setLocationId] = useState<string | null>(calLoc || null);
+  const [staffId, setStaffId] = useState<string>(draft.staffId || 'any');
+  const [walk, setWalk] = useState(false);
+  const [walkName, setWalkName] = useState('');
+  const [customer, setCustomer] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
-  // Build calendar grid
-  const firstDay = new Date(Date.UTC(year, month, 1));
-  const lastDay = new Date(Date.UTC(year, month + 1, 0));
-  const startDow = firstDay.getUTCDay(); // 0=Sun
-  const totalDays = lastDay.getUTCDate();
+  const svc = services.find((s) => s.id === serviceId);
+  const variant = svc?.variants.find((v) => v.id === variantId);
+  useEffect(() => { if (svc && !svc.variants.some((v) => v.id === variantId)) setVariantId(svc.variants[0]?.id || ''); }, [svc, variantId]);
+  useEffect(() => { onLength(variant?.duration || 30); onLabel(svc && variant ? `${svc.name} ${variant.name}` : ''); }, [svc, variant, onLength, onLabel]);
+  const { combos: raw, loaded } = useCombos(businessId, serviceId, variantId, draft.date, draft.date, ovr ? 1 : parts);
+  const combos = raw.filter((c) => zonedParts(new Date(c.start_time), timezone).date === draft.date);
 
-  const dayCountMap = new Map<string, number>();
-  for (const day of days) {
-    const dateStr = typeof day.date === 'string' ? day.date.split('T')[0] : day.date;
-    dayCountMap.set(dateStr, day.count);
-  }
+  const lhm = (iso: string) => hhmm(zonedParts(new Date(iso), timezone).minutes);
+  const times = [...new Set(combos.map((c) => lhm(c.start_time)))].sort();
+  const atTime = time ? combos.filter((c) => lhm(c.start_time) === time) : [];
+  const allLocs = [...new Map(combos.filter((c) => c.location_id).map((c) => [c.location_id!, c.location_name || ''])).entries()];
+  const multiLoc = allLocs.length > 1;
+  // NA-10: only what is free at that time; NA-8: Location first, staff once a location is chosen
+  const locFree = [...new Map(atTime.filter((c) => c.location_id && (staffId === 'any' || c.staff_id === staffId)).map((c) => [c.location_id!, c.location_name || ''])).entries()];
+  const loc = multiLoc ? (locationId && locFree.some(([id]) => id === locationId) ? locationId : null) : allLocs[0]?.[0] ?? null;
+  const staffFree = [...new Map(atTime.filter((c) => c.staff_id && (!multiLoc || c.location_id === loc)).map((c) => [c.staff_id!, `${c.staff_first_name || ''} ${c.staff_last_name || ''}`.trim()])).entries()];
+  const hasStaff = !!svc && svc.booking_type !== 'resource' && combos.some((c) => c.staff_id);
+  const pickedStaff = staffId !== 'any' && staffFree.some(([id]) => id === staffId) ? staffId : 'any';
+  const chosen = atTime.find((c) => (!multiLoc || c.location_id === loc) && (pickedStaff === 'any' || c.staff_id === pickedStaff)) || null;
+  const colStaffBusy = !!draft.staffId && staffId === draft.staffId && !!time && atTime.length > 0 && !staffFree.some(([id]) => id === draft.staffId);
+  const canCreate = !!chosen && (walk || !!customer) && !(multiLoc && !loc) && !saving;
 
-  const cells: Array<{ date: string | null; day: number; count: number; isToday: boolean }> = [];
-  // Leading empty cells
-  for (let i = 0; i < startDow; i++) cells.push({ date: null, day: 0, count: 0, isToday: false });
-  // Day cells
-  const todayStr = new Date().toISOString().slice(0, 10);
-  for (let i = 1; i <= totalDays; i++) {
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-    cells.push({ date: dateStr, day: i, count: dayCountMap.get(dateStr) || 0, isToday: dateStr === todayStr });
-  }
+  const W = 380;
+  const left = draft.x + 8 + W <= window.innerWidth - 12 ? draft.x + 8 : Math.max(12, (draft.left ?? draft.x) - W - 8);
+  const top = Math.max(12, Math.min(draft.y - 60, window.innerHeight - 640));
+
+  const create = async () => {
+    if (!chosen || !svc) return;
+    setSaving(true); setError('');
+    try {
+      await bookingsApi.createBooking({
+        business_id: businessId, customer_id: walk ? undefined : customer.id, walk_in_name: walk ? (walkName || 'Walk-in') : undefined,
+        service_id: serviceId, variant_id: variantId, staff_id: chosen.staff_id || undefined, start_time: chosen.start_time, participant_count: parts, override_rules: ovr,
+        location_id: chosen.location_id || undefined,
+      });
+      onCreated(`Booking created: ${svc.name}, ${dayLabel(draft.date)} ${time}`);
+    } catch (err: any) {
+      const e = err?.response?.data?.error; setError(typeof e === 'string' ? e : e?.message || 'The booking could not be created.');
+    } finally { setSaving(false); }
+  };
+
+  const pickRow = (kind: 'loc' | 'staff', list: Array<[string, string]>, cur: string | null, set: (v: string) => void) => {
+    const label = kind === 'loc' ? 'Location *' : 'Staff';
+    if (list.length > 6) {
+      return (
+        <div className="mk-f"><div className="mk-l">{label}</div>
+          <select value={cur || (kind === 'staff' ? 'any' : '')} onChange={(e) => set(e.target.value)} aria-label={kind === 'loc' ? 'Location' : 'Staff'}>
+            {kind === 'staff' ? <option value="any">Any staff</option> : <option value="" disabled>Choose a location…</option>}
+            {list.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        </div>
+      );
+    }
+    return (
+      <div className="mk-f"><div className="mk-l">{label}</div>
+        <div className="chips">
+          {kind === 'staff' && <button type="button" className="ch" aria-pressed={cur === 'any'} onClick={() => set('any')}>Any</button>}
+          {list.map(([id, name]) => <button key={id} type="button" className="ch" aria-pressed={cur === id} onClick={() => set(id)}>{kind === 'staff' && <span className="av">{initials(name)}</span>}{name}</button>)}
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div>
-      <div style={styles.monthHeader}>
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-          <div key={d} style={styles.monthHeaderCell}>{d}</div>
-        ))}
+    <div className="dsa pop2" style={{ left, top, width: W, maxHeight: `calc(100vh - ${top}px - 12px)` }} role="dialog" aria-label="New booking">
+      <h4><span>New booking</span><small>{dayLabel(draft.date)} · {time ? `${time}${variant ? '–' + hhmm(toMin(time) + variant.duration) : ''}` : 'choose a time'}</small></h4>
+      <CustomerPicker businessId={businessId} customer={customer} onCustomer={setCustomer} walk={walk} onWalk={setWalk} walkName={walkName} onWalkName={setWalkName} compact startOpen />
+      <ServicePicker services={services} serviceId={serviceId} onService={(id) => { setServiceId(id); setStaffId(draft.staffId || 'any'); setLocationId(calLoc || null); }} compact onlyFor={staffServices ? { name: staffServices.name, ids: staffServices.service_ids } : null} />
+      <OptionChips svc={svc} variantId={variantId} onVariant={setVariantId} />
+      <ParticipantsField svc={svc} parts={parts} onParts={setParts} ovr={ovr} onOvr={setOvr} />
+      {svc && loaded && (!time || (time && atTime.length === 0)) && (
+        <div className="mk-f">
+          <div className="mk-l">Time *</div>
+          {time && <p className="mk-warn">{time} is not free for {svc.name} {variant?.name}. Free times that day:</p>}
+          {times.length ? <div className="chips" style={{ maxHeight: '104px', overflowY: 'auto' }}>{times.map((t) => <button key={t} type="button" className="ch" aria-pressed={t === time} onClick={() => { setTime(t); setLocationId(calLoc || null); }}>{t}</button>)}</div>
+            : <p className="mk-warn">Nothing free that day for this service.</p>}
+        </div>
+      )}
+      {svc && time && atTime.length > 0 && multiLoc && (locFree.length ? pickRow('loc', locFree, loc, setLocationId) : <div className="mk-f"><div className="mk-l">Location *</div><p className="mk-warn">No location is free at this time.</p></div>)}
+      {svc && time && atTime.length > 0 && hasStaff && (multiLoc && !loc
+        ? <div className="mk-f"><div className="mk-l">Staff</div><p className="mk-hint">Choose a location first: the staff free there appear here.</p></div>
+        : staffFree.length ? pickRow('staff', staffFree, pickedStaff, setStaffId) : <div className="mk-f"><div className="mk-l">Staff</div><p className="mk-warn">Nobody is free at this time.</p></div>)}
+      {colStaffBusy && <p className="mk-warn">The staff member of this column is not free then; choose someone else or another time.</p>}
+      {multiLoc && time && atTime.length > 0 && !loc && <p className="mk-hint">Choose a location.</p>}
+      {error && <p className="mk-warn" role="alert">{error}</p>}
+      <div className="pop-act">
+        <button type="button" className="more" onClick={() => onMore({ date: draft.date, time, serviceId: serviceId || undefined, variantId: variantId || undefined, staffId: pickedStaff !== 'any' ? pickedStaff : draft.staffId, locationId: loc || undefined, customer, walkIn: walk, walkInName: walkName, participants: parts })}>More options ⤢</button>
+        <span>
+          <button type="button" className="btn sec" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn" disabled={!canCreate} onClick={create}>{saving ? 'Creating…' : 'Create'}</button>
+        </span>
       </div>
-      <div style={styles.monthGrid}>
-        {cells.map((cell, idx) => (
-          <div
-            key={idx}
-            style={{ ...styles.monthCell, ...(cell.isToday ? styles.monthCellToday : {}), ...(cell.date ? { cursor: 'pointer' } : {}) }}
-            onClick={cell.date ? () => onDayClick(cell.date!) : undefined}
-          >
-            {cell.date && (
+    </div>
+  );
+}
+
+// ============================================================
+// Month, as in the hub (calMonth, CAL-15 / CAL-16): Calendar = every day the same size, the three fullest
+// services then "+N more" (all, with Open the day); + (top right) books on that day; a click on the day opens
+// it in the Day view. Grid = one row per service, one column per day, fitting the width.
+// ============================================================
+
+type MonthCap = { service_id: string; booked: number; capacity: number | null };
+type MonthSvc = { id: string; name: string; unit: string };
+const capCls = (u: number, c: number | null) => (!c ? 'cp-none' : u >= c ? 'cp-full' : u / c >= 0.5 ? 'cp-low' : 'cp-ok');
+/** The fullest first: share of capacity, then the number booked. */
+export function topServices(list: MonthCap[]): MonthCap[] {
+  return [...list].filter((c) => c.booked > 0).sort((a, b) => ((b.capacity ? b.booked / b.capacity : 0) - (a.capacity ? a.booked / a.capacity : 0)) || b.booked - a.booked);
+}
+
+function MonthView({ days, capacityDays = {}, services = [], colorMap, date, dayHours = {}, timezone = 'UTC', onDayClick, onNew, picked }: {
+  days: any[]; capacityDays?: Record<string, MonthCap[]>; services?: MonthSvc[]; colorMap?: Map<string, string>; date: string;
+  dayHours?: Record<string, DayHoursEntry>; timezone?: string; onDayClick: (date: string) => void; onNew?: (date: string, e: React.MouseEvent) => void; picked?: string | null;
+}) {
+  const [openDay, setOpenDay] = useState<string | null>(null);
+  const svcName = (id: string) => services.find((s) => s.id === id)?.name || '';
+  const d = new Date(date + 'T12:00:00Z');
+  const year = d.getUTCFullYear(); const month = d.getUTCMonth();
+  const lead = (new Date(Date.UTC(year, month, 1)).getUTCDay() + 6) % 7;
+  const total = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const byDay = new Map<string, any>();
+  for (const x of days) byDay.set(typeof x.date === 'string' ? x.date.split('T')[0] : x.date, x);
+  const todayStr = zonedParts(new Date(), timezone).date;
+  const line = (c: MonthCap) => (
+    <span key={c.service_id} className="ln svl" title={`${svcName(c.service_id)}: ${c.booked} booked${c.capacity !== null ? ' of ' + c.capacity : ''}`}>
+      <span className="sdot" style={{ ['--sc' as any]: cv(colorMap?.get(c.service_id) || SERVICE_COLOR_VARS[0]) }} />
+      <span className="nm">{svcName(c.service_id)}</span>
+      <b className={capCls(c.booked, c.capacity)}>{c.capacity ? `${c.booked}/${c.capacity}` : c.booked || '–'}</b>
+    </span>
+  );
+  return (
+    <div className="mon">
+      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((x) => <span key={x} className="dow">{x}</span>)}
+      {Array.from({ length: lead }, (_, i) => <span key={'l' + i} />)}
+      {Array.from({ length: total }, (_, i) => {
+        const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`;
+        const h = dayHours[ds]; const closed = !!h && 'closed' in h;
+        const info = byDay.get(ds); const count = info?.count || 0; const people = info?.people || count;
+        const all = capacityDays[ds] || []; const top = topServices(all).slice(0, 3); const more = all.length - top.length;
+        const col = (lead + i) % 7;
+        const canAdd = !closed && ds >= todayStr && !!onNew;
+        const dim = ds < todayStr; // past days faded, as in the hub (David, 11 Nov 2026)
+        return (
+          <div key={ds} className={`mday${ds === todayStr ? ' today' : ''}${dim ? ' dim' : ''}${openDay === ds ? ' up' : ''}${picked === ds ? ' pick' : ''}${closed ? ' shut' : ''}`} onClick={dim ? undefined : () => onDayClick(ds)} title={closed ? (h as any).reason : undefined}>
+            <button type="button" className="mnum" disabled={dim} aria-label={`Open ${ds} in the Day view`} onClick={(e) => { e.stopPropagation(); onDayClick(ds); }}>{i + 1}{ds === todayStr ? ' · today' : ''}</button>
+            {canAdd && <button type="button" className="mplus" aria-label={`New booking on ${ds}`} title={`New booking on ${ds}`} onClick={(e) => { e.stopPropagation(); onNew!(ds, e); }}>+</button>}
+            {dim ? null : closed ? <span className="ln">closed</span> : (
               <>
-                <span style={styles.monthCellDay}>{cell.day}</span>
-                {cell.count > 0 && (
-                  <span style={styles.monthCellCount}>
-                    {cell.count} booking{cell.count !== 1 ? 's' : ''}
-                  </span>
+                <span className="cnt">{count} booking{count === 1 ? '' : 's'}{people > count ? ` · ${people} people` : ''}</span>
+                {top.map(line)}
+                {more > 0 && <button type="button" className="mmore" aria-expanded={openDay === ds} onClick={(e) => { e.stopPropagation(); setOpenDay(openDay === ds ? null : ds); }}>+{more} more</button>}
+                {openDay === ds && (
+                  <div className={`mpop${col >= 4 ? ' r' : ''}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={`All services on ${ds}`}>
+                    <b>{dayLabel(ds, { weekday: 'short', day: 'numeric', month: 'short' })}</b>
+                    {all.map(line)}
+                    <span className="mpop-f"><button type="button" className="btn sec" onClick={() => setOpenDay(null)}>Close</button><button type="button" className="btn" onClick={() => onDayClick(ds)}>Open the day</button></span>
+                  </div>
                 )}
               </>
             )}
           </div>
-        ))}
-      </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MonthGrid({ capacityDays, services, days = [], colorMap, date, dayHours = {}, timezone = 'UTC', onDayClick, onNew }: {
+  capacityDays: Record<string, MonthCap[]>; services: MonthSvc[]; days?: any[]; colorMap: Map<string, string>; date: string;
+  dayHours?: Record<string, DayHoursEntry>; timezone?: string; onDayClick: (date: string) => void; onNew?: (date: string, serviceId: string, e: React.MouseEvent) => void;
+}) {
+  const d = new Date(date + 'T12:00:00Z');
+  const year = d.getUTCFullYear(); const month = d.getUTCMonth();
+  const total = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const ds = Array.from({ length: total }, (_, i) => `${year}-${String(month + 1).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`);
+  const todayStr = zonedParts(new Date(), timezone).date;
+  const closed = (x: string) => { const h = dayHours[x]; return (!!h && 'closed' in h) || x < todayStr; };
+  const count = (x: string) => days.find((y: any) => String(y.date).slice(0, 10) === x)?.count || 0;
+  const ids = new Set(services.map((s) => s.id));
+  const people = (x: string) => (capacityDays[x] || []).filter((y) => ids.has(y.service_id)).reduce((a, y) => a + (y.booked || 0), 0);
+  if (services.length === 0) return <p className="q-empty">No services to show.</p>;
+  return (
+    <div className="mx">
+      <table className="mxt">
+        <colgroup><col className="mxcol" />{ds.map((x) => <col key={x} />)}</colgroup>
+        <thead>
+          <tr>
+            <th className="mxs">Service</th>
+            {ds.map((x, i) => (
+              <th key={x} className={x === todayStr ? 'today' : ''}>
+                <button type="button" className="mxd" onClick={() => onDayClick(x)} title={`Open ${dayLabel(x)} in the Day view`}><span>{dayLabel(x, { weekday: 'short' }).slice(0, 2)}</span>{i + 1}</button>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th className="mxs">Total</th>
+            {ds.map((x) => { if (closed(x)) return <td key={x} className="off">–</td>; const n = people(x); const b = count(x); return <td key={x}><button type="button" className="mxc" onClick={() => onDayClick(x)} title={`Open ${dayLabel(x)}${n ? ` · ${n} booked (${b} booking${b === 1 ? '' : 's'})` : ''}`}>{n ? <b>{n}</b> : null}</button></td>; })}
+          </tr>
+          {services.map((s) => (
+            <tr key={s.id}>
+              <th className="mxs" title={s.name}><span className="sdot" style={{ ['--sc' as any]: cv(colorMap.get(s.id) || SERVICE_COLOR_VARS[0]) }} />{s.name} <small>{s.unit}</small></th>
+              {ds.map((x) => {
+                if (closed(x)) return <td key={x} className="off">–</td>;
+                const c = (capacityDays[x] || []).find((y) => y.service_id === s.id);
+                const u = c?.booked || 0; const k = c?.capacity ?? null;
+                const canBook = x >= todayStr && !!onNew;
+                return (
+                  <td key={x}>
+                    <button type="button" className={`mxc ${capCls(u, k)}`} onClick={(e) => (canBook ? onNew!(x, s.id, e) : onDayClick(x))}
+                      title={`${dayLabel(x)} · ${s.name}: ${u} booked${k !== null ? ' of ' + k + ' ' + s.unit : ''}.${canBook ? ` Click to book ${s.name} on this day.` : ''}`}>
+                      {u ? (k ? <><b>{u}</b><small>{k}</small></> : <b>{u}</b>) : null}
+                    </button>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -814,90 +952,10 @@ function MonthView({ days, date, onDayClick }: { days: any[]; date: string; onDa
 // Helpers
 // ============================================================
 
-/**
- * Layout bookings into non-overlapping columns for the day view.
- * Returns bookings with top, height, left, width percentages.
- */
-function layoutBookings(bookings: any[], timezone: string, hourRange: HourRange = DEFAULT_HOUR_RANGE): Array<any & { top: number; height: number; left: number; width: number }> {
-  // Get positions and sort by start time
-  const items = bookings
-    .map((bk) => {
-      const pos = getBookingPosition(bk, timezone, hourRange);
-      if (!pos) return null;
-      return { ...bk, top: pos.top, height: pos.height, startPct: pos.top, endPct: pos.top + pos.height };
-    })
-    .filter(Boolean) as Array<any & { top: number; height: number; startPct: number; endPct: number }>;
-
-  items.sort((a, b) => a.startPct - b.startPct);
-
-  // Assign columns using a greedy approach
-  const columns: Array<Array<typeof items[0]>> = [];
-
-  for (const item of items) {
-    let placed = false;
-    for (let col = 0; col < columns.length; col++) {
-      const lastInCol = columns[col][columns[col].length - 1];
-      if (lastInCol.endPct <= item.startPct) {
-        columns[col].push(item);
-        (item as any)._col = col;
-        placed = true;
-        break;
-      }
-    }
-    if (!placed) {
-      (item as any)._col = columns.length;
-      columns.push([item]);
-    }
-  }
-
-  const totalCols = columns.length || 1;
-
-  // Determine max columns for each overlap group
-  return items.map((item) => {
-    const col = (item as any)._col as number;
-    // Find how many columns overlap at this item's time range
-    let maxOverlap = 0;
-    for (const other of items) {
-      if (other.startPct < item.endPct && other.endPct > item.startPct) {
-        maxOverlap++;
-      }
-    }
-    const numCols = Math.max(maxOverlap, 1);
-    const width = 100 / numCols;
-    const left = col * width;
-
-    return { ...item, left, width: width - 1 }; // -1 for small gap
-  });
-}
-
-/**
- * Week view summary mode (item 3c-e): merges a service's bookings into contiguous "there's
- * something booked here" ranges — no per-booking start/end, staff, or headcount detail, just
- * which hours have any activity at all. Overlapping/back-to-back bookings collapse into one bar.
- */
-export function mergeBookingRanges(bookings: Array<{ start_time: string; end_time: string }>, timezone: string, hourRange: HourRange = DEFAULT_HOUR_RANGE): Array<{ top: number; height: number }> {
-  const intervals = bookings
-    .map((bk) => getTimeRangePosition(bk.start_time, bk.end_time, timezone, hourRange))
-    .filter(Boolean) as Array<{ top: number; height: number }>;
-  if (intervals.length === 0) return [];
-
-  const sorted = intervals.map((p) => ({ start: p.top, end: p.top + p.height })).sort((a, b) => a.start - b.start);
-  const merged: Array<{ start: number; end: number }> = [];
-  for (const iv of sorted) {
-    const last = merged[merged.length - 1];
-    if (last && iv.start <= last.end) {
-      last.end = Math.max(last.end, iv.end);
-    } else {
-      merged.push({ ...iv });
-    }
-  }
-  return merged.map((m) => ({ top: m.start, height: m.end - m.start }));
-}
-
 function getWeekStart(dateStr: string): Date {
   const d = new Date(dateStr + 'T12:00:00Z');
-  const day = d.getUTCDay();
-  d.setUTCDate(d.getUTCDate() - day); // Sunday
+  const day = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - day); // Monday (weeks run Monday to Sunday)
   return d;
 }
 
@@ -929,237 +987,86 @@ function getTimeRangePosition(startISO: string, endISO: string, timezone: string
   return { top, height };
 }
 
-function getBookingPosition(bk: any, timezone: string, hourRange: HourRange = DEFAULT_HOUR_RANGE): { top: number; height: number } | null {
-  return getTimeRangePosition(bk.start_time, bk.end_time, timezone, hourRange);
-}
-
-// ============================================================
-// Capacity-width layout (day view, item 3c-c): a booking's WIDTH reflects its share of the
-// channel's capacity, with the rest of the width shown as a grayed "available" filler — replacing
-// the old equal-share time-overlap column packing wherever a real capacity ceiling exists.
-// ============================================================
-
-export interface CapacityPositionedBlock { booking: any; top: number; height: number; left: number; width: number }
-export interface AvailableCapacityBlock { top: number; height: number; left: number; width: number }
-
-/**
- * Lays out one channel's bookings (a resource, or a single staff member's slice of a service) by
- * capacity share rather than time-overlap count. Bookings that overlap in time are grouped into
- * clusters; within a cluster, each booking's width is participant_count/denominator, where
- * denominator is normally the channel's capacity but grows to the cluster's own peak concurrent
- * headcount when overbooked (so widths always sum to <= 100% instead of overflowing the column).
- * Falls back to the plain equal-share time-packing (`layoutBookings`) when there's no capacity
- * ceiling to encode (no resource, no staff-service capacity).
- */
-export function layoutCapacityChannel(
-  bookings: any[],
-  capacity: number | null,
-  timezone: string,
-  hourRange: HourRange = DEFAULT_HOUR_RANGE,
-): { blocks: CapacityPositionedBlock[]; availableBlocks: AvailableCapacityBlock[] } {
-  if (capacity == null) {
-    const positioned = layoutBookings(bookings, timezone, hourRange);
-    return {
-      blocks: positioned.map((p) => ({ booking: p, top: p.top, height: p.height, left: p.left, width: p.width })),
-      availableBlocks: [],
-    };
-  }
-
-  const items = bookings
-    .map((bk) => {
-      const pos = getBookingPosition(bk, timezone, hourRange);
-      if (!pos) return null;
-      return { booking: bk, top: pos.top, height: pos.height, startPct: pos.top, endPct: pos.top + pos.height, count: Math.max(1, bk.participant_count || 1) };
-    })
-    .filter(Boolean) as Array<{ booking: any; top: number; height: number; startPct: number; endPct: number; count: number }>;
-
-  if (items.length === 0) return { blocks: [], availableBlocks: [] };
-
-  items.sort((a, b) => a.startPct - b.startPct);
-
-  // Group into overlap clusters (maximal runs of transitively-overlapping bookings) — each is
-  // laid out independently since bookings outside a cluster never compete for the same space.
-  const clusters: Array<typeof items> = [];
-  let current: typeof items = [];
-  let clusterEnd = -Infinity;
-  for (const item of items) {
-    if (current.length > 0 && item.startPct >= clusterEnd) {
-      clusters.push(current);
-      current = [];
-      clusterEnd = -Infinity;
-    }
-    current.push(item);
-    clusterEnd = Math.max(clusterEnd, item.endPct);
-  }
-  if (current.length > 0) clusters.push(current);
-
-  const blocks: CapacityPositionedBlock[] = [];
-  const availableBlocks: AvailableCapacityBlock[] = [];
-
-  for (const cluster of clusters) {
-    const breakpoints = [...new Set(cluster.flatMap((it) => [it.startPct, it.endPct]))].sort((a, b) => a - b);
-
-    let peak = 0;
-    for (let i = 0; i < breakpoints.length - 1; i++) {
-      const mid = (breakpoints[i] + breakpoints[i + 1]) / 2;
-      const booked = cluster.filter((it) => it.startPct <= mid && it.endPct > mid).reduce((s, it) => s + it.count, 0);
-      if (booked > peak) peak = booked;
-    }
-    // Integer unit-columns (like a bin-packing grid) rather than a single "rightmost edge"
-    // cursor — a cursor-based stack never backfills a slot freed by an earlier-ending booking,
-    // which pushed later bookings off the edge at near-zero width instead of reusing the gap.
-    const denom = Math.max(Math.ceil(capacity), Math.ceil(peak), 1);
-    const unitWidth = 100 / denom;
-
-    // Each unit column's occupied time-ranges, built up as bookings are placed in start order.
-    const columnRanges: Array<Array<{ start: number; end: number }>> = Array.from({ length: denom }, () => []);
-    const placements: Array<{ item: typeof cluster[number]; startIdx: number; need: number }> = [];
-
-    for (const item of cluster) {
-      const need = Math.min(item.count, denom);
-      const isFree = (col: number) => !columnRanges[col].some((r) => r.start < item.endPct && r.end > item.startPct);
-
-      let startIdx = -1;
-      for (let i = 0; i <= denom - need; i++) {
-        let ok = true;
-        for (let j = 0; j < need; j++) { if (!isFree(i + j)) { ok = false; break; } }
-        if (ok) { startIdx = i; break; }
-      }
-      if (startIdx === -1) {
-        // No single contiguous run of `need` free columns (a fragmented, rare case) — take
-        // whatever's free rather than drop the booking.
-        startIdx = Math.max(0, [...Array(denom).keys()].find(isFree) ?? 0);
-      }
-      for (let j = 0; j < need && startIdx + j < denom; j++) columnRanges[startIdx + j].push({ start: item.startPct, end: item.endPct });
-
-      placements.push({ item, startIdx, need });
-      const left = startIdx * unitWidth;
-      const width = Math.min(need * unitWidth, 100 - left);
-      blocks.push({ booking: item.booking, top: item.top, height: item.height, left, width });
-    }
-
-    // Grayed "available" filler: for each sub-interval, whichever unit columns no placed booking
-    // occupies at that moment — derived from the same column assignments as the blocks above, so
-    // fillers can never land on top of (or leave a gap next to) an actual booking.
-    for (let i = 0; i < breakpoints.length - 1; i++) {
-      const segStart = breakpoints[i];
-      const segEnd = breakpoints[i + 1];
-      if (segStart >= segEnd) continue;
-      const mid = (segStart + segEnd) / 2;
-      const occupied = (col: number) => placements.some((p) => p.item.startPct <= mid && p.item.endPct > mid && col >= p.startIdx && col < p.startIdx + p.need);
-
-      let runStart = -1;
-      for (let col = 0; col <= denom; col++) {
-        const free = col < denom && !occupied(col);
-        if (free && runStart === -1) runStart = col;
-        if (!free && runStart !== -1) {
-          const left = runStart * unitWidth;
-          const width = (col - runStart) * unitWidth;
-          const prev = availableBlocks[availableBlocks.length - 1];
-          if (prev && prev.left === left && prev.width === width && prev.top + prev.height === segStart) {
-            prev.height = segEnd - prev.top;
-          } else {
-            availableBlocks.push({ top: segStart, height: segEnd - segStart, left, width });
-          }
-          runStart = -1;
-        }
-      }
-    }
-  }
-
-  return { blocks, availableBlocks };
-}
-
-export interface ServiceSubcolumn { key: string; label?: string; bookings: any[] }
-
-/** One subcolumn per distinct staff member when a service is staff-linked (each staff member's
- *  capacity is independent — two coaches running the same class don't share one bar); otherwise a
- *  single subcolumn for the whole service (governed by its resource, if any). */
-export function buildServiceSubcolumns(bookings: any[]): ServiceSubcolumn[] {
-  const hasStaff = bookings.some((bk) => bk.staff_id);
-  if (!hasStaff) return [{ key: 'all', bookings }];
-
-  const byStaff = new Map<string, ServiceSubcolumn>();
-  for (const bk of bookings) {
-    const key = bk.staff_id || 'unassigned';
-    if (!byStaff.has(key)) byStaff.set(key, { key, label: bk.staff_id ? bk.staff_name : 'Unassigned', bookings: [] });
-    byStaff.get(key)!.bookings.push(bk);
-  }
-  return [...byStaff.values()].sort((a, b) => (a.label || '').localeCompare(b.label || ''));
-}
-
-/** The capacity ceiling for a subcolumn: a staff subcolumn uses its service's max_capacity (all
- *  bookings in one subcolumn share the same service), otherwise the linked resource's capacity —
- *  null when neither applies, signalling "no capacity concept, fall back to time-based packing". */
-export function capacityForSubcolumn(sub: ServiceSubcolumn): number | null {
-  const first = sub.bookings[0];
-  if (!first) return null;
-  return sub.key === 'all' ? (first.resource_capacity ?? null) : (first.service_max_capacity ?? null);
-}
-
-function formatHour(h: number): string {
-  if (h === 0) return '12 AM';
-  if (h < 12) return `${h} AM`;
-  if (h === 12) return '12 PM';
-  return `${h - 12} PM`;
-}
-
-function formatTime(isoStr: string, timezone: string): string {
-  return new Date(isoStr).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone: timezone });
-}
-
 // ============================================================
 // Styles
 // ============================================================
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { padding: 'var(--space-lg)', maxWidth: '1200px', margin: '0 auto' },
-  header: { marginBottom: 'var(--space-md)' },
+  page: { maxWidth: '1400px', margin: '0 auto', position: 'relative' as const, height: 'calc(100vh - 76px - var(--space-sm) - var(--space-2xl) - 22px)', display: 'flex', flexDirection: 'column' as const, minHeight: '420px' },
+  header: { marginBottom: '10px', flexShrink: 0 },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, fontFamily: 'var(--font-family)', marginBottom: 'var(--space-sm)', display: 'block' },
   title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', margin: 0 },
-  controls: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)', flexWrap: 'wrap' as const, gap: 'var(--space-sm)' },
-  viewToggle: { display: 'flex', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
-  viewBtn: { background: 'none', border: 'none', borderRight: '1px solid var(--color-border)', padding: '8px 16px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
-  viewBtnActive: { background: 'var(--color-accent, #C9A96E)', color: '#1A1A1A', fontWeight: 600, borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
-  dateNav: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' },
-  dateLabel: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)', minWidth: '180px', textAlign: 'center' as const },
-  navBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '6px 12px', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)', minHeight: 'var(--button-height-sm)' },
-  todayBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '6px 12px', cursor: 'pointer', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-xs)', minHeight: 'var(--button-height-sm)' },
+  controls: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' as const, gap: '10px', flexShrink: 0 },
+  viewToggle: { display: 'flex', border: '1px solid var(--color-divider, #E1E5EE)', borderRadius: '8px', overflow: 'hidden', background: 'var(--color-surface, #fff)' },
+  viewBtn: { background: 'none', border: 'none', padding: '0 14px', height: '36px', fontSize: '15px', fontWeight: 600, color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  viewBtnActive: { background: 'var(--color-primary, #0F1F5C)', color: 'var(--color-primary-contrast, #fff)' },
+  dateNav: { display: 'flex', alignItems: 'center', gap: '8px' },
+  dateLabel: { fontSize: '18px', fontWeight: 700, color: 'var(--color-text)', marginLeft: '8px' },
+  navBtn: { background: 'var(--color-surface, #fff)', border: '1px solid var(--color-divider, #E1E5EE)', borderRadius: '8px', width: '36px', height: '36px', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: '16px', fontWeight: 700 },
+  todayBtn: { background: 'var(--color-surface, #fff)', border: '1px solid var(--color-divider, #E1E5EE)', borderRadius: '8px', padding: '0 14px', height: '36px', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: '15px', fontWeight: 600 },
   empty: { color: 'var(--color-text-secondary)', textAlign: 'center', padding: 'var(--space-xl)', fontSize: 'var(--font-size-sm)' },
 
+  fitBody: { flex: 1, minHeight: 0, overflowY: 'auto' as const },
+  dot: { display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', flexShrink: 0 },
+  quickFilterAllOn: { background: 'var(--color-primary, #0F1F5C)', borderColor: 'var(--color-primary, #0F1F5C)', color: 'var(--color-primary-contrast, #fff)', fontWeight: 600 },
+  quickFilterChipOn: { borderColor: 'var(--color-primary, #0F1F5C)', boxShadow: 'inset 0 0 0 1px var(--color-primary, #0F1F5C)', fontWeight: 600 },
+  colPagerText: { fontSize: '15px', color: 'var(--color-text)', whiteSpace: 'nowrap' as const },
+  colDots: { display: 'inline-flex', gap: '5px' },
+  colDot: { width: '9px', height: '9px', borderRadius: '50%', border: 0, padding: 0, background: 'var(--color-divider, #E1E5EE)', cursor: 'pointer' },
+  colDotOn: { background: 'var(--color-primary, #0F1F5C)' },
   legendSwatch: { display: 'inline-block', width: '10px', height: '10px', borderRadius: '3px', flexShrink: 0 },
 
   // Capacity badge
-  capacityBadge: { position: 'absolute' as const, top: '2px', right: '2px', fontSize: 'var(--font-size-xs)', fontWeight: 700, color: '#fff', borderRadius: '3px', padding: '1px 4px', lineHeight: 1.4, zIndex: 2 },
   participantBadge: { display: 'block', fontSize: 'var(--font-size-xs)', opacity: 0.85, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
 
   // Capacity timeline strip — a narrow lane per resource showing real concurrent utilization
   // over time, independent of any individual booking block.
-  capacityStripLane: { position: 'absolute' as const, top: 0, bottom: 0, left: 0, width: `${CAPACITY_STRIP_WIDTH}px`, zIndex: 1 },
-  capacitySegment: { position: 'absolute' as const, left: '1px', right: '1px', display: 'flex', flexDirection: 'row' as const, borderRadius: '2px', overflow: 'hidden', border: '1px solid var(--color-border)', boxSizing: 'border-box' as const },
-  capacitySegmentFill: { height: '100%' },
-  capacitySegmentAvailable: { height: '100%', background: 'var(--color-surface)' },
-  capacitySegmentLabel: { position: 'absolute' as const, inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--font-size-xs)', fontWeight: 700, color: '#fff', textShadow: '0 0 2px rgba(0,0,0,0.9), 0 0 1px rgba(0,0,0,0.9)', pointerEvents: 'none' as const, whiteSpace: 'nowrap' as const, overflow: 'hidden' },
 
   // Quick filter bar — JIRA-quick-filter-style pill buttons, shared by day/week/month views.
-  quickFilterBar: { display: 'flex', flexWrap: 'wrap' as const, gap: '8px', marginBottom: 'var(--space-md)' },
-  weekModeRow: { display: 'flex', flexWrap: 'wrap' as const, alignItems: 'center', gap: 'var(--space-md)' },
-  quickFilterChip: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 14px', borderRadius: '999px', border: '1px solid var(--color-border)', background: 'none', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
-  quickFilterChipActive: { background: 'rgba(201, 169, 110, 0.15)', borderColor: 'var(--color-accent, #C9A96E)', color: 'var(--color-text)', fontWeight: 600 },
+  quickFilterBar: { display: 'flex', flexWrap: 'nowrap' as const, alignItems: 'center', gap: '8px', overflow: 'hidden', minWidth: 0, flex: 1 },
+  row2: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: '12px', minHeight: '36px', flexShrink: 0 },
+  colPager: { display: 'inline-flex', alignItems: 'center', gap: '10px', flexShrink: 0 },
+  byLabel: { fontSize: '12px', fontWeight: 600, letterSpacing: '.06em', color: 'var(--color-text-secondary)' },
+  newBtn: { background: 'var(--color-primary-hover, #1B3597)', color: 'var(--color-primary-contrast, #fff)', border: 0, borderRadius: '8px', padding: '0 18px', height: '38px', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: '15px', fontWeight: 700 },
+  gridWrap: { border: '1px solid var(--color-divider, #E1E5EE)', borderRadius: '10px', overflow: 'hidden', background: 'var(--color-surface, #fff)', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' as const },
+  gridHead: { display: 'grid', borderBottom: '1px solid var(--color-divider, #E1E5EE)', background: 'var(--color-background, #F4F6FA)', position: 'sticky' as const, top: 0, zIndex: 6 },
+  gridScroll: { position: 'relative' as const, flex: 1, minHeight: 0, overflowY: 'auto' as const },
+  gridCol: { position: 'relative' as const, borderLeft: '1px solid var(--color-divider, #E1E5EE)' },
+  colHead: { padding: '10px 8px', display: 'flex', flexWrap: 'wrap' as const, alignItems: 'center', justifyContent: 'center', gap: '2px 6px', minWidth: 0, fontSize: '15px', fontWeight: 700, color: 'var(--color-text)', textAlign: 'center' as const },
+  colHeadName: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, minWidth: 0 },
+  colHeadSub: { flexBasis: '100%', fontSize: '13px', fontWeight: 400, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center' as const },
+  weekHeadBtn: { width: '100%', background: 'none', border: 0, padding: '2px', cursor: 'pointer', color: 'inherit', font: 'inherit', fontWeight: 700, borderRadius: '6px', textAlign: 'center' as const },
+  timeLab: { position: 'absolute' as const, left: 0, right: '8px', textAlign: 'right' as const, fontSize: '14px', color: 'var(--color-text-secondary)', paddingTop: '6px', lineHeight: 1 },
+  ghost: { position: 'absolute' as const, left: '3px', right: '3px', border: '2px dashed var(--color-primary, #2446a8)', borderRadius: '6px', background: 'color-mix(in srgb, var(--color-primary, #2446a8) 8%, transparent)', color: 'var(--color-primary, #2446a8)', fontSize: '11px', fontWeight: 700, padding: '2px 6px', zIndex: 3, pointerEvents: 'none' as const, boxSizing: 'border-box' as const },
+  nowLine: { position: 'absolute' as const, left: 0, right: 0, height: 0, borderTop: '2px solid var(--color-error, #c0392b)', zIndex: 4, pointerEvents: 'none' as const },
+  toast: { position: 'fixed' as const, bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-text, #1a1a1a)', color: 'var(--color-background, #fff)', padding: '10px 16px', borderRadius: '10px', fontSize: 'var(--font-size-sm)', zIndex: 60, boxShadow: '0 8px 30px rgba(0,0,0,.25)' },
+  pop: { position: 'fixed' as const, zIndex: 50, background: 'var(--color-surface, #fff)', color: 'var(--color-text)', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 16px 48px rgba(10,20,50,.25)', padding: '14px', display: 'grid', gap: '10px', maxHeight: 'calc(100vh - 24px)', overflowY: 'auto' as const, boxSizing: 'border-box' as const },
+  popHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' },
+  popSub: { fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 400 },
+  popField: { display: 'grid', gap: '5px' },
+  popLabelRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  popLabel: { fontSize: '12px', fontWeight: 700, color: 'var(--color-text)' },
+  popCheck: { display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--color-text-secondary)', cursor: 'pointer' },
+  popInput: { width: '100%', boxSizing: 'border-box' as const, padding: '7px 9px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-background, #fff)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
+  popPicked: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 9px', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: 'var(--font-size-sm)' },
+  popX: { background: 'none', border: 0, fontSize: '18px', cursor: 'pointer', color: 'var(--color-text-secondary)' },
+  popResults: { position: 'absolute' as const, top: '100%', left: 0, right: 0, zIndex: 2, background: 'var(--color-surface, #fff)', border: '1px solid var(--color-border)', borderRadius: '8px', boxShadow: '0 8px 24px rgba(10,20,50,.18)', display: 'grid', maxHeight: '200px', overflowY: 'auto' as const },
+  popResult: { textAlign: 'left' as const, background: 'none', border: 0, borderBottom: '1px solid var(--color-border)', padding: '7px 9px', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
+  popChips: { display: 'flex', flexWrap: 'wrap' as const, gap: '6px' },
+  popChip: { border: '1px solid var(--color-border)', background: 'var(--color-background, #fff)', color: 'var(--color-text)', borderRadius: '999px', padding: '4px 11px', fontSize: '12px', cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  popChipOn: { background: 'var(--color-primary, #13235b)', borderColor: 'var(--color-primary, #13235b)', color: 'var(--color-primary-contrast, #fff)', fontWeight: 600 },
+  popWarn: { margin: 0, fontSize: '12px', color: 'var(--color-warning-text, #8f5600)' },
+  popHint: { margin: 0, fontSize: '12px', color: 'var(--color-text-secondary)' },
+  popActions: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px' },
+  popLink: { background: 'none', border: 0, padding: 0, color: 'var(--color-primary, #2446a8)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', textDecoration: 'underline' },
+  pillPager: { display: 'inline-flex', alignItems: 'center', gap: '4px', flexShrink: 0 },
+  pillPagerBtn: { border: '1px solid var(--color-divider, #E1E5EE)', background: 'var(--color-surface, #fff)', color: 'var(--color-text)', borderRadius: '8px', width: '28px', height: '28px', padding: 0, fontSize: '15px', fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  pillPagerText: { fontSize: '14px', fontWeight: 600, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' as const, flexShrink: 0 },
+  quickFilterChip: { flexShrink: 0, whiteSpace: 'nowrap' as const, display: 'inline-flex', alignItems: 'center', gap: '8px', height: '32px', padding: '0 14px', borderRadius: '999px', border: '1px solid var(--color-divider, #E1E5EE)', background: 'var(--color-surface, #fff)', color: 'var(--color-text)', fontSize: '14px', fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  quickFilterChipActive: { background: 'var(--color-primary, #0F1F5C)', borderColor: 'var(--color-primary, #0F1F5C)', color: 'var(--color-primary-contrast, #fff)', fontWeight: 600 },
 
   // Day view — per-service column grid
-  dayGridContainer: { display: 'grid', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
-  dayTimeAxis: { borderRight: '1px solid var(--color-border)' },
-  dayColHeaderSpacer: { height: '36px', borderBottom: '1px solid var(--color-border)' },
-  dayTimeAxisLabel: { height: '60px', display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: '8px', paddingTop: '2px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', boxSizing: 'border-box' as const, borderTop: '1px solid var(--color-border)' },
-  dayServiceCol: { borderRight: '1px solid var(--color-border)', position: 'relative' as const },
-  dayColHeader: { height: '36px', boxSizing: 'border-box' as const, display: 'flex', alignItems: 'center', gap: '6px', padding: '0 8px', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', borderBottom: '1px solid var(--color-border)', borderTop: '3px solid transparent', overflow: 'hidden', whiteSpace: 'nowrap' as const, textOverflow: 'ellipsis' },
-  dayColBody: { position: 'relative' as const },
-  daySubcolumnDivider: { borderLeft: '1px dashed var(--color-border)' },
   // Week view summary mode — one bar per merged booked-hour-range, no per-booking detail.
-  weekSummaryBar: { position: 'absolute' as const, left: '10%', width: '80%', borderRadius: '2px', cursor: 'pointer', boxSizing: 'border-box' as const },
-  daySubcolumnLabel: { position: 'absolute' as const, top: '2px', left: '2px', right: '2px', fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-text-secondary)', textAlign: 'center' as const, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis', pointerEvents: 'none' as const, opacity: 0.8 },
-  availableCapacityBlock: { position: 'absolute' as const, background: 'var(--color-surface)', border: '1px dashed var(--color-border)', borderRadius: '3px', boxSizing: 'border-box' as const, opacity: 0.6 },
 
   // Resource block overlay — a business-owner-carved-out sub-range within an otherwise-open day.
   // Stripe colour is pre-blended with transparent (not a parent `opacity`) so the label text
@@ -1172,47 +1079,43 @@ const styles: Record<string, React.CSSProperties> = {
   resourceBlockLabel: { position: 'absolute' as const, top: '2px', left: '2px', right: '2px', fontSize: 'var(--font-size-xs)', fontWeight: 700, color: 'var(--color-error)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis', background: 'var(--color-background)', borderRadius: '2px', padding: '0 2px' },
 
   // Time grid (shared by day/week)
-  timeGrid: { position: 'relative' as const, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
-  gridRow: { display: 'grid', gridTemplateColumns: '60px 1fr', height: '60px', borderBottom: '1px solid var(--color-border)' },
-  timeLabel: { display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: '8px', paddingTop: '2px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
-  hourCell: { borderLeft: '1px solid var(--color-border)' },
-  bookingOverlay: { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0, display: 'grid', gridTemplateColumns: '60px 1fr', pointerEvents: 'none' as const },
-  timeLabelSpacer: {},
-  dayColumnOverlay: { position: 'relative' as const, pointerEvents: 'auto' as const },
-  timeLabels: { display: 'flex', flexDirection: 'column' as const },
-  timeLabelsHeader: { width: '60px', flexShrink: 0 },
-  dayColumn: { position: 'relative' as const, minHeight: `${(DEFAULT_HOUR_RANGE.end - DEFAULT_HOUR_RANGE.start) * 60}px` },
-  hourRow: { height: '60px', borderTop: '1px solid var(--color-border)', boxSizing: 'border-box' as const },
 
   // Booking blocks
   // Top/right/bottom stay a thin neutral separator between adjacent blocks; left is overridden
   // per-booking with a payment-status colour (item 3c-b) so it reads as a distinct signal from
   // the block's own service-colour fill.
-  bookingBlock: { position: 'absolute' as const, borderRadius: '4px', padding: '2px 4px', overflow: 'hidden', fontSize: 'var(--font-size-xs)', color: '#fff', zIndex: 1, borderTop: '2px solid var(--color-background, #FFF)', borderRight: '2px solid var(--color-background, #FFF)', borderBottom: '2px solid var(--color-background, #FFF)', borderLeft: '4px solid var(--color-background, #FFF)', boxSizing: 'border-box' as const },
+  // Booking box (hub design): light tint of the service colour, service-colour left edge, dark text; a small dot = payment status
+  bookingBlock: { position: 'absolute' as const, borderRadius: '6px', padding: '4px 10px', overflow: 'hidden', fontSize: '14px', fontWeight: 600, color: 'var(--color-text)', zIndex: 1, border: '2px solid var(--color-surface, #FFF)', borderLeft: '3px solid', boxSizing: 'border-box' as const, display: 'flex', alignItems: 'center', lineHeight: 1.25 },
+  blockLabel: { overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flex: 1 },
+  moreBox: { position: 'absolute' as const, height: '22px', zIndex: 2, border: '1px solid var(--color-border)', borderRadius: '6px', background: 'var(--color-surface, #f3f4f7)', color: 'var(--color-text)', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-family)' },
   blockTime: { fontWeight: 600, fontSize: 'var(--font-size-xs)', display: 'block' },
   blockTitle: { display: 'block', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
   blockSub: { display: 'block', fontSize: 'var(--font-size-xs)', opacity: 0.8, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
 
   // Week view
-  weekContainer: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' },
-  weekHeaderTimeCell: { borderRight: '1px solid var(--color-border)', borderBottom: '1px solid var(--color-border)' },
-  weekDayHeader: { padding: '8px 4px', textAlign: 'center' as const, fontSize: 'var(--font-size-sm)', borderRight: '1px solid var(--color-border)', borderBottom: '1px solid var(--color-border)' },
-  todayHeader: { background: 'var(--color-accent, #C9A96E)', color: '#1A1A1A' },
+  todayHeader: { color: 'var(--color-primary-hover, #1B3597)', textDecoration: 'underline', textUnderlineOffset: '4px' },
   weekDayName: { display: 'block', fontWeight: 500 },
   weekDayNum: { display: 'block', fontSize: 'var(--font-size-base)', fontWeight: 600 },
-  weekBodyScroll: { position: 'relative' as const, overflow: 'auto', maxHeight: '700px' },
-  weekRow: { display: 'grid', gridTemplateColumns: '60px repeat(7, 1fr)', height: '60px', borderBottom: '1px solid var(--color-border)' },
-  weekTimeLabel: { display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: '8px', paddingTop: '2px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', borderRight: '1px solid var(--color-border)' },
-  weekCell: { borderRight: '1px solid var(--color-border)' },
-  weekOverlay: { position: 'absolute' as const, top: 0, left: 0, right: 0, height: `${(DEFAULT_HOUR_RANGE.end - DEFAULT_HOUR_RANGE.start) * 60}px`, display: 'grid', gridTemplateColumns: '60px repeat(7, 1fr)', pointerEvents: 'none' as const },
-  weekOverlaySpacer: {},
-  weekDayOverlay: { position: 'relative' as const, pointerEvents: 'auto' as const },
 
   // Month view
   monthHeader: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--color-border)', marginBottom: '4px' },
   monthHeaderCell: { textAlign: 'center' as const, padding: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)' },
   monthGrid: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' },
-  monthCell: { minHeight: '80px', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '4px 6px', display: 'flex', flexDirection: 'column' as const, gap: '2px' },
+  monthSvcLine: { display: 'flex', alignItems: 'center', gap: '3px', fontSize: '11px', minWidth: 0 },
+  monthSvcName: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, flex: 1, minWidth: 0, color: 'var(--color-text-secondary)' },
+  monthMore: { background: 'none', border: 0, padding: 0, color: 'var(--color-primary, #2446a8)', fontSize: '11px', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer', alignSelf: 'flex-start' as const },
+  monthPop: { position: 'absolute' as const, top: '4px', left: '4px', zIndex: 5, width: '240px', background: 'var(--color-surface, #fff)', border: '1px solid var(--color-border)', borderRadius: '10px', boxShadow: '0 12px 40px rgba(10,20,50,.22)', padding: '10px', display: 'grid', gap: '3px', cursor: 'default' },
+  mgTable: { width: '100%', tableLayout: 'fixed' as const, borderCollapse: 'separate' as const, borderSpacing: 0, fontSize: '11px' },
+  mgName: { position: 'sticky' as const, left: 0, background: 'var(--color-surface, #fff)', textAlign: 'left' as const, padding: '3px 6px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, borderBottom: '1px solid var(--color-border)' },
+  mgHead: { fontSize: '10px', fontWeight: 700, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', padding: '2px 0' },
+  mgDay: { background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', width: '100%' },
+  mgCell: { textAlign: 'center' as const, borderBottom: '1px solid var(--color-border)', padding: '2px 0' },
+  mgBtn: { background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit', fontSize: '11px', width: '100%', lineHeight: 1.1 },
+  monthCell: { position: 'relative' as const, minHeight: '80px', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '4px 6px', display: 'flex', flexDirection: 'column' as const, gap: '2px' },
+  monthCellClosed: { background: 'var(--color-surface-muted, rgba(120,130,150,.16))' },
+  monthCellPicked: { outline: '2px dashed var(--color-primary, #2446a8)', outlineOffset: '-2px' },
+  monthClosed: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
+  mgOff: { background: 'var(--color-surface-muted, rgba(120,130,150,.16))', color: 'var(--color-text-secondary)' },
   monthCellToday: { background: 'rgba(201, 169, 110, 0.1)', borderColor: 'var(--color-accent, #C9A96E)' },
   monthCellDay: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)' },
   monthCellCount: { fontSize: 'var(--font-size-xs)', color: 'var(--color-accent-contrast, #fff)', fontWeight: 600, background: 'var(--color-accent, #C9A96E)', borderRadius: '4px', padding: '2px 6px', alignSelf: 'flex-start' },

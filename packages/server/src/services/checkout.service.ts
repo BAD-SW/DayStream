@@ -970,7 +970,7 @@ async function applyDefaultTaxCategory(businessId: string, netAmount: number): P
   return { amount: Math.round(netAmount * rate / 10000), taxCategoryId: rows[0].id, rate };
 }
 
-async function calculateTaxOnAmount(itemType: string, itemId: string | null, netAmount: number): Promise<AppliedTax> {
+export async function calculateTaxOnAmount(itemType: string, itemId: string | null, netAmount: number): Promise<AppliedTax> {
   if (!itemId || netAmount <= 0) return { amount: 0, taxCategoryId: null, rate: null };
 
   let taxCategoryId: string | null = null;

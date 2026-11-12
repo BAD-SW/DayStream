@@ -112,9 +112,10 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
     requires_dedicated_staff: s.requires_dedicated_staff !== false,
     is_taxable: (s as any).is_taxable || false,
     tax_category_id: (s as any).tax_category_id || '',
+    calendar_color: (s as any).calendar_color || '',
   });
   const draft = useDraft('service-details', 'Service details', fromService(service), async (values) => {
-    await servicesApi.updateService(service.id, businessId, values);
+    await servicesApi.updateService(service.id, businessId, { ...values, calendar_color: values.calendar_color || null } as any);
     // Read it back whole: the update's reply leaves out the category name shown in the header.
     const updated = await servicesApi.getService(service.id, businessId);
     onUpdate(updated);
@@ -204,6 +205,15 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
                 <input type="checkbox" checked={form.requires_dedicated_staff} onChange={(e) => setForm({ ...form, requires_dedicated_staff: e.target.checked })} style={{ width: '16px', height: '16px', ...checkMark(draft.changed((v) => v.requires_dedicated_staff)) }} />
                 Requires Dedicated Staff
               </label>
+            </div>
+          </div>
+          <div style={styles.formGroup}>
+            {/* CAL-11: a colour per service by default; the owner can choose another */}
+            <label style={styles.label}>Calendar colour</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', ...mark('calendar_color') }}>
+              <input type="color" aria-label="Calendar colour" value={form.calendar_color || '#2F7A91'} onChange={(e) => setForm({ ...form, calendar_color: e.target.value })} style={{ width: '44px', height: '34px', padding: 0, border: '1px solid var(--color-border)', borderRadius: '6px', background: 'none', cursor: 'pointer' }} />
+              <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{form.calendar_color ? form.calendar_color.toUpperCase() : 'Default colour (from the calendar palette)'}</span>
+              {form.calendar_color && <button type="button" onClick={() => setForm({ ...form, calendar_color: '' })} style={{ background: 'none', border: 0, color: 'var(--color-primary-hover, #1B3597)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', textDecoration: 'underline', fontFamily: 'var(--font-family)' }}>Use the default</button>}
             </div>
           </div>
           <div style={styles.formGroup}>

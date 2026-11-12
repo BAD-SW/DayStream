@@ -1,4 +1,5 @@
 import { withBookingLock, planBookingChange } from './booking.service';
+import { getChangeRules, checkChange } from './booking-change-rules.service';
 import { evaluateOnBooking } from './customer-lifecycle.service';
 import { adminPool } from '../db/pool';
 import { logAudit } from './audit.service';
@@ -164,9 +165,14 @@ export async function cancelBooking(
   if (rows.length === 0) return { success: false, error: 'Booking not found' };
 
   const booking = rows[0];
-  let cancellationFee = 0;
+  const cancellationFee = await cancellationFeeFor(booking, businessId);
+  const result = await transitionStatus(bookingId, businessId, 'cancelled', userId, tenantId, { reason });
+  return finishCancel(result, booking, bookingId, businessId, reason, cancellationFee);
+}
 
-  // Calculate fee if applicable
+/** The cancellation fee if the booking were cancelled now (its service's policy, else the business default). */
+export async function cancellationFeeFor(booking: any, businessId: string): Promise<number> {
+  let cancellationFee = 0;
   const policyId = booking.cancellation_policy_id;
   if (policyId) {
     const { rows: polRows } = await adminPool.query(
@@ -188,8 +194,10 @@ export async function cancelBooking(
       cancellationFee = calculateCancellationFee(defPol[0], booking.price, hoursBeforeStart);
     }
   }
+  return cancellationFee;
+}
 
-  const result = await transitionStatus(bookingId, businessId, 'cancelled', userId, tenantId, { reason });
+async function finishCancel(result: TransitionResult, booking: any, bookingId: string, businessId: string, reason: string | undefined, cancellationFee: number): Promise<TransitionResult> {
   if (result.success) {
     try {
       const { promoteNext } = await import('./waitlist.service');
@@ -322,6 +330,12 @@ export async function rescheduleBooking(
 
   if (!['pending', 'confirmed'].includes(booking.status)) {
     return { success: false, error: 'Can only reschedule pending or confirmed bookings' };
+  }
+  {
+    // CAL-19 / CAL-22: a started booking can't be moved; nothing moves into the past
+    const rules = await getChangeRules(booking, businessId);
+    const refused = checkChange(rules, { start_time: newStartTime, staff: !!newStaffId && newStaffId !== booking.staff_id });
+    if (refused) return { success: false, error: refused };
   }
 
   const startTime = new Date(newStartTime);

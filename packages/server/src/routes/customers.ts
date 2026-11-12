@@ -132,6 +132,7 @@ customersRouter.get('/', requirePermission('customers:read'), async (req: Reques
 
     const result = await customerService.getCustomers(businessId, {
       search: req.query.search as string,
+      search_mode: req.query.search_mode as string,
       lifecycle_stage: req.query.lifecycle_stage as string,
       page: req.query.page ? parseInt(req.query.page as string, 10) : 1,
       limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 20,

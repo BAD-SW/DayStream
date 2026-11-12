@@ -1,4 +1,6 @@
 import { adminPool } from '../db/pool';
+import { getAvailabilityCombinations } from './availability.service';
+import { staffWorkingOnDay } from './staff-working.service';
 
 interface CalendarQuery {
   businessId: string;
@@ -8,6 +10,8 @@ interface CalendarQuery {
   resourceId?: string;
   serviceIds?: string[];
   status?: string;
+  /** one location at a time (hub); bookings, opening hours and staff of that location */
+  locationId?: string;
 }
 
 export type PaymentStatus = 'paid' | 'partial' | 'unpaid';
@@ -108,7 +112,7 @@ export function computeCapacitySegments(
  * Get calendar data for a given view.
  */
 export async function getCalendar(query: CalendarQuery) {
-  const { businessId, view, date, staffId, resourceId, serviceIds, status } = query;
+  const { businessId, view, date, staffId, resourceId, serviceIds, status, locationId } = query;
 
   const { rows: bizRows } = await adminPool.query('SELECT timezone FROM sys_businesses WHERE id = $1', [businessId]);
   const timezone: string = bizRows[0]?.timezone || 'UTC';
@@ -137,6 +141,10 @@ export async function getCalendar(query: CalendarQuery) {
     conditions.push(`b.service_id = ANY($${paramIndex++}::uuid[])`);
     params.push(serviceIds);
   }
+  if (locationId) {
+    conditions.push(`b.location_id = $${paramIndex++}`);
+    params.push(locationId);
+  }
   if (status) {
     conditions.push(`b.status = $${paramIndex++}`);
     params.push(status);
@@ -145,6 +153,10 @@ export async function getCalendar(query: CalendarQuery) {
   }
 
   const where = conditions.join(' AND ');
+
+  // White / grey in the calendar follows the primary location's opening hours, closing days and
+  // holidays (CAL-hours, 11 Nov 2026). Not set up: hours_set_up false and the calendar stays white.
+  const opening = await loadOpeningHours(businessId, startYMD, endYMD, locationId);
 
   if (view === 'month') {
     // Month view: return daily counts, bucketed by the business's own timezone — a booking at
@@ -162,16 +174,23 @@ export async function getCalendar(query: CalendarQuery) {
       [...params, timezone],
     );
 
+    // Per service and day: booked against the day's capacity (CAL-15 / CAL-16, 11 Nov 2026).
+    const perService = await monthServiceCapacity(businessId, startYMD, endYMD, where, params, paramIndex, timezone, serviceIds, locationId);
     return {
       view: 'month',
       date,
       start_date: startDate.toISOString(),
       end_date: endDate.toISOString(),
+      services: perService.services,
       days: rows.map((r: any) => ({
         date: r.day,
         count: r.count,
         statuses: r.statuses,
+        services: perService.byDay.get(r.day) || [],
       })),
+      capacity_days: Object.fromEntries(perService.byDay),
+      hours_set_up: opening.setUp,
+      day_hours: opening.days,
     };
   }
 
@@ -296,6 +315,29 @@ export async function getCalendar(query: CalendarQuery) {
     }
   }
 
+  // Day view: what each service can still take, per 30 minutes, and the staff working (CAL-7 b, CAL-8)
+  const dayExtra = view === 'day' ? await daySlotCapacity(businessId, date, timezone, rows, serviceIds, !!opening.days[date] && 'closed' in opening.days[date], locationId) : null;
+  // Week with exactly one service filtered: its numbers per 30 minutes on every day too (THE-23 4.3)
+  let weekSlots: Record<string, Record<string, SlotCapacity>> | null = null;
+  if (view === 'week' && serviceIds && serviceIds.length === 1) {
+    weekSlots = {};
+    // every booking of the week (staff busy with another service count as not free)
+    const { rows: allWeek } = await adminPool.query(
+      `SELECT b.id, b.service_id, b.staff_id, b.start_time, b.end_time, b.status, b.participant_count, COALESCE(u.first_name || ' ' || u.last_name, '') AS staff_name
+         FROM apt_bookings b LEFT JOIN usr_users u ON u.id = b.staff_id
+        WHERE b.business_id = $1 AND b.start_time < $3 AND b.end_time > $2 AND b.status NOT IN ('cancelled') ${locationId ? 'AND b.location_id = $4' : ''}`,
+      locationId ? [businessId, startDate.toISOString(), endDate.toISOString(), locationId] : [businessId, startDate.toISOString(), endDate.toISOString()],
+    );
+    for (let d = new Date(startYMD + 'T12:00:00Z'); d.toISOString().slice(0, 10) < endYMD; d.setUTCDate(d.getUTCDate() + 1)) {
+      const ymd = d.toISOString().slice(0, 10);
+      const dayStart = zonedMidnightToUtc(ymd, timezone).getTime(); const dayEnd = dayStart + 864e5;
+      const dayRows = allWeek.filter((r: any) => new Date(r.start_time).getTime() < dayEnd && new Date(r.end_time).getTime() > dayStart);
+      const x = await daySlotCapacity(businessId, ymd, timezone, dayRows, serviceIds, !!opening.days[ymd] && 'closed' in opening.days[ymd], locationId);
+      weekSlots[ymd] = x.slots[serviceIds[0]] || {};
+    }
+  }
+
+
   return {
     view,
     date,
@@ -305,6 +347,139 @@ export async function getCalendar(query: CalendarQuery) {
     resourceTimelines,
     staffTimelines,
     resourceBlocks,
+    hours_set_up: opening.setUp,
+    day_hours: opening.days,
+    ...(dayExtra ? { day_services: dayExtra.services, slot_capacity: dayExtra.slots, day_staff: dayExtra.staff } : {}),
+    ...(weekSlots ? { week_slot_capacity: weekSlots } : {}),
+  };
+}
+
+export type DayHours = { open: string; close: string } | { closed: true; reason: string };
+const WEEKDAY_NAMES = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+
+/**
+ * Opening hours per day of [startYMD, endYMD) from the primary location: its weekly hours, then its
+ * date overrides (holidays, special hours). With no weekly hours set up, only override days get an
+ * entry and setUp is false (the calendar stays white everywhere else).
+ */
+export async function loadOpeningHours(businessId: string, startYMD: string, endYMD: string, locationId?: string): Promise<{ setUp: boolean; days: Record<string, DayHours> }> {
+  const { rows: locs } = await adminPool.query(
+    `SELECT id FROM sys_locations WHERE business_id = $1 AND status = 'active' ${locationId ? 'AND id = $2' : ''} ORDER BY is_primary DESC, created_at LIMIT 1`, locationId ? [businessId, locationId] : [businessId],
+  );
+  const loc = locs[0]?.id;
+  if (!loc) return { setUp: false, days: {} };
+  const weekly = (await adminPool.query('SELECT day_of_week, is_closed, open_time, close_time FROM sys_location_hours WHERE location_id = $1', [loc])).rows;
+  const overrides = (await adminPool.query(
+    `SELECT override_date::text AS d, label, is_closed, open_time, close_time FROM sys_location_hour_overrides
+      WHERE location_id = $1 AND override_date >= $2::date AND override_date < $3::date`, [loc, startYMD, endYMD],
+  )).rows;
+  const hm = (t: any) => String(t || '').slice(0, 5);
+  const setUp = weekly.some((w: any) => !w.is_closed && w.open_time && w.close_time);
+  const days: Record<string, DayHours> = {};
+  for (let d = new Date(startYMD + 'T12:00:00Z'); d.toISOString().slice(0, 10) < endYMD; d.setUTCDate(d.getUTCDate() + 1)) {
+    const day = d.toISOString().slice(0, 10);
+    const o = overrides.find((x: any) => x.d === day);
+    if (o) {
+      days[day] = o.is_closed || !o.open_time || !o.close_time
+        ? { closed: true, reason: o.label ? `Closed: ${o.label}` : 'Closed' }
+        : { open: hm(o.open_time), close: hm(o.close_time) };
+      continue;
+    }
+    if (!setUp) continue;
+    const dow = d.getUTCDay();
+    const w = weekly.find((x: any) => x.day_of_week === dow);
+    days[day] = !w || w.is_closed || !w.open_time || !w.close_time
+      ? { closed: true, reason: `Closed on ${WEEKDAY_NAMES[dow]}` }
+      : { open: hm(w.open_time), close: hm(w.close_time) };
+  }
+  return { setUp, days };
+}
+
+export interface SlotCapacity { booked: number; left: number; free_staff?: string[]; busy_other?: string[] }
+
+/** Local "HH:MM" of the 30-minute cell an instant falls in. */
+function cellOf(iso: string | Date, timezone: string): { day: string; cell: string } {
+  const d = typeof iso === 'string' ? new Date(iso) : iso;
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d);
+  const g = (t: string) => parts.find((p) => p.type === t)?.value || '00';
+  const h = g('hour') === '24' ? '00' : g('hour');
+  const m = Number(g('minute')) < 30 ? '00' : '30';
+  return { day: `${g('year')}-${g('month')}-${g('day')}`, cell: `${h}:${m}` };
+}
+
+/**
+ * Day view, per active service and 30-minute cell (CAL-7 b, 11 Nov 2026):
+ * - booked: bookings running at the start of the cell (people for shared rooms and group sessions);
+ * - left: what can still be booked starting in that cell = free places (shared / group), staff who
+ *   do the service, work then and are free (staff services), or 1 when the room / device is free.
+ * Taken from the same availability engine as New Appointment, so it already counts shifts, time
+ * off, opening hours, holidays and other services using the same staff. Cells nobody can take and
+ * nobody booked are left out. day_staff: the staff working that day (free at some time, or booked).
+ */
+async function daySlotCapacity(businessId: string, date: string, timezone: string, rows: any[], serviceIds?: string[], closedDay = false, locationId?: string) {
+  const filtered = serviceIds && serviceIds.length > 0;
+  const { rows: svcs } = await adminPool.query(
+    `SELECT s.id, s.name, s.booking_type, s.max_capacity,
+            (SELECT v.id FROM svc_variants v WHERE v.service_id = s.id AND v.status = 'active' ORDER BY v.display_order, v.duration, v.created_at LIMIT 1) AS variant_id,
+            CASE WHEN s.booking_type = 'resource' THEN 0 ELSE COALESCE(NULLIF((SELECT COUNT(*)::int FROM svc_staff ss WHERE ss.service_id = s.id), 0), (SELECT COUNT(DISTINCT sp.user_id)::int FROM stf_profiles sp JOIN usr_users u2 ON u2.id = sp.user_id WHERE u2.business_id = s.business_id AND sp.status = 'active' AND sp.user_id IS NOT NULL)) END AS staff_count
+       FROM svc_services s
+      WHERE s.business_id = $1 AND s.status = 'active' ${filtered ? 'AND s.id = ANY($2::uuid[])' : ''}
+      ORDER BY s.name`,
+    filtered ? [businessId, serviceIds] : [businessId],
+  );
+  const active = ['pending', 'confirmed', 'checked_in', 'in_progress'];
+  const live = rows.filter((r: any) => active.includes(r.status));
+  const slots: Record<string, Record<string, SlotCapacity>> = {};
+  const staffSeen = new Map<string, string>();
+  for (const r of live) if (r.staff_id && r.staff_name) staffSeen.set(r.staff_id, r.staff_name);
+
+  const working: Record<string, number> = {};
+  const onDay = await staffWorkingOnDay(businessId, date, svcs.map((x: any) => x.id), locationId);
+  // What each time can take now, as in the hub (capNow, 11 Nov 2026), for every 30-minute cell of the day:
+  // - staff services: booked = bookings running then; left = staff working that day who do it and are not busy
+  //   then with any service (THE-23 4.2: 2/15 on every row of a booking, not 2/14 at its start);
+  // - shared rooms: people in the room then (CAL-17); group sessions: the people of the latest session running;
+  //   left = places minus those;
+  // - a room or device for one: free or not (never shown as 1/1).
+  const at = (cell: string) => zonedDateTimeToUtc(date, cell + ':00', timezone).getTime();
+  const runningAt = (list: any[], t: number) => list.filter((r: any) => new Date(r.start_time).getTime() <= t && new Date(r.end_time).getTime() > t);
+  const cellsOfDay = Array.from({ length: 48 }, (_, i) => `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`);
+  for (const s of svcs) {
+    const places = s.booking_type === 'shared' || s.booking_type === 'group';
+    const mine = live.filter((r: any) => r.service_id === s.id);
+    const workingIds = new Set<string>(closedDay ? [] : onDay.byService[s.id] || []);
+    for (const r of mine) if (r.staff_id) workingIds.add(r.staff_id);
+    const byCell: Record<string, SlotCapacity> = {};
+    for (const cell of cellsOfDay) {
+      const t = at(cell);
+      const run = runningAt(mine, t);
+      if (places) {
+        let ppl = run.reduce((x: number, r: any) => x + (r.participant_count ?? 1), 0);
+        if (s.booking_type === 'group' && run.length) {
+          const latest = run.reduce((m: number, r: any) => Math.max(m, new Date(r.start_time).getTime()), 0);
+          ppl = run.filter((r: any) => new Date(r.start_time).getTime() === latest).reduce((x: number, r: any) => x + (r.participant_count ?? 1), 0);
+        }
+        byCell[cell] = { booked: ppl, left: closedDay ? 0 : Math.max(0, (s.max_capacity || 1) - ppl) };
+      } else if (s.booking_type === 'resource') {
+        byCell[cell] = { booked: run.length, left: closedDay || run.length ? 0 : 1 };
+      } else {
+        const busy = new Set(runningAt(live, t).map((r: any) => r.staff_id).filter(Boolean));
+        const free = [...workingIds].filter((id) => !busy.has(id));
+        const mineBusy = new Set(run.map((r: any) => r.staff_id));
+        const other = [...workingIds].filter((id) => busy.has(id) && !mineBusy.has(id));
+        byCell[cell] = { booked: run.length, left: free.length, free_staff: free.map((id) => onDay.names.get(id) || staffSeen.get(id) || ''), busy_other: other.map((id) => onDay.names.get(id) || staffSeen.get(id) || '') };
+      }
+    }
+    slots[s.id] = byCell;
+    working[s.id] = s.booking_type === 'resource' ? 0 : workingIds.size;
+    for (const id of workingIds) staffSeen.set(id, onDay.names.get(id) || staffSeen.get(id) || '');
+  }
+
+  return {
+    services: svcs.map((s: any) => ({ id: s.id, name: s.name, booking_type: s.booking_type, max_capacity: s.max_capacity, variant_id: s.variant_id, staff_count: s.staff_count, staff_working: working[s.id] ?? 0 })),
+    slots,
+    // with the services each staff member does (the popup from a staff column shows only those, as in the hub)
+    staff: [...staffSeen.entries()].map(([id, name]) => ({ id, name, service_ids: svcs.filter((x: any) => (onDay.byService[x.id] || []).includes(id) || live.some((r: any) => r.staff_id === id && r.service_id === x.id)).map((x: any) => x.id) })).sort((a, b) => a.name.localeCompare(b.name)),
   };
 }
 
@@ -323,8 +498,8 @@ function getDateRangeYMD(dateStr: string, view: 'day' | 'week' | 'month'): { sta
   }
 
   if (view === 'week') {
-    // Start from Sunday of the week
-    const dayOfWeek = date.getUTCDay(); // 0=Sun
+    // Weeks run Monday to Sunday (calendar design, 11 Nov 2026)
+    const dayOfWeek = (date.getUTCDay() + 6) % 7; // 0=Mon
     const startDate = new Date(date);
     startDate.setUTCDate(startDate.getUTCDate() - dayOfWeek);
     const endDate = new Date(startDate);
@@ -352,4 +527,69 @@ function zonedDateTimeToUtc(dateStr: string, timeStr: string, timeZone: string):
 /** UTC instant corresponding to local midnight (00:00:00) of `dateStr` (YYYY-MM-DD) in `timeZone`. */
 function zonedMidnightToUtc(dateStr: string, timeZone: string): Date {
   return zonedDateTimeToUtc(dateStr, '00:00:00', timeZone);
+}
+
+/**
+ * Month view, per service and day: booked against the day's capacity (CAL-15 / CAL-16, 11 Nov 2026).
+ * - Shared room or group session: places. Booked = people; capacity = places × sessions of the
+ *   default length that fit in the opening hours (shared rooms: sessions can start at any time,
+ *   CAL-17, so this is the room's place-time for the day).
+ * - Resource only (a float tank): sessions; capacity = sessions that fit.
+ * - With staff: sessions; capacity = active staff who do the service × sessions that fit
+ *   (staff shifts are not taken into account yet: this is the most they could do).
+ * Opening hours: the primary location's weekly hours and its date overrides (holidays). With no
+ * hours set up, capacity is null (shown as booked only).
+ */
+async function monthServiceCapacity(
+  businessId: string, startYMD: string, endYMD: string, where: string, params: any[], paramIndex: number, timezone: string, serviceIds?: string[], locationId?: string,
+): Promise<{ services: any[]; byDay: Map<string, Array<{ service_id: string; booked: number; capacity: number | null }>> }> {
+  const { rows: booked } = await adminPool.query(
+    `SELECT DATE(b.start_time AT TIME ZONE $${paramIndex})::text AS day, b.service_id,
+            COUNT(*)::int AS bookings, COALESCE(SUM(COALESCE(b.participant_count, 1)), 0)::int AS people
+       FROM apt_bookings b WHERE ${where} GROUP BY 1, 2`,
+    [...params, timezone],
+  );
+  const filtered = serviceIds && serviceIds.length > 0;
+  const { rows: services } = await adminPool.query(
+    `SELECT s.id, s.name, s.booking_type, s.max_capacity, s.default_duration,
+            -- no staff assigned = every active staff member can do it (same rule as availability)
+            COALESCE(NULLIF((SELECT COUNT(*)::int FROM svc_staff ss JOIN usr_users u ON u.id = ss.user_id
+              WHERE ss.service_id = s.id AND u.status = 'active'), 0), (SELECT COUNT(DISTINCT sp.user_id)::int FROM stf_profiles sp JOIN usr_users u2 ON u2.id = sp.user_id WHERE u2.business_id = s.business_id AND sp.status = 'active' AND sp.user_id IS NOT NULL)) AS staff_count
+       FROM svc_services s
+      WHERE s.business_id = $1 AND s.status = 'active' ${filtered ? 'AND s.id = ANY($2::uuid[])' : ''}
+      ORDER BY s.name`,
+    filtered ? [businessId, serviceIds] : [businessId],
+  );
+  const { rows: locs } = await adminPool.query(
+    `SELECT id FROM sys_locations WHERE business_id = $1 AND status = 'active' ${locationId ? 'AND id = $2' : ''} ORDER BY is_primary DESC, created_at LIMIT 1`, locationId ? [businessId, locationId] : [businessId],
+  );
+  const loc = locs[0]?.id;
+  const weekly = loc ? (await adminPool.query('SELECT day_of_week, is_closed, open_time, close_time FROM sys_location_hours WHERE location_id = $1', [loc])).rows : [];
+  const overrides = loc ? (await adminPool.query(
+    `SELECT override_date::text AS d, is_closed, open_time, close_time FROM sys_location_hour_overrides
+      WHERE location_id = $1 AND override_date >= $2::date AND override_date < $3::date`, [loc, startYMD, endYMD],
+  )).rows : [];
+  const mins = (t: string | null) => { if (!t) return 0; const [hh, mm] = String(t).split(':').map(Number); return hh * 60 + (mm || 0); };
+  const openMinutes = (day: string): number | null => {
+    const o = overrides.find((x: any) => x.d === day);
+    if (o) return o.is_closed ? 0 : Math.max(0, mins(o.close_time) - mins(o.open_time));
+    if (!weekly.length) return 13 * 60; // not set up: open 08:00–21:00, as in the hub
+    const w = weekly.find((x: any) => x.day_of_week === new Date(day + 'T12:00:00Z').getUTCDay());
+    if (!w || w.is_closed) return 0;
+    return Math.max(0, mins(w.close_time) - mins(w.open_time));
+  };
+  const byDay = new Map<string, Array<{ service_id: string; booked: number; capacity: number | null }>>();
+  for (let d = new Date(startYMD + 'T12:00:00Z'); d.toISOString().slice(0, 10) < endYMD; d.setUTCDate(d.getUTCDate() + 1)) {
+    const day = d.toISOString().slice(0, 10); const open = openMinutes(day);
+    const list = services.map((s: any) => {
+      const places = s.booking_type === 'shared' || s.booking_type === 'group';
+      const b = booked.find((x: any) => x.day === day && x.service_id === s.id);
+      const n = b ? (places ? b.people : b.bookings) : 0;
+      const units = places ? (s.max_capacity || 1) : s.booking_type === 'resource' ? 1 : (s.staff_count || 0);
+      const fit = open === null ? null : Math.floor(open / Math.max(5, s.default_duration || 60));
+      return { service_id: s.id, booked: n, capacity: fit === null ? null : units * fit };
+    }).filter((x: any) => x.booked > 0 || (x.capacity ?? 0) > 0);
+    byDay.set(day, list);
+  }
+  return { services: services.map((s: any) => ({ id: s.id, name: s.name, booking_type: s.booking_type, unit: s.booking_type === 'shared' || s.booking_type === 'group' ? 'places' : 'sessions' })), byDay };
 }

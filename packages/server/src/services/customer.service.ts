@@ -36,6 +36,8 @@ export const PEOPLE_VIEWS: Record<string, LifecycleStage[] | null> = {
 
 interface CustomerFilters {
   search?: string;
+  /** booking: the booking screens' search (NA, 11 Nov 2026) = first name, surname, the email before the @ (never the domain) and the phone digits. */
+  search_mode?: string;
   lifecycle_stage?: string;
   tag_ids?: string[];
   page?: number;
@@ -109,7 +111,16 @@ async function buildListConditions(businessId: string, filters: CustomerFilters,
 
   if (!filters.include_archived) conditions.push("c.status <> 'archived'");
 
-  if (filters.search) {
+  if (filters.search && filters.search_mode === 'booking') {
+    const digits = filters.search.replace(/\D/g, '');
+    const phoneLike = digits.length >= 3 && digits.length === filters.search.replace(/[\s+()-]/g, '').length;
+    const p = `$${paramIndex}`;
+    const name = `(${plainText('c.first_name')} LIKE ${plainText(p)} OR ${plainText('c.last_name')} LIKE ${plainText(p)} OR ${plainText("c.first_name || ' ' || c.last_name")} LIKE ${plainText(p)} OR ${plainText("split_part(c.email, '@', 1)")} LIKE ${plainText(p)}`;
+    conditions.push(phoneLike ? `${name} OR regexp_replace(COALESCE(c.phone, ''), '\\D', '', 'g') LIKE $${paramIndex + 1})` : `${name})`);
+    params.push(`%${filters.search}%`);
+    paramIndex++;
+    if (phoneLike) { params.push(`%${digits}%`); paramIndex++; }
+  } else if (filters.search) {
     // Names are compared without accents, so "garcia" finds "García" and the other way round.
     conditions.push(`(${plainText('c.first_name')} LIKE ${plainText(`$${paramIndex}`)} OR ${plainText('c.last_name')} LIKE ${plainText(`$${paramIndex}`)} OR ${plainText("c.first_name || ' ' || c.last_name")} LIKE ${plainText(`$${paramIndex}`)} OR COALESCE(c.email, '') ILIKE $${paramIndex} OR COALESCE(c.phone, '') ILIKE $${paramIndex} OR COALESCE(c.phone_e164, '') ILIKE $${paramIndex} OR COALESCE(c.reference_number, '') ILIKE $${paramIndex})`);
     params.push(`%${filters.search}%`);

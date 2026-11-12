@@ -11,6 +11,8 @@ interface AvailabilityCalendarProps {
   businessId: string;
   participantCount: number;
   selectedDate: string | null;
+  /** Open straight on the slots of selectedDate (the calendar popup's More options passes a day). */
+  startOnSlots?: boolean;
   onDateSelect: (date: string) => void;
   onDateClear: () => void;
   slots: SlotPickerSlot[];
@@ -28,13 +30,13 @@ interface AvailabilityCalendarProps {
 export function AvailabilityCalendar({
   serviceId, variantId, businessId, participantCount,
   selectedDate, onDateSelect, onDateClear,
-  slots, slotsLoading, selectedTime, onSlotSelect, businessTimezone, overrideCapacity, initialMonth,
+  slots, slotsLoading, selectedTime, onSlotSelect, businessTimezone, overrideCapacity, initialMonth, startOnSlots,
 }: AvailabilityCalendarProps) {
   const [viewedMonth, setViewedMonth] = useState<string>(initialMonth || currentMonthStr());
   const [dayStatuses, setDayStatuses] = useState<Record<string, DayStatus>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<'day-picker' | 'slot-picker'>('day-picker');
+  const [view, setView] = useState<'day-picker' | 'slot-picker'>(startOnSlots && selectedDate ? 'slot-picker' : 'day-picker');
 
   useEffect(() => {
     if (selectedDate === null) setView('day-picker');

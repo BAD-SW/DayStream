@@ -267,7 +267,7 @@ describe('Booking Lifecycle', () => {
            (SELECT id FROM svc_services WHERE business_id = $1 LIMIT 1),
            (SELECT sv.id FROM svc_variants sv JOIN svc_services s ON s.id = sv.service_id WHERE s.business_id = $1 LIMIT 1),
            $3, $4, $5, 'confirmed', 'BK-LC-0006', 'individual', 7500, '00000000-0000-0000-0000-000000000010')
-         ON CONFLICT (business_id, booking_reference) DO UPDATE SET status = 'confirmed'
+         ON CONFLICT (business_id, booking_reference) DO UPDATE SET status = 'confirmed', start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time
          RETURNING id`,
         [BUSINESS_ID, CUSTOMER_ID, STAFF_ID, otherTime.toISOString(), new Date(otherTime.getTime() + 60*60*1000).toISOString()],
       );

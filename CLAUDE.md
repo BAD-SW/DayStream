@@ -127,3 +127,11 @@ Availability logic for resource-type services with **no staff assigned** has a
 known bug in the staff-list handling — if a booking/availability flow behaves
 oddly for a resource-only service (e.g. a room with no therapist attached), that's
 a known issue, not a new bug to chase.
+
+## Working rules
+
+General rules for any work on this project:
+
+- Do not make assumptions.
+- Do not work on items that were not specifically requested.
+- Perform end-to-end tests.

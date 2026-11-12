@@ -166,10 +166,14 @@ export function Bookings() {
       <div style={styles.header}>
         <h1 style={styles.title}>{isCustomer ? 'My Bookings' : 'Appointments'}</h1>
         <div style={{ display: isCustomer ? 'none' : 'flex', gap: 'var(--space-sm)' }}>
+          {/* Calendar | List (THE-23 4.1): the same switch as on the calendar */}
+          <div role="group" aria-label="Calendar or list" style={{ display: 'flex', border: '1px solid var(--color-divider, #E1E5EE)', borderRadius: '8px', overflow: 'hidden', background: 'var(--color-surface, #fff)' }}>
+            <button type="button" aria-pressed={false} onClick={() => navigate('/bookings')} style={{ background: 'none', border: 0, padding: '0 14px', height: '36px', fontSize: '15px', fontWeight: 600, color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)' }}>Calendar</button>
+            <button type="button" aria-pressed={true} style={{ background: 'var(--color-primary, #0F1F5C)', color: 'var(--color-primary-contrast, #fff)', border: 0, padding: '0 14px', height: '36px', fontSize: '15px', fontWeight: 600, cursor: 'default', fontFamily: 'var(--font-family)' }}>List</button>
+          </div>
           <button style={styles.navBtn} onClick={() => navigate('/bookings/new')}>New Appointment</button>
           <button style={styles.navBtn} onClick={() => navigate('/checkout?new=true')}>New Sale</button>
           <button style={styles.navBtn} onClick={() => navigate('/orders')}>Orders</button>
-          <button style={styles.navBtn} onClick={() => navigate('/bookings/calendar')}>Calendar</button>
         </div>
       </div>
 

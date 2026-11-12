@@ -121,7 +121,7 @@ export async function getAvailabilityDays(businessId: string, serviceId: string,
 
 export async function createBooking(data: {
   business_id: string; customer_id?: string; walk_in_name?: string; service_id: string; variant_id: string;
-  staff_id?: string; start_time: string; notes?: string; override_rules?: boolean; participant_count?: number;
+  staff_id?: string; start_time: string; notes?: string; override_rules?: boolean; participant_count?: number; location_id?: string;
 }) {
   const res = await apiClient.post('/v1/bookings', data);
   return res.data.data;
@@ -131,8 +131,9 @@ export interface BookingFilters {
   timezone: string;
   currency: string | null;
   staff: Array<{ user_id: string; first_name: string; last_name: string }>;
-  services: Array<{ id: string; name: string; status?: string }>;
+  services: Array<{ id: string; name: string; status?: string; calendar_color?: string | null }>;
   location_hours?: Array<{ day_of_week: number; is_closed: boolean; open_time: string | null; close_time: string | null }>;
+  locations?: Array<{ id: string; name: string; is_primary: boolean }>;
 }
 
 export async function getBookingFilters(businessId: string): Promise<BookingFilters> {
@@ -177,8 +178,14 @@ export async function confirmBooking(id: string, businessId: string) {
   return res.data.data;
 }
 
-export async function cancelBooking(id: string, businessId: string, reason?: string) {
-  const res = await apiClient.put(`/v1/bookings/${id}/cancel?business_id=${businessId}`, { reason });
+export async function cancelBooking(id: string, businessId: string, reason?: string, refundTo?: 'none' | 'original' | 'account_credit') {
+  const res = await apiClient.put(`/v1/bookings/${id}/cancel?business_id=${businessId}`, refundTo ? { reason, refund_to: refundTo } : { reason });
+  return res.data.data;
+}
+
+/** What cancelling now means (CAL-5): the fee and what was paid. */
+export async function getCancelPreview(id: string, businessId: string): Promise<{ fee: number; paid_amount: number; refund_default: 'original' | 'account_credit' }> {
+  const res = await apiClient.get(`/v1/bookings/${id}/cancel-preview?business_id=${businessId}`);
   return res.data.data;
 }
 
@@ -210,7 +217,7 @@ export async function rescheduleBooking(id: string, businessId: string, startTim
 export async function updateBooking(id: string, businessId: string, data: {
   service_id?: string; variant_id?: string; staff_id?: string | null;
   start_time?: string; notes?: string | null; customer_id?: string | null;
-  walk_in_name?: string | null; participant_count?: number;
+  walk_in_name?: string | null; participant_count?: number; location_id?: string;
 }) {
   const res = await apiClient.put(`/v1/bookings/${id}?business_id=${businessId}`, data);
   return res.data.data;
@@ -229,9 +236,10 @@ export async function releaseHold(holdId: string) {
 
 // --- Calendar ---
 
-export async function getCalendar(businessId: string, view: 'day' | 'week' | 'month', date: string, filters?: { staff_id?: string; service_ids?: string[] }): Promise<CalendarResponse> {
+export async function getCalendar(businessId: string, view: 'day' | 'week' | 'month', date: string, filters?: { staff_id?: string; service_ids?: string[]; location_id?: string }): Promise<CalendarResponse> {
   const params = new URLSearchParams({ business_id: businessId, view, date });
   if (filters?.staff_id) params.set('staff_id', filters.staff_id);
+  if (filters?.location_id) params.set('location_id', filters.location_id);
   if (filters?.service_ids?.length) params.set('service_id', filters.service_ids.join(','));
   const res = await apiClient.get(`/v1/bookings/calendar?${params}`);
   return res.data.data;
