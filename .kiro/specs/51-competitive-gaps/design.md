@@ -479,6 +479,14 @@ Nothing a customer reads on the check-in screens is written into the pages. The 
 - **Not editable:** system messages (the kiosk "not set up" lines, generic failures, and the server's refusals such as "link no longer valid", which show before a business is known) are held per language in the same place but not offered for editing.
 - **Ready for you email:** there is no separate template. The email is built from the same Check-In wording (the greeting, the "ready for you" message and one extra piece, the email subject), in the customer's language, and sent at once. The business changes it in the one place.
 
+### 3.12 Which screen Bookings opens on
+
+The calendar redesign made `/bookings` open the calendar for staff, which hid the Waiting list behind the List switch. Each business, and each person, now chooses:
+
+- **Business default:** config key `bookings.default_view` (`calendar` or `list`, system default `calendar`) in `sys_business_configurations`, registered by migration 177. It is set under Settings > System > Bookings screen (`GET`/`PUT /v1/bookings-view`; reading is open to anyone of the business, saving needs the business settings permission).
+- **Own choice:** `stf_profiles.bookings_default_view` (migration 177; NULL follows the business). It is set on the staff profile under Personal Information, "Bookings opens on", and saved with the profile (`PUT /v1/staff/:id`).
+- **Opening Bookings:** `/bookings` for staff renders `BookingsHome`, which asks `GET /v1/bookings-view` (own choice, then business) and shows the calendar or the list; nothing shows until the answer arrives, so the other screen never flashes. `/bookings/calendar` and `/bookings/list` always show that screen, and the Calendar | List switch uses them, so switching never sends a person back to their default. Customers keep their list.
+
 ### 3.9 Build order
 
 1. Migration 174, lifecycle changes (start, ready, reset), time-zone-correct date range.

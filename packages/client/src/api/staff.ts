@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import type { BookingsView } from './bookingsView';
 
 /** The roles a staff login can have, in the order they are offered. The value is what the server stores. */
 export const STAFF_ROLE_OPTIONS: { value: string; label: string; hint: string }[] = [
@@ -36,6 +37,8 @@ export interface StaffProfile {
   languages: string | null;
   show_on_directory: boolean;
   primary_location_id: string | null;
+  /** The screen Bookings opens on for this person; null follows the business setting. */
+  bookings_default_view?: BookingsView | null;
   created_at: string;
   updated_at: string;
 }

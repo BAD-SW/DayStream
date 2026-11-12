@@ -349,6 +349,8 @@ const updateStaffSchema = Joi.object({
   show_on_directory: Joi.boolean(),
   primary_location_id: Joi.string().uuid().allow(null),
   user_id: Joi.string().uuid().allow(null),
+  // The screen Bookings opens on for this person; null follows the business setting.
+  bookings_default_view: Joi.string().valid('calendar', 'list').allow(null),
 }).min(1);
 
 // GET /api/v1/staff — List staff

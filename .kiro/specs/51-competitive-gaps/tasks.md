@@ -84,6 +84,8 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
   - [x] ✅ Appointment Reminder template (own entry in the Document Type list, with a Time Until Appointment placeholder); plain reminder until the business writes one
   - [x] ✅ Any wording on the check-in screens and in the ready-for-you email can include the customer's first name, service, appointment time and business name (chips in the editor stay visible while scrolling); the entry screen of the kiosk takes the business name only
   - [x] ✅ Moved to open items (section 18): a screen for the business to set its reminder times
+  - [x] ✅ Bookings opens on the calendar or the list with the Waiting list, chosen by the business (Settings > System) and, if they wish, by each staff member on their profile (migration 177)
+  - [ ] Verify live with the owner: business setting, staff profile choice, Calendar | List switch
   - [x] ✅ Manage link in the appointment emails: moved to gap 16 (it needs a customer self-service page first)
 - [x] ✅ Verify live and close with the owner
 

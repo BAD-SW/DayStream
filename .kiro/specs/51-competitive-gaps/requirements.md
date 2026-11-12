@@ -92,6 +92,7 @@ The acceptance criteria below set the capability each gap must reach. They are r
 23. THE system SHALL let a business write an Appointment Reminder template, separate from its Appointment template, with a placeholder for how long is left before the appointment, and SHALL send the reminder through that template; until the business has one, THE system SHALL send a plain reminder that still carries the check-in link.
 24. THE system SHALL show every word on the customer check-in screens (the phone page, the kiosk and the list of forms) in the customer's language, from wording held for each supported language and not written into the screens, and SHALL let a business replace any of that wording, per language, without affecting the rest.
 25. THE system SHALL email a waiting customer the same "ready for you" wording the check-in screens show, in the customer's language, so the business keeps one set of wording for the screens and the email.
+26. THE system SHALL let a business choose which screen Bookings opens on for staff (the calendar, or the list with the Waiting list), SHALL let each staff member's profile choose differently or follow the business setting, and SHALL keep the other screen one click away.
 
 ### Messaging and booking
 

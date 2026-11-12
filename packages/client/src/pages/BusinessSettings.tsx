@@ -14,6 +14,8 @@ import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, draftBox, 
 import { LeaveGuard } from '../components/unsaved/LeaveGuard';
 import * as payApi from '../api/payments';
 import * as bookingsApi from '../api/bookings';
+import { BOOKINGS_VIEW_OPTIONS, getBookingsView, saveBusinessBookingsView } from '../api/bookingsView';
+import type { BookingsView } from '../api/bookingsView';
 import { InboxSettings } from './settings/InboxSettings';
 import { KioskSettings } from './settings/KioskSettings';
 import { PeopleListSettings } from './settings/PeopleListSettings';
@@ -161,10 +163,48 @@ function SystemSettings() {
         </label>
       </div>
     </div>
+    <BookingsViewSetting />
     <CustomerCancellationSettings />
     <PayrollFrequencySettings />
     <CommissionRefundSetting />
     </>
+  );
+}
+
+// Which screen Bookings opens on for staff (spec 51, gap 3): the calendar, or the list with the
+// Waiting list. Each staff member can choose differently on their profile.
+function BookingsViewSetting() {
+  const businessId = localStorage.getItem('business_id') || '';
+  const [loaded, setLoaded] = useState(false);
+  const draft = useDraft<BookingsView>('bookings-view', 'System › Bookings screen', 'calendar', async (view) => {
+    await saveBusinessBookingsView(businessId, view);
+  });
+
+  useEffect(() => {
+    if (!businessId) return;
+    getBookingsView(businessId)
+      .then((r) => { draft.load(r.business); setLoaded(true); })
+      .catch(() => {});
+  }, [businessId, draft.load]);
+
+  if (!loaded) return null;
+  return (
+    <div style={settingStyles.section}>
+      <h3 style={settingStyles.sectionTitle}>Bookings screen<UnsavedTag dirty={draft.dirty} /></h3>
+      <div style={{ ...settingStyles.settingRow, flexDirection: 'column' as const, gap: '10px', ...draftBox(draft.dirty) }}>
+        <div style={settingStyles.settingInfo}>
+          <label style={settingStyles.settingLabel} htmlFor="bookings-view">Bookings opens on</label>
+          <p style={settingStyles.settingDesc}>
+            What staff see first when they open Bookings: the calendar, or the list with the Waiting list of checked-in
+            customers. Staff can switch between the two at any time, and a staff member can choose differently on their profile.
+          </p>
+        </div>
+        <select id="bookings-view" value={draft.value} onChange={(e) => draft.setValue(e.target.value as BookingsView)}
+          style={{ padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: '4px', fontSize: 'var(--font-size-sm)', alignSelf: 'flex-start', ...fieldMark(draft.dirty) }}>
+          {BOOKINGS_VIEW_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      </div>
+    </div>
   );
 }
 

@@ -283,6 +283,8 @@ export async function updateStaff(id: string, tenantId: string, updates: Record<
     primary_location_id: 'primary_location_id',
     user_id: 'user_id',
     profile_photo_path: 'profile_photo_path',
+    // The screen Bookings opens on for this person; null follows the business setting.
+    bookings_default_view: 'bookings_default_view',
   };
 
   const fields: string[] = [];

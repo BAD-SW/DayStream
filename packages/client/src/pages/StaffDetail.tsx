@@ -13,6 +13,8 @@ import * as staffApi from '../api/staff';
 import * as payrollApi from '../api/payroll';
 import { formatDateOnly } from '../utils/date';
 import type { StaffProfile, Qualification, AvailabilityPattern, AvailabilityOverride } from '../api/staff';
+import { BOOKINGS_VIEW_OPTIONS } from '../api/bookingsView';
+import type { BookingsView } from '../api/bookingsView';
 
 type Tab = 'profile' | 'qualifications' | 'availability' | 'calendar' | 'compensation';
 
@@ -114,6 +116,8 @@ function ProfileTab({ staff, onUpdate }: { staff: StaffProfile; onUpdate: (s: St
     show_on_directory: s.show_on_directory,
     // The login's role (empty when the person has no login).
     role: staffApi.normalizeStaffRole(s.user_role),
+    // The screen Bookings opens on for this person; '' follows the business setting.
+    bookings_default_view: (s.bookings_default_view ?? '') as BookingsView | '',
   });
   const draft = useDraft('staff-profile', 'Profile', fromStaff(staff), async (form) => {
     const { role, ...profile } = form;
@@ -123,6 +127,7 @@ function ProfileTab({ staff, onUpdate }: { staff: StaffProfile; onUpdate: (s: St
       mobile_phone: form.mobile_phone || null,
       languages: form.languages || null,
       bio: form.bio || null,
+      bookings_default_view: form.bookings_default_view || null,
     })) };
     // The role is saved with the profile; it is a separate call because it changes permissions.
     if (staff.user_id && role && role !== staffApi.normalizeStaffRole(staff.user_role)) {
@@ -147,7 +152,7 @@ function ProfileTab({ staff, onUpdate }: { staff: StaffProfile; onUpdate: (s: St
   return (
     <>
       {error && <Alert variant="error">{error}</Alert>}
-      <div style={{ ...styles.card, ...draftBox(draft.changed((v) => [v.first_name, v.last_name, v.email, v.mobile_phone, v.languages, v.role])) }}>
+      <div style={{ ...styles.card, ...draftBox(draft.changed((v) => [v.first_name, v.last_name, v.email, v.mobile_phone, v.languages, v.role, v.bookings_default_view])) }}>
         <h3 style={styles.cardTitle}>Personal Information</h3>
         <div style={styles.formGrid}>
           <div style={styles.formGroup}>
@@ -176,6 +181,16 @@ function ProfileTab({ staff, onUpdate }: { staff: StaffProfile; onUpdate: (s: St
               <select id="staff-role" style={{ ...styles.input, ...mark('role') }} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
                 {!staffApi.STAFF_ROLE_OPTIONS.some((o) => o.value === form.role) && <option value={form.role}>{form.role || 'Not set'}</option>}
                 {staffApi.STAFF_ROLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          )}
+          {staff.user_id && (
+            <div style={styles.formGroup}>
+              <label style={styles.label} htmlFor="staff-bookings-view">Bookings opens on</label>
+              <select id="staff-bookings-view" style={{ ...styles.input, ...mark('bookings_default_view') }} value={form.bookings_default_view}
+                onChange={(e) => setForm({ ...form, bookings_default_view: e.target.value as BookingsView | '' })}>
+                <option value="">Business setting</option>
+                {BOOKINGS_VIEW_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
           )}

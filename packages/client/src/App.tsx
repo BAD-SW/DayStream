@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { BookingsHome } from './components/BookingsHome';
 import { AdminLayout } from './components/AdminLayout';
 import { Login } from './pages/Login';
 import { ForgotPassword } from './pages/ForgotPassword';
@@ -153,8 +154,9 @@ export function App() {
         <Route path="/services/:id" element={<ProtectedRoute><ServiceDetail /></ProtectedRoute>} />
 
         {/* Bookings */}
-        {/* Bookings/Orders opens the calendar on today's Day view (staff); customers keep their list */}
-        <Route path="/bookings" element={<ProtectedRoute><ForPersona customer={<Bookings />} staff={<BookingCalendar />} /></ProtectedRoute>} />
+        {/* Bookings/Orders: staff get the calendar or the list with the Waiting list, as the business
+            (Settings > System) or their own staff profile chooses; customers keep their list */}
+        <Route path="/bookings" element={<ProtectedRoute><ForPersona customer={<Bookings />} staff={<BookingsHome />} /></ProtectedRoute>} />
         <Route path="/bookings/list" element={<ProtectedRoute><Bookings /></ProtectedRoute>} />
         <Route path="/bookings/new" element={<ProtectedRoute><AppointmentPage mode="new" /></ProtectedRoute>} />
         <Route path="/bookings/:id/edit" element={<ProtectedRoute><AppointmentPage mode="edit" /></ProtectedRoute>} />
