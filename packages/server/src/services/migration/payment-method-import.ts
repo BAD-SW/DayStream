@@ -19,6 +19,55 @@ import { ImportResult, RowFailure, emptyResult, matchCustomer, noCustomerReason 
 
 interface MappedRow { [field: string]: string }
 
+export type ImportedMethodType = 'card' | 'bank_draw';
+
+const BANK_WORDS = ['sepa', 'bacs', 'bank', 'direct debit', 'us_bank_account', 'iban'];
+const looksBank = (s: string) => BANK_WORDS.some((w) => s.includes(w)) || /\bach\b/.test(s); // "ach" only as a whole word
+const CARD_WORDS = ['card', 'credit', 'debit card', 'visa', 'mastercard', 'amex', 'american express', 'discover', 'maestro'];
+
+/**
+ * Work out whether a row is a card or a bank-account (SEPA / ACH / Bacs direct debit) method.
+ * Uses the explicit method-type value first, then the brand text ("SEPA Direct Debit"), else card
+ * (the default for a mapping file with no type column). An unrecognised explicit type is an error
+ * rather than a silent guess, so a bank account is never stored as a card.
+ */
+export function resolveMethodType(r: { method_type?: string; brand?: string; display_brand?: string }):
+  { type: ImportedMethodType; scheme: 'SEPA' | 'ACH' | 'Bacs' | null } | { error: string } {
+  const explicit = (r.method_type || '').trim().toLowerCase();
+  const brand = (r.brand || r.display_brand || '').trim().toLowerCase();
+  const schemeOf = (s: string): 'SEPA' | 'ACH' | 'Bacs' | null =>
+    s.includes('sepa') || s.includes('iban') ? 'SEPA' : /\bach\b/.test(s) || s.includes('us_bank') ? 'ACH' : s.includes('bacs') ? 'Bacs' : null;
+
+  if (explicit) {
+    if (looksBank(explicit)) return { type: 'bank_draw', scheme: schemeOf(explicit) ?? schemeOf(brand) };
+    if (CARD_WORDS.some((w) => explicit.includes(w))) return { type: 'card', scheme: null };
+    return { error: `"${r.method_type!.trim()}" isn't a method type I recognise. Use Card, or a bank account type such as SEPA, ACH or Bacs` };
+  }
+  if (looksBank(brand)) return { type: 'bank_draw', scheme: schemeOf(brand) };
+  return { type: 'card', scheme: null };
+}
+
+/**
+ * Card expiry from either separate month/year columns or one combined column ("09/28", "9/2028").
+ * Two-digit years are 20xx. Out-of-range values come back null rather than being stored wrong.
+ */
+export function parseExpiry(r: { exp_month?: string; exp_year?: string; expiry?: string }): { month: number | null; year: number | null } {
+  let month = parseInt((r.exp_month || '').trim(), 10);
+  let year = parseInt((r.exp_year || '').trim(), 10);
+  const combined = (r.expiry || '').trim().match(/^(\d{1,2})\s*[/\-.]\s*(\d{2}|\d{4})$/);
+  if (combined) {
+    if (!isFinite(month)) month = parseInt(combined[1], 10);
+    if (!isFinite(year)) year = parseInt(combined[2], 10);
+  }
+  if (isFinite(year) && year < 100) year += 2000;
+  return {
+    month: isFinite(month) && month >= 1 && month <= 12 ? month : null,
+    year: isFinite(year) && year >= 2000 && year <= 2100 ? year : null,
+  };
+}
+
+const SCHEME_LABEL: Record<string, string> = { SEPA: 'SEPA Direct Debit', ACH: 'ACH Direct Debit', Bacs: 'Bacs Direct Debit' };
+
 export async function runPaymentMethodImport(args: {
   businessId: string;
   tenantId: string;
@@ -43,10 +92,17 @@ export async function runPaymentMethodImport(args: {
     if (!token) { fail('payment_method_token', 'Missing migrated payment-method token'); continue; }
     if (!stripeCustomerId) { fail('stripe_customer_id', 'Missing migrated Stripe Customer id (required so the method can be charged off-session)'); continue; }
 
-    const match = await matchCustomer(businessId, {
+    const kindInfo = resolveMethodType(r);
+    if ('error' in kindInfo) { fail('method_type', kindInfo.error); continue; }
+
+    // Processor ids first: the previous processor's id (Stripe processor import), then the Stripe
+    // customer id itself (a Stripe-to-Stripe copy keeps customer ids unchanged).
+    const matchInput = {
+      processorCustomerIds: [r.previous_processor_customer_id, stripeCustomerId],
       legacyCustomerId: r.legacy_customer_id, email: r.email, phone: r.phone,
-    });
-    if (!match.customerId) { fail('customer', noCustomerReason(r)); continue; }
+    };
+    const match = await matchCustomer(businessId, matchInput);
+    if (!match.customerId) { fail('customer', match.conflict ?? noCustomerReason(matchInput)); continue; }
 
     // Idempotency: is this token already stored for this customer?
     const existing = await adminPool.query(
@@ -91,17 +147,24 @@ export async function runPaymentMethodImport(args: {
       }
 
       // 3. Store the migrated token + masked display.
-      const expMonth = parseInt((r.exp_month || '').trim(), 10);
-      const expYear = parseInt((r.exp_year || '').trim(), 10);
+      // Bank accounts have no expiry; their display brand is the scheme ("SEPA Direct Debit").
+      const isBank = kindInfo.type === 'bank_draw';
+      const exp = isBank ? { month: null, year: null } : parseExpiry(r);
+      const expMonth = exp.month ?? NaN;
+      const expYear = exp.year ?? NaN;
+      const rawBrand = (r.brand || r.display_brand || '').trim();
+      const brand = isBank
+        ? (kindInfo.scheme ? SCHEME_LABEL[kindInfo.scheme] : (rawBrand || 'Bank account'))
+        : (rawBrand || null);
+      // Keep digits only ("**** 4242" → 4242); the column holds 4 characters.
+      const last4 = (r.last4 || r.display_last4 || '').replace(/\D/g, '').slice(-4) || null;
       await adminPool.query(
         `INSERT INTO pay_payment_methods
            (tenant_id, owner_level, business_id, customer_id, method_type, provider,
             provider_token, display_brand, display_last4, exp_month, exp_year, is_default)
-         VALUES ($1,'customer',$2,$3,'card','stripe',$4,$5,$6,$7,$8,$9)`,
+         VALUES ($1,'customer',$2,$3,$4,'stripe',$5,$6,$7,$8,$9,$10)`,
         [
-          tenantId, businessId, match.customerId, token,
-          (r.brand || r.display_brand || null) || null,
-          (r.last4 || r.display_last4 || null) || null,
+          tenantId, businessId, match.customerId, kindInfo.type, token, brand, last4,
           isFinite(expMonth) ? expMonth : null,
           isFinite(expYear) ? expYear : null,
           isDefault,

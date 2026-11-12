@@ -39,6 +39,21 @@ function waitForContextInit(): Promise<void> {
   });
 }
 
+/**
+ * Send an unauthenticated user to the login screen WITHOUT triggering a reload loop.
+ * The prior implementation always did `window.location.href = '/login'`. When the failing
+ * request was fired from the login screen itself (or any public route), that is a full-page
+ * navigation back to the same URL — which re-runs bootstrap, fires the same doomed request,
+ * and navigates again, so the page appears to reload endlessly. A stale/rejected token left
+ * in localStorage is enough to start the cycle. Guard against it: if we're already on
+ * `/login`, do nothing (the login screen is the right place to be); otherwise navigate once.
+ */
+function redirectToLogin(): void {
+  if (typeof window === 'undefined') return;
+  if (window.location.pathname === '/login') return;
+  window.location.href = '/login';
+}
+
 function decodeJwtTenantId(token: string): string | null {
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
@@ -90,7 +105,7 @@ apiClient.interceptors.response.use(
 
       const refreshToken = localStorage.getItem('refresh_token');
       if (!refreshToken) {
-        window.location.href = '/login';
+        redirectToLogin();
         return Promise.reject(error);
       }
 
@@ -104,10 +119,11 @@ apiClient.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${access_token}`;
         return apiClient(originalRequest);
       } catch {
-        // Refresh failed — redirect to login
+        // Refresh failed — clear the dead session and send the user to login.
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
-        window.location.href = '/login';
+        localStorage.removeItem('business_id');
+        redirectToLogin();
         return Promise.reject(error);
       }
     }

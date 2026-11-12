@@ -47,8 +47,8 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
     const roleIds: Record<string, string> = {};
     const systemRoles = [
       { name: 'Tenant Owner', permissions: '["*:*"]' },
-      { name: 'Business Owner', permissions: '["services:*","bookings:*","staff:*","reports:*","settings:*","customers:*","resources:*","marketing:*","cms:*","integrations:*","checkin:*","events:*","community:*"]' },
-      { name: 'Manager', permissions: '["services:read","bookings:*","staff:read","reports:read","customers:*","schedule:*","checkin:*","events:read"]' },
+      { name: 'Business Owner', permissions: '["services:*","bookings:*","staff:*","reports:*","settings:*","customers:*","resources:*","marketing:*","cms:*","integrations:*","checkin:*","events:*","community:*","clinical:*"]' },
+      { name: 'Manager', permissions: '["services:read","bookings:*","staff:read","reports:read","customers:*","schedule:*","checkin:*","events:read","clinical:*"]' },
       { name: 'Staff', permissions: '["bookings:read","bookings:update","customers:read","schedule:read","checkin:*","events:read"]' },
       { name: 'Customer', permissions: '["bookings:create","bookings:read","profile:update"]' },
     ];

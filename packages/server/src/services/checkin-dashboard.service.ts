@@ -69,6 +69,7 @@ export async function getDashboard(
       booking_reference: row.booking_reference,
       start_time: row.start_time,
       end_time: row.end_time,
+      customer_id: row.customer_id,
       customer_name: `${row.customer_first_name} ${row.customer_last_name}`,
       service_name: row.service_name,
       staff_name: row.staff_first_name ? `${row.staff_first_name} ${row.staff_last_name}` : null,

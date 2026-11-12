@@ -15,6 +15,7 @@ import * as formsService from '../services/cms-forms.service';
 import * as navService from '../services/cms-navigation.service';
 import * as publicService from '../services/cms-public.service';
 import { storage } from '../services/storage.service';
+import { storagePaths } from '../utils/storage-paths';
 
 export const cmsRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -156,9 +157,10 @@ cmsRouter.post('/media', requirePermission('cms:*'), upload.single('file'), asyn
   try {
     const authReq = req as AuthenticatedRequest;
     if (!req.file) { error(res, 'No file', 'VALIDATION_ERROR', 400); return; }
-    const ext = req.file.originalname.split('.').pop() || 'bin';
+    const ext = (req.file.originalname.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const relativePath = `cms/${authReq.tenantId}/${filename}`;
+    // The website belongs to the tenant, so its media live in the tenant's public folder.
+    const relativePath = storagePaths.websiteMedia(authReq.tenantId, filename);
     await storage.save(relativePath, req.file.buffer);
     const media = await mediaService.uploadMedia(authReq.tenantId, { filename, originalFilename: req.file.originalname, mimeType: req.file.mimetype, fileSize: req.file.size, filePath: relativePath, folder: req.body.folder, altText: req.body.alt_text });
     success(res, media, undefined, 201);

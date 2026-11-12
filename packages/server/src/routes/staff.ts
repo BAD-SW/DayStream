@@ -7,6 +7,7 @@ import { requirePermission, requireAnyPermission } from '../auth/permissions';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import * as staffService from '../services/staff.service';
+import { STAFF_JOB_ROLES } from '../services/staff.service';
 import * as qualService from '../services/staff-qualifications.service';
 import * as availService from '../services/staff-availability.service';
 import * as leaveService from '../services/staff-leave.service';
@@ -15,6 +16,7 @@ import * as capacityService from '../services/staff-capacity.service';
 import * as calendarService from '../services/staff-calendar.service';
 import * as notifService from '../services/staff-notifications.service';
 import { storage } from '../services/storage.service';
+import { storagePaths, pathFromReference } from '../utils/storage-paths';
 
 export const staffRouter = Router();
 
@@ -325,7 +327,7 @@ const createStaffSchema = Joi.object({
   date_of_birth: Joi.string().isoDate().allow(null),
   hire_date: Joi.string().isoDate().allow(null),
   employment_type: Joi.string().valid('full_time', 'part_time', 'contractor').default('full_time'),
-  role: Joi.string().valid('business_owner', 'business_manager', 'business_staff').default('business_staff'),
+  role: Joi.string().valid(...STAFF_JOB_ROLES, 'business_staff').default('technician'),
   bio: Joi.string().max(2000).allow('', null),
   languages: Joi.string().max(200).allow('', null),
   show_on_directory: Joi.boolean().default(true),
@@ -427,6 +429,20 @@ staffRouter.put('/:id', requirePermission('staff:*'), validate(updateStaffSchema
   }
 });
 
+// PUT /api/v1/staff/:id/role — Change a staff member's role (their login's permissions)
+staffRouter.put('/:id/role', requirePermission('staff:*'), validate(Joi.object({ role: Joi.string().valid(...STAFF_JOB_ROLES).required() })), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const staff = await staffService.changeStaffRole(req.params.id, authReq.tenantId, req.body.role, authReq.user.sub);
+    success(res, staff);
+  } catch (err: any) {
+    const status = ({ NOT_FOUND: 404, NO_LOGIN: 409, OWN_ROLE: 403, LAST_OWNER: 409 } as Record<string, number>)[err?.code];
+    if (status) { error(res, err.message, err.code, status); return; }
+    console.error('Failed to change staff role', err?.message || err);
+    error(res, 'Failed to change role', 'INTERNAL_ERROR', 500);
+  }
+});
+
 // PUT /api/v1/staff/:id/deactivate — Deactivate staff
 staffRouter.put('/:id/deactivate', requirePermission('staff:*'), async (req: Request, res: Response) => {
   try {
@@ -450,10 +466,14 @@ staffRouter.post('/:id/photo', requirePermission('staff:*'), upload.single('phot
     if (!staff) { error(res, 'Staff not found', 'NOT_FOUND', 404); return; }
 
     const ext = req.file.originalname.split('.').pop() || 'jpg';
-    const relativePath = `staff/${authReq.tenantId}/${req.params.id}-photo.${ext}`;
+    // Staff belong to the tenant (they can work across its businesses), so their photos do too.
+    const relativePath = storagePaths.staffPhoto(authReq.tenantId, req.params.id, ext);
     await storage.save(relativePath, req.file.buffer);
 
     const updated = await staffService.updateProfilePhoto(req.params.id, authReq.tenantId, relativePath);
+    // The replaced photo is removed (with any folder it leaves empty).
+    const oldPath = pathFromReference(staff.profile_photo_path);
+    if (oldPath && oldPath !== relativePath) await storage.delete(oldPath).catch(() => {});
     success(res, updated);
   } catch (err: any) {
     console.error('Failed to upload photo', err?.message || err);
@@ -843,7 +863,7 @@ staffRouter.post('/:id/link-account', requirePermission('staff:*'), async (req: 
   try {
     const authReq = req as AuthenticatedRequest;
     const email = req.body.email as string;
-    const role = req.body.role as string || 'business_staff';
+    const role = req.body.role as string || 'technician';
     const password = req.body.password as string;
 
     if (!email) { error(res, 'email is required', 'VALIDATION_ERROR', 400); return; }

@@ -1,5 +1,5 @@
 import { parsePhoneNumberFromString, CountryCode } from 'libphonenumber-js';
-import { countryNameToIso2 } from '@daystream/shared';
+import { countryNameToIso2, languageFromText, DEFAULT_LANGUAGE } from '@daystream/shared';
 import { adminPool } from '../db/pool';
 import { createActivity } from './customer-activity.service';
 import { logAudit } from './audit.service';
@@ -248,7 +248,7 @@ async function insertPerson(input: PersonInput, email: string | null, phoneRaw: 
     [
       input.tenantId, input.businessId, refRows[0].ref, email,
       (input.firstName || '').trim(), (input.lastName || '').trim(), phoneRaw, e164,
-      input.dateOfBirth || null, input.gender || null, input.preferredLanguage || 'en', input.country || null,
+      input.dateOfBirth || null, input.gender || null, languageFromText(input.preferredLanguage) ?? DEFAULT_LANGUAGE, input.country || null,
       input.initialStage || 'lead', input.source, (input.sourceDetail || '').slice(0, 200) || null,
       input.userId || null, input.actorUserId || null,
     ],

@@ -8,6 +8,11 @@ import { formatCurrency } from '../../utils/currency';
 import { zonedParts, hhmm, toMin, addDays, dayLabel, initials } from '../../utils/zonedTime';
 import './AppointmentWindow.css';
 import { PaymentStep } from './PaymentStep';
+// Bill's spec 51 pieces, moved here from the old New/Edit Booking pages
+import { FormsNeededNotice } from '../forms/FormsNeededNotice';
+import { ChartsPanel } from '../charts/ChartsPanel';
+import { useClinicalAccess } from '../../utils/useClinicalAccess';
+import { getSelfCheckInLink } from '../../api/selfCheckIn';
 
 // ============================================================
 // New / Edit Appointment, round 8 (DayStream Hub → Designs → New Appointment, decided 11 Nov 2026):
@@ -19,7 +24,7 @@ import { PaymentStep } from './PaymentStep';
 // - Services in pages of 6 (3 rows × 2), with search; options as chips; participants for shared rooms.
 // ============================================================
 
-export interface SvcItem { id: string; name: string; category_name?: string; booking_type: string; max_capacity: number | null; variants: ServiceVariant[] }
+export interface SvcItem { id: string; name: string; category_name?: string; booking_type: string; max_capacity: number | null; default_chart_group_id?: string | null; variants: ServiceVariant[] }
 export interface Combo { start_time: string; end_time: string; location_id: string | null; location_name: string | null; staff_id?: string; staff_first_name?: string; staff_last_name?: string; capacity_remaining?: number }
 export interface AppointmentPrefill { date?: string; time?: string | null; serviceId?: string; variantId?: string; staffId?: string; locationId?: string; customer?: any; customerId?: string; walkIn?: boolean; walkInName?: string; participants?: number }
 
@@ -38,7 +43,7 @@ export function useBookableServices(businessId: string) {
       const withV = await Promise.all(svcs.map(async (s) => {
         let vs: ServiceVariant[] = [];
         try { vs = (await servicesApi.getVariants(s.id)).filter((v) => !v.status || v.status === 'active'); } catch { vs = []; }
-        return { id: s.id, name: s.name, category_name: s.category_name, booking_type: s.booking_type, max_capacity: s.max_capacity ?? null, variants: vs };
+        return { id: s.id, name: s.name, category_name: s.category_name, booking_type: s.booking_type, max_capacity: s.max_capacity ?? null, default_chart_group_id: s.default_chart_group_id ?? null, variants: vs };
       }));
       if (!off) setList(withV.filter((s) => s.variants.length > 0).sort((a, b) => a.name.localeCompare(b.name)));
     }).catch(() => {});
@@ -259,6 +264,15 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
   const [preview, setPreview] = useState<{ fee: number; paid_amount: number; refund_default: 'original' | 'account_credit' } | null>(null);
   const [refundTo, setRefundTo] = useState<'none' | 'original' | 'account_credit'>('original');
   const [error, setError] = useState('');
+  // spec 51: treatment chart (clinical access) and the customer's phone check-in link
+  const canCharts = useClinicalAccess();
+  const [linkMessage, setLinkMessage] = useState<string | null>(null);
+  const copyCheckInLink = async () => {
+    if (!bookingId) return;
+    setLinkMessage(null);
+    try { await navigator.clipboard.writeText(await getSelfCheckInLink(businessId, bookingId)); setLinkMessage('Copied.'); }
+    catch { setLinkMessage('The link could not be copied.'); }
+  };
 
   // prefilled customer by id (from the popup's More options or a link)
   useEffect(() => {
@@ -585,6 +599,9 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
         <div className="q-col">
           <div className="q-sec"><div className="q-sec-h"><b className="n">1</b> Customer</div><div className="q-sec-b">
             <CustomerPicker businessId={businessId} customer={customer} onCustomer={setCustomer} walk={walk} onWalk={setWalk} walkName={walkName} onWalkName={setWalkName} disabled={!!lockCustomer} />
+            {!walk && customer?.id && (mode === 'edit' && bookingId
+              ? <FormsNeededNotice customerId={customer.id} businessId={businessId} bookingId={bookingId} />
+              : <FormsNeededNotice customerId={customer.id} businessId={businessId} serviceId={serviceId || undefined} />)}
           </div></div>
           <div className="q-sec"><div className="q-sec-h"><b className="n">2</b> Service</div><div className="q-sec-b">
             <ServicePicker services={services} serviceId={serviceId} onService={(id) => { setServiceId(id); setTime(null); setStaff(prefill?.staffId && mode === 'new' ? prefill.staffId : 'any'); setPick(null); }} disabled={!!lockOffering} />
@@ -602,6 +619,18 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
           </div>
         </div>
       </div>
+      {mode === 'edit' && booking?.customer_id && booking.status === 'confirmed' && (
+        <p className="q-hint">Customer's phone check-in link:{' '}
+          <button type="button" className="lnk" onClick={copyCheckInLink}>Copy link</button>
+          {linkMessage && <span role="status"> {linkMessage}</span>}
+        </p>
+      )}
+      {mode === 'edit' && canCharts && booking?.customer_id && bookingId && (
+        <section className="q-sec" aria-labelledby="booking-charts-title">
+          <div className="q-sec-h" id="booking-charts-title">Treatment chart</div>
+          <div className="q-sec-b"><ChartsPanel businessId={businessId} customerId={booking.customer_id} bookingId={bookingId} defaultChartGroupId={svc?.default_chart_group_id ?? null} /></div>
+        </section>
+      )}
       {error && <p className="mk-warn" role="alert">{error}</p>}
       {mode === 'edit' && live && !ending && (
         <div className="q-end">

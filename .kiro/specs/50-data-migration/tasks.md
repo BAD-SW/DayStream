@@ -8,6 +8,7 @@ Waves:
 - **Wave 1 — Foundation + money**: the shared engine + Customers, Payment Methods, Account Balances, and the Data Migration page.
 - **Wave 2 — Recurring + prepaid**: Memberships, Packages.
 - **Wave 3 — Activity**: Appointments (future bookings + history + package-fulfillment derivation), Transaction History.
+- **Wave 4 — Intelligent detection & row repair**: profile-based column detection, id-pattern + name-dictionary + date-role inference, confidence scoring in the review UI, and realignment of shifted rows (Requirement 17). A cross-cutting upgrade to the shared engine that benefits every entity.
 
 ## Task Status Legend
 
@@ -38,7 +39,7 @@ Waves:
 
 #### 1.3 Reference matching
 - [x] ✅ Unified customer matching (shared by all customer-associated imports): Legacy Customer ID when present (exact, preferred), else Identity Service (email, then unique phone); unmatched → failed (never create a customer)
-- [ ] Name matchers (normalized): plan and package done (Wave 2); service and staff pending (Wave 3)
+- [x] ✅ Name matchers (normalized) for service, staff, plan, package (Waves 2-3)
 - [x] ✅ Reference resolution runs in the trial so unmatched refs surface pre-commit
 
 #### 1.4 Forgiving pipeline + trial/commit
@@ -123,28 +124,178 @@ Waves:
 ## Wave 3 — Activity
 
 ### 11. Appointment Import
-- [ ] Rows: customer (match), service (match), staff (match, optional), date/time, status
-- [ ] Future → real `apt_bookings` via the booking path, created WITHOUT notifications; NO availability/staff/hours/capacity validation at import (conflicts accepted; constraints only on later edit)
-- [ ] Past → `cus_activities` timeline entry (activityType `booking`), no `apt_bookings`, no availability impact
-- [ ] Unmatched customer/service → failed; idempotent per (customer + service + start time)
+- [x] ✅ Rows: customer (match), service (match by name), staff (match by name, optional), date, time (optional), duration (optional), status
+- [x] ✅ Migration 162: `source` CHECK on `apt_bookings` widened to include `'import'`; applied
+- [x] ✅ Future → real `apt_bookings` (status `confirmed`, source `import`) inserted directly; NO notifications and NO availability/staff/hours/lead-time/capacity validation (conflicts accepted; constraints only on later edit); variant chosen by stated duration else first active; `booking_type` from the service; reference via `generate_booking_reference`
+- [x] ✅ Past → `cus_activities` timeline entry (activityType `booking`, `imported: true`), backdated to the appointment time; no `apt_bookings`, no availability impact
+- [x] ✅ Unmatched/ambiguous service or staff → failed; unmatched customer → failed; idempotent per (customer + service + start time)
 
 ### 12. Package fulfillment derivation
-- [ ] When importing a past/completed appointment, check for a qualifying imported package purchase (same customer, service the package covers, within validity window) and insert the corresponding `pkg_redemptions` row
-- [ ] Define the selection rule when multiple packages qualify (e.g. oldest active covering package first); never over-redeem
+- [x] ✅ On a past attended appointment, find a qualifying imported `pkg_purchase` (same customer, `pkg_package_items.service_id` matches, within `expires_at`, purchased on/before the appointment) and insert a `pkg_redemptions` row
+- [x] ✅ Oldest qualifying purchase consumed first; remaining computed (quantity − SUM redeemed), sessions vs minutes handled (minutes draws the variant duration); never over-redeems — a used-up/expired package is skipped with a WARNING
+- [x] ✅ No `source`/CHECK change needed on `pkg_redemptions` (no such column); provenance noted via `notes = 'Imported appointment'`
 
 ### 13. Transaction History Import
-- [ ] Rows: customer (match), date, amount (integer cents), description, method (optional), reference (optional)
-- [ ] Write `cus_activities` only (activityType `payment`, `imported: true`); NEVER `pay_transactions`/GL/revenue/reporting (the key safety property)
-- [ ] Unmatched customer → failed; idempotent per (customer + date + amount + reference)
+- [x] ✅ Rows: customer (match), date, amount (integer cents), description, method (optional), reference (optional)
+- [x] ✅ Writes `cus_activities` only (activityType `payment`, `imported: true` in metadata), backdated to the transaction date; NEVER `pay_transactions`/GL/revenue/reporting
+- [x] ✅ Unmatched customer → failed; invalid amount/date → failed; idempotent per (customer + date + amount + reference)
 
 ### 14. Wave 3 verification
-- [ ] Future appointment is an editable live booking; past appointment is timeline-only and doesn't affect availability/capacity
-- [ ] A past completed appointment against an imported package creates a redemption; remaining balance reflects it
-- [ ] Transaction history appears on the timeline AND nothing lands in `pay_transactions`/GL/reporting
-- [ ] No emails; full locked-order run-through for a sample business; type-check clean
+- [x] ✅ Future appointment is a live `apt_bookings` booking (editable); past appointment is timeline-only and writes no booking row (verified live)
+- [x] ✅ A past attended appointment against an imported package creates a redemption; remaining balance reflects it (60 of 180 min drawn; verified live). A no-show draws nothing
+- [x] ✅ Transaction history appears on the timeline AND nothing lands in `pay_transactions` (count unchanged 96 → 96; verified live)
+- [x] ✅ Trial writes nothing; re-run → matched, no duplicates (bookings, timeline, redemptions, payments); notification queue unchanged across trial/commit/re-run; server tsc clean, client tsc clean for touched files
 
 ---
+## Wave 4 — Intelligent detection & row repair
 
-**Status**: � In Progress — Wave 1 ✅ complete (foundation + money); Wave 2 (memberships, packages) built, renewal run on an imported enrolment still to verify; Wave 3 (appointments, transactions) planned
+Implements Requirement 17 and design.md §15. A cross-cutting upgrade to the shared engine (`import-engine.ts`); pure and unit-tested, pre-select-but-confirm, never guesses the unknowable. Calibrated against the real sample customer file (12 columns incl. an unmodelled negative-integer legacy balance; `M/D/YYYY` dates; 9 of 10 rows dropped the `country` value with a trailing empty cell, so the count stays 12 while the shaped values shift). The structure is defined by the MAJORITY row shape, so those 9 rows are canonical and the lone country-bearing row is the outlier.
+
+Delivered in two stages: **Stage A — engine** (done), **Stage B — three-tab staging UI** (planned).
+
+### Stage A — Engine (profiling, detection, realignment)
+
+#### 15. Majority-based column profiling
+- [x] ✅ Profile each column from the distribution of its values (reuse `classifyCell`), not single cells
+- [x] ✅ `canonicalProfiles`: derive the canonical structure from the MAJORITY row shape (group rows by a shape signature of their shaped-value positions; largest cohort wins; profile from that cohort only) so a cluster of shifted rows can't distort detection. A blank optional field does not make a row an outlier
+- [x] ✅ Identifier detection: patterned ids (`LEG-10001`) → certain; bare-number ids via uniqueness + plain-integer shape + leading position → LOW confidence; two equally id-shaped numeric columns → propose the better fit, leave the other unmapped. `hasForeignHeader` guard: a deliberate foreign header (e.g. "Loyalty #") suppresses value inference
+- [x] ✅ Leave a column that no profile/pattern/dictionary identifies unmapped and flagged (the unmodelled legacy balance stays null)
+
+#### 16. Dictionary-based name + date-role inference
+- [x] ✅ Bundled common-given-name / common-surname lists; score each candidate column by hit-rate; pick the higher side and infer the neighbour (adjacency-preferred)
+- [x] ✅ Date-role disambiguation: two date columns → DOB vs joined by distribution (DOB skews decades back; joined clusters recent)
+- [x] ✅ Both inferences marked `likely` (suggestions, overridable), never asserted
+
+#### 17. Confidence scoring + review flag
+- [x] ✅ `ColumnProposal` carries graded `confidence` (certain | likely | unknown) across name-match, value-shape, id, dictionary, and date-role paths (plus the retained `confident` boolean)
+- [x] ✅ `DataMigration.tsx` renders `likely` mappings distinctly ("Guessed — please confirm", warning border) from `certain`; pre-select but require confirmation before commit
+- [x] ✅ No inferred mapping or row repair applied silently (Requirement 17.6)
+
+#### 18. Profile-driven row-alignment repair (against the canonical layout)
+- [x] ✅ Score each row against the CANONICAL profiles; flag misfits INCLUDING rows whose cell count still matches the width (dropped value + trailing empty)
+- [x] ✅ Shift-based repair search scored by HARD fit (shaped columns) then SOFT tiebreak (text sub-kind: sentence vs shortcode vs locale vs taglist) — the tiebreak places a dropped value in the right free-text slot
+- [x] ✅ Unique hard-then-soft winner → repaired (+ before/after); zero fit or a tie → unresolved with a plain-language reason (never guess)
+
+#### 19. Surface through analyze + trial/commit, and tests
+- [x] ✅ `analyze` and the trial/commit result carry `repair` { repaired, unresolved, samples }; unresolved rows join the failures with field `structure`; `buildRows` realigns before mapping and drops unresolved rows from the committed set
+- [x] ✅ First-pass `RepairPanel` in the review/trial/commit views (counts + before/after) — to be replaced by the Stage B three-tab UI
+- [x] ✅ `import-engine.test.ts` extended: id + name-dictionary + DOB-vs-joined detection; confidence grading; unmodelled balance unmapped; country-drop realignment; majority-cohort outlier. 20/20 pass
+
+### Stage B — Three-tab staging UI (built)
+
+#### 20. All / Mapped / Error staging + in-app correction
+- [x] ✅ Server: `analyze` returns per-row aligned data + bucket (`rows[]` with alignment/cells/raw/reason) and the canonical `width`; new `POST /import/:kind/{trial-rows,commit-rows}` commit the EXACT accepted cell arrays (JSON body), not a file re-parse
+- [x] ✅ Client `StagingTabs`: three tabs with live counts — ALL, MAPPED (canonical-fit "good" set), ERROR (outliers); majority → Mapped, non-conforming → Error
+- [x] ✅ Error tab: per-row shift-left / shift-right controls with a live aligned preview under the mapped column labels, and "Accept into Mapped" (moves Error → Mapped); a fixed row can be sent back
+- [x] ✅ Commit imports ONLY the Mapped set, owner-initiated (`commitRows`); committed rows leave the working set so the owner can keep working Error rows; "Clear mapped" and "Back to mapping" available; client-side staging only, no persisted partial state
+
+#### 21. Stage B verification
+- [x] ✅ Sample shape: majority rows land in Mapped and map correctly; the country-bearing outlier lands in Error with a plain-language reason (verified live)
+- [x] ✅ Committing the Mapped set imports only those (2 created); re-committing the same set reports `matched` not duplicated (0 imported / 2 matched) — record-level dedup (Requirement 12) verified live; test rows cleaned up
+- [x] ✅ No persisted partial state; server tsc 0 errors, client (touched files) tsc clean; 20/20 engine tests pass
+
+#### 22. Extended headerless detection (from live testing)
+- [x] ✅ Gender by token dictionary (incl. abbreviations); language by name + locale code; country by ISO alpha-2 set + names; tags by separated-label shape; notes by free-text fallback (last). All `likely`, foreign-header-guarded
+- [x] ✅ First/last name BY ELIMINATION (leftover name-shaped columns) when the dictionaries don't recognise diverse names
+- [x] ✅ Legacy id BY ELIMINATION via uniqueness (any id format — alpha-numeric, mixed), not just patterned/bare-number
+- [x] ✅ tags-vs-notes disambiguation (tags demoted without a separator so a short-notes column isn't mistaken for tags); 25/25 engine tests pass; verified live on jumbled 50-record files with varied date/gender/language/country formats
+
+---
+## Notes Import (new entity — planned)
+
+Implements Requirement 18 and design.md §6-§8. Notes are one-to-many (a customer may have none or hundreds), so they are their own import, not fields on the customer file. No schema change — reuses `cus_activities`.
+
+### 23. Notes import service
+- [x] ✅ `runNotesImport`: rows = customer (unified match) + note text (required) + optional date, author, category
+- [x] ✅ Lands each note on the Timeline (`cus_activities`, activityType `note`, `imported: true`), backdated to the note date (noon UTC) when present, else now; never the encrypted `cus_notes` store
+- [x] ✅ Unmatched customer → failed with reason; missing text → failed; partial success
+- [x] ✅ Idempotent per (customer + note date + normalized text, stored as `metadata.note_key`); re-run reports matched, not duplicated
+
+### 24. Wire + client
+- [x] ✅ Added `notes` to `ImportKind`, `SUPPORTED_KINDS`, `fieldsForKind` (synonyms: note/comment/remark/text/body; date; author/createdby/staff; category/type), and `dispatch`
+- [x] ✅ Client: `ImportKind` union, a Notes entry in `KINDS` (prereq: import customers first), `fieldsForKind`, `FIELD_LABELS`
+
+### 25. Notes verification
+- [x] ✅ A customer with many notes imports all of them as separate timeline entries (verified live: 3 notes on one customer); re-run → matched, no duplicates (5 created → recommit 0 imported / 5 matched)
+- [x] ✅ Backdating confirmed (note dates preserved; undated → now); optional author/category carried; trial writes nothing; unmatched-customer and empty-text rows fail with reasons; server + client (touched files) tsc clean
+
+---
+## Import Review Screen Polish (from live testing)
+### 26. Single-screen table: editing, replacing, progress
+- [x] ✅ Click-to-edit cells in the mapping table (Enter or blur saves, Escape cancels); the row is re-checked on the server (`rowFits` via `realign-row` with direction `check`) and its flag clears once the value fits
+- [x] ✅ Per-row reasons name the column and value ("column 3 expects an email but has ...")
+- [x] ✅ "Choose different file" button re-analyzes a new file and replaces the table and mapping; a failed read keeps the current table
+- [x] ✅ "Show only rows that need fixing" is always visible, with an empty-state note when nothing needs fixing
+- [x] ✅ Commit sends rows in batches of 100 with a progress panel (count, bar, large-file notice); one summary run is recorded at the end (`defer_record` + `record-run`); failure and warning row numbers map back to table Row numbers
+- [x] ✅ Import routes accept bodies up to 25 MB so 10,000-row commits are not rejected
+### 27. Required-data check up front
+- [x] ✅ Customer rows missing a first name, or both email and phone, are flagged "fix" when the file loads and as the mapping or cells change, so they are not shown as ready and then fail at commit
+- [x] ✅ Legacy-id and short-row classification fixes: bare 7-9 digit numbers are not phones; a short row that already fits is padded and treated as aligned
+### 28. Customer field normalization
+- [x] ✅ Language names and codes resolve to the supported set (English, Spanish, French, German); anything else is left blank and reported as a warning instead of failing the customer
+- [x] ✅ Verified live: 15, 50 and 10,000-row files (10,000 rows processed in under 4 minutes; 818 rows missing required data rejected as expected)
+### 29. Test-data cleanup (temporary)
+- [x] ✅ People page bulk action "Delete permanently" (confirmation, background above 5,000, skips people with linked bookings or payments)
+- [ ] Remove the temporary Delete action when test-data cleanup is no longer needed
+### 31. Payment methods: cards and bank accounts
+- [x] ✅ New optional Method Type column on the payment methods import; SEPA, ACH and Bacs rows are stored as `bank_draw`, cards as `card`
+- [x] ✅ Type is taken from the column, else from the brand text ("SEPA Direct Debit"), else card; an unrecognised type fails the row instead of being guessed
+- [x] ✅ Bank accounts store no expiry and show the scheme as their brand; last 4 is trimmed to the 4 characters the column holds
+- [x] ✅ Headerless payment files map by value: `cus_` → Stripe Customer ID and `pm_`/`card_`/`src_`/`ba_` → Payment Token (certain); method type, brand, last 4, expiry month/year and default flag (likely); the repeating customer id by leftmost id-shaped column
+- [x] ✅ Last 4 vs expiry year (both 4 digits) told apart by position next to the expiry month and the 20xx range
+- [x] ✅ Variable payment layouts: combined expiry ("09/28", new Expiry field, split on import), two-digit years, masked last 4 ("**** 4242"), partial header names ("Card Exp Month"), more header synonyms, and header rows recognised by contrast with payment values
+- [x] ✅ Stripe-style old/new mapping files: the NEW customer id and payment token are taken (a "new" header wins, an "old" header never matches; headerless → rightmost); the old token is left unmapped
+- [x] ✅ Payment field definitions moved to the engine (`PAYMENT_METHOD_FIELDS`); 8 layout regression tests + `parseExpiry` tests
+- [x] ✅ Text files are parsed with the delimiter detected from the file (comma, tab, semicolon or pipe); upload accepts .csv, .tsv, .txt, .xlsx, .xls
+- [x] ✅ Payment rows missing a token, a Stripe customer ID, or any way to find the customer are flagged "fix" at analysis
+- [ ] Confirm with Stripe whether migrated SEPA and ACH accounts carry their mandates, and what happens if they do not
+- [ ] Verify live with a mixed card and SEPA file, then a renewal against an imported SEPA method
+### 32. Source systems & processor customer matching (Requirement 19)
+- [x] ✅ Source system dropdown on the upload screen, before the file picker (Payment Methods: Other / custom file, Stripe); sent with analyze and validated per import kind
+- [x] ✅ One "Stripe" choice; the server recognises which Stripe file it is (account copy or import from another processor) by header (at least 2 known names) or, header-less, by width; unknown layouts keep automatic detection
+- [x] ✅ Review screen says which layout was recognised, or warns the file matched none and was detected automatically
+- [x] ✅ Migration 166: `cus_customers.processor_customer_id`; customer import captures it (by header or `cus_` values), fill-empty; not written to `pay_customer_refs`
+- [x] ✅ `matchCustomer` tries processor ids first (previous processor id, then Stripe Customer ID), then legacy id, email, phone; every key needs exactly one match
+- [x] ✅ Failure reasons name every key tried; fixed `noCustomerReason` ignoring snake_case row keys in every importer
+- [x] ✅ Tests: preset mapping for both Stripe files, header-less known order, unknown layout fallback, source validation, `cus_` customer column; live trial matched by processor id and failed an unknown id with a reason
+- [ ] Look up a Stripe customer in the connected account (email, phone, metadata) when a row has no other key
+- [ ] Name agreement as a second check on email and phone matches
+- [ ] Pick the customer by hand in the review table for unmatched or ambiguous rows
+- [ ] JSON mapping files
+### 33. Field reference tables and import correctness fixes
+- [x] ✅ Field reference table (Field / Required / Notes, plus general notes) on the upload screen for all eight imports, written from what each importer actually does
+- [x] ✅ Appointment date and time read in the business's time zone (`localToUtc`), not UTC; an unreadable time fails the row instead of becoming noon
+- [x] ✅ A future appointment marked cancelled / no-show / missed goes on the timeline as history, never into the calendar, and never uses a package session
+- [x] ✅ Day-first dates: `parseDateCell` takes a date order; accepts / - . separators and two-digit years; the order is detected over the whole file at analyze and sent with every commit batch, else the business's country (location, then phone) decides; applied to every import including customer date of birth and joined date
+- [x] ✅ Account balances safe to re-run: migration 167 `import_key` on credit notes and invoices; a repeated balance reports matched; staff-created balances are never matched
+- [x] ✅ Processor Customer ID offered on every customer-linked import and tried first (`customerMatchInput`)
+- [x] ✅ Tests: dates both orders, separators, two-digit years, detection; Madrid summer/winter and New York times; not-happening statuses; balance key; live trial on Transcend Health (date order dmy, repeated credit matched, day-first transactions read)
+- [ ] Verify live: a committed account-balance re-run, and future/past appointments in the calendar and timeline
+### 34. Header-less detection by matching the business's own data
+- [x] ✅ Engine Pass 1c: a column whose values match values the business already holds is that field; most distinct hits wins (so a 60/90 duration can't pass for ids); certain at 80%+, likely at 50%+
+- [x] ✅ Reference values loaded at analyze: stored legacy customer ids (every import), plan names (memberships); analyze now requires business_id
+- [x] ✅ Memberships: next billing date = the mostly-future date column, start date = the mostly-past one (a single past-only date column is the start date); status recognised by its words (memberships and appointments)
+- [x] ✅ Explicit business access check on the two multipart endpoints (analyze, file trial/commit), whose body business_id is parsed after tenantContext
+- [x] ✅ Tests: header-less memberships, dates either order with exceptions, repeating customer ids, the duration decoy; live on Transcend Health (ids like RE9284A and plans Recover / Optimize recognised, dates told apart)
+- [x] ✅ Every import after customers / payment methods checks columns against the business's setup: stored legacy and processor customer ids (all), package names (packages), service names, staff full names and service lengths (appointments), accepted payment methods with common wording such as Visa / cheque (transactions), staff names incl. first names and note categories (notes)
+- [x] ✅ Where there is no setup to check: time by format, credit / invoice by words, issue date = the earlier of two dates, amounts with two decimals or a currency sign, a unique id column as the transaction reference, the leftover free-text column as note / description
+- [x] ✅ Field tables say a header is optional for each of these imports and what is recognised how
+- [x] ✅ Tests: header-less packages, appointments, transactions, account balances and notes files; live reference lookups on Transcend Health (8 customer ids, 3 plans, 29 packages, 6 services, 4 staff, 6 service lengths, accepted methods, 3 note categories)
+### 35. Customer keys that disagree
+- [x] ✅ `matchCustomer` checks every key (processor id, legacy id, email, phone) in one query instead of stopping at the first match
+- [x] ✅ `resolveCustomerMatch`: keys that agree resolve the customer; keys pointing to different customers fail the row with a reason naming each key and customer; shared emails / phones are ignored, not conflicts
+- [x] ✅ All seven customer-linked importers report the conflict reason; field tables explain it
+- [x] ✅ Tests: agree, single key, conflict, shared key ignored, only shared keys, processor-vs-email conflict; live on Transcend Health (agreeing keys matched, a legacy-id / email mismatch reported with both names)
+### 36. Header row: indicator instead of a checkbox
+- [x] ✅ Removed the "First row is column names" checkbox: it only relabelled the columns and never changed which rows were imported
+- [x] ✅ When row 1 is detected as a header, the review screen says so and names the first columns; "It's data, include it" re-analyzes the file with row 1 as data (`has_header=false` on analyze). No header found shows nothing: a header misread as data appears as a flagged row
+### 30. Open follow-ups
+- [ ] Deferred: "Import from Stripe" via API (only helps when the business owns its Stripe account; the main competitors own the card accounts, so the file import from Stripe's card-copy mapping file stays the primary path)
+- [ ] Up-front required-data check for the non-customer import types
+- [ ] Faster customer commit (batch writes or background job runner) if 10,000+ rows need to be quicker
+- [ ] Import errors that name the failing field instead of a generic database message
+---
+**Status**: 🟡 In Progress — Waves 1-3 built and verified live (entity imports). Wave 4 **Stage A (engine)** and **Stage B (three-tab staging UI)** both built, unit-tested, and verified live; extended headerless detection added from live testing (gender/language/country/tags/notes + name & id by elimination), 25/25 engine tests pass. **Notes Import** (Requirement 18, new entity) built and verified live (multiple notes per customer, backdated, idempotent re-run). Server tsc 0, client touched files clean. Customer import verified end to end on 10,000 rows (cell editing, replace file, batched progress, up-front required-data flags, language normalization). Outstanding follow-ups from earlier waves: a renewal run against an imported membership enrolment not yet exercised; a per-balance-import ledger-double-count warning in the UI.
 **Dependencies**: Phase 46, Phase 05, Phase 10, Phase 08, packages, business setup
+
 

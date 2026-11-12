@@ -2,6 +2,7 @@ import { adminPool } from '../../db/pool';
 import { calculatePeriodEnd } from '../membership.service';
 import {
   ImportResult, RowFailure, emptyResult, matchCustomer, noCustomerReason, matchByName, parseDateCell,
+  fileDateOrder, customerMatchInput, DateOrder,
 } from './import-core';
 
 /**
@@ -70,6 +71,7 @@ export async function runMembershipImport(args: {
   userId: string;
   rows: MappedRow[];
   commit: boolean;
+  dateOrder?: DateOrder | null;
 }): Promise<ImportResult> {
   const { businessId, rows, commit } = args;
   const result = emptyResult();
@@ -82,6 +84,8 @@ export async function runMembershipImport(args: {
     [businessId],
   );
   const todayStr = new Date().toISOString().slice(0, 10);
+  // Day-first or month-first, read from the file's own dates (else the business's country).
+  const dateOrder = await fileDateOrder(businessId, rows, ['next_billing_date', 'start_date'], args.dateOrder);
   // (customer|plan) pairs already handled in THIS file, so a duplicate row is "matched" in
   // the trial exactly as it will be in the commit (where the first row has been written).
   const seen = new Set<string>();
@@ -111,16 +115,15 @@ export async function runMembershipImport(args: {
     }
 
     // --- customer ---
-    const match = await matchCustomer(businessId, {
-      legacyCustomerId: r.legacy_customer_id, email: r.email, phone: r.phone,
-    });
-    if (!match.customerId) { fail('customer', noCustomerReason(r)); continue; }
+    const matchInput = customerMatchInput(r);
+    const match = await matchCustomer(businessId, matchInput);
+    if (!match.customerId) { fail('customer', match.conflict ?? noCustomerReason(matchInput)); continue; }
     const customerId = match.customerId;
 
     // --- dates ---
     let nextBilling: string | null = null;
     if (status === 'active') {
-      nextBilling = parseDateCell(r.next_billing_date);
+      nextBilling = parseDateCell(r.next_billing_date, dateOrder);
       if (!nextBilling) {
         fail('next_billing_date', (r.next_billing_date || '').trim()
           ? `"${r.next_billing_date}" is not a valid date`
@@ -128,7 +131,7 @@ export async function runMembershipImport(args: {
         continue;
       }
     }
-    const startOverride = parseDateCell(r.start_date);
+    const startOverride = parseDateCell(r.start_date, dateOrder);
     if ((r.start_date || '').trim() && !startOverride) { fail('start_date', `"${r.start_date}" is not a valid date`); continue; }
 
     // --- idempotency: one live enrolment per customer + plan (same rule as enrollCustomer) ---

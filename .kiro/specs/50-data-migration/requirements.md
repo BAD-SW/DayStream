@@ -73,6 +73,8 @@ A key distinction runs through these requirements: **live state vs. history.** M
 5. WHERE a column cannot be confidently identified by header name or by its values, THE system SHALL leave it unmapped and draw attention to it, rather than guessing.
 6. THE system SHALL only require the owner's attention on what it is unsure about; confident detections are pre-filled.
 
+> Requirement 17 deepens this with profile-based detection, dictionary-based name and date-role inference, confidence levels, and realignment of shifted rows — all under the same confirm-not-configure, never-guess-silently principles.
+
 ### Requirement 3: Forgiving, Partial-Success Import
 
 **User Story:** As a business owner, I want the good rows to come in even if a few rows have problems, so that one bad cell does not block my whole migration.
@@ -217,7 +219,7 @@ A key distinction runs through these requirements: **live state vs. history.** M
 
 #### Acceptance Criteria
 
-1. THE system SHALL define and document a single locked import order: Setup (configured, not imported) → Customers → Payment Methods → Memberships → Packages → Appointments → Account Balances → Transaction History.
+1. THE system SHALL define and document a single locked import order: Setup (configured, not imported) → Customers → Payment Methods → Memberships → Packages → Appointments → Account Balances → Transaction History → Notes. (Notes depend only on Customers and so may be run any time after them; they are placed last as customer-attached history alongside Transaction History.)
 2. THE system SHALL enforce the two hard dependencies: Payment Methods before Memberships (so a default method can auto-link), and Packages before Appointments (so appointment import can derive package fulfillment).
 3. THE system SHALL allow a business to skip any step it does not need, provided nothing later in the order depends on it (e.g. skipping Packages simply means no package fulfillment is derived during appointment import).
 4. THE system SHALL make the order and the skippable rule clear in the Data Migration page and in the tenant-owner migration documentation.
@@ -247,6 +249,60 @@ A key distinction runs through these requirements: **live state vs. history.** M
 1. THE system SHALL allow a tenant owner to perform any of the imports for a business they own, from that business's management view, in that business's context.
 2. THE system SHALL present failure reasons in plain language sufficient for a tenant owner to tell the business owner how to fix a row (including unmatched customer/service/staff/plan/package values), without inspecting the database.
 3. THE system SHALL attribute each Import Run to the user who performed it (business owner or tenant owner) in the run history.
+
+### Requirement 17: Intelligent Column Detection & Row Repair
+
+**User Story:** As a business owner whose legacy export is imperfect — no header, ambiguous name columns, two date columns, and rows where a value was dropped so the rest shifted — I want the system to work out what each column really is and realign broken rows the way a careful person would, so that I am not left hand-fixing a file or silently importing shifted data into the wrong fields.
+
+This requirement deepens the automatic detection of Requirement 2 (which establishes header detection, name/value mapping, flag-don't-guess, and confirm-not-configure). Everything here is additive to that: a stronger set of signals for detection, plus a new row-alignment safeguard. The confirm-not-configure principle (Requirement 2.4, 2.6) and the never-guess-silently principle (Requirement 2.5) continue to govern — the system does more of the thinking, but the owner still sees and confirms anything inferred rather than certain.
+
+#### Acceptance Criteria
+
+1. THE system SHALL build a per-column profile from the distribution of values across rows (not a single cell), AND SHALL derive the canonical column structure from the MAJORITY row shape — the largest group of rows that share a consistent alignment of their shaped (email/phone/date/amount) values — so that a cluster of misaligned rows cannot distort the detected structure. A legitimately blank optional field (e.g. a missing date of birth or gender in some rows) SHALL NOT, by itself, make a row an outlier; only a misalignment of its values does.
+2. THE system SHALL propose a legacy/external identifier column so an id column can map even when the file has no header, recognising both a patterned id (e.g. a prefix-and-number form such as `LEG-10001`) with reasonable confidence AND a bare-number id by profile signals — principally that an id column's values are unique on every row (unlike a balance, points, or count), are plain integers (no decimals, currency, or negatives), and are often the leading column. WHERE the id is a bare number indistinguishable by value from another numeric column, THE system SHALL propose the best-fitting column at low confidence for the owner to confirm, and SHALL NOT assert it or guess between two equally id-shaped columns.
+3. THE system SHALL distinguish a first-name column from a last-name column by scoring each candidate column against dictionaries of common given names and common surnames, and SHALL infer the paired column once one side is identified; where the evidence is weak it SHALL mark the mapping as low-confidence rather than assert it.
+4. WHERE a file has two or more date columns (e.g. date of birth and a join date), THE system SHALL assign each to its field using the distribution of the dates (a birth-date column skews across decades into the past; a join/created column clusters recent), rather than leaving both ambiguous.
+5. THE system SHALL attach a confidence level to each proposed column mapping, distinguishing a certain match (e.g. email by value shape, a known header name) from an inferred one (e.g. first vs last name by dictionary), so the review step can show which proposals warrant a human glance.
+6. THE system SHALL, by default, pre-select its inferred mappings and row repairs AND require the owner to confirm them in the review step before a commit — it SHALL NOT apply an inferred mapping or a row repair silently.
+7. THE system SHALL detect a row whose values do not fit the canonical column structure — INCLUDING a row that still has the expected number of columns because a dropped value was compensated by a trailing empty cell (the field-shift case) — not only rows whose raw column count differs.
+8. WHERE a non-conforming row can be realigned to the canonical structure unambiguously (the fix is a shift left or right that makes its values line up), THE system SHALL realign it and present it as corrected for the owner to confirm; WHERE the correct alignment is genuinely ambiguous (no shift fits, or more than one fits equally), THE system SHALL NOT guess, leaving the row for the owner to resolve with a plain-language reason naming the mismatch.
+9. THE system SHALL present an imported file as three groups the owner works between: ALL records, the MAPPED records that fit the canonical structure (the "good" set), and the ERROR records that do not; and SHALL let the owner correct an Error record in the application — including shifting its values left or right into the correct columns — and, on acceptance, move it from Error to Mapped.
+10. THE system SHALL import ONLY the Mapped records, and ONLY when the owner initiates it; it SHALL let the owner commit the Mapped set (and continue working the remaining Error records afterward) or clear it, so a file can be imported in parts as records are fixed. Record-level duplicate safety (per Requirement 12) SHALL make committing the Mapped set repeatedly, or re-importing overlapping records, report the repeats as matched rather than creating duplicates.
+11. THE system SHALL leave a column it cannot identify by profile, pattern, or dictionary unmapped and flagged (consistent with Requirement 2.5), rather than forcing a guess; an unmodelled column (e.g. a legacy balance the entity does not import) is simply left unmapped.
+
+### Requirement 18: Notes Import
+
+**User Story:** As a business owner, I want to bring my customers' notes across as their own file, so that a customer with many notes keeps all of them, each on the right person, without me trying to cram them into the customer record.
+
+A note is a one-to-many relationship — a customer may have no notes or hundreds — so notes are their own import (like appointments and transaction history), not fields on the customer file. The customer import keeps a single optional notes column for the common "one note alongside the customer" case; this import is for the full note history. Imported notes land on the customer Timeline (`cus_activities`), the same home as imported appointment and transaction history.
+
+#### Acceptance Criteria
+
+1. THE system SHALL let a business owner import customer notes as their own Source File, separate from the customer import, where each row is one note.
+2. THE system SHALL import, per note row, at least: the customer (matched) and the note text (required); and WHERE present, the note's date, its author, and a category/type.
+3. THE system SHALL resolve each note's customer using the unified Customer Matching rule (Requirement 11) — Legacy Customer ID when present, else email, then unique phone — and SHALL fail a row with a clear reason where no customer matches, continuing with the rest (partial success).
+4. THE system SHALL record each imported note on the customer's Timeline (`cus_activities`, activity type `note`, marked `imported: true`), backdated to the note's date when one is provided, consistent with how imported appointment and transaction history land.
+5. THE system SHALL NOT require a note category or field-level encryption the Source File cannot supply (the reason imported notes land on the Timeline rather than in the encrypted `cus_notes` store).
+6. THE system SHALL make the note import idempotent so re-running the same file does not duplicate notes, using a natural key of customer + note date + the note text (so the same note on the same day for the same customer is brought in once); WHERE two genuinely distinct notes share a customer, date, and identical text, THE system MAY treat them as one (an accepted, conservative limitation, since notes carry no external reference).
+7. THE system SHALL treat the customer import as a prerequisite for the note import (a note must attach to an existing customer), consistent with the locked Migration Order (Requirement 14); the note import otherwise depends on nothing else and may run any time after customers.
+8. THE system SHALL apply the same forgiving, trial, detection, and staging behavior as the other imports (Requirements 2–4, 17): a trial writes nothing, bad rows fail with reasons, and columns are auto-detected with the owner confirming.
+
+#### Requirement 19: Source System Selection & Processor Customer Matching
+
+**User Story**: As a business owner moving my saved cards and bank accounts to DayStream, I want to say where my file came from before I upload it, and have each payment method land on the right customer, so that a processor's own file imports correctly without me rearranging it and no card is ever attached to the wrong person.
+
+Saved payment methods only work in DayStream once they sit in the business's own processor account, and the processor that put them there produces the file (for example Stripe's mapping file after an account copy or an import from another processor). Those files have fixed, known layouts, but their column names are ambiguous to automatic detection (Stripe's `customer_id` is the new Stripe customer, not the business's client number), and they carry no email or client number to find the customer. Knowing the source in advance resolves the layout; a processor customer id captured during the customer import resolves the customer.
+
+##### Acceptance Criteria
+
+1. THE system SHALL let the owner choose the Source System on the upload screen BEFORE choosing the file, for every import that has at least one known source layout, with "Other / custom file" (automatic detection) as the default.
+2. WHEN a known Source System is chosen, THE system SHALL map the file's columns using that system's known headers (and, for a header-less file of exactly the known width, its known column order), SHALL leave the system's known non-importable columns unmapped (such as an old, uncharged payment id), and SHALL fall back to automatic detection for any column the layout does not name.
+3. WHEN the file does not match the chosen system's layout, THE system SHALL keep the automatic mapping rather than force a wrong one, and the owner SHALL still be able to change any column before importing.
+4. THE system SHALL offer each source system as a single choice (at minimum "Stripe" for the Payment Methods import) and SHALL itself recognise which of that system's file layouts was uploaded (for Stripe: the account-to-account copy file or the import-from-another-processor file), so the owner never has to know which kind of file they hold; THE system SHALL tell the owner which layout it recognised, or that the file matched none and was detected automatically.
+5. THE system SHALL be extendable with further source systems, and further layouts for an existing system, without changing the import flow.
+6. THE system SHALL let the customer import capture a Processor Customer ID (the client's customer id at the previous system's payment processor) and SHALL store it on the customer without treating it as the id DayStream charges through.
+7. THE system SHALL match a row of any customer-linked import to a customer by checking every customer key the row has: the processor customer id (for payment methods, the previous processor's id and the processor customer id on the row), the Legacy Customer ID, the email and the phone. WHERE the keys that identify a customer all identify the same one, THE system SHALL use it; WHERE they identify different customers, THE system SHALL NOT import the row and SHALL give a reason naming each key and the customer it matched.
+8. THE system SHALL resolve a row by any key only when exactly one customer matches; WHERE a key matches several customers (such as a shared email or phone), THE system SHALL NOT use it, and SHALL fail the row with a reason naming what was tried when no key resolves.
 
 ---
 
@@ -292,6 +348,6 @@ A key distinction runs through these requirements: **live state vs. history.** M
 
 ---
 
-**Status**: 📋 Planned
+**Status**: 🟡 In Progress — Waves 1-3 built (entity imports); Wave 4 (Requirement 17: intelligent detection & row repair) in design/build
 **Dependencies**: Phase 46, Phase 05, Phase 10, Phase 08, packages, business setup
 **Next Phase**: TBD (deeper transaction history; competitor API migration; unlinked legacy refunds in Phase 10)

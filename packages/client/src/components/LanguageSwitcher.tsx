@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { LanguageSelect } from './LanguageSelect';
 
 /**
  * Language switcher dropdown.
@@ -7,22 +8,18 @@ import { useTranslation } from 'react-i18next';
 export function LanguageSwitcher() {
   const { i18n } = useTranslation();
 
-  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const lang = e.target.value;
+  function handleChange(lang: string) {
     i18n.changeLanguage(lang);
     localStorage.setItem('language', lang);
   }
 
   return (
-    <select
+    <LanguageSelect
       value={i18n.language}
       onChange={handleChange}
       style={styles.select}
       aria-label="Language"
-    >
-      <option value="en">English</option>
-      <option value="es">Español</option>
-    </select>
+    />
   );
 }
 

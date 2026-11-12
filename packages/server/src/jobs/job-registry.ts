@@ -139,6 +139,11 @@ export const jobRegistry: Record<string, JobHandler> = {
     const inbox = await import('../services/inbox.service');
     return { status: 'done', ...(await inbox.runReminders()) };
   },
+  // Files and folders that could not be removed when a customer was anonymised or deleted (spec 51).
+  'storage_cleanup': async () => {
+    const cleanup = await import('../services/storage-cleanup.service');
+    return { status: 'done', ...(await cleanup.retryPendingCleanups()) };
+  },
   'payment_reconciliation': async (ctx) => {
     const recon = await import('../services/payment-reconciliation.service');
     if (ctx.businessId) {

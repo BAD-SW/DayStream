@@ -35,3 +35,15 @@ export const publicFormLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+/**
+ * Self check-in (the kiosk and a customer's phone). Many people share a clinic's wifi address, so
+ * this is more generous than a contact form: 60 requests a minute per address.
+ */
+export const selfCheckInLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: 'Too many attempts. Please wait a minute and try again.', code: 'RATE_LIMITED' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

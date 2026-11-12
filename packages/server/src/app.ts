@@ -92,6 +92,10 @@ app.use(cookieParser());
 // webhook path BEFORE the global JSON parser so express.json() doesn't consume it.
 app.use('/api/v1/pay/webhooks', express.raw({ type: '*/*', limit: '1mb' }));
 
+// Data-migration row commits carry the whole accepted file as JSON (10k+ rows), so the import
+// routes get a larger body limit. Mounted BEFORE the global parser, which skips an already-parsed body.
+app.use('/api/v1/import', express.json({ limit: '25mb' }));
+
 // Body parsing
 app.use(express.json({ limit: '1mb' }));
 
@@ -104,28 +108,27 @@ app.use('/widget', express.static(path.join(__dirname, '../static'), {
   maxAge: '5m',
 }));
 
-// Serve uploaded files from storage (reads path from database config)
-app.use('/storage', async (req, res, next) => {
+// Serve PUBLIC uploaded files (logos, website media, staff / resource / product / service images)
+// through the storage service, so the same /storage URLs work whether files are on the local file
+// system or in S3 (spec 51, design §1.1). Any path with a `private` segment (customer documents,
+// photos, completed forms, data exports) is refused here: those are only served by authenticated
+// API routes that check the business and customer.
+app.use('/storage', async (req, res) => {
   try {
-    const { adminPool: pool } = await import('./db/pool');
-    const { rows } = await pool.query("SELECT config_data FROM sys_system_configurations WHERE category = 'storage'");
-    const config = rows[0]?.config_data;
-    const storagePath = config?.local_path || process.env.STORAGE_LOCAL_PATH || path.join(process.cwd(), 'storage');
-    const filePath = path.join(storagePath, req.path);
-
-    // Prevent path traversal. private/ (customer documents, photos, data exports) is only
-    // served through authenticated API routes.
-    const resolved = path.resolve(filePath);
-    if (!resolved.startsWith(path.resolve(storagePath)) || resolved.startsWith(path.resolve(storagePath, 'private'))) {
+    let relative: string;
+    try { relative = decodeURIComponent(req.path).replace(/^\/+/, ''); } catch { res.status(400).json({ error: 'Bad path' }); return; }
+    const segments = relative.split(/[\\/]+/);
+    if (!relative || segments.some((s) => s === '..' || s === '.' || s.toLowerCase() === 'private')) {
       res.status(403).json({ error: 'Forbidden' });
       return;
     }
-
-    if (fs.existsSync(resolved)) {
-      res.sendFile(resolved);
-    } else {
-      res.status(404).json({ error: 'File not found' });
-    }
+    const { storage } = await import('./services/storage.service');
+    const data = await storage.read(relative);
+    if (!data) { res.status(404).json({ error: 'File not found' }); return; }
+    res.type(path.extname(relative) || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(data);
   } catch {
     res.status(500).json({ error: 'Storage error' });
   }

@@ -396,6 +396,7 @@ const updateServiceSchema = Joi.object({
   cancellation_policy_id: Joi.string().uuid().allow('', null),
   // CAL-11: the service's colour in the calendar (#rrggbb); null = the default palette colour
   calendar_color: Joi.string().pattern(/^#[0-9a-fA-F]{6}$/).allow(null),
+  default_chart_group_id: Joi.string().uuid().allow('', null),
 }).min(1);
 
 // POST /api/v1/services — Create service

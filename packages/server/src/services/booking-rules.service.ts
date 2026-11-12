@@ -39,7 +39,7 @@ export async function validateBookingRules(input: BookingRulesCheck): Promise<Ru
   const service = svcRows[0];
 
   // 1. Lead time check
-  const minAdvanceMs = (service.min_advance_booking_hours || 2) * 60 * 60 * 1000;
+  const minAdvanceMs = (service.min_advance_booking_hours ?? 2) * 60 * 60 * 1000;
   const timeUntilBooking = input.startTime.getTime() - Date.now();
   if (timeUntilBooking < minAdvanceMs) {
     violations.push(`Minimum advance booking time is ${service.min_advance_booking_hours} hours`);

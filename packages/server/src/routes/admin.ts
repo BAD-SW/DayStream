@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { parseColumnFilters } from '../utils/column-filters';
 import Joi from 'joi';
+import { SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE } from '@daystream/shared';
 import multer from 'multer';
 import { validate } from '../middleware/validate';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
@@ -12,6 +13,7 @@ import * as featureFlagService from '../services/feature-flag.service';
 import { logAudit, queryAuditLog } from '../services/audit.service';
 import { hashPassword } from '../services/auth.service';
 import { storage } from '../services/storage.service';
+import { storagePaths, pathFromReference } from '../utils/storage-paths';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 
@@ -77,7 +79,7 @@ const createTenantSchema = Joi.object({
   owner_first_name: Joi.string().min(1).max(100).required(),
   owner_last_name: Joi.string().min(1).max(100).required(),
   owner_password: Joi.string().min(10).required(),
-  default_language: Joi.string().valid('en', 'es').default('en'),
+  default_language: Joi.string().valid(...SUPPORTED_LANGUAGES).default(DEFAULT_LANGUAGE),
   currency: Joi.string().length(3).uppercase().default('EUR'),
   timezone: Joi.string().max(50).default('UTC'),
 });
@@ -133,7 +135,7 @@ adminRouter.get('/tenants/:id', requirePermission('*:*'), async (req: Request, r
 const updateTenantSchema = Joi.object({
   name: Joi.string().min(2).max(255),
   slug: Joi.string().min(2).max(100).pattern(/^[a-z0-9-]+$/),
-  default_language: Joi.string().valid('en', 'es'),
+  default_language: Joi.string().valid(...SUPPORTED_LANGUAGES),
   currency: Joi.string().length(3).uppercase(),
   timezone: Joi.string().max(50),
   owner_email: Joi.string().email({ tlds: false }),
@@ -1814,8 +1816,10 @@ adminRouter.post('/businesses/:id/logo', tenantContext, requirePermission('setti
     const authReq = req as AuthenticatedRequest;
     if (!req.file) { error(res, 'No logo file provided', 'VALIDATION_ERROR', 400); return; }
 
+    const { rows: before } = await adminPool.query('SELECT tenant_id, logo_url FROM sys_businesses WHERE id = $1', [req.params.id]);
+    if (before.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
     const ext = req.file.originalname.split('.').pop() || 'png';
-    const relativePath = `businesses/${authReq.tenantId}/${req.params.id}-logo.${ext}`;
+    const relativePath = storagePaths.businessLogo(before[0].tenant_id, req.params.id, ext);
     await storage.save(relativePath, req.file.buffer);
     const logoUrl = storage.getUrl(relativePath);
 
@@ -1823,7 +1827,9 @@ adminRouter.post('/businesses/:id/logo', tenantContext, requirePermission('setti
       'UPDATE sys_businesses SET logo_url = $1, updated_at = NOW() WHERE id = $2 RETURNING logo_url',
       [logoUrl, req.params.id],
     );
-    if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    // The replaced logo is removed (with any folder it leaves empty).
+    const oldPath = pathFromReference(before[0].logo_url);
+    if (oldPath && oldPath !== relativePath) await storage.delete(oldPath).catch(() => {});
     success(res, rows[0]);
   } catch (err: any) {
     console.error('Failed to upload logo', err?.message || err);
@@ -1837,8 +1843,10 @@ adminRouter.post('/businesses/:id/favicon', tenantContext, requirePermission('se
     const authReq = req as AuthenticatedRequest;
     if (!req.file) { error(res, 'No favicon file provided', 'VALIDATION_ERROR', 400); return; }
 
+    const { rows: before } = await adminPool.query('SELECT tenant_id, favicon_url FROM sys_businesses WHERE id = $1', [req.params.id]);
+    if (before.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
     const ext = req.file.originalname.split('.').pop() || 'png';
-    const relativePath = `businesses/${authReq.tenantId}/${req.params.id}-favicon.${ext}`;
+    const relativePath = storagePaths.businessFavicon(before[0].tenant_id, req.params.id, ext);
     await storage.save(relativePath, req.file.buffer);
     const faviconUrl = storage.getUrl(relativePath);
 
@@ -1846,7 +1854,8 @@ adminRouter.post('/businesses/:id/favicon', tenantContext, requirePermission('se
       'UPDATE sys_businesses SET favicon_url = $1, updated_at = NOW() WHERE id = $2 RETURNING favicon_url',
       [faviconUrl, req.params.id],
     );
-    if (rows.length === 0) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    const oldPath = pathFromReference(before[0].favicon_url);
+    if (oldPath && oldPath !== relativePath) await storage.delete(oldPath).catch(() => {});
     success(res, rows[0]);
   } catch (err: any) {
     console.error('Failed to upload favicon', err?.message || err);

@@ -1,6 +1,7 @@
+import { languageFromText, isSupportedLanguage, supportedLanguagesText } from '@daystream/shared';
 import { adminPool } from '../../db/pool';
 import { findOrCreatePerson } from '../person-identity.service';
-import { ImportResult, RowFailure, emptyResult } from './import-core';
+import { ImportResult, RowFailure, emptyResult, DateOrder, parseDateCell, fileDateOrder } from './import-core';
 
 /**
  * Customers import (spec 50, Wave 1). Routes each mapped row through the Phase 46
@@ -16,7 +17,35 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface MappedRow { [field: string]: string }
 
-function validateRow(r: MappedRow, rowNum: number): RowFailure[] {
+// preferred_language is VARCHAR(5) (a locale code such as "en" or "en-US"), but legacy exports
+// usually carry the language name ("English"). Convert names to codes; unknown values are dropped
+// rather than failing the whole customer.
+const LANGUAGE_CODES: Record<string, string> = {
+  english: 'en', spanish: 'es', french: 'fr', german: 'de', italian: 'it', portuguese: 'pt', dutch: 'nl',
+  russian: 'ru', arabic: 'ar', chinese: 'zh', mandarin: 'zh', cantonese: 'yue', japanese: 'ja', korean: 'ko',
+  hindi: 'hi', bengali: 'bn', turkish: 'tr', polish: 'pl', swedish: 'sv', norwegian: 'no', danish: 'da',
+  finnish: 'fi', greek: 'el', czech: 'cs', hungarian: 'hu', romanian: 'ro', ukrainian: 'uk', hebrew: 'he',
+  thai: 'th', vietnamese: 'vi', indonesian: 'id', malay: 'ms', tagalog: 'tl', catalan: 'ca', basque: 'eu',
+  galician: 'gl',
+};
+
+/**
+ * Resolve a legacy language value ("English", "es", "en-US") to a supported language code.
+ * Which languages are supported comes from the one shared list. Returns `code: null` for blank
+ * or unsupported values; `unsupported` is true when a value was given but couldn't be resolved,
+ * so the caller can warn instead of silently dropping it.
+ */
+export function normalizeLanguage(raw: string | undefined): { code: string | null; unsupported: boolean } {
+  const v = (raw || '').trim();
+  if (!v) return { code: null, unsupported: false };
+  // Other languages' names are recognised only so a legacy "Spanish" is read as a language and not
+  // as an error; whether it is supported is decided by the shared list.
+  const lower = v.toLowerCase().replace('_', '-');
+  const code = languageFromText(v) ?? LANGUAGE_CODES[lower] ?? lower.split('-')[0];
+  return isSupportedLanguage(code) ? { code, unsupported: false } : { code: null, unsupported: true };
+}
+
+function validateRow(r: MappedRow, rowNum: number, dateOrder: DateOrder): RowFailure[] {
   const failures: RowFailure[] = [];
   const first = (r.first_name || '').trim();
   const email = (r.email || '').trim();
@@ -24,8 +53,11 @@ function validateRow(r: MappedRow, rowNum: number): RowFailure[] {
   if (!first) failures.push({ row: rowNum, field: 'first_name', message: 'First name is required' });
   if (!email && !phone) failures.push({ row: rowNum, field: 'email', message: 'An email or a phone number is required' });
   if (email && !EMAIL_RE.test(email)) failures.push({ row: rowNum, field: 'email', message: `"${email}" is not a valid email address` });
-  if (r.date_of_birth && isNaN(new Date(r.date_of_birth).getTime())) {
+  if ((r.date_of_birth || '').trim() && !parseDateCell(r.date_of_birth, dateOrder)) {
     failures.push({ row: rowNum, field: 'date_of_birth', message: `"${r.date_of_birth}" is not a valid date` });
+  }
+  if ((r.joined || '').trim() && !parseDateCell(r.joined, dateOrder)) {
+    failures.push({ row: rowNum, field: 'joined', message: `"${r.joined}" is not a valid date` });
   }
   return failures;
 }
@@ -36,15 +68,20 @@ export async function runCustomerImport(args: {
   userId: string;
   rows: MappedRow[];
   commit: boolean;
+  dateOrder?: DateOrder | null;
 }): Promise<ImportResult> {
   const { businessId, tenantId, userId, rows, commit } = args;
   const result = emptyResult();
   result.total = rows.length;
+  const warnings: RowFailure[] = [];
+  result.warnings = warnings;
+  // Day-first or month-first, read from the file's own dates (else the business's country).
+  const dateOrder = await fileDateOrder(businessId, rows, ['date_of_birth', 'joined'], args.dateOrder);
 
   for (let i = 0; i < rows.length; i++) {
     const rowNum = i + 1;
     const r = rows[i];
-    const rowFailures = validateRow(r, rowNum);
+    const rowFailures = validateRow(r, rowNum, dateOrder);
     if (rowFailures.length > 0) {
       result.failed += 1;
       result.failures.push(...rowFailures);
@@ -59,6 +96,14 @@ export async function runCustomerImport(args: {
       continue;
     }
 
+    const lang = normalizeLanguage(r.preferred_language);
+    if (lang.unsupported) {
+      warnings.push({
+        row: rowNum, field: 'preferred_language',
+        message: `Language "${r.preferred_language.trim()}" isn't one DayStream supports (${supportedLanguagesText()}), so it was left blank`,
+      });
+    }
+
     try {
       const res = await findOrCreatePerson({
         businessId,
@@ -67,9 +112,9 @@ export async function runCustomerImport(args: {
         phone: r.phone || null,
         firstName: r.first_name || null,
         lastName: r.last_name || null,
-        dateOfBirth: r.date_of_birth || null,
+        dateOfBirth: parseDateCell(r.date_of_birth, dateOrder),
         gender: r.gender || null,
-        preferredLanguage: r.preferred_language || null,
+        preferredLanguage: lang.code,
         country: r.country || null,
         source: 'import',
         sourceDetail: 'data migration',
@@ -86,9 +131,20 @@ export async function runCustomerImport(args: {
         );
       }
 
+      // Capture the previous processor's customer id (fill-empty) — the exact key the payment-method
+      // import matches on. Not a charging reference; see migration 166.
+      if ((r.processor_customer_id || '').trim()) {
+        await adminPool.query(
+          `UPDATE cus_customers SET processor_customer_id = $1, updated_at = NOW()
+           WHERE id = $2 AND (processor_customer_id IS NULL OR processor_customer_id = '')`,
+          [r.processor_customer_id.trim(), res.person.id],
+        );
+      }
+
       if ((r.tags || '').trim()) await applyTags(businessId, res.person.id, r.tags, userId);
       if ((r.notes || '').trim()) await applyNote(businessId, res.person.id, r.notes, userId);
-      if ((r.joined || '').trim()) await applyJoinedDate(res.person.id, r.joined);
+      const joined = parseDateCell(r.joined, dateOrder);
+      if (joined) await applyJoinedDate(res.person.id, joined);
 
       if (res.created) result.imported += 1; else result.matched += 1;
     } catch (e: any) {
@@ -159,12 +215,10 @@ async function applyNote(businessId: string, customerId: string, note: string, u
   }).catch(() => undefined);
 }
 
-/** Preserve the legacy join date as the customer's created_at where provided. */
+/** Preserve the legacy join date (YYYY-MM-DD) as the customer's created_at, at noon UTC. */
 async function applyJoinedDate(customerId: string, joined: string): Promise<void> {
-  const d = new Date(joined);
-  if (isNaN(d.getTime())) return;
   await adminPool.query(
     `UPDATE cus_customers SET created_at = $1 WHERE id = $2`,
-    [d.toISOString(), customerId],
+    [`${joined}T12:00:00Z`, customerId],
   );
 }

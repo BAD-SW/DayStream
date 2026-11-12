@@ -167,6 +167,19 @@ export async function queueBookingReminder(booking: any, customerEmail: string, 
     }
   }
 
+  // The customer's personal link to check in from their phone and complete any forms. A reminder
+  // is still sent without it if the link cannot be made.
+  let checkInLink: string | null = null;
+  if (booking.id && booking.customer_id && booking.business_id) {
+    try {
+      const { tenantOfBusiness } = await import('../utils/storage-paths');
+      const qr = await import('./checkin-qr.service');
+      checkInLink = qr.checkInLinkUrl(await qr.getBookingLinkCode(await tenantOfBusiness(booking.business_id), booking.id));
+    } catch (err) {
+      logger.warn('Could not make the check-in link for a reminder', { booking: booking.booking_reference, error: (err as Error).message });
+    }
+  }
+
   for (const hoursBefore of hoursBeforeList) {
     const scheduledFor = new Date(startTime.getTime() - hoursBefore * 60 * 60 * 1000);
 
@@ -184,6 +197,7 @@ export async function queueBookingReminder(booking: any, customerEmail: string, 
         start_time: booking.start_time,
         staff_name: booking.staff_first_name ? `${booking.staff_first_name} ${booking.staff_last_name}` : null,
         hours_before: hoursBefore,
+        ...(checkInLink ? { check_in_link: checkInLink } : {}),
       },
       scheduledFor,
     });
@@ -434,6 +448,10 @@ function renderDefaultEmail(type: string, data: Record<string, unknown>): { subj
   if (service) lines.push(`<p>Service: ${service}</p>`);
   if (when) lines.push(`<p>When: ${esc(when)}</p>`);
   if (data.booking_reference) lines.push(`<p>Reference: ${esc(data.booking_reference)}</p>`);
+  // Only a link the system made itself (https or http), shown as text and as a link.
+  if (typeof data.check_in_link === 'string' && /^https?:\/\//.test(data.check_in_link)) {
+    lines.push(`<p>Check in from your phone when you arrive, and complete any forms: <a href="${esc(data.check_in_link)}">${esc(data.check_in_link)}</a></p>`);
+  }
   if (data.task_title) lines.push(`<p>${esc(data.task_title)}</p>`);
   if (data.task_description) lines.push(`<p>${esc(data.task_description)}</p>`);
   if (data.due_at) lines.push(`<p>Date: ${esc(new Date(String(data.due_at)).toLocaleString())}</p>`);

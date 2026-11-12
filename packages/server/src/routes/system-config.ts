@@ -116,10 +116,41 @@ systemConfigRouter.post('/email/test', requirePermission('*:*'), async (req: Req
 // Storage Configuration
 // ============================================================
 
+/**
+ * Storage settings (spec 51, design §1.1). The S3 secret key is stored encrypted
+ * (s3_secret_key_encrypted) and never returned: the page gets STORAGE_SECRET_MASK when one is set,
+ * and sending the mask back (or leaving the field blank) keeps the stored key.
+ */
+const STORAGE_SECRET_MASK = '••••••••';
+
+/** The stored storage config, with the secret replaced by the mask. */
+function maskStorageConfig(data: Record<string, any> | null): Record<string, any> {
+  const { s3_secret_key_encrypted, s3_secret_key, ...rest } = data || {};
+  return { ...rest, s3_secret_key: s3_secret_key_encrypted || s3_secret_key ? STORAGE_SECRET_MASK : '' };
+}
+
+/** Turn the page's values into what is stored: secret encrypted, mask/blank keeps the old secret. */
+async function storageConfigToSave(body: Record<string, any>): Promise<Record<string, any>> {
+  const { encrypt } = await import('../utils/encryption');
+  const stored = (await getSystemConfig('storage')) || {};
+  const { s3_secret_key: incoming, ...rest } = body || {};
+  const out: Record<string, any> = {
+    storage_type: rest.storage_type === 'aws_s3' ? 'aws_s3' : 'local',
+    local_path: String(rest.local_path || '').trim(),
+    s3_bucket: String(rest.s3_bucket || '').trim(),
+    s3_region: String(rest.s3_region || '').trim(),
+    s3_access_key: String(rest.s3_access_key || '').trim(),
+  };
+  const secret = typeof incoming === 'string' ? incoming.trim() : '';
+  if (secret && secret !== STORAGE_SECRET_MASK) out.s3_secret_key_encrypted = encrypt(secret);
+  else if (stored.s3_secret_key_encrypted) out.s3_secret_key_encrypted = stored.s3_secret_key_encrypted;
+  else if (stored.s3_secret_key) out.s3_secret_key_encrypted = encrypt(String(stored.s3_secret_key)); // legacy plain value
+  return out;
+}
+
 systemConfigRouter.get('/storage', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
-    const data = await getSystemConfig('storage');
-    success(res, data);
+    success(res, maskStorageConfig(await getSystemConfig('storage')));
   } catch (err: any) {
     console.error('Failed to get storage config', err?.message || err);
     error(res, 'Failed to get storage config', 'INTERNAL_ERROR', 500);
@@ -129,57 +160,61 @@ systemConfigRouter.get('/storage', requirePermission('*:*'), async (req: Request
 systemConfigRouter.put('/storage', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    await upsertSystemConfig('storage', req.body, authReq.user.sub);
+    const toSave = await storageConfigToSave(req.body);
+    await upsertSystemConfig('storage', toSave, authReq.user.sub);
+    // The new location takes effect at once, without a restart.
+    const { invalidateStorageConfig } = await import('../services/storage.service');
+    invalidateStorageConfig();
     await logAudit({
       tenantId: 'system',
       userId: authReq.user.sub,
       action: 'system_config.storage.updated',
       resourceType: 'system_config',
-      details: { category: 'storage', storage_type: req.body.storage_type },
+      details: { category: 'storage', storage_type: toSave.storage_type },
     });
-    success(res, req.body);
+    success(res, maskStorageConfig(toSave));
   } catch (err: any) {
     console.error('Failed to save storage config', err?.message || err);
     error(res, 'Failed to save storage config', 'INTERNAL_ERROR', 500);
   }
 });
 
+// Test Connection: prove the location in the form (not yet saved) can be written, read and deleted.
 systemConfigRouter.post('/storage/test', requirePermission('*:*'), async (req: Request, res: Response) => {
   try {
-    const config = req.body;
-    if (!config || !config.storage_type) {
+    const config = req.body || {};
+    if (config.storage_type !== 'local' && config.storage_type !== 'aws_s3') {
       error(res, 'Storage type is required.', 'VALIDATION_ERROR', 400);
       return;
     }
-
-    if (config.storage_type === 'local') {
-      if (!config.local_path) {
-        error(res, 'Local storage path is required.', 'VALIDATION_ERROR', 400);
-        return;
-      }
-      const fs = await import('fs/promises');
-      const path = await import('path');
-      const resolvedPath = path.resolve(config.local_path);
-      try {
-        await fs.access(resolvedPath);
-        success(res, { message: `Local storage path verified: ${resolvedPath}` });
-      } catch {
-        try {
-          await fs.mkdir(resolvedPath, { recursive: true });
-          success(res, { message: `Local storage path created and verified: ${resolvedPath}` });
-        } catch (mkErr: any) {
-          error(res, `Cannot access or create path: ${resolvedPath}. ${mkErr.message}`, 'TEST_FAILED', 400);
-        }
-      }
-    } else if (config.storage_type === 'aws_s3') {
-      if (!config.s3_bucket || !config.s3_access_key || !config.s3_secret_key) {
-        error(res, 'S3 configuration is incomplete. Bucket, Access Key, and Secret Key are required.', 'VALIDATION_ERROR', 400);
-        return;
-      }
-      success(res, { message: `S3 configuration validated for bucket: ${config.s3_bucket} in ${config.s3_region}` });
-    } else {
-      error(res, 'Unknown storage type.', 'VALIDATION_ERROR', 400);
+    if (config.storage_type === 'local' && !String(config.local_path || '').trim()) {
+      error(res, 'Local storage path is required.', 'VALIDATION_ERROR', 400);
+      return;
     }
+    if (config.storage_type === 'aws_s3' && !String(config.s3_bucket || '').trim()) {
+      error(res, 'An S3 bucket is required.', 'VALIDATION_ERROR', 400);
+      return;
+    }
+    // Use the secret typed in the form, or the stored one when the field still shows the mask.
+    const typed = typeof config.s3_secret_key === 'string' ? config.s3_secret_key.trim() : '';
+    let secret = typed && typed !== STORAGE_SECRET_MASK ? typed : '';
+    if (!secret && config.storage_type === 'aws_s3') {
+      const stored = await storageConfigToSave({ ...config, s3_secret_key: STORAGE_SECRET_MASK });
+      if (stored.s3_secret_key_encrypted) {
+        const { decrypt } = await import('../utils/encryption');
+        secret = decrypt(stored.s3_secret_key_encrypted);
+      }
+    }
+    const { testStorage } = await import('../services/storage.service');
+    const result = await testStorage({
+      storage_type: config.storage_type,
+      local_path: String(config.local_path || '').trim(),
+      s3_bucket: String(config.s3_bucket || '').trim(),
+      s3_region: String(config.s3_region || '').trim(),
+      s3_access_key: String(config.s3_access_key || '').trim(),
+    }, secret);
+    if (result.ok) success(res, { message: result.message });
+    else error(res, result.message, 'TEST_FAILED', 400);
   } catch (err: any) {
     error(res, 'Storage test failed: ' + err.message, 'TEST_FAILED', 500);
   }

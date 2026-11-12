@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useCheckInFormsPrompt } from '../components/forms/useCheckInFormsPrompt';
 import { Table } from '../design-system/components/data/Table';
 import type { TableFilters } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
@@ -106,12 +107,19 @@ export function Bookings() {
     }));
   }, [businessId, tableFilters]);
 
+  // Forms the customer still has to complete are shown before checking in; staff can always check in anyway.
+  const { requestCheckIn, prompt: formsPrompt } = useCheckInFormsPrompt(businessId);
+
   const handleAction = async (action: string, booking: Booking) => {
+    if (action === 'check-in') {
+      await requestCheckIn(booking, () => handleAction('check-in-now', booking));
+      return;
+    }
     try {
       if (action === 'confirm') await bookingsApi.confirmBooking(booking.id, businessId);
       else if (action === 'cancel') await bookingsApi.cancelBooking(booking.id, businessId);
       else if (action === 'no-show') await bookingsApi.noShowBooking(booking.id, businessId);
-      else if (action === 'check-in') await bookingsApi.checkInBooking(booking.id, businessId);
+      else if (action === 'check-in-now') await bookingsApi.checkInBooking(booking.id, businessId);
       else if (action === 'reset') await bookingsApi.resetBooking(booking.id, businessId);
       else if (action === 'checkout') { navigate(`/checkout?appointment=${booking.id}`); return; }
       fetchBookings();
@@ -189,6 +197,8 @@ export function Bookings() {
       <Table columns={columns} data={bookings} loading={loading} emptyMessage="No bookings found" mobileCardMode clientSort onRowClick={isCustomer ? undefined : (row) => navigate(`/bookings/${row.id}/edit`)}
         filters={tableFilters} onFiltersChange={setTableFilters} filterOptions={filterOptions}
         onLoadMore={loadMore} hasMore={bookings.length < total} loadingMore={loadingMore} />
+
+      {formsPrompt}
 
       <ConfirmDialog
         open={!!pendingNoShow}

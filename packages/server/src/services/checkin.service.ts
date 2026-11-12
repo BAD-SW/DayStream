@@ -13,10 +13,10 @@ export class CheckInRefused extends Error {
   code = 'CHECK_IN_REFUSED';
 }
 
-interface BookingRef { id: string; customer_id: string | null; business_id: string; status: string }
+export interface BookingRef { id: string; customer_id: string | null; business_id: string; status: string }
 
 /** "Today" is the business's own calendar day, not the database server's. */
-const BOOKING_IS_TODAY = `(b.start_time AT TIME ZONE bus.timezone)::date = (NOW() AT TIME ZONE bus.timezone)::date`;
+export const BOOKING_IS_TODAY = `(b.start_time AT TIME ZONE bus.timezone)::date = (NOW() AT TIME ZONE bus.timezone)::date`;
 
 /** A booking of this tenant and, when a business is given, of that business only. */
 async function findBooking(bookingId: string, tenantId: string, businessId?: string): Promise<BookingRef | null> {
@@ -44,11 +44,129 @@ async function todaysBookingFor(customerId: string, tenantId: string, businessId
   return rows[0] || null;
 }
 
+/** Digits only: "+34 600 111 222" and "600-111-222" can then be compared. */
+const digitsOf = (s: string) => String(s || '').replace(/\D/g, '');
+
+/**
+ * The SQL condition that matches a customer (alias `c`) by the phone number or email address given,
+ * adding its values to `params`. Null when neither is usable. Never matches on a name.
+ */
+function contactMatch(input: { phone?: string; email?: string }, params: any[]): string | null {
+  const phone = digitsOf(input.phone || '');
+  const email = String(input.email || '').trim().toLowerCase();
+  const hasPhone = phone.length >= 7;
+  const hasEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!hasPhone && !hasEmail) return null;
+  const parts: string[] = [];
+  if (hasEmail) { params.push(email); parts.push(`LOWER(c.email) = $${params.length}`); }
+  if (hasPhone) {
+    params.push(phone);
+    const p = `$${params.length}`;
+    const e164 = `regexp_replace(COALESCE(c.phone_e164, ''), '\\D', '', 'g')`;
+    const raw = `regexp_replace(COALESCE(c.phone, ''), '\\D', '', 'g')`;
+    parts.push(`(${e164} = ${p} OR ${raw} = ${p} OR right(${e164}, length(${p})) = ${p})`);
+  }
+  return parts.join(' OR ');
+}
+
+export interface UpcomingAppointment {
+  service_name: string;
+  start_time: string;
+  timezone: string;
+  status: string;
+}
+
+/**
+ * When nobody is expected today under that phone number or email address: the person's other
+ * appointments from today on (the next 60 days), so the kiosk can say "nothing today, but you have
+ * these". An appointment may simply have been moved without the calendar being updated. Only the
+ * service and time are returned. Two people matching returns nothing: no guessing.
+ */
+export async function findUpcomingByContact(
+  input: { phone?: string; email?: string },
+  tenantId: string,
+  businessId: string | undefined,
+): Promise<UpcomingAppointment[]> {
+  const params: any[] = [tenantId, businessId || null];
+  const contact = contactMatch(input, params);
+  if (!contact) return [];
+  const { rows: people } = await adminPool.query(
+    `SELECT DISTINCT c.id
+       FROM cus_customers c
+       JOIN apt_bookings b ON b.customer_id = c.id
+       JOIN sys_businesses bus ON bus.id = b.business_id
+      WHERE bus.tenant_id = $1 AND ($2::uuid IS NULL OR b.business_id = $2)
+        AND (${contact})
+      LIMIT 2`,
+    params,
+  );
+  if (people.length !== 1) return [];
+  const { rows } = await adminPool.query(
+    `SELECT s.name AS service_name, b.start_time, bus.timezone, b.status
+       FROM apt_bookings b
+       JOIN sys_businesses bus ON bus.id = b.business_id
+       JOIN svc_services s ON s.id = b.service_id
+      WHERE b.customer_id = $1 AND bus.tenant_id = $2 AND ($3::uuid IS NULL OR b.business_id = $3)
+        AND b.status IN ('confirmed', 'pending')
+        AND (b.start_time AT TIME ZONE bus.timezone)::date >= (NOW() AT TIME ZONE bus.timezone)::date
+        AND b.start_time < NOW() + interval '60 days'
+      ORDER BY b.start_time ASC
+      LIMIT 5`,
+    [people[0].id, tenantId, businessId || null],
+  );
+  return rows.map((r: any) => ({ service_name: r.service_name, start_time: r.start_time, timezone: r.timezone || 'UTC', status: r.status }));
+}
+
+/**
+ * Find the person who is expected today by the phone number or email address they gave. Never by
+ * name. A phone number matches on its digits, with or without the country code (at least 7 digits);
+ * an email address matches exactly, ignoring case. If more than one person matches, nothing is
+ * guessed: `ambiguous` is true and the person is sent to the front desk.
+ *
+ * Returns that person's booking today: the next one still to check in, else one already checked in
+ * (only when `includeCheckedIn`, so a customer who checked in can come back for their forms).
+ */
+export async function findTodaysBookingByContact(
+  input: { phone?: string; email?: string },
+  tenantId: string,
+  businessId: string | undefined,
+  opts: { includeCheckedIn?: boolean } = {},
+): Promise<{ booking: BookingRef | null; ambiguous: boolean }> {
+  const statuses = opts.includeCheckedIn ? ['confirmed', 'checked_in', 'in_progress'] : ['confirmed'];
+  const params: any[] = [tenantId, businessId || null, statuses];
+  const contact = contactMatch(input, params);
+  if (!contact) return { booking: null, ambiguous: false };
+  const { rows: people } = await adminPool.query(
+    `SELECT DISTINCT c.id
+       FROM cus_customers c
+       JOIN apt_bookings b ON b.customer_id = c.id
+       JOIN sys_businesses bus ON bus.id = b.business_id
+      WHERE bus.tenant_id = $1 AND ($2::uuid IS NULL OR b.business_id = $2)
+        AND b.status = ANY($3::text[]) AND ${BOOKING_IS_TODAY}
+        AND (${contact})
+      LIMIT 2`,
+    params,
+  );
+  if (people.length > 1) return { booking: null, ambiguous: true };
+  if (people.length === 0) return { booking: null, ambiguous: false };
+
+  const { rows } = await adminPool.query(
+    `SELECT b.id, b.customer_id, b.business_id, b.status
+       FROM apt_bookings b JOIN sys_businesses bus ON bus.id = b.business_id
+      WHERE b.customer_id = $1 AND bus.tenant_id = $2 AND ($3::uuid IS NULL OR b.business_id = $3)
+        AND b.status = ANY($4::text[]) AND ${BOOKING_IS_TODAY}
+      ORDER BY (b.status = 'confirmed') DESC, b.start_time ASC
+      LIMIT 1`,
+    [people[0].id, tenantId, businessId || null, statuses],
+  );
+  return { booking: rows[0] || null, ambiguous: false };
+}
+
 /**
  * Check the booking in, or refuse with the reason. Nothing is written for a refused check-in
  * (a record used to be saved even then, which blocked the real check-in later).
  */
-async function completeCheckIn(booking: BookingRef, opts: {
+export async function completeCheckIn(booking: BookingRef, opts: {
   tenantId: string; method: string; processedBy?: string; locationId?: string; auditAction: string;
 }) {
   if (!booking.customer_id) {
@@ -132,7 +250,7 @@ export async function checkInByBookingId(
  * Kiosk check-in — tries QR code first, then booking reference, then name search.
  */
 export async function checkInKiosk(
-  input: { code?: string; reference?: string; name?: string; phone?: string },
+  input: { code?: string; reference?: string; email?: string; phone?: string },
   tenantId: string,
   locationId: string,
   businessId?: string,
@@ -160,29 +278,11 @@ export async function checkInKiosk(
     booking = rows[0] || null;
   }
 
-  if (!booking && !customerId && (input.name || input.phone)) {
-    // Only people who are expected today can be found this way.
-    const conditions = ['bus.tenant_id = $1', '($2::uuid IS NULL OR b.business_id = $2)', "b.status = 'confirmed'", BOOKING_IS_TODAY];
-    const params: any[] = [tenantId, businessId || null];
-    if (input.name) {
-      params.push(`%${String(input.name).trim()}%`);
-      conditions.push(`(c.first_name || ' ' || c.last_name) ILIKE $${params.length}`);
-    }
-    if (input.phone) {
-      params.push(String(input.phone).replace(/[^\d+]/g, ''));
-      conditions.push(`(REPLACE(COALESCE(c.phone, ''), ' ', '') = $${params.length} OR c.phone_e164 = $${params.length})`);
-    }
-    const { rows } = await adminPool.query(
-      `SELECT DISTINCT c.id
-         FROM cus_customers c
-         JOIN apt_bookings b ON b.customer_id = c.id
-         JOIN sys_businesses bus ON bus.id = b.business_id
-        WHERE ${conditions.join(' AND ')}
-        LIMIT 2`,
-      params,
-    );
-    // Two different people match: do not guess.
-    if (rows.length === 1) customerId = rows[0].id;
+  // By phone number or email address, never by name. If two people match, nothing is guessed.
+  if (!booking && !customerId && (input.phone || input.email)) {
+    const found = await findTodaysBookingByContact({ phone: input.phone, email: input.email }, tenantId, businessId);
+    if (found.ambiguous) throw new CheckInRefused('More than one person matches. Please see the front desk.');
+    booking = found.booking;
   }
 
   if (!booking && customerId) booking = await todaysBookingFor(customerId, tenantId, businessId);

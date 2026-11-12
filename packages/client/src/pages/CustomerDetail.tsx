@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { LanguageSelect } from '../components/LanguageSelect';
 import { Table, applyTableFilters } from '../design-system/components/data/Table';
 import type { TableFilters } from '../design-system/components/data/Table';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -27,6 +28,10 @@ import {
   ProfilePhoto, VisitsCreditsCard, CommunicationCard, ReferralsCard, ReviewsCard,
   MessagesTab, TasksTab, DocumentsTab, AssignStaffDialog, PasswordResetDialog, PersonalDataDialog,
 } from './CustomerProfileParts';
+import { CustomerFormsTab } from './CustomerFormsTab';
+import { FormsNeededNotice } from '../components/forms/FormsNeededNotice';
+import { ChartsPanel } from '../components/charts/ChartsPanel';
+import { useClinicalAccess } from '../utils/useClinicalAccess';
 
 const LIFECYCLE_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   lead: 'neutral', trial: 'info', active: 'success', at_risk: 'warning', churned: 'error', winback: 'info',
@@ -35,7 +40,7 @@ const LIFECYCLE_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info
 const PROFILE_TABS: { key: string; label: string }[] = [
   { key: 'overview', label: 'Overview' }, { key: 'messages', label: 'Messages' }, { key: 'timeline', label: 'Timeline' },
   { key: 'billing', label: 'Billing' }, { key: 'notes', label: 'Notes' }, { key: 'tasks', label: 'Tasks' },
-  { key: 'documents', label: 'Documents' }, { key: 'preferences', label: 'Consent' },
+  { key: 'documents', label: 'Documents' }, { key: 'forms', label: 'Forms' }, { key: 'charts', label: 'Charts' }, { key: 'preferences', label: 'Consent' },
 ];
 
 // Stage and source names come from one shared map ('trial' is shown as "New customer").
@@ -61,6 +66,8 @@ export function CustomerDetail() {
 }
 
 function CustomerProfilePage() {
+  // Treatment charts are only for clinical roles (spec 51, gap 2); other roles don't see the tab.
+  const canCharts = useClinicalAccess();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   // Leaving the profile from a button asks first too when something is unsaved.
@@ -79,6 +86,8 @@ function CustomerProfilePage() {
   const [dialog, setDialog] = useState<'payment' | 'assign' | 'reset' | 'data' | null>(null);
   // Bumped by the header's Add task button (opens the form) and after changes (reloads the Timeline).
   const [addTaskSignal, setAddTaskSignal] = useState(0);
+  // Bumped when the person's forms change, so the "forms needed" notice checks again.
+  const [formsRefresh, setFormsRefresh] = useState(0);
   const [timelineVersion, setTimelineVersion] = useState(0);
   const { dirtySections, saveAll, saving } = useDraftSections();
   const [saveResult, setSaveResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -94,7 +103,9 @@ function CustomerProfilePage() {
   useEffect(() => {
     if (!id || !businessId) return;
     setLoading(true);
-    setTab('overview');
+    // A link can open a section directly, e.g. /customers/:id?tab=forms from a booking.
+    const wanted = new URLSearchParams(window.location.search).get('tab');
+    setTab(PROFILE_TABS.some((t) => t.key === wanted) ? (wanted as string) : 'overview');
     Promise.all([
       customersApi.getCustomer(id, businessId),
       customersApi.getNotes(id, businessId).catch(() => []),
@@ -143,9 +154,11 @@ function CustomerProfilePage() {
     const confirmed = confirm(
       '⚠️ GDPR Data Anonymization\n\n' +
       'This will PERMANENTLY and IRREVERSIBLY anonymize all personal data for this customer including:\n' +
-      '• Name, email, phone, date of birth\n' +
-      '• Notes and activity history\n' +
-      '• All identifiable information\n\n' +
+      '• Name, email, phone, address, date of birth, photo and sign-in link\n' +
+      '• Notes, and the wording of the activity timeline\n' +
+      '• Completed forms and waivers (the signed PDFs), uploaded documents and data exports\n' +
+      '• All files stored for this customer, with their folders\n\n' +
+      'Bookings and payments stay, as financial records, without a name attached.\n\n' +
       'This action cannot be undone. Are you sure you want to proceed?'
     );
     if (!confirmed) return;
@@ -241,8 +254,10 @@ function CustomerProfilePage() {
       }} />
 
       {/* Tabs (order agreed on THE-16) */}
-      <TabBar aria-label="Profile sections" tabs={PROFILE_TABS.map((t) => ({ ...t, changed: dirtySections.some((d) => d.tab === t.key) }))} active={tab} onChange={setTab} />
+      <TabBar aria-label="Profile sections" tabs={PROFILE_TABS.filter((t) => t.key !== 'charts' || canCharts).map((t) => ({ ...t, changed: dirtySections.some((d) => d.tab === t.key) }))} active={tab} onChange={setTab} />
       </StickyPageTop>
+      {/* Forms still to complete: shown on every tab, so staff see it as soon as they open the person. */}
+      <FormsNeededNotice customerId={customer.id} businessId={businessId} refreshKey={formsRefresh} onOpenForms={() => setTab('forms')} />
       <div hidden={tab !== 'overview'}>
         <DraftTab tab="overview">
           <OverviewTab key={mergeCount} customer={customer} tags={tags} preferences={preferences} staff={staff} onUpdate={(c) => { setCustomer(c); setTimelineVersion((n) => n + 1); }} onOpenConsent={() => setTab('preferences')} />
@@ -254,6 +269,8 @@ function CustomerProfilePage() {
       <div hidden={tab !== 'notes'}><DraftTab tab="notes"><NotesTab notes={notes} customerId={customer.id} businessId={businessId} onRefresh={(n) => setNotes(n)} /></DraftTab></div>
       <div hidden={tab !== 'tasks'}><DraftTab tab="tasks"><TasksTab customer={customer} businessId={businessId} staff={staff} addSignal={addTaskSignal} /></DraftTab></div>
       <div hidden={tab !== 'documents'}><DraftTab tab="documents"><DocumentsTab customerId={customer.id} businessId={businessId} /></DraftTab></div>
+      {tab === 'charts' && canCharts && <ChartsPanel customerId={customer.id} businessId={businessId} />}
+      {tab === 'forms' && <CustomerFormsTab customerId={customer.id} businessId={businessId} customerEmail={customer.email} onChanged={() => setFormsRefresh((n) => n + 1)} />}
       <div hidden={tab !== 'preferences'}><DraftTab tab="preferences"><PreferencesTab preferences={preferences} onSaved={(prefs) => { setPreferences(prefs); setTimelineVersion((n) => n + 1); }} customerId={customer.id} businessId={businessId} /></DraftTab></div>
     </div>
   );
@@ -380,9 +397,7 @@ function OverviewTab({ customer, tags, preferences, staff, onUpdate, onOpenConse
               </select>
             </div>
             <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-lang">Language</label>
-              <select id="f-lang" style={{ ...styles.fieldInput, ...mark('preferred_language') }} value={form.preferred_language} onChange={(e) => setForm({ ...form, preferred_language: e.target.value })}>
-                <option value="en">English</option><option value="es">Spanish</option>
-              </select>
+              <LanguageSelect id="f-lang" style={{ ...styles.fieldInput, ...mark('preferred_language') }} value={form.preferred_language} onChange={(v) => setForm({ ...form, preferred_language: v })} />
             </div>
             {text('country', 'Country')}
             <div style={styles.formGroup}><label style={styles.fieldLabel} htmlFor="f-stage">Lifecycle Stage</label>

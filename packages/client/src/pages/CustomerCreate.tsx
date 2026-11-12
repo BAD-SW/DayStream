@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { LanguageSelect } from '../components/LanguageSelect';
 import { useNavigate } from 'react-router-dom';
 import { isValidPhoneNumber } from 'libphonenumber-js';
 import { iso2ToCountry } from '@daystream/shared';
@@ -159,12 +160,7 @@ export function CustomerCreate() {
           <div style={styles.row}>
             <div style={styles.fieldWrapper}>
               <label style={styles.label}>Language</label>
-              <select value={form.preferred_language} onChange={(e) => handleChange('preferred_language', e.target.value)} style={styles.input}>
-                <option value="en">English</option>
-                <option value="es">Spanish</option>
-                <option value="fr">French</option>
-                <option value="de">German</option>
-              </select>
+              <LanguageSelect value={form.preferred_language} onChange={(v) => handleChange('preferred_language', v)} style={styles.input} />
             </div>
             <div style={styles.fieldWrapper}>
               <label style={styles.label}>Country</label>

@@ -10,12 +10,14 @@
     "seed:dev": "tsx src/db/seed.ts",
     "seed:config": "tsx src/db/seed-config-runner.ts",
     "seed:export": "tsx src/db/export-config.ts",
+    "storage:relayout": "tsx src/db/storage-relayout.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "echo \"No lint configured yet\""
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1164.0",
     "@daystream/shared": "*",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",

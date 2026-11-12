@@ -190,3 +190,8 @@
 .dsa .pay-short { color: var(--warn); font-weight: 700; }
 .dsa .pay-zero { margin: 0; background: var(--ok-bg); color: var(--fg); border-radius: 10px; padding: 12px; font-weight: 600; }
 @media (max-width: 860px) { .dsa .pay-a { grid-template-columns: 1fr; } }
+
+/* spec 51 (Bill): phone check-in link in the edit window */
+.dsa .q-hint { font-size: 13px; color: var(--muted); margin: 0; }
+.dsa .q-hint .lnk { all: unset; cursor: pointer; color: var(--accent); font-weight: 700; }
+.dsa .q-hint .lnk:focus-visible { outline: 2px solid var(--accent); }

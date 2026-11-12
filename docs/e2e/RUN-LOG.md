@@ -31,6 +31,13 @@ What was not cleaned up, if anything.
 
 ## Runs
 
+## Run 20261112-1 — Month Grid totals; merge of Bill's 22 commits (spec 50 Waves 3-4, spec 51)
+
+- Month Grid: empty cells when nothing is booked; top row Total = sum of the service rows (Thu 12: 3, hover "3 booked (2 bookings)"). Verified in the browser.
+- Merge: conflicts in ServiceDetail, routes/services, service.service (calendar_color + default_chart_group_id both kept), routes/bookings (location/staff + skipLeadTime both kept). Bill's additions to the deleted BookingCreate / BookingEdit moved into the New Appointment window: FormsNeededNotice (customer section), phone check-in Copy link and Treatment chart (edit). Verified in the browser on an existing booking.
+- Setup after the pull: npm install (@aws-sdk/client-s3), build packages/shared, migrate:dev (162, 166, 167, 168-173 applied).
+- Client 159 / 159 pass; server 1244: 1222 pass on the first full run, the 22 failures were leftovers of earlier pre-migration runs (3 CEV Hosted events removed) and one timeout; the 3 files rerun: 41 / 41 pass.
+
 ## Run 20261111-8 — THE-23 4.2 / 4.3, location filter, payment step (local, not committed)
 
 - 4.2: boxes side by side across overlaps; numbers on every row (hub capNow: staff free = working that day and not busy then; shared = people then; group = latest session); the 2/14 vs 2/15 was a staff member busy with Cold Plunge 15:00–15:30 (now in the hover text). 4.3: Week numbers with one service; (1) for multi-person services; Month Grid bigger; month capacity with no hours set up = 08:00–21:00 (hub). Past days in Month faded (David: yes).

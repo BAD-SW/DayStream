@@ -6,6 +6,9 @@ import { Login } from './pages/Login';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { PersonalDataDownload } from './pages/PersonalDataDownload';
+import { PublicForm } from './pages/PublicForm';
+import { Kiosk } from './pages/Kiosk';
+import { PhoneCheckIn } from './pages/PhoneCheckIn';
 import { Profile } from './pages/Profile';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { Tenants } from './pages/Tenants';
@@ -75,7 +78,6 @@ import { CustomerEvents } from './pages/CustomerEvents';
 import { CustomerEventDetail } from './pages/CustomerEventDetail';
 import { useContextManager } from './context/ContextManager';
 import { EventCreate } from './pages/EventCreate';
-import { CheckIn } from './pages/CheckIn';
 import { Marketing } from './pages/Marketing';
 import { Inbox } from './pages/Inbox';
 import { CustomerMessages } from './pages/CustomerMessages';
@@ -113,6 +115,10 @@ export function App() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/personal-data" element={<PersonalDataDownload />} />
+        <Route path="/forms/:token" element={<PublicForm />} />
+        {/* Self check-in, no login (spec 51): the front-desk kiosk and a customer's own phone */}
+        <Route path="/kiosk" element={<Kiosk />} />
+        <Route path="/check-in/:code" element={<PhoneCheckIn />} />
 
         {/* Embeddable booking widget (spec 38) — standalone, no admin chrome, no auth gate */}
         <Route path="/booking-widget" element={<BookingWidget />} />
@@ -207,8 +213,6 @@ export function App() {
         <Route path="/events/new" element={<ProtectedRoute><EventCreate /></ProtectedRoute>} />
         <Route path="/events/:id" element={<ProtectedRoute><ForPersona customer={<CustomerEventDetail />} staff={<EventDetail />} /></ProtectedRoute>} />
 
-        {/* Check-In */}
-        <Route path="/check-in" element={<ProtectedRoute><CheckIn /></ProtectedRoute>} />
 
         {/* Marketing */}
         <Route path="/marketing" element={<ProtectedRoute><Marketing /></ProtectedRoute>} />

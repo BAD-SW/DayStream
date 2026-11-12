@@ -51,6 +51,8 @@ export interface IssueCreditNoteInput {
   reason: string;
   lineItems: CreditNoteLineInput[];
   createdBy: string;
+  /** Set only by the data-migration import: the source row's key, so a re-import is detected (migration 167). */
+  importKey?: string | null;
 }
 
 /** Business timezone-local posting date (YYYY-MM-DD). */
@@ -122,12 +124,12 @@ export async function issueCreditNote(input: IssueCreditNoteInput): Promise<any>
     const { rows: cnRows } = await client.query(
       `INSERT INTO pay_credit_notes
          (tenant_id, business_id, customer_id, credit_note_number, issue_date, currency,
-          subtotal_cents, tax_cents, total_cents, reason, status, created_by)
-       VALUES ($1,$2,$3,$4,CURRENT_DATE,$5,$6,$7,$8,$9,'issued',$10)
+          subtotal_cents, tax_cents, total_cents, reason, status, created_by, import_key)
+       VALUES ($1,$2,$3,$4,CURRENT_DATE,$5,$6,$7,$8,$9,'issued',$10,$11)
        RETURNING *`,
       [
         input.tenantId, input.businessId, input.customerId, creditNoteNumber, currency,
-        subtotalCents, taxCents, totalCents, input.reason.trim(), input.createdBy,
+        subtotalCents, taxCents, totalCents, input.reason.trim(), input.createdBy, input.importKey ?? null,
       ],
     );
     creditNote = cnRows[0];

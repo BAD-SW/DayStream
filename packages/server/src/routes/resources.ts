@@ -18,6 +18,7 @@ import * as depsService from '../services/resource-dependencies.service';
 import * as calendarService from '../services/resource-calendar.service';
 import * as utilizationService from '../services/resource-utilization.service';
 import { storage } from '../services/storage.service';
+import { storagePaths, pathFromReference, tenantOfBusiness } from '../utils/storage-paths';
 
 export const resourcesRouter = Router();
 
@@ -271,10 +272,17 @@ resourcesRouter.post('/:id/photo', requirePermission('resources:*'), upload.sing
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
 
     if (!req.file) { error(res, 'No photo provided', 'VALIDATION_ERROR', 400); return; }
+    const { rows: before } = await adminPool.query(
+      'SELECT photo_path FROM res_resources WHERE id = $1 AND business_id = $2', [req.params.id, businessId],
+    );
+    if (!before[0]) { error(res, 'Resource not found', 'NOT_FOUND', 404); return; }
     const ext = req.file.originalname.split('.').pop() || 'jpg';
-    const relativePath = `resources/${authReq.tenantId}/${req.params.id}.${ext}`;
+    const relativePath = storagePaths.resourcePhoto(await tenantOfBusiness(businessId), businessId, req.params.id, ext);
     await storage.save(relativePath, req.file.buffer);
     const resource = await resourceService.updateResource(req.params.id, businessId, { photo_path: relativePath }, authReq.user.sub);
+    // The replaced photo is removed (with any folder it leaves empty).
+    const oldPath = pathFromReference(before[0].photo_path);
+    if (oldPath && oldPath !== relativePath) await storage.delete(oldPath).catch(() => {});
     success(res, resource);
   } catch (err: any) { console.error('Failed to upload photo', err?.message || err); error(res, 'Failed to upload photo', 'INTERNAL_ERROR', 500); }
 });

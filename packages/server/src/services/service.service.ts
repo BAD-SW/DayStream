@@ -257,6 +257,7 @@ export async function updateService(id: string, businessId: string, updates: Rec
     is_taxable: 'is_taxable',
     cancellation_policy_id: 'cancellation_policy_id',
     calendar_color: 'calendar_color',
+    default_chart_group_id: 'default_chart_group_id',
   };
 
   const fields: string[] = [];
@@ -267,7 +268,7 @@ export async function updateService(id: string, businessId: string, updates: Rec
     if (allowedFields[key] !== undefined) {
       // Convert empty strings to null for UUID and boolean fields
       let finalValue = value;
-      if ((key === 'category_id' || key === 'tax_category_id' || key === 'cancellation_policy_id') && value === '') {
+      if ((key === 'category_id' || key === 'tax_category_id' || key === 'cancellation_policy_id' || key === 'default_chart_group_id') && value === '') {
         finalValue = null;
       }
       fields.push(`${allowedFields[key]} = $${idx++}`);

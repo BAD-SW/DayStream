@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import sharp from 'sharp';
 import { adminPool } from '../db/pool';
 import { storage } from './storage.service';
+import { storagePaths, tenantOfBusiness } from '../utils/storage-paths';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -11,8 +12,16 @@ const SIZES = {
   thumbnail: { width: 200 },
 };
 
-function buildBasePath(businessId: string, merchandiseId: string): string {
-  return `products/${businessId}/${merchandiseId}`;
+/** The product's image folder (holds original/, medium/, thumbnail/) in the business's public storage. */
+async function buildBasePath(businessId: string, merchandiseId: string): Promise<string> {
+  return storagePaths.productImageFolder(await tenantOfBusiness(businessId), businessId, merchandiseId);
+}
+
+/** Remove a product image's files: the original, every size, and the product folder they were in. */
+async function removeImageFiles(imagePath: string): Promise<void> {
+  const basePath = imagePath.replace(/\/original\/.*$/, '');
+  if (!basePath || basePath === imagePath) { await storage.delete(imagePath); return; }
+  await storage.deleteDirectory(basePath);
 }
 
 /**
@@ -35,7 +44,11 @@ export async function uploadImage(
   // Generate unique filename
   const fileId = crypto.randomUUID();
   const ext = file.mimetype === 'image/png' ? 'png' : file.mimetype === 'image/webp' ? 'webp' : 'jpg';
-  const basePath = buildBasePath(businessId, merchandiseId);
+  const basePath = await buildBasePath(businessId, merchandiseId);
+
+  // A product has one image: remove the one it replaces (all sizes) before saving the new one.
+  const { rows: prev } = await adminPool.query('SELECT image_url FROM prd_merchandise WHERE id = $1 AND business_id = $2', [merchandiseId, businessId]);
+  if (prev[0]?.image_url) await removeImageFiles(prev[0].image_url).catch(() => {});
 
   // Save original
   const originalPath = `${basePath}/original/${fileId}.${ext}`;
@@ -69,22 +82,8 @@ export async function deleteImage(merchandiseId: string, businessId: string): Pr
   );
   if (!rows[0]?.image_url) return false;
 
-  const imagePath = rows[0].image_url;
-
-  // Delete files from storage
-  try {
-    await storage.delete(imagePath);
-    // Delete resized versions
-    const basePath = imagePath.replace(/\/original\/.*$/, '');
-    const fileId = imagePath.match(/\/([^/]+)\.[^.]+$/)?.[1];
-    if (fileId) {
-      for (const sizeName of Object.keys(SIZES)) {
-        await storage.delete(`${basePath}/${sizeName}/${fileId}.webp`);
-      }
-    }
-    // Remove the product folder and subfolders
-    await storage.deleteDirectory(basePath);
-  } catch { /* best effort */ }
+  // Delete files from storage (best effort): the original, its sizes, and the product's folder.
+  await removeImageFiles(rows[0].image_url).catch(() => {});
 
   // Clear the reference
   await adminPool.query(

@@ -9,7 +9,7 @@ import { logAudit } from '../audit.service';
 
 export type ImportKind =
   | 'customers' | 'payment_methods' | 'memberships'
-  | 'packages' | 'appointments' | 'account_balances' | 'transactions';
+  | 'packages' | 'appointments' | 'account_balances' | 'transactions' | 'notes';
 
 export type RowOutcome = 'imported' | 'matched' | 'failed';
 
@@ -76,24 +76,104 @@ export function matchByName<T extends { name: string }>(
   return { match: null, reason: `No ${label} named "${value}" — create it in setup first, or fix the name` };
 }
 
-/** Parse a date cell (YYYY-MM-DD, M/D/YYYY, or any Date-parseable string) to YYYY-MM-DD, or null. */
-export function parseDateCell(value: string | null | undefined): string | null {
+// ---------------------------------------------------------------------------
+// Dates: day-first vs month-first
+// ---------------------------------------------------------------------------
+
+/** Order of a numeric date's first two parts: month/day (US) or day/month (most of the world). */
+export type DateOrder = 'mdy' | 'dmy';
+
+/** A numeric date with separators: 15/03/2026, 3-15-26, 15.03.2026. */
+const NUMERIC_DATE_RE = /^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2}|\d{4})$/;
+
+/** A two-digit year: up to 10 years ahead is this century (a booking or expiry), else last (a birth). */
+function expandYear(y: number): number {
+  if (y >= 100) return y;
+  const thisYY = new Date().getUTCFullYear() % 100;
+  return y <= thisYY + 10 ? 2000 + y : 1900 + y;
+}
+
+function ymd(y: number, m: number, d: number): string | null {
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (isNaN(dt.getTime()) || dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+  return dt.toISOString().slice(0, 10);
+}
+
+/**
+ * Parse a date cell to YYYY-MM-DD, or null. Accepts ISO (2026-03-15), numeric dates with /, - or .
+ * separators and 2- or 4-digit years, read in `order` (month-first by default), and finally any
+ * string the JavaScript date parser understands ("15 March 2026", "Mar 15, 2026").
+ */
+export function parseDateCell(value: string | null | undefined, order: DateOrder = 'mdy'): string | null {
   const s = (value || '').trim();
   if (!s) return null;
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) {
-    const d = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
-    return isNaN(d.getTime()) || d.getUTCMonth() !== Number(iso[2]) - 1 ? null : `${iso[1]}-${iso[2]}-${iso[3]}`;
-  }
-  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (us) {
-    const m = Number(us[1]); const day = Number(us[2]); const y = Number(us[3]);
-    const d = new Date(Date.UTC(y, m - 1, day));
-    if (isNaN(d.getTime()) || d.getUTCMonth() !== m - 1 || d.getUTCDate() !== day) return null;
-    return d.toISOString().slice(0, 10);
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return ymd(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+  const num = s.match(NUMERIC_DATE_RE);
+  if (num) {
+    const a = Number(num[1]); const b = Number(num[2]); const y = expandYear(Number(num[3]));
+    return order === 'dmy' ? ymd(y, b, a) : ymd(y, a, b);
   }
   const d = new Date(s);
   return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+/**
+ * Work out a file's date order from its values: a first part over 12 can only be a day (day-first),
+ * a second part over 12 can only be a day (month-first). Returns null when the values can't tell
+ * (every part is 12 or under) or contradict each other.
+ */
+export function detectDateOrder(values: Array<string | null | undefined>): DateOrder | null {
+  let dayFirst = 0; let monthFirst = 0;
+  for (const v of values) {
+    const m = (v || '').trim().match(NUMERIC_DATE_RE);
+    if (!m) continue;
+    if (Number(m[1]) > 12) dayFirst++;
+    if (Number(m[2]) > 12) monthFirst++;
+  }
+  if (dayFirst > 0 && monthFirst === 0) return 'dmy';
+  if (monthFirst > 0 && dayFirst === 0) return 'mdy';
+  return null;
+}
+
+/** Countries that write dates month-first. Everywhere else is day-first. */
+const MONTH_FIRST_COUNTRIES = new Set(['US', 'PR', 'GU', 'VI', 'AS', 'MP', 'UM', 'PH', 'FM', 'MH', 'PW']);
+
+/**
+ * The business's own date order, for files whose values can't tell: from its location's country,
+ * else the country of its phone number. Month-first when neither is known (the previous behavior).
+ */
+export async function businessDateOrder(businessId: string): Promise<DateOrder> {
+  const { rows } = await adminPool.query(
+    `SELECT l.country AS location_country, b.phone
+     FROM sys_businesses b
+     LEFT JOIN LATERAL (
+       SELECT country FROM sys_locations WHERE business_id = b.id AND country IS NOT NULL ORDER BY created_at LIMIT 1
+     ) l ON true
+     WHERE b.id = $1`,
+    [businessId],
+  ).catch(() => ({ rows: [] as Array<{ location_country: string | null; phone: string | null }> }));
+  let country = (rows[0]?.location_country || '').toUpperCase();
+  if (!country && rows[0]?.phone) {
+    const { parsePhoneNumberFromString } = await import('libphonenumber-js');
+    country = (parsePhoneNumberFromString(String(rows[0].phone))?.country || '').toUpperCase();
+  }
+  if (!country) return 'mdy';
+  return MONTH_FIRST_COUNTRIES.has(country) ? 'mdy' : 'dmy';
+}
+
+/**
+ * The date order for one import file: read from all of its date columns together (one export uses
+ * one format), else the business's own order.
+ */
+export async function fileDateOrder(
+  businessId: string, rows: Array<Record<string, string>>, dateFields: string[], known?: DateOrder | null,
+): Promise<DateOrder> {
+  // The order detected over the WHOLE file at analyze time wins: a file is committed in batches,
+  // and each batch working out its own order could read 05/04 differently from the next.
+  if (known) return known;
+  const values = rows.flatMap((r) => dateFields.map((f) => r[f]));
+  return detectDateOrder(values) ?? (await businessDateOrder(businessId));
 }
 
 // ---------------------------------------------------------------------------
@@ -103,68 +183,141 @@ export function parseDateCell(value: string | null | undefined): string | null {
 // ---------------------------------------------------------------------------
 
 export interface CustomerMatchInput {
+  /** Processor customer ids from the file (e.g. Stripe's old and new cus_ ids), tried first. */
+  processorCustomerIds?: Array<string | null | undefined>;
   legacyCustomerId?: string | null;
   email?: string | null;
   phone?: string | null;
 }
 
+export type MatchKey = 'processor_id' | 'legacy_id' | 'email' | 'phone';
+
 export interface CustomerMatch {
   customerId: string | null;
-  matchedBy: 'legacy_id' | 'email' | 'phone' | null;
+  matchedBy: MatchKey | null;
+  /**
+   * Set when the row's keys point to DIFFERENT customers (e.g. the legacy id is Ana's but the email
+   * is Maria's). The row is not attached to anyone; this is the plain-language reason to show.
+   */
+  conflict?: string;
+}
+
+/** A customer found by at least one of the row's keys, and which keys found it. */
+export interface MatchCandidate {
+  id: string;
+  name: string;
+  byProcessor: boolean;
+  byLegacy: boolean;
+  byEmail: boolean;
+  byPhone: boolean;
+}
+
+const KEY_ORDER: Array<{ key: MatchKey; flag: keyof Pick<MatchCandidate, 'byProcessor' | 'byLegacy' | 'byEmail' | 'byPhone'> }> = [
+  { key: 'processor_id', flag: 'byProcessor' },
+  { key: 'legacy_id', flag: 'byLegacy' },
+  { key: 'email', flag: 'byEmail' },
+  { key: 'phone', flag: 'byPhone' },
+];
+
+/** How a key and its value read in a reason ("legacy ID "RE9284A""). */
+function describeKey(key: MatchKey, input: CustomerMatchInput): string {
+  switch (key) {
+    case 'processor_id': return `processor customer ID "${(input.processorCustomerIds ?? []).filter((v) => (v || '').trim()).join('" / "')}"`;
+    case 'legacy_id': return `legacy ID "${(input.legacyCustomerId || '').trim()}"`;
+    case 'email': return `email "${(input.email || '').trim()}"`;
+    default: return `phone "${(input.phone || '').trim()}"`;
+  }
 }
 
 /**
- * Resolve the DayStream customer a row belongs to. Preferred key is the legacy
- * customer id captured at customer import (exact, unambiguous); falls back to
- * email (case-insensitive) then a unique phone. Returns a null id when nothing
- * resolves, so the caller can fail the row with a clear reason.
+ * Decide the customer from every customer any key found (pure, so it can be tested without a
+ * database). Each key counts only when it found EXACTLY ONE customer: a shared email or phone is
+ * ignored rather than guessed. When the counting keys agree, the strongest key is reported as the
+ * match; when they point to different customers, nothing is attached and the conflict is explained.
  */
-export async function matchCustomer(businessId: string, input: CustomerMatchInput): Promise<CustomerMatch> {
-  const legacy = (input.legacyCustomerId || '').trim();
-  if (legacy) {
-    const { rows } = await adminPool.query(
-      `SELECT id FROM cus_customers
-       WHERE business_id = $1 AND legacy_customer_id = $2 AND status <> 'merged'
-       LIMIT 2`,
-      [businessId, legacy],
-    );
-    if (rows.length === 1) return { customerId: rows[0].id, matchedBy: 'legacy_id' };
-    // 0 → fall through to email/phone; 2+ → ambiguous legacy id, also fall through.
+export function resolveCustomerMatch(candidates: MatchCandidate[], input: CustomerMatchInput): CustomerMatch {
+  const resolved: Array<{ key: MatchKey; customer: MatchCandidate }> = [];
+  for (const { key, flag } of KEY_ORDER) {
+    const hits = candidates.filter((c) => c[flag]);
+    if (hits.length === 1) resolved.push({ key, customer: hits[0] });
   }
+  if (resolved.length === 0) return { customerId: null, matchedBy: null };
 
-  const email = (input.email || '').trim().toLowerCase();
-  if (email) {
-    const { rows } = await adminPool.query(
-      `SELECT id FROM cus_customers
-       WHERE business_id = $1 AND LOWER(email) = $2 AND status <> 'merged'
-       LIMIT 2`,
-      [businessId, email],
-    );
-    if (rows.length === 1) return { customerId: rows[0].id, matchedBy: 'email' };
+  const distinct = [...new Map(resolved.map((r) => [r.customer.id, r])).values()];
+  if (distinct.length > 1) {
+    const parts = distinct.map((d) => `the ${describeKey(d.key, input)} matches ${d.customer.name}`);
+    return {
+      customerId: null, matchedBy: null,
+      conflict: `This row points to different customers: ${parts.join(', but ')}. Fix the row so its details belong to the same customer`,
+    };
   }
-
-  const phone = (input.phone || '').trim();
-  if (phone) {
-    const { rows } = await adminPool.query(
-      `SELECT id FROM cus_customers
-       WHERE business_id = $1 AND (phone = $2 OR phone_e164 = $2) AND status <> 'merged'
-       LIMIT 2`,
-      [businessId, phone],
-    );
-    if (rows.length === 1) return { customerId: rows[0].id, matchedBy: 'phone' };
-  }
-
-  return { customerId: null, matchedBy: null };
+  return { customerId: resolved[0].customer.id, matchedBy: resolved[0].key };
 }
 
-/** A plain-language "no customer" failure reason naming what was looked for. */
-export function noCustomerReason(input: CustomerMatchInput): string {
+/**
+ * Resolve the DayStream customer a row belongs to, checking EVERY key the row has (processor
+ * customer id, legacy customer id, email, phone) in one query, then deciding with
+ * resolveCustomerMatch: keys that agree resolve the customer; keys that disagree fail the row with
+ * a conflict reason instead of silently picking one. With no key resolving, the caller fails the
+ * row with noCustomerReason.
+ */
+export async function matchCustomer(businessId: string, input: CustomerMatchInput): Promise<CustomerMatch> {
+  const processorIds = [...new Set((input.processorCustomerIds ?? []).map((v) => (v || '').trim()).filter(Boolean))];
+  const legacy = (input.legacyCustomerId || '').trim() || null;
+  const email = (input.email || '').trim().toLowerCase() || null;
+  const phone = (input.phone || '').trim() || null;
+  if (processorIds.length === 0 && !legacy && !email && !phone) return { customerId: null, matchedBy: null };
+
+  const { rows } = await adminPool.query<{
+    id: string; first_name: string | null; last_name: string | null; email: string | null;
+    by_processor: boolean; by_legacy: boolean; by_email: boolean; by_phone: boolean;
+  }>(
+    `SELECT id, first_name, last_name, email,
+            COALESCE(processor_customer_id = ANY($2::text[]), false) AS by_processor,
+            COALESCE(legacy_customer_id = $3, false) AS by_legacy,
+            COALESCE(LOWER(email) = $4, false) AS by_email,
+            COALESCE(phone = $5 OR phone_e164 = $5, false) AS by_phone
+     FROM cus_customers
+     WHERE business_id = $1 AND status <> 'merged'
+       AND (processor_customer_id = ANY($2::text[]) OR legacy_customer_id = $3
+            OR LOWER(email) = $4 OR phone = $5 OR phone_e164 = $5)
+     LIMIT 20`,
+    [businessId, processorIds, legacy, email, phone],
+  );
+  return resolveCustomerMatch(rows.map((r) => ({
+    id: r.id,
+    name: [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || r.email || 'a customer with no name',
+    byProcessor: r.by_processor, byLegacy: r.by_legacy, byEmail: r.by_email, byPhone: r.by_phone,
+  })), input);
+}
+
+/**
+ * The customer keys of a field-mapped row, for matchCustomer and noCustomerReason. Every
+ * customer-linked import uses this so they all match the same way (Requirement 19).
+ */
+export function customerMatchInput(r: Record<string, string | undefined>): CustomerMatchInput {
+  return {
+    processorCustomerIds: [r.processor_customer_id],
+    legacyCustomerId: r.legacy_customer_id, email: r.email, phone: r.phone,
+  };
+}
+
+/**
+ * A plain-language "no customer" failure reason naming what was looked for. Accepts either the
+ * match input or a field-mapped file row (snake_case keys such as legacy_customer_id) — most
+ * importers pass the row, and reading only the camelCase keys made every reason say "no
+ * identifier on the row" even when the row had one.
+ */
+export function noCustomerReason(input: CustomerMatchInput & { legacy_customer_id?: string }): string {
   const tried: string[] = [];
-  if ((input.legacyCustomerId || '').trim()) tried.push(`legacy id "${input.legacyCustomerId}"`);
+  const processorIds = [...new Set((input.processorCustomerIds ?? []).map((v) => (v || '').trim()).filter(Boolean))];
+  if (processorIds.length) tried.push(`processor customer id "${processorIds.join('" / "')}"`);
+  const legacy = (input.legacyCustomerId || input.legacy_customer_id || '').trim();
+  if (legacy) tried.push(`legacy id "${legacy}"`);
   if ((input.email || '').trim()) tried.push(`email "${input.email}"`);
   if ((input.phone || '').trim()) tried.push(`phone "${input.phone}"`);
   if (tried.length === 0) return 'No customer identifier on the row (need a legacy id, email, or phone)';
-  return `No matching customer for ${tried.join(' / ')} — import customers first, or fix the identifier`;
+  return `No single matching customer for ${tried.join(' / ')} — import customers first, or fix the identifier (a shared email or phone matching several customers is not used)`;
 }
 
 // ---------------------------------------------------------------------------

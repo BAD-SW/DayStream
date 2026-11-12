@@ -11,6 +11,8 @@ import { SaveChanges } from '../components/unsaved/SaveChanges';
 import * as servicesApi from '../api/services';
 import type { Service, ServiceVariant, ServiceCategory, AvailabilityRule } from '../api/services';
 import { formatCurrency } from '../utils/currency';
+import { useClinicalAccess } from '../utils/useClinicalAccess';
+import * as formsApi from '../api/forms';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   active: 'success', draft: 'neutral', paused: 'warning', archived: 'error',
@@ -98,6 +100,15 @@ function ServiceDetailPage() {
 
 function ServiceForm({ service, categories, taxCategories, businessId, onUpdate }: { service: Service; categories: ServiceCategory[]; taxCategories: any[]; businessId: string; onUpdate: (s: Service) => void }) {
   const [statusChanging, setStatusChanging] = useState(false);
+  // Chart templates a service can suggest (spec 51, gap 2); only clinical roles can list them.
+  const canCharts = useClinicalAccess();
+  const [chartTemplates, setChartTemplates] = useState<{ groupId: string; name: string }[]>([]);
+  useEffect(() => {
+    if (!canCharts) return;
+    formsApi.listForms(businessId, 'chart')
+      .then((list) => setChartTemplates(list.filter((x) => x.isActive).map((x) => ({ groupId: x.groupId, name: x.name }))))
+      .catch(() => setChartTemplates([]));
+  }, [canCharts, businessId]);
   const fromService = (s: Service) => ({
     name: s.name,
     category_id: s.category_id || '',
@@ -113,6 +124,7 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
     is_taxable: (s as any).is_taxable || false,
     tax_category_id: (s as any).tax_category_id || '',
     calendar_color: (s as any).calendar_color || '',
+    default_chart_group_id: (s as any).default_chart_group_id || '',
   });
   const draft = useDraft('service-details', 'Service details', fromService(service), async (values) => {
     await servicesApi.updateService(service.id, businessId, { ...values, calendar_color: values.calendar_color || null } as any);
@@ -223,6 +235,16 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
               {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
             </select>
           </div>
+          {canCharts && (
+            <div style={styles.formGroup}>
+              <label style={styles.label} htmlFor="svc-default-chart">Default chart</label>
+              <select id="svc-default-chart" style={{ ...styles.input, ...mark('default_chart_group_id') }} value={form.default_chart_group_id}
+                onChange={(e) => setForm({ ...form, default_chart_group_id: e.target.value })}>
+                <option value="">None</option>
+                {chartTemplates.map((c) => <option key={c.groupId} value={c.groupId}>{c.name}</option>)}
+              </select>
+            </div>
+          )}
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
             <label style={styles.label}>Short Description</label>
             <input style={{ ...styles.input, ...mark('short_description') }} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />

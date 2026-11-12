@@ -51,7 +51,10 @@ export type {
 export { USER_ROLES, PERSONAS } from './constants/roles';
 export { ERROR_CODES } from './constants/error-codes';
 export { CONFIG_KEYS } from './constants/config-keys';
-export { SUPPORTED_LANGUAGES, SUPPORTED_CURRENCIES } from './constants/supported';
+export {
+  SUPPORTED_LANGUAGES, SUPPORTED_CURRENCIES, DEFAULT_LANGUAGE, LANGUAGE_DETAILS, LANGUAGE_LABELS, LANGUAGE_OPTIONS,
+  isSupportedLanguage, languageFromText, supportedLanguagesText,
+} from './constants/supported';
 export type { SupportedLanguage, SupportedCurrency } from './constants/supported';
 export { COUNTRIES, countryNameToIso2, countryNameToDialCode, iso2ToCountry } from './constants/countries';
 export type { CountryInfo } from './constants/countries';
@@ -69,6 +72,25 @@ export {
   isKnownArtifactType,
   DETAILS_TABLE_TOKEN,
 } from './documents/catalog';
+
+// Forms (spec 51)
+export {
+  FORM_ITEM_TYPES,
+  validateFormDefinition,
+  validateFormAnswers,
+  isSignedForm,
+  entriesByColumn,
+  MAX_FORM_COLUMNS,
+  MAX_FORM_OPTIONS,
+} from './forms/definition';
+export type {
+  FormItem,
+  FormItemType,
+  FormDefinition,
+  FormApplies,
+  FormAnswer,
+  FormValidationIssue,
+} from './forms/definition';
 
 // Utilities
 export { formatCurrency } from './utils/currency';

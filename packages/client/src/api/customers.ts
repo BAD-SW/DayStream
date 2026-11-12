@@ -67,6 +67,8 @@ export interface CustomerFilters {
   owner?: string;
   incomplete?: boolean;
   segment_id?: string;
+  /** Include archived people (hidden by default). */
+  include_archived?: boolean;
   /** Column filters of the shared table. */
   columns?: Record<string, { values?: string[]; contains?: string; from?: string; to?: string }>;
 }
@@ -140,6 +142,7 @@ export async function getCustomers(businessId: string, filters: CustomerFilters 
   if (filters.owner) params.set('owner', filters.owner);
   if (filters.incomplete) params.set('incomplete', 'true');
   if (filters.segment_id) params.set('segment_id', filters.segment_id);
+  if (filters.include_archived) params.set('include_archived', 'true');
   if (filters.columns && Object.keys(filters.columns).length) params.set('cf', JSON.stringify(filters.columns));
 
   const res = await apiClient.get(`/v1/customers?${params}`);
@@ -360,7 +363,7 @@ export async function getAudienceSummary(segmentId: string, businessId: string, 
 
 // --- Bulk actions ---
 
-export type BulkAction = 'add_tag' | 'remove_tag' | 'assign_owner' | 'change_stage' | 'add_to_list' | 'archive';
+export type BulkAction = 'add_tag' | 'remove_tag' | 'assign_owner' | 'change_stage' | 'add_to_list' | 'archive' | 'delete';
 /** Either the people ticked on screen, or everyone matching the list's filters. */
 export interface BulkTarget { ids?: string[]; filters?: Record<string, any> }
 export interface BulkPayload { tag_id?: string; owner_user_id?: string | null; stage?: string; segment_id?: string }
@@ -381,7 +384,7 @@ export async function previewBulk(businessId: string, target: BulkTarget): Promi
 }
 
 /** `background` is true when the change is too large to wait for; `count` is then how many people it covers. */
-export async function runBulk(businessId: string, target: BulkTarget, action: BulkAction, payload: BulkPayload): Promise<{ affected: number | null; background?: boolean; count?: number }> {
+export async function runBulk(businessId: string, target: BulkTarget, action: BulkAction, payload: BulkPayload): Promise<{ affected: number | null; skipped?: number; background?: boolean; count?: number }> {
   const res = await apiClient.post('/v1/customers/bulk', { ...bulkBody(businessId, target), action, payload });
   return res.data.data;
 }

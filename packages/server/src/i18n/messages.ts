@@ -3,6 +3,8 @@
  * Used for API responses that need to be in the user's language.
  */
 
+import { isSupportedLanguage, DEFAULT_LANGUAGE } from '@daystream/shared';
+
 const messages: Record<string, Record<string, string>> = {
   en: {
     'error.generic': 'Something went wrong. Please try again.',
@@ -37,7 +39,9 @@ const messages: Record<string, Record<string, string>> = {
  * Falls back to English if the requested language or key is not found.
  */
 export function getLocalizedMessage(key: string, lang: string): string {
-  const langMessages = messages[lang] || messages['en'];
+  // Only languages on the shared supported list are used; the rest of the translations below
+  // become active when their language is added to that list.
+  const langMessages = (isSupportedLanguage(lang) && messages[lang]) || messages['en'];
   return langMessages[key] || messages['en'][key] || messages['en']['error.generic'];
 }
 
@@ -47,6 +51,6 @@ export function getLocalizedMessage(key: string, lang: string): string {
 export function detectLanguageFromRequest(acceptLanguage?: string): string {
   if (!acceptLanguage) return 'en';
   const primary = acceptLanguage.split(',')[0]?.split('-')[0]?.toLowerCase();
-  if (primary && messages[primary]) return primary;
-  return 'en';
+  if (isSupportedLanguage(primary) && messages[primary]) return primary;
+  return DEFAULT_LANGUAGE;
 }

@@ -206,19 +206,38 @@ describe('Booking CRUD API', () => {
       expect(body.error).toContain('Customer has a conflicting');
     });
 
-    it('rejects booking within lead time (without override)', async () => {
-      const tooSoon = new Date(Date.now() + 30 * 60 * 1000); // 30 min from now
+    it('keeps the minimum notice for a customer booking for themselves', async () => {
+      // The notice is there to stop customers booking at the last minute: without skipLeadTime
+      // (what the customer paths use) a booking 30 minutes away is still refused.
+      const bookingService = await import('../src/services/booking.service');
+      const tooSoon = new Date(Date.now() + 30 * 60 * 1000);
+      await expect(bookingService.createBooking({
+        businessId: BUSINESS_ID, customerId: CUSTOMER_ID, serviceId: SERVICE_ID, variantId: VARIANT_ID,
+        startTime: tooSoon.toISOString(), createdBy: '00000000-0000-0000-0000-000000000010', tenantId: TENANT_ID,
+      })).rejects.toThrow(/advance booking/);
+    });
+
+    it('does not hold staff to the minimum notice when they book for a customer', async () => {
+      const { rows: cust3 } = await adminPool.query(
+        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+         VALUES ($1, $2, 'CUST-BK03', 'booking-cust3@example.com', 'Third', 'Customer', '00000000-0000-0000-0000-000000000010')
+         ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Third'
+         RETURNING id`,
+        [TENANT_ID, BUSINESS_ID],
+      );
+      const soon = new Date(Date.now() + 30 * 60 * 1000); // 30 min from now
 
       const { statusCode, body } = await request('POST', '/api/v1/bookings', {
         business_id: BUSINESS_ID,
-        customer_id: CUSTOMER_ID,
+        customer_id: cust3[0].id,
         service_id: SERVICE_ID,
         variant_id: VARIANT_ID,
-        start_time: tooSoon.toISOString(),
+        start_time: soon.toISOString(),
       }, ownerToken);
 
-      expect(statusCode).toBe(409);
-      expect(body.error).toContain('advance booking');
+      // It may still be refused for another reason (hours, a clash), but never for the notice.
+      if (statusCode !== 201) expect(String(body.error)).not.toContain('advance booking');
+      if (statusCode === 201) await adminPool.query('DELETE FROM apt_bookings WHERE id = $1', [body.data.id]);
     });
 
     it('allows override_rules for staff-initiated booking', async () => {

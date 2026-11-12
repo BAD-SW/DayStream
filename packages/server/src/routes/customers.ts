@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { parseColumnFilters } from '../utils/column-filters';
 import Joi from 'joi';
+import { SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE } from '@daystream/shared';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { tenantContext } from '../auth/tenant-context';
 import { requirePermission } from '../auth/permissions';
@@ -30,7 +31,7 @@ const createCustomerSchema = Joi.object({
   phone: Joi.string().max(50).allow('', null),
   date_of_birth: Joi.string().isoDate().allow(null),
   gender: Joi.string().max(20).allow('', null),
-  preferred_language: Joi.string().max(5).default('en'),
+  preferred_language: Joi.string().valid(...SUPPORTED_LANGUAGES).default(DEFAULT_LANGUAGE),
   country: Joi.string().max(100).allow('', null),
   source: Joi.string().valid('manual', 'walk_in', 'referral').default('manual'),
   source_detail: Joi.string().max(200).allow('', null),
@@ -46,7 +47,7 @@ const updateCustomerSchema = Joi.object({
   phone: Joi.string().max(50).allow('', null),
   date_of_birth: Joi.string().isoDate().allow(null, ''),
   gender: Joi.string().max(20).allow('', null),
-  preferred_language: Joi.string().max(5),
+  preferred_language: Joi.string().valid(...SUPPORTED_LANGUAGES),
   country: Joi.string().max(100).allow('', null),
   avatar_url: Joi.string().uri().allow('', null),
   status: Joi.string().valid('active', 'archived'),
@@ -224,7 +225,7 @@ const bulkSchema = Joi.object({
   // Either the people ticked on screen, or "everyone matching these filters".
   ids: Joi.array().items(Joi.string().uuid()).max(5000),
   filters: bulkFiltersSchema,
-  action: Joi.string().valid('add_tag', 'remove_tag', 'assign_owner', 'change_stage', 'add_to_list', 'archive'),
+  action: Joi.string().valid('add_tag', 'remove_tag', 'assign_owner', 'change_stage', 'add_to_list', 'archive', 'delete'),
   payload: Joi.object({
     tag_id: Joi.string().uuid(),
     owner_user_id: Joi.string().uuid().allow(null),

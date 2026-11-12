@@ -15,10 +15,11 @@ import { LeaveGuard } from '../components/unsaved/LeaveGuard';
 import * as payApi from '../api/payments';
 import * as bookingsApi from '../api/bookings';
 import { InboxSettings } from './settings/InboxSettings';
+import { KioskSettings } from './settings/KioskSettings';
 import { PeopleListSettings } from './settings/PeopleListSettings';
 import { TIMEZONES } from '../utils/timezones';
 
-type SettingsTab = 'system' | 'lifecycle' | 'leads' | 'inbox' | 'people-lists' | 'processes' | 'notifications' | 'payment-methods' | 'integrations' | 'booking-widget' | 'appearance';
+type SettingsTab = 'system' | 'lifecycle' | 'leads' | 'inbox' | 'people-lists' | 'processes' | 'kiosk' | 'notifications' | 'payment-methods' | 'integrations' | 'booking-widget' | 'appearance';
 
 const TABS: { key: SettingsTab; label: string; separatorBefore?: boolean }[] = [
   { key: 'system', label: 'System' },
@@ -33,6 +34,7 @@ const TABS: { key: SettingsTab; label: string; separatorBefore?: boolean }[] = [
   // Processes and Appearance act straight away with their own buttons (David, 2026-10-28):
   // they sit apart, after a separator, and are not part of Save changes.
   { key: 'processes', label: 'Processes', separatorBefore: true },
+  { key: 'kiosk', label: 'Check-In Kiosk' },
   { key: 'appearance', label: 'Appearance' },
 ];
 
@@ -98,6 +100,7 @@ function renderTab(tab: SettingsTab) {
     case 'inbox': return <InboxSettings />;
     case 'people-lists': return <PeopleListSettings />;
     case 'processes': return <ProcessesSettings />;
+    case 'kiosk': return <KioskSettings />;
     case 'notifications': return <NotificationSettings />;
     case 'payment-methods': return <PaymentMethodsSettings />;
     case 'integrations': return <IntegrationsSettings />;

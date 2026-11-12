@@ -13,6 +13,8 @@ import * as kioskService from '../services/checkin-kiosk.service';
 import * as dashboardService from '../services/checkin-dashboard.service';
 import * as reportsService from '../services/checkin-reports.service';
 import * as validationService from '../services/checkin-validation.service';
+import * as selfService from '../services/self-check-in.service';
+import { selfCheckInLimiter } from '../middleware/rate-limit';
 
 export const checkInRouter = Router();
 
@@ -36,6 +38,17 @@ function kioskToken(req: Request): string {
   return String(req.headers['x-kiosk-token'] || req.query.token || '').trim();
 }
 
+/**
+ * Refuse a kiosk request. A kiosk that exists but is switched off says KIOSK_OFF (the tablet keeps
+ * its key and waits to be switched back on); a key that matches nothing says KIOSK_UNKNOWN (the
+ * kiosk was deleted, so the tablet forgets the key).
+ */
+async function denyKiosk(res: Response, token: string): Promise<void> {
+  const exists = token ? await kioskService.kioskTokenExists(token) : false;
+  if (exists) error(res, 'This kiosk is switched off', 'KIOSK_OFF', 401);
+  else error(res, 'Kiosk not registered', 'KIOSK_UNKNOWN', 401);
+}
+
 async function kioskSession(token: string) {
   const kiosk = await kioskService.getKioskStatus(token);
   if (!kiosk) return null;
@@ -48,29 +61,69 @@ checkInRouter.get('/kiosk/status', async (req: Request, res: Response, next: Nex
   if (!token) { next(); return; }
   try {
     const session = await kioskSession(token);
-    if (!session) { error(res, 'Kiosk not registered or switched off', 'KIOSK_UNKNOWN', 401); return; }
+    if (!session) { await denyKiosk(res, token); return; }
     const { kiosk } = session;
     success(res, { id: kiosk.id, device_name: kiosk.device_name, location_id: kiosk.location_id, is_active: kiosk.is_active, last_activity_at: kiosk.last_activity_at });
   } catch (err: any) { console.error('Failed to get status', err?.message || err); error(res, 'Failed to get status', 'INTERNAL_ERROR', 500); }
 });
 
-checkInRouter.post('/kiosk', async (req: Request, res: Response, next: NextFunction) => {
+const selfScreen = selfService.selfScreen;
+
+// The kiosk identifies the customer by the phone number or email address on the booking, or a
+// scanned QR code. Never by name. Check-in comes first; forms never hold it back.
+checkInRouter.post('/kiosk', selfCheckInLimiter, async (req: Request, res: Response, next: NextFunction) => {
   const token = kioskToken(req);
   if (!token) { next(); return; }
   try {
     const session = await kioskSession(token);
-    if (!session || !session.businessId) { error(res, 'Kiosk not registered or switched off', 'KIOSK_UNKNOWN', 401); return; }
-    const result = await checkinService.checkInKiosk(
-      { code: req.body.code, reference: req.body.reference, name: req.body.name, phone: req.body.phone },
-      session.kiosk.tenant_id, session.kiosk.location_id, session.businessId);
-    // The kiosk shows a greeting and what the visit is: no contact details, no ids of the person.
-    const { rows } = await adminPool.query(
-      `SELECT b.booking_reference, b.start_time, s.name AS service_name, c.first_name
-         FROM apt_bookings b JOIN svc_services s ON s.id = b.service_id LEFT JOIN cus_customers c ON c.id = b.customer_id
-        WHERE b.id = $1`, [result.booking_id]);
-    success(res, { checked_in: true, ...(rows[0] || {}), warnings: result.validation.warnings });
+    if (!session || !session.businessId) { await denyKiosk(res, token); return; }
+    const { ctx, ambiguous } = await selfService.contextFromKioskInput(
+      { code: req.body.code, phone: req.body.phone, email: req.body.email }, session.kiosk.tenant_id, session.businessId);
+    if (ambiguous) throw new checkinService.CheckInRefused('More than one person matches. Please see the front desk.');
+    if (!ctx) {
+      // Nothing today. If the same phone or email has other appointments, say so: one may have been
+      // moved without the calendar being updated. Staff can sort it out at the desk.
+      const upcoming = req.body.code ? [] : await checkinService.findUpcomingByContact(
+        { phone: req.body.phone, email: req.body.email }, session.kiosk.tenant_id, session.businessId);
+      if (upcoming.length > 0) {
+        error(res, 'Nothing is scheduled for you today, but you have other appointments.', 'NOT_TODAY', 404, { upcoming });
+        return;
+      }
+      throw new checkinService.CheckInRefused('We could not find an appointment for you. Please check the phone number or email address, or see the front desk.');
+    }
+    const result = await selfService.selfCheckIn(ctx, 'kiosk', session.kiosk.location_id);
+    success(res, { checked_in_now: result.checkedInNow, ...(await selfScreen(ctx)), session: selfService.createSession(ctx) });
   } catch (err: any) { refuse(res, err, 'Check-in failed'); }
 });
+
+/** The visit named by a kiosk's session, which must belong to this kiosk's business. */
+async function kioskVisit(req: Request, res: Response): Promise<selfService.SelfContext | null> {
+  const token = kioskToken(req);
+  const session = token ? await kioskSession(token) : null;
+  if (!session || !session.businessId) { await denyKiosk(res, token); return null; }
+  const ctx = selfService.readSession(req.body?.session);
+  if (!ctx || ctx.businessId !== session.businessId || ctx.tenantId !== session.kiosk.tenant_id) {
+    error(res, 'This screen timed out. Please start again.', 'SESSION_EXPIRED', 401); return null;
+  }
+  return ctx;
+}
+
+checkInRouter.post('/kiosk/forms', selfCheckInLimiter, async (req: Request, res: Response) => {
+  try {
+    const ctx = await kioskVisit(req, res);
+    if (!ctx) return;
+    success(res, await selfScreen(ctx));
+  } catch (err: any) { refuse(res, err, 'Could not load the forms'); }
+});
+
+checkInRouter.post('/kiosk/forms/start', selfCheckInLimiter, async (req: Request, res: Response) => {
+  try {
+    const ctx = await kioskVisit(req, res);
+    if (!ctx) return;
+    success(res, await selfService.startSelfForm(ctx, String(req.body?.group_id || '')));
+  } catch (err: any) { refuse(res, err, 'Could not start the form'); }
+});
+
 
 checkInRouter.use(authenticate);
 checkInRouter.use(tenantContext);
@@ -149,7 +202,7 @@ checkInRouter.post('/kiosk', requirePermission('checkin:*'), async (req: Request
   try {
     const authReq = req as AuthenticatedRequest;
     const result = await checkinService.checkInKiosk(
-      { code: req.body.code, reference: req.body.reference, name: req.body.name, phone: req.body.phone },
+      { code: req.body.code, reference: req.body.reference, email: req.body.email, phone: req.body.phone },
       authReq.tenantId, req.body.location_id, bizOf(req));
     success(res, result);
   } catch (err: any) { refuse(res, err, 'Check-in failed'); }
@@ -213,6 +266,16 @@ checkInRouter.post('/qr-code/customer/:customerId/regenerate', requirePermission
     const qr = await qrService.regenerateCustomerQrCode(authReq.tenantId, req.params.customerId);
     success(res, qr);
   } catch (err: any) { console.error('Failed to regenerate QR code', err?.message || err); error(res, 'Failed to regenerate QR code', 'INTERNAL_ERROR', 500); }
+});
+
+// The personal check-in link of a booking, to copy or send: what the reminder email carries.
+checkInRouter.get('/self-link/:bookingId', requirePermission('checkin:read'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    if (!(await bookingInBusiness(req.params.bookingId, bizOf(req)))) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    const code = await qrService.getBookingLinkCode(authReq.tenantId, req.params.bookingId);
+    success(res, { url: qrService.checkInLinkUrl(code) });
+  } catch (err: any) { console.error('Failed to get the link', err?.message || err); error(res, 'Failed to get the link', 'INTERNAL_ERROR', 500); }
 });
 
 // ============================================================
@@ -309,6 +372,63 @@ checkInRouter.post('/kiosk/register', requirePermission('checkin:*'), async (req
     const kiosk = await kioskService.registerKiosk(authReq.tenantId, locationId, String(req.body.device_name || 'Kiosk').slice(0, 100));
     success(res, kiosk, undefined, 201);
   } catch (err: any) { console.error('Failed to register kiosk', err?.message || err); error(res, 'Failed to register kiosk', 'INTERNAL_ERROR', 500); }
+});
+
+checkInRouter.get('/kiosk/devices', requirePermission('checkin:read'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    success(res, await kioskService.listKiosks(authReq.tenantId, bizOf(req)));
+  } catch (err: any) { console.error('Failed to list kiosks', err?.message || err); error(res, 'Failed to list kiosks', 'INTERNAL_ERROR', 500); }
+});
+
+checkInRouter.put('/kiosk/:id/off', requirePermission('checkin:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    if (!UUID_RE.test(req.params.id) || !(await kioskService.kioskInBusiness(req.params.id, authReq.tenantId, bizOf(req)))) {
+      error(res, 'Kiosk not found', 'NOT_FOUND', 404); return;
+    }
+    await kioskService.deactivateKiosk(req.params.id, authReq.tenantId);
+    success(res, { switched_off: true });
+  } catch (err: any) { console.error('Failed to switch off kiosk', err?.message || err); error(res, 'Failed to switch off the kiosk', 'INTERNAL_ERROR', 500); }
+});
+
+/** A kiosk of this business, or a 404. */
+async function ownKiosk(req: Request, res: Response): Promise<string | null> {
+  const authReq = req as AuthenticatedRequest;
+  if (!UUID_RE.test(req.params.id) || !(await kioskService.kioskInBusiness(req.params.id, authReq.tenantId, bizOf(req)))) {
+    error(res, 'Kiosk not found', 'NOT_FOUND', 404); return null;
+  }
+  return req.params.id;
+}
+
+checkInRouter.put('/kiosk/:id/on', requirePermission('checkin:*'), async (req: Request, res: Response) => {
+  try {
+    const id = await ownKiosk(req, res);
+    if (!id) return;
+    await kioskService.activateKiosk(id, (req as AuthenticatedRequest).tenantId);
+    success(res, { switched_on: true });
+  } catch (err: any) { console.error('Failed to switch on kiosk', err?.message || err); error(res, 'Failed to switch on the kiosk', 'INTERNAL_ERROR', 500); }
+});
+
+// The tablet's key, to open the kiosk link again. Same permission as registering a kiosk.
+checkInRouter.get('/kiosk/:id/link', requirePermission('checkin:*'), async (req: Request, res: Response) => {
+  try {
+    const id = await ownKiosk(req, res);
+    if (!id) return;
+    const token = await kioskService.getKioskToken(id, (req as AuthenticatedRequest).tenantId);
+    if (!token) { error(res, 'Kiosk not found', 'NOT_FOUND', 404); return; }
+    res.setHeader('Cache-Control', 'no-store');
+    success(res, { token });
+  } catch (err: any) { console.error('Failed to get kiosk link', err?.message || err); error(res, 'Failed to get the kiosk link', 'INTERNAL_ERROR', 500); }
+});
+
+checkInRouter.delete('/kiosk/:id', requirePermission('checkin:*'), async (req: Request, res: Response) => {
+  try {
+    const id = await ownKiosk(req, res);
+    if (!id) return;
+    await kioskService.deleteKiosk(id, (req as AuthenticatedRequest).tenantId);
+    success(res, { deleted: true });
+  } catch (err: any) { console.error('Failed to delete kiosk', err?.message || err); error(res, 'Failed to delete the kiosk', 'INTERNAL_ERROR', 500); }
 });
 
 // Reached only without a kiosk token (see the top of this file).

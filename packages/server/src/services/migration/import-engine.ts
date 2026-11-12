@@ -47,15 +47,52 @@ function parseExcel(buffer: Buffer): string[][] {
   return rows.map((r) => (Array.isArray(r) ? r.map((c) => String(c ?? '').trim()) : []));
 }
 
-/** CSV parse into a grid (handles quoted fields and escaped quotes). */
+/**
+ * Delimited-text parse into a grid (handles quoted fields and escaped quotes). The delimiter is
+ * detected from the file: comma, tab, semicolon (common in European Excel exports) or pipe.
+ */
 export function parseCsv(text: string): string[][] {
   const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/);
   // Drop a trailing empty line (common when files end with a newline).
   while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop();
-  return lines.map(parseCsvLine);
+  const delimiter = detectDelimiter(lines);
+  return lines.map((l) => parseCsvLine(l, delimiter));
 }
 
-function parseCsvLine(line: string): string[] {
+const CANDIDATE_DELIMITERS = [',', '\t', ';', '|'];
+
+/** Count a character on a line, ignoring any inside double quotes. */
+function countOutsideQuotes(line: string, ch: string): number {
+  let n = 0; let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '"') inQuotes = !inQuotes;
+    else if (line[i] === ch && !inQuotes) n++;
+  }
+  return n;
+}
+
+/**
+ * Pick the delimiter that splits the sample lines most consistently: the one whose per-line count
+ * is non-zero and the same on the most lines, ties broken by the higher count. Falls back to comma.
+ */
+export function detectDelimiter(lines: string[]): string {
+  const sample = lines.filter((l) => l.trim() !== '').slice(0, 20);
+  if (sample.length === 0) return ',';
+  let best = ','; let bestScore = -1;
+  for (const d of CANDIDATE_DELIMITERS) {
+    const counts = sample.map((l) => countOutsideQuotes(l, d));
+    const freq = new Map<number, number>();
+    for (const c of counts) if (c > 0) freq.set(c, (freq.get(c) ?? 0) + 1);
+    let modeCount = 0; let modeLines = 0;
+    for (const [c, n] of freq) if (n > modeLines || (n === modeLines && c > modeCount)) { modeCount = c; modeLines = n; }
+    if (modeLines === 0) continue;
+    const score = (modeLines / sample.length) * 1000 + modeCount; // consistency first, then width
+    if (score > bestScore) { bestScore = score; best = d; }
+  }
+  return best;
+}
+
+function parseCsvLine(line: string, delimiter = ','): string[] {
   const result: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -64,7 +101,7 @@ function parseCsvLine(line: string): string[] {
     if (ch === '"') {
       if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
       else inQuotes = !inQuotes;
-    } else if (ch === ',' && !inQuotes) {
+    } else if (ch === delimiter && !inQuotes) {
       result.push(current.trim());
       current = '';
     } else {
@@ -80,13 +117,28 @@ function parseCsvLine(line: string): string[] {
 // ---------------------------------------------------------------------------
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-// Phone: 7-15 digits, allowing +, spaces, (), -, . separators.
+// Phone shape overall (digits with +, spaces, (), -, . separators).
 const PHONE_RE = /^\+?[\d][\d\s().-]{5,}$/;
 const DATE_RE = /^\d{4}[-/]\d{1,2}[-/]\d{1,2}$|^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$/;
 const NUMBER_RE = /^-?\d+(?:[.,]\d+)?$/;
 const MONEY_RE = /^[-+]?[$€£]?\s?\d{1,3}(?:[,.\s]?\d{3})*(?:[.,]\d{1,2})?$/;
+// Phone formatting that disambiguates a phone from a bare integer: a leading + or any of the
+// usual separators. A plain run of digits with NONE of these is ambiguous (id / count / number),
+// so it is only treated as a phone when it's long enough to actually be one (10+ digits).
+const PHONE_FORMATTING_RE = /[+\s().-]/;
 
 export type CellKind = 'email' | 'phone' | 'date' | 'number' | 'money' | 'empty' | 'text';
+
+/** Does a value look like a phone number (not just any digit run)? */
+function looksLikePhone(v: string): boolean {
+  if (!PHONE_RE.test(v)) return false;
+  const digits = v.replace(/\D/g, '').length;
+  if (digits < 7 || digits > 15) return false;
+  // A bare integer (no +, space, (), -, .) is NOT a phone unless it's a full 10+ digit number —
+  // a 7–9 digit bare integer (e.g. a legacy customer id like 10492831) is a `number`, not a phone.
+  if (!PHONE_FORMATTING_RE.test(v)) return digits >= 10;
+  return true;
+}
 
 /** Classify a single cell by what it looks like. */
 export function classifyCell(value: string): CellKind {
@@ -94,10 +146,302 @@ export function classifyCell(value: string): CellKind {
   if (v === '') return 'empty';
   if (EMAIL_RE.test(v)) return 'email';
   if (DATE_RE.test(v)) return 'date';
-  if (PHONE_RE.test(v) && (v.replace(/\D/g, '').length >= 7)) return 'phone';
+  if (looksLikePhone(v)) return 'phone';
   if (NUMBER_RE.test(v)) return 'number';
   if (MONEY_RE.test(v)) return 'money';
   return 'text';
+}
+
+// ---------------------------------------------------------------------------
+// Value-pattern signals (Wave 4 — spec 50 §15.1)
+// ---------------------------------------------------------------------------
+
+// A patterned identifier: a short alphabetic/alphanumeric prefix, a separator, and digits
+// (e.g. LEG-10001, L-1, CUST000123, ACC_4421). Distinctive enough to propose with some
+// confidence. A BARE number is deliberately NOT matched here — it is indistinguishable from
+// any other integer column by shape, and is handled by profile signals (uniqueness + integer
+// shape + position) in profileColumns instead.
+const PATTERNED_ID_RE = /^[A-Za-z][A-Za-z]{0,9}[-_/ ]?\d{1,}$/;
+
+/** True when a value looks like a plain integer (no decimals, currency, sign-as-data, spaces). */
+function isPlainInteger(v: string): boolean {
+  return /^\d{1,}$/.test(v.trim());
+}
+
+/** True when a value looks like a patterned identifier (prefix + digits). */
+export function looksLikePatternedId(value: string): boolean {
+  return PATTERNED_ID_RE.test((value ?? '').trim());
+}
+
+/**
+ * Fraction of values shaped like an identifier token in ANY format a legacy system might use:
+ * a single run of letters/digits (plus - _ / .), containing at least one digit, no spaces,
+ * reasonable length. This is deliberately broad — `NX104928`, `DS83749`, `RE9284A`, `CA57204`,
+ * `ME4729B`, `48217`, `LEG-10001` all qualify — because an id's defining trait isn't its format,
+ * it's that it's unique per row (checked separately via the profile's `allUnique`).
+ */
+export function idShapeScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim()).filter((v) => v !== '');
+  if (vals.length === 0) return 0;
+  const hits = vals.filter((v) =>
+    v.length >= 3 && v.length <= 40
+    && /^[A-Za-z0-9][A-Za-z0-9_/.-]*$/.test(v)
+    && /\d/.test(v), // must contain a digit — a pure word is a name/label, not an id
+  ).length;
+  return hits / vals.length;
+}
+
+// Modest bundled name dictionaries (NOT exhaustive by design — spec 50 §15.5). The decision
+// is which of two adjacent text columns scores higher as given-names vs surnames, so a
+// representative sample that separates the columns by rate is all that's needed; unknown names
+// simply don't score, they don't mislead. Lowercased for case-insensitive lookup.
+const COMMON_FIRST_NAMES = new Set([
+  'james', 'john', 'robert', 'michael', 'william', 'david', 'richard', 'joseph', 'thomas', 'charles',
+  'christopher', 'daniel', 'matthew', 'anthony', 'mark', 'donald', 'steven', 'paul', 'andrew', 'joshua',
+  'mary', 'patricia', 'jennifer', 'linda', 'elizabeth', 'barbara', 'susan', 'jessica', 'sarah', 'karen',
+  'nancy', 'lisa', 'margaret', 'sandra', 'ashley', 'kimberly', 'emily', 'donna', 'michelle', 'carol',
+  'avery', 'jordan', 'camila', 'noah', 'sophia', 'mateo', 'riley', 'emma', 'lucas', 'isabella',
+  'liam', 'olivia', 'ethan', 'mia', 'aiden', 'ava', 'mason', 'amelia', 'logan', 'harper',
+  'alex', 'sam', 'jose', 'maria', 'ana', 'carlos', 'luis', 'juan', 'sofia', 'diego',
+  'grace', 'chloe', 'ella', 'lily', 'zoe', 'nathan', 'owen', 'leo', 'max', 'jack',
+]);
+const COMMON_SURNAMES = new Set([
+  'smith', 'johnson', 'williams', 'brown', 'jones', 'garcia', 'miller', 'davis', 'rodriguez', 'martinez',
+  'hernandez', 'lopez', 'gonzalez', 'wilson', 'anderson', 'thomas', 'taylor', 'moore', 'jackson', 'martin',
+  'lee', 'perez', 'thompson', 'white', 'harris', 'sanchez', 'clark', 'ramirez', 'lewis', 'robinson',
+  'walker', 'young', 'allen', 'king', 'wright', 'scott', 'torres', 'nguyen', 'hill', 'flores',
+  'morgan', 'rossi', 'patel', 'bennett', 'kim', 'wilson', 'davis', 'nunez', 'russo', 'ferrari',
+  'bianchi', 'romano', 'colombo', 'ricci', 'marino', 'greco', 'bruno', 'gallo', 'conti', 'costa',
+]);
+
+// Recognised gender tokens (lowercased). Covers the common spellings a legacy export uses;
+// a column dominated by these is proposed as `gender`. Deliberately small and inclusive.
+const GENDER_TOKENS = new Set([
+  'male', 'female', 'non-binary', 'nonbinary', 'non binary', 'nb', 'enby',
+  'm', 'f', 'other', 'prefer not to say', 'unspecified', 'none', 'man', 'woman',
+  'trans', 'transgender', 'genderqueer', 'genderfluid', 'intersex', 'x',
+]);
+
+/** Fraction of a column's non-empty values that are recognised gender tokens. */
+export function genderTokenScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim().toLowerCase()).filter((v) => v !== '');
+  if (vals.length === 0) return 0;
+  const hits = vals.filter((v) => GENDER_TOKENS.has(v)).length;
+  return hits / vals.length;
+}
+
+// Common language names a legacy export is likely to use (lowercased). Not exhaustive — enough
+// to recognise a language column by rate. A locale code (en-US) is matched by pattern instead.
+const LANGUAGE_NAMES = new Set([
+  'english', 'spanish', 'french', 'german', 'italian', 'portuguese', 'dutch', 'russian', 'arabic',
+  'chinese', 'mandarin', 'cantonese', 'japanese', 'korean', 'hindi', 'bengali', 'turkish', 'polish',
+  'swedish', 'norwegian', 'danish', 'finnish', 'greek', 'czech', 'hungarian', 'romanian', 'ukrainian',
+  'hebrew', 'thai', 'vietnamese', 'indonesian', 'malay', 'tagalog', 'catalan', 'basque', 'galician',
+]);
+const LOCALE_RE = /^[a-z]{2,3}([-_][A-Za-z]{2,4})?$/; // en, en-US, zh-Hant, pt_BR
+
+/** Fraction of values that are a recognised language name or a locale code. */
+export function languageScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim()).filter((v) => v !== '');
+  if (vals.length === 0) return 0;
+  const hits = vals.filter((v) => LANGUAGE_NAMES.has(v.toLowerCase()) || LOCALE_RE.test(v)).length;
+  return hits / vals.length;
+}
+
+// ISO-3166 alpha-2 country codes (the real set — so an arbitrary 2-letter text column doesn't
+// get mistaken for a country). Plus a short list of common full country names.
+const ISO_COUNTRY_CODES = new Set([
+  'ad', 'ae', 'af', 'ag', 'ai', 'al', 'am', 'ao', 'ar', 'at', 'au', 'az', 'ba', 'bb', 'bd', 'be',
+  'bg', 'bh', 'bo', 'br', 'bs', 'by', 'bz', 'ca', 'cd', 'ch', 'cl', 'cm', 'cn', 'co', 'cr', 'cu',
+  'cy', 'cz', 'de', 'dk', 'do', 'dz', 'ec', 'ee', 'eg', 'es', 'et', 'fi', 'fj', 'fr', 'gb', 'ge',
+  'gh', 'gr', 'gt', 'hk', 'hn', 'hr', 'hu', 'id', 'ie', 'il', 'in', 'iq', 'ir', 'is', 'it', 'jm',
+  'jo', 'jp', 'ke', 'kr', 'kw', 'kz', 'lb', 'lk', 'lt', 'lu', 'lv', 'ly', 'ma', 'mt', 'mx', 'my',
+  'ng', 'nl', 'no', 'nz', 'om', 'pa', 'pe', 'ph', 'pk', 'pl', 'pt', 'py', 'qa', 'ro', 'rs', 'ru',
+  'sa', 'se', 'sg', 'si', 'sk', 'sv', 'th', 'tn', 'tr', 'tw', 'ua', 'ug', 'us', 'uy', 've', 'vn',
+  'za', 'zm', 'zw',
+]);
+const COUNTRY_NAMES = new Set([
+  'united states', 'usa', 'united kingdom', 'uk', 'canada', 'australia', 'spain', 'france', 'germany',
+  'italy', 'portugal', 'netherlands', 'russia', 'china', 'japan', 'india', 'brazil', 'mexico', 'ireland',
+  'sweden', 'norway', 'denmark', 'finland', 'poland', 'greece', 'turkey', 'egypt', 'saudi arabia',
+  'united arab emirates', 'uae', 'new zealand', 'south africa', 'switzerland', 'belgium', 'austria',
+]);
+
+/** Fraction of values that are an ISO alpha-2 country code or a known country name. */
+export function countryScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim()).filter((v) => v !== '');
+  if (vals.length === 0) return 0;
+  const hits = vals.filter((v) => {
+    const low = v.toLowerCase();
+    return (v.length === 2 && ISO_COUNTRY_CODES.has(low)) || COUNTRY_NAMES.has(low);
+  }).length;
+  return hits / vals.length;
+}
+
+/**
+ * Fraction of values that look like a tag/label rather than prose: short, often containing a
+ * `,` or `;` separator or a hyphen-joined label (VIP, Sports-Therapy, Elite-Tier), and NOT a
+ * sentence. Deliberately excludes long free text so it doesn't steal the notes column.
+ */
+export function tagsScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim()).filter((v) => v !== '');
+  if (vals.length === 0) return 0;
+  const isTagish = (v: string): boolean => {
+    if (v.length > 40) return false;                 // too long → prose
+    if (/[.!?]$/.test(v)) return false;              // ends like a sentence
+    if (/[,;]/.test(v)) return true;                 // a separated list → clearly tags
+    // A single label: one or two words joined by a hyphen/slash (Elite-Tier, Cryo-Only, VIP),
+    // but NOT a short free-text phrase (Prefers Room 2, Evening only) which belongs to notes.
+    if (/\s/.test(v)) return false;                  // a space with no separator → treat as prose
+    return /^[A-Za-z][\w&'./-]*$/.test(v);
+  };
+  // Require a meaningful share to look like tags AND at least one value to carry a separator —
+  // this is what distinguishes a tags column (VIP,Sports-Therapy / Elite-Tier) from a short-notes
+  // column (Prefers Room 2 / Evening only) that would otherwise pass the per-value test.
+  const hits = vals.filter(isTagish).length;
+  const anySeparator = vals.some((v) => /[,;]/.test(v));
+  const ratio = hits / vals.length;
+  return anySeparator ? ratio : ratio * 0.5; // without a separator, demote (ambiguous vs notes)
+}
+
+/** Fraction of values that read as free-text prose (a space and some length) — the notes signal. */
+export function freeTextScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim()).filter((v) => v !== '');
+  if (vals.length === 0) return 0;
+  const hits = vals.filter((v) => /\s/.test(v) && v.length >= 10).length;
+  return hits / vals.length;
+}
+
+/**
+ * Fraction of values that are shaped like a person's name part: a single word (optionally with
+ * an internal hyphen/apostrophe, e.g. O'Brien, Jean-Luc), alphabetic, no digits, 2–30 chars, not
+ * a tag list. This is the signal used to resolve first/last name BY ELIMINATION when the name
+ * dictionaries don't recognise the specific (often non-Anglo) names — a leftover name-shaped
+ * text column, with the other fields already identified, is almost certainly a name.
+ */
+export function nameShapeScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim()).filter((v) => v !== '');
+  if (vals.length === 0) return 0;
+  const hits = vals.filter((v) =>
+    v.length >= 2 && v.length <= 30
+    && !/[,;]/.test(v)
+    && /^[\p{L}][\p{L}'’-]*$/u.test(v), // one alphabetic token (incl. accents, hyphen, apostrophe)
+  ).length;
+  return hits / vals.length;
+}
+
+/** Fraction of a column's non-empty single-token values present in a name dictionary. */
+export function nameDictionaryScore(values: string[], dict: Set<string>): number {
+  const tokens = values
+    .map((v) => (v ?? '').trim().toLowerCase())
+    .filter((v) => v !== '' && /^[a-zà-ÿ'-]+$/i.test(v)); // single alphabetic token (names, incl. accents)
+  if (tokens.length === 0) return 0;
+  const hits = tokens.filter((t) => dict.has(t)).length;
+  return hits / tokens.length;
+}
+
+// ---------------------------------------------------------------------------
+// Payment-method file value shapes (spec 50, Payment Methods import). A Stripe migration mapping
+// file has very distinctive values, so a headerless file can be mapped by value alone.
+// ---------------------------------------------------------------------------
+
+const nonEmptyTrimmed = (values: string[]): string[] => values.map((v) => (v ?? '').trim()).filter((v) => v !== '');
+const fractionOf = (values: string[], test: (v: string) => boolean): number => {
+  const vals = nonEmptyTrimmed(values);
+  return vals.length === 0 ? 0 : vals.filter(test).length / vals.length;
+};
+
+/** Stripe Customer ids (cus_...). */
+export const stripeCustomerScore = (values: string[]): number => fractionOf(values, (v) => /^cus_[A-Za-z0-9]+$/.test(v));
+/** Stripe payment-method / card / source / bank-account tokens (pm_..., card_..., src_..., ba_...). */
+export const paymentTokenScore = (values: string[]): number => fractionOf(values, (v) => /^(pm|card|src|ba|tok|btok)_[A-Za-z0-9_]+$/.test(v));
+
+const METHOD_TYPE_VALUES = new Set([
+  'card', 'credit card', 'debit card', 'credit', 'sepa', 'sepa_debit', 'sepa debit', 'ach', 'ach_debit', 'us_bank_account',
+  'bacs', 'bacs_debit', 'bank', 'bank account', 'bank_account', 'direct debit',
+]);
+const CARD_BRAND_VALUES = new Set([
+  'visa', 'mastercard', 'master card', 'amex', 'american express', 'discover', 'diners', 'diners club', 'jcb', 'unionpay', 'maestro',
+]);
+/** Values that name the instrument kind (card / SEPA / ACH / Bacs / bank). */
+export const methodTypeScore = (values: string[]): number => fractionOf(values, (v) => METHOD_TYPE_VALUES.has(v.toLowerCase()));
+// In a brand column, bank-account rows carry the scheme instead of a card brand ("SEPA", "ACH").
+const BANK_SCHEME_BRANDS = new Set(['sepa', 'ach', 'bacs', 'sepa debit', 'ach debit', 'bacs debit', 'bank', 'bank account']);
+/** Card brand names, or a bank scheme as the brand of a bank-account row ("SEPA", "SEPA Direct Debit"). */
+export const cardBrandScore = (values: string[]): number =>
+  fractionOf(values, (v) => CARD_BRAND_VALUES.has(v.toLowerCase()) || BANK_SCHEME_BRANDS.has(v.toLowerCase()) || /direct debit/i.test(v));
+/** A masked card number ("**** 4242", "•••• 1111", "xxxx1024"): mask characters, then 4 digits. */
+const MASKED_LAST4_RE = /^[\s*•·xX#.\-]+\d{4}$/;
+/** Last 4: four digits, plain or behind a mask. */
+export const last4Score = (values: string[]): number => fractionOf(values, (v) => /^\d{4}$/.test(v) || MASKED_LAST4_RE.test(v));
+/** Masked card numbers only (unambiguous: a year is never written behind a mask). */
+export const maskedLast4Score = (values: string[]): number => fractionOf(values, (v) => MASKED_LAST4_RE.test(v));
+export const expMonthScore = (values: string[]): number => fractionOf(values, (v) => /^\d{1,2}$/.test(v) && +v >= 1 && +v <= 12);
+export const expYearScore = (values: string[]): number => fractionOf(values, (v) => /^20\d{2}$/.test(v));
+/** A two-digit value ("28") — an expiry year when it sits right after the expiry month. */
+export const twoDigitScore = (values: string[]): number => fractionOf(values, (v) => /^\d{2}$/.test(v));
+/** Month and year in one cell: 09/28, 9/2028, 09-28, 09.2028. */
+export const EXPIRY_RE = /^(0?[1-9]|1[0-2])\s*[/\-.]\s*(\d{2}|\d{4})$/;
+export const expiryScore = (values: string[]): number => fractionOf(values, (v) => EXPIRY_RE.test(v));
+
+/**
+ * True when a single cell carries a recognisable payment value (Stripe id, brand, method type,
+ * expiry, masked card number). Used by header detection: these values are plain text to
+ * classifyCell, so without this a payment file's header row couldn't be told from its data.
+ */
+export function isPaymentShaped(value: string): boolean {
+  const v = (value ?? '').trim();
+  if (!v) return false;
+  const lower = v.toLowerCase();
+  return /^(cus|pm|card|src|ba|tok|btok)_[A-Za-z0-9_]+$/.test(v)
+    || CARD_BRAND_VALUES.has(lower) || BANK_SCHEME_BRANDS.has(lower) || METHOD_TYPE_VALUES.has(lower)
+    || EXPIRY_RE.test(v) || MASKED_LAST4_RE.test(v);
+}
+/** Yes/no style flags (the "default method" column). Bare 0/1 is handled separately. */
+export const defaultFlagScore = (values: string[]): number =>
+  fractionOf(values, (v) => ['yes', 'no', 'true', 'false', 'y', 'n', 't', 'f', 'default'].includes(v.toLowerCase()));
+
+/** Parse a cell to a Date for distribution analysis (reuses the engine's date shapes), or null. */
+function parseDateLoose(value: string): Date | null {
+  const s = (value ?? '').trim();
+  if (!s) return null;
+  const iso = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (iso) { const d = new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3])); return isNaN(d.getTime()) ? null : d; }
+  const mdy = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/);
+  if (mdy) {
+    let y = +mdy[3]; if (y < 100) y += y < 50 ? 2000 : 1900;
+    const d = new Date(Date.UTC(y, +mdy[1] - 1, +mdy[2]));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+/**
+ * Given the parsed dates of a column, a score (0..1) for how birth-date-like it is: birth dates
+ * skew well into the past and span many years; join/created dates cluster in recent years. Used
+ * to assign DOB vs joined when a file has two date columns (spec 50 §15.1). Higher = more DOB-like.
+ */
+/** The most common soft text sub-kind across a column's values. */
+function dominantTextSubKindOf(values: string[]): TextSubKind {
+  const counts = new Map<TextSubKind, number>();
+  for (const v of values) { const k = textSubKind(v); counts.set(k, (counts.get(k) ?? 0) + 1); }
+  let best: TextSubKind = 'other'; let bestN = 0;
+  for (const [k, n] of counts) if (n > bestN) { best = k; bestN = n; }
+  return best;
+}
+
+export function birthDateLikeness(values: string[]): number {
+  const dates = values.map(parseDateLoose).filter((d): d is Date => d !== null);
+  if (dates.length === 0) return 0;
+  const now = Date.now();
+  const yearsAgo = dates.map((d) => (now - d.getTime()) / (365.25 * 24 * 3600 * 1000));
+  const meanAge = yearsAgo.reduce((a, b) => a + b, 0) / yearsAgo.length;
+  const spanYears = Math.max(...dates.map((d) => d.getUTCFullYear())) - Math.min(...dates.map((d) => d.getUTCFullYear()));
+  // Normalise: a mean age around 40+ and a wide spread (decades) read as DOB; a recent, tight
+  // cluster reads as a join date. Map to 0..1 with simple, legible thresholds.
+  const ageSignal = Math.min(Math.max((meanAge - 5) / 45, 0), 1);   // 5y→0, 50y→1
+  const spanSignal = Math.min(spanYears / 30, 1);                    // 30y spread → 1
+  return (ageSignal * 0.7) + (spanSignal * 0.3);
 }
 
 // ---------------------------------------------------------------------------
@@ -145,16 +489,19 @@ export function detectHeaderRow(grid: string[][], fields?: FieldDef[]): HeaderDe
   // Per column, does the body carry value-shaped cells while the header cell is text?
   let columnsWhereHeaderIsLabelOverData = 0;
   let columnsConsidered = 0;
+  // A cell is "value-shaped" when classifyCell sees a value (email/phone/date/number/money) or it is
+  // a recognisable payment value (cus_/pm_ id, card brand, expiry, masked card number).
+  const shaped = (v: string) => { const k = classifyCell(v); return (k !== 'text' && k !== 'empty') || isPaymentShaped(v); };
   for (let c = 0; c < header.length; c++) {
-    const headerKind = classifyCell(header[c]);
-    const bodyKinds = sample.map((r) => classifyCell(r[c] ?? ''));
-    const bodyValueShaped = bodyKinds.filter((k) => k !== 'text' && k !== 'empty').length;
-    const bodyNonEmpty = bodyKinds.filter((k) => k !== 'empty').length;
+    const headerShaped = shaped(header[c] ?? '');
+    const bodyCells = sample.map((r) => r[c] ?? '');
+    const bodyValueShaped = bodyCells.filter(shaped).length;
+    const bodyNonEmpty = bodyCells.filter((v) => v.trim() !== '').length;
     if (bodyNonEmpty === 0) continue; // nothing to judge in this column
     columnsConsidered++;
     // Header looks like a label (text) AND the body is mostly value-shaped → a
     // telltale header-over-data column.
-    if ((headerKind === 'text' || headerKind === 'empty') && bodyValueShaped >= Math.ceil(bodyNonEmpty / 2)) {
+    if (!headerShaped && bodyValueShaped >= Math.ceil(bodyNonEmpty / 2)) {
       columnsWhereHeaderIsLabelOverData++;
     }
   }
@@ -182,6 +529,9 @@ export interface FieldDef {
   valueKinds?: CellKind[];
 }
 
+/** Graded confidence in a proposed mapping (Wave 4 — spec 50 §15.2). */
+export type Confidence = 'certain' | 'likely' | 'unknown';
+
 export interface ColumnProposal {
   /** Column index. */
   index: number;
@@ -189,8 +539,174 @@ export interface ColumnProposal {
   column: string;
   /** Proposed field, or null when nothing confident matched. */
   field: string | null;
-  /** True when the match is confident (pre-filled; needs no owner action). */
+  /**
+   * True when the match is confident (pre-filled; needs no owner action).
+   * Retained for backward compatibility; `confidence === 'certain'` is the graded form.
+   */
   confident: boolean;
+  /**
+   * Graded confidence: `certain` = decisive (known header / value shape), `likely` = inferred
+   * (dictionary / distribution / id-by-profile) and worth a glance, `unknown` = unmapped.
+   */
+  confidence: Confidence;
+}
+
+/** A per-column profile over ALL data rows (Wave 4 — spec 50 §15.1). Pure function of the grid. */
+export interface ColumnProfile {
+  index: number;
+  /** Dominant cell kind among non-empty cells, and how dominant (0..1). */
+  dominantKind: CellKind;
+  dominance: number;
+  nonEmpty: number;
+  total: number;
+  /** Signals for identifier detection. */
+  allPatternedId: boolean;   // every non-empty value is a patterned id (LEG-10001)
+  allPlainInteger: boolean;  // every non-empty value is a bare integer
+  allUnique: boolean;        // every non-empty value distinct (strong id signal)
+  hasNegativeOrDecimal: boolean; // excludes a balance/amount column from being an id
+  /** Name-dictionary scores (0..1). */
+  firstNameScore: number;
+  lastNameScore: number;
+  /** Fraction of values that are recognised gender tokens (0..1). */
+  genderScore: number;
+  /** Value-shape scores (0..1) for the softer customer fields. */
+  languageScore: number;
+  countryScore: number;
+  tagsScore: number;
+  freeTextScore: number;
+  /** Fraction of values shaped like a single name token (for name-by-elimination). */
+  nameShapeScore: number;
+  /** Fraction of values shaped like an identifier token, any format (for id-by-elimination). */
+  idShapeScore: number;
+  /** Payment-file value-shape scores (0..1). */
+  stripeCustomerScore: number;
+  paymentTokenScore: number;
+  methodTypeScore: number;
+  cardBrandScore: number;
+  last4Score: number;
+  expMonthScore: number;
+  expYearScore: number;
+  defaultFlagScore: number;
+  maskedLast4Score: number;
+  twoDigitScore: number;
+  expiryScore: number;
+  /** True when every non-empty value is 0 or 1 (a bare boolean flag, e.g. is_default). */
+  allZeroOne: boolean;
+  /** Birth-date likeness (0..1) when the column is date-dominant. */
+  birthLikeness: number;
+  /** Dominant soft sub-kind of a text column (locale/shortcode/taglist/sentence/word), for repair tiebreaks. */
+  dominantTextSubKind: TextSubKind;
+}
+
+/**
+ * Build a profile per column from all data rows. Pure; drives the smarter detection in
+ * detectColumns and the row-repair fitter. `dataRows` must already exclude the header row.
+ */
+export function profileColumns(dataRows: string[][], width: number): ColumnProfile[] {
+  const profiles: ColumnProfile[] = [];
+  for (let c = 0; c < width; c++) {
+    const cells = dataRows.map((r) => (r[c] ?? '').trim());
+    const nonEmptyCells = cells.filter((v) => v !== '');
+    const kinds = nonEmptyCells.map(classifyCell);
+
+    const counts = new Map<CellKind, number>();
+    for (const k of kinds) counts.set(k, (counts.get(k) ?? 0) + 1);
+    let dominantKind: CellKind = 'empty'; let dominantN = 0;
+    for (const [k, n] of counts) if (n > dominantN) { dominantKind = k; dominantN = n; }
+    const dominance = nonEmptyCells.length ? dominantN / nonEmptyCells.length : 0;
+
+    const seen = new Set<string>();
+    let allUnique = nonEmptyCells.length > 0;
+    for (const v of nonEmptyCells) { if (seen.has(v)) { allUnique = false; break; } seen.add(v); }
+
+    profiles.push({
+      index: c,
+      dominantKind: nonEmptyCells.length ? dominantKind : 'empty',
+      dominance,
+      nonEmpty: nonEmptyCells.length,
+      total: cells.length,
+      allPatternedId: nonEmptyCells.length > 0 && nonEmptyCells.every(looksLikePatternedId),
+      allPlainInteger: nonEmptyCells.length > 0 && nonEmptyCells.every(isPlainInteger),
+      allUnique,
+      hasNegativeOrDecimal: nonEmptyCells.some((v) => /[.-]/.test(v)),
+      firstNameScore: nameDictionaryScore(nonEmptyCells, COMMON_FIRST_NAMES),
+      lastNameScore: nameDictionaryScore(nonEmptyCells, COMMON_SURNAMES),
+      genderScore: genderTokenScore(nonEmptyCells),
+      languageScore: languageScore(nonEmptyCells),
+      countryScore: countryScore(nonEmptyCells),
+      tagsScore: tagsScore(nonEmptyCells),
+      freeTextScore: freeTextScore(nonEmptyCells),
+      nameShapeScore: nameShapeScore(nonEmptyCells),
+      idShapeScore: idShapeScore(nonEmptyCells),
+      stripeCustomerScore: stripeCustomerScore(nonEmptyCells),
+      paymentTokenScore: paymentTokenScore(nonEmptyCells),
+      methodTypeScore: methodTypeScore(nonEmptyCells),
+      cardBrandScore: cardBrandScore(nonEmptyCells),
+      last4Score: last4Score(nonEmptyCells),
+      expMonthScore: expMonthScore(nonEmptyCells),
+      expYearScore: expYearScore(nonEmptyCells),
+      defaultFlagScore: defaultFlagScore(nonEmptyCells),
+      maskedLast4Score: maskedLast4Score(nonEmptyCells),
+      twoDigitScore: twoDigitScore(nonEmptyCells),
+      expiryScore: expiryScore(nonEmptyCells),
+      allZeroOne: nonEmptyCells.length > 0 && nonEmptyCells.every((v) => v === '0' || v === '1'),
+      birthLikeness: dominantKind === 'date' ? birthDateLikeness(nonEmptyCells) : 0,
+      dominantTextSubKind: dominantTextSubKindOf(nonEmptyCells),
+    });
+  }
+  return profiles;
+}
+
+/**
+ * A row's "shape signature": the sequence of (position, hard value kind) for its NON-text,
+ * non-empty cells — i.e. where the email/phone/date/money values sit. Rows that share a
+ * signature share a column alignment. A legitimately blank optional field (a missing DOB or
+ * gender) does NOT change the signature, so sparse-but-consistent rows group together; only an
+ * actual shift of shaped values produces a different signature. This is what lets the majority
+ * define the canonical structure (spec 50 §15.1, per the three-tab staging model).
+ */
+export function rowShapeSignature(row: string[]): string {
+  const parts: string[] = [];
+  for (let c = 0; c < row.length; c++) {
+    const v = (row[c] ?? '').trim();
+    if (v === '') continue;
+    const k = classifyCell(v);
+    if (k === 'text' || k === 'number') continue; // text & bare numbers are too generic to anchor
+    parts.push(`${c}:${k}`);
+  }
+  return parts.join(',');
+}
+
+/**
+ * Derive the CANONICAL column profiles from the MAJORITY row shape, not from all rows. Rows are
+ * grouped by their shape signature; the largest group defines the structure and profiles are
+ * built from that cohort only. This prevents a cluster of shifted rows from polluting detection
+ * (the bug where a majority of country-dropped rows made the country column look like free text
+ * and erased the join-date column). Falls back to all-rows profiling when nothing anchors a shape.
+ */
+export function canonicalProfiles(dataRows: string[][], width: number): {
+  profiles: ColumnProfile[];
+  canonicalSignature: string;
+  cohortSize: number;
+} {
+  if (dataRows.length === 0) {
+    return { profiles: profileColumns(dataRows, width), canonicalSignature: '', cohortSize: 0 };
+  }
+  const groups = new Map<string, string[][]>();
+  for (const row of dataRows) {
+    const sig = rowShapeSignature(row);
+    if (!groups.has(sig)) groups.set(sig, []);
+    groups.get(sig)!.push(row);
+  }
+  // Largest cohort wins; an empty signature (no shaped anchors at all) is a weak last resort.
+  let bestSig = ''; let bestRows: string[][] = [];
+  for (const [sig, rows] of groups) {
+    const better = rows.length > bestRows.length
+      || (rows.length === bestRows.length && sig !== '' && bestSig === '');
+    if (better) { bestSig = sig; bestRows = rows; }
+  }
+  const cohort = bestRows.length > 0 ? bestRows : dataRows;
+  return { profiles: profileColumns(cohort, width), canonicalSignature: bestSig, cohortSize: bestRows.length };
 }
 
 /** Normalise a header for name matching: lowercase, strip non-alphanumerics. */
@@ -203,58 +719,882 @@ export function normalizeHeader(h: string): string {
  * value-based inference when the header doesn't match (or there is no header).
  * `sampleRows` are the data rows (already excluding the header row).
  */
+/**
+ * Values DayStream already holds for a field, used to recognise that field's column by value
+ * (e.g. the legacy customer ids stored by the customer import, the business's plan names). The
+ * engine stays pure: the caller loads the values and says how to normalise a cell for comparison.
+ */
+export interface ReferenceValues {
+  values: Set<string>;
+  normalize: (v: string) => string;
+}
+export type ReferenceSet = Record<string, ReferenceValues>;
+
+/** How well a column's values match a reference set: share of non-empty cells found, and distinct hits. */
+export function referenceMatch(cells: string[], ref: ReferenceValues): { share: number; distinctHits: number } {
+  const vals = cells.map((c) => (c ?? '').trim()).filter((c) => c !== '');
+  if (vals.length === 0 || ref.values.size === 0) return { share: 0, distinctHits: 0 };
+  const hits = new Set<string>();
+  let n = 0;
+  for (const v of vals) {
+    const k = ref.normalize(v);
+    if (k && ref.values.has(k)) { n++; hits.add(k); }
+  }
+  return { share: n / vals.length, distinctHits: hits.size };
+}
+
+/** Status words used by membership and appointment files (see mapMembershipStatus, NOT_HAPPENING). */
+const STATUS_WORDS = new Set([
+  'active', 'current', 'live', 'ongoing', 'good standing', 'paused', 'on hold', 'hold', 'frozen', 'freeze',
+  'suspended', 'cancelled', 'canceled', 'terminated', 'ended', 'expired', 'inactive', 'closed',
+  'completed', 'complete', 'confirmed', 'booked', 'pending', 'checked in', 'attended', 'no show', 'noshow',
+  'missed', 'late cancel', 'declined', 'done', 'fulfilled', 'scheduled',
+]);
+/** Fraction of a column's values that are recognised status words. */
+export function statusWordScore(values: string[]): number {
+  const vals = values.map((v) => (v ?? '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ')).filter(Boolean);
+  if (vals.length === 0) return 0;
+  return vals.filter((v) => STATUS_WORDS.has(v)).length / vals.length;
+}
+
+/** A time of day with a colon or am/pm (14:30, 9:05, 2:30 PM, 9am). Bare "1430" is too like a year or last-4. */
+const TIME_OF_DAY_RE = /^(?:([01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:\s*[ap]\.?m\.?)?|(1[0-2]|0?[1-9])\s*[ap]\.?m\.?)$/i;
+export const timeOfDayScore = (values: string[]): number => {
+  const vals = values.map((v) => (v ?? '').trim()).filter(Boolean);
+  return vals.length ? vals.filter((v) => TIME_OF_DAY_RE.test(v)).length / vals.length : 0;
+};
+
+/** An amount: two decimals (45.00, 1.234,50, -12.50) or a currency sign (€45, $1,200). */
+const AMOUNT_RE = /^[-+]?(?:[$€£]\s?\d[\d.,\s]*|\d{1,3}(?:[.,\s]?\d{3})*[.,]\d{2})$/;
+export const amountShapeScore = (values: string[]): number => {
+  const vals = values.map((v) => (v ?? '').trim()).filter(Boolean);
+  return vals.length ? vals.filter((v) => AMOUNT_RE.test(v)).length / vals.length : 0;
+};
+
+/** Account-balance kind words (see account-balance-import rowKind). */
+const BALANCE_TYPE_WORDS = new Set(['credit', 'account credit', 'account_credit', 'invoice', 'outstanding', 'debit', 'owed', 'balance due']);
+export const balanceTypeScore = (values: string[]): number => {
+  const vals = values.map((v) => (v ?? '').trim().toLowerCase()).filter(Boolean);
+  return vals.length ? vals.filter((v) => BALANCE_TYPE_WORDS.has(v)).length / vals.length : 0;
+};
+
+/** Share of rows (with both dates) where column A's date is on or before column B's. */
+export function onOrBeforeShare(a: string[], b: string[]): number {
+  let both = 0; let before = 0;
+  for (let i = 0; i < a.length; i++) {
+    const da = parseDateLoose(a[i] ?? ''); const db = parseDateLoose(b[i] ?? '');
+    if (!da || !db) continue;
+    both++;
+    if (da.getTime() <= db.getTime()) before++;
+  }
+  return both ? before / both : 0;
+}
+
+/** Fraction of a column's parseable dates that fall after today (UTC). */
+export function futureDateShare(values: string[], today: Date = new Date()): number {
+  const t = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const dates = values.map(parseDateLoose).filter((d): d is Date => d !== null);
+  if (dates.length === 0) return 0;
+  return dates.filter((d) => d.getTime() > t).length / dates.length;
+}
+
 export function detectColumns(
   grid: string[][],
   hasHeader: boolean,
   fields: FieldDef[],
+  references: ReferenceSet = {},
 ): ColumnProposal[] {
   if (grid.length === 0) return [];
   const headerRow = grid[0] ?? [];
   const width = Math.max(...grid.map((r) => r.length), 0);
   const dataRows = hasHeader ? grid.slice(1) : grid;
-  const sample = dataRows.slice(0, 50);
+  // Profile from the MAJORITY row shape so a cluster of shifted rows can't erase a real column
+  // (e.g. the country column disappearing because most rows had dropped it). §15.1.
+  const profiles = canonicalProfiles(dataRows, width).profiles;
+  const fieldSet = new Set(fields.map((f) => f.field));
 
   // byName: normalised synonym → field (first wins on collision).
   const byName = new Map<string, string>();
   for (const f of fields) for (const s of f.synonyms) if (!byName.has(normalizeHeader(s))) byName.set(normalizeHeader(s), f.field);
 
   const used = new Set<string>(); // a field maps to at most one column
-  const proposals: ColumnProposal[] = [];
+  const result: Array<{ field: string | null; confidence: Confidence }> =
+    Array.from({ length: width }, () => ({ field: null, confidence: 'unknown' as Confidence }));
 
-  for (let c = 0; c < width; c++) {
-    const label = hasHeader ? (headerRow[c] ?? `Column ${c + 1}`) : `Column ${c + 1}`;
-    let field: string | null = null;
-    let confident = false;
+  const claim = (c: number, field: string, confidence: Confidence) => {
+    if (used.has(field) || !fieldSet.has(field)) return false;
+    result[c] = { field, confidence };
+    used.add(field);
+    return true;
+  };
 
-    // 1. Name match (only when there's a header).
-    if (hasHeader) {
+  // A column carries a "deliberate foreign header" when there IS a header row and this column's
+  // header is a non-empty label that matched no known field. That label is a user signal the
+  // column is something we don't model (e.g. "Loyalty #"), so value-shape *inference* (id by
+  // pattern/number, name by dictionary, date-role) must NOT override it — only the decisive,
+  // self-evident value shapes (email/phone) may, as they already did before Wave 4.
+  const hasForeignHeader = (c: number): boolean => {
+    if (!hasHeader) return false;
+    const h = normalizeHeader(headerRow[c] ?? '');
+    return h !== '' && !byName.has(h);
+  };
+
+  // Header words that mark a column as the "before" or "after" side of a migration mapping file
+  // (Stripe's card copy lists the old and new ids side by side).
+  const isPaymentFile = fieldSet.has('payment_method_token');
+  const headerText = (c: number) => (hasHeader ? normalizeHeader(headerRow[c] ?? '') : '');
+  // Whole words of a header ("old_payment_method_id", "NewCustomerId" → old/payment/method/id).
+  const headerWords = (c: number): string[] => (hasHeader
+    ? (headerRow[c] ?? '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+    : []);
+  const OLD_WORDS = new Set(['old', 'original', 'previous', 'prior', 'legacy', 'former']);
+  const NEW_WORDS = new Set(['new', 'migrated', 'destination', 'target', 'current']);
+  const isOldSide = (c: number) => headerWords(c).some((w) => OLD_WORDS.has(w));
+  const isNewSide = (c: number) => headerWords(c).some((w) => NEW_WORDS.has(w));
+
+  // --- Pass 1: header name match → CERTAIN (only when there's a header). ---
+  if (hasHeader) {
+    for (let c = 0; c < width; c++) {
       const named = byName.get(normalizeHeader(headerRow[c] ?? ''));
-      if (named && !used.has(named)) { field = named; confident = true; }
+      if (named) claim(c, named, 'certain');
     }
-
-    // 2. Value-based inference (no header, or header didn't match).
-    if (!field) {
-      const kinds = sample.map((r) => classifyCell(r[c] ?? ''));
-      const nonEmpty = kinds.filter((k) => k !== 'empty');
-      if (nonEmpty.length > 0) {
-        // Dominant kind among non-empty cells.
-        const counts = new Map<CellKind, number>();
-        for (const k of nonEmpty) counts.set(k, (counts.get(k) ?? 0) + 1);
-        let dominant: CellKind = 'text'; let dominantN = 0;
-        for (const [k, n] of counts) if (n > dominantN) { dominant = k; dominantN = n; }
-        const dominance = dominantN / nonEmpty.length;
-        if (dominance >= 0.8 && dominant !== 'text') {
-          const candidate = fields.find((f) => f.valueKinds?.includes(dominant) && !used.has(f.field));
-          if (candidate) { field = candidate.field; confident = true; }
-        }
+    // Payment files: a header that CONTAINS a known name ("Card Exp Month" → exp month,
+    // "Last Four Digits" → last 4) is a likely match. Longest name wins; an "old"-side header is
+    // never matched this way, so "old_payment_method_id" can't be taken as the new token.
+    if (isPaymentFile) {
+      const synonyms = fields.flatMap((f) => f.synonyms.map((s) => ({ field: f.field, s: normalizeHeader(s) })))
+        .filter((x) => x.s.length >= 5)
+        .sort((a, b) => b.s.length - a.s.length);
+      for (let c = 0; c < width; c++) {
+        if (result[c].field) continue;
+        const h = headerText(c);
+        if (!h || isOldSide(c)) continue;
+        // Columns holding Stripe ids are decided by their values in Pass 1b, never by a partial
+        // name: Stripe's own "customer_id_new" contains "customerid" but is NOT a legacy id.
+        if (profiles[c].stripeCustomerScore >= 0.8 || profiles[c].paymentTokenScore >= 0.8) continue;
+        const hit = synonyms.find((x) => h.includes(x.s) && !used.has(x.field));
+        if (hit) claim(c, hit.field, 'likely');
       }
     }
-
-    if (field) used.add(field);
-    proposals.push({ index: c, column: label, field, confident });
   }
 
+  // --- Pass 1b: Stripe ids → CERTAIN. cus_... and pm_... values are unmistakable, so they are
+  // claimed from the values alone (even over a header we don't recognise) and before any
+  // generic id inference can mistake them for a legacy customer id. When a migration mapping
+  // file has BOTH an old and a new column of the same kind, the new one is what DayStream can
+  // charge: a "new"-side header wins, an "old"-side header loses, and with no header the
+  // rightmost column wins (mapping files list old then new). ---
+  const claimIdShape = (field: string, score: (p: ColumnProfile) => number) => {
+    if (!fieldSet.has(field) || used.has(field)) return;
+    const candidates = profiles.filter((p) => !result[p.index].field && p.nonEmpty > 0 && score(p) >= 0.8);
+    if (candidates.length === 0) return;
+    const rank = (p: ColumnProfile) => (isNewSide(p.index) ? 1 : 0) - (isOldSide(p.index) ? 1 : 0);
+    const c = candidates.sort((a, b) => rank(b) - rank(a) || b.index - a.index)[0];
+    claim(c.index, field, 'certain');
+  };
+  claimIdShape('stripe_customer_id', (p) => p.stripeCustomerScore);
+  claimIdShape('payment_method_token', (p) => p.paymentTokenScore);
+  // Customer files: a cus_ column is the client's processor customer id.
+  claimIdShape('processor_customer_id', (p) => p.stripeCustomerScore);
+
+  // --- Pass 1c: values DayStream already holds → CERTAIN / LIKELY. A column whose values are
+  // mostly legacy customer ids the customer import stored, or the business's own plan names, is
+  // that field whatever its header says. Of several matching columns, the one with the most
+  // DISTINCT hits wins: a duration column holding only "60" and "90" can't beat a real id column
+  // just because ids 60 and 90 exist. ---
+  for (const [field, ref] of Object.entries(references)) {
+    if (!fieldSet.has(field) || used.has(field)) continue;
+    const scored = profiles
+      .filter((p) => !result[p.index].field && p.nonEmpty > 0)
+      .map((p) => ({ p, ...referenceMatch(dataRows.map((r) => r[p.index] ?? ''), ref) }))
+      .filter((x) => x.share >= 0.5)
+      .sort((a, b) => b.distinctHits - a.distinctHits || b.share - a.share || a.p.index - b.p.index);
+    if (scored[0]) claim(scored[0].p.index, field, scored[0].share >= 0.8 ? 'certain' : 'likely');
+  }
+
+  // --- Pass 1d: membership dates → LIKELY. A next billing date is (almost always) in the future and
+  // a start date in the past, so the majority of each column decides; a few exceptions don't. ---
+  if (fieldSet.has('next_billing_date') && fieldSet.has('start_date')) {
+    const dateCols = profiles
+      .filter((p) => !result[p.index].field && p.dominantKind === 'date' && p.dominance >= 0.8)
+      .map((p) => ({ p, future: futureDateShare(dataRows.map((r) => r[p.index] ?? '')) }));
+    const next = [...dateCols].sort((a, b) => b.future - a.future)[0];
+    if (next && next.future > 0.5 && !used.has('next_billing_date')) claim(next.p.index, 'next_billing_date', 'likely');
+    const start = dateCols.filter((d) => !result[d.p.index].field).sort((a, b) => a.future - b.future)[0];
+    if (start && start.future < 0.5 && !used.has('start_date')) claim(start.p.index, 'start_date', 'likely');
+  }
+
+  // --- Pass 1d (balances): issue date vs due date. A due date falls on or after its issue date, so
+  // of two date columns, the one that is earlier in most rows is the issue date. ---
+  if (fieldSet.has('issue_date') && fieldSet.has('due_date') && !used.has('issue_date') && !used.has('due_date')) {
+    const dateCols = profiles.filter((p) => !result[p.index].field && p.dominantKind === 'date' && p.dominance >= 0.8);
+    if (dateCols.length === 2) {
+      const [a, b] = dateCols;
+      const share = onOrBeforeShare(dataRows.map((r) => r[a.index] ?? ''), dataRows.map((r) => r[b.index] ?? ''));
+      const [issue, due] = share >= 0.5 ? [a, b] : [b, a];
+      claim(issue.index, 'issue_date', 'likely');
+      claim(due.index, 'due_date', 'likely');
+    }
+  }
+
+  // --- Pass 1f: shapes and words with no setup to check against: a time of day, and the
+  // credit / invoice type of an account balance. ---
+  const claimBestScore = (field: string, score: (cells: string[]) => number, floor: number) => {
+    if (!fieldSet.has(field) || used.has(field)) return;
+    const best = profiles
+      .filter((p) => !result[p.index].field && p.nonEmpty > 0)
+      .map((p) => ({ p, s: score(dataRows.map((r) => r[p.index] ?? '')) }))
+      .filter((x) => x.s >= floor)
+      .sort((x, y) => y.s - x.s || x.p.index - y.p.index)[0];
+    if (best) claim(best.p.index, field, 'likely');
+  };
+  claimBestScore('time', timeOfDayScore, 0.8);
+  claimBestScore('type', balanceTypeScore, 0.8);
+
+  // --- Pass 1e: a status column, by its words (active / paused / cancelled, completed / no show). ---
+  if (fieldSet.has('status') && !used.has('status')) {
+    const s = profiles
+      .filter((p) => !result[p.index].field && p.nonEmpty > 0)
+      .map((p) => ({ p, score: statusWordScore(dataRows.map((r) => r[p.index] ?? '')) }))
+      .filter((x) => x.score >= 0.8)
+      .sort((a, b) => b.score - a.score)[0];
+    if (s) claim(s.p.index, 'status', 'likely');
+  }
+
+  // --- Pass 2: decisive value shapes → CERTAIN (email, phone, money; and a patterned id). ---
+  // These are self-evident from the values regardless of header.
+  for (let c = 0; c < width; c++) {
+    if (result[c].field) continue;
+    const p = profiles[c];
+    if (p.nonEmpty === 0) continue;
+    if (p.dominance >= 0.8 && p.dominantKind !== 'text' && p.dominantKind !== 'empty') {
+      const candidate = fields.find((f) => f.valueKinds?.includes(p.dominantKind) && !used.has(f.field));
+      // A single date column maps certainly; two date columns are disambiguated in pass 4.
+      const dateColumns = profiles.filter((q) => q.dominantKind === 'date' && q.dominance >= 0.8).length;
+      if (candidate && !(p.dominantKind === 'date' && dateColumns > 1)) {
+        claim(c, candidate.field, 'certain');
+        continue;
+      }
+    }
+    if (p.allPatternedId && fieldSet.has('legacy_customer_id') && !hasForeignHeader(c)) {
+      // A patterned id (LEG-10001) is distinctive enough to be certain when nothing contradicts
+      // it, but a deliberate foreign header (e.g. "Loyalty #") suppresses the inference entirely.
+      claim(c, 'legacy_customer_id', 'certain');
+    }
+  }
+
+  // --- Pass 2b: amounts without a currency sign. "45.00" classifies as a plain number, so a money
+  // field also takes a column whose values mostly carry two decimals (or a currency sign). Whole
+  // numbers alone aren't enough: they're indistinguishable from ids and counts. Fields are filled
+  // in their declared order (amount before amount paid), leftmost column first. ---
+  for (const f of fields) {
+    if (!f.valueKinds?.includes('money') || used.has(f.field)) continue;
+    const col = profiles
+      .filter((p) => !result[p.index].field && p.nonEmpty > 0 && amountShapeScore(dataRows.map((r) => r[p.index] ?? '')) >= 0.8)
+      .sort((a, b) => a.index - b.index)[0];
+    if (col) claim(col.index, f.field, 'likely');
+  }
+
+  // --- Pass 3: bare-number identifier → LIKELY (uniqueness + integer shape + leading position). ---
+  // A bare number is indistinguishable by value from a balance/points/count, so this is a
+  // low-confidence proposal, never asserted; of equally id-shaped columns, the leftmost wins.
+  // (Skipped for payment files: there the customer id REPEATS per row, and a unique integer
+  // column is a last-4 or similar; Pass 3b finds the customer id for those files instead.)
+  if (fieldSet.has('legacy_customer_id') && !used.has('legacy_customer_id') && !fieldSet.has('payment_method_token')) {
+    const idCandidates = profiles
+      .filter((p) => !result[p.index].field && p.nonEmpty > 0 && p.allPlainInteger && p.allUnique
+        && !p.hasNegativeOrDecimal && !hasForeignHeader(p.index))
+      .sort((a, b) => a.index - b.index); // position tie-breaker: leftmost
+    if (idCandidates.length) claim(idCandidates[0].index, 'legacy_customer_id', 'likely');
+  }
+
+  // --- Pass 3b: payment-file card details → LIKELY. Method type, brand, last 4, expiry and the
+  // default flag all have bounded value shapes. Last 4 and expiry year are both 4 digits, so they
+  // are told apart by position (last 4 sits just before the expiry month) and by the 20xx range. ---
+  if (isPaymentFile) {
+    const free = (p: ColumnProfile) => !result[p.index].field && !hasForeignHeader(p.index) && p.nonEmpty > 0;
+    // Distinctive values (brand names, method types, "09/28", "**** 4242") are claimed even under a
+    // header we don't recognise ("Card Type", "Expiration"); a payment file rarely has an unrelated
+    // column holding Visa / SEPA / masked card numbers.
+    const freeAnyHeader = (p: ColumnProfile) => !result[p.index].field && p.nonEmpty > 0;
+    const best = (score: (p: ColumnProfile) => number, floor: number, ok: (p: ColumnProfile) => boolean = free) =>
+      profiles.filter((p) => ok(p) && score(p) >= floor).sort((a, b) => score(b) - score(a) || a.index - b.index)[0];
+
+    const type = best((p) => p.methodTypeScore, 0.8, freeAnyHeader);
+    if (type) claim(type.index, 'method_type', 'likely');
+    const brand = best((p) => p.cardBrandScore, 0.6, freeAnyHeader);
+    if (brand) claim(brand.index, 'brand', 'likely');
+    const flag = best((p) => p.defaultFlagScore, 0.8);
+    if (flag) claim(flag.index, 'is_default', 'likely');
+
+    // Expiry in one cell ("09/28") — claimed before the separate month/year and before the
+    // customer id fallback below, which would otherwise take it as an id-shaped column.
+    const expiry = best((p) => p.expiryScore, 0.8, freeAnyHeader);
+    if (expiry) claim(expiry.index, 'expiry', 'likely');
+    // A masked card number ("**** 4242") is unambiguous, so it's last 4 under any header.
+    const masked = best((p) => p.maskedLast4Score, 0.8, freeAnyHeader);
+    if (masked) claim(masked.index, 'last4', 'likely');
+
+    const month = used.has('expiry') ? undefined : best((p) => (p.allZeroOne ? 0 : p.expMonthScore), 0.8);
+    if (month) claim(month.index, 'exp_month', 'likely');
+    // Expiry year: the column right after the month (4-digit or 2-digit), else the best 20xx column.
+    const afterMonth = month ? profiles[month.index + 1] : undefined;
+    const yearAfterMonth = afterMonth && free(afterMonth)
+      && (afterMonth.last4Score >= 0.8 || afterMonth.twoDigitScore >= 0.8) ? afterMonth : undefined;
+    const year = used.has('expiry') ? undefined : (yearAfterMonth ?? best((p) => p.expYearScore, 0.8));
+    if (year) claim(year.index, 'exp_year', 'likely');
+    // Last 4: the 4-digit column just before the month, else just after the brand, else the rightmost left.
+    const fourDigit = profiles.filter((p) => free(p) && p.last4Score >= 0.8);
+    const beforeMonth = month ? fourDigit.find((p) => p.index === month.index - 1) : undefined;
+    const afterBrand = brand ? fourDigit.find((p) => p.index === brand.index + 1) : undefined;
+    const last4 = beforeMonth ?? afterBrand ?? fourDigit.sort((a, b) => b.index - a.index)[0];
+    if (last4) claim(last4.index, 'last4', 'likely');
+    // A bare 0/1 column is the default flag only when nothing else claimed it (it also fits a month of 1).
+    if (!used.has('is_default')) {
+      const bit = profiles.filter((p) => free(p) && p.allZeroOne).sort((a, b) => b.index - a.index)[0];
+      if (bit) claim(bit.index, 'is_default', 'likely');
+    }
+    // The customer reference repeats across rows (one per method), so uniqueness can't find it:
+    // the leftmost leftover id-shaped column is the legacy customer id.
+    if (fieldSet.has('legacy_customer_id') && !used.has('legacy_customer_id')) {
+      const idCol = profiles.filter((p) => free(p) && p.idShapeScore >= 0.8).sort((a, b) => a.index - b.index)[0];
+      if (idCol) claim(idCol.index, 'legacy_customer_id', 'likely');
+    }
+  }
+
+  // --- Pass 4: name dictionaries + date-role + gender tokens → LIKELY (inferred). ---
+  // Inference is suppressed on columns with a deliberate foreign header.
+  assignNamesByDictionary(profiles, result, used, fieldSet, claim, hasForeignHeader);
+  assignDateRoles(profiles, result, used, fieldSet, claim, hasForeignHeader);
+  if (fieldSet.has('gender') && !used.has('gender')) {
+    const g = profiles
+      .filter((p) => !result[p.index].field && !hasForeignHeader(p.index) && p.nonEmpty > 0 && p.genderScore >= 0.6)
+      .sort((a, b) => b.genderScore - a.genderScore)[0];
+    if (g) claim(g.index, 'gender', 'likely');
+  }
+
+  // --- Pass 5: softer value-shape fields, most distinctive first → LIKELY. ---
+  // Language and country have bounded value sets (names / ISO codes), so they're matched first and
+  // confidently; tags is a soft label-shape signal; notes is the last-resort free-text fallback so
+  // the distinctive fields get first claim on any column. All suppressed by a foreign header.
+  const claimByScore = (field: string, score: (p: ColumnProfile) => number, floor: number) => {
+    if (!fieldSet.has(field) || used.has(field)) return;
+    const c = profiles
+      .filter((p) => !result[p.index].field && !hasForeignHeader(p.index) && p.nonEmpty > 0 && score(p) >= floor)
+      .sort((a, b) => score(b) - score(a))[0];
+    if (c) claim(c.index, field, 'likely');
+  };
+  claimByScore('preferred_language', (p) => p.languageScore, 0.6);
+  claimByScore('country', (p) => p.countryScore, 0.6);
+  claimByScore('tags', (p) => p.tagsScore, 0.6);
+  // Notes last: any remaining free-text column is claimed as a best-shot (user can override).
+  claimByScore('notes', (p) => p.freeTextScore, 0.5);
+  // The same free-text fallback for the Notes import's note text and a balance / payment description.
+  claimByScore('note', (p) => p.freeTextScore, 0.5);
+  claimByScore('description', (p) => p.freeTextScore, 0.5);
+
+  // --- Pass 6: identifier + first/last name BY ELIMINATION → LIKELY (last resort). ---
+  // The user's own reasoning: once the other columns are identified, a leftover column that looks
+  // like an identifier (any format) AND is unique on every row is almost certainly the legacy id —
+  // a legacy system may assign ids in any shape (NX104928, RE9284A, 48217), so uniqueness, not
+  // format, is the signal. Resolved before names (a name column isn't unique, so it won't collide).
+  // A file with a transaction reference (receipt / transaction number) is one row per payment: the
+  // customer repeats, the reference doesn't. So there, a unique id-shaped column is the reference.
+  if (fieldSet.has('reference') && !used.has('reference')) {
+    const refCol = profiles
+      .filter((p) => !result[p.index].field && !hasForeignHeader(p.index) && p.nonEmpty > 0
+        && p.idShapeScore >= 0.8 && p.allUnique)
+      .sort((a, b) => b.index - a.index)[0]; // rightmost: references usually follow the customer
+    if (refCol) claim(refCol.index, 'reference', 'likely');
+  }
+  if (fieldSet.has('legacy_customer_id') && !used.has('legacy_customer_id')) {
+    const idCol = profiles
+      .filter((p) => !result[p.index].field && !hasForeignHeader(p.index) && p.nonEmpty > 0
+        && p.idShapeScore >= 0.8 && p.allUnique)
+      .sort((a, b) => a.index - b.index)[0];
+    if (idCol) claim(idCol.index, 'legacy_customer_id', 'likely');
+  }
+
+  // When the dictionaries didn't recognise the names (diverse/non-Anglo files), fall back to the
+  // user's own reasoning: with the other columns identified, a leftover name-shaped text column is
+  // almost certainly a name. Best-shot, overridable. Leftmost → first name, the other → last name.
+  const wantFirst = fieldSet.has('first_name') && !used.has('first_name');
+  const wantLast = fieldSet.has('last_name') && !used.has('last_name');
+  if (wantFirst || wantLast) {
+    const leftovers = profiles
+      .filter((p) => !result[p.index].field && !hasForeignHeader(p.index) && p.nonEmpty > 0 && p.nameShapeScore >= 0.8)
+      .sort((a, b) => a.index - b.index); // left-to-right: first name usually precedes last
+    if (wantFirst && wantLast && leftovers.length >= 2) {
+      claim(leftovers[0].index, 'first_name', 'likely');
+      claim(leftovers[1].index, 'last_name', 'likely');
+    } else if (wantFirst && leftovers.length >= 1) {
+      claim(leftovers[0].index, 'first_name', 'likely');
+      if (wantLast && leftovers.length >= 2) claim(leftovers[1].index, 'last_name', 'likely');
+    } else if (wantLast && leftovers.length >= 1) {
+      claim(leftovers[0].index, 'last_name', 'likely');
+    }
+  }
+
+  // --- Assemble proposals. ---
+  const proposals: ColumnProposal[] = [];
+  for (let c = 0; c < width; c++) {
+    const label = hasHeader ? (headerRow[c] ?? `Column ${c + 1}`) : `Column ${c + 1}`;
+    const { field, confidence } = result[c];
+    proposals.push({ index: c, column: label, field, confident: confidence === 'certain', confidence });
+  }
   return proposals;
+}
+
+type ClaimFn = (c: number, field: string, confidence: Confidence) => boolean;
+
+/**
+ * Pick the first-name column as the text column that scores highest on given-names (above a
+ * floor), then infer the adjacent remaining text column as last name. Both are LIKELY — a
+ * confidence-scored suggestion, never asserted (spec 50 §15.2/§15.5).
+ */
+function assignNamesByDictionary(
+  profiles: ColumnProfile[],
+  result: Array<{ field: string | null; confidence: Confidence }>,
+  used: Set<string>,
+  fieldSet: Set<string>,
+  claim: ClaimFn,
+  isForeignHeader: (c: number) => boolean,
+): void {
+  const wantFirst = fieldSet.has('first_name') && !used.has('first_name');
+  const wantLast = fieldSet.has('last_name') && !used.has('last_name');
+  if (!wantFirst && !wantLast) return;
+
+  const textCols = profiles.filter(
+    (p) => !result[p.index].field && p.nonEmpty > 0 && !isForeignHeader(p.index)
+      && (p.firstNameScore > 0 || p.lastNameScore > 0),
+  );
+  if (textCols.length === 0) return;
+
+  const FLOOR = 0.3; // at least ~a third of the column's tokens are recognised names
+  if (wantFirst) {
+    const firstCol = [...textCols]
+      .filter((p) => p.firstNameScore >= FLOOR && p.firstNameScore >= p.lastNameScore)
+      .sort((a, b) => b.firstNameScore - a.firstNameScore)[0];
+    if (firstCol) {
+      claim(firstCol.index, 'first_name', 'likely');
+      // Infer last name as the best surname-scoring OTHER text column (prefer an adjacent one).
+      if (wantLast && !used.has('last_name')) {
+        const lastCandidates = profiles.filter(
+          (p) => !result[p.index].field && p.nonEmpty > 0 && !isForeignHeader(p.index)
+            && (p.lastNameScore > 0 || p.firstNameScore > 0),
+        );
+        const adjacent = lastCandidates.find((p) => Math.abs(p.index - firstCol.index) === 1);
+        const best = [...lastCandidates].sort((a, b) => b.lastNameScore - a.lastNameScore)[0];
+        const pick = adjacent ?? best;
+        if (pick) claim(pick.index, 'last_name', 'likely');
+      }
+    }
+  } else if (wantLast) {
+    const lastCol = [...textCols]
+      .filter((p) => p.lastNameScore >= FLOOR)
+      .sort((a, b) => b.lastNameScore - a.lastNameScore)[0];
+    if (lastCol) claim(lastCol.index, 'last_name', 'likely');
+  }
+}
+
+/**
+ * When two or more date columns remain, assign DOB vs a join date by distribution: the most
+ * birth-date-like column (older, wider spread) → date_of_birth; the least → joined. Both LIKELY.
+ */
+function assignDateRoles(
+  profiles: ColumnProfile[],
+  result: Array<{ field: string | null; confidence: Confidence }>,
+  used: Set<string>,
+  fieldSet: Set<string>,
+  claim: ClaimFn,
+  isForeignHeader: (c: number) => boolean,
+): void {
+  const dateCols = profiles.filter(
+    (p) => !result[p.index].field && !isForeignHeader(p.index) && p.dominantKind === 'date' && p.dominance >= 0.8,
+  );
+  if (dateCols.length < 2) return; // a single leftover date column is handled by the value pass
+
+  const sorted = [...dateCols].sort((a, b) => b.birthLikeness - a.birthLikeness);
+  if (fieldSet.has('date_of_birth')) claim(sorted[0].index, 'date_of_birth', 'likely');
+  if (fieldSet.has('joined')) claim(sorted[sorted.length - 1].index, 'joined', 'likely');
+}
+
+// ---------------------------------------------------------------------------
+// Profile-driven row-alignment repair (Wave 4 — spec 50 §15.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * The value kind each mapped column expects, derived from the column profiles. A column that
+ * is dominantly one value shape (email/phone/date/money) expects that shape; a free-text or
+ * mixed column expects 'text' (which anything satisfies). Used to score whether a row's cells
+ * line up with their columns, so a shifted row can be detected even when its cell count matches.
+ */
+export function expectedKinds(profiles: ColumnProfile[]): CellKind[] {
+  return profiles.map((p) => {
+    if (p.nonEmpty === 0) return 'text';
+    if (p.dominance >= 0.8 && p.dominantKind !== 'text' && p.dominantKind !== 'empty') return p.dominantKind;
+    return 'text';
+  });
+}
+
+/** Does a single cell satisfy a column's expected kind? Empty satisfies anything (optional value). */
+function cellFits(value: string, expected: CellKind): boolean {
+  const v = (value ?? '').trim();
+  if (v === '') return true;          // an empty cell is allowed in any column
+  if (expected === 'text') return true; // a free-text column accepts anything
+  return classifyCell(v) === expected;
+}
+
+/**
+ * Soft sub-classification of a free-text value, used ONLY as a tiebreaker when the hard
+ * value kinds (email/phone/date/money) can't pinpoint where a dropped value sits among a run of
+ * text columns. These are gentle shape hints, not authoritative: a locale code (`en-US`), a
+ * short code (`US`), a tag list (`a;b`), a sentence (notes), or a short word (a name/gender).
+ */
+export type TextSubKind = 'locale' | 'shortcode' | 'taglist' | 'sentence' | 'word' | 'other';
+
+export function textSubKind(value: string): TextSubKind {
+  const v = (value ?? '').trim();
+  if (v === '') return 'other';
+  if (/^[a-z]{2}[-_][A-Za-z]{2}$/.test(v)) return 'locale';           // en-US, it-IT
+  if (v.includes(';')) return 'taglist';                              // fitness;new-member
+  if (/\s/.test(v.trim()) && v.length > 12) return 'sentence';        // a notes sentence
+  if (/^[A-Za-z]{2,3}$/.test(v)) return 'shortcode';                  // US, GB, USA
+  if (/^[\p{L}][\p{L}'’-]*$/u.test(v)) return 'word';                 // a single word (name/gender)
+  return 'other';
+}
+
+/**
+ * Score how badly a row's cells line up with the expected column kinds (lower is better; 0 is a
+ * clean fit). Two kinds of evidence, both needed to catch a left-shift where free-text columns
+ * mask the problem:
+ *  1. a NON-EMPTY cell whose value violates its shape-constrained column (e.g. a sentence in the
+ *     email column) — a direct misfit; and
+ *  2. a shape-constrained column that is EMPTY while a value OF THAT SHAPE sits elsewhere in a
+ *     column that doesn't require it (e.g. the joined date column is empty but a date is sitting
+ *     in the free-text notes column) — the tell-tale that a value was dropped and the rest shifted.
+ * Free-text columns accept anything, so a shift only reveals itself through the shaped columns it
+ * disturbs; counting the shaped columns that fail to receive their value is what exposes it.
+ */
+function misfitScore(row: string[], expected: CellKind[]): number {
+  let bad = 0;
+  // (1) wrong-shaped values in shape-constrained columns.
+  for (let c = 0; c < expected.length; c++) {
+    const v = (row[c] ?? '').trim();
+    if (v === '') continue;
+    if (!cellFits(v, expected[c])) bad++;
+  }
+  // (2) a shape-constrained column left empty while a value of its shape is misplaced elsewhere.
+  for (let c = 0; c < expected.length; c++) {
+    const want = expected[c];
+    if (want === 'text') continue;
+    const here = (row[c] ?? '').trim();
+    if (here !== '' && cellFits(here, want)) continue; // satisfied
+    // Column c is unsatisfied. Is there a value of this shape sitting in a non-matching column?
+    const misplaced = row.some((cell, idx) => {
+      const cv = (cell ?? '').trim();
+      return cv !== '' && idx !== c && expected[idx] !== want && classifyCell(cv) === want;
+    });
+    if (misplaced) bad++;
+  }
+  return bad;
+}
+
+export type RowAlignment = 'ok' | 'repaired' | 'unresolved';
+
+export interface RowRepairResult {
+  /** The row's cells after any repair (unchanged when ok/unresolved). */
+  cells: string[];
+  alignment: RowAlignment;
+  /** The original cells, present when the row was repaired (for a before/after review sample). */
+  before?: string[];
+  /** Plain-language reason when unresolved (for the failure report). */
+  reason?: string;
+}
+
+/**
+ * Realign one row against the expected column kinds. The detector is profile-fit, NOT column
+ * count: a row that already has the right number of cells but whose shaped values sit in the
+ * wrong columns (a dropped value compensated by a trailing empty cell) is still caught.
+ *
+ * Candidate repairs tried, each re-scored by misfitScore:
+ *  - the row as-is;
+ *  - drop a trailing empty cell (the dropped-value-plus-trailing-empty case) then, for each
+ *    position, insert an empty cell — i.e. "a value went missing at slot k, everything after
+ *    shifted left, and an empty was appended to keep the count";
+ *  - for a too-LONG row (an unquoted delimiter over-split a free-text column), re-join the
+ *    overflow back into the first free-text column.
+ *
+ * Exactly one candidate reaching misfit 0 (and strictly better than as-is) → repaired.
+ * As-is already fits → ok. Zero fit, or two-plus distinct candidates tie at the best score
+ * → unresolved (never guess), with a reason.
+ */
+export function repairRow(row: string[], profiles: ColumnProfile[]): RowRepairResult {
+  const expected = expectedKinds(profiles);
+  const width = expected.length;
+  const asIs = misfitScore(padOrTrimless(row, width), expected);
+  // Already lines up AND has no extra cells → accept. A row SHORTER than the canonical width is
+  // just a record that didn't fill its trailing optional column(s) (e.g. no legacy id in the last
+  // column) — pad it with empties and accept; it is NOT a misalignment to repair. Only a too-long
+  // row (extra cells) or a genuine misfit needs the repair search below.
+  if (asIs === 0 && row.length <= width) return { cells: padOrTrimless(row, width), alignment: 'ok' };
+
+  // Build candidate alignments (each normalised to `width` cells for scoring).
+  const candidates: string[][] = [];
+  const seen = new Set<string>();
+  const add = (cells: string[]) => {
+    const norm = cells.slice(0, width);
+    while (norm.length < width) norm.push('');
+    const key = norm.join('\u0001');
+    if (!seen.has(key)) { seen.add(key); candidates.push(norm); }
+  };
+
+  // Case A: drop one trailing empty, then try inserting an empty at each slot (a value was
+  // dropped mid-row, the rest shifted left, and a trailing empty was appended).
+  const trimmed = row.slice();
+  while (trimmed.length > 0 && (trimmed[trimmed.length - 1] ?? '').trim() === '' && trimmed.length > width - 1) {
+    trimmed.pop();
+  }
+  if (trimmed.length === width - 1) {
+    for (let k = 0; k < width; k++) {
+      const c = trimmed.slice();
+      c.splice(k, 0, '');
+      add(c);
+    }
+  }
+
+  // Case B: row is too long — re-join the overflow into the first free-text column.
+  if (row.length > width) {
+    const firstText = expected.indexOf('text');
+    if (firstText >= 0) {
+      const overflow = row.length - width;
+      const c = row.slice();
+      const joined = c.slice(firstText, firstText + overflow + 1).join(', ');
+      c.splice(firstText, overflow + 1, joined);
+      add(c);
+    }
+  }
+
+  // Score candidates by HARD misfit (shaped columns). Among the best, break ties by SOFT fit —
+  // how well each value's text sub-kind matches its column's dominant sub-kind — which is what
+  // separates "dropped country" from "dropped gender" when both leave the shaped columns happy.
+  const scored = candidates.map((c) => ({
+    c, hard: misfitScore(c, expected), soft: softMisfit(c, profiles),
+  }));
+  if (scored.length === 0) {
+    return unresolved(padOrTrimless(row, width), expected);
+  }
+  const minHard = Math.min(...scored.map((s) => s.hard));
+  if (minHard > 0) return unresolved(padOrTrimless(row, width), expected); // nothing lines the shaped columns up cleanly
+  const hardWinners = scored.filter((s) => s.hard === minHard);
+  const minSoft = Math.min(...hardWinners.map((s) => s.soft));
+  const best = hardWinners.filter((s) => s.soft === minSoft);
+
+  if (best.length === 1 && (asIs > 0 || row.length !== width)) {
+    return { cells: best[0].c, alignment: 'repaired', before: row.slice() };
+  }
+  if (asIs === 0) return { cells: padOrTrimless(row, width), alignment: 'ok' };
+  return unresolved(padOrTrimless(row, width), expected, best.length > 1);
+}
+
+/** Human names for the shape a column expects, for a readable mismatch reason. */
+const KIND_LABEL: Record<CellKind, string> = {
+  email: 'an email', phone: 'a phone number', date: 'a date', money: 'an amount',
+  number: 'a number', text: 'text', empty: 'nothing',
+};
+
+/**
+ * Build an unresolved result with a reason that NAMES the specific mismatch, so a flagged row
+ * explains itself instead of a generic "something is off". Finds the first shaped column whose
+ * value violates its expected shape (or is empty while that shape sits elsewhere) and describes it.
+ */
+function unresolved(row: string[], expected: CellKind[], tie = false): RowRepairResult {
+  let detail = '';
+  for (let c = 0; c < expected.length; c++) {
+    const want = expected[c];
+    if (want === 'text') continue;
+    const v = (row[c] ?? '').trim();
+    if (v === '') {
+      // Empty shaped column, with a value of that shape sitting elsewhere → a shift happened.
+      const misplacedAt = row.findIndex((cell, idx) => {
+        const cv = (cell ?? '').trim();
+        return cv !== '' && idx !== c && expected[idx] !== want && classifyCell(cv) === want;
+      });
+      if (misplacedAt >= 0) {
+        detail = `column ${c + 1} expects ${KIND_LABEL[want]} but is empty (it looks like it landed in column ${misplacedAt + 1})`;
+        break;
+      }
+    } else if (!cellFits(v, want)) {
+      detail = `column ${c + 1} expects ${KIND_LABEL[want]} but has "${v.length > 24 ? v.slice(0, 24) + '…' : v}"`;
+      break;
+    }
+  }
+  const base = detail
+    ? `This row doesn't line up: ${detail}.`
+    : 'This row doesn\u2019t line up with the columns — a value may be missing or an extra separator split a field.';
+  return {
+    cells: row.slice(),
+    alignment: 'unresolved',
+    reason: tie ? `${base} It could line up more than one way — check it.` : base,
+  };
+}
+
+/**
+ * Soft misfit: among alignments that satisfy the hard shaped columns equally, count how many
+ * non-empty text cells land in a text column whose dominant sub-kind they don't match (a
+ * sentence in a shortcode column, a locale code in a sentence column, …). Lower is better; this
+ * is the tiebreaker that places a dropped value in the right free-text slot.
+ */
+function softMisfit(row: string[], profiles: ColumnProfile[]): number {
+  let bad = 0;
+  for (let c = 0; c < profiles.length; c++) {
+    const p = profiles[c];
+    if (p.dominantKind !== 'text' && p.dominantKind !== 'empty') continue; // only text columns
+    const v = (row[c] ?? '').trim();
+    if (v === '') continue;
+    const want = p.dominantTextSubKind;
+    if (want === 'other') continue; // no clear expectation → no penalty
+    if (textSubKind(v) !== want) bad++;
+  }
+  return bad;
+}
+
+/** Pad a row with empty strings to `width` without trimming real cells (only for scoring). */
+function padOrTrimless(row: string[], width: number): string[] {
+  const c = row.slice();
+  while (c.length < width) c.push('');
+  return c;
+}
+
+export interface RealignResult {
+  cells: string[];           // the full row after re-fitting the tail
+  aligned: boolean;          // true when the result fully fits the column profiles
+  /** When not aligned: a plain-language description of the first mismatch (names the column). */
+  reason?: string;
+}
+
+/**
+ * Does this row line up with the column profiles AS-IS? Used after the user edits a single cell
+ * by hand: nothing is moved, the row is simply re-checked so its flag clears (or updates its
+ * reason) once the value fits. Reuses the same shaped-column fit rules as detection.
+ */
+export function rowFits(row: string[], profiles: ColumnProfile[]): RealignResult {
+  const expected = expectedKinds(profiles);
+  const padded = padOrTrimless(row, expected.length);
+  if (misfitScore(padded, expected) === 0) return { cells: padded, aligned: true };
+  return { cells: padded, aligned: false, reason: unresolved(padded, expected).reason };
+}
+
+/**
+ * Re-fit the TAIL of a row from `fromIndex` onward against the column profiles, holding columns
+ * [0, fromIndex) fixed. This is the engine behind the UI's per-cell shift: the user asserts "the
+ * value in this column actually belongs one column to the right", which both (a) locks the head
+ * as correct and (b) says the tail is misplaced — so we take the remaining non-empty values, keep
+ * their left-to-right order (never scramble a person's data), and find the best placement of them
+ * across the open columns [fromIndex, width) by the same hard-then-soft profile-fit scoring used
+ * for detection. Reuses `misfitScore` + `softMisfit` so the result is consistent with analysis.
+ *
+ * `fromIndex` is the shift point: the user shifted the value AT `fromIndex` to the right, so the
+ * tail begins there. Candidate placements interleave the needed empty gaps among the tail values;
+ * the unique best-scoring placement wins. `aligned` reflects whether the whole row then fits.
+ */
+export function realignRowTail(
+  row: string[], profiles: ColumnProfile[], fromIndex: number, forceLeadingGap = false,
+): RealignResult {
+  const expected = expectedKinds(profiles);
+  const width = expected.length;
+  const head = row.slice(0, fromIndex).map((c) => (c ?? ''));
+  const tailValues = row.slice(fromIndex).map((c) => (c ?? '').trim()).filter((v) => v !== '');
+  // A right-shift forces the value out of `fromIndex`: the first open slot must be a gap, so the
+  // tail re-fits into fromIndex+1 onward. A left-shift opens the empty slot to the left and lets
+  // the tail start at fromIndex.
+  const firstOpen = forceLeadingGap ? fromIndex + 1 : fromIndex;
+  const headFull = forceLeadingGap ? [...head, ''] : head;
+  const slots = width - firstOpen;               // open columns to place the tail values into
+  if (tailValues.length > slots) {
+    // More values than open columns — can't place without losing data; leave as-is, flag it.
+    return { cells: padOrTrimless(row, width), aligned: false };
+  }
+
+  // Enumerate every way to place `tailValues` (in order) into `slots` positions, i.e. choose
+  // which positions hold a value vs a gap. For a modest number of columns this is small.
+  const results: string[][] = [];
+  const place = (vals: string[], openSlots: number, acc: string[]) => {
+    if (vals.length === 0) { results.push([...acc, ...Array(openSlots).fill('')]); return; }
+    if (vals.length > openSlots) return;
+    // Option 1: put the next value here.
+    place(vals.slice(1), openSlots - 1, [...acc, vals[0]]);
+    // Option 2: leave a gap here (only if enough slots remain for the rest).
+    if (openSlots - 1 >= vals.length) place(vals, openSlots - 1, [...acc, '']);
+  };
+  place(tailValues, slots, []);
+
+  // Score each full-row candidate (frozen head + candidate tail) by hard then soft fit.
+  const candidates = results.map((tail) => headFull.concat(tail));
+  const scored = candidates.map((c) => ({ c, hard: misfitScore(c, expected), soft: softMisfit(c, profiles) }));
+  const minHard = Math.min(...scored.map((s) => s.hard));
+  const hardWinners = scored.filter((s) => s.hard === minHard);
+  const minSoft = Math.min(...hardWinners.map((s) => s.soft));
+  const best = hardWinners.filter((s) => s.soft === minSoft);
+
+  // Prefer the unique best; on a tie, take the first (values stay in order, gaps earliest) so the
+  // result is deterministic. The row is "aligned" only when the chosen placement fully fits.
+  const chosen = best[0].c;
+  return { cells: chosen, aligned: misfitScore(chosen, expected) === 0 };
+}
+
+export interface RepairSummary {
+  rows: string[][];        // repaired/ok rows, aligned to the column width
+  repaired: number;
+  unresolved: number;
+  /** Up to a few before/after samples of repaired rows for the review step. */
+  samples: Array<{ row: number; before: string[]; after: string[] }>;
+  /** Per-row failures for unresolved rows: 1-based row number + reason. */
+  failures: Array<{ row: number; reason: string }>;
+  /**
+   * Per-row outcome for the three-tab staging UI (Stage B): the 1-based source row, its aligned
+   * cells, how it was classified, and the raw cells + reason for the Error tab's shift editor.
+   */
+  perRow: Array<{
+    row: number;
+    alignment: RowAlignment;      // ok | repaired | unresolved
+    cells: string[];              // aligned cells (for ok/repaired); raw cells for unresolved
+    raw: string[];                // the original cells as read from the file
+    reason?: string;              // present when unresolved
+  }>;
+}
+
+/**
+ * Apply row-alignment repair across all data rows. The canonical column structure is derived
+ * from the MAJORITY row shape (not all rows), so a cluster of shifted rows cannot pollute the
+ * profiles used to judge alignment (spec 50 §15.1/§15.3, three-tab staging model). A caller may
+ * pass pre-computed profiles (e.g. tests, or to reuse a known-clean cohort); otherwise the
+ * majority cohort is computed from `dataRows`. Pure.
+ */
+export function repairRows(dataRows: string[][], profilesOrWidth: ColumnProfile[] | number): RepairSummary {
+  const profiles = Array.isArray(profilesOrWidth)
+    ? profilesOrWidth
+    : canonicalProfiles(dataRows, profilesOrWidth).profiles;
+  const out: string[][] = [];
+  const samples: RepairSummary['samples'] = [];
+  const failures: RepairSummary['failures'] = [];
+  const perRow: RepairSummary['perRow'] = [];
+  let repaired = 0;
+  let unresolvedCount = 0;
+
+  for (let i = 0; i < dataRows.length; i++) {
+    const res = repairRow(dataRows[i], profiles);
+    out.push(res.cells);
+    perRow.push({ row: i + 1, alignment: res.alignment, cells: res.cells, raw: dataRows[i].slice(), reason: res.reason });
+    if (res.alignment === 'repaired') {
+      repaired++;
+      if (samples.length < 5) samples.push({ row: i + 1, before: res.before!, after: res.cells });
+    } else if (res.alignment === 'unresolved') {
+      unresolvedCount++;
+      failures.push({ row: i + 1, reason: res.reason! });
+    }
+  }
+  return { rows: out, repaired, unresolved: unresolvedCount, samples, failures, perRow };
 }
 
 /** Build the working rows from a grid + confirmed mapping (field → row object). */
@@ -275,9 +1615,34 @@ export function applyMapping(
   });
 }
 
+/**
+ * The Payment Methods import fields (a processor migration mapping file). Header synonyms cover
+ * common export names; headerless files are mapped by value (see detectColumns, Pass 1b / 3b).
+ */
+export const PAYMENT_METHOD_FIELDS: FieldDef[] = [
+  { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'oldcustomerid', 'customerid', 'client', 'clientid', 'clientnumber', 'customernumber', 'memberid'] },
+  { field: 'stripe_customer_id', synonyms: ['stripecustomerid', 'providercustomerid', 'customerref', 'newcustomerid', 'stripecustomer', 'newstripecustomerid'] },
+  // The customer's id at the PREVIOUS processor (Stripe's processor-import file: old_customer_id).
+  // Matched exactly against the processor customer id captured by the customer import.
+  { field: 'previous_processor_customer_id', synonyms: ['previousprocessorcustomerid', 'oldprocessorcustomerid', 'oldstripecustomerid'] },
+  { field: 'payment_method_token', synonyms: ['paymentmethodtoken', 'token', 'paymentmethodid', 'newtoken', 'pm', 'newpaymentmethodid', 'newsourceid', 'newcardid'] },
+  { field: 'email', synonyms: ['email', 'emailaddress'], valueKinds: ['email'] },
+  { field: 'phone', synonyms: ['phone', 'mobile'], valueKinds: ['phone'] },
+  { field: 'method_type', synonyms: ['methodtype', 'type', 'paymenttype', 'instrumenttype', 'scheme', 'kind', 'paymentmethodtype'] },
+  { field: 'brand', synonyms: ['brand', 'cardbrand', 'cardtype', 'network', 'cardnetwork'] },
+  { field: 'last4', synonyms: ['last4', 'lastfour', 'cardlast4', 'lastfourdigits', 'last4digits', 'cardnumber', 'maskednumber'] },
+  { field: 'expiry', synonyms: ['expiry', 'expiration', 'expirationdate', 'expirydate', 'expdate', 'exp', 'cardexpiry', 'validthru'] },
+  { field: 'exp_month', synonyms: ['expmonth', 'expirymonth', 'expirationmonth', 'cardexpmonth'] },
+  { field: 'exp_year', synonyms: ['expyear', 'expiryyear', 'expirationyear', 'cardexpyear'] },
+  { field: 'is_default', synonyms: ['isdefault', 'default', 'primary', 'isprimary', 'defaultmethod'] },
+];
+
 /** The customer-field definitions shared by the Customers import. */
 export const CUSTOMER_FIELDS: FieldDef[] = [
   { field: 'legacy_customer_id', synonyms: ['legacyid', 'legacycustomerid', 'externalid', 'oldid', 'customerid', 'id'] },
+  // The client's customer id at the previous system's payment processor (e.g. Stripe cus_...).
+  // A cus_ column is also found by value (detectColumns Pass 1b).
+  { field: 'processor_customer_id', synonyms: ['processorcustomerid', 'stripecustomerid', 'stripeid', 'stripecustomer', 'paymentcustomerid', 'squarecustomerid', 'braintreecustomerid', 'gatewaycustomerid'] },
   { field: 'email', synonyms: ['email', 'emailaddress', 'mail'], valueKinds: ['email'] },
   { field: 'first_name', synonyms: ['firstname', 'first', 'givenname', 'fname'] },
   { field: 'last_name', synonyms: ['lastname', 'last', 'surname', 'familyname', 'lname'] },

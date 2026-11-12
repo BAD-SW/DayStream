@@ -62,6 +62,11 @@ export function Staff() {
     },
     { key: 'email', header: 'Email', sortable: true },
     {
+      key: 'user_role', header: 'Role',
+      render: (_: unknown, row: StaffProfile) =>
+        staffApi.STAFF_ROLE_OPTIONS.find((o) => o.value === staffApi.normalizeStaffRole(row.user_role))?.label ?? (row.user_role ? row.user_role : 'No login'),
+    },
+    {
       key: 'employment_type', header: 'Type', sortable: true,
       render: (val: string) => EMPLOYMENT_LABELS[val] || val,
     },
