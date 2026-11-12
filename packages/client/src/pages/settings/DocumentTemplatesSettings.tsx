@@ -7,6 +7,7 @@ import { DETAILS_TABLE_TOKEN } from '@daystream/shared';
 import { LanguageSelect } from '../../components/LanguageSelect';
 import { useContextManager } from '../../context/ContextManager';
 import { FormsTemplates } from './FormsTemplates';
+import { CheckInTextTemplates } from './CheckInTextTemplates';
 import { useClinicalAccess } from '../../utils/useClinicalAccess';
 import * as payApi from '../../api/payments';
 import type {
@@ -41,6 +42,8 @@ import type {
 const FORMS_TYPE = 'forms';
 /** The extra entry for clinical chart templates (spec 51, gap 2); only offered to clinical roles. */
 const CHARTS_TYPE = 'charts';
+/** The extra entry for the words on the customer check-in screens (spec 51, gap 3). */
+const CHECKIN_TEXT_TYPE = 'checkin-screen';
 
 /** The editable fields; mirrors the server DocumentBrandingInput (snake_case). */
 interface EditForm {
@@ -190,7 +193,7 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
   }, []);
 
   const loadTemplates = useCallback(() => {
-    if (!businessId || !artifactType || artifactType === FORMS_TYPE || artifactType === CHARTS_TYPE) return;
+    if (!businessId || !artifactType || artifactType === FORMS_TYPE || artifactType === CHARTS_TYPE || artifactType === CHECKIN_TEXT_TYPE) return;
     payApi.listDocumentTemplates(businessId, artifactType)
       .then(setTemplates)
       .catch(() => setError('Failed to load templates.'));
@@ -316,11 +319,14 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
           ))}
           <option value={FORMS_TYPE}>Forms</option>
           {canUseCharts && <option value={CHARTS_TYPE}>Charts</option>}
+          <option value={CHECKIN_TEXT_TYPE}>Check-In</option>
         </select>
         {selectedType && <span style={s.helper}>{selectedType.description}</span>}
       </div>
 
-      {artifactType === FORMS_TYPE || artifactType === CHARTS_TYPE ? (
+      {artifactType === CHECKIN_TEXT_TYPE ? (
+        <CheckInTextTemplates businessId={businessId} onDirtyChange={onDirtyChange} />
+      ) : artifactType === FORMS_TYPE || artifactType === CHARTS_TYPE ? (
         <FormsTemplates key={artifactType} businessId={businessId} onDirtyChange={onDirtyChange}
           kind={artifactType === CHARTS_TYPE ? 'chart' : 'form'} />
       ) : (<>

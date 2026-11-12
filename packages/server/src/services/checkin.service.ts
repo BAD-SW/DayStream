@@ -4,6 +4,8 @@ import { logAudit } from './audit.service';
 import { validateQrCode } from './checkin-qr.service';
 import { validateSession } from './checkin-validation.service';
 import { evaluateOnBooking } from './customer-lifecycle.service';
+import { notifyArrival } from './arrival-alert.service';
+import { createActivity } from './customer-activity.service';
 
 /**
  * A check-in that is not allowed (wrong day, already checked in, cancelled, no booking today...).
@@ -168,22 +170,32 @@ export async function findTodaysBookingByContact(
  */
 export async function completeCheckIn(booking: BookingRef, opts: {
   tenantId: string; method: string; processedBy?: string; locationId?: string; auditAction: string;
+  /** Staff checking in outside the rules (too early or late, a no-show restriction): the reason is kept on the record. */
+  override?: { reason: string };
 }) {
   if (!booking.customer_id) {
     throw new CheckInRefused('This booking has no customer on file. Check it in from the bookings screen.');
   }
   const validation = await validateSession(booking.id, booking.customer_id, opts.tenantId);
-  if (!validation.pass) throw new CheckInRefused(validation.errors.join('. ') || 'Check-in is not allowed');
+  // An override only lifts the timing and no-show rules. A booking that is not waiting to be checked in
+  // (cancelled, already checked in, not confirmed) is refused whatever staff say.
+  let overridden = false;
+  if (!validation.pass) {
+    const stillCheckable = booking.status === 'confirmed' && !(await hasCheckInRecord(booking.id));
+    if (!(opts.override && stillCheckable)) throw new CheckInRefused(validation.errors.join('. ') || 'Check-in is not allowed');
+    overridden = true;
+  }
 
   const record = await createCheckInRecord({
     tenantId: opts.tenantId,
     bookingId: booking.id,
     customerId: booking.customer_id,
     method: opts.method,
-    validated: true,
-    validationWarnings: validation.warnings,
+    validated: !overridden,
+    validationWarnings: overridden ? [...validation.warnings, ...validation.errors] : validation.warnings,
     processedBy: opts.processedBy,
     locationId: opts.locationId,
+    overrideReason: overridden ? opts.override!.reason : undefined,
   });
 
   await adminPool.query(
@@ -202,9 +214,16 @@ export async function completeCheckIn(booking: BookingRef, opts: {
     action: opts.auditAction,
     resourceType: 'check_in_record',
     resourceId: record.id,
-    details: { booking_id: booking.id, method: opts.method, location_id: opts.locationId || null },
+    details: { booking_id: booking.id, method: opts.method, location_id: opts.locationId || null, override_reason: overridden ? opts.override!.reason : null },
   });
 
+  await createActivity({
+    customerId: booking.customer_id, businessId: booking.business_id, activityType: 'booking',
+    description: `Checked in (${opts.method})`,
+    metadata: { booking_id: booking.id, from: booking.status, to: 'checked_in' },
+    createdBy: opts.processedBy,
+  }).catch(() => undefined);
+  await notifyArrival(booking.id);
   return { record, validation, booking_id: booking.id };
 }
 
@@ -240,10 +259,11 @@ export async function checkInByBookingId(
   tenantId: string,
   processedBy: string,
   businessId?: string,
+  override?: { reason: string },
 ) {
   const booking = await findBooking(bookingId, tenantId, businessId);
   if (!booking) throw new CheckInRefused('Booking not found');
-  return completeCheckIn(booking, { tenantId, method: 'reception', processedBy, auditAction: 'checkin.reception' });
+  return completeCheckIn(booking, { tenantId, method: 'reception', processedBy, auditAction: 'checkin.reception', override });
 }
 
 /**
@@ -304,6 +324,11 @@ export async function getCheckInRecord(bookingId: string) {
 
 // --- Helper ---
 
+async function hasCheckInRecord(bookingId: string): Promise<boolean> {
+  const { rows } = await adminPool.query(`SELECT 1 FROM apt_check_in_records WHERE booking_id = $1 AND status != 'cancelled' LIMIT 1`, [bookingId]);
+  return rows.length > 0;
+}
+
 export async function createCheckInRecord(input: {
   tenantId: string;
   bookingId: string;
@@ -313,11 +338,12 @@ export async function createCheckInRecord(input: {
   validationWarnings: string[];
   processedBy?: string;
   locationId?: string;
+  overrideReason?: string;
 }) {
   const { rows } = await adminPool.query(
     `INSERT INTO apt_check_in_records
-       (tenant_id, booking_id, customer_id, check_in_method, validated, validation_warnings, processed_by, location_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (tenant_id, booking_id, customer_id, check_in_method, validated, validation_warnings, processed_by, location_id, override_reason)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
     [
       input.tenantId,
@@ -328,6 +354,7 @@ export async function createCheckInRecord(input: {
       JSON.stringify(input.validationWarnings),
       input.processedBy || null,
       input.locationId || null,
+      input.overrideReason || null,
     ],
   );
   // A check-in is a visit: it moves the person's "last visit" and "last activity" (Phase 46).

@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { phoneVisit, phoneCheckIn, phoneStartForm, selfCheckInError } from '../api/selfCheckIn';
 import type { SelfVisit } from '../api/selfCheckIn';
 import { SelfFormsList } from '../components/forms/SelfFormsList';
+import { checkInTextFor, fillCheckInTexts } from '@daystream/shared';
 
 /**
  * Check in from your own phone (spec 51, design 1.11a). Reached from the link in the reminder
@@ -16,6 +17,14 @@ export function PhoneCheckIn() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [busyGroup, setBusyGroup] = useState<string | null>(null);
+  // All wording comes from the server in the customer's language; the built-in wording shows only until it arrives.
+  // Any wording can mention the customer's details; they are written in here once.
+  const t = visit
+    ? fillCheckInTexts(visit.texts, {
+      first_name: visit.first_name, service_name: visit.service_name, business_name: visit.business_name,
+      time: new Date(visit.start_time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: visit.timezone }),
+    })
+    : checkInTextFor(null);
 
   const load = useCallback(() => {
     phoneVisit(code)
@@ -23,6 +32,13 @@ export function PhoneCheckIn() {
       .catch((err) => setInvalid(selfCheckInError(err, 'This link is no longer valid. Please see the front desk.').message));
   }, [code]);
   useEffect(() => { load(); }, [load]);
+
+  // While waiting, ask every few seconds so "Please come in" appears without a refresh.
+  useEffect(() => {
+    if (!visit?.checked_in || visit.started) return;
+    const timer = window.setInterval(() => { if (!document.hidden) load(); }, 5000);
+    return () => window.clearInterval(timer);
+  }, [visit?.checked_in, visit?.started, load]);
 
   // Forms are completed on another page; check again when the customer comes back.
   useEffect(() => {
@@ -36,7 +52,7 @@ export function PhoneCheckIn() {
     try {
       setVisit(await phoneCheckIn(code));
     } catch (err) {
-      setError(selfCheckInError(err, 'Check-in did not work. Please see the front desk.').message);
+      setError(selfCheckInError(err, t.checkInFailed).message);
     } finally { setBusy(false); }
   };
 
@@ -46,15 +62,15 @@ export function PhoneCheckIn() {
       const { path } = await phoneStartForm(code, groupId);
       window.location.assign(`${path}?next=${encodeURIComponent(`/check-in/${code}`)}`);
     } catch (err) {
-      setError(selfCheckInError(err, 'The form could not be opened. Please see the front desk.').message);
+      setError(selfCheckInError(err, t.formFailed).message);
     } finally { setBusyGroup(null); }
   };
 
   if (invalid) {
-    return <Screen><h1 style={s.title}>Check-in</h1><p role="alert" style={s.text}>{invalid}</p></Screen>;
+    return <Screen><p role="alert" style={s.text}>{invalid}</p></Screen>;
   }
   if (!visit) {
-    return <Screen><p role="status" style={s.text}>Loading…</p></Screen>;
+    return <Screen><p role="status" style={s.text}>{t.loading}</p></Screen>;
   }
 
   const when = new Date(visit.start_time).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short', timeZone: visit.timezone });
@@ -63,21 +79,27 @@ export function PhoneCheckIn() {
 
   return (
     <Screen>
-      <h1 style={s.title}>Hello, {visit.first_name}</h1>
+      <h1 style={s.title}>{t.greeting}</h1>
       <p style={s.text}><strong>{visit.service_name}</strong><br />{when}</p>
 
-      {visit.checked_in && (
-        <p role="status" style={s.ok}>You are checked in. Please take a seat; we will be with you shortly.</p>
+      {visit.ready && !visit.started && (
+        <p role="alert" style={s.ready}>{t.ready}</p>
+      )}
+      {visit.started && (
+        <p role="status" style={s.ok}>{t.started}</p>
+      )}
+      {visit.checked_in && !visit.ready && !visit.started && (
+        <p role="status" style={s.ok}>{t.checkedIn}</p>
       )}
       {canCheckIn && (
         <button type="button" style={{ ...s.go, opacity: busy ? 0.7 : 1 }} disabled={busy} onClick={here}>
-          {busy ? 'Checking in…' : "I'm here"}
+          {busy ? t.checkingIn : t.checkInButton}
         </button>
       )}
-      {closed && <p role="status" style={s.text}>This appointment can no longer be checked in. Please see the front desk.</p>}
+      {closed && <p role="status" style={s.text}>{t.cannotCheckIn}</p>}
       {error && <p role="alert" style={s.error}>{error}</p>}
 
-      <SelfFormsList forms={visit.forms} busyGroupId={busyGroup} onFillIn={fillIn} />
+      <SelfFormsList forms={visit.forms} busyGroupId={busyGroup} onFillIn={fillIn} texts={t} />
     </Screen>
   );
 }
@@ -96,6 +118,7 @@ const s: Record<string, React.CSSProperties> = {
   title: { margin: '0 0 var(--space-sm) 0', fontSize: 'var(--font-size-h2, 1.5rem)', fontWeight: 700, color: 'var(--color-text)' },
   text: { margin: '0 0 var(--space-md) 0', fontSize: 'var(--font-size-base)', color: 'var(--color-text)', lineHeight: 1.5 },
   ok: { margin: '0 0 var(--space-md) 0', fontSize: 'var(--font-size-base)', color: 'var(--color-success)', fontWeight: 600 },
+  ready: { margin: '0 0 var(--space-md) 0', padding: 'var(--space-md)', borderRadius: '12px', background: 'var(--color-primary)', color: 'var(--color-primary-contrast)', fontSize: '1.5rem', fontWeight: 700, lineHeight: 1.3 },
   go: { width: '100%', minHeight: '64px', fontSize: '1.25rem', fontWeight: 700, fontFamily: 'var(--font-family)', background: 'var(--color-primary)', color: 'var(--color-primary-contrast)', border: 'none', borderRadius: 'var(--button-radius)', cursor: 'pointer', marginBottom: 'var(--space-md)' },
   error: { margin: '0 0 var(--space-md) 0', color: 'var(--color-error)', fontSize: 'var(--font-size-base)', fontWeight: 600 },
 };

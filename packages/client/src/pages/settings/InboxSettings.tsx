@@ -18,6 +18,7 @@ const EVENTS: { key: InboxEvent; label: string }[] = [
   { key: 'delivery_failed', label: 'A message to a customer could not be delivered' },
   { key: 'new_lead', label: 'Message from a new lead' },
   { key: 'daily_summary', label: 'Daily summary (08:00 business time)' },
+  { key: 'customer_arrived', label: 'A customer has checked in (the booked practitioner is always told)' },
 ];
 const ROLES: { key: InboxRole; label: string }[] = [
   { key: 'owner', label: 'Owner' }, { key: 'manager', label: 'Manager' }, { key: 'front_desk', label: 'Front desk' }, { key: 'staff', label: 'Staff' },

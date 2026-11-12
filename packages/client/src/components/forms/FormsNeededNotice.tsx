@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { getCustomerForms } from '../../api/forms';
 import type { CustomerFormStatus } from '../../api/forms';
+import { FormsToCompleteModal } from './FormsToCompleteModal';
 
 /**
  * A clear warning that a customer still has forms to complete (spec 51, gap 1). Shown wherever
@@ -19,12 +19,15 @@ interface Props {
   bookingId?: string;
   serviceId?: string;
   refreshKey?: number;
-  /** Opens the Forms tab in place (the profile). Without it the notice links to the customer's profile. */
+  /** Opens the Forms tab in place (the profile). Without it the forms open in a window over the current page. */
   onOpenForms?: () => void;
 }
 
 export function FormsNeededNotice({ customerId, businessId, bookingId, serviceId, refreshKey = 0, onOpenForms }: Props) {
   const [needed, setNeeded] = useState<CustomerFormStatus[]>([]);
+  const [open, setOpen] = useState(false);
+  // Raised after a form is completed in the window, so the notice checks again.
+  const [changed, setChanged] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,22 +39,26 @@ export function FormsNeededNotice({ customerId, businessId, bookingId, serviceId
       })
       .catch(() => { if (!cancelled) setNeeded([]); });
     return () => { cancelled = true; };
-  }, [customerId, businessId, bookingId, serviceId, refreshKey]);
+  }, [customerId, businessId, bookingId, serviceId, refreshKey, changed]);
 
-  if (needed.length === 0) return null;
+  if (needed.length === 0 && !open) return null;
 
   const names = needed.map((f) => `${f.name}${f.status === 'out_of_date' ? ' (out of date)' : ''}`).join(', ');
   return (
+    <>
+    {needed.length > 0 && (
     <div role="alert" style={s.box}>
       <span style={s.icon} aria-hidden="true">!</span>
       <div style={s.text}>
         <strong style={s.title}>{needed.length === 1 ? '1 form needs to be completed' : `${needed.length} forms need to be completed`}</strong>
         <span style={s.names}>{names}</span>
       </div>
-      {onOpenForms
-        ? <button type="button" style={s.action} onClick={onOpenForms}>Open forms</button>
-        : <Link to={`/customers/${customerId}?tab=forms`} style={s.action}>Open forms</Link>}
+      <button type="button" style={s.action} onClick={onOpenForms ?? (() => setOpen(true))}>{onOpenForms ? 'Open forms' : 'Fill in now'}</button>
     </div>
+    )}
+    <FormsToCompleteModal open={open} onClose={() => setOpen(false)} customerId={customerId} businessId={businessId}
+      bookingId={bookingId} serviceId={serviceId} onChanged={() => setChanged((n) => n + 1)} />
+    </>
   );
 }
 

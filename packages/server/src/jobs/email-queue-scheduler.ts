@@ -13,7 +13,25 @@ import { logger } from '../middleware/logger';
 const DEFAULT_INTERVAL_MS = 60_000;   // drain once a minute
 
 let intervalHandle: ReturnType<typeof setInterval> | null = null;
+let reminderHandle: ReturnType<typeof setInterval> | null = null;
 let running = false;
+let reminding = false;
+
+// Appointment reminders (with the personal check-in link) are queued every 15 minutes.
+const REMINDER_INTERVAL_MS = 15 * 60_000;
+
+async function reminderTick(): Promise<void> {
+  if (reminding) return;
+  reminding = true;
+  try {
+    const { scheduleUpcomingReminders } = await import('../services/booking-notifications.service');
+    await scheduleUpcomingReminders();
+  } catch (err: any) {
+    logger.error('Scheduling appointment reminders failed', { error: err?.message || err });
+  } finally {
+    reminding = false;
+  }
+}
 
 async function tick(): Promise<void> {
   if (running) return;   // don't overlap a still-running drain
@@ -38,6 +56,8 @@ export function startEmailQueueScheduler(intervalMs?: number): void {
     || parseInt(process.env.EMAIL_QUEUE_INTERVAL_MS || '', 10) || DEFAULT_INTERVAL_MS;
   logger.info(`Email queue scheduler started (interval: ${interval}ms)`);
   intervalHandle = setInterval(tick, interval);
+  reminderHandle = setInterval(reminderTick, REMINDER_INTERVAL_MS);
+  setTimeout(reminderTick, 30_000);   // and once shortly after start-up
 }
 
 /** Stop the email-queue drainer. */
@@ -45,6 +65,7 @@ export function stopEmailQueueScheduler(): void {
   if (intervalHandle) {
     clearInterval(intervalHandle);
     intervalHandle = null;
+    if (reminderHandle) { clearInterval(reminderHandle); reminderHandle = null; }
     logger.info('Email queue scheduler stopped');
   }
 }

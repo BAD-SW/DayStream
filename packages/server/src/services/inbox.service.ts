@@ -37,8 +37,8 @@ export async function inboxRoleOfUser(userId: string): Promise<InboxRole> {
 // Notification settings
 // ---------------------------------------------------------------------------------------------
 
-export type InboxEvent = 'new_unassigned' | 'assigned_message' | 'assigned_to_me' | 'mentioned' | 'unanswered' | 'delivery_failed' | 'new_lead' | 'daily_summary';
-export const INBOX_EVENTS: InboxEvent[] = ['new_unassigned', 'assigned_message', 'assigned_to_me', 'mentioned', 'unanswered', 'delivery_failed', 'new_lead', 'daily_summary'];
+export type InboxEvent = 'new_unassigned' | 'assigned_message' | 'assigned_to_me' | 'mentioned' | 'unanswered' | 'delivery_failed' | 'new_lead' | 'daily_summary' | 'customer_arrived';
+export const INBOX_EVENTS: InboxEvent[] = ['new_unassigned', 'assigned_message', 'assigned_to_me', 'mentioned', 'unanswered', 'delivery_failed', 'new_lead', 'daily_summary', 'customer_arrived'];
 /** Events a user cannot switch off for themselves (assignments and mentions). */
 export const ALWAYS_IN_APP: InboxEvent[] = ['assigned_to_me', 'mentioned'];
 
@@ -58,6 +58,8 @@ export const DEFAULT_INBOX_NOTIFICATIONS: InboxNotificationSettings = {
   delivery_failed: r(false, true, true, false, true, false),
   new_lead: r(true, true, true, false, true, true),
   daily_summary: r(true, true, false, false, false, true),
+  // A customer has checked in (spec 51, gap 3); the booked practitioner is always included.
+  customer_arrived: r(true, true, true, false, true, false),
 };
 
 export async function getNotificationSettings(businessId: string): Promise<{ events: InboxNotificationSettings; unanswered_hours: number }> {
@@ -125,11 +127,11 @@ async function businessUsers(businessId: string) {
  * notification (the bell) and / or an email. `to` limits it to given users (the assignee, the
  * people mentioned); otherwise every user whose role gets the event. The actor is never told.
  */
-export async function notify(businessId: string, event: InboxEvent, n: { title: string; body?: string; link?: string; to?: string[]; actorId?: string | null }) {
+export async function notify(businessId: string, event: InboxEvent, n: { title: string; body?: string; link?: string; to?: string[]; alsoTo?: string[]; actorId?: string | null }) {
   try {
     const { events } = await getNotificationSettings(businessId);
     const rule = events[event];
-    const users = (await businessUsers(businessId)).filter((u) => u.id !== n.actorId && (n.to ? n.to.includes(u.id) : rule.roles[u.inboxRole as InboxRole]));
+    const users = (await businessUsers(businessId)).filter((u) => u.id !== n.actorId && (n.to ? n.to.includes(u.id) : (rule.roles[u.inboxRole as InboxRole] || !!n.alsoTo?.includes(u.id))));
     if (!users.length) return 0;
     const { sendEmail } = await import('./email.service');
     let told = 0;

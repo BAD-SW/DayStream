@@ -2,8 +2,12 @@ import { canContact } from './contactability.service';
 import { adminPool } from '../db/pool';
 import { logger } from '../middleware/logger';
 import { isKnownArtifactType } from '@daystream/shared';
-import { resolveArtifactKey, resolveAndRender } from './document-branding-resolver.service';
+import { resolveArtifactKey, resolveAndRender, selectTemplate } from './document-branding-resolver.service';
 import { sendEmail as sendEmailTransport } from './email.service';
+import { getConfig } from './config.service';
+import { buildIcs, calendarLinksHtml, CALENDAR_LINKS_MARKER } from '../utils/ics';
+import { fillCheckInTexts } from '@daystream/shared';
+import type { CalendarEvent } from '../utils/ics';
 
 /**
  * Build the From value for a branded document email.
@@ -56,6 +60,54 @@ export async function queueNotification(input: NotificationData): Promise<any> {
 }
 
 /**
+ * The customer's personal link to check in from their phone and complete any forms, or null when it
+ * cannot be made (the email is then sent without it).
+ */
+async function personalCheckInLink(booking: any): Promise<string | null> {
+  if (!booking.id || !booking.customer_id || !booking.business_id) return null;
+  try {
+    const { tenantOfBusiness } = await import('../utils/storage-paths');
+    const qr = await import('./checkin-qr.service');
+    return qr.checkInLinkUrl(await qr.getBookingLinkCode(await tenantOfBusiness(booking.business_id), booking.id));
+  } catch (err) {
+    logger.warn('Could not make the check-in link', { booking: booking.booking_reference, error: (err as Error).message });
+    return null;
+  }
+}
+
+/** The appointment as a calendar entry, for the add-to-calendar links and the attached invite. */
+async function calendarEventFor(booking: any): Promise<CalendarEvent | null> {
+  if (!booking.start_time || !booking.end_time) return null;
+  const { rows } = await adminPool.query('SELECT name, address FROM sys_businesses WHERE id = $1', [booking.business_id]);
+  const biz = rows[0];
+  const service = booking.service_name || 'Appointment';
+  const staffName = booking.staff_first_name ? `${booking.staff_first_name} ${booking.staff_last_name || ''}`.trim() : '';
+  const staff = staffName ? `with ${staffName}` : '';
+  return {
+    uid: String(booking.id || booking.booking_reference),
+    title: biz?.name ? `${service} at ${biz.name}` : service,
+    start: new Date(booking.start_time).toISOString(),
+    end: new Date(booking.end_time).toISOString(),
+    description: [service, staff, booking.booking_reference ? `Reference ${booking.booking_reference}` : ''].filter(Boolean).join(' · '),
+    ...(typeof biz?.address === 'string' && biz.address ? { location: biz.address } : {}),
+  };
+}
+
+/** The data the appointment template's link placeholders need: check-in page and Add to Calendar. */
+async function appointmentLinks(booking: any): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {};
+  const checkIn = await personalCheckInLink(booking);
+  if (checkIn) out.check_in_link = checkIn;
+  try {
+    const ev = await calendarEventFor(booking);
+    if (ev) { out.calendar_event = ev; out.calendar_links = calendarLinksHtml(ev); }
+  } catch (err) {
+    logger.warn('Could not make the calendar links', { booking: booking.booking_reference, error: (err as Error).message });
+  }
+  return out;
+}
+
+/**
  * Queue a booking confirmation notification.
  */
 export async function queueBookingConfirmation(booking: any, customerEmail: string): Promise<void> {
@@ -77,6 +129,8 @@ export async function queueBookingConfirmation(booking: any, customerEmail: stri
       // from the hydrated booking (getBookingById joins the customer).
       customer_name: [booking.customer_first_name, booking.customer_last_name].filter(Boolean).join(' ').trim() || null,
       customer_email: booking.customer_email || customerEmail || null,
+      // Links for the template's placeholders: the personal check-in page and Add to Calendar.
+      ...(await appointmentLinks(booking)),
     },
   });
 }
@@ -154,7 +208,7 @@ export async function queueBookingReschedule(booking: any, customerEmail: string
 /**
  * Queue booking reminder(s).
  */
-export async function queueBookingReminder(booking: any, customerEmail: string, hoursBeforeList: number[]): Promise<void> {
+export async function queueBookingReminder(booking: any, customerEmail: string, hoursBeforeList: number[]): Promise<number> {
   const startTime = new Date(booking.start_time);
 
   // A reminder is not sent to someone who switched reminders off, has no usable email, or is
@@ -163,23 +217,15 @@ export async function queueBookingReminder(booking: any, customerEmail: string, 
     const decision = await canContact(booking.customer_id, booking.business_id, 'email', 'transactional', { reminder: true });
     if (!decision.allowed) {
       logger.info('Booking reminder not queued', { booking: booking.booking_reference, reason: decision.reason });
-      return;
+      return 0;
     }
   }
 
-  // The customer's personal link to check in from their phone and complete any forms. A reminder
-  // is still sent without it if the link cannot be made.
-  let checkInLink: string | null = null;
-  if (booking.id && booking.customer_id && booking.business_id) {
-    try {
-      const { tenantOfBusiness } = await import('../utils/storage-paths');
-      const qr = await import('./checkin-qr.service');
-      checkInLink = qr.checkInLinkUrl(await qr.getBookingLinkCode(await tenantOfBusiness(booking.business_id), booking.id));
-    } catch (err) {
-      logger.warn('Could not make the check-in link for a reminder', { booking: booking.booking_reference, error: (err as Error).message });
-    }
-  }
+  // What the Appointment Reminder template's placeholders need: the customer's name, the check-in link and
+  // Add to Calendar. A reminder is still sent without the links if they cannot be made.
+  const links = await appointmentLinks(booking);
 
+  let queuedCount = 0;
   for (const hoursBefore of hoursBeforeList) {
     const scheduledFor = new Date(startTime.getTime() - hoursBefore * 60 * 60 * 1000);
 
@@ -197,13 +243,55 @@ export async function queueBookingReminder(booking: any, customerEmail: string, 
         start_time: booking.start_time,
         staff_name: booking.staff_first_name ? `${booking.staff_first_name} ${booking.staff_last_name}` : null,
         hours_before: hoursBefore,
-        ...(checkInLink ? { check_in_link: checkInLink } : {}),
+        customer_name: [booking.customer_first_name, booking.customer_last_name].filter(Boolean).join(' ').trim() || null,
+        customer_first_name: booking.customer_first_name || null,
+        customer_email: customerEmail || null,
+        ...links,
       },
       scheduledFor,
     });
+    queuedCount++;
   }
+  return queuedCount;
 }
 
+/**
+ * Emails a waiting customer that the business is ready for them (spec 51, gap 3), at once. The words are the
+ * business's Check-In wording in the customer's language (the greeting, the "ready for you" message and the
+ * subject), so there is one place to change them. Returns whether an email was sent.
+ */
+export async function sendReadyNotification(bookingId: string): Promise<boolean> {
+  try {
+    const { rows } = await adminPool.query(
+      `SELECT b.business_id, b.customer_id, b.start_time, c.first_name, c.email, c.preferred_language,
+              bus.name AS business_name, bus.timezone, s.name AS service_name
+         FROM apt_bookings b
+         JOIN sys_businesses bus ON bus.id = b.business_id
+         JOIN svc_services s ON s.id = b.service_id
+         JOIN cus_customers c ON c.id = b.customer_id
+        WHERE b.id = $1`,
+      [bookingId],
+    );
+    const r = rows[0];
+    if (!r?.email) return false;
+    const { languageFor, resolveTexts } = await import('./checkin-texts.service');
+    const time = new Date(r.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: r.timezone || 'UTC' });
+    const wording = fillCheckInTexts(
+      await resolveTexts(r.business_id, await languageFor(r.business_id, r.preferred_language)),
+      { first_name: r.first_name || '', service_name: r.service_name, time, business_name: r.business_name },
+    );
+    const subject = wording.readyEmailSubject;
+    const lines = [wording.greeting, wording.ready];
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    await sendEmailTransport({ to: r.email, subject, html: lines.map((l) => `<p>${esc(l)}</p>`).join('\n'), text: lines.join('\n\n') });
+    logger.info('Ready email sent', { booking: bookingId });
+    await recordInThread({ recipient_id: r.customer_id, business_id: r.business_id }, subject, lines.join('\n\n'));
+    return true;
+  } catch (err) {
+    logger.warn(`Ready email for booking ${bookingId} not sent: ${(err as Error).message}`);
+    return false;
+  }
+}
 /**
  * Queue a waitlist promotion notification.
  */
@@ -358,6 +446,9 @@ export async function processNotificationQueue(): Promise<{ sent: number; failed
  * dedicated email engine (next planned work) will own those; this change
  * deliberately does not start sending booking mail that wasn't sent before.
  */
+/** Types that have a template but fall back to the plain email while the business has none. */
+const TEMPLATE_OR_PLAIN: ReadonlySet<string> = new Set(['booking.reminder']);
+
 async function sendEmail(notification: any): Promise<void> {
   const type: string = notification.type;
   const artifactKey = resolveArtifactKey(type);
@@ -374,7 +465,12 @@ async function sendEmail(notification: any): Promise<void> {
     data = typeof notification.data === 'string' ? JSON.parse(notification.data) : (notification.data ?? {});
   } catch { data = {}; }
 
-  if (isKnownArtifactType(artifactKey)) {
+  // A reminder uses the business's Appointment Reminder template. A business that has not made one yet
+  // still sends the plain reminder (with the check-in link) instead of an almost empty email.
+  const templateIfAny = TEMPLATE_OR_PLAIN.has(type)
+    ? await selectTemplate(notification.business_id, type, typeof data.language === 'string' ? data.language : null)
+    : true;
+  if (isKnownArtifactType(artifactKey) && templateIfAny) {
     // Branded catalog document — resolve the business's template and render it.
     // Build the {{details_table}} line-item table from the queued data so the
     // email draws it where the marker sits (receipt/invoice/adjustment).
@@ -391,11 +487,18 @@ async function sendEmail(notification: any): Promise<void> {
     // NOTE: deliverability in production requires the reply-to domain to authorize
     // the platform's sending infrastructure (SPF/DKIM) — tracked follow-up.
     const brandedFrom = buildBrandedFrom(rendered.senderName, rendered.replyTo);
+    // The calendar invite is attached only when the template uses the Add to Calendar placeholder
+    // (its links are in the body); a template without the placeholder gets neither.
+    const ev = data.calendar_event as CalendarEvent | undefined;
+    const attachments = ev && rendered.html.includes(CALENDAR_LINKS_MARKER)
+      ? [{ filename: 'invite.ics', content: Buffer.from(buildIcs(ev), 'utf8'), contentType: 'text/calendar; charset=utf-8; method=PUBLISH' }]
+      : undefined;
     await sendEmailTransport({
       to: recipient,
       subject: rendered.subject,
       html: rendered.html,
       text: rendered.text,
+      ...(attachments ? { attachments } : {}),
       ...(brandedFrom ? { from: brandedFrom } : {}),
       ...(rendered.replyTo ? { replyTo: rendered.replyTo } : {}),
     });
@@ -505,38 +608,99 @@ export function generateICal(booking: {
   return lines.join('\r\n');
 }
 
+const DEFAULT_REMINDER_HOURS = [24, 2];
+
 /**
- * Schedule reminders for all confirmed bookings happening in the next 48 hours.
+ * When reminders go out before an appointment, in hours (longest first). The business's own setting
+ * wins, then the tenant's, then the system default (24 and 2); a value that is not a short list of
+ * sensible hours is ignored.
+ */
+export async function reminderHoursFor(businessId: string, tenantId: string): Promise<number[]> {
+  const valid = (v: unknown): number[] | null => {
+    if (!Array.isArray(v)) return null;
+    const hours = v.map(Number).filter((n) => Number.isFinite(n) && n > 0 && n <= 336);
+    return hours.length > 0 && hours.length <= 5 && hours.length === v.length
+      ? [...new Set(hours)].sort((x, y) => y - x) : null;
+  };
+  try {
+    const { rows } = await adminPool.query(
+      `SELECT value FROM sys_business_configurations WHERE business_id = $1 AND key = 'booking.reminder_hours'`,
+      [businessId],
+    );
+    if (rows[0]) {
+      const own = valid(JSON.parse(rows[0].value));
+      if (own) return own;
+    }
+  } catch { /* fall through to the tenant and system settings */ }
+  try {
+    const inherited = valid(await getConfig(tenantId, 'booking.reminder_hours'));
+    if (inherited) return inherited;
+  } catch { /* use the default */ }
+  return DEFAULT_REMINDER_HOURS;
+}
+
+/**
+ * Queue the reminders of every confirmed appointment coming up (the longest lead time plus a day
+ * ahead). Safe to run often: an appointment that already has reminders queued or sent is skipped, and
+ * reminders still waiting for an appointment that was moved or is no longer confirmed are cancelled so
+ * the right ones are queued instead.
  */
 export async function scheduleUpcomingReminders(): Promise<number> {
-  const cutoff = new Date(Date.now() + 48 * 60 * 60 * 1000);
+  // Reminders queued before they carried the customer's name and the calendar links: replace the ones that
+  // are not due for a few minutes, so a template's placeholders fill in. (Anything due soon goes as it is.)
+  await adminPool.query(
+    `UPDATE apt_notification_queue
+        SET status = 'cancelled', error = 'Replaced with an updated reminder', claimed_at = NULL, claimed_by = NULL
+      WHERE type = 'booking.reminder' AND status = 'pending' AND NOT (data ? 'customer_email')
+        AND scheduled_for > NOW() + INTERVAL '5 minutes'`,
+  );
 
-  // Find confirmed bookings in the next 48h that don't already have a reminder queued
+  // Reminders that no longer match their appointment.
+  await adminPool.query(
+    `UPDATE apt_notification_queue nq
+        SET status = 'cancelled', error = 'The appointment changed', claimed_at = NULL, claimed_by = NULL
+      WHERE nq.type = 'booking.reminder' AND nq.status = 'pending'
+        AND EXISTS (
+          SELECT 1 FROM apt_bookings b
+           WHERE b.business_id = nq.business_id AND b.booking_reference = nq.data->>'booking_reference'
+             AND (b.status <> 'confirmed'
+                  -- JSON keeps milliseconds, the database microseconds: compare to the second.
+                  OR ABS(EXTRACT(EPOCH FROM (b.start_time - (nq.data->>'start_time')::timestamptz))) > 1))`,
+  );
+
+  const horizon = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
   const { rows: bookings } = await adminPool.query(
     `SELECT b.id, b.business_id, b.customer_id, b.booking_reference, b.start_time, b.end_time,
-            s.name AS service_name, c.email AS customer_email,
+            s.name AS service_name, c.email AS customer_email, bus.tenant_id,
+            c.first_name AS customer_first_name, c.last_name AS customer_last_name,
             u.first_name AS staff_first_name, u.last_name AS staff_last_name
      FROM apt_bookings b
      JOIN svc_services s ON s.id = b.service_id
      JOIN cus_customers c ON c.id = b.customer_id
+     JOIN sys_businesses bus ON bus.id = b.business_id
      LEFT JOIN usr_users u ON u.id = b.staff_id
      WHERE b.status = 'confirmed'
        AND b.start_time > NOW()
        AND b.start_time <= $1
+       AND c.email IS NOT NULL AND c.email <> ''
        AND NOT EXISTS (
          SELECT 1 FROM apt_notification_queue nq
          WHERE nq.type = 'booking.reminder'
            AND nq.recipient_id = b.customer_id
            AND nq.data->>'booking_reference' = b.booking_reference
-           AND nq.status IN ('pending', 'sent')
+           AND nq.status IN ('pending', 'processing', 'sent')
        )`,
-    [cutoff.toISOString()],
+    [horizon.toISOString()],
   );
 
+  const hoursByBusiness = new Map<string, number[]>();
   let queued = 0;
   for (const booking of bookings) {
-    await queueBookingReminder(booking, booking.customer_email, [24, 2]);
-    queued++;
+    let hours = hoursByBusiness.get(booking.business_id);
+    if (!hours) { hours = await reminderHoursFor(booking.business_id, booking.tenant_id); hoursByBusiness.set(booking.business_id, hours); }
+    // Only appointments that are inside the longest lead time can have their first reminder due.
+    if (new Date(booking.start_time).getTime() - Date.now() > (Math.max(...hours) + 24) * 3600 * 1000) continue;
+    queued += await queueBookingReminder(booking, booking.customer_email, hours);
   }
 
   if (queued > 0) {

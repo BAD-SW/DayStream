@@ -92,6 +92,12 @@ export type {
   FormValidationIssue,
 } from './forms/definition';
 
+// Check-in screen wording (spec 51, gap 3)
+export {
+  CHECK_IN_TEXT_KEYS, CHECK_IN_TEXT_FIELDS, CHECK_IN_TEXT_PLACEHOLDERS, CHECK_IN_TEXT_DEFAULTS, EDITABLE_CHECK_IN_TEXT_KEYS,
+  checkInTextFor, fillText, fillCheckInTexts,
+} from './checkin/text';
+export type { CheckInText, CheckInTextKey, CheckInTextField } from './checkin/text';
 // Utilities
 export { formatCurrency } from './utils/currency';
 export { formatDate, formatDateTime } from './utils/date';

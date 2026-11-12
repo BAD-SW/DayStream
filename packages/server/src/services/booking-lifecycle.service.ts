@@ -10,7 +10,7 @@ import { logger } from '../middleware/logger';
 const VALID_TRANSITIONS: Record<string, string[]> = {
   pending: ['confirmed', 'cancelled'],
   confirmed: ['checked_in', 'cancelled', 'no_show'],
-  checked_in: ['completed', 'confirmed'],
+  checked_in: ['in_progress', 'completed', 'confirmed'],
   in_progress: ['completed'],
   // Terminal states: completed, cancelled, no_show — no transitions out
 };
@@ -69,8 +69,14 @@ async function transitionStatus(
     updateFields.push(`checked_in_at = NOW()`);
   }
 
+  if (newStatus === 'in_progress') {
+    updateFields.push(`started_at = NOW()`);
+  }
+
   if (newStatus === 'confirmed' && currentStatus === 'checked_in') {
-    updateFields.push(`checked_in_at = NULL`);
+    updateFields.push(`checked_in_at = NULL`, `ready_at = NULL`);
+    // A reset undoes the check-in: its record is cancelled so the customer can be checked in again.
+    await adminPool.query(`UPDATE apt_check_in_records SET status = 'cancelled' WHERE booking_id = $1 AND status IN ('checked_in', 'in_progress')`, [bookingId]);
   }
 
   await adminPool.query(
@@ -224,6 +230,36 @@ export async function checkInBooking(bookingId: string, businessId: string, user
   const result = await transitionStatus(bookingId, businessId, 'checked_in', userId, tenantId);
   if (result.success) await afterVisit(bookingId, businessId);
   return result;
+}
+
+/**
+ * Start the session of a checked-in customer (Checked In → In Progress). The customer leaves the waiting
+ * list and their screen shows that the appointment has begun.
+ */
+export async function startBooking(bookingId: string, businessId: string, userId: string, tenantId: string): Promise<TransitionResult> {
+  const result = await transitionStatus(bookingId, businessId, 'in_progress', userId, tenantId);
+  if (result.success) {
+    await adminPool.query(`UPDATE apt_check_in_records SET status = 'in_progress' WHERE booking_id = $1 AND status = 'checked_in'`, [bookingId]).catch(() => undefined);
+  }
+  return result;
+}
+
+/**
+ * Tell a waiting customer "ready for you" (only while checked in). Saying it again just keeps the first time.
+ * Returns the customer's contact so the caller can email them.
+ */
+export async function markReady(bookingId: string, businessId: string, userId: string, tenantId: string): Promise<TransitionResult & { customer?: { first_name: string; email: string | null }; service_name?: string }> {
+  const { rows } = await adminPool.query(`SELECT status FROM apt_bookings WHERE id = $1 AND business_id = $2`, [bookingId, businessId]);
+  if (!rows[0]) return { success: false, error: 'Booking not found' };
+  if (rows[0].status !== 'checked_in') return { success: false, error: 'Only a customer who has checked in can be called in' };
+  await adminPool.query(`UPDATE apt_bookings SET ready_at = COALESCE(ready_at, NOW()), updated_at = NOW() WHERE id = $1`, [bookingId]);
+  await logAudit({ tenantId, userId, action: 'booking.ready', resourceType: 'booking', resourceId: bookingId, details: {} });
+  const { rows: info } = await adminPool.query(`
+    SELECT b.*, s.name AS service_name, c.first_name AS c_first, c.email AS c_email
+      FROM apt_bookings b JOIN svc_services s ON s.id = b.service_id LEFT JOIN cus_customers c ON c.id = b.customer_id
+     WHERE b.id = $1`, [bookingId]);
+  const r = info[0];
+  return { success: true, booking: r, service_name: r.service_name, customer: r.c_first ? { first_name: r.c_first, email: r.c_email } : undefined };
 }
 
 /**

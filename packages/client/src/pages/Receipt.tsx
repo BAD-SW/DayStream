@@ -12,6 +12,7 @@ import { RefundOrderModal } from '../components/RefundOrderModal';
 const labels = {
   back: '← Back',
   print: 'Print',
+  done: 'Done',
   email: 'Email Receipt',
   emailSent: 'Receipt emailed successfully',
   emailFailed: 'Failed to send receipt email',
@@ -96,8 +97,10 @@ export function Receipt() {
             && order.items.some((it) => checkoutApi.REFUNDABLE_ITEM_TYPES.has(it.item_type) && it.quantity - (it.refunded_quantity || 0) > 0) && (
             <Button variant="destructive" size="sm" onClick={() => setShowRefund(true)}>Refund</Button>
           )}
-          <Button size="sm" onClick={handlePrint}>{labels.print}</Button>
+          <Button variant="secondary" size="sm" onClick={handlePrint}>{labels.print}</Button>
           <Button variant="secondary" size="sm" onClick={handleEmail} loading={emailing}>{labels.email}</Button>
+          {/* The sale is finished: back to the Bookings screen, ready for the next customer. */}
+          <Button size="sm" onClick={() => navigate('/bookings')}>{labels.done}</Button>
         </div>
       </div>
 

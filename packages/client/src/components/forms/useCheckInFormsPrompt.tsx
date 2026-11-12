@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../../design-system/components/actions/Button';
 import { Modal } from '../../design-system/components/feedback/Modal';
 import { getOutstandingForms, startFormRequest } from '../../api/forms';
+import { FormFillModal } from './FormFillModal';
 import type { OutstandingForms } from '../../api/forms';
 
 /**
@@ -30,6 +31,8 @@ export function useCheckInFormsPrompt(businessId: string): {
   const [forms, setForms] = useState<OutstandingForms['forms']>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // A form being filled in, in a window over this prompt (nobody leaves the page).
+  const [fill, setFill] = useState<{ url: string; name: string } | null>(null);
   const openRef = useRef(open);
   openRef.current = open;
 
@@ -66,23 +69,26 @@ export function useCheckInFormsPrompt(businessId: string): {
     if (current) await current.proceed();
   };
 
-  /** Hand the customer a device: open the form page in a new tab (a blank one first, so it isn't blocked). */
-  const fillInHere = async (groupId: string) => {
+  /** Hand the customer a device: the form opens in a window over this one, so staff keep their place. */
+  const fillInHere = async (groupId: string, name: string) => {
     if (!open?.booking.customer_id) return;
     setMessage(null); setBusy(groupId);
-    const tab = window.open('', '_blank');
     try {
       const r = await startFormRequest(open.booking.customer_id, businessId, {
         group_id: groupId, channel: 'device', booking_id: open.booking.id,
       });
-      if (tab && r.url) tab.location.href = r.url;
+      if (!r.url) throw new Error('no link');
+      setFill({ url: r.url, name });
     } catch (err) {
-      tab?.close();
       setMessage((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'The form could not be started.');
     } finally { setBusy(null); }
   };
-
-  const prompt = open ? (
+  const fillDone = () => {
+    setFill(null);
+    if (open) lookup(open.booking.id).then(setForms).catch(() => undefined);
+  };  const prompt = fill ? (
+    <FormFillModal url={fill.url} title={fill.name} onClose={() => setFill(null)} onDone={fillDone} />
+  ) : open ? (
     <Modal open onClose={close} title="Forms still to complete" size="md" footer={(
       <div style={s.footer}>
         <Button variant="ghost" onClick={close}>Cancel</Button>
@@ -105,15 +111,15 @@ export function useCheckInFormsPrompt(businessId: string): {
                   {f.name}
                   {f.status === 'out_of_date' && <span style={s.tag}>out of date</span>}
                 </span>
-                <Button size="sm" variant="secondary" loading={busy === f.groupId} onClick={() => fillInHere(f.groupId)}>
-                  Fill in on this device
+                <Button size="sm" variant="secondary" loading={busy === f.groupId} onClick={() => fillInHere(f.groupId, f.name)}>
+                  Fill in now
                 </Button>
               </li>
             ))}
           </ul>
           <p style={s.hint}>
             You can check in now and collect the {forms.length === 1 ? 'form' : 'forms'} later, or have the customer complete
-            {forms.length === 1 ? ' it' : ' them'} first. This window updates when you come back.
+            {forms.length === 1 ? ' it' : ' them'} first.
           </p>
           <button type="button" style={s.link}
             onClick={() => { const c = open.booking.customer_id; close(); if (c) navigate(`/customers/${c}?tab=forms`); }}>

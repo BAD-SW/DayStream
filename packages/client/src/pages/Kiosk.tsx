@@ -4,6 +4,8 @@ import {
 } from '../api/selfCheckIn';
 import type { SelfVisit, UpcomingAppointment } from '../api/selfCheckIn';
 import { SelfFormsList } from '../components/forms/SelfFormsList';
+import { checkInTextFor, fillCheckInTexts } from '@daystream/shared';
+import type { CheckInText } from '@daystream/shared';
 
 /**
  * The front-desk check-in screen (spec 51, design 1.11a): a full-screen page for a tablet.
@@ -19,6 +21,10 @@ const TOKEN_KEY = 'kiosk_token';
 const VISIT_KEY = 'kiosk_visit';
 const VISIT_MAX_AGE_MS = 10 * 60 * 1000;
 const IDLE_MS = 2 * 60 * 1000;
+// A customer who is waiting to be called in keeps their screen longer, so "Please come in" is not missed.
+const WAITING_IDLE_MS = 10 * 60 * 1000;
+// How often a waiting customer's screen asks whether staff are ready for them.
+const WAITING_POLL_MS = 5 * 1000;
 // How often the tablet asks whether it is still switched on.
 const AVAILABILITY_CHECK_MS = 30 * 1000;
 
@@ -77,6 +83,9 @@ export function Kiosk() {
 
   // The kiosk's name, shown in the browser tab's title (handy when several kiosks are open).
   const [kioskName, setKioskName] = useState<string | null>(null);
+  // The entry screen's wording, in the business's language (the kiosk status carries it).
+  const [entryTexts, setEntryTexts] = useState<CheckInText | null>(null);
+  const [businessName, setBusinessName] = useState('');
   useEffect(() => { document.title = kioskName ? `Kiosk · ${kioskName}` : 'Kiosk'; }, [kioskName]);
 
   useEffect(() => {
@@ -89,6 +98,8 @@ export function Kiosk() {
         const info = await kioskStatus(token);
         if (stale) return;
         setKioskName(info.device_name);
+        if (info.texts) setEntryTexts(info.texts);
+        setBusinessName(info.business_name ?? '');
         setAvailability('on');
       } catch (err) {
         if (stale) return;
@@ -127,12 +138,33 @@ export function Kiosk() {
       .catch(() => startOver());
   }, [token, startOver]);
 
+  // A waiting customer's screen asks every few seconds whether staff are ready for them.
+  useEffect(() => {
+    if (!token || !visit?.session || !visit.checked_in || visit.started) return;
+    const session = visit.session;
+    const checkedInNow = visit.checked_in_now;
+    let stale = false;
+    const timer = window.setInterval(async () => {
+      try {
+        const fresh = await kioskForms(token, session);
+        if (stale) return;
+        const next = { ...fresh, session, checked_in_now: checkedInNow };
+        setVisit(next); remember(next);
+      } catch (err) {
+        if (!stale && selfCheckInError(err, '').code === 'SESSION_EXPIRED') startOver();
+      }
+    }, WAITING_POLL_MS);
+    return () => { stale = true; window.clearInterval(timer); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, visit?.session, visit?.checked_in, visit?.started, startOver]);
+
   // Back to the start after two minutes of nobody touching the screen, so the next person never
-  // sees the last one's name.
+  // sees the last one's name. Someone still waiting to be called in gets longer.
+  const idleMs = visit && visit.checked_in && !visit.started ? WAITING_IDLE_MS : IDLE_MS;
   useEffect(() => {
     if (!visit && !upcoming) return;
-    let timer = window.setTimeout(startOver, IDLE_MS);
-    const reset = () => { window.clearTimeout(timer); timer = window.setTimeout(startOver, IDLE_MS); };
+    let timer = window.setTimeout(startOver, idleMs);
+    const reset = () => { window.clearTimeout(timer); timer = window.setTimeout(startOver, idleMs); };
     window.addEventListener('pointerdown', reset);
     window.addEventListener('keydown', reset);
     return () => {
@@ -140,7 +172,7 @@ export function Kiosk() {
       window.removeEventListener('pointerdown', reset);
       window.removeEventListener('keydown', reset);
     };
-  }, [visit, upcoming, startOver]);
+  }, [visit, upcoming, startOver, idleMs]);
 
   useEffect(() => { if (!visit && !upcoming) inputRef.current?.focus(); }, [visit, upcoming]);
 
@@ -152,7 +184,7 @@ export function Kiosk() {
       const v = await kioskCheckIn(token, classify(input));
       setVisit(v); remember(v); setInput('');
     } catch (err) {
-      const { message, code, upcoming: others } = selfCheckInError(err, 'Check-in did not work. Please see the front desk.');
+      const { message, code, upcoming: others } = selfCheckInError(err, t.checkInFailed);
       // A kiosk that is switched off (or deleted) keeps its key on the tablet and says so, so it
       // works again as soon as staff switch it back on.
       if (code === 'KIOSK_OFF') setAvailability('off');
@@ -169,16 +201,22 @@ export function Kiosk() {
       const { path } = await kioskStartForm(token, visit.session, groupId);
       window.location.assign(`${path}?next=/kiosk`);
     } catch (err) {
-      const { message, code } = selfCheckInError(err, 'The form could not be opened. Please see the front desk.');
+      const { message, code } = selfCheckInError(err, t.formFailed);
       if (code === 'SESSION_EXPIRED') startOver(); else setError(message);
     } finally { setBusyGroup(null); }
   };
 
+  // Wording: the identified customer's language once known, otherwise the business's; the built-in wording until it arrives.
+  const visitTime = visit ? new Date(visit.start_time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: visit.timezone }) : '';
+  const t = visit
+    ? fillCheckInTexts(visit.texts, { first_name: visit.first_name, service_name: visit.service_name, business_name: visit.business_name, time: visitTime })
+    : fillCheckInTexts(entryTexts ?? checkInTextFor(null), { business_name: businessName });
+
   if (!token) {
     return (
       <Screen>
-        <h1 style={s.title}>This screen is not set up</h1>
-        <p style={s.text}>Ask a member of staff to open the check-in screen from Check-In &gt; Kiosk.</p>
+        <h1 style={s.title}>{t.kioskNotSetUpTitle}</h1>
+        <p style={s.text}>{t.kioskNotSetUpBody}</p>
       </Screen>
     );
   }
@@ -188,10 +226,10 @@ export function Kiosk() {
     return (
       <Screen>
         {availability === 'checking'
-          ? <p style={s.text} role="status">Loading…</p>
+          ? <p style={s.text} role="status">{t.loading}</p>
           : <>
-            <h1 style={s.title}>Check-in is not available</h1>
-            <p style={s.text} role="status">This kiosk is switched off. Please see the front desk.</p>
+            <h1 style={s.title}>{t.kioskOffTitle}</h1>
+            <p style={s.text} role="status">{t.kioskOffBody}</p>
           </>}
       </Screen>
     );
@@ -200,8 +238,8 @@ export function Kiosk() {
   if (upcoming) {
     return (
       <Screen>
-        <h1 style={s.title}>Nothing is scheduled for today</h1>
-        <p style={s.text}>We could not find an appointment for you today, but you have {upcoming.length === 1 ? 'this appointment' : 'these appointments'}:</p>
+        <h1 style={s.title}>{t.kioskNothingToday}</h1>
+        <p style={s.text}>{upcoming.length === 1 ? t.kioskNothingTodayOne : t.kioskNothingTodayMany}</p>
         <ul style={s.upcoming} aria-label="Your other appointments">
           {upcoming.map((a, i) => (
             <li key={i} style={s.upcomingRow}>
@@ -210,36 +248,36 @@ export function Kiosk() {
             </li>
           ))}
         </ul>
-        <p style={s.text}>If one of these should be today, please see the front desk. It may have been moved.</p>
-        <button type="button" style={s.done} onClick={startOver}>Back</button>
+        <p style={s.text}>{t.kioskNothingTodayHelp}</p>
+        <button type="button" style={s.done} onClick={startOver}>{t.kioskBack}</button>
       </Screen>
     );
   }
 
   if (visit) {
-    const time = new Date(visit.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: visit.timezone });
     const todo = visit.forms.some((f) => f.status !== 'done');
     return (
       <Screen>
-        <h1 style={s.title}>Welcome, {visit.first_name}</h1>
+        <h1 style={s.title}>{t.kioskWelcomeName}</h1>
+        {visit.ready && !visit.started && <p role="alert" style={s.ready}>{t.ready}</p>}
+        {visit.started && <p role="status" style={s.text}>{t.started}</p>}
         <p style={s.text} role="status">
-          {visit.checked_in_now === false ? 'You are already checked in for ' : 'You are checked in for '}
-          <strong>{visit.service_name}</strong> at {time}.
+          {visit.checked_in_now === false ? t.kioskAlreadyCheckedIn : t.kioskCheckedIn}
         </p>
-        <SelfFormsList forms={visit.forms} busyGroupId={busyGroup} onFillIn={fillIn} />
+        <SelfFormsList forms={visit.forms} busyGroupId={busyGroup} onFillIn={fillIn} texts={t} />
         {error && <p role="alert" style={s.error}>{error}</p>}
-        <p style={s.text}>{todo ? 'You can fill these in now, or later at the front desk.' : 'All set. Please take a seat.'}</p>
-        <button type="button" style={s.done} onClick={startOver}>Done</button>
+        <p style={s.text}>{todo ? t.kioskFormsTodo : t.kioskAllSet}</p>
+        <button type="button" style={s.done} onClick={startOver}>{t.kioskDone}</button>
       </Screen>
     );
   }
 
   return (
     <Screen>
-      <h1 style={s.title}>Welcome</h1>
-      <p style={s.text}>Please check in. Enter the phone number or email address you booked with.</p>
+      <h1 style={s.title}>{t.kioskWelcome}</h1>
+      <p style={s.text}>{t.kioskPrompt}</p>
       <form onSubmit={submit} style={s.form} noValidate>
-        <label htmlFor="kiosk-who" style={s.label}>Phone number or email address</label>
+        <label htmlFor="kiosk-who" style={s.label}>{t.kioskInputLabel}</label>
         <input
           id="kiosk-who" ref={inputRef} style={s.input} value={input} disabled={busy}
           onChange={(e) => setInput(e.target.value)}
@@ -248,7 +286,7 @@ export function Kiosk() {
         />
         {error && <p id="kiosk-error" role="alert" style={s.error}>{error}</p>}
         <button type="submit" style={{ ...s.go, opacity: busy || !input.trim() ? 0.6 : 1 }} disabled={busy || !input.trim()}>
-          {busy ? 'Checking in…' : 'Check in'}
+          {busy ? t.checkingIn : t.kioskSubmit}
         </button>
       </form>
     </Screen>
@@ -264,6 +302,7 @@ function Screen({ children }: { children: React.ReactNode }) {
 }
 
 const s: Record<string, React.CSSProperties> = {
+  ready: { margin: 0, padding: 'var(--space-md)', borderRadius: '12px', background: 'var(--color-primary)', color: 'var(--color-primary-contrast)', fontSize: '1.75rem', fontWeight: 700, lineHeight: 1.3 },
   page: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-background)', fontFamily: 'var(--font-family)', padding: 'var(--space-lg)', boxSizing: 'border-box' },
   card: { width: '100%', maxWidth: '720px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: '16px', padding: 'var(--space-xl)', boxSizing: 'border-box', textAlign: 'center' },
   title: { margin: '0 0 var(--space-md) 0', fontSize: 'var(--font-size-h1, 2rem)', fontWeight: 700, color: 'var(--color-text)' },

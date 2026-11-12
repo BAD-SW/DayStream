@@ -593,13 +593,13 @@ export async function getBookings(filters: BookingFilters) {
   }
 
   if (filters.dateFrom) {
-    conditions.push(`b.start_time >= $${paramIndex}::date`);
+    conditions.push(`(b.start_time AT TIME ZONE ${BOOKING_TZ})::date >= $${paramIndex}::date`);
     params.push(filters.dateFrom);
     paramIndex++;
   }
 
   if (filters.dateTo) {
-    conditions.push(`b.start_time < ($${paramIndex}::date + interval '1 day')`);
+    conditions.push(`(b.start_time AT TIME ZONE ${BOOKING_TZ})::date <= $${paramIndex}::date`);
     params.push(filters.dateTo);
     paramIndex++;
   }
@@ -637,6 +637,41 @@ export async function getBookings(filters: BookingFilters) {
   };
 }
 
+/**
+ * The waiting list (spec 51, gap 3): customers who checked in today and whose session has not started,
+ * longest wait first, with the forms they still have to complete. Walk-ins by name are included.
+ */
+export async function getWaitingList(businessId: string) {
+  const { rows } = await adminPool.query(
+    `SELECT b.id, b.customer_id, b.walk_in_name, b.checked_in_at, b.ready_at, b.start_time,
+            s.name AS service_name,
+            c.first_name AS customer_first_name, c.last_name AS customer_last_name,
+            u.first_name AS staff_first_name, u.last_name AS staff_last_name
+       FROM apt_bookings b
+       JOIN sys_businesses bus ON bus.id = b.business_id
+       JOIN svc_services s ON s.id = b.service_id
+       LEFT JOIN cus_customers c ON c.id = b.customer_id
+       LEFT JOIN usr_users u ON u.id = b.staff_id
+      WHERE b.business_id = $1 AND b.status = 'checked_in' AND b.checked_in_at IS NOT NULL
+        AND (b.checked_in_at AT TIME ZONE COALESCE(bus.timezone, 'UTC'))::date = (NOW() AT TIME ZONE COALESCE(bus.timezone, 'UTC'))::date
+      ORDER BY b.checked_in_at ASC
+      LIMIT 100`,
+    [businessId],
+  );
+  const { countOutstandingForBookings } = await import('./form-status.service');
+  const outstanding = await countOutstandingForBookings(businessId, rows.filter((r) => r.customer_id).map((r) => r.id));
+  return rows.map((r) => ({
+    id: r.id,
+    customer_id: r.customer_id,
+    customer_name: r.customer_first_name ? `${r.customer_first_name} ${r.customer_last_name ?? ''}`.trim() : (r.walk_in_name || 'Walk-in'),
+    service_name: r.service_name,
+    staff_name: r.staff_first_name ? `${r.staff_first_name} ${r.staff_last_name ?? ''}`.trim() : null,
+    start_time: r.start_time,
+    checked_in_at: r.checked_in_at,
+    ready_at: r.ready_at,
+    forms_outstanding: outstanding[r.id]?.count ?? 0,
+  }));
+}
 /**
  * Get a single booking by ID.
  */

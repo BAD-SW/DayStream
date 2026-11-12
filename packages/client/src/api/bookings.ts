@@ -182,8 +182,42 @@ export async function cancelBooking(id: string, businessId: string, reason?: str
   return res.data.data;
 }
 
-export async function checkInBooking(id: string, businessId: string) {
-  const res = await apiClient.put(`/v1/bookings/${id}/check-in?business_id=${businessId}`);
+/**
+ * The staff Check-in button. The server applies the check-in window rules and answers 409 with code
+ * CHECK_IN_REFUSED when they stop it; repeat the call with an override (and the reason) to check in anyway.
+ */
+export async function checkInBooking(id: string, businessId: string, override?: { reason: string }) {
+  const res = await apiClient.put(`/v1/bookings/${id}/check-in?business_id=${businessId}`, override ? { override: true, reason: override.reason } : undefined);
+  return res.data.data;
+}
+
+/** Start the session of a customer who is waiting. */
+export async function startBooking(id: string, businessId: string) {
+  const res = await apiClient.put(`/v1/bookings/${id}/start?business_id=${businessId}`);
+  return res.data.data;
+}
+
+/** Tell a waiting customer "ready for you" (their screen, and an email when they have an address). */
+export async function readyBooking(id: string, businessId: string): Promise<{ emailed: boolean }> {
+  const res = await apiClient.put(`/v1/bookings/${id}/ready?business_id=${businessId}`);
+  return res.data.data;
+}
+
+export interface WaitingEntry {
+  id: string;
+  customer_id: string | null;
+  customer_name: string;
+  service_name: string;
+  staff_name: string | null;
+  start_time: string;
+  checked_in_at: string;
+  ready_at: string | null;
+  forms_outstanding: number;
+}
+
+/** Customers who have checked in today and not started: the waiting list. */
+export async function getWaitingList(businessId: string): Promise<WaitingEntry[]> {
+  const res = await apiClient.get('/v1/bookings/waiting', { params: { business_id: businessId } });
   return res.data.data;
 }
 

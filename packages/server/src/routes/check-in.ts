@@ -14,6 +14,7 @@ import * as dashboardService from '../services/checkin-dashboard.service';
 import * as reportsService from '../services/checkin-reports.service';
 import * as validationService from '../services/checkin-validation.service';
 import * as selfService from '../services/self-check-in.service';
+import * as checkInTexts from '../services/checkin-texts.service';
 import { selfCheckInLimiter } from '../middleware/rate-limit';
 
 export const checkInRouter = Router();
@@ -63,7 +64,15 @@ checkInRouter.get('/kiosk/status', async (req: Request, res: Response, next: Nex
     const session = await kioskSession(token);
     if (!session) { await denyKiosk(res, token); return; }
     const { kiosk } = session;
-    success(res, { id: kiosk.id, device_name: kiosk.device_name, location_id: kiosk.location_id, is_active: kiosk.is_active, last_activity_at: kiosk.last_activity_at });
+    // The entry screen's wording (the business's own language) and the business name it may mention.
+    let texts; let businessName = '';
+    if (session.businessId) {
+      const language = await checkInTexts.languageFor(session.businessId);
+      texts = await checkInTexts.resolveTexts(session.businessId, language);
+      const { rows } = await adminPool.query('SELECT name FROM sys_businesses WHERE id = $1', [session.businessId]);
+      businessName = rows[0]?.name ?? '';
+    }
+    success(res, { id: kiosk.id, device_name: kiosk.device_name, location_id: kiosk.location_id, is_active: kiosk.is_active, last_activity_at: kiosk.last_activity_at, texts, business_name: businessName });
   } catch (err: any) { console.error('Failed to get status', err?.message || err); error(res, 'Failed to get status', 'INTERNAL_ERROR', 500); }
 });
 

@@ -58,23 +58,23 @@ export async function validateSession(
     return { pass: false, warnings, errors };
   }
 
-  // 2. Check booking is for today (within early_arrival_minutes)
+  // 2. Too early is refused (staff and kiosk can bypass it on request); late is never refused
   const now = new Date();
   const startTime = new Date(booking.start_time);
   const earlyArrivalMs = config.early_arrival_minutes * 60 * 1000;
-  const lateArrivalMs = config.late_arrival_max_minutes * 60 * 1000;
 
   const earliestArrival = new Date(startTime.getTime() - earlyArrivalMs);
-  const latestArrival = new Date(startTime.getTime() + lateArrivalMs);
 
   if (now < earliestArrival) {
     errors.push('Too early to check in');
     return { pass: false, warnings, errors };
   }
 
-  if (now > latestArrival) {
-    errors.push('Check-in window has expired');
-    return { pass: false, warnings, errors };
+  // There is no cut-off for a late customer: schedules slip, and someone who turns up late still has to be
+  // let in. Staff see how late they are and the waiting list shows how long they have waited.
+  if (now > startTime) {
+    const lateBy = Math.round((now.getTime() - startTime.getTime()) / 60000);
+    if (lateBy >= 1) warnings.push(`Arrived ${lateBy} minute${lateBy === 1 ? '' : 's'} after the start time`);
   }
 
   // 3. Check not already checked in

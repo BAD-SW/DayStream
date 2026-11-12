@@ -684,11 +684,15 @@ export function Checkout() {
           <p style={{ color: 'var(--color-text)', margin: '0 0 12px' }}>
             Payment completed via <strong>{order.payment_method}</strong> on {new Date(order.completed_at!).toLocaleString()}
           </p>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Receipt:</span>
             <Button size="sm" variant="secondary" loading={receiptBusy} onClick={() => handleReceipt('email')}>Email</Button>
             <Button size="sm" variant="secondary" loading={receiptBusy} onClick={() => handleReceipt('print')}>Print</Button>
             <Button size="sm" variant="secondary" loading={receiptBusy} onClick={() => handleReceipt('both')}>Both</Button>
+          </div>
+          {/* The sale is finished: back to the Bookings screen, ready for the next customer. */}
+          <div style={{ marginTop: '16px' }}>
+            <Button onClick={() => navigate('/bookings')}>Done</Button>
           </div>
           {receiptNote && <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>{receiptNote}</p>}
         </div>

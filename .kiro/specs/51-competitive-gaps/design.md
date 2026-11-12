@@ -31,6 +31,7 @@ Requirements: requirements.md, Requirement 1 (criteria 1-11).
    - [1.12 Security](#112-security)
    - [1.13 Build order](#113-build-order)
 2. [Gap 2: Treatment charting](#2-gap-2-treatment-charting)
+3. [Gap 3: Virtual waiting room](#3-gap-3-virtual-waiting-room)
 
 ---
 
@@ -420,3 +421,69 @@ All routes require `business_id` and clinical access.
 5. Sign-off PDF.
 6. Anonymise, merge and export hooks.
 7. Verification: access refused for reception, audit rows written, locked chart cannot change, anonymise removes rows and files.
+
+---
+
+## 3. Gap 3: Virtual waiting room
+
+### 3.1 Scope
+
+Criteria 14 to 19 of Requirement 3. Criteria 1 to 13 were built with gap 1 (design 1.11a). Customer SMS is not part of this gap: "ready for you" goes by email and on the customer's screen now, and SMS joins it when gap 4 provides a sender.
+
+### 3.2 Data
+
+Migration 174 adds to `apt_bookings`: `ready_at TIMESTAMPTZ` (when staff said "ready for you") and `started_at TIMESTAMPTZ` (when the session started). The status values already allow `in_progress`.
+
+### 3.3 Status flow
+
+`confirmed -> checked_in -> in_progress -> completed`. Lifecycle changes:
+- `checked_in` may go to `in_progress` (start session), `completed` or back to `confirmed` (reset, which clears `checked_in_at` and `ready_at`).
+- `in_progress` may go to `completed`. Checkout works from `checked_in` and `in_progress`.
+- `startBooking` sets `started_at`; `markReady` (only while `checked_in`) sets `ready_at`.
+
+### 3.4 Staff check-in through the check-in service
+
+`PUT /bookings/:id/check-in` calls `completeCheckIn` (window rules, check-in record, audit, arrival alert) for a booking with a customer. If the rules refuse it, the answer is a 409 with code `CHECK_IN_REFUSED` and the reason; the screen asks "Check in anyway?" and repeats the call with `override: true` and the reason, which the record stores (`validated = false`, `override_reason`). A booking with no customer (a walk-in by name) has nothing to record against, so it keeps the plain status change and still appears on the waiting list.
+
+### 3.5 Waiting list
+
+`GET /bookings/waiting?business_id=` returns today's bookings in `checked_in`, oldest check-in first: id, customer name or walk-in name, service, practitioner, `checked_in_at`, `ready_at`, and the number of forms still to complete (from `countOutstandingForBookings`). "Today" is the business's own day. The panel and the Appointments list both refresh every 10 seconds (the list only while its first page is showing) and after any action. Each row has Ready for you, Start, Check-out and Reset. The row opens the booking.
+
+### 3.6 Alerts
+
+A new Inbox notification event `customer_arrived` (title "Ines has arrived", body service and time, link to Bookings). Defaults: owner, manager and front desk in the app, nobody by email; the booked practitioner is always included in the app alert (`alsoTo`). Settings > Inbox lists it with the other events so the business can change roles and email; each person can switch their own off. It fires from `completeCheckIn`, so kiosk, phone, QR and staff check-in all alert.
+
+### 3.7 Customer screens
+
+`selfView` gains `ready` (`ready_at` set while checked in) and `started` (`in_progress`). The phone page shows "Please come in" when ready and "Your appointment has started" when started, and polls every 5 seconds while checked in. The kiosk does the same through its session and does not time the screen out while the visit is waiting. "Ready for you" also emails the customer when they have an email address.
+
+### 3.8 Bookings page
+
+Two panes: the Waiting list panel (maximum height with its own scroll), then Appointments, which has From and To dates that start as today and are sent as `date_from` and `date_to`. Day boundaries use the business's time zone (the list query used the database's). Customers see their own bookings without either pane's staff features.
+
+### 3.10 Getting the link to the customer
+
+The personal check-in link (`/check-in/DSCI-...`) reaches the customer three ways:
+- **Confirmation email:** the appointment template gets a **Check-in Link** placeholder (`check_in_link`) and fills the **Add to Calendar** placeholder (`calendar_links`), which until now resolved to nothing. Add to Calendar is Google and Outlook links; when the template uses it, an `invite.ics` is attached for Apple Calendar and others. A template without the placeholder gets neither. (`manage_link`, a page to view, change or cancel the appointment, is still empty: no such page exists yet.)
+- **Reminder emails:** reminders are sent through the business's **Appointment Reminder** template (its own entry in the Document Type list: the Appointment placeholders plus **Time Until Appointment**, filled as "24 hours" or "2 hours", so the template writes "Your appointment is in {{reminder_lead}}"). A business that has not written one yet gets the plain reminder, which always carries the check-in link; the plain reminder is not a template and goes away when starter templates exist (gap 17). Reminder data carries the customer's name, the check-in link and the calendar links. Reminders are queued by a job that runs every 15 minutes (it had never been scheduled). It looks at confirmed appointments in the next 14 days, skips any that already have reminders pending or sent, cancels pending reminders for an appointment that was moved or is no longer confirmed (compared to the second), and queues one reminder per lead time that is still in the future. An appointment booked too close to its start for any reminder is covered by the confirmation email.
+- **Staff Copy link:** unchanged.
+
+Lead times come from `booking.reminder_hours` (a list of hours, at most five, each up to 336): the business's own value in `sys_business_configurations` first, then the tenant's, then the system default of 24 and 2. There is no screen for the business value yet.
+
+### 3.11 Words on the customer screens, and the ready email
+
+Nothing a customer reads on the check-in screens is written into the pages. The shared package holds the wording of every supported language (`CHECK_IN_TEXT_DEFAULTS`, keyed by language, so TypeScript will not compile until a newly supported language has a full set). The server answers every customer screen with the wording already chosen:
+- **Language:** the customer's own language, then the business's default, then English (`languageFor`).
+- **Business wording:** `apt_check_in_texts` (migration 176) holds, per business and language, only the pieces the business changed. A saved piece replaces the built-in wording; an empty one goes back to it. The visit (`selfView`) carries the finished wording and the language, and the kiosk status carries the entry screen's wording in the business's language. A page shows the built-in wording only until the server's arrives.
+- **Editing:** Business Setup > Templates > **Check-In**: choose a language, see each piece with the built-in wording as the hint, and save (`GET`/`PUT /v1/checkin-texts`, business settings permission). Pieces that can include the customer's details accept `{{first_name}}`, `{{service_name}}` and `{{time}}`.
+- **Not editable:** system messages (the kiosk "not set up" lines, generic failures, and the server's refusals such as "link no longer valid", which show before a business is known) are held per language in the same place but not offered for editing.
+- **Ready for you email:** there is no separate template. The email is built from the same Check-In wording (the greeting, the "ready for you" message and one extra piece, the email subject), in the customer's language, and sent at once. The business changes it in the one place.
+
+### 3.9 Build order
+
+1. Migration 174, lifecycle changes (start, ready, reset), time-zone-correct date range.
+2. Staff check-in through `completeCheckIn` with override.
+3. Waiting list route and arrival alert event.
+4. Bookings page panes.
+5. Phone page and kiosk "Please come in", polling, ready email.
+6. Verification live with the owner.

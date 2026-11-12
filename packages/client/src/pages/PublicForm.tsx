@@ -55,6 +55,11 @@ export function PublicForm() {
     const n = new URLSearchParams(window.location.search).get('next');
     return n && /^\/(kiosk|check-in\/DSCI-[0-9a-f]{20,})$/.test(n) ? n : null;
   }, []);
+  // Shown inside a window over a staff page (spec 51, gap 3): tell that page when the form is submitted.
+  const embedded = useMemo(() => new URLSearchParams(window.location.search).get('embedded') === '1' && window.parent !== window, []);
+  useEffect(() => {
+    if (done && embedded) window.parent.postMessage({ type: 'daystream:form-complete' }, window.location.origin);
+  }, [done, embedded]);
   useEffect(() => {
     if (!done || !next) return;
     const timer = window.setTimeout(() => window.location.assign(next), 2500);
@@ -130,7 +135,7 @@ export function PublicForm() {
         <div style={s.center} role="status">
           <h1 style={s.title}>{t.thanks}</h1>
           <p style={s.text}>{t.received}</p>
-          {next
+          {embedded ? null : next
             ? <button type="button" style={{ ...s.button, marginTop: 'var(--space-md)' }} onClick={() => window.location.assign(next)}>Continue</button>
             : data?.channel === 'device' && <p style={s.text}>{t.device}</p>}
         </div>

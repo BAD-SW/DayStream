@@ -5,6 +5,8 @@ import type { BookingRef } from './checkin.service';
 import { validateQrCode, isLinkCode } from './checkin-qr.service';
 import { getCustomerFormStatus } from './form-status.service';
 import { createRequest } from './form-completion.service';
+import { languageFor, resolveTexts } from './checkin-texts.service';
+import type { CheckInText } from '@daystream/shared';
 
 /**
  * Self check-in with forms (spec 51, design 1.11a): a customer checks themselves in on the
@@ -104,16 +106,25 @@ export interface SelfForm {
 export interface SelfView {
   first_name: string;
   service_name: string;
+  /** The business, for wording that mentions it. */
+  business_name: string;
   start_time: string;
   timezone: string;
   /** confirmed (not yet checked in), checked_in, or something that cannot be checked in. */
   status: string;
   checked_in: boolean;
+  /** Staff said "ready for you" while the customer is waiting. */
+  ready: boolean;
+  /** The session has begun. */
+  started: boolean;
+  /** The language of the screen and its wording: the business's own, over the built-in wording of that language. */
+  language: string;
+  texts: CheckInText;
 }
 
 export async function selfView(ctx: SelfContext): Promise<SelfView | null> {
   const { rows } = await adminPool.query(
-    `SELECT b.status, b.start_time, s.name AS service_name, c.first_name, bus.timezone
+    `SELECT b.status, b.start_time, b.ready_at, s.name AS service_name, c.first_name, c.preferred_language, bus.timezone, bus.name AS business_name
        FROM apt_bookings b
        JOIN sys_businesses bus ON bus.id = b.business_id
        JOIN svc_services s ON s.id = b.service_id
@@ -123,13 +134,19 @@ export async function selfView(ctx: SelfContext): Promise<SelfView | null> {
   );
   const r = rows[0];
   if (!r) return null;
+  const language = await languageFor(ctx.businessId, r.preferred_language);
   return {
+    language,
+    texts: await resolveTexts(ctx.businessId, language),
     first_name: r.first_name,
     service_name: r.service_name,
+    business_name: r.business_name,
     start_time: r.start_time,
     timezone: r.timezone || 'UTC',
     status: r.status,
     checked_in: CHECKED_IN_STATUSES.includes(r.status),
+    ready: r.status === 'checked_in' && !!r.ready_at,
+    started: r.status === 'in_progress',
   };
 }
 

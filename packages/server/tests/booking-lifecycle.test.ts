@@ -106,7 +106,7 @@ describe('Booking Lifecycle', () => {
     const { rows: bk1 } = await adminPool.query(
       `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', 'BK-LC-0001', 'individual', 7500, '00000000-0000-0000-0000-000000000010')
-       ON CONFLICT (business_id, booking_reference) DO UPDATE SET status = 'confirmed'
+       ON CONFLICT (business_id, booking_reference) DO UPDATE SET status = 'confirmed', start_time = $6, end_time = $7
        RETURNING id`,
       [BUSINESS_ID, CUSTOMER_ID, serviceId, variantId, STAFF_ID, t1.toISOString(), new Date(t1.getTime() + 60*60*1000).toISOString()],
     );
@@ -117,7 +117,7 @@ describe('Booking Lifecycle', () => {
     const { rows: bk2 } = await adminPool.query(
       `INSERT INTO apt_bookings (business_id, customer_id, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', 'BK-LC-0002', 'individual', 7500, '00000000-0000-0000-0000-000000000010')
-       ON CONFLICT (business_id, booking_reference) DO UPDATE SET status = 'confirmed'
+       ON CONFLICT (business_id, booking_reference) DO UPDATE SET status = 'confirmed', start_time = $6, end_time = $7
        RETURNING id`,
       [BUSINESS_ID, CUSTOMER_ID, serviceId, variantId, STAFF_ID, t2.toISOString(), new Date(t2.getTime() + 60*60*1000).toISOString()],
     );
@@ -134,6 +134,10 @@ describe('Booking Lifecycle', () => {
     );
     BOOKING_ID_3 = bk3[0].id;
 
+    // These bookings are reused between runs: a check-in record left by the last run would make the next
+    // check-in count as a repeat.
+    await adminPool.query('DELETE FROM apt_check_in_records WHERE booking_id = ANY($1::uuid[])', [[BOOKING_ID, BOOKING_ID_2, BOOKING_ID_3]]);
+
     ownerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000021', TENANT_ID, 'business_owner',
       ['services:*', 'customers:*', 'bookings:*', 'staff:*', 'reports:*', 'settings:*'],
@@ -141,16 +145,41 @@ describe('Booking Lifecycle', () => {
   });
 
   describe('Valid transitions', () => {
-    it('confirmed → checked_in (check-in)', async () => {
-      const { statusCode, body } = await request(
+    it('check-in outside the check-in window is refused, and goes through when staff override', async () => {
+      // The booking is 10 days away: the staff button follows the same rules as the kiosk.
+      const refused = await request(
         'PUT', `/api/v1/bookings/${BOOKING_ID}/check-in?business_id=${BUSINESS_ID}`,
         undefined, ownerToken,
+      );
+      expect(refused.statusCode).toBe(409);
+      expect(refused.body.code).toBe('CHECK_IN_REFUSED');
+
+      const { statusCode, body } = await request(
+        'PUT', `/api/v1/bookings/${BOOKING_ID}/check-in?business_id=${BUSINESS_ID}`,
+        { override: true, reason: 'Arrived early' }, ownerToken,
       );
       expect(statusCode).toBe(200);
       expect(body.data.status).toBe('checked_in');
     });
 
-    it('checked_in → completed', async () => {
+    it('checked_in → ready for you → in_progress (start session)', async () => {
+      const ready = await request(
+        'PUT', `/api/v1/bookings/${BOOKING_ID}/ready?business_id=${BUSINESS_ID}`,
+        undefined, ownerToken,
+      );
+      expect(ready.statusCode).toBe(200);
+      expect(ready.body.data.ready_at).toBeTruthy();
+
+      const { statusCode, body } = await request(
+        'PUT', `/api/v1/bookings/${BOOKING_ID}/start?business_id=${BUSINESS_ID}`,
+        undefined, ownerToken,
+      );
+      expect(statusCode).toBe(200);
+      expect(body.data.status).toBe('in_progress');
+      expect(body.data.started_at).toBeTruthy();
+    });
+
+    it('in_progress → completed', async () => {
       const { statusCode, body } = await request(
         'PUT', `/api/v1/bookings/${BOOKING_ID}/complete?business_id=${BUSINESS_ID}`,
         undefined, ownerToken,
@@ -185,10 +214,11 @@ describe('Booking Lifecycle', () => {
     it('cancelled → checked_in is rejected', async () => {
       const { statusCode, body } = await request(
         'PUT', `/api/v1/bookings/${BOOKING_ID_2}/check-in?business_id=${BUSINESS_ID}`,
-        undefined, ownerToken,
+        { override: true, reason: 'x' }, ownerToken,
       );
-      expect(statusCode).toBe(400);
-      expect(body.error).toContain('Cannot transition');
+      // Even a staff override cannot check in a cancelled booking.
+      expect(statusCode).toBe(409);
+      expect(body.code).toBe('CHECK_IN_REFUSED');
     });
   });
 

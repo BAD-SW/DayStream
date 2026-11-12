@@ -63,7 +63,7 @@ The acceptance criteria below set the capability each gap must reach. They are r
 
 **User Story**: As a customer, I want to tell the business I have arrived from my phone and be told when to come in, so that I don't queue at the desk.
 
-**Current state**: Partial. Kiosk, QR and reception check-in, walk-ins and no-show handling are built (Phase 15). There is no "I'm here" from the customer's own phone and no "we're ready for you" message.
+**Current state**: Partial. Kiosk, QR and phone-link check-in (with forms), reception check-in, walk-ins and no-show handling are built. Missing: a waiting list for staff (the Bookings page shows only a status badge), a "ready for you" message, an alert to the practitioner and front desk when someone arrives, and a way to mark a session as started (the "in progress" status exists but nothing sets it). The staff Check-in button on the Bookings page skips the check-in window rules and writes no check-in record, so it differs from the kiosk and the phone link. The Bookings page lists every appointment with no date range.
 
 ##### Acceptance Criteria
 
@@ -80,6 +80,18 @@ The acceptance criteria below set the capability each gap must reach. They are r
 11. WHEN nothing is scheduled for a customer today but they have other appointments in the next 60 days, THE system SHALL say so at the kiosk, list those appointments by service and date and time, and send the customer to the front desk, because an appointment may have been moved without the calendar being updated.
 12. THE system SHALL let staff register, list, switch off, switch back on and delete kiosks from the business Settings, and show a registered kiosk's link again whenever they need it.
 13. THE system SHALL keep a switched-off kiosk's key on its tablet, so the tablet works again as soon as it is switched back on.
+14. THE system SHALL check a customer in from the staff Check-in button by the same rules and with the same check-in record as the kiosk and the phone link, and SHALL let staff check in before the earliest check-in time after a confirmation that records the override. THE system SHALL NOT refuse a customer for arriving late, and SHALL show how late they were; a reset SHALL cancel the check-in so the customer can be checked in again.
+15. THE system SHALL show staff a Waiting list panel at the top of the Bookings page, limited in height and scrolling, listing each customer who has checked in and not yet started, with the service, the practitioner, how long they have waited, and any forms still to complete, walk-ins included.
+16. THE system SHALL show the Bookings page's appointments in a second pane limited by a date range that starts as today.
+17. WHEN a customer checks in, THE system SHALL alert the booked practitioner and the front desk in the app, and SHALL let the business choose which roles are alerted and whether they are also emailed.
+18. WHEN staff mark a waiting customer ready, THE system SHALL change that customer's phone page and kiosk screen to "Please come in", email them, and update the phone page without the customer refreshing it.
+19. THE system SHALL let staff start a session for a checked-in customer, SHALL record when it started, SHALL remove the customer from the Waiting list, and SHALL show on the customer's screen that the session has begun.
+20. THE system SHALL put the customer's personal check-in link in the appointment confirmation email through a Check-in Link placeholder in the appointment template, and in each appointment reminder.
+21. THE system SHALL queue appointment reminders automatically for confirmed appointments, at the lead times the business chose (24 and 2 hours by default), SHALL never queue the same reminder twice, and SHALL replace reminders for an appointment that was moved and drop those for one that was cancelled.
+22. THE system SHALL fill the Add to Calendar placeholder with Google and Outlook links, and SHALL attach a calendar invite (.ics) to the email when the template uses that placeholder.
+23. THE system SHALL let a business write an Appointment Reminder template, separate from its Appointment template, with a placeholder for how long is left before the appointment, and SHALL send the reminder through that template; until the business has one, THE system SHALL send a plain reminder that still carries the check-in link.
+24. THE system SHALL show every word on the customer check-in screens (the phone page, the kiosk and the list of forms) in the customer's language, from wording held for each supported language and not written into the screens, and SHALL let a business replace any of that wording, per language, without affecting the rest.
+25. THE system SHALL email a waiting customer the same "ready for you" wording the check-in screens show, in the customer's language, so the business keeps one set of wording for the screens and the email.
 
 ### Messaging and booking
 
@@ -241,6 +253,39 @@ The acceptance criteria below set the capability each gap must reach. They are r
 5. THE system SHALL let staff add or remove an add-on on an existing booking, and SHALL show the add-ons on the calendar, the booking and the receipt.
 6. THE system SHALL let a membership benefit make named add-ons free.
 
+### Customers
+
+#### Requirement 16: Customer Self-Service
+
+**User Story**: As a customer, I want to book, change and cancel my appointments and look after my own account without phoning or emailing the business, so that I can do it at any hour and the business's staff are not tied up with routine requests.
+
+**Current state**: Partial and scattered. A customer can book through the embeddable booking widget (its payment step is a simulation, in euros only), cancel an appointment from "My Bookings" when the business allows it (with refunds as the business set), register for and pay for events, send messages, and open personal links for forms and check-in without signing in. The server has customer-profile routes (change email, phone, language and country; communication preferences; data export; a deletion request that only records the request), but no page uses them. Not built: an account page, changing a password, changing one's name or address, rescheduling, a page reached from an email link to view or change one appointment (the Manage Link placeholder in the appointment emails resolves to nothing for this reason), a list of past orders, receipts and invoices, a view of memberships, packages, gift card balances and account credit, managing a card on file, a list of forms, and a way to sign in or register outside the booking widget. Sign-in always asks for the business's tenant, and the web app's sign-in page has one tenant written into it, so a customer of any other business cannot sign in there. A customer's login is matched to their customer record by email address alone, so changing the email in the profile can break the link, and a person who is a customer of two businesses is matched to whichever the database returns first. The sidebar links for customers (Book, My Bookings, Account) point to pages that do not exist.
+
+##### Acceptance Criteria
+
+1. THE system SHALL let a customer register, sign in, reset a forgotten password and change their password for the business they belong to, without the customer choosing a tenant.
+2. THE system SHALL give a customer an account page where they can see and change their name, email address, phone number, address and language, and their communication preferences, and keep their login and their customer record in step when the email changes.
+3. THE system SHALL let a customer request a copy of their data and ask for their account to be deleted, and SHALL show staff the request to act on.
+4. THE system SHALL let a customer book an appointment for themselves, see the price, pay when the business requires it by a real payment, and book the same service again from a past visit.
+5. THE system SHALL let a customer see their upcoming and past appointments, cancel one within the business's cancellation rules, and move one to another time within the business's rescheduling rules.
+6. THE system SHALL put a Manage link in the appointment emails that opens a page for that one appointment without signing in, showing the details and offering the actions the business allows, and SHALL make the link personal, impossible to guess, and unusable once the appointment is over.
+7. THE system SHALL let a customer see their orders, receipts and invoices, their memberships, packages, gift card balances and account credit, and manage the cards they have saved.
+8. THE system SHALL let a customer see which forms they have completed and which they still have to complete, and complete them.
+9. THE system SHALL let the business choose which of these actions customers may do, and how far ahead of an appointment each is allowed.
+10. THE system SHALL show a customer only their own information for the business they are using, and SHALL keep a customer's activity out of any other customer's view.
+#### Requirement 17: Starter Templates
+
+**User Story**: As a business owner setting up DayStream, I want ready-made, well-worded templates for every email and document the system sends, so that customers get a proper message from the first day and I only change what I want to.
+
+**Current state**: Not started. No template is created for a new business. A business that has not built a template for an appointment, receipt, invoice or other document gets a bare email with a greeting, the logo bar and a footer, and no details. The one exception is the appointment reminder, which falls back to a plain reminder with the check-in link while the business has no Appointment Reminder template. Each business has to write every template from a blank editor, in the Templates tab of Business Setup.
+
+##### Acceptance Criteria
+
+1. THE system SHALL give every new business a starter template for each template type it can send, written in plain, friendly wording with the placeholders already in place.
+2. THE system SHALL let a business give an existing business the starter templates for the types it has no template for, without touching templates it has already written.
+3. THE system SHALL keep each starter template editable and deletable like any other template, and SHALL mark it as a starter until the business changes it.
+4. THE system SHALL provide the starter wording in each language the system supports, using the business's language.
+5. THE system SHALL show a preview of the starter template with sample values before the business activates it.
 ---
 
 ## Dependencies
@@ -253,6 +298,7 @@ The acceptance criteria below set the capability each gap must reach. They are r
 - Phase 22 (Community): on-demand video and courses
 - Phase 12 (Staff Management): pay runs for payout (also tip payout)
 - Checkout and payments (orders, payment transactions, the ledger): where tips are added and recorded
+- Booking widget, customer portal routes, events and the cancellation settings: the customer self-service that already exists and gets joined up
 - Phase 21 (AI Features) and Phase 44 (Language Support): where those gaps are finished
 
 ## Success Criteria

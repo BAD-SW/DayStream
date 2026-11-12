@@ -20,6 +20,7 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 - [x] ✅ Gaps collected from the competitive comparison and checked against the current code (state recorded per requirement)
 - [x] ✅ Order of work: top to bottom through this document, one gap at a time
 - [x] ✅ Inventory confirmed as planned long term (Phase 28 left it out short term only)
+- [x] ✅ Gap 14 (tips), gap 15 (service and product add-ons), gap 16 (customer self-service) and gap 17 (starter templates) added by the owner; state confirmed in the code
 
 ## 1. Forms, waivers and e-signature (Requirement 1)
 - [x] ✅ Confirm current state (no forms; S3 backend unimplemented; anonymisation incomplete)
@@ -41,20 +42,23 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 ## 2. Treatment charting (Requirement 2)
 - [x] ✅ Confirm current state and agree requirements (criteria 1-11, from the owner's answers)
 - [x] ✅ Design (design.md section 2)
-- Build
-  - [x] Migration 171: clinical permissions, `frm_forms.kind`, `svc_services.default_chart_group_id`, `chr_charts`, `chr_amendments`
-  - [x] Clinical access helper (roles plus Therapist/Trainer job titles) and client permission mapping
-  - [x] Shared validator: charts reject agree and signature items
-  - [x] Chart service and routes with strict audit (view, create, update, sign, amend, delete, PDF)
-  - [x] Charts type on the Templates tab and default chart on the service
-  - [x] Customer Charts tab and booking Chart panel, with the previous chart shown
-  - [x] Sign-off PDF stored in the customer's charts folder
-  - [x] Anonymise, delete, merge and export hooks
-  - [x] Checked with live scripts (service and HTTP): reception refused, locking, amendments, audit rows, anonymise removes charts and files
+- [x] ✅ Build
+  - [x] ✅ Migration 171: clinical permissions, `frm_forms.kind`, `svc_services.default_chart_group_id`, `chr_charts`, `chr_amendments`
+  - [x] ✅ Clinical access helper (owner, manager and technician; not reception) and client permission mapping
+  - [x] ✅ Shared validator: charts reject agree and signature items
+  - [x] ✅ Chart service and routes with strict audit (view, create, update, sign, amend, delete, PDF)
+  - [x] ✅ Charts type on the Templates tab and default chart on the service
+  - [x] ✅ Customer Charts tab and booking Chart panel, with the previous chart shown
+  - [x] ✅ Sign-off PDF stored in the customer's charts folder
+  - [x] ✅ Anonymise, delete, merge and export hooks
+  - [x] ✅ Staff roles made generic: Owner, Manager, Reception and Technician replace Staff, Therapist and Trainer (migrations 172 and 173); role dropdown on the staff profile saved with the profile; Role column on the Staff list
+  - [x] ✅ Checked with live scripts (service and HTTP): reception refused, locking, amendments, audit rows, anonymise removes charts and files
 - [x] ✅ Verify live and close with the owner
 
 ## 3. Virtual waiting room (Requirement 3)
-- [ ] Confirm current state and agree requirements (including forms at self check-in: criteria 4 and 5)
+- [x] ✅ Confirm current state (criteria 1, 4 and 6-13 built; staff waiting list, ready-for-you message and arrival alerts missing; customer SMS waits for gap 4)
+- [x] ✅ Agree requirements (criteria 14-19, from the owner's answers)
+- [x] ✅ Design (design.md section 3)
 - Self check-in with forms (design.md §1.11a)
   - [x] ✅ Kiosk identifies by phone, email or QR code (never name), refuses when ambiguous
   - [x] ✅ Server: self check-in service, kiosk session, kiosk and phone routes, long personal check-in code
@@ -64,10 +68,24 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
   - [x] ✅ Form page returns the customer to the kiosk or phone page afterwards
   - [x] ✅ First-visit forms stay outstanding until the first visit is completed (a checked-in visit is not yet completed)
   - [x] ✅ Verified live with the owner: kiosk registered, appointment made for today, checked in at the kiosk and a pending form completed
-  - [ ] Phone link check-in not yet tried live (the rest of the virtual waiting room, gap 3, is still to do)
-- [ ] Design
-- [ ] Build
-- [ ] Verify live and close with the owner
+  - [x] ✅ Phone link check-in tried live with the owner
+- Build the waiting room
+  - [x] ✅ Migration 174, start session and ready-for-you, reset clears them
+  - [x] ✅ Staff Check-in button goes through the check-in service, with override
+  - [x] ✅ Waiting list route and customer-arrived alert (Settings > Inbox event)
+  - [x] ✅ Bookings page: Waiting list panel and Appointments pane with date range
+  - [x] ✅ Phone page and kiosk: Please come in, started, polling; ready email
+  - [x] ✅ No cut-off for late check-in (early still prompts); a reset cancels the check-in so the customer can be checked in again
+  - [x] ✅ Forms completed in a window over the current page (waiting list, check-in prompt, booking, new appointment), with no redirect
+  - [x] ✅ No-show button turns red when a confirmed customer is more than 15 minutes late
+  - [x] ✅ Checkout: Done button returns to the Bookings screen after payment
+  - [x] ✅ Check-in link and Add to Calendar (links and attached invite) in the confirmation email; reminders scheduled every 15 minutes with the link; lead times read from the business, tenant or system setting
+  - [x] ✅ Words on the check-in screens (phone page, kiosk, forms list) held per language and editable per business under Templates > Check-In; the ready-for-you email uses the same wording (no separate template)
+  - [x] ✅ Appointment Reminder template (own entry in the Document Type list, with a Time Until Appointment placeholder); plain reminder until the business writes one
+  - [x] ✅ Any wording on the check-in screens and in the ready-for-you email can include the customer's first name, service, appointment time and business name (chips in the editor stay visible while scrolling); the entry screen of the kiosk takes the business name only
+  - [x] ✅ Moved to open items (section 18): a screen for the business to set its reminder times
+  - [x] ✅ Manage link in the appointment emails: moved to gap 16 (it needs a customer self-service page first)
+- [x] ✅ Verify live and close with the owner
 
 ## 4. Two-way SMS and WhatsApp (Requirement 4)
 - [ ] Write up what the Inbox does today for the owner, and bring Phase 47 documents up to date (with David)
@@ -125,22 +143,40 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 - [ ] Verify live and close with the owner
 
 ## 14. Tips (Requirement 14)
-
-- [ ] Confirm current state (done: no tip support; order total, charge, receipt, ledger, commission, payroll and refunds all recorded in requirements.md)
+- [x] ✅ Confirm current state (no tip support; order total, charge, receipt, ledger, commission, payroll and refunds recorded in requirements.md)
 - [ ] Agree requirements with the owner (who gets the tip, when it is offered, cash tips, payout, refunds)
 - [ ] Design
 - [ ] Build
 - [ ] Verify live and close with the owner
 
 ## 15. Service and product add-ons (Requirement 15)
-
 - [x] ✅ Confirm current state (no add-on support; extras are sold only as separate checkout lines)
-- [ ] Agree requirements with the owner
+- [ ] Agree requirements with the owner (an add-on that uses a product depends on gap 7, inventory)
 - [ ] Design
 - [ ] Build
 - [ ] Verify live and close with the owner
 
+## 16. Customer self-service (Requirement 16)
+- [x] ✅ Confirm current state (booking widget with simulated payment, My Bookings with cancel, events, personal links for forms and check-in; profile routes with no page; no account page, change password, reschedule, manage link, order or membership views)
+- [ ] Agree requirements with the owner (which actions customers get, whether customers sign in or use personal links, how sign-in finds the business, rescheduling rules, real payment in the widget)
+- [ ] Design
+- [ ] Build
+- [ ] Verify live and close with the owner
+
+## 17. Starter templates (Requirement 17)
+- [x] ✅ Confirm current state (no template is created for a new business; a missing template gives a bare email)
+- [ ] Agree requirements with the owner (which types, wording and languages, existing businesses, how a starter is marked)
+- [ ] Design
+- [ ] Build
+- [ ] Verify live and close with the owner
+
+## 18. Open items raised along the way
+- [ ] Decide: add a minimum-notice field to the service edit screen (today it can only be set when the service is created)
+- [ ] Decide: should the chart feature be renamed for other industries (for example Service records or Job cards)?
+- [ ] Decide: should technicians see the Inbox?
+- [ ] Decide: add a screen for the business to set its reminder times (today the times come from the business, tenant or system setting, default 24 hours and 2 hours before)
+
 ---
 
-**Status**: 🟡 In Progress — gap register complete; working top to bottom, starting with section 1
+**Status**: 🟡 In Progress — gaps 1, 2 and 3 complete; gap 4 (two-way SMS and WhatsApp) is next
 **Dependencies**: Phase 47, Phase 21, Phase 44, Phase 15, Phase 28

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { CheckInText } from '@daystream/shared';
 import { apiClient } from './client';
 
 /**
@@ -18,10 +19,18 @@ export interface SelfForm {
 export interface SelfVisit {
   first_name: string;
   service_name: string;
+  business_name: string;
   start_time: string;
   timezone: string;
   status: string;
   checked_in: boolean;
+  /** Staff have said "ready for you" while the customer is waiting. */
+  ready?: boolean;
+  /** The session has begun. */
+  started?: boolean;
+  /** The language of the screen, and its wording (the business's own over the built-in wording). */
+  language: string;
+  texts: CheckInText;
   checked_in_now?: boolean;
   forms: SelfForm[];
   /** Kiosk only: what the screen sends back to list or start a form. */
@@ -48,7 +57,7 @@ export function selfCheckInError(err: unknown, fallback: string): {
 const kioskHeaders = (token: string) => ({ headers: { 'X-Kiosk-Token': token } });
 
 /** Whether the kiosk's key is still good. Rejects with KIOSK_OFF (switched off) or KIOSK_UNKNOWN (deleted). */
-export async function kioskStatus(token: string): Promise<{ device_name: string }> {
+export async function kioskStatus(token: string): Promise<{ device_name: string; texts?: CheckInText; business_name?: string }> {
   const res = await axios.get(`${API}/check-in/kiosk/status`, kioskHeaders(token));
   return res.data.data;
 }

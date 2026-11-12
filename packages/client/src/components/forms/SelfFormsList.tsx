@@ -1,3 +1,4 @@
+import type { CheckInText } from '@daystream/shared';
 import type { SelfForm } from '../../api/selfCheckIn';
 
 /**
@@ -5,19 +6,21 @@ import type { SelfForm } from '../../api/selfCheckIn';
  * every form that applies, with a tick beside each completed one and a button beside each one still
  * to complete. Large touch targets, since customers use it on a tablet or a phone.
  */
-export function SelfFormsList({ forms, busyGroupId, onFillIn }: {
+export function SelfFormsList({ forms, busyGroupId, onFillIn, texts }: {
   forms: SelfForm[];
+  /** The screen's wording, in the customer's language. */
+  texts: CheckInText;
   busyGroupId?: string | null;
   onFillIn: (groupId: string) => void;
 }) {
   if (forms.length === 0) return null;
   const todo = forms.filter((f) => f.status !== 'done').length;
   return (
-    <section aria-label="Forms for your visit" style={s.section}>
+    <section aria-label={texts.formsLabel} style={s.section}>
       <h2 style={s.heading}>
         {todo === 0
-          ? 'Your forms are complete'
-          : todo === 1 ? 'Please complete this form before your appointment' : 'Please complete these forms before your appointment'}
+          ? texts.formsAllDone
+          : todo === 1 ? texts.formsOne : texts.formsMany}
       </h2>
       <ul style={s.list}>
         {forms.map((f) => {
@@ -28,12 +31,12 @@ export function SelfFormsList({ forms, busyGroupId, onFillIn }: {
                 <span aria-hidden="true" style={{ ...s.mark, ...(done ? s.markDone : s.markTodo) }}>{done ? '✓' : '!'}</span>
                 <span>
                   {f.name}
-                  <span style={s.state}>{done ? 'Completed' : f.status === 'out_of_date' ? 'Needs to be completed again' : 'Not completed yet'}</span>
+                  <span style={s.state}>{done ? texts.formDone : f.status === 'out_of_date' ? texts.formRedo : texts.formTodo}</span>
                 </span>
               </span>
               {!done && (
                 <button type="button" style={s.button} disabled={busyGroupId === f.groupId} onClick={() => onFillIn(f.groupId)}>
-                  {busyGroupId === f.groupId ? 'Opening…' : 'Fill in'}
+                  {busyGroupId === f.groupId ? texts.formOpening : texts.formFill}
                 </button>
               )}
             </li>

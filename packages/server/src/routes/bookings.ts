@@ -5,7 +5,10 @@ import { parseColumnFilters } from '../utils/column-filters';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { tenantContext } from '../auth/tenant-context';
-import { requirePermission } from '../auth/permissions';
+import { requirePermission, requireAnyPermission } from '../auth/permissions';
+import { CheckInRefused, checkInByBookingId } from '../services/checkin.service';
+import { notifyArrival } from '../services/arrival-alert.service';
+import { sendReadyNotification } from '../services/booking-notifications.service';
 import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
@@ -437,7 +440,20 @@ bookingsRouter.get('/', requirePermission('bookings:read'), async (req: Request,
   }
 });
 
-// PUT /api/v1/bookings/:id/customer-cancel — a customer cancels their own appointment
+// GET /api/v1/bookings/waiting — customers who have checked in today and not started: the waiting list.
+// Before the /:id routes.
+bookingsRouter.get('/waiting', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, await bookingService.getWaitingList(businessId));
+  } catch (err: any) {
+    console.error('Failed to load waiting list', err?.message || err);
+    error(res, 'Failed to load the waiting list', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/bookings/:id/customer-cancel: a customer cancels their own appointment
 // (THE-20), within the business's appointment cancellation settings. A visit paid in
 // advance is refunded to the card or given as account credit, as the business set it.
 bookingsRouter.put('/:id/customer-cancel', requirePermission('bookings:read'), async (req: Request, res: Response) => {
@@ -569,19 +585,37 @@ bookingsRouter.put('/:id/cancel', requirePermission('bookings:*'), validate(canc
   }
 });
 
-// PUT /api/v1/bookings/:id/check-in
-bookingsRouter.put('/:id/check-in', requirePermission('bookings:*'), async (req: Request, res: Response) => {
+// PUT /api/v1/bookings/:id/check-in — the staff Check-in button. Goes through the same check-in rules and
+// record as the kiosk and the phone link. Outside the window it answers 409 CHECK_IN_REFUSED with the reason;
+// repeating it with { override: true, reason } checks the customer in anyway and keeps the reason.
+// Front desk holds checkin:*, so either permission is enough.
+bookingsRouter.put('/:id/check-in', requireAnyPermission('bookings:*', 'checkin:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
 
-    const result = await lifecycleService.checkInBooking(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
-    if (!result.success) {
-      const status = result.error === 'Booking not found' ? 404 : 400;
-      error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INVALID_TRANSITION', status);
+    const existing = await bookingService.getBookingById(req.params.id, businessId);
+    if (!existing) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+
+    if (existing.customer_id) {
+      const override = req.body?.override === true
+        ? { reason: String(req.body.reason || 'Checked in by staff outside the check-in rules').slice(0, 500) }
+        : undefined;
+      try {
+        await checkInByBookingId(req.params.id, authReq.tenantId, authReq.user.sub, businessId, override);
+      } catch (e) {
+        if (e instanceof CheckInRefused) { error(res, e.message, 'CHECK_IN_REFUSED', 409); return; }
+        throw e;
+      }
+      success(res, await bookingService.getBookingById(req.params.id, businessId));
       return;
     }
+
+    // A walk-in by name has no customer to record a check-in against: plain status change.
+    const result = await lifecycleService.checkInBooking(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
+    if (!result.success) { error(res, result.error!, 'INVALID_TRANSITION', 400); return; }
+    await notifyArrival(req.params.id);
     success(res, result.booking);
   } catch (err: any) {
     console.error('Check-in error:', err);
@@ -589,6 +623,44 @@ bookingsRouter.put('/:id/check-in', requirePermission('bookings:*'), async (req:
   }
 });
 
+// PUT /api/v1/bookings/:id/start — start the session of a customer who is waiting.
+bookingsRouter.put('/:id/start', requireAnyPermission('bookings:*', 'checkin:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const result = await lifecycleService.startBooking(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
+    if (!result.success) {
+      const status = result.error === 'Booking not found' ? 404 : 400;
+      error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INVALID_TRANSITION', status);
+      return;
+    }
+    success(res, result.booking);
+  } catch (err: any) {
+    console.error('Failed to start session', err?.message || err);
+    error(res, 'Failed to start the session', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/bookings/:id/ready — tell a waiting customer "ready for you" (their screen and an email).
+bookingsRouter.put('/:id/ready', requireAnyPermission('bookings:*', 'checkin:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const result = await lifecycleService.markReady(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
+    if (!result.success) {
+      const status = result.error === 'Booking not found' ? 404 : 400;
+      error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INVALID_TRANSITION', status);
+      return;
+    }
+    const emailed = result.customer ? await sendReadyNotification(req.params.id) : false;
+    success(res, { ...result.booking, emailed });
+  } catch (err: any) {
+    console.error('Failed to call customer in', err?.message || err);
+    error(res, 'Failed to send the message', 'INTERNAL_ERROR', 500);
+  }
+});
 // PUT /api/v1/bookings/:id/complete
 bookingsRouter.put('/:id/complete', requirePermission('bookings:*'), async (req: Request, res: Response) => {
   try {
@@ -610,7 +682,7 @@ bookingsRouter.put('/:id/complete', requirePermission('bookings:*'), async (req:
 });
 
 // PUT /api/v1/bookings/:id/reset
-bookingsRouter.put('/:id/reset', requirePermission('bookings:*'), async (req: Request, res: Response) => {
+bookingsRouter.put('/:id/reset', requireAnyPermission('bookings:*', 'checkin:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;

@@ -204,6 +204,11 @@ export function buildTokenMap(
     payment_link: str(data.payment_link),
     update_payment_link: str(data.update_payment_link),
     manage_link: str(data.manage_link),
+    // The customer's personal page to check in from their phone and complete forms.
+    check_in_link: str(data.check_in_link),
+    // Reminders: how long until the appointment (the reminder's lead time, in hours).
+    reminder_lead: typeof data.hours_before === 'number' && data.hours_before > 0
+      ? `${data.hours_before} hour${data.hours_before === 1 ? '' : 's'}` : '',
     redeem_link: str(data.redeem_link),
     // Add-to-calendar block (links + .ics attachment) — not generated yet;
     // resolves empty until the calendar/portal work lands.
@@ -233,6 +238,28 @@ export function substitute(text: string | null | undefined, tokens: Record<strin
     // literal so the renderers can split the body on it and draw the table there.
     if (key === DETAILS_TABLE_TOKEN) return `{{${DETAILS_TABLE_TOKEN}}}`;
     return Object.prototype.hasOwnProperty.call(tokens, key) ? tokens[key] : '';
+  });
+}
+
+/** Link placeholders whose value is a web address; in an email body they become clickable links. */
+const LINK_TOKENS = new Set(['check_in_link', 'manage_link', 'payment_link', 'update_payment_link', 'redeem_link']);
+
+/**
+ * Like substitute, for an email body (HTML): a link placeholder written as plain text becomes a clickable
+ * link showing the address. If the author put it inside an attribute (for example href="{{check_in_link}}"),
+ * it stays the plain address so their own markup keeps working.
+ */
+export function substituteBodyHtml(text: string | null | undefined, tokens: Record<string, string>): string {
+  if (!text) return '';
+  return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, key: string, offset: number) => {
+    if (key === DETAILS_TABLE_TOKEN) return `{{${DETAILS_TABLE_TOKEN}}}`;
+    const value = Object.prototype.hasOwnProperty.call(tokens, key) ? tokens[key] : '';
+    if (!LINK_TOKENS.has(key) || !/^https?:\/\//i.test(value)) return value;
+    const before = text.slice(0, offset);
+    const insideAttribute = /=\s*["']$/.test(before.slice(-12));
+    // Already inside a link the author wrote: leave the address as plain text.
+    const insideLink = before.toLowerCase().lastIndexOf('<a ') > before.toLowerCase().lastIndexOf('</a>');
+    return insideAttribute || insideLink ? value : `<a href="${escapeHtml(value)}">${escapeHtml(value)}</a>`;
   });
 }
 
@@ -346,7 +373,7 @@ export async function renderDocument(
 
   // Body: branded HTML (already a sanitized subset), else a minimal default.
   const bodyWithMarker = template?.bodyTemplate
-    ? substitute(template.bodyTemplate, tokens)
+    ? substituteBodyHtml(template.bodyTemplate, tokens)
     : `<p>Hi ${escapeHtml(tokens.customer_first_name || 'there')},</p>`;
 
   // The {{details_table}} token is a placement MARKER left literal by substitute.

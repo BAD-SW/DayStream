@@ -62,7 +62,7 @@ export async function getInboxUsers() {
 }
 
 // Settings
-export type InboxEvent = 'new_unassigned' | 'assigned_message' | 'assigned_to_me' | 'mentioned' | 'unanswered' | 'delivery_failed' | 'new_lead' | 'daily_summary';
+export type InboxEvent = 'new_unassigned' | 'assigned_message' | 'assigned_to_me' | 'mentioned' | 'unanswered' | 'delivery_failed' | 'new_lead' | 'daily_summary' | 'customer_arrived';
 export interface InboxRule { roles: Record<InboxRole, boolean>; in_app: boolean; email: boolean }
 export interface InboxSettings {
   events: Record<InboxEvent, InboxRule>; unanswered_hours: number;

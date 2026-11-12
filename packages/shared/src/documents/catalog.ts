@@ -165,6 +165,12 @@ const APPOINTMENT_PLACEHOLDERS: DocumentPlaceholder[] = [
     sample: 'Add to calendar: Google · Outlook · Apple',
   },
   {
+    token: 'check_in_link',
+    label: 'Check-in Link',
+    description: 'Personal page where the customer checks in from their phone when they arrive and completes any forms.',
+    sample: 'https://app.daystream.app/check-in/DSCI-4f9a7c21e0b3d58a6c91f02e',
+  },
+  {
     token: 'manage_link',
     label: 'Manage Link',
     description: 'URL where the customer can view, reschedule, or cancel the appointment.',
@@ -185,6 +191,21 @@ export const DOCUMENT_ARTIFACT_TYPES: DocumentArtifactType[] = [
     placeholders: [
       ...COMMON_PLACEHOLDERS,
       ...APPOINTMENT_PLACEHOLDERS,
+    ],
+  },
+  {
+    key: 'booking.reminder',
+    label: 'Appointment Reminder',
+    description: 'Sent automatically before an appointment (24 and 2 hours before, unless the business chose other times). Without a template, a plain reminder with the check-in link is sent.',
+    placeholders: [
+      ...COMMON_PLACEHOLDERS,
+      ...APPOINTMENT_PLACEHOLDERS,
+      {
+        token: 'reminder_lead',
+        label: 'Time Until Appointment',
+        description: 'How long until the appointment, for example "24 hours" or "2 hours". Write the words around it yourself, such as "Your appointment is in {{reminder_lead}}".',
+        sample: '24 hours',
+      },
     ],
   },
   {
