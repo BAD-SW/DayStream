@@ -1,4 +1,5 @@
 import { requiredResourceAlternatives, loadMaintenance, underMaintenance } from './required-resources.service';
+import { peakParticipants } from './session-capacity';
 import { localSlotMinutes } from '../utils/business-time';
 import { adminPool } from '../db/pool';
 
@@ -149,13 +150,18 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
   );
 
   let eligibleStaff = assignedStaff;
-  if (assignedStaff.length === 0 && !staffId) {
+  // No staff assigned = every active staff member can do it; a chosen staff member narrows that list
+  // (before, choosing one returned nothing for such services).
+  const anyAssigned = staffId
+    ? (await adminPool.query('SELECT 1 FROM svc_staff WHERE service_id = $1 LIMIT 1', [serviceId])).rows.length > 0
+    : assignedStaff.length > 0;
+  if (!anyAssigned) {
     const { rows: allBusinessStaff } = await adminPool.query(
       `SELECT DISTINCT sp.user_id, sp.first_name, sp.last_name
        FROM stf_profiles sp
        JOIN usr_users u ON u.id = sp.user_id
-       WHERE u.business_id = $1 AND sp.status = 'active' AND sp.user_id IS NOT NULL`,
-      [businessId],
+       WHERE u.business_id = $1 AND sp.status = 'active' AND sp.user_id IS NOT NULL ${staffId ? 'AND sp.user_id = $2' : ''}`,
+      staffId ? [businessId, staffId] : [businessId],
     );
     eligibleStaff = allBusinessStaff;
   }
@@ -336,10 +342,14 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
         // already in it do not make the provider busy for the next person; they use up places.
         // (Such a session used to disappear from the slots as soon as it had its first booking.)
         const isSession = bookingType === 'shared' || bookingType === 'group';
-        const inThisSession = (bk: any) => bk.service_id === service.id && new Date(bk.start_time).getTime() === slotStart.getTime();
-        const sessionTaken = isSession
-          ? existingBookings.filter(inThisSession).reduce((sum: number, bk: any) => sum + (bk.participant_count || 1), 0)
-          : 0;
+        // Shared rooms (CAL-17): sessions can start at any time; places = people in the room at the
+        // same moment during this slot. Group sessions: bookings at the same start time.
+        const inThisSession = (bk: any) => bk.service_id === service.id && (bookingType === 'shared'
+          ? new Date(bk.start_time).getTime() < slotEnd.getTime() && new Date(bk.end_time).getTime() > slotStart.getTime()
+          : new Date(bk.start_time).getTime() === slotStart.getTime());
+        const sessionTaken = !isSession ? 0 : bookingType === 'shared'
+          ? peakParticipants(existingBookings.filter(inThisSession), slotStart, slotEnd)
+          : existingBookings.filter(inThisSession).reduce((sum: number, bk: any) => sum + (bk.participant_count || 1), 0);
         if (isSession && sessionTaken >= capacity) continue;
         const bookingsForStaffCheck = isSession ? existingBookings.filter((bk: any) => !inThisSession(bk)) : existingBookings;
 

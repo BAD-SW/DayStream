@@ -196,20 +196,26 @@ bookingsRouter.get('/availability/days', requirePermission('bookings:read'), asy
 
     const days = getDaysInMonth(month);
     const result: Record<string, 'available' | 'unavailable' | 'closed'> = {};
+    // Free start times per day (New Appointment month: many / a few / none, NA round 8), for the staff
+    // member and location chosen when given.
+    const freeTimes: Record<string, number> = {};
+    const staffId = (req.query.staff_id as string) || undefined;
+    const locationId = (req.query.location_id as string) || undefined;
     let timezone = 'UTC';
 
     for (const day of days) {
       const availability = await availabilityService.getAvailabilityCombinations({
-        serviceId, businessId, variantId, dateFrom: day, dateTo: day,
+        serviceId, businessId, variantId, dateFrom: day, dateTo: day, staffId, locationId,
         skipLeadTime: !isCustomerRole(req),
       });
       timezone = availability.timezone;
 
       const isClosed = availability.slots.length === 0 ? await isDayClosedForBusiness(businessId, day) : false;
       result[day] = computeDayStatus(availability.slots, participantCount, isClosed);
+      freeTimes[day] = new Set(availability.slots.filter((s) => (s.capacity_remaining ?? 1) >= participantCount).map((s) => s.start_time)).size;
     }
 
-    success(res, { timezone, days: result });
+    success(res, { timezone, days: result, free_times: freeTimes });
   } catch (err: any) {
     console.error('Failed to load day availability', err?.message || err);
     error(res, 'Failed to load day availability', 'INTERNAL_ERROR', 500);
@@ -218,6 +224,7 @@ bookingsRouter.get('/availability/days', requirePermission('bookings:read'), asy
 
 // GET /api/v1/bookings/calendar — (registered before /:id)
 import * as calendarServiceForward from '../services/booking-calendar.service';
+import * as changeRules from '../services/booking-change-rules.service';
 import * as notificationsServiceForward from '../services/booking-notifications.service';
 
 bookingsRouter.get('/calendar', requirePermission('bookings:read'), async (req: Request, res: Response) => {
@@ -233,6 +240,7 @@ bookingsRouter.get('/calendar', requirePermission('bookings:read'), async (req: 
       businessId, view: view as 'day' | 'week' | 'month', date,
       staffId: req.query.staff_id as string, resourceId: req.query.resource_id as string,
       serviceIds, status: req.query.status as string,
+      locationId: (req.query.location_id as string) || undefined,
     });
     success(res, result);
   } catch (err: any) {
@@ -259,10 +267,12 @@ bookingsRouter.get('/filters', requirePermission('bookings:read'), async (req: R
       'SELECT timezone, currency FROM sys_businesses WHERE id = $1 AND tenant_id = $2', [businessId, authReq.tenantId],
     );
     if (!biz.rows[0]) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
-    const [staff, services, primaryLocation] = await Promise.all([
+    const [staff, services, primaryLocation, locations] = await Promise.all([
       staffServiceForward.getStaffList(authReq.tenantId, { status: 'active', businessId, page: 1, limit: 200 }),
-      adminPool.query(`SELECT id, name, status FROM svc_services WHERE business_id = $1 AND status <> 'archived' ORDER BY name`, [businessId]),
+      adminPool.query(`SELECT id, name, status, calendar_color FROM svc_services WHERE business_id = $1 AND status <> 'archived' ORDER BY name`, [businessId]),
       adminPool.query(`SELECT id FROM sys_locations WHERE business_id = $1 ORDER BY is_primary DESC, display_order, name LIMIT 1`, [businessId]),
+      // the calendar's Location select (shown when there are several)
+      adminPool.query(`SELECT id, name, is_primary FROM sys_locations WHERE business_id = $1 AND status = 'active' ORDER BY is_primary DESC, display_order, name`, [businessId]),
     ]);
     // Opening hours of the primary location size the calendar's time axis. Served here because
     // the locations endpoints need settings:read, which staff roles do not have.
@@ -275,6 +285,7 @@ bookingsRouter.get('/filters', requirePermission('bookings:read'), async (req: R
       staff: (staff.staff as any[]).map((s) => ({ user_id: s.user_id, first_name: s.first_name, last_name: s.last_name })),
       services: services.rows,
       location_hours: locationHours,
+      locations: locations.rows,
     });
   } catch (err: any) {
     console.error('Failed to load booking filters', err?.message || err);
@@ -332,6 +343,7 @@ const createBookingSchema = Joi.object({
   variant_id: Joi.string().uuid().required(),
   staff_id: Joi.string().uuid().allow(null),
   resource_id: Joi.string().uuid().allow(null),
+  location_id: Joi.string().uuid().allow(null),
   start_time: Joi.string().isoDate().required(),
   notes: Joi.string().max(500).allow('', null),
   override_rules: Joi.boolean().default(false),
@@ -350,6 +362,7 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
       variantId: req.body.variant_id,
       staffId: req.body.staff_id,
       resourceId: req.body.resource_id,
+      locationId: req.body.location_id || undefined,
       startTime: req.body.start_time,
       notes: req.body.notes,
       createdBy: authReq.user.sub,
@@ -521,7 +534,9 @@ bookingsRouter.get('/:id', requirePermission('bookings:read'), async (req: Reque
     const ownCustomerId = await ownCustomerScope(req, businessId);
     if (ownCustomerId !== undefined && (ownCustomerId === null || booking.customer_id !== ownCustomerId)) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
 
-    success(res, booking);
+    // What staff may change (CAL-19, CAL-22): the edit screen opens as View appointment when read_only
+    const change_rules = await changeRules.getChangeRules(booking, businessId);
+    success(res, { ...booking, change_rules });
   } catch (err: any) {
     console.error('Failed to get booking', err?.message || err);
     error(res, 'Failed to get booking', 'INTERNAL_ERROR', 500);
@@ -537,6 +552,92 @@ import * as lifecycleService from '../services/booking-lifecycle.service';
 
 const cancelSchema = Joi.object({
   reason: Joi.string().max(500).allow('', null),
+  // CAL-5 (9 Nov 2026): a paid appointment cancelled by staff: no refund, back to the payment, or account credit
+  refund_to: Joi.string().valid('none', 'original', 'account_credit'),
+});
+
+/** The refundable lines of a booking's completed order (the visit itself). */
+async function bookingRefundLines(bookingId: string, businessId: string): Promise<{ orderId: string | null; lines: Array<{ id: string; left: number; amount: number }> }> {
+  const { rows: orders } = await adminPool.query(
+    `SELECT o.id FROM fin_orders o WHERE o.booking_id = $1 AND o.business_id = $2 AND o.status IN ('completed', 'partially_refunded') LIMIT 1`,
+    [bookingId, businessId],
+  );
+  if (!orders[0]) return { orderId: null, lines: [] };
+  const { rows: lines } = await adminPool.query(
+    `SELECT id, quantity - refunded_quantity AS left,
+            CASE WHEN quantity > 0 THEN (total_price * (quantity - refunded_quantity)) / quantity ELSE 0 END AS amount
+       FROM fin_order_items
+      WHERE order_id = $1 AND quantity > refunded_quantity AND (booking_id = $2 OR (booking_id IS NULL AND item_type = 'service'))`,
+    [orders[0].id, bookingId],
+  );
+  return { orderId: orders[0].id, lines: lines.map((l: any) => ({ id: l.id, left: Number(l.left), amount: Number(l.amount) })) };
+}
+
+// POST /api/v1/bookings/payment-quote — the numbers of the payment step (PAY-1 A) before the booking exists
+bookingsRouter.post('/payment-quote', requirePermission('bookings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const b = req.body || {};
+    if (!b.business_id || !b.service_id || !b.variant_id) { error(res, 'business_id, service_id and variant_id required', 'VALIDATION_ERROR', 400); return; }
+    const { quote } = await import('../services/booking-payment.service');
+    success(res, await quote({
+      businessId: b.business_id, customerId: b.customer_id || null, serviceId: b.service_id, variantId: b.variant_id,
+      participants: b.participant_count, promoCode: b.promo_code || null, usePackage: !!b.use_package, useCredit: !!b.use_credit, userId: authReq.user.sub,
+    }));
+  } catch (err: any) {
+    if (err?.code === 'NOT_FOUND') { error(res, err.message, 'NOT_FOUND', 404); return; }
+    console.error('Failed to quote payment', err?.message || err);
+    error(res, 'Failed to work out the payment', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// POST /api/v1/bookings/:id/pay — pay the booking just made in the window (PAY-1 A)
+bookingsRouter.post('/:id/pay', requirePermission('bookings:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const booking = await bookingService.getBookingById(req.params.id, businessId);
+    if (!booking) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    const b = req.body || {};
+    const { payBooking } = await import('../services/booking-payment.service');
+    success(res, await payBooking({
+      businessId, bookingId: booking.id, customerId: booking.customer_id, serviceId: booking.service_id, variantId: booking.variant_id,
+      participants: booking.participant_count, promoCode: b.promo_code || null, usePackage: !!b.use_package, useCredit: !!b.use_credit,
+      method: b.method, paymentMethodId: b.payment_method_id || null, giftCardCode: b.gift_card_code || null, reference: b.reference || null,
+      cashReceived: b.cash_received ?? null, userId: authReq.user.sub,
+    }));
+  } catch (err: any) {
+    // a refused payment: the booking stays, unpaid, and the answer says why
+    if (err?.code) { error(res, err.message, err.code, err.code === 'PAYMENT_DECLINED' ? 402 : 400); return; }
+    console.error('Failed to pay booking', err?.message || err);
+    error(res, err?.message || 'Failed to pay the booking', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/bookings/:id/cancel-preview — what cancelling now means (CAL-5): the fee and what was paid
+bookingsRouter.get('/:id/cancel-preview', requirePermission('bookings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { rows } = await adminPool.query(
+      `SELECT b.*, s.cancellation_policy_id FROM apt_bookings b JOIN svc_services s ON s.id = b.service_id WHERE b.id = $1 AND b.business_id = $2`,
+      [req.params.id, businessId],
+    );
+    if (!rows[0]) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    const fee = await lifecycleService.cancellationFeeFor(rows[0], businessId);
+    const paid = await bookingRefundLines(req.params.id, businessId);
+    const { getCancelSettings } = await import('../services/customer-cancellation.service');
+    const settings = await getCancelSettings(businessId, 'appointments');
+    success(res, {
+      fee,
+      paid_amount: paid.lines.reduce((x, l) => x + l.amount, 0),
+      refund_default: settings.cancel_refund_to === 'credit' ? 'account_credit' : 'original',
+    });
+  } catch (err: any) {
+    console.error('Failed to preview cancellation', err?.message || err);
+    error(res, 'Failed to preview cancellation', 'INTERNAL_ERROR', 500);
+  }
 });
 
 const rescheduleSchema = Joi.object({
@@ -571,6 +672,26 @@ bookingsRouter.put('/:id/cancel', requirePermission('bookings:*'), validate(canc
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
 
+    // Paid and a refund chosen: refund the visit's lines first; if the refund fails the appointment stays as it was
+    let refund: any = null;
+    const refundTo = req.body.refund_to as 'none' | 'original' | 'account_credit' | undefined;
+    if (refundTo && refundTo !== 'none') {
+      const current = await bookingService.getBookingById(req.params.id, businessId);
+      if (!current) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+      if (!['pending', 'confirmed'].includes(current.status)) { error(res, 'This appointment can no longer be cancelled', 'INVALID_TRANSITION', 400); return; }
+      const paid = await bookingRefundLines(req.params.id, businessId);
+      if (paid.orderId && paid.lines.reduce((x, l) => x + l.amount, 0) > 0) {
+        const { refundOrderLines } = await import('../services/order-refund.service');
+        refund = await refundOrderLines({
+          businessId, tenantId: authReq.tenantId, orderId: paid.orderId,
+          lines: paid.lines.map((l) => ({ orderItemId: l.id, quantity: l.left })),
+          reason: req.body.reason ? `Appointment cancelled: ${req.body.reason}` : 'Appointment cancelled', processedBy: authReq.user.sub,
+          refundTo, allowServiceLines: true,
+        });
+        if (refund.status === 'failed') { error(res, refund.failureReason || 'The refund failed', 'REFUND_FAILED', 502); return; }
+      }
+    }
+
     const result = await lifecycleService.cancelBooking(req.params.id, businessId, authReq.user.sub, authReq.tenantId, req.body.reason);
     if (!result.success) {
       const status = result.error === 'Booking not found' ? 404 : 400;
@@ -578,8 +699,10 @@ bookingsRouter.put('/:id/cancel', requirePermission('bookings:*'), validate(canc
       return;
     }
     emitEvent(authReq.tenantId, 'booking.cancelled', { id: req.params.id, business_id: businessId, reason: req.body.reason || null });
-    success(res, { ...result.booking, cancellation_fee: result.cancellation_fee });
+    success(res, { ...result.booking, cancellation_fee: result.cancellation_fee, refund: refund ? { amount: refund.amountCents, to: refundTo, status: refund.status, reference: refund.referenceNumber } : null });
   } catch (err: any) {
+    // refund refused (e.g. account credit for a walk-in, nothing left to refund): say why; the appointment stays as it was
+    if (err?.name === 'OrderRefundError' || ['CUSTOMER_REQUIRED', 'NOTHING_TO_REFUND', 'ORDER_NOT_REFUNDABLE', 'NO_CONNECTION', 'ITEM_NOT_REFUNDABLE'].includes(err?.code)) { error(res, err.message, err.code || 'REFUND_REFUSED', 409); return; }
     console.error('Failed to cancel booking', err?.message || err);
     error(res, 'Failed to cancel booking', 'INTERNAL_ERROR', 500);
   }
@@ -750,6 +873,7 @@ const updateBookingSchema = Joi.object({
   service_id: Joi.string().uuid(),
   variant_id: Joi.string().uuid(),
   staff_id: Joi.string().uuid().allow(null),
+  location_id: Joi.string().uuid(),
   start_time: Joi.string().isoDate(),
   notes: Joi.string().allow('', null),
   customer_id: Joi.string().uuid().allow(null),
@@ -772,6 +896,8 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
     if (req.body.service_id !== undefined) updates.service_id = req.body.service_id;
     if (req.body.variant_id !== undefined) updates.variant_id = req.body.variant_id;
     if (req.body.staff_id !== undefined) updates.staff_id = req.body.staff_id;
+    // the location can change with the day and time (CAL-19: also for paid future bookings)
+    if (req.body.location_id !== undefined) updates.location_id = req.body.location_id;
     if (req.body.customer_id !== undefined) updates.customer_id = req.body.customer_id;
     if (req.body.walk_in_name !== undefined) updates.walk_in_name = req.body.walk_in_name || null;
     if (req.body.participant_count !== undefined) updates.participant_count = req.body.participant_count;
@@ -791,10 +917,18 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
       : String(req.body[k] ?? '') === String((existing as any)[k] ?? ''));
     const slotChange = ['service_id', 'variant_id', 'staff_id', 'start_time', 'participant_count', 'customer_id']
       .some((k) => req.body[k] !== undefined && req.body[k] !== '' && !same(k));
-    if (slotChange && !['pending', 'confirmed'].includes(existing.status)) {
-      error(res, `A booking that is ${existing.status} cannot be moved or changed`, 'INVALID_TRANSITION', 400);
-      return;
-    }
+    // CAL-19 / CAL-22 (11 Nov): started bookings can be corrected (staff, service, customer) until
+    // checkout but not moved; paid ones keep their service, option, headcount and customer.
+    const changed = (k: string) => req.body[k] !== undefined && req.body[k] !== '' && !same(k);
+    const rules = await changeRules.getChangeRules(existing, businessId);
+    const refused = changeRules.checkChange(rules, {
+      start_time: changed('start_time') ? req.body.start_time : null,
+      staff: changed('staff_id'),
+      offering: changed('service_id') || changed('variant_id') || changed('participant_count'),
+      customer: changed('customer_id'),
+    });
+    if (refused) { error(res, refused, 'INVALID_TRANSITION', 400); return; }
+    if (changed('location_id') && !rules.can_move) { error(res, rules.reason || 'This booking can not be moved to another location.', 'INVALID_TRANSITION', 400); return; }
 
     const saved = await bookingService.withBookingLock(businessId, async () => {
       if (slotChange) {

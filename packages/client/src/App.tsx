@@ -50,8 +50,7 @@ import { Schedule } from './pages/Schedule';
 import { Clock } from './pages/Clock';
 import { ClockAdmin } from './pages/ClockAdmin';
 import { MyHours } from './pages/MyHours';
-import { BookingCreate } from './pages/BookingCreate';
-import { BookingEdit } from './pages/BookingEdit';
+import { AppointmentPage } from './pages/AppointmentPage';
 import { Memberships } from './pages/Memberships';
 import { MembershipDetail } from './pages/MembershipDetail';
 import { PromotionDetail } from './pages/PromotionDetail';
@@ -154,9 +153,11 @@ export function App() {
         <Route path="/services/:id" element={<ProtectedRoute><ServiceDetail /></ProtectedRoute>} />
 
         {/* Bookings */}
-        <Route path="/bookings" element={<ProtectedRoute><Bookings /></ProtectedRoute>} />
-        <Route path="/bookings/new" element={<ProtectedRoute><BookingCreate /></ProtectedRoute>} />
-        <Route path="/bookings/:id/edit" element={<ProtectedRoute><BookingEdit /></ProtectedRoute>} />
+        {/* Bookings/Orders opens the calendar on today's Day view (staff); customers keep their list */}
+        <Route path="/bookings" element={<ProtectedRoute><ForPersona customer={<Bookings />} staff={<BookingCalendar />} /></ProtectedRoute>} />
+        <Route path="/bookings/list" element={<ProtectedRoute><Bookings /></ProtectedRoute>} />
+        <Route path="/bookings/new" element={<ProtectedRoute><AppointmentPage mode="new" /></ProtectedRoute>} />
+        <Route path="/bookings/:id/edit" element={<ProtectedRoute><AppointmentPage mode="edit" /></ProtectedRoute>} />
         <Route path="/bookings/calendar" element={<ProtectedRoute><BookingCalendar /></ProtectedRoute>} />
         <Route path="/checkout" element={<ProtectedRoute><CheckoutPage /></ProtectedRoute>} />
         <Route path="/orders" element={<ProtectedRoute><Orders /></ProtectedRoute>} />

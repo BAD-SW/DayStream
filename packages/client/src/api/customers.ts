@@ -47,6 +47,8 @@ export interface Customer {
 
 export interface CustomerFilters {
   search?: string;
+  /** booking = name, surname, the email before the @ and the phone (never the email domain). */
+  search_mode?: 'booking';
   lifecycle_stage?: string;
   page?: number;
   limit?: number;
@@ -122,6 +124,7 @@ export interface Segment {
 export async function getCustomers(businessId: string, filters: CustomerFilters = {}): Promise<PaginatedResponse<Customer>> {
   const params = new URLSearchParams({ business_id: businessId });
   if (filters.search) params.set('search', filters.search);
+  if (filters.search_mode) params.set('search_mode', filters.search_mode);
   if (filters.lifecycle_stage) params.set('lifecycle_stage', filters.lifecycle_stage);
   if (filters.page) params.set('page', String(filters.page));
   if (filters.limit) params.set('limit', String(filters.limit));

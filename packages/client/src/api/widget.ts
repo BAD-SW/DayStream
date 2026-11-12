@@ -131,7 +131,7 @@ export interface WidgetAvailabilityDays {
 
 /**
  * One (time, location, staff) combination — the same shape the admin booking flow
- * (BookingCreate.tsx) already consumes from availability.service.ts's combinations
+ * (the New Appointment screen) already consumes from availability.service.ts's combinations
  * endpoint. A single start_time appears as multiple rows when more than one
  * location/staff can serve it; staff_id is absent entirely for staff-less
  * (booking_type: 'resource') services.

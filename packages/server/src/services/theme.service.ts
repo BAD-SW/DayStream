@@ -76,10 +76,11 @@ async function fetchThemeRow(id: string, tenantId: string | null, pool: Queryabl
 // [data-base-theme] as normal, which is what makes Classic's dark+light toggle and Bold
 // Business's fixed light look work correctly. mergeTokens() (the full palette) is still
 // used for the gallery preview swatches and the editor's "what would this look like".
-const DEFAULT_RESOLVED: ResolvedTheme = { base_theme: 'bold-business', tokens: {}, source: 'default', theme_id: 'bold-business' };
+// Navy is the default look (David, 2026-11-05, THE-12); Classic and Bold Business stay selectable.
+const DEFAULT_RESOLVED: ResolvedTheme = { base_theme: 'navy', tokens: {}, source: 'default', theme_id: 'navy' };
 
 /**
- * System -> Bold Business built-in default. Also the tail of resolveForTenant/resolveForBusiness.
+ * System -> Navy built-in default. Also the tail of resolveForTenant/resolveForBusiness.
  *
  * Two independent pointers exist at every scope: an explicit *custom* theme
  * (theme.system_active_theme_id) and an explicit *built-in* choice
@@ -108,7 +109,7 @@ export async function resolveSystemDefault(pool: Queryable): Promise<ResolvedThe
   return DEFAULT_RESOLVED;
 }
 
-/** Tenant -> system -> Bold Business built-in default. */
+/** Tenant -> system -> Navy built-in default. */
 export async function resolveForTenant(tenantId: string, pool: Queryable): Promise<ResolvedTheme> {
   const { rows: tenantRows } = await pool.query(
     'SELECT active_custom_theme_id, active_built_in_theme FROM sys_tenants WHERE id = $1',
@@ -125,7 +126,7 @@ export async function resolveForTenant(tenantId: string, pool: Queryable): Promi
   return resolveSystemDefault(pool);
 }
 
-/** Business -> tenant -> system -> Bold Business built-in default. */
+/** Business -> tenant -> system -> Navy built-in default. */
 export async function resolveForBusiness(businessId: string, pool: Queryable): Promise<ResolvedTheme> {
   const { rows: bizRows } = await pool.query(
     'SELECT active_custom_theme_id, active_built_in_theme, tenant_id FROM sys_businesses WHERE id = $1',

@@ -88,19 +88,23 @@ export function applyBaseTheme(baseTheme: string | null | undefined): void {
   // Remembered so the next page load can paint in the right palette before the theme
   // request returns (see applyCachedBaseTheme) instead of flashing the Classic look.
   try {
-    if (valid) localStorage.setItem(BASE_THEME_CACHE_KEY, baseTheme!);
+    // An explicit Classic is remembered too, so it does not flash the Navy default first.
+    if (valid || baseTheme === 'classic') localStorage.setItem(BASE_THEME_CACHE_KEY, baseTheme!);
     else localStorage.removeItem(BASE_THEME_CACHE_KEY);
   } catch { /* storage unavailable — only costs the early paint */ }
 }
 
 const BASE_THEME_CACHE_KEY = 'ds_base_theme';
 
+/** Navy is the default look (THE-12): used before the theme request returns and when it fails. */
+export const DEFAULT_BASE_THEME = 'navy';
+
 /** Applies the last known base theme synchronously at startup (call before the first render). */
 export function applyCachedBaseTheme(): void {
-  try {
-    const cached = localStorage.getItem(BASE_THEME_CACHE_KEY);
-    if (cached && VALID_BASE_THEMES.includes(cached)) document.documentElement.setAttribute('data-base-theme', cached);
-  } catch { /* ignore */ }
+  let cached: string | null = null;
+  try { cached = localStorage.getItem(BASE_THEME_CACHE_KEY); } catch { /* ignore */ }
+  if (cached === 'classic') { document.documentElement.removeAttribute('data-base-theme'); return; }
+  document.documentElement.setAttribute('data-base-theme', cached && VALID_BASE_THEMES.includes(cached) ? cached : DEFAULT_BASE_THEME);
 }
 
 // Mirrors packages/server/src/services/themeTokens.ts CONFIGURABLE_TOKEN_KEYS — the client

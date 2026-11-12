@@ -203,7 +203,7 @@ const styles: Record<string, React.CSSProperties> = {
   pathHint: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', textTransform: 'capitalize' as const, marginLeft: '6px' },
   selectedBar: { display: 'flex', flexWrap: 'wrap' as const, gap: '6px', alignItems: 'center', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--color-border)' },
   selectedLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontWeight: 600 },
-  chip: { display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 4px 2px 8px', borderRadius: '12px', fontSize: 'var(--font-size-xs)', background: 'var(--color-primary)', color: '#fff', textTransform: 'capitalize' as const },
-  chipX: { background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 'var(--font-size-sm)', lineHeight: 1, padding: '0 2px' },
+  chip: { display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 4px 2px 8px', borderRadius: '12px', fontSize: 'var(--font-size-xs)', background: 'var(--color-primary)', color: 'var(--color-primary-contrast, #fff)', textTransform: 'capitalize' as const },
+  chipX: { background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 'var(--font-size-sm)', lineHeight: 1, padding: '0 2px' },
   muted: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', padding: '8px' },
 };

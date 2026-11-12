@@ -256,6 +256,7 @@ export async function updateService(id: string, businessId: string, updates: Rec
     tax_category_id: 'tax_category_id',
     is_taxable: 'is_taxable',
     cancellation_policy_id: 'cancellation_policy_id',
+    calendar_color: 'calendar_color',
     default_chart_group_id: 'default_chart_group_id',
   };
 

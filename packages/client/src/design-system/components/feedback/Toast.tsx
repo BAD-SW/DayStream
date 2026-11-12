@@ -81,8 +81,8 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 const variantStyles: Record<ToastVariant, React.CSSProperties> = {
-  success: { background: 'var(--color-success)', color: '#FFFFFF' },
-  error: { background: 'var(--color-error)', color: '#FFFFFF' },
+  success: { background: 'var(--color-success-solid, var(--color-success))', color: '#FFFFFF' },
+  error: { background: 'var(--color-error-solid, var(--color-error))', color: '#FFFFFF' },
   warning: { background: 'var(--color-warning)', color: '#1A1A1A' },
-  info: { background: 'var(--color-info)', color: '#FFFFFF' },
+  info: { background: 'var(--color-info-solid, var(--color-info))', color: '#FFFFFF' },
 };

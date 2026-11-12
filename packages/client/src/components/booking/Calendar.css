@@ -1,0 +1,124 @@
+/* Calendar (Bookings/Orders), copied from the DayStream Hub calendar mock (Designs → Booking from the calendar,
+   rounds 9–11, 11 Nov 2026). Same class names and values as the hub; colours from the app theme.
+   Tokens (--surface, --line, --navy, --accent…) come from .dsa in AppointmentWindow.css. */
+.dsc {
+  --info: var(--color-info-dark, #23518f);
+  --info-bg: var(--color-info-bg, #e3ecf8);
+  --idle-bg: color-mix(in srgb, var(--color-divider, #dfe4ee) 55%, var(--color-surface, #fff));
+  --mono: ui-monospace, Consolas, monospace;
+  --cal-red: #d64545;
+}
+
+/* toolbar */
+.dsc .ctb { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 12px; align-items: center; margin-bottom: 10px; position: relative; }
+.dsc .ctb-l, .dsc .ctb-r { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.dsc .ctb-l b { font: 800 15px var(--font-family); margin-left: 6px; }
+.dsc .ctb .nav { border: 1.5px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; padding: 6px 10px; font: 700 13px var(--font-family); cursor: pointer; }
+.dsc .seg { display: inline-flex; border: 1.5px solid var(--line); border-radius: 8px; overflow: hidden; }
+.dsc .seg button { all: unset; cursor: pointer; padding: 6px 10px; font: 700 12.5px var(--font-family); color: var(--fg); background: var(--surface); }
+.dsc .seg button[aria-pressed="true"] { background: var(--navy); color: var(--navy-fg); }
+.dsc .seg button:focus-visible, .dsc .ctb .nav:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dsc .ctb .lab { font: 700 11px var(--font-family); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.dsc .ctb select { width: auto; text-transform: none; letter-spacing: 0; padding: 5px 8px; border: 1.5px solid var(--idle); border-radius: 8px; background: var(--surface); color: var(--fg); font: 400 13px var(--font-family); height: auto; min-height: 0; }
+.dsc .ctb .btn { border: 1px solid var(--accent); background: var(--accent); color: var(--surface); border-radius: 8px; padding: 8px 14px; font: 700 13.5px var(--font-family); cursor: pointer; }
+
+/* pills and column pages */
+.dsc .ctb2 { display: flex; flex-wrap: nowrap; justify-content: space-between; align-items: center; gap: 8px 14px; margin: -2px 0 10px; }
+.dsc .ctb2 .cpg { margin: 0 0 0 auto; }
+.dsc .spills { display: flex; flex-wrap: nowrap; gap: 6px; overflow: hidden; align-items: center; min-width: 0; flex: 1; }
+.dsc .spill { border: 1.5px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 999px; padding: 5px 12px; font: 600 12.5px var(--font-family); cursor: pointer; display: inline-flex; align-items: center; white-space: nowrap; flex-shrink: 0; }
+.dsc .spill[aria-pressed="true"] { background: var(--navy); border-color: var(--navy); color: var(--navy-fg); }
+.dsc .spill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dsc .spg { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.dsc .spg .nav { border: 1.5px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; padding: 3px 10px; font: 700 14px var(--font-family); cursor: pointer; }
+.dsc .spg .nav:disabled, .dsc .cpg .nav:disabled { opacity: .4; cursor: not-allowed; }
+.dsc .spg small { font: 600 11px var(--mono); color: var(--muted); }
+.dsc .spills .mk-hint { flex-shrink: 0; }
+.dsc .sdot { display: inline-block; width: 10px; height: 10px; border-radius: 999px; background: var(--sc); margin-right: 5px; vertical-align: middle; flex: none; }
+.dsc .cpg { display: flex; align-items: center; justify-content: flex-end; gap: 8px; font-size: 13px; flex-wrap: nowrap; flex-shrink: 0; white-space: nowrap; }
+.dsc .cpg .nav { border: 1.5px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; padding: 4px 12px; font: 700 15px var(--font-family); cursor: pointer; }
+.dsc .cpg-dots { display: inline-flex; gap: 4px; }
+.dsc .cpg-dots button { all: unset; width: 8px; height: 8px; border-radius: 999px; background: var(--line); cursor: pointer; }
+.dsc .cpg-dots button[aria-pressed="true"] { background: var(--navy); }
+
+/* Day and Week grid */
+.dsc .cal2-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); flex: 1; min-height: 0; }
+.dsc .cal2 { display: grid; font-size: 11.5px; color: var(--fg); }
+.dsc .cal2 .hd { background: var(--bg); font-weight: 700; text-align: center; padding: 7px 2px; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 4; min-width: 0; overflow: hidden; }
+.dsc .cal2 .hd small { display: block; font-weight: 500; color: var(--muted); font-size: 10.5px; }
+.dsc .cal2 .hd.closed { color: var(--muted); }
+.dsc .cal2 .hd button { all: unset; cursor: pointer; }
+.dsc .cal2 .hav { display: inline-block; width: 20px; height: 20px; line-height: 20px; font-size: 9px; vertical-align: middle; margin-right: 4px; border-radius: 999px; background: var(--soft); color: var(--accent); font-weight: 700; text-align: center; }
+.dsc .cal2 .tm { color: var(--muted); text-align: right; padding: 0 6px; border-right: 1px solid var(--line); height: 30px; line-height: 30px; }
+.dsc .c2 { position: relative; height: 30px; border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); min-width: 0; }
+.dsc .c2.off { background: var(--idle-bg); }
+.dsc .c2.nocap { background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--line) 80%, transparent) 6px 7px); }
+.dsc .cnew { all: unset; position: absolute; inset: 0; cursor: pointer; display: flex; justify-content: flex-end; align-items: center; padding-right: 6px; box-sizing: border-box; }
+.dsc .cnew span { opacity: 0; font: 800 15px var(--font-family); color: var(--accent); width: 18px; height: 18px; border-radius: 999px; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--accent); line-height: 1; }
+.dsc .cnew:hover, .dsc .cnew:focus-visible { background: var(--soft); }
+.dsc .cnew:hover span, .dsc .cnew:focus-visible span { opacity: 1; }
+.dsc .capn { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); font: 700 10.5px var(--mono); pointer-events: none; }
+.dsc .c2:hover .capn, .dsc .c2:focus-within .capn { opacity: 0; }
+.dsc .cp-ok { color: var(--ok); }
+.dsc .bk2 { all: unset; box-sizing: border-box; position: absolute; top: 2px; z-index: 1; border-radius: 6px; background: var(--info-bg); color: var(--info); border-left: 3px solid var(--info); font: 700 11px/1.25 var(--font-family); padding: 3px 5px; overflow: hidden; cursor: pointer; white-space: normal; overflow-wrap: anywhere; }
+.dsc .bk2:hover, .dsc .bk2:focus-visible { outline: 2px solid var(--accent); }
+/* text always from the top: a long label is cut at the bottom, never at the top (David, 11 Nov 2026) */
+.dsc .bk2 { display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; text-align: left; }
+.dsc .bk2 > span { display: block; }
+.dsc .bk2.sc { background: color-mix(in srgb, var(--sc) 17%, var(--surface)); border-left-color: var(--sc); color: var(--fg); }
+.dsc .bk2.more { background: var(--idle-bg); color: var(--fg); border-left-color: var(--idle); text-align: center; font-weight: 800; justify-content: center; }
+.dsc .gh { position: absolute; left: 2px; right: 2px; top: 2px; z-index: 2; border: 2px dashed var(--accent); background: var(--soft); border-radius: 6px; font: 700 11px/1.25 var(--font-family); color: var(--accent); padding: 3px 5px; pointer-events: none; overflow: hidden; box-shadow: 0 4px 12px rgba(10, 20, 50, .12); }
+.dsc .nowl { position: absolute; left: 0; right: 0; top: -1px; border-top: 2px solid var(--cal-red); z-index: 3; pointer-events: none; }
+.dsc .q-empty { border: 1.5px dashed var(--line); border-radius: 10px; padding: 24px 14px; text-align: center; color: var(--fg); font-weight: 600; }
+
+/* Month: Calendar */
+.dsc .mon { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.dsc .mon .dow { font: 700 11px var(--font-family); color: var(--muted); text-align: center; }
+.dsc .mday { box-sizing: border-box; position: relative; min-height: 88px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 6px; display: grid; align-content: start; gap: 2px; cursor: pointer; font-size: 11.5px; min-width: 0; }
+.dsc .mday:hover { outline: 2px solid var(--accent); }
+.dsc .mday.today { box-shadow: inset 0 0 0 2px var(--navy); }
+.dsc .mday.up { z-index: 5; }
+.dsc .mday.dim { opacity: .45; cursor: default; outline: none; }
+.dsc .mday.pick { box-shadow: inset 0 0 0 2px var(--accent); }
+.dsc .mday.shut { background: var(--idle-bg); }
+.dsc .mnum { all: unset; cursor: pointer; font: 700 13px var(--font-family); justify-self: start; border-radius: 4px; }
+.dsc .mday .cnt { color: var(--info); font-weight: 700; }
+.dsc .mday .ln { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dsc .mday .svl { display: flex; align-items: center; gap: 2px; }
+.dsc .mday .svl .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.dsc .mday .svl b { margin-left: auto; font: 700 11px var(--mono); padding-left: 4px; white-space: nowrap; color: var(--fg); }
+.dsc .mday .svl b.cp-ok { color: var(--ok); }
+.dsc .mday .svl b.cp-low { color: var(--warn); }
+.dsc .mday .svl b.cp-none { color: var(--muted); }
+.dsc .mday .svl .sdot { margin: 0; }
+.dsc .mmore { all: unset; cursor: pointer; font: 700 11px var(--font-family); color: var(--accent); text-decoration: underline; justify-self: start; }
+.dsc .mpop { position: absolute; top: 4px; left: 4px; z-index: 6; width: 260px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(10, 20, 50, .22); padding: 10px; display: grid; gap: 3px; cursor: default; font-size: 12.5px; }
+.dsc .mpop.r { left: auto; right: 4px; }
+.dsc .mpop-f { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.dsc .mpop .btn { border: 1px solid var(--accent); background: var(--accent); color: var(--surface); border-radius: 8px; padding: 6px 12px; font: 700 12.5px var(--font-family); cursor: pointer; }
+.dsc .mpop .btn.sec { background: var(--surface); color: var(--accent); }
+.dsc .mplus { all: unset; position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border-radius: 999px; display: grid; place-items: center; font: 800 15px/1 var(--font-family); color: var(--accent); background: var(--surface); border: 1.5px solid var(--accent); cursor: pointer; opacity: .35; z-index: 2; }
+.dsc .mday:hover .mplus, .dsc .mplus:focus-visible { opacity: 1; }
+.dsc .mplus:hover { background: var(--accent); color: var(--surface); }
+
+/* Month: Grid (THE-23 4.3: bigger, full service names, uses the height of the screen) */
+.dsc .mx { overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); height: 100%; }
+.dsc .mxt { border-collapse: separate; border-spacing: 0; font-size: 13px; width: 100%; height: 100%; table-layout: fixed; }
+.dsc .mxt th, .dsc .mxt td { border-bottom: 1px solid var(--line); padding: 4px 1px; text-align: center; white-space: nowrap; background: var(--surface); }
+.dsc .mxt thead th { font: 700 12px var(--font-family); color: var(--muted); position: sticky; top: 0; z-index: 2; height: 40px; }
+.dsc .mxt thead th span { display: block; font-weight: 500; }
+.dsc .mxt thead th.today { color: var(--navy); box-shadow: inset 0 -2px 0 var(--navy); }
+.dsc .mxt .mxcol { width: 230px; }
+.dsc .mxt .mxs { position: sticky; left: 0; z-index: 1; text-align: left; padding: 4px 10px; font: 600 13.5px var(--font-family); color: var(--fg); box-shadow: 1px 0 0 var(--line); white-space: normal; line-height: 1.2; }
+.dsc .mxt thead th.mxs { z-index: 3; }
+.dsc .mxt .mxs small { color: var(--muted); font-weight: 500; }
+.dsc .mxt td.off { color: var(--muted); background: var(--idle-bg); }
+.dsc .mxd { all: unset; cursor: pointer; display: block; text-align: center; border-radius: 4px; padding: 1px 0; }
+.dsc .mxd:hover, .dsc .mxd:focus-visible { outline: 2px solid var(--accent); }
+.dsc .mxc { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; height: 100%; min-height: 34px; display: grid; align-content: center; justify-items: center; line-height: 1.15; padding: 2px 0; border-radius: 4px; font: 600 13px var(--mono); }
+.dsc .mxc small { font-size: 10.5px; color: var(--muted); font-weight: 500; }
+.dsc .mxc:hover, .dsc .mxc:focus-visible { outline: 2px solid var(--accent); }
+.dsc .mxc.cp-ok { background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.dsc .mxc.cp-low { background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.dsc .mxc.cp-full { background: var(--idle-bg); }
+.dsc .mxc.pick { outline: 2px solid var(--accent); }

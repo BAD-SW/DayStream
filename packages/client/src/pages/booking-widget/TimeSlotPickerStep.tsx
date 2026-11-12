@@ -13,7 +13,7 @@ interface Props {
 }
 
 /**
- * Mirrors BookingCreate.tsx's (admin) location/staff filter logic exactly, against the
+ * Mirrors the New Appointment screen's (admin) location/staff filter logic exactly, against the
  * same combinations endpoint — a location/staff filter row only renders when there's an
  * actual choice to make (more than one option); when there's exactly one, its name is
  * still shown as a resolved line so the visitor always sees who/where, even without a

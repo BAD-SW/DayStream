@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'async_hooks';
+import { peakParticipants } from './session-capacity';
 import { evaluateOnBooking } from './customer-lifecycle.service';
 import { adminPool } from '../db/pool';
 import { ColumnFilters, FilterableColumn, addColumnFilterConditions, columnValuesSql } from '../utils/column-filters';
@@ -19,6 +20,8 @@ interface CreateBookingInput {
   variantId: string;
   staffId?: string;
   resourceId?: string;
+  /** where it takes place (calendar location filter); default the business's primary location */
+  locationId?: string;
   startTime: string;     // ISO 8601
   notes?: string;
   createdBy: string;
@@ -193,7 +196,8 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
       ORDER BY l.is_primary DESC, l.created_at LIMIT 1`,
     [input.businessId, input.serviceId],
   );
-  const locationId = locRows[0]?.id;
+  // the location chosen when booking, else the first where the service is offered
+  const locationId = input.locationId || locRows[0]?.id;
   // Opening hours, shifts and availability patterns are wall-clock times where the business
   // is: read the appointment in the business's time zone, not on the UTC clock (which is off
   // by the zone's offset and, near midnight, on the wrong day).
@@ -419,15 +423,19 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
   // For shared/group: check capacity
   if (bookingType === 'shared' || bookingType === 'group') {
     const capacity = service.max_capacity || 1;
-    const { rows: countRows } = await adminPool.query(
-      `SELECT COALESCE(SUM(COALESCE(participant_count, 1)), 0)::int AS count FROM apt_bookings
+    // Shared rooms (CAL-17): people in the room at the same moment, whatever their start times.
+    // Group sessions: the bookings at the same start time.
+    const { rows: sessRows } = await adminPool.query(
+      `SELECT start_time, end_time, participant_count FROM apt_bookings
        WHERE service_id = $1 AND business_id = $2
-         AND start_time = $3 AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
+         AND ${bookingType === 'shared' ? 'start_time < $5 AND end_time > $3' : 'start_time = $3'}
+         AND status IN ('pending', 'confirmed', 'checked_in', 'in_progress')
          AND ($4::uuid IS NULL OR id <> $4)`,
-      [input.serviceId, input.businessId, startTime.toISOString(), excludedId()],
+      [input.serviceId, input.businessId, startTime.toISOString(), excludedId(), ...(bookingType === 'shared' ? [endTime.toISOString()] : [])],
     );
-    if (countRows[0].count + participantCount > capacity) {
-      const left = Math.max(capacity - countRows[0].count, 0);
+    const taken = bookingType === 'shared' ? peakParticipants(sessRows, startTime, endTime) : sessRows.reduce((n: number, r: any) => n + (r.participant_count || 1), 0);
+    if (taken + participantCount > capacity) {
+      const left = Math.max(capacity - taken, 0);
       throw new Error(left === 0 ? 'Session is at full capacity' : `Only ${left} place(s) left in this session — exceeds its capacity`);
     }
   }
@@ -456,18 +464,21 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
   // used by the widget when a business requires payment before confirmation, spec 38)
   const status = input.initialStatus || 'confirmed';
 
-  // Insert booking
+  // Insert booking (its location: the one chosen, else the business's primary location)
+  const bookingLocationId = locationId || (await adminPool.query(
+    "SELECT id FROM sys_locations WHERE business_id = $1 AND status = 'active' ORDER BY is_primary DESC, created_at LIMIT 1", [input.businessId],
+  )).rows[0]?.id || null;
   const { rows } = await adminPool.query(
     `INSERT INTO apt_bookings (business_id, customer_id, walk_in_name, service_id, variant_id, staff_id, resource_id,
-       start_time, end_time, buffer_before, buffer_after, status, booking_reference, booking_type, price, notes, created_by, participant_count, source)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+       start_time, end_time, buffer_before, buffer_after, status, booking_reference, booking_type, price, notes, created_by, participant_count, source, location_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
      RETURNING *`,
     [
       input.businessId, input.customerId || null, input.walkInName || null, input.serviceId, input.variantId,
       staffId, resourceId,
       startTime.toISOString(), endTime.toISOString(),
       bufferBefore, bufferAfter, status, bookingReference, bookingType, price,
-      input.notes || null, input.createdBy, participantCount, input.source || 'admin',
+      input.notes || null, input.createdBy, participantCount, input.source || 'admin', bookingLocationId,
     ],
   );
 
