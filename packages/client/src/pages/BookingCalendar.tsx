@@ -1,7 +1,8 @@
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { newAppointmentPath, editAppointmentPath } from './AppointmentPage';
 import * as bookingsApi from '../api/bookings';
-import { AppointmentWindow, CustomerPicker, ServicePicker, OptionChips, ParticipantsField, useBookableServices, useCombos } from '../components/booking/AppointmentWindow';
+import { CustomerPicker, ServicePicker, OptionChips, ParticipantsField, useBookableServices, useCombos } from '../components/booking/AppointmentWindow';
 import type { AppointmentPrefill, SvcItem } from '../components/booking/AppointmentWindow';
 import { dayLabel, initials } from '../utils/zonedTime';
 import '../components/booking/AppointmentWindow.css';
@@ -306,14 +307,18 @@ interface NewBookingDraft { date: string; time: string | null; serviceId?: strin
 
 export function BookingCalendar() {
   const navigate = useNavigate();
-  const [view, setView] = useState<'day' | 'week' | 'month'>('day'); // opens on today's Day view
-  const [by, setBy] = useState<'service' | 'staff'>('service');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const location = useLocation();
+  // Coming back from the New / Edit Appointment screen: the same day, view and columns (in the address).
+  const [initial] = useState(() => new URLSearchParams(location.search));
+  const [view, setView] = useState<'day' | 'week' | 'month'>(() => { const v = initial.get('view'); return v === 'week' || v === 'month' ? v : 'day'; }); // opens on today's Day view
+  const [by, setBy] = useState<'service' | 'staff'>(() => (initial.get('by') === 'staff' ? 'staff' : 'service'));
+  const [date, setDate] = useState(() => { const d = initial.get('date'); return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : new Date().toISOString().slice(0, 10); });
   const [calendarData, setCalendarData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [businessTimezone, setBusinessTimezone] = useState('UTC');
   const [reload, setReload] = useState(0);
-  const [toast, setToast] = useState('');
+  // The message of a booking just saved on the New / Edit Appointment screen.
+  const [toast, setToast] = useState(() => (location.state as { toast?: string } | null)?.toast || '');
 
   const businessId = localStorage.getItem('business_id') || '';
 
@@ -346,8 +351,11 @@ export function BookingCalendar() {
   const [draft, setDraft] = useState<NewBookingDraft | null>(null);
   const [ghostLen, setGhostLen] = useState(30);
   const [ghostLabel, setGhostLabel] = useState('');
-  // The New / Edit Appointment window (round 8) over the calendar: + New appointment, More options, a booking clicked
-  const [win, setWin] = useState<{ mode: 'new' | 'edit'; bookingId?: string; prefill?: AppointmentPrefill } | null>(null);
+  // + New appointment, More options and a booking clicked open the one New / Edit Appointment screen,
+  // which comes back here on the same day, view and columns.
+  const here = `/bookings/calendar?date=${date}&view=${view}&by=${by}`;
+  const openNew = (p: AppointmentPrefill) => navigate(newAppointmentPath({ ...p, customerId: p.customerId || p.customer?.id }, here));
+  const openEdit = (id: string) => navigate(editAppointmentPath(id, here));
   const bookable = useBookableServices(businessId);
 
   useEffect(() => {
@@ -462,7 +470,10 @@ export function BookingCalendar() {
           {seg('view', view, [['day', 'Day'], ['week', 'Week'], ['month', 'Month']], (v) => { setDraft(null); setView(v as any); }, 'View')}
           {view === 'day' && <><span className="lab">By</span>{seg('by', by, [['service', 'Service'], ['staff', 'Staff']], (v) => { setDraft(null); setBy(v as any); }, 'Columns')}</>}
           {view === 'month' && seg('mo', monthLayout, [['calendar', 'Calendar'], ['grid', 'Grid']], (v) => setMonthLayout(v as any), 'Month layout')}
-          <button type="button" className="btn" onClick={() => { setDraft(null); setWin({ mode: 'new', prefill: { date: date < zonedParts(new Date(), businessTimezone).date ? undefined : date, serviceId: singleService, locationId: locations.length > 1 ? loc : undefined } }); }}>+ New appointment</button>
+          <button type="button" className="nav" onClick={() => { setDraft(null); openNew({ date: date < zonedParts(new Date(), businessTimezone).date ? undefined : date, serviceId: singleService, locationId: locations.length > 1 ? loc : undefined }); }}>+ New appointment</button>
+          {/* As on the list: sell without an appointment, and look up past sales */}
+          <button type="button" className="nav" onClick={() => navigate('/checkout?new=true')}>New Sale</button>
+          <button type="button" className="nav" onClick={() => navigate('/orders')}>Orders</button>
         </div>
       </div>
 
@@ -515,7 +526,7 @@ export function BookingCalendar() {
             })}
             dayHours={dayHours}
             colorMap={colorMap}
-            onBookingClick={(id) => { setDraft(null); setWin({ mode: 'edit', bookingId: id }); }}
+            onBookingClick={(id) => { setDraft(null); openEdit(id); }}
             ghost={ghost}
           />
         );
@@ -547,7 +558,7 @@ export function BookingCalendar() {
             })}
             dayHours={dayHours}
             colorMap={colorMap}
-            onBookingClick={(id) => { setDraft(null); setWin({ mode: 'edit', bookingId: id }); }}
+            onBookingClick={(id) => { setDraft(null); openEdit(id); }}
             ghost={ghost}
             maxPerTime={3}
             onMore={(d) => { setDraft(null); setDate(d); setView('day'); }}
@@ -572,19 +583,7 @@ export function BookingCalendar() {
           onLabel={setGhostLabel}
           onClose={() => setDraft(null)}
           onCreated={(msg) => { setDraft(null); setToast(msg); setReload((n) => n + 1); }}
-          onMore={(p) => { setDraft(null); setWin({ mode: 'new', prefill: p }); }}
-        />
-      )}
-      {win && (
-        <AppointmentWindow
-          businessId={businessId}
-          timezone={businessTimezone}
-          mode={win.mode}
-          bookingId={win.bookingId}
-          prefill={win.prefill}
-          inWindow
-          onClose={() => setWin(null)}
-          onSaved={(msg) => { setWin(null); setToast(msg); setReload((n) => n + 1); }}
+          onMore={(p) => { setDraft(null); openNew(p); }}
         />
       )}
       {toast && <div role="status" style={styles.toast}>{toast}</div>}
@@ -743,7 +742,13 @@ function NewBookingPopup({ businessId, timezone, draft, services, locationId: ca
   const pickedStaff = staffId !== 'any' && staffFree.some(([id]) => id === staffId) ? staffId : 'any';
   const chosen = atTime.find((c) => (!multiLoc || c.location_id === loc) && (pickedStaff === 'any' || c.staff_id === pickedStaff)) || null;
   const colStaffBusy = !!draft.staffId && staffId === draft.staffId && !!time && atTime.length > 0 && !staffFree.some(([id]) => id === draft.staffId);
-  const canCreate = !!chosen && (walk || !!customer) && !(multiLoc && !loc) && !saving;
+  // A walk-in is already here: booked for today only (the server refuses another day too).
+  const walkNotToday = walk && draft.date !== zonedParts(new Date(), timezone).date;
+  const canCreate = !!chosen && (walk || !!customer) && !(multiLoc && !loc) && !saving && !walkNotToday;
+  // Reservation Payment Rule (spec 51, gap 5): a service that needs a card or a payment goes on in the
+  // full window (its card or payment step), with everything chosen here carried over.
+  const needsMore = !!svc && svc.payment_rule !== 'no_card' && !(svc.payment_rule === 'card_required' && walk);
+  const more = () => onMore({ date: draft.date, time, serviceId: serviceId || undefined, variantId: variantId || undefined, staffId: pickedStaff !== 'any' ? pickedStaff : draft.staffId, locationId: loc || undefined, customer, walkIn: walk, walkInName: walkName, participants: parts });
 
   const W = 380;
   const left = draft.x + 8 + W <= window.innerWidth - 12 ? draft.x + 8 : Math.max(12, (draft.left ?? draft.x) - W - 8);
@@ -806,13 +811,16 @@ function NewBookingPopup({ businessId, timezone, draft, services, locationId: ca
         ? <div className="mk-f"><div className="mk-l">Staff</div><p className="mk-hint">Choose a location first: the staff free there appear here.</p></div>
         : staffFree.length ? pickRow('staff', staffFree, pickedStaff, setStaffId) : <div className="mk-f"><div className="mk-l">Staff</div><p className="mk-warn">Nobody is free at this time.</p></div>)}
       {colStaffBusy && <p className="mk-warn">The staff member of this column is not free then; choose someone else or another time.</p>}
+      {walkNotToday && <p className="mk-warn">A walk-in is booked for today only. For {dayLabel(draft.date)}, choose or add the customer.</p>}
       {multiLoc && time && atTime.length > 0 && !loc && <p className="mk-hint">Choose a location.</p>}
       {error && <p className="mk-warn" role="alert">{error}</p>}
       <div className="pop-act">
-        <button type="button" className="more" onClick={() => onMore({ date: draft.date, time, serviceId: serviceId || undefined, variantId: variantId || undefined, staffId: pickedStaff !== 'any' ? pickedStaff : draft.staffId, locationId: loc || undefined, customer, walkIn: walk, walkInName: walkName, participants: parts })}>More options ⤢</button>
+        <button type="button" className="more" onClick={more}>More options ⤢</button>
         <span>
           <button type="button" className="btn sec" onClick={onClose}>Cancel</button>
-          <button type="button" className="btn" disabled={!canCreate} onClick={create}>{saving ? 'Creating…' : 'Create'}</button>
+          {needsMore
+            ? <button type="button" className="btn" disabled={!canCreate} onClick={more}>Next: payment ›</button>
+            : <button type="button" className="btn" disabled={!canCreate} onClick={create}>{saving ? 'Creating…' : 'Create'}</button>}
         </span>
       </div>
     </div>
@@ -993,28 +1001,28 @@ function getTimeRangePosition(startISO: string, endISO: string, timezone: string
 
 const styles: Record<string, React.CSSProperties> = {
   page: { maxWidth: '1400px', margin: '0 auto', position: 'relative' as const, height: 'calc(100vh - 76px - var(--space-sm) - var(--space-2xl) - 22px)', display: 'flex', flexDirection: 'column' as const, minHeight: '420px' },
-  header: { marginBottom: '10px', flexShrink: 0 },
+  header: { marginBottom: 'var(--space-sm)', flexShrink: 0 },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, fontFamily: 'var(--font-family)', marginBottom: 'var(--space-sm)', display: 'block' },
   title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', margin: 0 },
-  controls: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' as const, gap: '10px', flexShrink: 0 },
-  viewToggle: { display: 'flex', border: '1px solid var(--color-divider, #E1E5EE)', borderRadius: '8px', overflow: 'hidden', background: 'var(--color-surface, #fff)' },
-  viewBtn: { background: 'none', border: 'none', padding: '0 14px', height: '36px', fontSize: '15px', fontWeight: 600, color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
-  viewBtnActive: { background: 'var(--color-primary, #0F1F5C)', color: 'var(--color-primary-contrast, #fff)' },
-  dateNav: { display: 'flex', alignItems: 'center', gap: '8px' },
-  dateLabel: { fontSize: '18px', fontWeight: 700, color: 'var(--color-text)', marginLeft: '8px' },
-  navBtn: { background: 'var(--color-surface, #fff)', border: '1px solid var(--color-divider, #E1E5EE)', borderRadius: '8px', width: '36px', height: '36px', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: '16px', fontWeight: 700 },
-  todayBtn: { background: 'var(--color-surface, #fff)', border: '1px solid var(--color-divider, #E1E5EE)', borderRadius: '8px', padding: '0 14px', height: '36px', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: '15px', fontWeight: 600 },
+  controls: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)', flexWrap: 'wrap' as const, gap: 'var(--space-sm)', flexShrink: 0 },
+  viewToggle: { display: 'flex', border: '1px solid var(--color-divider)', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'var(--color-surface)' },
+  viewBtn: { background: 'none', border: 'none', padding: '0 var(--space-md)', height: '36px', fontSize: 'var(--font-size-body)', fontWeight: 600, color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  viewBtnActive: { background: 'var(--color-primary)', color: 'var(--color-primary-contrast)' },
+  dateNav: { display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' },
+  dateLabel: { fontSize: 'var(--font-size-lg)', fontWeight: 700, color: 'var(--color-text)', marginLeft: 'var(--space-sm)' },
+  navBtn: { background: 'var(--color-surface)', border: '1px solid var(--color-divider)', borderRadius: 'var(--radius-md)', width: '36px', height: '36px', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-base)', fontWeight: 700 },
+  todayBtn: { background: 'var(--color-surface)', border: '1px solid var(--color-divider)', borderRadius: 'var(--radius-md)', padding: '0 var(--space-md)', height: '36px', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-body)', fontWeight: 600 },
   empty: { color: 'var(--color-text-secondary)', textAlign: 'center', padding: 'var(--space-xl)', fontSize: 'var(--font-size-sm)' },
 
   fitBody: { flex: 1, minHeight: 0, overflowY: 'auto' as const },
   dot: { display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', flexShrink: 0 },
-  quickFilterAllOn: { background: 'var(--color-primary, #0F1F5C)', borderColor: 'var(--color-primary, #0F1F5C)', color: 'var(--color-primary-contrast, #fff)', fontWeight: 600 },
-  quickFilterChipOn: { borderColor: 'var(--color-primary, #0F1F5C)', boxShadow: 'inset 0 0 0 1px var(--color-primary, #0F1F5C)', fontWeight: 600 },
-  colPagerText: { fontSize: '15px', color: 'var(--color-text)', whiteSpace: 'nowrap' as const },
-  colDots: { display: 'inline-flex', gap: '5px' },
-  colDot: { width: '9px', height: '9px', borderRadius: '50%', border: 0, padding: 0, background: 'var(--color-divider, #E1E5EE)', cursor: 'pointer' },
-  colDotOn: { background: 'var(--color-primary, #0F1F5C)' },
-  legendSwatch: { display: 'inline-block', width: '10px', height: '10px', borderRadius: '3px', flexShrink: 0 },
+  quickFilterAllOn: { background: 'var(--color-primary)', borderColor: 'var(--color-primary)', color: 'var(--color-primary-contrast)', fontWeight: 600 },
+  quickFilterChipOn: { borderColor: 'var(--color-primary)', boxShadow: 'inset 0 0 0 1px var(--color-primary)', fontWeight: 600 },
+  colPagerText: { fontSize: 'var(--font-size-body)', color: 'var(--color-text)', whiteSpace: 'nowrap' as const },
+  colDots: { display: 'inline-flex', gap: 'var(--space-xs)' },
+  colDot: { width: '9px', height: '9px', borderRadius: '50%', border: 0, padding: 0, background: 'var(--color-divider)', cursor: 'pointer' },
+  colDotOn: { background: 'var(--color-primary)' },
+  legendSwatch: { display: 'inline-block', width: '10px', height: '10px', borderRadius: 'var(--radius-sm)', flexShrink: 0 },
 
   // Capacity badge
   participantBadge: { display: 'block', fontSize: 'var(--font-size-xs)', opacity: 0.85, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
@@ -1023,47 +1031,47 @@ const styles: Record<string, React.CSSProperties> = {
   // over time, independent of any individual booking block.
 
   // Quick filter bar — JIRA-quick-filter-style pill buttons, shared by day/week/month views.
-  quickFilterBar: { display: 'flex', flexWrap: 'nowrap' as const, alignItems: 'center', gap: '8px', overflow: 'hidden', minWidth: 0, flex: 1 },
-  row2: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: '12px', minHeight: '36px', flexShrink: 0 },
-  colPager: { display: 'inline-flex', alignItems: 'center', gap: '10px', flexShrink: 0 },
-  byLabel: { fontSize: '12px', fontWeight: 600, letterSpacing: '.06em', color: 'var(--color-text-secondary)' },
-  newBtn: { background: 'var(--color-primary-hover, #1B3597)', color: 'var(--color-primary-contrast, #fff)', border: 0, borderRadius: '8px', padding: '0 18px', height: '38px', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: '15px', fontWeight: 700 },
-  gridWrap: { border: '1px solid var(--color-divider, #E1E5EE)', borderRadius: '10px', overflow: 'hidden', background: 'var(--color-surface, #fff)', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' as const },
-  gridHead: { display: 'grid', borderBottom: '1px solid var(--color-divider, #E1E5EE)', background: 'var(--color-background, #F4F6FA)', position: 'sticky' as const, top: 0, zIndex: 6 },
+  quickFilterBar: { display: 'flex', flexWrap: 'nowrap' as const, alignItems: 'center', gap: 'var(--space-sm)', overflow: 'hidden', minWidth: 0, flex: 1 },
+  row2: { display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-sm)', minHeight: '36px', flexShrink: 0 },
+  colPager: { display: 'inline-flex', alignItems: 'center', gap: 'var(--space-sm)', flexShrink: 0 },
+  byLabel: { fontSize: 'var(--font-size-xs)', fontWeight: 600, letterSpacing: '.06em', color: 'var(--color-text-secondary)' },
+  newBtn: { background: 'var(--color-primary-hover)', color: 'var(--color-primary-contrast)', border: 0, borderRadius: 'var(--radius-md)', padding: '0 var(--space-md)', height: '38px', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-body)', fontWeight: 700 },
+  gridWrap: { border: '1px solid var(--color-divider)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', background: 'var(--color-surface)', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' as const },
+  gridHead: { display: 'grid', borderBottom: '1px solid var(--color-divider)', background: 'var(--color-background)', position: 'sticky' as const, top: 0, zIndex: 6 },
   gridScroll: { position: 'relative' as const, flex: 1, minHeight: 0, overflowY: 'auto' as const },
-  gridCol: { position: 'relative' as const, borderLeft: '1px solid var(--color-divider, #E1E5EE)' },
-  colHead: { padding: '10px 8px', display: 'flex', flexWrap: 'wrap' as const, alignItems: 'center', justifyContent: 'center', gap: '2px 6px', minWidth: 0, fontSize: '15px', fontWeight: 700, color: 'var(--color-text)', textAlign: 'center' as const },
+  gridCol: { position: 'relative' as const, borderLeft: '1px solid var(--color-divider)' },
+  colHead: { padding: 'var(--space-sm) var(--space-sm)', display: 'flex', flexWrap: 'wrap' as const, alignItems: 'center', justifyContent: 'center', gap: '2px var(--space-sm)', minWidth: 0, fontSize: 'var(--font-size-body)', fontWeight: 700, color: 'var(--color-text)', textAlign: 'center' as const },
   colHeadName: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, minWidth: 0 },
-  colHeadSub: { flexBasis: '100%', fontSize: '13px', fontWeight: 400, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center' as const },
-  weekHeadBtn: { width: '100%', background: 'none', border: 0, padding: '2px', cursor: 'pointer', color: 'inherit', font: 'inherit', fontWeight: 700, borderRadius: '6px', textAlign: 'center' as const },
-  timeLab: { position: 'absolute' as const, left: 0, right: '8px', textAlign: 'right' as const, fontSize: '14px', color: 'var(--color-text-secondary)', paddingTop: '6px', lineHeight: 1 },
-  ghost: { position: 'absolute' as const, left: '3px', right: '3px', border: '2px dashed var(--color-primary, #2446a8)', borderRadius: '6px', background: 'color-mix(in srgb, var(--color-primary, #2446a8) 8%, transparent)', color: 'var(--color-primary, #2446a8)', fontSize: '11px', fontWeight: 700, padding: '2px 6px', zIndex: 3, pointerEvents: 'none' as const, boxSizing: 'border-box' as const },
-  nowLine: { position: 'absolute' as const, left: 0, right: 0, height: 0, borderTop: '2px solid var(--color-error, #c0392b)', zIndex: 4, pointerEvents: 'none' as const },
-  toast: { position: 'fixed' as const, bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-text, #1a1a1a)', color: 'var(--color-background, #fff)', padding: '10px 16px', borderRadius: '10px', fontSize: 'var(--font-size-sm)', zIndex: 60, boxShadow: '0 8px 30px rgba(0,0,0,.25)' },
-  pop: { position: 'fixed' as const, zIndex: 50, background: 'var(--color-surface, #fff)', color: 'var(--color-text)', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 16px 48px rgba(10,20,50,.25)', padding: '14px', display: 'grid', gap: '10px', maxHeight: 'calc(100vh - 24px)', overflowY: 'auto' as const, boxSizing: 'border-box' as const },
-  popHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' },
-  popSub: { fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 400 },
-  popField: { display: 'grid', gap: '5px' },
+  colHeadSub: { flexBasis: '100%', fontSize: 'var(--font-size-small)', fontWeight: 400, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center' as const },
+  weekHeadBtn: { width: '100%', background: 'none', border: 0, padding: '2px', cursor: 'pointer', color: 'inherit', font: 'inherit', fontWeight: 700, borderRadius: 'var(--radius-md)', textAlign: 'center' as const },
+  timeLab: { position: 'absolute' as const, left: 0, right: '8px', textAlign: 'right' as const, fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', paddingTop: 'var(--space-sm)', lineHeight: 1 },
+  ghost: { position: 'absolute' as const, left: '3px', right: '3px', border: '2px dashed var(--color-primary)', borderRadius: 'var(--radius-md)', background: 'color-mix(in srgb, var(--color-primary) 8%, transparent)', color: 'var(--color-primary)', fontSize: 'var(--font-size-xs)', fontWeight: 700, padding: '2px var(--space-sm)', zIndex: 3, pointerEvents: 'none' as const, boxSizing: 'border-box' as const },
+  nowLine: { position: 'absolute' as const, left: 0, right: 0, height: 0, borderTop: '2px solid var(--color-error)', zIndex: 4, pointerEvents: 'none' as const },
+  toast: { position: 'fixed' as const, bottom: '24px', left: '50%', transform: 'translateX(-50%)', background: 'var(--color-text)', color: 'var(--color-background)', padding: 'var(--space-sm) var(--space-md)', borderRadius: 'var(--radius-lg)', fontSize: 'var(--font-size-sm)', zIndex: 60, boxShadow: '0 8px 30px rgba(0,0,0,.25)' },
+  pop: { position: 'fixed' as const, zIndex: 50, background: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', boxShadow: '0 16px 48px rgba(10,20,50,.25)', padding: 'var(--space-md)', display: 'grid', gap: 'var(--space-sm)', maxHeight: 'calc(100vh - 24px)', overflowY: 'auto' as const, boxSizing: 'border-box' as const },
+  popHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 'var(--space-sm)' },
+  popSub: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontWeight: 400 },
+  popField: { display: 'grid', gap: 'var(--space-xs)' },
   popLabelRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  popLabel: { fontSize: '12px', fontWeight: 700, color: 'var(--color-text)' },
-  popCheck: { display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--color-text-secondary)', cursor: 'pointer' },
-  popInput: { width: '100%', boxSizing: 'border-box' as const, padding: '7px 9px', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-background, #fff)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
-  popPicked: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 9px', border: '1px solid var(--color-border)', borderRadius: '8px', fontSize: 'var(--font-size-sm)' },
-  popX: { background: 'none', border: 0, fontSize: '18px', cursor: 'pointer', color: 'var(--color-text-secondary)' },
-  popResults: { position: 'absolute' as const, top: '100%', left: 0, right: 0, zIndex: 2, background: 'var(--color-surface, #fff)', border: '1px solid var(--color-border)', borderRadius: '8px', boxShadow: '0 8px 24px rgba(10,20,50,.18)', display: 'grid', maxHeight: '200px', overflowY: 'auto' as const },
-  popResult: { textAlign: 'left' as const, background: 'none', border: 0, borderBottom: '1px solid var(--color-border)', padding: '7px 9px', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
-  popChips: { display: 'flex', flexWrap: 'wrap' as const, gap: '6px' },
-  popChip: { border: '1px solid var(--color-border)', background: 'var(--color-background, #fff)', color: 'var(--color-text)', borderRadius: '999px', padding: '4px 11px', fontSize: '12px', cursor: 'pointer', fontFamily: 'var(--font-family)' },
-  popChipOn: { background: 'var(--color-primary, #13235b)', borderColor: 'var(--color-primary, #13235b)', color: 'var(--color-primary-contrast, #fff)', fontWeight: 600 },
-  popWarn: { margin: 0, fontSize: '12px', color: 'var(--color-warning-text, #8f5600)' },
-  popHint: { margin: 0, fontSize: '12px', color: 'var(--color-text-secondary)' },
-  popActions: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '2px' },
-  popLink: { background: 'none', border: 0, padding: 0, color: 'var(--color-primary, #2446a8)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', textDecoration: 'underline' },
-  pillPager: { display: 'inline-flex', alignItems: 'center', gap: '4px', flexShrink: 0 },
-  pillPagerBtn: { border: '1px solid var(--color-divider, #E1E5EE)', background: 'var(--color-surface, #fff)', color: 'var(--color-text)', borderRadius: '8px', width: '28px', height: '28px', padding: 0, fontSize: '15px', fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-family)' },
-  pillPagerText: { fontSize: '14px', fontWeight: 600, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' as const, flexShrink: 0 },
-  quickFilterChip: { flexShrink: 0, whiteSpace: 'nowrap' as const, display: 'inline-flex', alignItems: 'center', gap: '8px', height: '32px', padding: '0 14px', borderRadius: '999px', border: '1px solid var(--color-divider, #E1E5EE)', background: 'var(--color-surface, #fff)', color: 'var(--color-text)', fontSize: '14px', fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-family)' },
-  quickFilterChipActive: { background: 'var(--color-primary, #0F1F5C)', borderColor: 'var(--color-primary, #0F1F5C)', color: 'var(--color-primary-contrast, #fff)', fontWeight: 600 },
+  popLabel: { fontSize: 'var(--font-size-xs)', fontWeight: 700, color: 'var(--color-text)' },
+  popCheck: { display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer' },
+  popInput: { width: '100%', boxSizing: 'border-box' as const, padding: 'var(--space-sm) var(--space-sm)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-background)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
+  popPicked: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-sm) var(--space-sm)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)' },
+  popX: { background: 'none', border: 0, fontSize: 'var(--font-size-lg)', cursor: 'pointer', color: 'var(--color-text-secondary)' },
+  popResults: { position: 'absolute' as const, top: '100%', left: 0, right: 0, zIndex: 2, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', boxShadow: '0 8px 24px rgba(10,20,50,.18)', display: 'grid', maxHeight: '200px', overflowY: 'auto' as const },
+  popResult: { textAlign: 'left' as const, background: 'none', border: 0, borderBottom: '1px solid var(--color-border)', padding: 'var(--space-sm) var(--space-sm)', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
+  popChips: { display: 'flex', flexWrap: 'wrap' as const, gap: 'var(--space-sm)' },
+  popChip: { border: '1px solid var(--color-border)', background: 'var(--color-background)', color: 'var(--color-text)', borderRadius: 'var(--radius-full)', padding: 'var(--space-xs) var(--space-sm)', fontSize: 'var(--font-size-xs)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  popChipOn: { background: 'var(--color-primary)', borderColor: 'var(--color-primary)', color: 'var(--color-primary-contrast)', fontWeight: 600 },
+  popWarn: { margin: 0, fontSize: 'var(--font-size-xs)', color: 'var(--color-warning-text)' },
+  popHint: { margin: 0, fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
+  popActions: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-sm)', marginTop: '2px' },
+  popLink: { background: 'none', border: 0, padding: 0, color: 'var(--color-primary)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', textDecoration: 'underline' },
+  pillPager: { display: 'inline-flex', alignItems: 'center', gap: 'var(--space-xs)', flexShrink: 0 },
+  pillPagerBtn: { border: '1px solid var(--color-divider)', background: 'var(--color-surface)', color: 'var(--color-text)', borderRadius: 'var(--radius-md)', width: '28px', height: '28px', padding: 0, fontSize: 'var(--font-size-body)', fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  pillPagerText: { fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' as const, flexShrink: 0 },
+  quickFilterChip: { flexShrink: 0, whiteSpace: 'nowrap' as const, display: 'inline-flex', alignItems: 'center', gap: 'var(--space-sm)', height: '32px', padding: '0 var(--space-md)', borderRadius: 'var(--radius-full)', border: '1px solid var(--color-divider)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 'var(--font-size-sm)', fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  quickFilterChipActive: { background: 'var(--color-primary)', borderColor: 'var(--color-primary)', color: 'var(--color-primary-contrast)', fontWeight: 600 },
 
   // Day view — per-service column grid
   // Week view summary mode — one bar per merged booked-hour-range, no per-booking detail.
@@ -1072,11 +1080,11 @@ const styles: Record<string, React.CSSProperties> = {
   // Stripe colour is pre-blended with transparent (not a parent `opacity`) so the label text
   // sitting on top stays fully legible instead of fading with the background.
   resourceBlockOverlay: {
-    position: 'absolute' as const, left: 0, right: 0, boxSizing: 'border-box' as const, borderRadius: '3px',
+    position: 'absolute' as const, left: 0, right: 0, boxSizing: 'border-box' as const, borderRadius: 'var(--radius-sm)',
     border: '1px solid var(--color-error)', zIndex: 0, pointerEvents: 'none' as const,
     background: 'repeating-linear-gradient(45deg, color-mix(in srgb, var(--color-error) 22%, transparent) 0, color-mix(in srgb, var(--color-error) 22%, transparent) 5px, transparent 5px, transparent 10px)',
   },
-  resourceBlockLabel: { position: 'absolute' as const, top: '2px', left: '2px', right: '2px', fontSize: 'var(--font-size-xs)', fontWeight: 700, color: 'var(--color-error)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis', background: 'var(--color-background)', borderRadius: '2px', padding: '0 2px' },
+  resourceBlockLabel: { position: 'absolute' as const, top: '2px', left: '2px', right: '2px', fontSize: 'var(--font-size-xs)', fontWeight: 700, color: 'var(--color-error)', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis', background: 'var(--color-background)', borderRadius: 'var(--radius-sm)', padding: '0 2px' },
 
   // Time grid (shared by day/week)
 
@@ -1085,38 +1093,38 @@ const styles: Record<string, React.CSSProperties> = {
   // per-booking with a payment-status colour (item 3c-b) so it reads as a distinct signal from
   // the block's own service-colour fill.
   // Booking box (hub design): light tint of the service colour, service-colour left edge, dark text; a small dot = payment status
-  bookingBlock: { position: 'absolute' as const, borderRadius: '6px', padding: '4px 10px', overflow: 'hidden', fontSize: '14px', fontWeight: 600, color: 'var(--color-text)', zIndex: 1, border: '2px solid var(--color-surface, #FFF)', borderLeft: '3px solid', boxSizing: 'border-box' as const, display: 'flex', alignItems: 'center', lineHeight: 1.25 },
+  bookingBlock: { position: 'absolute' as const, borderRadius: 'var(--radius-md)', padding: 'var(--space-xs) var(--space-sm)', overflow: 'hidden', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text)', zIndex: 1, border: '2px solid var(--color-surface)', borderLeft: '3px solid', boxSizing: 'border-box' as const, display: 'flex', alignItems: 'center', lineHeight: 1.25 },
   blockLabel: { overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flex: 1 },
-  moreBox: { position: 'absolute' as const, height: '22px', zIndex: 2, border: '1px solid var(--color-border)', borderRadius: '6px', background: 'var(--color-surface, #f3f4f7)', color: 'var(--color-text)', fontSize: '12px', fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-family)' },
+  moreBox: { position: 'absolute' as const, height: '22px', zIndex: 2, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 'var(--font-size-xs)', fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-family)' },
   blockTime: { fontWeight: 600, fontSize: 'var(--font-size-xs)', display: 'block' },
   blockTitle: { display: 'block', whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
   blockSub: { display: 'block', fontSize: 'var(--font-size-xs)', opacity: 0.8, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
 
   // Week view
-  todayHeader: { color: 'var(--color-primary-hover, #1B3597)', textDecoration: 'underline', textUnderlineOffset: '4px' },
+  todayHeader: { color: 'var(--color-primary-hover)', textDecoration: 'underline', textUnderlineOffset: '4px' },
   weekDayName: { display: 'block', fontWeight: 500 },
   weekDayNum: { display: 'block', fontSize: 'var(--font-size-base)', fontWeight: 600 },
 
   // Month view
-  monthHeader: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--color-border)', marginBottom: '4px' },
-  monthHeaderCell: { textAlign: 'center' as const, padding: '8px', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)' },
+  monthHeader: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--color-border)', marginBottom: 'var(--space-xs)' },
+  monthHeaderCell: { textAlign: 'center' as const, padding: 'var(--space-sm)', fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)' },
   monthGrid: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' },
-  monthSvcLine: { display: 'flex', alignItems: 'center', gap: '3px', fontSize: '11px', minWidth: 0 },
+  monthSvcLine: { display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', fontSize: 'var(--font-size-xs)', minWidth: 0 },
   monthSvcName: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, flex: 1, minWidth: 0, color: 'var(--color-text-secondary)' },
-  monthMore: { background: 'none', border: 0, padding: 0, color: 'var(--color-primary, #2446a8)', fontSize: '11px', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer', alignSelf: 'flex-start' as const },
-  monthPop: { position: 'absolute' as const, top: '4px', left: '4px', zIndex: 5, width: '240px', background: 'var(--color-surface, #fff)', border: '1px solid var(--color-border)', borderRadius: '10px', boxShadow: '0 12px 40px rgba(10,20,50,.22)', padding: '10px', display: 'grid', gap: '3px', cursor: 'default' },
-  mgTable: { width: '100%', tableLayout: 'fixed' as const, borderCollapse: 'separate' as const, borderSpacing: 0, fontSize: '11px' },
-  mgName: { position: 'sticky' as const, left: 0, background: 'var(--color-surface, #fff)', textAlign: 'left' as const, padding: '3px 6px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, borderBottom: '1px solid var(--color-border)' },
-  mgHead: { fontSize: '10px', fontWeight: 700, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', padding: '2px 0' },
+  monthMore: { background: 'none', border: 0, padding: 0, color: 'var(--color-primary)', fontSize: 'var(--font-size-xs)', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer', alignSelf: 'flex-start' as const },
+  monthPop: { position: 'absolute' as const, top: '4px', left: '4px', zIndex: 5, width: '240px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', boxShadow: '0 12px 40px rgba(10,20,50,.22)', padding: 'var(--space-sm)', display: 'grid', gap: 'var(--space-xs)', cursor: 'default' },
+  mgTable: { width: '100%', tableLayout: 'fixed' as const, borderCollapse: 'separate' as const, borderSpacing: 0, fontSize: 'var(--font-size-xs)' },
+  mgName: { position: 'sticky' as const, left: 0, background: 'var(--color-surface)', textAlign: 'left' as const, padding: 'var(--space-xs) var(--space-sm)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, borderBottom: '1px solid var(--color-border)' },
+  mgHead: { fontSize: 'var(--font-size-xs)', fontWeight: 700, color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)', padding: '2px 0' },
   mgDay: { background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', width: '100%' },
   mgCell: { textAlign: 'center' as const, borderBottom: '1px solid var(--color-border)', padding: '2px 0' },
-  mgBtn: { background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit', fontSize: '11px', width: '100%', lineHeight: 1.1 },
-  monthCell: { position: 'relative' as const, minHeight: '80px', border: '1px solid var(--color-border)', borderRadius: '4px', padding: '4px 6px', display: 'flex', flexDirection: 'column' as const, gap: '2px' },
+  mgBtn: { background: 'none', border: 0, padding: 0, cursor: 'pointer', font: 'inherit', fontSize: 'var(--font-size-xs)', width: '100%', lineHeight: 1.1 },
+  monthCell: { position: 'relative' as const, minHeight: '80px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: 'var(--space-xs) var(--space-sm)', display: 'flex', flexDirection: 'column' as const, gap: '2px' },
   monthCellClosed: { background: 'var(--color-surface-muted, rgba(120,130,150,.16))' },
-  monthCellPicked: { outline: '2px dashed var(--color-primary, #2446a8)', outlineOffset: '-2px' },
+  monthCellPicked: { outline: '2px dashed var(--color-primary)', outlineOffset: '-2px' },
   monthClosed: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
   mgOff: { background: 'var(--color-surface-muted, rgba(120,130,150,.16))', color: 'var(--color-text-secondary)' },
-  monthCellToday: { background: 'rgba(201, 169, 110, 0.1)', borderColor: 'var(--color-accent, #C9A96E)' },
+  monthCellToday: { background: 'rgba(201, 169, 110, 0.1)', borderColor: 'var(--color-accent)' },
   monthCellDay: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text)' },
-  monthCellCount: { fontSize: 'var(--font-size-xs)', color: 'var(--color-accent-contrast, #fff)', fontWeight: 600, background: 'var(--color-accent, #C9A96E)', borderRadius: '4px', padding: '2px 6px', alignSelf: 'flex-start' },
+  monthCellCount: { fontSize: 'var(--font-size-xs)', color: 'var(--color-accent-contrast)', fontWeight: 600, background: 'var(--color-accent)', borderRadius: 'var(--radius-sm)', padding: '2px var(--space-sm)', alignSelf: 'flex-start' },
 };

@@ -4,6 +4,7 @@ import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import * as checkoutApi from '../api/checkout';
 import * as payApi from '../api/payments';
+import * as bookingsApi from '../api/bookings';
 import type { PaymentMethod, MethodType } from '../api/payments';
 import { AddPaymentMethodInline, AddMethodButton } from '../components/AddPaymentMethodInline';
 import { StripeOneTimeCardCharge } from '../components/StripeOneTimeCardCharge';
@@ -190,14 +191,21 @@ export function Checkout() {
 
   useEffect(() => {
     if (!businessId || !order?.customer_id) { setStoredMethods([]); return; }
-    payApi.listPaymentMethods({ owner_level: 'customer', business_id: businessId, customer_id: order.customer_id })
-      .then((m) => {
+    const bookingId = order.booking_id;
+    Promise.all([
+      payApi.listPaymentMethods({ owner_level: 'customer', business_id: businessId, customer_id: order.customer_id }),
+      // The card held for the reservation (spec 51, gap 5) is offered first; staff can choose another.
+      bookingId ? bookingsApi.getBooking(bookingId, businessId).then((b) => b.payment_method_id ?? null).catch(() => null) : Promise.resolve(null),
+    ])
+      .then(([m, heldId]) => {
         setStoredMethods(m);
-        const def = m.find((x) => x.is_default) ?? m[0];
+        const held = heldId ? m.find((x) => x.id === heldId) : undefined;
+        const def = held ?? m.find((x) => x.is_default) ?? m[0];
         if (def) setPayStoredMethodId(def.id);
+        if (held) setPayMethod(held.method_type === 'bank_draw' ? 'bank_draw' : 'card');
       })
       .catch(() => setStoredMethods([]));
-  }, [businessId, order?.customer_id]);
+  }, [businessId, order?.customer_id, order?.booking_id]);
 
   const isProcessedMethod = (m: string) => m === 'card' || m === 'bank_draw' || m === 'google_pay' || m === 'apple_pay';
 
@@ -257,6 +265,19 @@ export function Checkout() {
     } finally {
       setCompleting(false);
     }
+  };
+
+  // The service was paid at reservation and nothing else was sold: finish the appointment
+  // (spec 51, gap 5). The server closes it and answers with the order that paid it.
+  const handleFinishPrepaid = async () => {
+    if (!order) return;
+    setCompleting(true);
+    try {
+      const paidOrder = await checkoutApi.completeOrder(order.id, businessId, { payment_method: 'other' });
+      navigate(`/receipt/${paidOrder.id}`);
+    } catch (err: any) {
+      alert(err?.response?.data?.error || 'The appointment could not be finished.');
+    } finally { setCompleting(false); }
   };
 
   const handleComplete = async () => {
@@ -567,8 +588,23 @@ export function Checkout() {
         </div>
       </div>
 
+      {/* Paid at reservation: the service is not charged again; only extras are */}
+      {isOpen && order.prepaid_order_number && (
+        <div style={styles.card}>
+          <p style={{ color: 'var(--color-text)', margin: 0 }}>
+            The service was paid when it was booked (order <strong>{order.prepaid_order_number}</strong>). Add anything else
+            sold at this visit, or finish the appointment.
+          </p>
+          {order.items.length === 0 && (
+            <div style={{ ...styles.actions, marginTop: '16px' }}>
+              <Button onClick={handleFinishPrepaid} loading={completing}>Finish appointment</Button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Payment Actions */}
-      {isOpen && (
+      {isOpen && !(order.prepaid_order_number && order.items.length === 0) && (
         <div style={styles.card}>
           <h3 style={{ color: 'var(--color-text)', margin: '0 0 12px', fontSize: 'var(--font-size-md)' }}>Payment</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '420px' }}>

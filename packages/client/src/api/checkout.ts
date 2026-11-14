@@ -34,6 +34,8 @@ export interface Order {
   customer_last_name: string | null;
   walk_in_name: string | null;
   booking_id: string | null;
+  /** The order that already paid this order's appointment at reservation (spec 51, gap 5). */
+  prepaid_order_number?: string | null;
   order_number: string;
   status: 'open' | 'completed' | 'voided' | 'refunded' | 'partially_refunded';
   subtotal: number;

@@ -7,8 +7,9 @@ import { logAudit } from './audit.service';
 import { createActivity } from './customer-activity.service';
 import { calculatePrice } from './pricing.service';
 import { logger } from '../middleware/logger';
-import { localSlotMinutes } from '../utils/business-time';
-import { requiredResourceAlternatives, loadMaintenance, underMaintenance } from './required-resources.service';
+import { localSlotMinutes, localParts } from '../utils/business-time';
+import { requiredResourceAlternatives, loadMaintenance, underMaintenance, loadResourceHours, resourceOpen, endOfDayMinutes } from './required-resources.service';
+import { getServiceHoursForDay } from './availability.service';
 import { touchActivity } from './person-identity.service';
 import { queueBookingConfirmation } from './booking-notifications.service';
 
@@ -27,6 +28,8 @@ interface CreateBookingInput {
   createdBy: string;
   tenantId: string;
   overrideRules?: boolean;  // staff can override lead time, staff hours, AND resource capacity
+  /** The customer's saved card held for the reservation (checked by the caller), charged at Checkout. */
+  heldCardId?: string | null;
   participantCount?: number; // headcount this booking occupies on its resource; default 1
   skipLeadTime?: boolean;   // a walk-in, or moving an existing booking: minimum notice does not apply
   excludeBookingId?: string; // when re-checking an existing booking, it does not conflict with itself
@@ -203,6 +206,11 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
   // by the zone's offset and, near midnight, on the wrong day).
   const { rows: tzRows } = await adminPool.query('SELECT timezone FROM sys_businesses WHERE id = $1', [input.businessId]);
   const slotLocal = localSlotMinutes(startTime, endTime, tzRows[0]?.timezone || 'UTC');
+  // A walk-in is someone already at the business: booked for today only, never a future day.
+  // Not an override-able rule (a later visit is booked for a customer).
+  if (!input.customerId && slotLocal.date !== localParts(new Date(), tzRows[0]?.timezone || 'UTC').date) {
+    throw new Error('A walk-in can only be booked for today. For another day, choose or add the customer.');
+  }
   if (locationId) {
     const bookingDate = slotLocal.date;
     const dayOfWeek = slotLocal.dayOfWeek;
@@ -221,8 +229,7 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
       }
       if (override.open_time && override.close_time) {
         const [oh, om] = override.open_time.split(':').map(Number);
-        const [ch, cm] = override.close_time.split(':').map(Number);
-        if (slotMins < oh * 60 + om || endMins > ch * 60 + cm) {
+        if (slotMins < oh * 60 + om || endMins > endOfDayMinutes(override.close_time)) {
           throw new Error('Appointment time is outside business hours for this date');
         }
       }
@@ -239,8 +246,7 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
         }
         if (bh.open_time && bh.close_time) {
           const [oh, om] = bh.open_time.split(':').map(Number);
-          const [ch, cm] = bh.close_time.split(':').map(Number);
-          if (slotMins < oh * 60 + om || endMins > ch * 60 + cm) {
+          if (slotMins < oh * 60 + om || endMins > endOfDayMinutes(bh.close_time)) {
             throw new Error('Appointment time is outside business hours');
           }
         }
@@ -248,85 +254,21 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
     }
   }
 
-  // Check staff working hours (schedule mode vs availability mode)
+  // Staff hours (shifts or availability patterns): nothing set up for the person = no limit.
   if (input.staffId && !input.overrideRules) {
-    const { rows: bizRows } = await adminPool.query(
-      'SELECT scheduling_mode FROM sys_businesses WHERE id = $1',
-      [input.businessId],
-    );
-    const schedulingMode = bizRows[0]?.scheduling_mode || 'availability';
-    const bookingDate = slotLocal.date;
-    const dayOfWeek = slotLocal.dayOfWeek;
-    const slotMins = slotLocal.startMinutes;
-    const endMins = slotLocal.endMinutes;
-
-    if (schedulingMode === 'schedule') {
-      // Check if staff has a schedule entry covering this time
-      const { rows: schedEntries } = await adminPool.query(
-        `SELECT e.start_time, e.end_time FROM stf_schedule_entries e
-         JOIN stf_profiles sp ON sp.id = e.staff_id
-         WHERE sp.user_id = $1 AND e.schedule_date = $2 AND e.entry_type = 'shift'`,
-        [input.staffId, bookingDate],
-      );
-      if (schedEntries.length === 0) {
-        throw new Error('Staff member is not scheduled to work on this date');
-      }
-      const isWithinShift = schedEntries.some((e: any) => {
-        const [sh, sm] = e.start_time.split(':').map(Number);
-        const [eh, em] = e.end_time.split(':').map(Number);
-        return slotMins >= sh * 60 + sm && endMins <= eh * 60 + em;
-      });
-      if (!isWithinShift) {
-        throw new Error('Appointment time is outside staff scheduled shift');
-      }
-    } else {
-      // Check availability patterns + overrides
-      const { rows: profileRows } = await adminPool.query(
-        'SELECT id FROM stf_profiles WHERE user_id = $1 LIMIT 1', [input.staffId],
-      );
-      if (profileRows.length > 0) {
-        const staffProfileId = profileRows[0].id;
-
-        // Check overrides first
-        const { rows: overrideRows } = await adminPool.query(
-          'SELECT * FROM stf_availability_overrides WHERE staff_id = $1 AND override_date = $2',
-          [staffProfileId, bookingDate],
-        );
-        if (overrideRows.length > 0) {
-          const override = overrideRows[0];
-          if (override.override_type === 'remove') {
-            throw new Error('Staff member is not available on this date');
-          }
-          if ((override.override_type === 'modify' || override.override_type === 'add') && override.start_time && override.end_time) {
-            const [oh, om] = override.start_time.split(':').map(Number);
-            const [ch, cm] = override.end_time.split(':').map(Number);
-            if (slotMins < oh * 60 + om || endMins > ch * 60 + cm) {
-              throw new Error('Appointment time is outside staff availability for this date');
-            }
-          }
-        } else {
-          // Check pattern for this day of week
-          const { rows: patternSlots } = await adminPool.query(
-            `SELECT ps.start_time, ps.end_time FROM stf_availability_pattern_slots ps
-             JOIN stf_availability_patterns p ON p.id = ps.pattern_id
-             WHERE p.staff_id = $1 AND p.is_default = true AND ps.day_of_week = $2`,
-            [staffProfileId, dayOfWeek],
-          );
-          if (patternSlots.length > 0) {
-            const isAvailable = patternSlots.some((s: any) => {
-              const [sh, sm] = s.start_time.split(':').map(Number);
-              const [eh, em] = s.end_time.split(':').map(Number);
-              return slotMins >= sh * 60 + sm && endMins <= eh * 60 + em;
-            });
-            if (!isAvailable) {
-              throw new Error('Appointment time is outside staff availability hours');
-            }
-          }
-        }
-      }
-    }
+    const refusal = await staffHoursRefusal(input.businessId, input.staffId, slotLocal);
+    if (refusal) throw new Error(refusal);
   }
 
+  // The service's own availability (its availability rules): no rule = no limit.
+  if (!input.overrideRules) {
+    const { rows: rules } = await adminPool.query('SELECT * FROM svc_availability_rules WHERE service_id = $1', [input.serviceId]);
+    const windows = getServiceHoursForDay(rules, slotLocal.dayOfWeek, slotLocal.date);
+    const fits = windows.some((w) => slotLocal.startMinutes >= w.start && slotLocal.endMinutes <= w.end
+      && (!w.staffIds || !input.staffId || w.staffIds.includes(input.staffId))
+      && (!w.locationIds || !locationId || w.locationIds.includes(locationId)));
+    if (!fits) throw new Error('The service is not offered at this time');
+  }
   // The provider's daily booking limit (Business Setup → staff → capacity).
   if (input.staffId && !input.overrideRules) {
     const { rows: cap } = await adminPool.query(
@@ -407,6 +349,15 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
     }
   }
 
+  // The resource's own hours (its schedule and closures; "Available 24/7" overrides the schedule).
+  // A resource with no schedule is not limited.
+  if (resourceId && !input.overrideRules) {
+    const resHours = await loadResourceHours([resourceId]);
+    if (!resourceOpen(resHours, resourceId, startTime, endTime, businessTimeZone)) {
+      throw new Error('The resource is not available at this time (outside its schedule or closed)');
+    }
+  }
+
   if (resourceId) {
     const remaining = await getResourceRemainingCapacity(resourceId, startTime, endTime);
     if (participantCount > remaining) {
@@ -470,8 +421,10 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
   )).rows[0]?.id || null;
   const { rows } = await adminPool.query(
     `INSERT INTO apt_bookings (business_id, customer_id, walk_in_name, service_id, variant_id, staff_id, resource_id,
-       start_time, end_time, buffer_before, buffer_after, status, booking_reference, booking_type, price, notes, created_by, participant_count, source, location_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+       start_time, end_time, buffer_before, buffer_after, status, booking_reference, booking_type, price, notes, created_by, participant_count, source, location_id,
+       payment_method_id, card_saved_at, card_saved_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+       $21::uuid, CASE WHEN $21::uuid IS NULL THEN NULL ELSE NOW() END, CASE WHEN $21::uuid IS NULL THEN NULL ELSE $17::uuid END)
      RETURNING *`,
     [
       input.businessId, input.customerId || null, input.walkInName || null, input.serviceId, input.variantId,
@@ -479,6 +432,7 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
       startTime.toISOString(), endTime.toISOString(),
       bufferBefore, bufferAfter, status, bookingReference, bookingType, price,
       input.notes || null, input.createdBy, participantCount, input.source || 'admin', bookingLocationId,
+      input.heldCardId || null,
     ],
   );
 
@@ -708,10 +662,54 @@ export async function getBookingById(id: string, businessId: string) {
     [id],
   );
 
-  return { ...rows[0], status_history: history };
+  // The paid orders of this appointment (paid at reservation, at check-out, extras, fees), for their receipts.
+  const { rows: paidOrders } = await adminPool.query(
+    `SELECT id, order_number, status, total_amount, completed_at FROM fin_orders
+      WHERE booking_id = $1 AND business_id = $2 AND status IN ('completed', 'refunded', 'partially_refunded')
+      ORDER BY completed_at`,
+    [id, businessId],
+  );
+  return { ...rows[0], status_history: history, paid_orders: paidOrders };
 }
 
 // --- Helpers ---
+
+/**
+ * Why a staff member cannot take a slot, or null when they can (spec 51: nothing set up = no limit).
+ * Schedule mode: a shift must cover it; no shift that day = not working. Availability mode: a date
+ * override wins; else the weekday pattern, if the person has any pattern at all.
+ */
+const toMin = (t: string) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + (m || 0); };
+
+async function staffHoursRefusal(businessId: string, staffUserId: string, slot: { date: string; dayOfWeek: number; startMinutes: number; endMinutes: number }): Promise<string | null> {
+  const { rows: biz } = await adminPool.query('SELECT scheduling_mode FROM sys_businesses WHERE id = $1', [businessId]);
+  const within = (start: string, end: string) => slot.startMinutes >= toMin(start) && slot.endMinutes <= endOfDayMinutes(end);
+  if ((biz[0]?.scheduling_mode || 'availability') === 'schedule') {
+    const { rows } = await adminPool.query(
+      `SELECT e.start_time, e.end_time FROM stf_schedule_entries e JOIN stf_profiles sp ON sp.id = e.staff_id
+        WHERE sp.user_id = $1 AND e.schedule_date = $2 AND e.entry_type = 'shift'`, [staffUserId, slot.date]);
+    if (rows.length === 0) return 'Staff member is not scheduled to work on this date';
+    return rows.some((e: any) => within(e.start_time, e.end_time)) ? null : 'Appointment time is outside the staff member\'s shift';
+  }
+  const { rows: prof } = await adminPool.query('SELECT id FROM stf_profiles WHERE user_id = $1 LIMIT 1', [staffUserId]);
+  if (!prof[0]) return null;
+  const { rows: ov } = await adminPool.query(
+    'SELECT override_type, start_time, end_time FROM stf_availability_overrides WHERE staff_id = $1 AND override_date = $2', [prof[0].id, slot.date]);
+  if (ov[0]) {
+    if (ov[0].override_type === 'remove') return 'Staff member is not available on this date';
+    if ((ov[0].override_type === 'modify' || ov[0].override_type === 'add') && ov[0].start_time && ov[0].end_time) {
+      return within(ov[0].start_time, ov[0].end_time) ? null : 'Appointment time is outside the staff member\'s availability for this date';
+    }
+    return null;
+  }
+  const { rows: pats } = await adminPool.query(
+    `SELECT ps.day_of_week, ps.start_time, ps.end_time FROM stf_availability_pattern_slots ps
+       JOIN stf_availability_patterns p ON p.id = ps.pattern_id WHERE p.staff_id = $1 AND p.is_default = true`, [prof[0].id]);
+  if (pats.length === 0) return null; // no pattern at all = no restriction
+  const day = pats.filter((p: any) => p.day_of_week === slot.dayOfWeek);
+  if (day.length === 0) return 'Staff member does not work on this day';
+  return day.some((p: any) => within(p.start_time, p.end_time)) ? null : 'Appointment time is outside the staff member\'s availability hours';
+}
 
 async function autoAssignStaff(
   serviceId: string, businessId: string, startTime: Date, endTime: Date, bufferBefore: number, bufferAfter: number,

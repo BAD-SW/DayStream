@@ -31,10 +31,12 @@ interface Benefits {
   pkg: { purchase_id: string; item_id: string; name: string; left: number } | null;
   credit: number;
   cards: Array<{ id: string; label: string }>;
+  /** the customer's saved bank accounts (SEPA / ACH direct debit) */
+  banks: Array<{ id: string; label: string }>;
 }
 
 async function benefits(businessId: string, customerId: string | null | undefined, serviceId: string): Promise<Benefits> {
-  const out: Benefits = { membership: null, pkg: null, credit: 0, cards: [] };
+  const out: Benefits = { membership: null, pkg: null, credit: 0, cards: [], banks: [] };
   if (!customerId) return out;
   const { rows: mem } = await adminPool.query(
     `SELECT p.name, a.access_type, COALESCE(a.discount_percentage, 0) AS pct
@@ -69,6 +71,13 @@ async function benefits(businessId: string, customerId: string | null | undefine
     [customerId, businessId],
   );
   out.cards = cards.map((c: any) => ({ id: c.id, label: `${c.display_brand || 'Card'} •••• ${c.display_last4 || ''}`.trim() }));
+  const { rows: banks } = await adminPool.query(
+    `SELECT id, display_brand, display_last4 FROM pay_payment_methods
+      WHERE owner_level = 'customer' AND customer_id = $1 AND business_id = $2 AND status = 'active' AND method_type = 'bank_draw'
+      ORDER BY is_default DESC, created_at DESC`,
+    [customerId, businessId],
+  );
+  out.banks = banks.map((c: any) => ({ id: c.id, label: `${c.display_brand || 'Bank account'} ···· ${c.display_last4 || ''}`.trim() }));
   return out;
 }
 
@@ -133,7 +142,7 @@ export async function quote(c: PayChoices) {
       lines, total: priced.total, due: priced.total - creditUse, promo: priced.promo,
       // credit covers only part: the rest would need a second method (split payment, PAY-2, later)
       credit_needs_split: creditUse > 0 && creditUse < priced.total,
-      membership: b.membership, package: b.pkg, credit: b.credit, cards: b.cards,
+      membership: b.membership, package: b.pkg, credit: b.credit, cards: b.cards, banks: b.banks,
     };
   } finally {
     await adminPool.query('DELETE FROM fin_order_items WHERE order_id = $1', [order.id]);
@@ -143,7 +152,7 @@ export async function quote(c: PayChoices) {
 
 export interface PayInput extends PayChoices {
   bookingId: string;
-  method: 'onfile' | 'card' | 'cash' | 'transfer' | 'gift' | 'other' | 'later' | 'covered';
+  method: 'onfile' | 'card' | 'bank' | 'cash' | 'transfer' | 'gift' | 'other' | 'later' | 'covered';
   paymentMethodId?: string | null;
   giftCardCode?: string | null;
   reference?: string | null;
@@ -156,7 +165,12 @@ export interface PayInput extends PayChoices {
  * order: the screen takes the card with the one-time charge and completes it, as Checkout does.
  */
 export async function payBooking(p: PayInput) {
-  if (p.method === 'later') return { status: 'unpaid' as const };
+  // Paying while booking (spec 51, gap 5): only a card or a bank account (direct debit). Cash, check,
+  // gift cards and other methods are taken at Checkout, and "pay later" is what a service whose
+  // Reservation Payment Rule needs no payment already does.
+  if (!['onfile', 'card', 'bank', 'covered'].includes(p.method)) {
+    throw Object.assign(new Error('When booking, payment is by card or bank account. Other methods are taken at Checkout.'), { code: 'METHOD_NOT_ALLOWED' });
+  }
   const b = await benefits(p.businessId, p.customerId, p.serviceId);
   const order = await checkout.createOrderFromBooking(p.bookingId, p.businessId, p.userId);
   const priced = await priceOrder(order.id, p.businessId, p, b);
@@ -186,6 +200,7 @@ export async function payBooking(p: PayInput) {
   if (p.method === 'card') return { status: 'card_form' as const, order_id: order.id, total };
   const map: Record<string, any> = {
     onfile: { paymentMethod: 'card', paymentMethodId: p.paymentMethodId },
+    bank: { paymentMethod: 'bank_draw', paymentMethodId: p.paymentMethodId },
     cash: { paymentMethod: 'cash', paymentReference: p.cashReceived ? `Received ${(p.cashReceived / 100).toFixed(2)}, change ${((p.cashReceived - total) / 100).toFixed(2)}` : undefined },
     transfer: { paymentMethod: 'bank_transfer', paymentReference: p.reference || undefined },
     gift: { paymentMethod: 'gift_card', giftCardCode: p.giftCardCode },

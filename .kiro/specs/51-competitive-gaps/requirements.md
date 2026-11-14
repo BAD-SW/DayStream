@@ -113,13 +113,25 @@ The acceptance criteria below set the capability each gap must reach. They are r
 
 **User Story**: As front-desk staff, I want to send a customer a link that books a specific service and takes payment in one step, so that a conversation turns into a paid booking without a call.
 
-**Current state**: Not started. The booking widget (Phase 38) and online payment exist; there is no per-customer, prefilled link.
+**Current state**: Not started. Confirmed in the code:
+- The booking widget (Phase 38) can only be opened on a service, needs the customer to sign in, and its payment is simulated (no money is taken, and no order is created).
+- Stripe is connected per business and can take a one-time card payment, but only from staff screens (Checkout and the New Appointment payment step).
+- The New Appointment payment step offers card, cash, transfer, gift card, other and Pay later; there is no option to send the customer a link.
+- Personal links exist for forms (a secure, single-use link with an expiry, sent by email) and check-in, which a book-and-pay link can follow. Neither records when a link was opened.
+- There are no deposits, no per-booking price change, and nothing cancels an unpaid booking that was never paid.
+- SMS and WhatsApp are not connected (gap 4); only email can be sent today.
 
 ##### Acceptance Criteria
 
 1. THE system SHALL let staff create a link for a customer with the service, and optionally the time, staff member and price, already chosen.
 2. THE system SHALL send the link by SMS, WhatsApp or email from the Inbox or the customer's profile.
 3. THE system SHALL let the customer confirm and pay in as few steps as the payment requires, and SHALL show staff when the link was opened, completed or expired.
+4. THE system SHALL let a business set a Reservation Payment Rule on each service: Not required for reservation, Taken but not charged for reservation, or Charged at reservation (payment being a card or a bank account by direct debit). Existing and new services start as Not required.
+5. WHEN a service needs no card, THE system SHALL save the reservation without a payment step.
+6. WHEN a service requires a card, THE system SHALL require staff to attach one of the customer's saved cards, or add a new one, before the reservation is saved, SHALL record that the customer agreed to the card being kept and charged after the service and for a no-show or late-cancellation fee, and SHALL charge nothing at that time.
+7. WHEN a service requires a card, THE system SHALL NOT ask a walk-in for one, because the customer is already at the business.
+8. THE system SHALL offer the reservation's card first at Checkout, for the final total including anything added, SHALL let staff choose another card or method there, and SHALL charge a no-show fee to the reservation's card before any other saved card.
+9. WHEN a customer is not present to give a card, THE system SHALL let staff send the customer a link to give it (the book-and-pay link of this requirement).
 
 ### Classes and retail
 
@@ -287,6 +299,30 @@ The acceptance criteria below set the capability each gap must reach. They are r
 3. THE system SHALL keep each starter template editable and deletable like any other template, and SHALL mark it as a starter until the business changes it.
 4. THE system SHALL provide the starter wording in each language the system supports, using the business's language.
 5. THE system SHALL show a preview of the starter template with sample values before the business activates it.
+
+### Records
+
+#### Requirement 18: Appointment History
+
+**User Story**: As a business owner, I want to see everything that happened to an appointment (who changed what, when, and why), so that I can explain any change, whether it was made by staff, by the customer or by the system.
+
+**Current state**: Partly recorded, not shown. Confirmed in the code:
+- Status changes go to `apt_booking_status_history` (from, to, who, reason, when) from most places: creation, the lifecycle changes, check-in and the automatic no-show. The automatic no-show records no person; it only has a reason. Completing a sale at Checkout and cancelling a recurring series change the status without writing a history row.
+- Moving an appointment writes a history row ("Rescheduled") and an audit row with the old and new time; other edits (service, option, staff, location, notes, price, number of people) record nothing.
+- Creation, status changes, "ready for you" and moves also write to the general audit log, which only system administrators can query.
+- The booking API returns the status history, but no screen shows it. A customer's activity timeline gets some booking events.
+- There is no way to tell whether a change came from staff, the customer, the booking widget, a personal link, the kiosk, an import, or an automatic job.
+- A late appointment was marked No-Show by the automatic no-show function, run from a server test that changes every overdue booking in the database, and nothing on screen showed how it happened (found 12 Nov 2026).
+
+##### Acceptance Criteria
+
+1. THE system SHALL record every change to an appointment: creation, every status change, and every change to its time, service, option, staff member, location, resource, number of people, price, notes and customer, with the value before and after.
+2. THE system SHALL record for each change when it happened, who or what made it (a named staff member, the customer, or the system), where it came from (staff screen, booking widget, customer link, kiosk, import or automatic job), and the reason where one was given.
+3. THE system SHALL show an appointment's history, newest first and in plain words, on the appointment for staff who may see the appointment.
+4. THE system SHALL record changes made by automatic jobs with the job's name and the rule that caused them, for example "Marked No-Show automatically: not checked in 15 minutes after the start".
+5. THE system SHALL record changes to an appointment's payment that follow from the appointment (order created, paid, refunded, no-show or late-cancellation fee charged) in the same history.
+6. THE system SHALL keep the history when the appointment is cancelled or completed, and SHALL remove or anonymise it with the customer's other personal data when the customer is anonymised.
+7. THE system SHALL NOT let anyone edit or delete history entries.
 ---
 
 ## Dependencies

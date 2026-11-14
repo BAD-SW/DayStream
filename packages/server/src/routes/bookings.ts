@@ -13,6 +13,7 @@ import { validate } from '../middleware/validate';
 import { success, error } from '../utils/response';
 import { adminPool } from '../db/pool';
 import * as availabilityService from '../services/availability.service';
+import * as reservationCard from '../services/reservation-card.service';
 
 /** A booking refused by a business rule (a plain message for the user), as opposed to a failure. */
 function isBookingRefusal(err: any): boolean {
@@ -348,14 +349,28 @@ const createBookingSchema = Joi.object({
   notes: Joi.string().max(500).allow('', null),
   override_rules: Joi.boolean().default(false),
   participant_count: Joi.number().integer().min(1).default(1),
+  // The customer's saved card held for the reservation (Reservation Payment Rule "Card required").
+  payment_method_id: Joi.string().uuid().allow(null),
 });
 
 // POST /api/v1/bookings — Create booking
 bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBookingSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
+    // Reservation Payment Rule (spec 51, gap 5): "Card required" needs one of the customer's saved cards.
+    let heldCardId: string | null;
+    try {
+      heldCardId = await reservationCard.cardForNewBooking({
+        serviceId: req.body.service_id, businessId: req.body.business_id,
+        customerId: req.body.customer_id || null, paymentMethodId: req.body.payment_method_id || null,
+      });
+    } catch (e) {
+      if (e instanceof reservationCard.ReservationCardError) { error(res, e.message, e.code, 400); return; }
+      throw e;
+    }
     const booking = await bookingService.createBooking({
       businessId: req.body.business_id,
+      heldCardId,
       customerId: req.body.customer_id || undefined,
       walkInName: req.body.walk_in_name,
       serviceId: req.body.service_id,
@@ -580,10 +595,14 @@ bookingsRouter.post('/payment-quote', requirePermission('bookings:*'), async (re
     const b = req.body || {};
     if (!b.business_id || !b.service_id || !b.variant_id) { error(res, 'business_id, service_id and variant_id required', 'VALIDATION_ERROR', 400); return; }
     const { quote } = await import('../services/booking-payment.service');
-    success(res, await quote({
+    const { businessPublishableKey } = await import('../services/walkin-payment.service');
+    const q = await quote({
       businessId: b.business_id, customerId: b.customer_id || null, serviceId: b.service_id, variantId: b.variant_id,
       participants: b.participant_count, promoCode: b.promo_code || null, usePackage: !!b.use_package, useCredit: !!b.use_credit, userId: authReq.user.sub,
-    }));
+    });
+    // The card field for a walk-in's new card is shown before anything is charged; it needs the
+    // business's publishable key (not a secret).
+    success(res, { ...q, publishable_key: (await businessPublishableKey(b.business_id).catch(() => undefined)) || null });
   } catch (err: any) {
     if (err?.code === 'NOT_FOUND') { error(res, err.message, 'NOT_FOUND', 404); return; }
     console.error('Failed to quote payment', err?.message || err);
@@ -880,6 +899,8 @@ const updateBookingSchema = Joi.object({
   walk_in_name: Joi.string().allow('', null),
   participant_count: Joi.number().integer().min(1),
   override_rules: Joi.boolean(),
+  // Swap the card held for the reservation (null removes it where the service does not need one)
+  payment_method_id: Joi.string().uuid().allow(null),
 });
 
 bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBookingSchema), async (req: Request, res: Response) => {
@@ -902,6 +923,35 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
     if (req.body.walk_in_name !== undefined) updates.walk_in_name = req.body.walk_in_name || null;
     if (req.body.participant_count !== undefined) updates.participant_count = req.body.participant_count;
     if (req.body.notes !== undefined) updates.notes = req.body.notes;
+
+    // The held card (Reservation Payment Rule, spec 51 gap 5). A card belongs to one customer, so a
+    // change of customer drops the old one; a service with "Card required" must still end up with a card.
+    {
+      const finalCustomer: string | null = updates.customer_id !== undefined ? updates.customer_id : existing.customer_id;
+      const finalService: string = updates.service_id || existing.service_id;
+      const customerChanged = updates.customer_id !== undefined && String(updates.customer_id ?? '') !== String(existing.customer_id ?? '');
+      let card: string | null = customerChanged ? null : (existing.payment_method_id ?? null);
+      if (req.body.payment_method_id !== undefined) card = req.body.payment_method_id;
+      try {
+        if (card && finalCustomer) await reservationCard.assertCustomerCard(card, businessId, finalCustomer);
+        if (!finalCustomer) card = null;
+        // Only asked when the card, the customer or the service changes, so a booking made before the
+        // service needed a card can still be edited.
+        const serviceChanged = updates.service_id !== undefined && updates.service_id !== existing.service_id;
+        const cardTouched = req.body.payment_method_id !== undefined || customerChanged || serviceChanged;
+        if (!card && cardTouched && await reservationCard.cardIsRequired(finalService, businessId, finalCustomer)) {
+          throw new reservationCard.ReservationCardError('This service needs a card for the reservation. Choose a saved card or add one.', 'CARD_REQUIRED');
+        }
+      } catch (e) {
+        if (e instanceof reservationCard.ReservationCardError) { error(res, e.message, e.code, 400); return; }
+        throw e;
+      }
+      if (card !== (existing.payment_method_id ?? null)) {
+        updates.payment_method_id = card;
+        updates.card_saved_at = card ? new Date().toISOString() : null;
+        updates.card_saved_by = card ? authReq.user.sub : null;
+      }
+    }
 
     if (Object.keys(updates).length === 0 && !req.body.start_time) {
       success(res, existing);

@@ -14,6 +14,8 @@ export interface Booking {
   customer_last_name: string | null;
   customer_email?: string;
   walk_in_name?: string | null;
+  /** The customer's saved card held for the reservation, charged at Checkout (spec 51, gap 5). */
+  payment_method_id?: string | null;
   staff_id: string | null;
   staff_first_name?: string;
   staff_last_name?: string;
@@ -122,6 +124,8 @@ export async function getAvailabilityDays(businessId: string, serviceId: string,
 export async function createBooking(data: {
   business_id: string; customer_id?: string; walk_in_name?: string; service_id: string; variant_id: string;
   staff_id?: string; start_time: string; notes?: string; override_rules?: boolean; participant_count?: number; location_id?: string;
+  /** The customer's saved card held for the reservation (Reservation Payment Rule "Card required"). */
+  payment_method_id?: string | null;
 }) {
   const res = await apiClient.post('/v1/bookings', data);
   return res.data.data;
@@ -252,6 +256,7 @@ export async function updateBooking(id: string, businessId: string, data: {
   service_id?: string; variant_id?: string; staff_id?: string | null;
   start_time?: string; notes?: string | null; customer_id?: string | null;
   walk_in_name?: string | null; participant_count?: number; location_id?: string;
+  payment_method_id?: string | null;
 }) {
   const res = await apiClient.put(`/v1/bookings/${id}?business_id=${businessId}`, data);
   return res.data.data;

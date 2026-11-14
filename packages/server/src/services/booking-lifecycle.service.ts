@@ -447,16 +447,18 @@ export async function rescheduleBooking(
 /**
  * Scheduled job: Mark no-shows for confirmed bookings past their start time + window.
  */
-export async function evaluateNoShows(windowMinutes = 15): Promise<{ processed: number }> {
+export async function evaluateNoShows(windowMinutes = 15, businessId?: string): Promise<{ processed: number }> {
   const cutoff = new Date(Date.now() - windowMinutes * 60 * 1000);
 
+  // businessId limits the run to one business (the tests use it, so they never touch other data)
   const { rows } = await adminPool.query(
     `SELECT b.id, b.business_id, b.customer_id, b.booking_reference
      FROM apt_bookings b
      JOIN sys_businesses biz ON biz.id = b.business_id
      WHERE b.status = 'confirmed'
-       AND b.start_time < $1`,
-    [cutoff.toISOString()],
+       AND b.start_time < $1
+       AND ($2::uuid IS NULL OR b.business_id = $2)`,
+    [cutoff.toISOString(), businessId ?? null],
   );
 
   let processed = 0;

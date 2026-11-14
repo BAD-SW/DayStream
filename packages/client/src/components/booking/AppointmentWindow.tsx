@@ -8,9 +8,11 @@ import { formatCurrency } from '../../utils/currency';
 import { zonedParts, hhmm, toMin, addDays, dayLabel, initials } from '../../utils/zonedTime';
 import './AppointmentWindow.css';
 import { PaymentStep } from './PaymentStep';
+import { PriceSummary } from './PriceSummary';
 // Bill's spec 51 pieces, moved here from the old New/Edit Booking pages
 import { FormsNeededNotice } from '../forms/FormsNeededNotice';
 import { ChartsPanel } from '../charts/ChartsPanel';
+import { ReceiptActions } from '../ReceiptActions';
 import { useClinicalAccess } from '../../utils/useClinicalAccess';
 import { getSelfCheckInLink } from '../../api/selfCheckIn';
 
@@ -24,7 +26,7 @@ import { getSelfCheckInLink } from '../../api/selfCheckIn';
 // - Services in pages of 6 (3 rows × 2), with search; options as chips; participants for shared rooms.
 // ============================================================
 
-export interface SvcItem { id: string; name: string; category_name?: string; booking_type: string; max_capacity: number | null; default_chart_group_id?: string | null; variants: ServiceVariant[] }
+export interface SvcItem { id: string; name: string; category_name?: string; booking_type: string; max_capacity: number | null; default_chart_group_id?: string | null; payment_rule: servicesApi.PaymentRule; variants: ServiceVariant[] }
 export interface Combo { start_time: string; end_time: string; location_id: string | null; location_name: string | null; staff_id?: string; staff_first_name?: string; staff_last_name?: string; capacity_remaining?: number }
 export interface AppointmentPrefill { date?: string; time?: string | null; serviceId?: string; variantId?: string; staffId?: string; locationId?: string; customer?: any; customerId?: string; walkIn?: boolean; walkInName?: string; participants?: number }
 
@@ -43,7 +45,7 @@ export function useBookableServices(businessId: string) {
       const withV = await Promise.all(svcs.map(async (s) => {
         let vs: ServiceVariant[] = [];
         try { vs = (await servicesApi.getVariants(s.id)).filter((v) => !v.status || v.status === 'active'); } catch { vs = []; }
-        return { id: s.id, name: s.name, category_name: s.category_name, booking_type: s.booking_type, max_capacity: s.max_capacity ?? null, default_chart_group_id: s.default_chart_group_id ?? null, variants: vs };
+        return { id: s.id, name: s.name, category_name: s.category_name, booking_type: s.booking_type, max_capacity: s.max_capacity ?? null, default_chart_group_id: s.default_chart_group_id ?? null, payment_rule: (s.payment_rule ?? 'no_card') as servicesApi.PaymentRule, variants: vs };
       }));
       if (!off) setList(withV.filter((s) => s.variants.length > 0).sort((a, b) => a.name.localeCompare(b.name)));
     }).catch(() => {});
@@ -107,7 +109,7 @@ export function CustomerPicker({ businessId, customer, onCustomer, walk, onWalk,
     return (
       <div className="mk-f">{head}
         <div className="mk-new">
-          <b style={{ fontSize: '13px' }}>New customer</b>
+          <b style={{ fontSize: 'var(--font-size-small)' }}>New customer</b>
           <div className="mk-g2">
             <input type="text" value={nc.fn} onChange={(e) => setNc({ ...nc, fn: e.target.value })} placeholder="First name *" aria-label="First name" />
             <input type="text" value={nc.ln} onChange={(e) => setNc({ ...nc, ln: e.target.value })} placeholder="Last name" aria-label="Last name" />
@@ -116,7 +118,7 @@ export function CustomerPicker({ businessId, customer, onCustomer, walk, onWalk,
           </div>
           <p className="mk-hint">An email or a phone number is needed. If it matches someone, they are offered instead of a duplicate.</p>
           {msg && <p className="mk-warn">{msg}</p>}
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             <button type="button" className="btn sec" onClick={() => setIsNew(false)}>Cancel</button>
             <button type="button" className="btn" disabled={!ok} onClick={add}>Add and select</button>
           </div>
@@ -162,7 +164,7 @@ export function ServicePicker({ services, serviceId, onService, compact, disable
   return (
     <div className="mk-f">
       <div className="mk-l">Service *</div>
-      {limit && <p className="mk-hint" style={{ margin: '0 0 6px' }}>Services {onlyFor!.name} does · <button type="button" className="lk2" onClick={() => { setAll(true); setPage(0); }}>Show all</button></p>}
+      {limit && <p className="mk-hint" style={{ margin: '0 0 var(--space-sm)' }}>Services {onlyFor!.name} does · <button type="button" className="lk2" onClick={() => { setAll(true); setPage(0); }}>Show all</button></p>}
       <div className="sv-top">
         <input type="text" value={sq} onChange={(e) => { setSq(e.target.value); setPage(0); }} placeholder="Search services…" autoComplete="off" aria-label="Search services" disabled={disabled} />
         <div className="sv-pager" aria-label="Service pages">
@@ -203,7 +205,7 @@ export function ParticipantsField({ svc, parts, onParts, ovr, onOvr, disabled }:
     <div className="mk-f">
       <div className="mk-l"><span>Participants <span className="mk-hint" style={{ textTransform: 'none', letterSpacing: 0 }}>{svc!.booking_type === 'shared' ? 'shared room' : 'group'}, up to {svc!.max_capacity}</span></span></div>
       <div className="chips">{Array.from({ length: max }, (_, i) => i + 1).map((n) => <button key={n} type="button" className="ch" aria-pressed={n === parts} onClick={() => onParts(n)} disabled={disabled}>{n}</button>)}</div>
-      <label className="mk-hint" style={{ display: 'flex', gap: '6px', alignItems: 'center' }}><input type="checkbox" checked={ovr} onChange={(e) => onOvr(e.target.checked)} disabled={disabled} /> Override capacity limit</label>
+      <label className="mk-hint" style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}><input type="checkbox" checked={ovr} onChange={(e) => onOvr(e.target.checked)} disabled={disabled} /> Override capacity limit</label>
     </div>
   );
 }
@@ -226,8 +228,9 @@ export function useCombos(businessId: string, serviceId: string, variantId: stri
 }
 
 // ---------- the screen ----------
-export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefill, inWindow, onClose, onSaved }: {
-  businessId: string; timezone: string; mode: 'new' | 'edit'; bookingId?: string; prefill?: AppointmentPrefill; inWindow?: boolean;
+// One screen, always shown as a page (/bookings/new, /bookings/:id/edit), wherever it is opened from.
+export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefill, onClose, onSaved }: {
+  businessId: string; timezone: string; mode: 'new' | 'edit'; bookingId?: string; prefill?: AppointmentPrefill;
   onClose: () => void; onSaved: (message: string) => void;
 }) {
   const services = useBookableServices(businessId);
@@ -257,7 +260,8 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
   const [noteOpen, setNoteOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   // New: Confirm booking becomes Next: payment, step 4 in the same window (PAY-1 A)
-  const [step, setStep] = useState<'book' | 'pay'>('book');
+  // 'card': the Reservation Payment Rule "Card required" holds a saved card instead (spec 51, gap 5)
+  const [step, setStep] = useState<'book' | 'pay' | 'card'>('book');
   // CAL-5: Cancel appointment (future) and Mark as no-show (started), in the edit window; no Delete
   const [ending, setEnding] = useState<null | 'cancel' | 'noshow'>(null);
   const [cancelReason, setCancelReason] = useState('');
@@ -319,6 +323,14 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
     return () => { off = true; };
   }, [businessId, serviceId, variantId, month, staff, loc, parts, ovr]);
 
+  // A walk-in is already here: booked for today only (the server refuses another day too).
+  const walkInToday = walk && !lockMove;
+  useEffect(() => {
+    if (!walkInToday || date === today) return;
+    setDate(today); setMonth(today.slice(0, 7)); setTime(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walkInToday, today]);
+
   // no day chosen yet: the first day with free times (from today)
   useEffect(() => {
     if (date || !monthFree) return;
@@ -365,7 +377,7 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
   const atTime = time ? matches.filter((c) => lhm(c.start_time) === time) : [];
   const chosen = atTime.find((c) => pick && c.staff_id === pick) || atTime[0] || null;
   const needLoc = multiLoc && !loc;
-  const ready = !!chosen && (walk || !!customer) && !!svc && !!variant && !needLoc && !viewOnly;
+  const ready = !!chosen && (walk || !!customer) && !!svc && !!variant && !needLoc && !viewOnly && (!walkInToday || date === today);
 
   const byTime = new Map<string, Combo[]>();
   for (const c of matches) { const k = lhm(c.start_time); byTime.set(k, [...(byTime.get(k) || []), c]); }
@@ -407,7 +419,7 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
           service_id: serviceId, variant_id: variantId, staff_id: chosen.staff_id || undefined, start_time: chosen.start_time,
           notes: notes || undefined, participant_count: parts, override_rules: ovr, location_id: chosen.location_id || undefined,
         });
-        onSaved(`Booking created: ${svc!.name}, ${when}${chosen.staff_id ? ' with ' + staffName(chosen) : ''}`);
+        onSaved(`Reservation saved: ${svc!.name}, ${when}${chosen.staff_id ? ' with ' + staffName(chosen) : ''}`);
       } else {
         const data: any = { notes: notes || null };
         if (!lockOffering) { data.service_id = serviceId; data.variant_id = variantId; data.participant_count = parts; }
@@ -430,7 +442,7 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
 
   const title3 = ['Date', ...(hasStaff ? ['staff'] : []), ...(multiLoc ? ['location'] : [])];
   const head = viewOnly ? <>View appointment <small>{cName} · {String(booking?.status || '').replace('_', ' ')}</small></>
-    : mode === 'edit' ? <>Edit appointment <small>{cName}</small></> : <>New appointment{inWindow && <small>from the calendar</small>}</>;
+    : mode === 'edit' ? <>Edit appointment <small>{cName}</small></> : <>New appointment</>;
 
   // Location / Staff boxes: search and pages when there are more than fit (2 rows; 4 per row alone, 2 per row side by side)
   const lsCol = (kind: 'loc' | 'staff', all: Array<{ id: string; name: string; n: number }>) => {
@@ -485,14 +497,14 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
             <div className="q-calh">
               <button type="button" className="arr" disabled={month <= today.slice(0, 7) || lockMove} onClick={() => shiftMonth(-1)} aria-label="Previous month">‹</button>
               <b>{dayLabel(month + '-15', { month: 'long', year: 'numeric' })}</b>
-              <button type="button" className="arr" disabled={lockMove} onClick={() => shiftMonth(1)} aria-label="Next month">›</button>
+              <button type="button" className="arr" disabled={lockMove || walkInToday} onClick={() => shiftMonth(1)} aria-label="Next month">›</button>
             </div>
             <div className="q-grid">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => <span key={d} className="q-dow">{d}</span>)}
               {Array.from({ length: lead }, (_, i) => <span key={'l' + i} />)}
               {Array.from({ length: nDays }, (_, i) => {
                 const d = `${month}-${String(i + 1).padStart(2, '0')}`;
-                if (d < today) return <span key={d} className="q-day past">{i + 1}</span>;
+                if (d < today || (walkInToday && d !== today)) return <span key={d} className="q-day past" title={walkInToday && d > today ? 'A walk-in is booked for today only' : undefined}>{i + 1}</span>;
                 const n = monthFree?.free[d] || 0; const closed = monthFree?.days[d] === 'closed';
                 const lvl = !monthFree ? 'none' : closed ? 'closed' : n === 0 ? 'none' : n < 6 ? 'few' : 'many';
                 return (
@@ -504,6 +516,7 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
               })}
             </div>
             <div className="q-legend"><span className="q-day many">8</span> many free <span className="q-day few">8</span> a few <span className="q-day none">8</span> none</div>
+            {walkInToday && <p className="mk-hint">A walk-in is booked for today only. For another day, choose or add the customer.</p>}
           </div>
           {!date ? <div className="q-empty">Choose a day in the calendar.<br /><span className="mk-hint">Green days have many free times; amber a few.</span></div> : (
             <div className="q-times">
@@ -551,7 +564,7 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
           </div>
           {(() => {
             const list = listCombos.filter((c) => (!multiLoc || !loc || c.location_id === loc) && (staff === 'any' || c.staff_id === staff));
-            const days = [...new Set(list.map((c) => zonedParts(new Date(c.start_time), timezone).date))].sort().slice(0, listDays);
+            const days = [...new Set(list.map((c) => zonedParts(new Date(c.start_time), timezone).date))].filter((d) => !walkInToday || d === today).sort().slice(0, listDays);
             if (!days.length) return <p className="mk-warn">Nothing free with these choices in the next three weeks.</p>;
             return (
               <div className="q-list">
@@ -584,15 +597,16 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
     </>
   );
 
-  const payDraft = step === 'pay' && chosen && svc && variant && date && time ? {
+  const payDraft = step !== 'book' && chosen && svc && variant && date && time ? {
     customer, walk, walkName, serviceId, serviceName: svc.name, variantId, variantName: variant.name, parts, ovr,
     startIso: chosen.start_time, staffId: chosen.staff_id, locationId: chosen.location_id, notes, whenLabel: when, whoLabel: whoBits,
   } : null;
   const body = loadError ? <p className="mk-warn">{loadError}</p> : payDraft ? (
-    <PaymentStep businessId={businessId} draft={payDraft} onBack={() => setStep('book')} onClose={onClose} onDone={onSaved} />
+    <PaymentStep businessId={businessId} draft={payDraft} mode={step === 'card' ? 'hold' : 'charge'}
+      onBack={() => setStep('book')} onDone={onSaved} />
   ) : (
     <div className="mk-app">
-      <div className="mk-title"><span>{head}</span>{inWindow && <button type="button" className="mk-x" onClick={onClose} aria-label="Close">×</button>}</div>
+      <div className="mk-title"><span>{head}</span></div>
       {viewOnly && <p className="mk-warn"><b>View only.</b> {rules?.reason}</p>}
       {!viewOnly && mode === 'edit' && rules?.reason && <p className="mk-warn">{rules.reason}</p>}
       <div className="nd-cols">
@@ -608,6 +622,11 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
             <OptionChips svc={svc} variantId={variantId} onVariant={setVariantId} disabled={!!lockOffering} />
             <ParticipantsField svc={svc} parts={parts} onParts={setParts} ovr={ovr} onOvr={setOvr} disabled={!!lockOffering} />
           </div></div>
+          {/* What it costs, from the first choice on (spec 51, gap 5; add-ons, gap 15, will show here) */}
+          {mode === 'new' && svc && variantId && (
+            <PriceSummary businessId={businessId} customerId={walk ? null : customer?.id || null} serviceId={serviceId} variantId={variantId}
+              participants={parts} rule={walk && svc.payment_rule === 'card_required' ? 'no_card' : svc.payment_rule} />
+          )}
         </div>
         <div className="q-col">
           <div className="q-sec">
@@ -624,6 +643,18 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
           <button type="button" className="lnk" onClick={copyCheckInLink}>Copy link</button>
           {linkMessage && <span role="status"> {linkMessage}</span>}
         </p>
+      )}
+      {/* Every payment made for this appointment, with its receipt (spec 51, gap 5) */}
+      {mode === 'edit' && booking?.paid_orders?.length > 0 && (
+        <section className="q-sec" aria-labelledby="booking-receipts-title">
+          <div className="q-sec-h" id="booking-receipts-title">Payments</div>
+          <div className="q-sec-b" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+            {booking.paid_orders.map((o: { id: string; order_number: string; status: string; total_amount: number; completed_at: string | null }) => (
+              <ReceiptActions key={o.id} kind="order" id={o.id} businessId={businessId}
+                label={`${o.order_number} · ${formatCurrency(o.total_amount)}${o.completed_at ? ' · ' + new Date(o.completed_at).toLocaleDateString() : ''}${o.status !== 'completed' ? ' · ' + o.status.replace('_', ' ') : ''}`} />
+            ))}
+          </div>
+        </section>
       )}
       {mode === 'edit' && canCharts && booking?.customer_id && bookingId && (
         <section className="q-sec" aria-labelledby="booking-charts-title">
@@ -660,7 +691,7 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
               <p className="mk-hint">{(variant as any)?.no_show_fee ? `The no-show fee of ${formatCurrency((variant as any).no_show_fee)} is charged to the card on file.` : 'No no-show fee is set for this option, so nothing is charged.'} The time is freed.</p>
             </>
           )}
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end' }}>
             <button type="button" className="btn sec" onClick={() => setEnding(null)}>Keep appointment</button>
             <button type="button" className="btn danger" disabled={saving || (ending === 'cancel' && !preview)} onClick={endBooking}>{saving ? 'Working…' : ending === 'cancel' ? 'Cancel appointment' : 'Mark as no-show'}</button>
           </div>
@@ -677,17 +708,18 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
         <div className="q-cbtns">
           <button type="button" className="btn ghost" onClick={onClose}>{viewOnly ? 'Close' : 'Cancel'}</button>
           {!viewOnly && (mode === 'new'
-            ? <button type="button" className="btn" disabled={!ready} onClick={() => setStep('pay')}>Next: payment ›</button>
+            // Reservation Payment Rule (spec 51, gap 5): no card → save now; card required → hold a card
+            // (not for a walk-in, who is already here); card charged at reservation → the payment step.
+            ? svc?.payment_rule === 'no_card' || (svc?.payment_rule === 'card_required' && walk)
+              ? <button type="button" className="btn" disabled={!ready || saving} onClick={save}>{saving ? 'Saving…' : 'Save reservation'}</button>
+              : svc?.payment_rule === 'card_required'
+                ? <button type="button" className="btn" disabled={!ready} onClick={() => setStep('card')}>Next: payment ›</button>
+                : <button type="button" className="btn" disabled={!ready} onClick={() => setStep('pay')}>Next: payment ›</button>
             : <button type="button" className="btn" disabled={!ready || saving} onClick={save}>{saving ? 'Saving…' : 'Save changes'}</button>)}
         </div>
       </div>
     </div>
   );
 
-  if (!inWindow) return <div className="dsa" style={{ padding: 'var(--space-lg)', maxWidth: '1240px', margin: '0 auto' }}>{body}</div>;
-  return (
-    <div className="dsa nd-bg" role="dialog" aria-modal="true" aria-label={mode === 'edit' ? 'Edit appointment' : 'New appointment'} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="nd-modal">{body}</div>
-    </div>
-  );
+  return <div className="dsa" style={{ padding: 'var(--space-lg)', maxWidth: '1240px', margin: '0 auto' }}>{body}</div>;
 }

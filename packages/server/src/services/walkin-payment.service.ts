@@ -37,7 +37,7 @@ export interface OneTimeChargeSession {
 }
 
 /** Resolve the business's processor publishable key (non-secret config). */
-async function businessPublishableKey(businessId: string): Promise<string | undefined> {
+export async function businessPublishableKey(businessId: string): Promise<string | undefined> {
   const { rows } = await adminPool.query(
     `SELECT config_json FROM pay_processor_connections
      WHERE owner_level = 'business' AND business_id = $1 LIMIT 1`,

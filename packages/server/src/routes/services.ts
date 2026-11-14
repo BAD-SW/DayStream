@@ -397,6 +397,8 @@ const updateServiceSchema = Joi.object({
   // CAL-11: the service's colour in the calendar (#rrggbb); null = the default palette colour
   calendar_color: Joi.string().pattern(/^#[0-9a-fA-F]{6}$/).allow(null),
   default_chart_group_id: Joi.string().uuid().allow('', null),
+  // Payment Rules (spec 51, gap 5)
+  payment_rule: Joi.string().valid('no_card', 'card_required', 'charge_at_booking'),
 }).min(1);
 
 // POST /api/v1/services — Create service

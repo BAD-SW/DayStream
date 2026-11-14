@@ -4,6 +4,7 @@ import {
   schemeForCurrency, BankDebitSchemeId, BANK_DEBIT_SCHEMES,
 } from './payments';
 import { getDecryptedSecrets } from './processor-config.service';
+import { logger } from '../middleware/logger';
 
 /**
  * Resolve the billing currency that governs an owner's bank-draw scheme.
@@ -278,8 +279,23 @@ export async function beginCaptureSession(
     const pmTypes = scheme ? [scheme.stripeType] : ['card'];
     // Attach the capture to the owner's Stripe Customer so the vaulted method can
     // be charged off-session later (recurring billing).
-    const customerId = await getOrCreateCustomerRef(owner, account);
-    const { clientSecret, setupIntentId } = await adapter.createSetupIntent(pmTypes, customerId);
+    let customerId = await getOrCreateCustomerRef(owner, account);
+    let intent: { clientSecret: string; setupIntentId: string };
+    try {
+      intent = await adapter.createSetupIntent(pmTypes, customerId);
+    } catch (e) {
+      // The stored Stripe customer does not exist in this Stripe account (for example an id that
+      // came with imported data, or an account that was switched). Nothing can be charged through
+      // it, so it is replaced by a new Stripe customer and the capture goes ahead.
+      const se = e as { code?: string; param?: string };
+      if (se.code !== 'resource_missing' || se.param !== 'customer') throw e;
+      logger.warn(`Stripe customer ${customerId} not found; creating a new one for ${owner.ownerLevel} ${owner.customerId ?? owner.businessId ?? owner.tenantId ?? ''}`);
+      const { clause, params } = customerRefFilter(owner, account.provider);
+      await adminPool.query(`DELETE FROM pay_customer_refs WHERE ${clause}`, params);
+      customerId = await getOrCreateCustomerRef(owner, account);
+      intent = await adapter.createSetupIntent(pmTypes, customerId);
+    }
+    const { clientSecret, setupIntentId } = intent;
     const config = await getConfigForOwner(cfgOwner);
     const currency = isWallet ? await resolveOwnerCurrency(owner) : undefined;
     return {

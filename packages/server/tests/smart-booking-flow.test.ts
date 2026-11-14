@@ -12,6 +12,9 @@ let BUSINESS_ID: string;
 let SERVICE_ID: string;
 let VARIANT_ID: string;
 let CUSTOMER_ID: string;
+// Two more customers for the over-capacity bookings (a walk-in can only be booked for today).
+let CUSTOMER_2_ID: string;
+let CUSTOMER_3_ID: string;
 let RESOURCE_ID: string;
 let ownerToken: string;
 
@@ -199,6 +202,16 @@ describe('Smart Booking Flow — DB-backed (feature 32)', () => {
       [TENANT_ID, BUSINESS_ID],
     );
     CUSTOMER_ID = custRows[0].id;
+    for (const [n, set] of [[2, (id: string) => { CUSTOMER_2_ID = id; }], [3, (id: string) => { CUSTOMER_3_ID = id; }]] as const) {
+      const { rows } = await adminPool.query(
+        `INSERT INTO cus_customers (tenant_id, business_id, reference_number, email, first_name, last_name, created_by)
+         VALUES ($1, $2, $3, $4, 'Smart', $5, '00000000-0000-0000-0000-000000000010')
+         ON CONFLICT (business_id, email) DO UPDATE SET first_name = 'Smart'
+         RETURNING id`,
+        [TENANT_ID, BUSINESS_ID, `CUST-SBF0${n}`, `smart-booking-cust${n}@example.com`, `Customer ${n}`],
+      );
+      set(rows[0].id);
+    }
 
     ownerToken = authService.generateAccessToken(
       '00000000-0000-0000-0000-000000000021', TENANT_ID, 'business_owner',
@@ -451,14 +464,14 @@ describe('Smart Booking Flow — DB-backed (feature 32)', () => {
       expect(statusCode).toBe(201);
       expect(body.data.participant_count).toBe(7);
 
-      // A different walk-in (avoids the unrelated customer-double-booking check) requesting just 1
+      // A different customer (avoids the unrelated customer-double-booking check) requesting just 1
       // more spot on the same, now-over-capacity resource is rejected without override...
       const { statusCode: normalStatus } = await request(
         'POST',
         '/api/v1/bookings',
         {
           business_id: BUSINESS_ID,
-          walk_in_name: 'Second Walk-in',
+          customer_id: CUSTOMER_2_ID,
           service_id: SERVICE_ID,
           variant_id: VARIANT_ID,
           resource_id: RESOURCE_ID,
@@ -476,7 +489,7 @@ describe('Smart Booking Flow — DB-backed (feature 32)', () => {
         '/api/v1/bookings',
         {
           business_id: BUSINESS_ID,
-          walk_in_name: 'Third Walk-in',
+          customer_id: CUSTOMER_3_ID,
           service_id: SERVICE_ID,
           variant_id: VARIANT_ID,
           resource_id: RESOURCE_ID,

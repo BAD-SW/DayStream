@@ -125,6 +125,7 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
     tax_category_id: (s as any).tax_category_id || '',
     calendar_color: (s as any).calendar_color || '',
     default_chart_group_id: (s as any).default_chart_group_id || '',
+    payment_rule: (s.payment_rule ?? 'no_card') as servicesApi.PaymentRule,
   });
   const draft = useDraft('service-details', 'Service details', fromService(service), async (values) => {
     await servicesApi.updateService(service.id, businessId, { ...values, calendar_color: values.calendar_color || null } as any);
@@ -245,6 +246,13 @@ function ServiceForm({ service, categories, taxCategories, businessId, onUpdate 
               </select>
             </div>
           )}
+          <div style={styles.formGroup}>
+            <label style={styles.label} htmlFor="svc-payment-rule">Reservation Payment Rule</label>
+            <select id="svc-payment-rule" style={{ ...styles.input, ...mark('payment_rule') }} value={form.payment_rule}
+              onChange={(e) => setForm({ ...form, payment_rule: e.target.value as servicesApi.PaymentRule })}>
+              {servicesApi.PAYMENT_RULE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
             <label style={styles.label}>Short Description</label>
             <input style={{ ...styles.input, ...mark('short_description') }} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} />

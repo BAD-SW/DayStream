@@ -360,14 +360,13 @@ describe('Booking CRUD API', () => {
       expect(refetched.data.participant_count).toBe(3);
     });
 
-    it('converts a customer booking to a walk-in (customer_id cleared, walk_in_name set)', async () => {
+    it('refuses to turn a booking on another day into a walk-in (a walk-in is for today only)', async () => {
       const { statusCode, body } = await request(
         'PUT', `/api/v1/bookings/${BOOKING_ID}?business_id=${BUSINESS_ID}`,
         { customer_id: null, walk_in_name: 'Drop-in Dana' }, ownerToken,
       );
-      expect(statusCode).toBe(200);
-      expect(body.data.customer_id).toBeNull();
-      expect(body.data.walk_in_name).toBe('Drop-in Dana');
+      expect(statusCode).toBeGreaterThanOrEqual(400);
+      expect(JSON.stringify(body)).toContain('walk-in can only be booked for today');
     });
 
     it('converts a walk-in booking back to a real customer (walk_in_name cleared)', async () => {

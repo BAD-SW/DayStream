@@ -1,4 +1,4 @@
-import { requiredResourceAlternatives, loadMaintenance, underMaintenance } from './required-resources.service';
+import { requiredResourceAlternatives, loadMaintenance, underMaintenance, loadResourceHours, resourceOpen, endOfDayMinutes } from './required-resources.service';
 import { peakParticipants } from './session-capacity';
 import { localSlotMinutes } from '../utils/business-time';
 import { adminPool } from '../db/pool';
@@ -37,7 +37,7 @@ interface AvailabilityResponse {
   slots: AvailableSlotCombo[];
 }
 
-interface TimeWindow {
+export interface TimeWindow {
   start: number; // minutes from midnight
   end: number;
   staffIds?: string[];    // if set, only these staff are valid for this window
@@ -205,6 +205,7 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
   const requiredAlternatives = await requiredResourceAlternatives(serviceId, variantId, businessId);
   const ruleResourceIds = [...new Set([...availRules.flatMap((r: any) => r.resource_ids || []), ...requiredAlternatives])];
   const maintenanceWindows = await loadMaintenance(ruleResourceIds);
+  const resourceHours = await loadResourceHours(ruleResourceIds);
   let resourceBookings: any[] = [];
   let resourceCapacities = new Map<string, number>();
   if (ruleResourceIds.length > 0) {
@@ -366,6 +367,8 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
           : windowEligibleStaff;
 
         if (availableStaffForSlot.length === 0 && needsStaff) continue;
+        // Opening hours apply to services without staff too (the staff check above includes them).
+        if (!needsStaff && !withinLocationHours(localSlotMinutes(slotStart, slotEnd, businessTimezone), dayOfWeek, currentDateStr, locationHours, locationHourOverrides)) continue;
 
         // A hold taken without choosing a provider (the booking widget does this) reserves one
         // of the providers who could take the slot: when as many are held as are free, the slot
@@ -387,6 +390,8 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
           const remainingByResource = slotResourceIds.map((resId: string) => {
             // A resource under maintenance during the slot cannot be used at all.
             if (underMaintenance(maintenanceWindows, resId, slotStart, slotEnd, businessTimezone)) return 0;
+            // Nor outside its own schedule, or on a closure day (24/7 overrides the schedule).
+            if (!resourceOpen(resourceHours, resId, slotStart, slotEnd, businessTimezone)) return 0;
             const cap = resourceCapacities.get(resId) || 1;
             // Find all bookings that overlap this slot for this resource
             const overlapping = resourceBookings.filter((rb: any) =>
@@ -511,7 +516,7 @@ export async function getAvailabilityCombinations(query: AvailabilityQuery): Pro
 /**
  * Get service hours for a day, considering availability rules.
  */
-function getServiceHoursForDay(rules: any[], dayOfWeek: number, dateStr: string): TimeWindow[] {
+export function getServiceHoursForDay(rules: any[], dayOfWeek: number, dateStr: string): TimeWindow[] {
   // Check for blocks
   for (const rule of rules) {
     if (rule.rule_type === 'block') {
@@ -536,7 +541,9 @@ function getServiceHoursForDay(rules: any[], dayOfWeek: number, dateStr: string)
   const recurringRules = rules.filter((r) => r.rule_type === 'recurring');
 
   if (recurringRules.length === 0) {
-    return [{ start: 8 * 60, end: 20 * 60 }]; // default: 8:00-20:00
+    // No hours of its own: the service can take any time of the day, and the location's opening
+    // hours, staff availability and resources decide (there used to be a hidden 08:00-20:00 here).
+    return [{ start: 0, end: 24 * 60 }];
   }
 
   for (const rule of recurringRules) {
@@ -559,6 +566,33 @@ function getServiceHoursForDay(rules: any[], dayOfWeek: number, dateStr: string)
   }
 
   return windows;
+}
+
+/**
+ * Whether a slot falls inside the location's opening hours that day: a holiday or special-hours
+ * entry for the date first, then the weekly hours. A location with no hours set limits nothing.
+ */
+export function withinLocationHours(
+  slotLocal: { startMinutes: number; endMinutes: number },
+  dayOfWeek: number,
+  dateStr: string,
+  locationHours: any[],
+  locationHourOverrides: any[],
+): boolean {
+  if (locationHours.length === 0) return true;
+  const override = locationHourOverrides.find((o: any) => {
+    const oDate = typeof o.override_date === 'string' ? o.override_date.split('T')[0] : o.override_date;
+    return oDate === dateStr;
+  });
+  const day = override ?? locationHours.find((h: any) => h.day_of_week === dayOfWeek);
+  if (!day) return true;
+  if (day.is_closed) return false;
+  if (day.open_time && day.close_time) {
+    const openMin = timeToMinutes(day.open_time);
+    const closeMin = endOfDayMinutes(day.close_time);
+    if (slotLocal.startMinutes < openMin || slotLocal.endMinutes > closeMin) return false;
+  }
+  return true;
 }
 
 /**
@@ -588,37 +622,7 @@ function getAvailableStaffForSlot(
   const blockStart = new Date(slotStart.getTime() - bufferBefore * 60 * 1000);
   const blockEnd = new Date(slotEnd.getTime() + bufferAfter * 60 * 1000);
 
-  // Check if slot is within business hours
-  if (locationHours.length > 0) {
-    // Check for holiday override on this date
-    const override = locationHourOverrides.find((o: any) => {
-      const oDate = typeof o.override_date === 'string' ? o.override_date.split('T')[0] : o.override_date;
-      return oDate === dateStr;
-    });
-    if (override) {
-      if (override.is_closed) return []; // Business closed this day
-      if (override.open_time && override.close_time) {
-        const slotMinutes = slotLocal.startMinutes;
-        const slotEndMinutes = slotLocal.endMinutes;
-        const openMin = timeToMinutes(override.open_time);
-        const closeMin = timeToMinutes(override.close_time);
-        if (slotMinutes < openMin || slotEndMinutes > closeMin) return [];
-      }
-    } else {
-      // Normal business hours check
-      const bh = locationHours.find((h: any) => h.day_of_week === dayOfWeek);
-      if (bh) {
-        if (bh.is_closed) return [];
-        if (bh.open_time && bh.close_time) {
-          const slotMinutes = slotLocal.startMinutes;
-          const slotEndMinutes = slotLocal.endMinutes;
-          const openMin = timeToMinutes(bh.open_time);
-          const closeMin = timeToMinutes(bh.close_time);
-          if (slotMinutes < openMin || slotEndMinutes > closeMin) return [];
-        }
-      }
-    }
-  }
+  if (!withinLocationHours(slotLocal, dayOfWeek, dateStr, locationHours, locationHourOverrides)) return [];
 
   return eligibleStaff.filter((staff: any) => {
     const userId = staff.user_id;

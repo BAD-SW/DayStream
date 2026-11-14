@@ -258,6 +258,8 @@ export async function updateService(id: string, businessId: string, updates: Rec
     cancellation_policy_id: 'cancellation_policy_id',
     calendar_color: 'calendar_color',
     default_chart_group_id: 'default_chart_group_id',
+    // Payment Rules (spec 51, gap 5): no_card, card_required or charge_at_booking.
+    payment_rule: 'payment_rule',
   };
 
   const fields: string[] = [];

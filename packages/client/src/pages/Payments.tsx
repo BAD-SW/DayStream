@@ -6,6 +6,7 @@ import { Badge } from '../design-system/components/data/Badge';
 import { Button } from '../design-system/components/actions/Button';
 import { apiClient } from '../api/client';
 import { formatCurrency } from '../utils/currency';
+import { ReceiptActions } from '../components/ReceiptActions';
 
 const TYPE_VARIANTS: Record<string, 'success' | 'error' | 'info' | 'neutral'> = {
   charge: 'success', refund: 'error', credit: 'info',
@@ -540,6 +541,12 @@ export function Payments() {
               {detailTransaction.booking_id && <div><strong>Booking:</strong> {detailTransaction.booking_id.slice(0, 8)}...</div>}
               {detailTransaction.membership_id && <div><strong>Membership:</strong> {detailTransaction.membership_id.slice(0, 8)}...</div>}
             </div>
+            {/* A receipt for any payment taken, at any time (spec 51, gap 5) */}
+            {detailTransaction.type === 'charge' && ['completed', 'pending', 'partially_refunded', 'refunded'].includes(detailTransaction.status) && (
+              <div style={{ marginTop: 'var(--space-md)' }}>
+                <ReceiptActions kind="transaction" id={detailTransaction.id} businessId={businessId} />
+              </div>
+            )}
           </div>
         </div>
       )}

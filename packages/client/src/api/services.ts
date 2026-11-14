@@ -2,6 +2,15 @@ import { apiClient } from './client';
 
 // --- Types ---
 
+/** Payment Rules on a service (spec 51, gap 5). */
+export type PaymentRule = 'no_card' | 'card_required' | 'charge_at_booking';
+export const PAYMENT_RULE_OPTIONS: { value: PaymentRule; label: string }[] = [
+  // Payment = a card or a bank account (direct debit), so the wording does not say "card".
+  { value: 'no_card', label: 'Not required for reservation' },
+  { value: 'card_required', label: 'Taken but not charged for reservation' },
+  { value: 'charge_at_booking', label: 'Charged at reservation' },
+];
+
 export interface Service {
   id: string;
   name: string;
@@ -15,6 +24,8 @@ export interface Service {
   buffer_after: number;
   max_capacity: number;
   online_booking_enabled: boolean;
+  /** Payment Rules: what booking the service asks of the customer's card (spec 51, gap 5). */
+  payment_rule?: PaymentRule;
   display_order: number;
   category_id: string;
   category_name?: string;

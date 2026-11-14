@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { loadStripe, Stripe, StripeCardElement } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { Button } from '../design-system/components/actions/Button';
@@ -67,6 +67,41 @@ function ChargeForm({ clientSecret, onPaid, onCancel, busyLabel }: Omit<Props, '
         <button type="button" style={styles.link} onClick={onCancel} disabled={busy}>Cancel</button>
       </div>
     </div>
+  );
+}
+
+/** Charges the card typed into a StripeDeferredCard: confirms the PaymentIntent made afterwards. */
+export type DeferredCardCharge = (clientSecret: string) => Promise<string>;
+
+function DeferredCardForm({ onReady }: { onReady: (charge: DeferredCardCharge | null) => void }) {
+  const stripe = useStripe();
+  const elements = useElements();
+  useEffect(() => {
+    if (!stripe || !elements) { onReady(null); return; }
+    onReady(async (clientSecret: string) => {
+      const card = elements.getElement(CardElement) as StripeCardElement | null;
+      if (!card) throw new Error('Enter the card first.');
+      const result = await stripe.confirmCardPayment(clientSecret, { payment_method: { card } });
+      if (result.error) throw new Error(result.error.message || 'The card could not be charged.');
+      const pi = result.paymentIntent;
+      if (!pi || (pi.status !== 'succeeded' && pi.status !== 'processing')) throw new Error('The payment did not complete.');
+      return pi.id;
+    });
+    return () => onReady(null);
+  }, [stripe, elements, onReady]);
+  return <div style={styles.cardBox}><CardElement options={{ hidePostalCode: false }} /></div>;
+}
+
+/**
+ * The card field shown at once, before there is anything to charge (Stripe's card field needs no
+ * payment to exist). The caller makes the PaymentIntent when the person confirms, then charges the
+ * typed card with the function handed to onReady. One-time: the card is never saved.
+ */
+export function StripeDeferredCard({ publishableKey, onReady }: { publishableKey: string; onReady: (charge: DeferredCardCharge | null) => void }) {
+  return (
+    <Elements stripe={stripeFor(publishableKey)}>
+      <DeferredCardForm onReady={onReady} />
+    </Elements>
   );
 }
 

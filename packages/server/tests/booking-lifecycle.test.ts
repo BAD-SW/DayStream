@@ -245,7 +245,8 @@ describe('Booking Lifecycle', () => {
         [BUSINESS_ID, CUSTOMER_ID, STAFF_ID, pastTime.toISOString(), new Date(pastTime.getTime() + 60*60*1000).toISOString()],
       );
 
-      const result = await lifecycleService.evaluateNoShows(15);
+      // Only this test's own business: the database is the development database.
+      const result = await lifecycleService.evaluateNoShows(15, BUSINESS_ID);
       expect(result.processed).toBeGreaterThanOrEqual(1);
     });
   });

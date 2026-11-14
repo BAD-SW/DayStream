@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { newAppointmentPath, editAppointmentPath } from './AppointmentPage';
 import { useCheckInFormsPrompt } from '../components/forms/useCheckInFormsPrompt';
 import { FormsToCompleteModal } from '../components/forms/FormsToCompleteModal';
 import { Table } from '../design-system/components/data/Table';
@@ -17,6 +18,8 @@ const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' |
 
 export function Bookings() {
   const navigate = useNavigate();
+  // The message of a booking just saved on the New / Edit Appointment screen.
+  const savedMessage = (useLocation().state as { toast?: string } | null)?.toast || '';
   // Customers get a read-only list of their own bookings: no staff tools, filters or actions.
   const isCustomer = useContextManager().persona === 'customer';
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -247,13 +250,14 @@ export function Bookings() {
     <div style={styles.page}>
       <div style={styles.header}>
         <h1 style={styles.title}>{isCustomer ? 'My Bookings' : 'Appointments'}</h1>
+        {savedMessage && <span role="status" style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-success)' }}>{savedMessage}</span>}
         <div style={{ display: isCustomer ? 'none' : 'flex', gap: 'var(--space-sm)' }}>
           {/* Calendar | List (THE-23 4.1): the same switch as on the calendar */}
-          <div role="group" aria-label="Calendar or list" style={{ display: 'flex', border: '1px solid var(--color-divider, #E1E5EE)', borderRadius: '8px', overflow: 'hidden', background: 'var(--color-surface, #fff)' }}>
-            <button type="button" aria-pressed={false} onClick={() => navigate('/bookings/calendar')} style={{ background: 'none', border: 0, padding: '0 14px', height: '36px', fontSize: '15px', fontWeight: 600, color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)' }}>Calendar</button>
-            <button type="button" aria-pressed={true} style={{ background: 'var(--color-primary, #0F1F5C)', color: 'var(--color-primary-contrast, #fff)', border: 0, padding: '0 14px', height: '36px', fontSize: '15px', fontWeight: 600, cursor: 'default', fontFamily: 'var(--font-family)' }}>List</button>
+          <div role="group" aria-label="Calendar or list" style={styles.seg}>
+            <button type="button" aria-pressed={false} onClick={() => navigate('/bookings/calendar')} style={styles.segBtn}>Calendar</button>
+            <button type="button" aria-pressed={true} style={{ ...styles.segBtn, background: 'var(--color-primary)', color: 'var(--color-primary-contrast)', cursor: 'default' }}>List</button>
           </div>
-          <button style={styles.navBtn} onClick={() => navigate('/bookings/new')}>New Appointment</button>
+          <button style={styles.navBtn} onClick={() => navigate(newAppointmentPath({}, '/bookings/list'))}>New Appointment</button>
           <button style={styles.navBtn} onClick={() => navigate('/checkout?new=true')}>New Sale</button>
           <button style={styles.navBtn} onClick={() => navigate('/orders')}>Orders</button>
         </div>
@@ -279,7 +283,7 @@ export function Bookings() {
           ) : (
             <ul style={styles.waitList}>
               {waiting.map((w) => (
-                <li key={w.id} style={styles.waitRow} onClick={() => navigate(`/bookings/${w.id}/edit`)}>
+                <li key={w.id} style={styles.waitRow} onClick={() => navigate(editAppointmentPath(w.id, '/bookings/list'))}>
                   <div style={styles.waitMain}>
                     <strong>{w.customer_name}</strong>
                     <span style={styles.waitMeta}>{w.service_name}{w.staff_name ? ` with ${w.staff_name}` : ''}</span>
@@ -328,7 +332,7 @@ export function Bookings() {
             </div>
           </div>
         )}
-      <Table columns={columns} data={bookings} loading={loading} emptyMessage="No bookings found" mobileCardMode clientSort onRowClick={isCustomer ? undefined : (row) => navigate(`/bookings/${row.id}/edit`)}
+      <Table columns={columns} data={bookings} loading={loading} emptyMessage="No bookings found" mobileCardMode clientSort onRowClick={isCustomer ? undefined : (row) => navigate(editAppointmentPath(row.id, '/bookings/list'))}
         filters={tableFilters} onFiltersChange={setTableFilters} filterOptions={filterOptions}
         onLoadMore={loadMore} hasMore={bookings.length < total} loadingMore={loadingMore} />
       </section>
@@ -398,7 +402,10 @@ const styles: Record<string, React.CSSProperties> = {
   title: { fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)' as any, color: 'var(--color-text)', margin: 0 },
   toolbar: { display: 'flex', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)', flexWrap: 'wrap' as const, alignItems: 'center' },
   select: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
-  navBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '8px 16px', color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', minHeight: 'var(--button-height-sm)' },
+  // Toolbar buttons and the Calendar | List switch: the same sizes as on the calendar (design tokens)
+  navBtn: { display: 'inline-flex', alignItems: 'center', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', height: 'var(--button-height-sm)', padding: '0 var(--space-md)', color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', fontWeight: 'var(--button-font-weight)' as any, whiteSpace: 'nowrap' },
+  seg: { display: 'inline-flex', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', overflow: 'hidden', background: 'var(--color-surface)' },
+  segBtn: { display: 'inline-flex', alignItems: 'center', background: 'var(--color-surface)', border: 0, height: 'calc(var(--button-height-sm) - 2px)', padding: '0 var(--space-md)', fontSize: 'var(--font-size-sm)', fontWeight: 'var(--button-font-weight)' as any, color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'var(--font-family)' },
   actionBtn: { background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '2px 8px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-family)', minHeight: 'var(--button-height-sm)' },
   // Both panes keep a useful depth even when empty (the waiting list scrolls inside its own limit).
   waitPane: { minHeight: '260px' },

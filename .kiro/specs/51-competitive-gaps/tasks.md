@@ -97,7 +97,9 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 - [ ] Verify live and close with the owner
 
 ## 5. Book-and-pay links (Requirement 5)
-- [ ] Confirm current state and agree requirements
+- [x] ✅ Confirm current state (widget payment simulated; Stripe one-time payments from staff screens only; no card can be linked to an appointment; Pay later chooses the card only at Checkout)
+- [ ] Link for a customer who is not present (send the link to give a card or pay)
+- [ ] Agree the rest of the requirements, one step at a time
 - [ ] Design
 - [ ] Build
 - [ ] Verify live and close with the owner
@@ -172,13 +174,48 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 - [ ] Build
 - [ ] Verify live and close with the owner
 
-## 18. Open items raised along the way
+## 18. Appointment history (Requirement 18)
+- [x] ✅ Confirm current state (status history recorded in most places but not shown; other edits not recorded; no source of a change; the automatic no-show records no person)
+- [ ] Agree requirements with the owner (where the history is shown, who may see it, what customers see, older appointments)
+- [ ] Design
+- [ ] Build
+- [ ] Verify live and close with the owner
+
+## 19. Open items raised along the way
 - [ ] Decide: add a minimum-notice field to the service edit screen (today it can only be set when the service is created)
 - [ ] Decide: should the chart feature be renamed for other industries (for example Service records or Job cards)?
 - [ ] Decide: should technicians see the Inbox?
 - [ ] Decide: add a screen for the business to set its reminder times (today the times come from the business, tenant or system setting, default 24 hours and 2 hours before)
+- [x] ✅ Removed the hidden 08:00-20:00 hours of a service without an availability rule; such a service now follows the location hours, staff availability and resources. Opening hours now also apply to services without staff (they were only checked with the staff)
+- [x] ✅ Availability checks aligned (14 Nov): when a time can be booked, location hours, the service's own availability rules, staff availability and resource schedules are all checked, both in the booking times offered and when a booking is saved; nothing set up for a location, staff member, resource or service means no limit; a resource marked Available 24/7 ignores its schedule (closures still apply); a closing time of 23:59 counts as the end of the day
+- [x] ✅ The server test of the automatic no-show was limited to its own business (it had marked bookings of the real business as No-Show; four were restored)
+- [ ] Fix: the server tests run against the development database and leave about 24 test businesses and their data behind; give the tests their own database, or have them clean up
+- [ ] Decide: should late appointments be marked No-Show automatically (a business setting, off by default)? Today nothing runs it; staff mark No-Show, helped by the red button after 15 minutes
+
+## 20. Clean-up of the booking workflow (after the New Appointment and calendar changes)
+Not gap work: fixes found while testing the booking workflow (owner, 14 Nov 2026).
+- [x] ✅ Reservation Payment Rule on the service (Service Details: Not required / Taken but not charged / Charged at reservation; migration 178)
+- [x] ✅ No card required: New Appointment skips the payment step; the button reads Save reservation
+- [x] ✅ Renamed to Reservation Payment Rule
+- [x] ✅ Card required (option A, owner 14 Nov 2026): card step in New Appointment (saved cards or a new one, customer agreement, nothing charged); card stored on the booking (migration 179) and checked on the server; walk-ins need no card; Checkout offers the booking's card first; a no-show fee uses it first; the calendar's quick popup sends these services on to the full window
+- [x] ✅ Adding a card opens the card form at once (no Continue button), in New Appointment, Checkout and Take payment
+- [x] ✅ A stored Stripe customer that does not exist in the connected Stripe account is replaced when a card is added (it came with imported test data and stopped every new card for that customer)
+- [ ] Verify Reservation Payment Rule live with the owner (No card required, Card required)
+- [ ] Decide: remove the imported sample cards and Stripe customer ids of Transcend Health (13 cards, 7 customers), which do not exist in the connected Stripe account and cannot be charged
+- [x] ✅ Paying or holding while booking is by card or bank account (SEPA / ACH direct debit) only: the payment step offers Card on file, New card and Bank account (saved, or added through the direct-debit form); Cash, Check, Gift card, Other and Pay later are only at Checkout (refused by the server too). The old "Bank transfer" tile was a free-text reference, not a direct debit, and is gone. Card required accepts a saved bank account as well as a card
+- [x] ✅ One step 4 for "Taken but not charged" and "Charged at reservation": what it costs on the left; on the right Card on file, New card and Bank account, a new card or bank account entered in place (a walk-in's new card still opens the card form after Confirm)
+- [x] ✅ New Appointment shows the price (lines, tax, total, and when it is paid) as soon as a service and option are chosen, for every Reservation Payment Rule; it follows the customer (member prices), option and number of people. Add-ons (gap 15) will add lines here
+- [x] ✅ A walk-in can only be booked for today: New Appointment offers only today once Walk-in is chosen, the calendar's quick popup refuses a walk-in on another day, and the server refuses it (also when a booking on another day is changed to a walk-in)
+- [x] ✅ Check-out of an appointment paid at reservation: opens an order for anything else sold at the visit (no service line), noting the order that paid the service; with nothing added, Finish appointment completes it. It used to refuse ("already been checked out") and left the appointment in progress
+- [x] ✅ A receipt for every payment, at the time and later: the booking payment step ends on Paid with Print and Email receipt; an appointment lists its payments with their receipts; the Payments page's payment detail has Print and Email receipt. Checkout (receipt page), Record payment (Email / Print) and the customer's Billing tab already had them
+- [x] ✅ A walk-in's new card: the card field opens when New card is pressed, like everyone else's; it is charged once (never saved) on Take and confirm, and a declined card can be tried again on the same booking
+- [x] ✅ The calendar has New Sale and Orders again (page header, as on the list)
+- [x] ✅ One New / Edit Appointment screen, always the page (/bookings/new, /bookings/:id/edit): the calendar no longer opens it as a window; closing or saving goes back where it was opened from (the calendar on the same day, view and columns, or the list) with the saved message
+- [x] ✅ Calendar and New / Edit Appointment on the design system: font sizes, weights, spacing, corner rounding, shadows and buttons from the standard tokens (they were fixed pixel values copied from the design mock); no fixed colours left
+- [ ] Verify Charged at reservation and Taken but not charged live with the owner
+- [ ] Decide: show and change the held card on an existing appointment (the server accepts a change; no screen yet besides Checkout)
 
 ---
 
-**Status**: 🟡 In Progress — gaps 1, 2 and 3 complete; gap 4 (two-way SMS and WhatsApp) is next
+**Status**: 🟡 In Progress — gaps 1, 2 and 3 complete; gap 4 (two-way SMS and WhatsApp) skipped for now (Inbox is David's area); gap 5 (book-and-pay links) is being agreed
 **Dependencies**: Phase 47, Phase 21, Phase 44, Phase 15, Phase 28

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '../design-system/components/actions/Button';
 import { StripeCardCapture } from './StripeCardCapture';
 import { StripeBankCapture } from './StripeBankCapture';
@@ -72,6 +72,14 @@ export function AddPaymentMethodInline({ owner, allowedTypes, onAdded, onCancel 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [session, setSession] = useState<{ clientSecret: string; publishableKey: string; methodType: MethodType; debitScheme?: BankDebitSchemeId } | null>(null);
 
+  // With only one kind of method there is nothing to choose: open the entry form straight away.
+  const single = types.length === 1;
+  const started = useRef(false); // once, also when React runs the effect twice in development
+  useEffect(() => {
+    if (single && !started.current) { started.current = true; void begin(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function begin() {
     setBusy(true); setErrorMsg(null);
     try {
@@ -114,14 +122,15 @@ export function AddPaymentMethodInline({ owner, allowedTypes, onAdded, onCancel 
     <div style={styles.wrap}>
       {errorMsg && <p style={styles.error}>{errorMsg}</p>}
 
-      {!session && (
+      {!session && single && busy && <p style={styles.loading} role="status">Opening the card form…</p>}
+      {!session && (!single || (!busy && errorMsg)) && (
         <div style={styles.row}>
           {types.length > 1 && (
             <select style={styles.select} value={newType} onChange={(e) => setNewType(e.target.value as MethodType)}>
               {types.map((t) => <option key={t} value={t}>{METHOD_LABEL[t]}</option>)}
             </select>
           )}
-          <Button size="sm" variant="primary" loading={busy} onClick={begin}>Continue</Button>
+          <Button size="sm" variant="primary" loading={busy} onClick={begin}>{single ? 'Try again' : 'Continue'}</Button>
           <button type="button" style={styles.linkBtn} onClick={cancel}>Cancel</button>
         </div>
       )}
@@ -148,4 +157,5 @@ const styles: Record<string, React.CSSProperties> = {
   select: { padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)' },
   linkBtn: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', fontFamily: 'var(--font-family)' },
   error: { color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: '0 0 var(--space-sm)' },
+  loading: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', margin: 0 },
 };

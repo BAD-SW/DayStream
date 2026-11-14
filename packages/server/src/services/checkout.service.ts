@@ -79,14 +79,29 @@ export async function createOrder(input: CreateOrderInput) {
  * Create an order pre-populated from a booking (service line item auto-added).
  */
 export async function createOrderFromBooking(bookingId: string, businessId: string, checkedOutBy: string) {
-  // A booking is paid once. (After the first order was completed, "check out" used to start a
-  // second order for the same visit.)
+  // The service is paid once. When it was already paid (at reservation, spec 51 gap 5), checking
+  // out after the service opens an order for anything else sold at the visit, without the service
+  // line; with nothing added, completing it just finishes the appointment (payAndCompleteOrder).
   const { rows: paid } = await adminPool.query(
-    `SELECT order_number FROM fin_orders WHERE booking_id = $1 AND business_id = $2 AND status IN ('completed', 'refunded') LIMIT 1`,
+    `SELECT b.status AS booking_status, o.order_number FROM fin_orders o JOIN apt_bookings b ON b.id = o.booking_id
+      WHERE o.booking_id = $1 AND o.business_id = $2 AND o.status IN ('completed', 'refunded') ORDER BY o.completed_at LIMIT 1`,
     [bookingId, businessId],
   );
   if (paid.length > 0) {
-    throw Object.assign(new Error(`This booking has already been checked out (order ${paid[0].order_number})`), { code: 'ALREADY_CHECKED_OUT' });
+    if (paid[0].booking_status === 'completed') {
+      throw Object.assign(new Error(`This booking has already been checked out (order ${paid[0].order_number})`), { code: 'ALREADY_CHECKED_OUT' });
+    }
+    const { rows: extras } = await adminPool.query(
+      `SELECT id FROM fin_orders WHERE booking_id = $1 AND business_id = $2 AND status = 'open' ORDER BY created_at LIMIT 1`, [bookingId, businessId],
+    );
+    if (extras.length > 0) return getOrder(extras[0].id);
+    const { rows: bk } = await adminPool.query('SELECT customer_id, staff_id FROM apt_bookings WHERE id = $1 AND business_id = $2', [bookingId, businessId]);
+    const extra = await createOrder({
+      businessId, customerId: bk[0]?.customer_id || undefined, bookingId, checkedOutBy,
+      creditedTo: bk[0]?.staff_id || undefined,
+      notes: `Service paid at reservation (${paid[0].order_number})`,
+    });
+    return getOrder(extra.id);
   }
   const { rows: bookings } = await adminPool.query(
     `SELECT b.*, s.name AS service_name, s.tax_category_id,
@@ -335,7 +350,22 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   const { rows: items } = await adminPool.query(
     'SELECT id FROM fin_order_items WHERE order_id = $1', [orderId],
   );
-  if (items.length === 0) throw new Error('Cannot complete an empty order');
+  if (items.length === 0) {
+    // An appointment paid at reservation, with nothing else sold at the visit: finish the
+    // appointment, drop the empty order, and answer with the order that paid it.
+    const { rows: prepaid } = orderRows[0].booking_id
+      ? await adminPool.query(
+        `SELECT id FROM fin_orders WHERE booking_id = $1 AND id <> $2 AND status IN ('completed', 'refunded') ORDER BY completed_at LIMIT 1`,
+        [orderRows[0].booking_id, orderId],
+      )
+      : { rows: [] as any[] };
+    if (!prepaid[0]) throw new Error('Cannot complete an empty order');
+    await adminPool.query(`UPDATE fin_orders SET status = 'voided', updated_at = NOW() WHERE id = $1 AND status = 'open'`, [orderId]);
+    await adminPool.query(
+      `UPDATE apt_bookings SET status = 'completed' WHERE id = $1 AND status IN ('checked_in', 'in_progress')`, [orderRows[0].booking_id],
+    );
+    return getOrder(prepaid[0].id);
+  }
 
   // The payment belongs to the order. It used to be the screen's job to take a card or gift
   // card payment first and then close the order, and cash, transfer and check sales recorded
@@ -588,15 +618,18 @@ export async function chargeNoShowFee(input: {
   if (input.paymentMethod && input.paymentMethod !== 'card') {
     await completeOrder(order.id, input.businessId, { paymentMethod: input.paymentMethod, checkedOutBy: input.checkedOutBy });
   } else if (input.customerId) {
+    // The card or bank account held for the reservation comes first (spec 51, gap 5), then the
+    // customer's default card.
     const { rows: cards } = await adminPool.query(
-      `SELECT id FROM pay_payment_methods
-        WHERE owner_level = 'customer' AND customer_id = $1 AND business_id = $2 AND status = 'active' AND method_type = 'card'
-        ORDER BY is_default DESC, created_at DESC LIMIT 1`,
-      [input.customerId, input.businessId],
+      `SELECT pm.id, pm.method_type FROM pay_payment_methods pm
+        WHERE pm.owner_level = 'customer' AND pm.customer_id = $1 AND pm.business_id = $2 AND pm.status = 'active'
+          AND (pm.method_type = 'card' OR pm.id = (SELECT payment_method_id FROM apt_bookings WHERE id = $3))
+        ORDER BY (pm.id = (SELECT payment_method_id FROM apt_bookings WHERE id = $3)) DESC NULLS LAST, pm.is_default DESC, pm.created_at DESC LIMIT 1`,
+      [input.customerId, input.businessId, input.bookingId],
     );
     if (cards[0]) {
       try {
-        await completeOrder(order.id, input.businessId, { paymentMethod: 'card', paymentMethodId: cards[0].id, checkedOutBy: input.checkedOutBy });
+        await completeOrder(order.id, input.businessId, { paymentMethod: cards[0].method_type === 'bank_draw' ? 'bank_draw' : 'card', paymentMethodId: cards[0].id, checkedOutBy: input.checkedOutBy });
       } catch (err: any) {
         if (!(err instanceof OrderPaymentError) && !err?.code) throw err;
       }
@@ -865,7 +898,15 @@ export async function getOrder(orderId: string) {
     [orderId],
   );
 
-  return { ...rows[0], items };
+  // The order that already paid this order's appointment (paid at reservation), if any.
+  const { rows: prepaid } = rows[0].booking_id
+    ? await adminPool.query(
+      `SELECT order_number FROM fin_orders WHERE booking_id = $1 AND id <> $2 AND status IN ('completed', 'refunded') ORDER BY completed_at LIMIT 1`,
+      [rows[0].booking_id, orderId],
+    )
+    : { rows: [] as any[] };
+
+  return { ...rows[0], items, prepaid_order_number: prepaid[0]?.order_number ?? null };
 }
 
 /**
