@@ -32,6 +32,7 @@ Requirements: requirements.md, Requirement 1 (criteria 1-11).
    - [1.13 Build order](#113-build-order)
 2. [Gap 2: Treatment charting](#2-gap-2-treatment-charting)
 3. [Gap 3: Virtual waiting room](#3-gap-3-virtual-waiting-room)
+19. [Paying with a membership or package (Requirement 19)](#19-paying-with-a-membership-or-package-requirement-19)
 
 ---
 
@@ -495,3 +496,69 @@ The calendar redesign made `/bookings` open the calendar for staff, which hid th
 4. Bookings page panes.
 5. Phone page and kiosk "Please come in", polling, ready email.
 6. Verification live with the owner.
+
+---
+
+## 19. Paying with a membership or package (Requirement 19)
+
+One place decides what a customer's memberships and packages cover, holds the allowance for a booking, and counts it as used at payment. New Appointment, the payment step, the price shown while booking and Checkout all use it.
+
+### 19.1 What counts
+
+- **Memberships** are the `mbr_*` model: an active enrollment (`mbr_enrollments`, `status = 'active'`, `cancelled_at IS NULL`) of a plan whose plan items (`mbr_plan_items`) include the service, for any option (`variant_id` empty) or for the option booked. Each item allows `quantity_per_period` uses per `access_frequency` window: `daily` (the calendar day), `weekly` (Monday to Sunday), `monthly` (a month counted from the membership's start day, which is the membership term for a monthly plan) or `unlimited`. The window is the one the appointment falls in, in the business's time zone. Product items cover products at Checkout the same way.
+- **Packages** are an active purchase (`pkg_purchases`, not expired on the appointment day) with an item for the service (any option, or the one booked) or the product. Sessions items use 1 per person; minutes items use the appointment's length.
+- The reads of the old `mem_*` tables (the booking payment step, membership pricing rules) are replaced by this.
+
+### 19.2 Holding and using an allowance
+
+A new table records each use, so it can be counted, shown, moved and given back:
+
+```sql
+-- migration 180
+CREATE TABLE pay_benefit_uses (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id     UUID NOT NULL,
+  business_id   UUID NOT NULL,
+  customer_id   UUID NOT NULL,
+  kind          VARCHAR(12) NOT NULL CHECK (kind IN ('membership', 'package')),
+  enrollment_id UUID REFERENCES mbr_enrollments(id),   -- membership
+  plan_item_id  UUID REFERENCES mbr_plan_items(id),
+  purchase_id   UUID REFERENCES pkg_purchases(id),     -- package
+  package_item_id UUID REFERENCES pkg_package_items(id),
+  booking_id    UUID REFERENCES apt_bookings(id),
+  order_item_id UUID REFERENCES fin_order_items(id),
+  quantity      INTEGER NOT NULL DEFAULT 1,             -- sessions or items
+  minutes       INTEGER,                                -- a minutes package
+  window_start  DATE, window_end DATE,                  -- a membership's allowance window
+  status        VARCHAR(10) NOT NULL CHECK (status IN ('held', 'used', 'released')),
+  created_at    TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
+);  -- RLS on tenant_id, as every table
+```
+
+- **Left** = allowance − (held + used) in the window (membership) or in total (package).
+- **Booking made** with a membership or package: a `held` row for the booking.
+- **Paid** (Checkout completed, or paid at reservation): the row becomes `used`, linked to the order line. A package use also writes its `pkg_redemptions` row and a membership use adds to `mbr_usage.quantity_used`, so the existing reports and the customer's timeline stay right.
+- **Cancelled** booking: `held` becomes `released`. A refund of the order line releases a `used` row and removes its redemption.
+- **Changed** at Checkout (another membership or package, or a normal method): the old row is released and, where one is chosen, a new one held.
+
+### 19.3 API
+
+- `GET /v1/bookings/benefits?business_id&customer_id&service_id&variant_id&start_time&participants`: every membership and package of the customer, each marked as covering the booking or not (with the reason: used up this week, expired, not for this option), with used, allowance, left and the window end or expiry.
+- `POST /v1/bookings` and `PUT /v1/bookings/:id` take `benefit: { kind, enrollment_id | purchase_id, item_id } | null`; the server checks it covers the booking and holds it in the same transaction as the booking.
+- Checkout: `PUT /v1/checkout/orders/:id/items/:itemId/benefit` sets or clears the benefit of a line (the service line of a booking, a product line); the line's price becomes zero (a discount recorded with the benefit's name, as now).
+- `payment-quote` and the price shown while booking take the same `benefit` and return the lines with it applied.
+
+### 19.4 Screens
+
+- **New Appointment, as soon as a customer is chosen:** the Price box lists the customer's memberships and packages that cover what is booked, with used and left. "Pay with membership or package" is first and preselected on the one that runs out soonest; the customer's other covering memberships and packages, and "Pay normally", can be picked instead. Ones that do not cover it are shown greyed with the reason.
+- **Reservation Payment Rules:** with a membership or package chosen the service costs nothing, so "Charged at reservation" has nothing to charge for it (only uncovered extras are charged). "Taken but not charged" still asks for a card or bank account, for extras and any no-show or late-cancellation fee.
+- **Checkout:** each covered line shows "Paid with ⟨name⟩ (n left after this)" and a Change control: another covering membership or package, or a normal method. Lines not covered are paid as usual.
+- **Receipt:** covered lines show the membership or package that paid them.
+
+### 19.5 Build order
+
+1. Migration 180 and the benefits service (what covers, held / used / released), replacing the `mem_*` reads.
+2. Benefits endpoint; booking create / update hold the chosen benefit; cancel releases it.
+3. New Appointment price box with the choice; payment step and quote follow it.
+4. Checkout: benefit per line, change, used on completion; refund releases.
+5. Receipt lines; verification live with the owner.

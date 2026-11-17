@@ -83,7 +83,7 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
   - [x] ✅ Words on the check-in screens (phone page, kiosk, forms list) held per language and editable per business under Templates > Check-In; the ready-for-you email uses the same wording (no separate template)
   - [x] ✅ Appointment Reminder template (own entry in the Document Type list, with a Time Until Appointment placeholder); plain reminder until the business writes one
   - [x] ✅ Any wording on the check-in screens and in the ready-for-you email can include the customer's first name, service, appointment time and business name (chips in the editor stay visible while scrolling); the entry screen of the kiosk takes the business name only
-  - [x] ✅ Moved to open items (section 18): a screen for the business to set its reminder times
+  - [x] ✅ Moved to open items (section 20): a screen for the business to set its reminder times
   - [x] ✅ Bookings opens on the calendar or the list with the Waiting list, chosen by the business (Settings > System) and, if they wish, by each staff member on their profile (migration 177)
   - [ ] Verify live with the owner: business setting, staff profile choice, Calendar | List switch
   - [x] ✅ Manage link in the appointment emails: moved to gap 16 (it needs a customer self-service page first)
@@ -181,7 +181,14 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 - [ ] Build
 - [ ] Verify live and close with the owner
 
-## 19. Open items raised along the way
+## 19. Paying with a membership or package (Requirement 19)
+- [x] ✅ Confirm current state (memberships read from the old mem_* tables, so not recognised; one package only, on the "Charged at reservation" step; nothing at Checkout; no usage counted; nothing given back on cancel)
+- [x] ✅ Requirements and design written from the owner's description (15 Nov 2026)
+- [ ] Owner agrees the requirements and design
+- [ ] Build (design 19.5)
+- [ ] Verify live and close with the owner
+
+## 20. Open items raised along the way
 - [ ] Decide: add a minimum-notice field to the service edit screen (today it can only be set when the service is created)
 - [ ] Decide: should the chart feature be renamed for other industries (for example Service records or Job cards)?
 - [ ] Decide: should technicians see the Inbox?
@@ -192,7 +199,7 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 - [ ] Fix: the server tests run against the development database and leave about 24 test businesses and their data behind; give the tests their own database, or have them clean up
 - [ ] Decide: should late appointments be marked No-Show automatically (a business setting, off by default)? Today nothing runs it; staff mark No-Show, helped by the red button after 15 minutes
 
-## 20. Clean-up of the booking workflow (after the New Appointment and calendar changes)
+## 21. Clean-up of the booking workflow (after the New Appointment and calendar changes)
 Not gap work: fixes found while testing the booking workflow (owner, 14 Nov 2026).
 - [x] ✅ Reservation Payment Rule on the service (Service Details: Not required / Taken but not charged / Charged at reservation; migration 178)
 - [x] ✅ No card required: New Appointment skips the payment step; the button reads Save reservation
@@ -217,5 +224,5 @@ Not gap work: fixes found while testing the booking workflow (owner, 14 Nov 2026
 
 ---
 
-**Status**: 🟡 In Progress — gaps 1, 2 and 3 complete; gap 4 (two-way SMS and WhatsApp) skipped for now (Inbox is David's area); gap 5 (book-and-pay links) is being agreed
+**Status**: 🟡 In Progress — gaps 1, 2 and 3 complete; gaps 4 (two-way SMS and WhatsApp) and 5 (book-and-pay links) wait for the owner's talk with David about SMS and WhatsApp; gap 6 (class scheduling depth) is next
 **Dependencies**: Phase 47, Phase 21, Phase 44, Phase 15, Phase 28

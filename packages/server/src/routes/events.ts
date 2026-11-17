@@ -236,8 +236,9 @@ eventsRouter.post('/types', requirePermission('events:*'), async (req: Request, 
     const type = await eventTypesService.createEventType(authReq.tenantId, req.body);
     success(res, type, undefined, 201);
   } catch (err: any) {
-    if (err.message?.includes('duplicate') || err.message?.includes('unique')) error(res, 'Type already exists', 'DUPLICATE', 409);
-    else error(res, 'Failed to create type', 'INTERNAL_ERROR', 500);
+    if (err.message?.includes('duplicate') || err.message?.includes('unique')) error(res, 'A type with this name already exists.', 'DUPLICATE', 409);
+    else if (err.code === 'NAME_REQUIRED') error(res, err.message, 'VALIDATION_ERROR', 400);
+    else { console.error('Failed to create event type', err?.message || err); error(res, 'Failed to create type', 'INTERNAL_ERROR', 500); }
   }
 });
 

@@ -109,6 +109,8 @@ The acceptance criteria below set the capability each gap must reach. They are r
 3. THE system SHALL respect each customer's channel consent and the provider's opt-out keywords.
 4. THE system SHALL use the same connection for booking reminders and campaigns, not only the Inbox.
 
+**Owner's direction (15 Nov 2026, to agree with David)**: reminders go by email (perhaps SMS later). The email carries links for the customer to reply by email, by WhatsApp (a click-to-chat link to the business's number with a reference filled in) or by SMS (a text link, for phones), and the reply lands in the Inbox. Because the customer starts the conversation, WhatsApp needs no approved templates for these replies (free-form within 24 hours of the customer's last message); business-initiated WhatsApp would. Needs: a provider account and number per channel (monthly and per-message costs, and registration in some countries such as US 10DLC), inbound email into the Inbox (not built), and a decision on whether DayStream holds one account or each business connects its own.
+
 #### Requirement 5: Book-and-Pay Links
 
 **User Story**: As front-desk staff, I want to send a customer a link that books a specific service and takes payment in one step, so that a conversation turns into a paid booking without a call.
@@ -148,6 +150,8 @@ The acceptance criteria below set the capability each gap must reach. They are r
 3. THE system SHALL promote the next waitlisted customer automatically when a spot opens, and tell them.
 4. THE system SHALL apply the business's late-cancel and no-show rules to class spots, including credit return or charge.
 5. THE system SHALL use class passes and membership credits when a customer books a class.
+
+**Owner's direction (15 Nov 2026)**: a class is scheduled by the business (date, time, place, instructor, capacity) and customers sign up to it; the first ones to sign up, up to the capacity, get a place. Customers do not choose a date and time themselves, as they do for a Group service in the appointment calendar today (it offers any free start time).
 
 #### Requirement 7: Retail Inventory
 
@@ -323,6 +327,32 @@ The acceptance criteria below set the capability each gap must reach. They are r
 5. THE system SHALL record changes to an appointment's payment that follow from the appointment (order created, paid, refunded, no-show or late-cancellation fee charged) in the same history.
 6. THE system SHALL keep the history when the appointment is cancelled or completed, and SHALL remove or anonymise it with the customer's other personal data when the customer is anonymised.
 7. THE system SHALL NOT let anyone edit or delete history entries.
+
+### Payments
+
+#### Requirement 19: Paying with a Membership or Package
+
+**User Story**: As front-desk staff, I want to see what a customer's memberships and packages cover when I book them, and use one to pay for the appointment, so that members and package holders are not charged for what they already paid for, and their allowance is always right.
+
+**Current state**: Confirmed in the code (15 Nov 2026):
+- Memberships live in the `mbr_*` tables (plans, plan items with a quantity and how often it resets, enrollments), but the booking payment step and the membership pricing rules read the older `mem_*` tables, which nothing fills any more. A membership is therefore not recognised when booking.
+- Packages are recognised only on the "Charged at reservation" payment step, and only one: the first package that has a session left for the service. The option chosen is ignored, minutes packages and products are not handled, and the session is used before payment, with nothing to undo it.
+- Checkout applies no membership or package at all, and charges the option's list price.
+- No use of a membership is counted (the usage table exists, nothing writes it), and a package session is never given back when a booking is cancelled.
+- No screen shows a customer's packages or what is left of any membership or package.
+
+##### Acceptance Criteria
+
+1. WHEN a customer is chosen on a booking, THE system SHALL show every membership and package the customer holds that covers the service and option being booked, each with how much is used and how much is left (for a membership, in its current allowance period; for a package, in total, with its expiry date).
+2. THE system SHALL handle customers with several memberships, several packages, or both, and SHALL let staff choose which one pays; THE system SHALL offer "Pay with membership or package" first, preselecting the one that runs out soonest, and SHALL always let staff pay with a normal payment method instead.
+3. WHEN a membership or package is chosen, THE system SHALL reduce the price of what it covers to zero, and SHALL leave anything it does not cover (other services, add-ons, products) to be paid by another method.
+4. THE system SHALL count a membership's allowance per period as the plan item says (per day, week or month, or without limit), and a package's allowance per item until it expires; THE system SHALL NOT offer a membership or package whose allowance for that appointment is used up, has expired, or is not active.
+5. THE system SHALL hold the allowance for the booking when it is made, so the same allowance cannot be promised twice, and SHALL count it as used when the appointment is checked out (or paid at reservation).
+6. THE system SHALL show the chosen membership or package at Checkout, and SHALL let staff change it, choose another, or pay with a normal method instead, before completing the order; extras and products added at Checkout SHALL be paid as usual, or by a membership or package that covers them.
+7. WHEN a booking held against a membership or package is cancelled, THE system SHALL give the allowance back; WHEN a used allowance is refunded, THE system SHALL give it back.
+8. THE system SHALL record on the order and its receipt which membership or package paid for which line.
+9. THE system SHALL apply the same membership and package rules wherever a booking or sale is priced (New Appointment, the payment step, Checkout and the price shown while booking), so they never disagree.
+
 ---
 
 ## Dependencies

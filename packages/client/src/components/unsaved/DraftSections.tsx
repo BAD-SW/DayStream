@@ -99,10 +99,15 @@ export function useDraft<T>(id: string, label: string, initial: T, persist: (val
     setValue(stored);
   }, []);
 
+  // Depend on the provider's register / unregister (stable), not on the context value: that value
+  // changes whenever a section registers, and re-running these on each change unregistered and
+  // re-registered every section, which changed the value again ("Maximum update depth exceeded").
+  const register = ctx?.register;
+  const unregister = ctx?.unregister;
   useEffect(() => {
-    ctx?.register({ id, tab, label, dirty, save });
-  }, [ctx, id, tab, label, dirty, save]);
-  useEffect(() => () => ctx?.unregister(id), [ctx, id]);
+    register?.({ id, tab, label, dirty, save });
+  }, [register, id, tab, label, dirty, save]);
+  useEffect(() => () => unregister?.(id), [unregister, id]);
 
   return { value, setValue, dirty, load, rebase, changed, saved, save };
 }
