@@ -130,7 +130,7 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
     - [x] ✅ Stock Movements: From and To; grouped by location; every stock change with date, movement, reason, change, unit cost, value, on hand after and who (owner, 19 Nov 2026)
     - [x] ✅ Report screen: a report can be as of a date (shown, not chosen), always grouped (no Group by options), with hidden columns; headers top-aligned with their icons beside them; the column filter window is solid
   - [x] ✅ Requirement 7 brought in line with what was built (criteria 5 to 10; owner, 19 Nov 2026)
-- [ ] Verify live and close with the owner
+- [x] ✅ Verify live and close with the owner (Checkout stock limit, Stock card, purchase orders to bills, accounting entries, low stock and the inventory reports; closed 19 Nov 2026)
 
 ## 8. Staff mobile app (Requirement 8)
 - [ ] Confirm current state and agree requirements
@@ -222,6 +222,8 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 - [ ] Fix: the server tests run against the development database and leave about 24 test businesses and their data behind; give the tests their own database, or have them clean up
 - [ ] Decide: should late appointments be marked No-Show automatically (a business setting, off by default)? Today nothing runs it; staff mark No-Show, helped by the red button after 15 minutes
 - [x] ✅ Two orders were created when Checkout opened (the page loaded twice in development, and two orders made at once got the same number): Checkout reuses an order being created, and the server numbers orders and opens a booking's checkout one at a time
+- [x] ✅ Reports page: each person puts the report categories in their own order by dragging a category by its handle (or with the keyboard), saved on their profile and used every time; Reset order goes back to the standard order (owner, 19 Nov 2026; migration 184, usr_preferences)
+- [x] ✅ Reports category order verified live with the owner (19 Nov 2026)
 - [x] ✅ Bills could not be paid: every bill starts as draft and payment needs it approved, but the Bills tab had no Approve. Bills now have Approve (draft, pending, or overdue and never approved), then Record Payment; an approved bill past its due date (overdue) can still be paid. A form's error on the Accounting page shows on its own line under its buttons
 - [x] ✅ Considered addressed by the owner (19 Nov 2026), no clean-up: the extra open Checkout orders left by the duplicate-order bug in the development data (176 orders across all dev businesses share an order number with another, back to ORD-2026-0004; 110 are open, many with a line on them)
 - [x] ✅ Duplicate purchase orders from the Save draft bug: PO-0003 to PO-0006 cancelled by the owner; PO-0001 (a copy of PO-0002) cancelled (owner, 19 Nov 2026)

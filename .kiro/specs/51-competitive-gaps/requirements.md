@@ -157,7 +157,7 @@ The acceptance criteria below set the capability each gap must reach. They are r
 
 **User Story**: As a business owner who sells products, I want stock levels tracked as I sell and receive goods, so that I know what to reorder.
 
-**Current state**: Built (19 Nov 2026); the description below is what was there before. Phase 28 left inventory out as a short-term scope decision ("no stock levels, reorder points or quantity management"); it was always expected long term. Confirmed in the code (15 Nov 2026):
+**Current state**: ✅ Complete, closed with the owner (19 Nov 2026); the description below is what was there before. Phase 28 left inventory out as a short-term scope decision ("no stock levels, reorder points or quantity management"); it was always expected long term. Confirmed in the code (15 Nov 2026):
 - Products (`prd_merchandise`) have a name, SKU, price, category, tax and status; variants (`prd_merchandise_variants`) are a flat name, SKU and price. There is no quantity, cost price, barcode, supplier, reorder level or location on either, and products have no `tenant_id` column.
 - Selling a product at Checkout and refunding it change no stock. Product refunds work line by line.
 - Accounts payable has vendors, bills with free-text lines, and expenses, with no link to products, purchase orders or receiving.

@@ -73,3 +73,47 @@ profileRouter.put('/', validate(updateProfileSchema), async (req: Request, res: 
     error(res, 'Failed to update profile', 'INTERNAL_ERROR', 500);
   }
 });
+
+// ---------------------------------------------------------------------------------------------
+// The person's own screen settings (owner, 19 Nov 2026), kept on the server so they follow them to
+// any browser. Only known keys are accepted, each with its own shape.
+// ---------------------------------------------------------------------------------------------
+
+const PREFERENCE_SCHEMAS: Record<string, Joi.Schema> = {
+  // The Reports page's category order: category ids, first to last.
+  'reports.category_order': Joi.array().items(Joi.string().pattern(/^[a-z0-9_-]{1,40}$/)).max(50).unique().required(),
+};
+
+// GET /api/v1/profile/preferences/:key — the saved value, or null when none is saved
+profileRouter.get('/preferences/:key', async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    if (!PREFERENCE_SCHEMAS[req.params.key]) { error(res, 'Unknown preference', 'NOT_FOUND', 404); return; }
+    const { rows } = await adminPool.query(
+      'SELECT value FROM usr_preferences WHERE user_id = $1 AND key = $2', [authReq.user.sub, req.params.key]);
+    success(res, rows[0]?.value ?? null);
+  } catch (err) { console.error('Failed to load preference', (err as Error).message); error(res, 'Failed to load the setting', 'INTERNAL_ERROR', 500); }
+});
+
+// PUT /api/v1/profile/preferences/:key — { value }; null removes it (back to the default)
+profileRouter.put('/preferences/:key', async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const schema = PREFERENCE_SCHEMAS[req.params.key];
+    if (!schema) { error(res, 'Unknown preference', 'NOT_FOUND', 404); return; }
+    const value = req.body?.value ?? null;
+    if (value === null) {
+      await adminPool.query('DELETE FROM usr_preferences WHERE user_id = $1 AND key = $2', [authReq.user.sub, req.params.key]);
+      success(res, null);
+      return;
+    }
+    const { error: invalid } = schema.validate(value);
+    if (invalid) { error(res, invalid.message, 'VALIDATION_ERROR', 400); return; }
+    const { rows } = await adminPool.query(
+      `INSERT INTO usr_preferences (tenant_id, user_id, key, value) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+       RETURNING value`,
+      [authReq.user.tid, authReq.user.sub, req.params.key, JSON.stringify(value)]);
+    success(res, rows[0].value);
+  } catch (err) { console.error('Failed to save preference', (err as Error).message); error(res, 'Failed to save the setting', 'INTERNAL_ERROR', 500); }
+});
