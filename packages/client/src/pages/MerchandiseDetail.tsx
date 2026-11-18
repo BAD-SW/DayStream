@@ -10,6 +10,10 @@ import { apiClient } from '../api/client';
 import { formatCurrency } from '../utils/currency';
 import * as servicesApi from '../api/services';
 import type { ServiceCategory } from '../api/services';
+import { getVendors } from '../api/accounts-payable';
+import * as inventoryApi from '../api/inventory';
+import type { StockLine, StockMovement } from '../api/inventory';
+import { ChangeStockModal, ReorderModal, CountModal, TransferModal } from '../components/inventory/StockModals';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   active: 'success', draft: 'neutral', paused: 'warning', archived: 'error', inactive: 'neutral',
@@ -28,6 +32,12 @@ interface Merchandise {
   image_url?: string;
   display_order: number;
   tax_category_id?: string;
+  is_taxable?: boolean;
+  // retail inventory (spec 51, gap 7)
+  track_stock?: boolean;
+  cost_cents?: number | null;
+  barcode?: string | null;
+  supplier_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -37,9 +47,16 @@ interface MerchVariant {
   name: string;
   sku?: string;
   price: number;
+  cost_cents?: number | null;
+  barcode?: string | null;
   status: string;
   display_order: number;
 }
+
+interface VendorOption { id: string; name: string }
+
+const centsText = (c: number | null | undefined) => (c == null ? '' : (c / 100).toFixed(2));
+const toCents = (s: string): number | null => (s.trim() === '' ? null : Math.max(0, Math.round(parseFloat(s) * 100) || 0));
 
 // One Save for the product (David, 2026-11-02, as in Settings, Events and People): details,
 // image and variants wait for Save changes; Pause, Activate, Archive and Restore act straight away.
@@ -102,6 +119,7 @@ function MerchandiseDetailPage() {
       <ProductForm item={item} categories={categories} businessId={businessId} onUpdate={setItem} />
       <ProductImage item={item} businessId={businessId} onUpdate={setItem} />
       <VariantsCard merchandiseId={item.id} />
+      <StockCard item={item} businessId={businessId} />
     </div>
   );
 }
@@ -117,8 +135,12 @@ function ProductForm({ item, categories, businessId, onUpdate }: { item: Merchan
     price: m.price,
     category_id: m.category_id || '',
     display_order: m.display_order,
-    is_taxable: (m as any).is_taxable || false,
+    is_taxable: m.is_taxable || false,
     tax_category_id: m.tax_category_id || '',
+    track_stock: m.track_stock || false,
+    cost_cents: m.cost_cents ?? null,
+    barcode: m.barcode || '',
+    supplier_id: m.supplier_id || '',
   });
   const draft = useDraft('product-details', 'Product details', fromItem(item), async (form) => {
     const payload = {
@@ -128,6 +150,8 @@ function ProductForm({ item, categories, businessId, onUpdate }: { item: Merchan
       sku: form.sku || null,
       description: form.description || null,
       short_description: form.short_description || null,
+      barcode: form.barcode || null,
+      supplier_id: form.supplier_id || null,
     };
     const res = await apiClient.put(`/v1/merchandise/${item.id}?business_id=${businessId}`, payload);
     onUpdate({ ...item, ...res.data.data });
@@ -139,12 +163,19 @@ function ProductForm({ item, categories, businessId, onUpdate }: { item: Merchan
   const [priceDisplay, setPriceDisplay] = useState((item.price / 100).toFixed(2));
   // The price box follows the stored price after a save.
   useEffect(() => { setPriceDisplay((draft.saved.price / 100).toFixed(2)); }, [draft.saved.price]);
+  const [costDisplay, setCostDisplay] = useState(centsText(item.cost_cents));
+  useEffect(() => { setCostDisplay(centsText(draft.saved.cost_cents)); }, [draft.saved.cost_cents]);
   const [statusChanging, setStatusChanging] = useState(false);
   const [taxCategories, setTaxCategories] = useState<any[]>([]);
+  const [vendors, setVendors] = useState<VendorOption[]>([]);
 
   // Fetch tax categories
   useEffect(() => {
     servicesApi.getTaxCategories(businessId).then(setTaxCategories).catch(() => []);
+  }, [businessId]);
+  // Suppliers are the business's vendors (Accounts Payable); staff without access see none.
+  useEffect(() => {
+    getVendors(businessId).then((v: VendorOption[]) => setVendors(v || [])).catch(() => setVendors([]));
   }, [businessId]);
 
   const handleStatusAction = async (action: string) => {
@@ -204,6 +235,32 @@ function ProductForm({ item, categories, businessId, onUpdate }: { item: Merchan
               <option value="">No tax</option>
               {taxCategories.map((tc: any) => <option key={tc.id} value={tc.id}>{tc.name} ({(tc.rate / 100).toFixed(2)}%)</option>)}
             </select>
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Cost price</label>
+            <input style={{ ...styles.input, ...mark('cost_cents') }} type="number" step="0.01" min="0" value={costDisplay} placeholder="What you pay for one"
+              onChange={(e) => { setCostDisplay(e.target.value); setForm({ ...form, cost_cents: toCents(e.target.value) }); }}
+              onBlur={() => setCostDisplay(centsText(form.cost_cents))}
+            />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Barcode</label>
+            <input style={{ ...styles.input, ...mark('barcode') }} value={form.barcode} maxLength={64} onChange={(e) => setForm({ ...form, barcode: e.target.value })} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Supplier</label>
+            <select style={{ ...styles.input, ...mark('supplier_id') }} value={form.supplier_id} onChange={(e) => setForm({ ...form, supplier_id: e.target.value })}>
+              <option value="">None</option>
+              {form.supplier_id && !vendors.some((v) => v.id === form.supplier_id) && <option value={form.supplier_id}>Current supplier</option>}
+              {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+          </div>
+          <div style={{ ...styles.formGroup, justifyContent: 'flex-end' }}>
+            <label style={{ ...styles.label, display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', cursor: 'pointer', ...mark('track_stock') }}>
+              <input type="checkbox" checked={form.track_stock} onChange={(e) => setForm({ ...form, track_stock: e.target.checked })} />
+              Track stock
+            </label>
+            <span style={styles.hint}>Count what is on hand at each location; Checkout cannot sell more than that.</span>
           </div>
           <div style={{ ...styles.formGroup, gridColumn: '1 / -1' }}>
             <label style={styles.label}>Short Description</label>
@@ -281,8 +338,8 @@ function ProductImage({ item, businessId, onUpdate }: { item: Merchandise; busin
 
 // --- Variants Card (add/edit in a window; saved with the page's Save changes) ---
 
-type VariantData = Pick<MerchVariant, 'name' | 'sku' | 'price'>;
-const variantData = (v: VariantData) => ({ name: v.name, sku: v.sku || undefined, price: v.price });
+type VariantData = Pick<MerchVariant, 'name' | 'sku' | 'price' | 'cost_cents' | 'barcode'>;
+const variantData = (v: VariantData) => ({ name: v.name, sku: v.sku || undefined, price: v.price, cost_cents: v.cost_cents ?? null, barcode: v.barcode || null });
 
 function VariantsCard({ merchandiseId }: { merchandiseId: string }) {
   const [loading, setLoading] = useState(true);
@@ -335,6 +392,7 @@ function VariantsCard({ merchandiseId }: { merchandiseId: string }) {
                 <div style={{ flex: 1, textDecoration: r.deleted ? 'line-through' : 'none' }}>
                   <strong>{v.name}</strong>
                   {v.sku && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>SKU: {v.sku}</span>}
+                  {v.cost_cents != null && <span style={{ marginLeft: '8px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>Cost: {formatCurrency(v.cost_cents)}</span>}
                   {r.isNew && <> <RowTag>New</RowTag></>}
                   {edited && <> <RowTag>Changed</RowTag></>}
                   {r.deleted && <> <RowTag>Deleted when you save</RowTag></>}
@@ -360,14 +418,16 @@ function VariantModal({ variant, onClose, onDone }: { variant?: MerchVariant; on
   const [form, setForm] = useState({
     name: variant?.name || '',
     sku: variant?.sku || '',
+    barcode: variant?.barcode || '',
   });
   const [priceDisplay, setPriceDisplay] = useState(variant ? (variant.price / 100).toFixed(2) : '0.00');
+  const [costDisplay, setCostDisplay] = useState(centsText(variant?.cost_cents));
   const [error, setError] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name) { setError('Name is required'); return; }
-    onDone({ name: form.name, sku: form.sku || undefined, price: Math.round(parseFloat(priceDisplay || '0') * 100) });
+    onDone({ name: form.name, sku: form.sku || undefined, price: Math.round(parseFloat(priceDisplay || '0') * 100), cost_cents: toCents(costDisplay), barcode: form.barcode || null });
   };
 
   return (
@@ -394,6 +454,17 @@ function VariantModal({ variant, onClose, onDone }: { variant?: MerchVariant; on
             <label style={styles.label}>SKU</label>
             <input style={styles.input} value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="Optional" />
           </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Cost price</label>
+            <input style={styles.input} type="number" step="0.01" min="0" value={costDisplay} placeholder="Same as the product if empty"
+              onChange={(e) => setCostDisplay(e.target.value)}
+              onBlur={() => setCostDisplay(centsText(toCents(costDisplay)))}
+            />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Barcode</label>
+            <input style={styles.input} value={form.barcode} maxLength={64} onChange={(e) => setForm({ ...form, barcode: e.target.value })} placeholder="Optional" />
+          </div>
           <p style={{ ...styles.muted, fontSize: 'var(--font-size-xs)' }}>Saved with the page's Save changes.</p>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
@@ -405,7 +476,146 @@ function VariantModal({ variant, onClose, onDone }: { variant?: MerchVariant; on
   );
 }
 
+// --- Stock (spec 51, gap 7). Stock changes are recorded straight away, like Pause or Archive:
+// each one is a movement in the history, so it is not held for Save changes. ---
+
+function StockCard({ item, businessId }: { item: Merchandise; businessId: string }) {
+  const { dirtySections } = useDraftSections();
+  const [lines, setLines] = useState<StockLine[]>([]);
+  const [history, setHistory] = useState<StockMovement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showHistory, setShowHistory] = useState(false);
+  const [changing, setChanging] = useState<StockLine | null>(null);
+  const [reordering, setReordering] = useState<StockLine | null>(null);
+  const [counting, setCounting] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const tracked = !!item.track_stock;
+
+  const load = useCallback(async () => {
+    if (!tracked) { setLoading(false); return; }
+    try {
+      const [s, h] = await Promise.all([inventoryApi.getProductStock(item.id, businessId), inventoryApi.getProductHistory(item.id, businessId)]);
+      setLines(s.lines); setHistory(h);
+    } catch { setLines([]); setHistory([]); }
+    finally { setLoading(false); }
+  }, [item.id, businessId, tracked]);
+  // Reload after the page is saved too (Track stock turned on, or options added).
+  useEffect(() => { if (dirtySections.length === 0) load(); }, [load, dirtySections.length]);
+
+  const hasVariants = lines.some((l) => l.variant_id);
+  const hasLocations = new Set(lines.map((l) => l.location_id)).size > 1;
+
+  return (
+    <div style={styles.card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>Stock</h3>
+        {tracked && (
+          <div style={{ display: 'flex', gap: 'var(--space-xs)', alignItems: 'center' }}>
+            {lines.length > 0 && <Button size="sm" variant="secondary" onClick={() => setCounting(true)}>Count</Button>}
+            {hasLocations && <Button size="sm" variant="secondary" onClick={() => setMoving(true)} disabled={!lines.some((l) => l.on_hand > 0)}>Transfer</Button>}
+            {history.length > 0 && <Button size="sm" variant="ghost" onClick={() => setShowHistory((s) => !s)}>{showHistory ? 'Hide history' : 'History'}</Button>}
+          </div>
+        )}
+      </div>
+      {!tracked && <p style={styles.muted}>Stock is not tracked. Tick Track stock in Product Details and save to count what is on hand.</p>}
+      {tracked && loading && <p style={styles.muted}>Loading...</p>}
+      {tracked && !loading && lines.length === 0 && <p style={styles.muted}>The business has no active location to hold stock.</p>}
+      {tracked && !loading && lines.length > 0 && (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                {hasLocations && <th style={styles.th}>Location</th>}
+                {hasVariants && <th style={styles.th}>Option</th>}
+                <th style={{ ...styles.th, textAlign: 'right' }}>On hand</th>
+                <th style={{ ...styles.th, textAlign: 'right' }}>Average cost</th>
+                <th style={{ ...styles.th, textAlign: 'right' }}>Reorder at</th>
+                <th style={{ ...styles.th, textAlign: 'right' }}>Reorder qty</th>
+                <th style={styles.th} />
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l) => (
+                <tr key={`${l.location_id}-${l.variant_id || ''}`}>
+                  {hasLocations && <td style={styles.td}>{l.location_name}</td>}
+                  {hasVariants && <td style={styles.td}>{l.variant_name}</td>}
+                  <td style={{ ...styles.td, textAlign: 'right', fontWeight: 600 }}>
+                    {l.on_hand}{' '}
+                    {l.on_hand === 0 ? <Badge variant="error">Out of stock</Badge> : l.low ? <Badge variant="warning">Low</Badge> : null}
+                  </td>
+                  <td style={{ ...styles.td, textAlign: 'right' }}>{l.on_hand > 0 || l.avg_cost_cents > 0 ? formatCurrency(l.avg_cost_cents) : '—'}</td>
+                  <td style={{ ...styles.td, textAlign: 'right' }}>{l.reorder_level ?? '—'}</td>
+                  <td style={{ ...styles.td, textAlign: 'right' }}>{l.reorder_qty ?? '—'}</td>
+                  <td style={{ ...styles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <Button size="sm" variant="secondary" onClick={() => setChanging(l)}>Change stock</Button>{' '}
+                    <Button size="sm" variant="ghost" onClick={() => setReordering(l)}>Reorder</Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {tracked && showHistory && (
+        <div style={{ marginTop: 'var(--space-md)', overflowX: 'auto' }}>
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>When</th>
+                <th style={styles.th}>What</th>
+                {hasLocations && <th style={styles.th}>Location</th>}
+                {hasVariants && <th style={styles.th}>Option</th>}
+                <th style={{ ...styles.th, textAlign: 'right' }}>Change</th>
+                <th style={{ ...styles.th, textAlign: 'right' }}>On hand after</th>
+                <th style={styles.th}>By</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((m) => (
+                <tr key={m.id}>
+                  <td style={styles.td}>{new Date(m.created_at).toLocaleString()}</td>
+                  <td style={styles.td}>
+                    {inventoryApi.MOVEMENT_LABELS[m.reason] || m.reason}
+                    {m.adjust_reason && `: ${inventoryApi.ADJUST_REASONS.find((r) => r.value === m.adjust_reason)?.label || m.adjust_reason}`}
+                    {m.order_number && ` (order ${m.order_number})`}
+                    {m.note && <div style={styles.hint}>{m.note}</div>}
+                  </td>
+                  {hasLocations && <td style={styles.td}>{m.location_name}</td>}
+                  {hasVariants && <td style={styles.td}>{m.variant_name}</td>}
+                  <td style={{ ...styles.td, textAlign: 'right' }}>{m.qty_change > 0 ? `+${m.qty_change}` : m.qty_change}</td>
+                  <td style={{ ...styles.td, textAlign: 'right' }}>{m.on_hand_after}</td>
+                  <td style={styles.td}>{m.by_name || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {changing && (
+        <ChangeStockModal line={changing} productId={item.id} productName={item.name} businessId={businessId} defaultCost={item.cost_cents ?? null}
+          onClose={() => setChanging(null)} onDone={() => { setChanging(null); load(); }} />
+      )}
+      {counting && (
+        <CountModal lines={lines} productId={item.id} productName={item.name} businessId={businessId}
+          onClose={() => setCounting(false)} onDone={() => { setCounting(false); load(); }} />
+      )}
+      {moving && (
+        <TransferModal lines={lines} productId={item.id} productName={item.name} businessId={businessId}
+          onClose={() => setMoving(false)} onDone={() => { setMoving(false); load(); }} />
+      )}
+      {reordering && (
+        <ReorderModal line={reordering} productId={item.id} productName={item.name} businessId={businessId}
+          onClose={() => setReordering(null)} onDone={() => { setReordering(null); load(); }} />
+      )}
+    </div>
+  );
+}
+
 const styles: Record<string, React.CSSProperties> = {
+  hint: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' },
+  th: { textAlign: 'left', padding: 'var(--space-xs) var(--space-sm)', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', fontWeight: 600 },
+  td: { padding: 'var(--space-xs) var(--space-sm)', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)', verticalAlign: 'middle' },
   page: { padding: 'var(--space-lg)', maxWidth: '900px', margin: '0 auto' },
   loading: { padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-text-secondary)' },
   back: { background: 'none', border: 'none', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 'var(--font-size-sm)', padding: 0, marginBottom: 'var(--space-md)', fontFamily: 'var(--font-family)' },

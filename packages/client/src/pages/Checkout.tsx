@@ -13,6 +13,27 @@ import { MissingDetailsPrompt } from '../components/MissingDetailsPrompt';
 import { CurrencyInput } from '../components/CurrencyInput';
 import type { Order, OrderItem } from '../api/checkout';
 import { formatCurrency } from '../utils/currency';
+import { getLocations } from '../api/locations';
+import type { Location } from '../api/locations';
+import { getLocationStock } from '../api/inventory';
+
+/** On hand of a tracked product (or variant) at the order's location; null when stock is not tracked. */
+type StockInfo = { onHand: number; low: boolean };
+type StockOf = (productId: string | null | undefined, variantId: string | null | undefined) => StockInfo | null;
+type MaxFor = (productId: string | null | undefined, variantId: string | null, exceptItemId?: string) => number | null;
+
+/** A typed quantity, kept between 1 and the most that may be added (when stock is tracked). */
+const clampQty = (raw: string, max: number | null) => {
+  const n = parseInt(raw, 10) || 1;
+  return Math.max(1, max != null && max > 0 ? Math.min(n, max) : n);
+};
+
+const stockText = (s: StockInfo) => (s.onHand === 0 ? 'Out of stock' : `${s.onHand} in stock`);
+const stockColor = (s: StockInfo) => (s.onHand === 0 ? 'var(--color-error)' : s.low ? 'var(--color-warning)' : 'var(--color-text-secondary)');
+const limitedText = (l: NonNullable<Order['stock_limited']>, name: string, changed: boolean) =>
+  `${name}: only ${l.onHand} in stock, so ${changed ? `the quantity is ${l.added}` : `${l.added} ${l.added === 1 ? 'was' : 'were'} added`}, not ${l.requested}.`;
+const errText = (e: unknown, fallback: string) =>
+  (e as { response?: { data?: { error?: string } } })?.response?.data?.error || fallback;
 
 const PAY_METHOD_LABEL: Record<string, string> = {
   cash: 'Cash', card: 'Card', bank_draw: 'Direct debit', bank_transfer: 'Bank transfer',
@@ -23,6 +44,17 @@ const paySelectStyle: React.CSSProperties = {
   padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
   background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-base)',
 };
+
+// An order being created right now, by what it is for. React runs the page's loading effect twice in
+// development (Strict Mode), which used to create two orders; the second run reuses the first's.
+const ordersBeingCreated = new Map<string, Promise<Order>>();
+function createOnce(key: string, create: () => Promise<Order>): Promise<Order> {
+  const pending = ordersBeingCreated.get(key);
+  if (pending) return pending;
+  const p = create().finally(() => { setTimeout(() => ordersBeingCreated.delete(key), 2000); });
+  ordersBeingCreated.set(key, p);
+  return p;
+}
 
 export function Checkout() {
   const navigate = useNavigate();
@@ -66,6 +98,60 @@ export function Checkout() {
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
   const [newCustomerForm, setNewCustomerForm] = useState({ first_name: '', last_name: '', email: '', phone: '' });
 
+  // Retail stock (spec 51, gap 7): the order's location and what is on hand there.
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [tracked, setTracked] = useState<Set<string>>(new Set());
+  const [stock, setStock] = useState<Map<string, StockInfo>>(new Map());
+  const [stockNote, setStockNote] = useState<string | null>(null);
+  const orderLocationId = order?.location_id || locations.find((l) => l.is_primary)?.id || locations[0]?.id || null;
+
+  useEffect(() => {
+    if (!businessId) return;
+    getLocations(businessId, { status: 'active' }).then((l) => setLocations(l || [])).catch(() => setLocations([]));
+  }, [businessId]);
+
+  const loadStock = useCallback(async () => {
+    if (!businessId || !orderLocationId) return;
+    try {
+      const s = await getLocationStock(orderLocationId, businessId);
+      setTracked(new Set(s.tracked_ids));
+      setStock(new Map(s.stock.map((r) => [`${r.merchandise_id}:${r.variant_id || ''}`, { onHand: r.on_hand, low: r.low }])));
+    } catch { setTracked(new Set()); setStock(new Map()); }
+  }, [businessId, orderLocationId]);
+  useEffect(() => { loadStock(); }, [loadStock]);
+
+  const stockOf: StockOf = (productId, variantId) => {
+    if (!productId || !tracked.has(productId)) return null;
+    if (variantId !== undefined) return stock.get(`${productId}:${variantId || ''}`) ?? { onHand: 0, low: false };
+    // The whole product: every option together.
+    let onHand = 0; let low = false;
+    stock.forEach((v, k) => { if (k.startsWith(`${productId}:`)) { onHand += v.onHand; low = low || v.low; } });
+    return { onHand, low };
+  };
+
+  /** Most of a tracked item that may still go on this order (on hand less the order's other lines); null: no limit. */
+  const maxFor: MaxFor = (productId, variantId, exceptItemId) => {
+    const s = stockOf(productId, variantId);
+    if (!s || !order) return null;
+    const held = order.items
+      .filter((o) => o.item_type === 'product' && o.item_id === productId && (o.variant_id ?? null) === (variantId ?? null) && o.id !== exceptItemId)
+      .reduce((n, o) => n + o.quantity, 0);
+    return Math.max(0, s.onHand - held);
+  };
+
+  // An answer to adding or changing a line: say when the quantity was limited to what is on hand.
+  const applyOrder = (updated: Order, lineName: string, changed: boolean) => {
+    setOrder(updated);
+    setStockNote(updated.stock_limited ? limitedText(updated.stock_limited, lineName, changed) : null);
+  };
+
+  const handleSetLocation = async (locationId: string) => {
+    if (!order) return;
+    try {
+      setOrder(await checkoutApi.setOrderLocation(order.id, businessId, locationId));
+    } catch (err) { alert(errText(err, 'Could not change the location.')); }
+  };
+
   // Load order
   const loadOrder = useCallback(async () => {
     setLoading(true);
@@ -75,15 +161,17 @@ export function Checkout() {
         const o = await checkoutApi.getOrder(orderId);
         setOrder(o);
       } else if (bookingId) {
-        const o = await checkoutApi.createOrderFromBooking(businessId, bookingId);
+        const o = await createOnce(`booking:${bookingId}`, () => checkoutApi.createOrderFromBooking(businessId, bookingId));
         setOrder(o);
         // Update URL to include order ID
         window.history.replaceState(null, '', `/checkout?order=${o.id}`);
       } else if (isNewSale) {
         // "New order" from a person's profile opens the sale with that person already chosen.
         const forCustomer = searchParams.get('customer');
-        const created = await checkoutApi.createOrder({ business_id: businessId, ...(forCustomer ? { customer_id: forCustomer } : {}) });
-        const o = await checkoutApi.getOrder(created.id);
+        const o = await createOnce(`new:${businessId}:${forCustomer || ''}`, async () => {
+          const created = await checkoutApi.createOrder({ business_id: businessId, ...(forCustomer ? { customer_id: forCustomer } : {}) });
+          return checkoutApi.getOrder(created.id);
+        });
         setOrder(o);
         window.history.replaceState(null, '', `/checkout?order=${o!.id}`);
       } else {
@@ -221,6 +309,8 @@ export function Checkout() {
       }
       setOneTimeSession(session);
     } catch (err: any) {
+      const code = err?.response?.data?.code;
+      if (code === 'OUT_OF_STOCK' || code === 'NOT_ENOUGH_STOCK') loadStock();
       alert(err?.response?.data?.error || 'Could not start the card charge.');
     } finally {
       setStartingOneTime(false);
@@ -344,7 +434,10 @@ export function Checkout() {
         ? 'This business has no active payment processor connected.'
         : code === 'GIFT_CARD_INSUFFICIENT'
           ? 'The gift card balance is less than the order total.'
-          : err?.response?.data?.error || 'Failed to complete payment';
+          : code === 'OUT_OF_STOCK' || code === 'NOT_ENOUGH_STOCK'
+            ? `${err?.response?.data?.error} Nothing was charged.`
+            : err?.response?.data?.error || 'Failed to complete payment';
+      if (code === 'OUT_OF_STOCK' || code === 'NOT_ENOUGH_STOCK') loadStock();
       alert(msg);
     } finally {
       setCompleting(false);
@@ -408,6 +501,14 @@ export function Checkout() {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+          {locations.length > 1 && (isOpen ? (
+            <select style={styles.creditSelect} value={orderLocationId || ''} onChange={(e) => handleSetLocation(e.target.value)}
+              aria-label="Location" title="Where the sale happens; products are sold from this location's stock">
+              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          ) : (
+            <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{locations.find((l) => l.id === orderLocationId)?.name}</span>
+          ))}
           {isOpen ? (
             <select
               style={styles.creditSelect}
@@ -490,8 +591,14 @@ export function Checkout() {
       <div style={styles.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
           <h3 style={styles.cardTitle}>Items</h3>
-          {isOpen && <Button variant="secondary" size="sm" onClick={() => setShowAddItem(true)}>Add Item</Button>}
+          {isOpen && <Button variant="secondary" size="sm" onClick={() => { setShowAddItem(true); loadStock(); }}>Add Item</Button>}
         </div>
+
+        {isOpen && stockNote && (
+          <div role="status" style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-sm)', padding: 'var(--space-sm) var(--space-md)', marginBottom: 'var(--space-sm)', border: '1px solid var(--color-warning)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+            <span>{stockNote}</span>
+          </div>
+        )}
 
         {order.items.length === 0 && <p style={styles.empty}>No items in cart</p>}
 
@@ -518,7 +625,8 @@ export function Checkout() {
                         item={item}
                         orderId={order.id}
                         staffList={staffList}
-                        onSaved={(updated) => { setOrder(updated); setEditingItemId(null); }}
+                        maxQty={item.item_type === 'product' ? maxFor(item.item_id, item.variant_id ?? null, item.id) : null}
+                        onSaved={(updated) => { applyOrder(updated, item.item_name, true); setEditingItemId(null); }}
                         onCancel={() => setEditingItemId(null)}
                       />
                     </td>
@@ -528,6 +636,17 @@ export function Checkout() {
                     <td style={styles.td}>
                       <span style={styles.itemTypeLabel}>{item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1)}:</span>{' '}
                       <strong>{item.item_name}</strong>
+                      {isOpen && item.item_type === 'product' && (() => {
+                        const s = stockOf(item.item_id, item.variant_id ?? null);
+                        if (!s) return null;
+                        // The order's lines for this item together, against what is on hand.
+                        const onOrder = order.items
+                          .filter((o) => o.item_type === 'product' && o.item_id === item.item_id && (o.variant_id ?? null) === (item.variant_id ?? null))
+                          .reduce((n, o) => n + o.quantity, 0);
+                        return onOrder > s.onHand
+                          ? <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-error)' }}>Only {s.onHand} in stock. Reduce the quantity.</div>
+                          : <div style={{ fontSize: 'var(--font-size-xs)', color: stockColor(s) }}>{s.onHand} in stock</div>;
+                      })()}
                       {item.credited_to && item.credited_to !== order.credited_to && (
                         <div style={styles.overrideInline}>Credit: {item.credited_first_name} {item.credited_last_name}</div>
                       )}
@@ -562,7 +681,9 @@ export function Checkout() {
             offerings={offerings}
             staffList={staffList}
             customerId={order.customer_id}
-            onAdded={(updated) => { setOrder(updated); setShowAddItem(false); }}
+            stockOf={stockOf}
+            maxFor={maxFor}
+            onAdded={(updated, name) => { applyOrder(updated, name, false); setShowAddItem(false); }}
             onCancel={() => setShowAddItem(false)}
           />
         )}
@@ -742,12 +863,14 @@ export function Checkout() {
 // Inline Add Item Row
 // ============================================================
 
-function InlineAddItem({ orderId, offerings, staffList, customerId, onAdded, onCancel }: {
+function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, maxFor, onAdded, onCancel }: {
   orderId: string;
   offerings: { services: any[]; products: any[]; memberships: any[]; packages: any[] };
   staffList: any[];
   customerId: string | null;
-  onAdded: (order: Order) => void;
+  stockOf: StockOf;
+  maxFor: MaxFor;
+  onAdded: (order: Order, lineName: string) => void;
   onCancel: () => void;
 }) {
   const [itemType, setItemType] = useState<'product' | 'membership' | 'package' | 'gift_card'>('product');
@@ -828,7 +951,7 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, onAdded, onC
           // Explicit: the shown date, or null when staff cleared it (no expiry).
           gift_expiry: giftExpiry || null,
         });
-        onAdded(updated);
+        onAdded(updated, 'Gift card');
       } catch { alert('Failed to add gift card'); }
       finally { setSaving(false); }
       return;
@@ -864,10 +987,25 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, onAdded, onC
         unit_price: price,
         credited_to: creditedTo || undefined,
       });
-      onAdded(updated);
-    } catch { alert('Failed to add item'); }
+      onAdded(updated, variantName ? `${selectedItem.name} (${variantName})` : selectedItem.name);
+    } catch (err) {
+      // A tracked product with none left to add is refused with the reason (spec 51, gap 7).
+      const code = (err as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      alert(code === 'OUT_OF_STOCK' ? `${selectedItem.name}: ${errText(err, 'Out of stock.')}` : errText(err, 'Failed to add item'));
+    }
     finally { setSaving(false); }
   };
+
+  // Stock of what is chosen: the option, or the product when it has no options.
+  const isProduct = itemType === 'product';
+  // A tracked product with options is stocked per option: one must be chosen before stock is shown.
+  const needsOption = isProduct && !!selectedId && variants.length > 0 && !selectedVariantId && stockOf(selectedId, undefined) !== null;
+  const chosenStock = isProduct && selectedId && !needsOption ? stockOf(selectedId, selectedVariantId || null) : null;
+  // The quantity never goes above what may still be added: typed numbers are brought down to it.
+  const maxQty = chosenStock ? maxFor(selectedId, selectedVariantId || null) : null;
+  useEffect(() => {
+    if (maxQty != null && maxQty > 0 && quantity > maxQty) setQuantity(maxQty);
+  }, [maxQty, quantity]);
 
   if (itemType === 'gift_card') {
     return (
@@ -914,21 +1052,30 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, onAdded, onC
         </select>
         <select style={styles.inlineSelect} value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
           <option value="">— Select item —</option>
-          {itemList.map((item: any) => (
-            <option key={item.id} value={item.id}>{item.name} — {formatCurrency(item.price)}</option>
-          ))}
+          {itemList.map((item: any) => {
+            const s = isProduct ? stockOf(item.id, undefined) : null;
+            return (
+              <option key={item.id} value={item.id} disabled={s?.onHand === 0}>
+                {item.name} — {formatCurrency(item.price)}{s ? ` · ${stockText(s)}` : ''}
+              </option>
+            );
+          })}
         </select>
         {variants.length > 0 ? (
           <select style={{ ...styles.inlineSelect, minWidth: '110px' }} value={selectedVariantId} onChange={(e) => setSelectedVariantId(e.target.value)}>
-            <option value="">Base ({formatCurrency(selectedItem?.price || 0)})</option>
-            {variants.map((v: any) => (
-              <option key={v.id} value={v.id}>{v.name} — {formatCurrency(v.price)}</option>
-            ))}
+            {stockOf(selectedId, undefined) !== null
+              ? <option value="">— Choose an option —</option>
+              : <option value="">Base ({formatCurrency(selectedItem?.price || 0)})</option>}
+            {variants.map((v: any) => {
+              const s = stockOf(selectedId, v.id);
+              return <option key={v.id} value={v.id} disabled={s?.onHand === 0}>{v.name} — {formatCurrency(v.price)}{s ? ` · ${stockText(s)}` : ''}</option>;
+            })}
           </select>
         ) : (
           <span />
         )}
-        <input type="number" min="1" style={{ ...styles.inlineSelect, width: '40px', textAlign: 'center' as const }} value={quantity} onChange={(e) => setQuantity(parseInt(e.target.value) || 1)} />
+        <input type="number" min="1" max={maxQty != null && maxQty > 0 ? maxQty : undefined}
+          style={{ ...styles.inlineSelect, width: '40px', textAlign: 'center' as const }} value={quantity} onChange={(e) => setQuantity(clampQty(e.target.value, maxQty))} aria-label="Quantity" />
         <select style={styles.inlineSelect} value={creditedTo} onChange={(e) => setCreditedTo(e.target.value)}>
           <option value="">— Override —</option>
           {staffList.map((s: any) => (
@@ -936,10 +1083,16 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, onAdded, onC
           ))}
         </select>
         <div style={{ display: 'flex', gap: '4px' }}>
-          <Button size="sm" onClick={handleAdd} loading={saving} disabled={!selectedId}>Add</Button>
+          <Button size="sm" onClick={handleAdd} loading={saving} disabled={!selectedId || needsOption || maxQty === 0}>Add</Button>
           <Button variant="secondary" size="sm" onClick={onCancel}>✕</Button>
         </div>
       </div>
+      {/* The lists show what is in stock; a note only when nothing more can be added (Add is greyed out). */}
+      {chosenStock && maxQty === 0 && chosenStock.onHand > 0 && (
+        <p style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', margin: '6px 0 0' }}>
+          All {chosenStock.onHand} in stock are already on this order.
+        </p>
+      )}
     </div>
   );
 }
@@ -1010,14 +1163,17 @@ function PromoCodeInput({ order, businessId, onUpdated }: { order: Order; busine
 // Inline Edit Item Row
 // ============================================================
 
-function InlineEditItem({ item, orderId, staffList, onSaved, onCancel }: {
+function InlineEditItem({ item, orderId, staffList, maxQty, onSaved, onCancel }: {
   item: OrderItem;
   orderId: string;
   staffList: any[];
+  maxQty: number | null;
   onSaved: (order: Order) => void;
   onCancel: () => void;
 }) {
   const [quantity, setQuantity] = useState(item.quantity);
+  // A tracked product: the quantity cannot be raised above what is in stock (less the order's other lines).
+  const cap = maxQty != null ? Math.max(1, maxQty) : null;
   const [creditedTo, setCreditedTo] = useState(item.credited_to || '');
   const [variants, setVariants] = useState<any[]>([]);
   const [selectedVariantId, setSelectedVariantId] = useState(item.variant_id || '');
@@ -1046,7 +1202,7 @@ function InlineEditItem({ item, orderId, staffList, onSaved, onCancel }: {
         credited_to: creditedTo || null,
       });
       onSaved(updated);
-    } catch { alert('Failed to update item'); }
+    } catch (err) { alert(errText(err, 'Failed to update item')); }
     finally { setSaving(false); }
   };
 
@@ -1065,7 +1221,7 @@ function InlineEditItem({ item, orderId, staffList, onSaved, onCancel }: {
         ) : (
           <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>{item.variant_name ? `(${item.variant_name})` : ''} {formatCurrency(currentPrice)}</span>
         )}
-        <input type="number" min="1" style={{ ...styles.inlineSelect, width: '40px', textAlign: 'center' as const }} value={quantity} onChange={(e) => setQuantity(parseInt(e.target.value) || 1)} title="Quantity" />
+        <input type="number" min="1" max={cap ?? undefined} style={{ ...styles.inlineSelect, width: '40px', textAlign: 'center' as const }} value={quantity} onChange={(e) => setQuantity(clampQty(e.target.value, cap))} title="Quantity" />
         <select style={styles.inlineSelect} value={creditedTo} onChange={(e) => setCreditedTo(e.target.value)}>
           <option value="">— Override —</option>
           {staffList.map((s: any) => (

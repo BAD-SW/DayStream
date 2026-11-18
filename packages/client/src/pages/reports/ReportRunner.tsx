@@ -34,8 +34,11 @@ function buildTableColumns(cols: ReportColumn[], currency: string) {
     sortable: true,
     width: col.width || `${((weightFor(col) / totalWeight) * 100).toFixed(2)}%`,
     align: columnAlign(col),
-    // Headers may wrap: with the sort and filter icons a long header no longer fits one line.
-    headerStyle: { whiteSpace: 'normal' as const },
+    // Headers may wrap: with the sort and filter icons a long header no longer fits one line. The icons
+    // stay beside the label (the label wraps instead), so every header in the row lines up.
+    // Top-aligned (owner, 19 Nov 2026): one- and two-line headers line up along the top.
+    headerStyle: { whiteSpace: 'normal' as const, verticalAlign: 'top' as const },
+    headerIconsBeside: true,
     // Column filter beside the sort icon (David, 2026-11-02): dates get the calendar, the rest a value list.
     filter: (col.filterable === false ? false : col.type === 'date' ? 'date' : 'values') as 'date' | 'values' | false,
     filterLabel: (v: string) => (v === '' ? '' : String(formatReportValue(col.type === 'currency' || col.type === 'number' || col.type === 'percent' ? Number(v) : v, col.type, currency))),
@@ -65,12 +68,13 @@ function buildTableColumns(cols: ReportColumn[], currency: string) {
 
 /** Map a column link descriptor + row id to a detail-page href, or null when
  *  there's no id (so the cell renders as plain text rather than a dead link). */
-function linkHref(link: { to: 'customer' | 'order'; idKey: string }, id: unknown): string | null {
+function linkHref(link: { to: 'customer' | 'order' | 'product'; idKey: string }, id: unknown): string | null {
   if (id == null || id === '') return null;
   const encoded = encodeURIComponent(String(id));
   switch (link.to) {
     case 'customer': return `/customers/${encoded}`;
     case 'order': return `/receipt/${encoded}`;
+    case 'product': return `/offers/merchandise/${encoded}`;
     default: return null;
   }
 }
@@ -97,6 +101,12 @@ function isoToday(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Today in the browser's time zone (yyyy-mm-dd). */
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function ReportRunner() {
   const { reportId = '' } = useParams();
   const navigate = useNavigate();
@@ -106,7 +116,10 @@ export function ReportRunner() {
   const entry = findCatalogEntry(reportId);
 
   const [fromDate, setFromDate] = useState<string>(isoFirstOfMonth());
-  const [toDate, setToDate] = useState<string>(isoToday());
+  // A report 'as of' one date (catalog asOf) shows one date, today by default (the local day), and
+  // runs with From = To = that date.
+  const asOf = !!entry?.asOf;
+  const [toDate, setToDate] = useState<string>(asOf ? localToday() : isoToday());
   const [result, setResult] = useState<ReportRunResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState<ReportExportFormat | null>(null);
@@ -114,20 +127,25 @@ export function ReportRunner() {
   const [filters, setFilters] = useState<TableFilters>({});
   const [groupBy, setGroupBy] = useState<string[]>([]);
 
-  const rangeInvalid = !fromDate || !toDate || fromDate > toDate;
+  const startDate = asOf ? toDate : fromDate;
+  const rangeInvalid = !startDate || !toDate || startDate > toDate;
 
-  const groupableColumns = result?.columns.filter((c) => c.groupable) ?? [];
+  // A report with a fixed grouping offers no Group by options; hidden columns are not shown.
+  const fixedGroupBy = result?.groupBy?.length ? result.groupBy : null;
+  const groupableColumns = fixedGroupBy ? [] : result?.columns.filter((c) => c.groupable && !c.hidden) ?? [];
+  const effectiveGroupBy = fixedGroupBy ?? groupBy;
+  const shownColumns = useMemo(() => result?.columns.filter((c) => !c.hidden) ?? [], [result]);
 
   function toggleGroupBy(key: string) {
     setGroupBy((g) => (g.includes(key) ? g.filter((k) => k !== key) : [...g, key]));
   }
 
   const handleRun = useCallback(async () => {
-    if (!businessId || !reportId || !fromDate || !toDate || fromDate > toDate) return;
+    if (!businessId || !reportId || !startDate || !toDate || startDate > toDate) return;
     setLoading(true);
     setErrorMsg(null);
     try {
-      const data = await reportsApi.runReport(reportId, { start_date: fromDate, end_date: toDate });
+      const data = await reportsApi.runReport(reportId, { start_date: startDate, end_date: toDate });
       setResult(data);
       setFilters({});
       setGroupBy([]);
@@ -137,7 +155,7 @@ export function ReportRunner() {
     } finally {
       setLoading(false);
     }
-  }, [businessId, reportId, fromDate, toDate]);
+  }, [businessId, reportId, startDate, toDate]);
 
   // Auto-run: generate the report on open and whenever the date range (or the
   // active business/report) changes. A short debounce coalesces the rapid
@@ -155,11 +173,11 @@ export function ReportRunner() {
     if (rangeInvalid) return;
     setExporting(format);
     try {
-      const blob = await reportsApi.exportRunReport(reportId, format, { start_date: fromDate, end_date: toDate });
+      const blob = await reportsApi.exportRunReport(reportId, format, { start_date: startDate, end_date: toDate });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${reportId}_${fromDate}_${toDate}.${format}`;
+      link.download = asOf ? `${reportId}_as-of_${toDate}.${format}` : `${reportId}_${fromDate}_${toDate}.${format}`;
       link.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -192,11 +210,11 @@ export function ReportRunner() {
   // Grouped view: sections keyed by the selected group-by column values, each
   // with its own subtotals. Only active when at least one groupable column is selected.
   const groups = useMemo(() => {
-    if (!result || groupBy.length === 0) return null;
+    if (!result || effectiveGroupBy.length === 0) return null;
     const totalCols = result.columns.filter((c) => c.total && isNumericType(c.type));
     const map = new Map<string, { label: string; rows: Record<string, any>[]; subtotals: Record<string, number> }>();
     for (const row of filteredRows) {
-      const label = groupBy.map((k) => String(row[k] ?? '—')).join(' · ');
+      const label = effectiveGroupBy.map((k) => String(row[k] ?? '—')).join(' · ');
       let g = map.get(label);
       if (!g) {
         g = { label, rows: [], subtotals: {} };
@@ -207,15 +225,15 @@ export function ReportRunner() {
       for (const col of totalCols) g.subtotals[col.key] += Number(row[col.key]) || 0;
     }
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
-  }, [result, filteredRows, groupBy]);
+  }, [result, filteredRows, effectiveGroupBy]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const columns = useMemo(() => (result ? buildTableColumns(result.columns, result.meta.currency) : []), [result]);
+  const columns = useMemo(() => (result ? buildTableColumns(shownColumns, result.meta.currency) : []), [result, shownColumns]);
 
   // Build a footer-cells array (one per column, same order) for a totals row so
   // it renders inside the table and shares the exact column widths.
   function buildFooterCells(label: string, totals: Record<string, number>) {
     if (!result) return [];
-    return buildFooterCellsFor(result.columns, totals, result.meta.currency, label);
+    return buildFooterCellsFor(shownColumns, totals, result.meta.currency, label);
   }
 
   if (!entry) {
@@ -241,28 +259,38 @@ export function ReportRunner() {
       </div>
 
       <div style={styles.controlBar}>
-        <div style={styles.dateField}>
-          <label htmlFor="report-from" style={styles.dateLabel}>From</label>
-          <input
-            id="report-from"
-            type="date"
-            value={fromDate}
-            max={toDate || undefined}
-            onChange={(e) => setFromDate(e.target.value)}
-            style={styles.dateInput}
-          />
-        </div>
-        <div style={styles.dateField}>
-          <label htmlFor="report-to" style={styles.dateLabel}>To</label>
-          <input
-            id="report-to"
-            type="date"
-            value={toDate}
-            min={fromDate || undefined}
-            onChange={(e) => setToDate(e.target.value)}
-            style={styles.dateInput}
-          />
-        </div>
+        {asOf ? (
+          // Always today (owner, 19 Nov 2026): shown, not chosen.
+          <div style={styles.dateField}>
+            <span style={styles.dateLabel}>As of</span>
+            <span style={styles.asOfValue}>{new Date(`${toDate}T12:00:00`).toLocaleDateString()}</span>
+          </div>
+        ) : (
+          <>
+            <div style={styles.dateField}>
+              <label htmlFor="report-from" style={styles.dateLabel}>From</label>
+              <input
+                id="report-from"
+                type="date"
+                value={fromDate}
+                max={toDate || undefined}
+                onChange={(e) => setFromDate(e.target.value)}
+                style={styles.dateInput}
+              />
+            </div>
+            <div style={styles.dateField}>
+              <label htmlFor="report-to" style={styles.dateLabel}>To</label>
+              <input
+                id="report-to"
+                type="date"
+                value={toDate}
+                min={fromDate || undefined}
+                onChange={(e) => setToDate(e.target.value)}
+                style={styles.dateInput}
+              />
+            </div>
+          </>
+        )}
         {loading && <span style={styles.runningHint}>Running…</span>}
         {result && groupableColumns.length > 0 && (
           <div style={styles.groupInline}>
@@ -303,7 +331,7 @@ export function ReportRunner() {
             <span>
               {result.sections
                 ? `${result.meta.dateRange.start} to ${result.meta.dateRange.end}`
-                : `${filteredRows.length} of ${result.rows.length} rows · ${result.meta.dateRange.start} to ${result.meta.dateRange.end}`}
+                : `${filteredRows.length} of ${result.rows.length} rows · ${result.meta.asOf ? `as of ${result.meta.dateRange.end}` : `${result.meta.dateRange.start} to ${result.meta.dateRange.end}`}`}
             </span>
           </div>
 
@@ -390,6 +418,8 @@ const styles: Record<string, React.CSSProperties> = {
   dateField: { display: 'flex', flexDirection: 'column', gap: '4px' },
   dateLabel: { fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-medium)' as any },
   dateInput: { fontSize: 'var(--font-size-sm)', padding: '7px 9px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-surface)', color: 'var(--color-text)', fontFamily: 'var(--font-family)' },
+  // The As of date: plain text, the same height as a date field so the bar keeps its line.
+  asOfValue: { fontSize: 'var(--font-size-sm)', padding: '7px 0', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontWeight: 'var(--font-weight-medium)' as React.CSSProperties['fontWeight'] },
   spacer: { flex: 1 },
   hint: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' },
   runningHint: { color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', paddingBottom: '9px' },

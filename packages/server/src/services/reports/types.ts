@@ -36,6 +36,10 @@ export interface ReportDefinition {
   columns?: ReportColumn[];
   /** Single-table reports: returns raw rows keyed by column key. */
   run?: (ctx: ReportContext) => Promise<Record<string, any>[]>;
+  /** The report is a position on one date, ctx.end ('As of'); ctx.start is not used. */
+  asOf?: boolean;
+  /** Single-table reports: always group the rows by these column keys (no Group by options). */
+  groupBy?: string[];
   /** Multi-section reports: returns one section per table. */
   buildSections?: (ctx: ReportContext) => Promise<ReportSectionDef[]>;
 }

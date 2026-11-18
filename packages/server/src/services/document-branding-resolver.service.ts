@@ -210,6 +210,16 @@ export function buildTokenMap(
     reminder_lead: typeof data.hours_before === 'number' && data.hours_before > 0
       ? `${data.hours_before} hour${data.hours_before === 1 ? '' : 's'}` : '',
     redeem_link: str(data.redeem_link),
+    // Purchase order (purchase_order.sent, spec 51 gap 7): the recipient is the vendor.
+    vendor_name: str(data.vendor_name),
+    vendor_contact_name: str(data.vendor_contact_name),
+    po_number: str(data.po_number),
+    po_date: fmtDate(data.po_date, locale),
+    expected_date: fmtDate(data.expected_date, locale),
+    deliver_to: str(data.deliver_to),
+    deliver_to_address: str(data.deliver_to_address),
+    po_total: money(data.po_total_cents),
+    po_note: str(data.po_note),
     // Add-to-calendar block (links + .ics attachment) — not generated yet;
     // resolves empty until the calendar/portal work lands.
     calendar_links: str(data.calendar_links),

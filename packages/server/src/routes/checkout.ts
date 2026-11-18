@@ -169,12 +169,13 @@ checkoutRouter.post('/orders/:id/items', requirePermission('bookings:*'), valida
         ? { giftExpiry: req.body.gift_expiry ? String(req.body.gift_expiry).slice(0, 10) : null }
         : {}),
     });
-    // Return full order with updated totals
+    // Return full order with updated totals; stock_limited says a quantity was limited to what is on hand.
     const order = await checkoutService.getOrder(req.params.id);
-    success(res, order, undefined, 201);
+    success(res, { ...order, stock_limited: (item as any)?.stock_limited ?? null }, undefined, 201);
   } catch (err: any) {
+    if (err?.name === 'StockError') { error(res, err.message, err.code || 'OUT_OF_STOCK', 409); return; }
     if (err.message.includes('not open')) { error(res, err.message, 'CONFLICT', 409); }
-    else { error(res, 'Failed to add item', 'INTERNAL_ERROR', 500); }
+    else { console.error('Failed to add item', err?.message || err); error(res, 'Failed to add item', 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -190,7 +191,7 @@ const updateItemSchema = Joi.object({
 // PUT /api/v1/checkout/orders/:id/items/:itemId — Update item
 checkoutRouter.put('/orders/:id/items/:itemId', requirePermission('bookings:*'), validate(updateItemSchema), async (req: Request, res: Response) => {
   try {
-    await checkoutService.updateItem(req.params.itemId, req.params.id, {
+    const updated = await checkoutService.updateItem(req.params.itemId, req.params.id, {
       quantity: req.body.quantity,
       unitPrice: req.body.unit_price,
       discountAmount: req.body.discount_amount,
@@ -199,10 +200,10 @@ checkoutRouter.put('/orders/:id/items/:itemId', requirePermission('bookings:*'),
       notes: req.body.notes,
     });
     const order = await checkoutService.getOrder(req.params.id);
-    success(res, order);
+    success(res, { ...order, stock_limited: (updated as any)?.stock_limited ?? null });
   } catch (err: any) {
     if (err.message.includes('not open') || err.message.includes('not found')) { error(res, err.message, 'CONFLICT', 409); }
-    else { error(res, 'Failed to update item', 'INTERNAL_ERROR', 500); }
+    else { console.error('Failed to update item', err?.message || err); error(res, 'Failed to update item', 'INTERNAL_ERROR', 500); }
   }
 });
 
@@ -298,6 +299,8 @@ const refundOrderSchema = Joi.object({
   lines: Joi.array().items(Joi.object({
     order_item_id: Joi.string().uuid().required(),
     quantity: Joi.number().integer().min(1).required(),
+    // a product line: back into stock (default) or written off (spec 51, gap 7)
+    restock: Joi.boolean().default(true),
   })).min(1).required(),
 });
 
@@ -312,7 +315,7 @@ checkoutRouter.post('/orders/:id/refund', requirePermission('bookings:*'), valid
       businessId,
       tenantId: authReq.tenantId,
       orderId: req.params.id,
-      lines: req.body.lines.map((l: any) => ({ orderItemId: l.order_item_id, quantity: l.quantity })),
+      lines: req.body.lines.map((l: any) => ({ orderItemId: l.order_item_id, quantity: l.quantity, restock: l.restock !== false })),
       reason: req.body.reason,
       processedBy: authReq.user.sub,
     });
@@ -335,12 +338,15 @@ checkoutRouter.post('/orders/:id/one-time-charge', requirePermission('bookings:*
   try {
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    // The card is charged in the browser before completion, so check stock first (spec 51, gap 7).
+    const { checkOrderFits } = await import('../services/inventory.service');
+    await checkOrderFits(req.params.id);
     const { beginOneTimeOrderCharge } = await import('../services/walkin-payment.service');
     const session = await beginOneTimeOrderCharge(businessId, req.params.id);
     success(res, session);
   } catch (err: any) {
     const codes: Record<string, number> = {
-      ORDER_NOT_FOUND: 404, ORDER_NOT_OPEN: 409, INVALID_AMOUNT: 400, NO_CONNECTION: 409,
+      ORDER_NOT_FOUND: 404, ORDER_NOT_OPEN: 409, INVALID_AMOUNT: 400, NO_CONNECTION: 409, OUT_OF_STOCK: 409, NOT_ENOUGH_STOCK: 409,
     };
     if (err?.code && codes[err.code]) { error(res, err.message, err.code, codes[err.code]); return; }
     console.error('Failed to begin one-time charge', err?.message || err);
@@ -375,11 +381,28 @@ checkoutRouter.put('/orders/:id/complete', requirePermission('bookings:*'), vali
       AMOUNT_MISMATCH: 400,
     };
     if (err?.code && PAYMENT_STATUS[err.code]) { error(res, err.message, err.code, PAYMENT_STATUS[err.code]); return; }
+    // A tracked product no longer in stock (sold elsewhere since it was added): nothing was charged.
+    if (err?.code === 'OUT_OF_STOCK' || err?.code === 'NOT_ENOUGH_STOCK') { error(res, err.message, err.code, 409); return; }
     if (err.message.includes('not open') || err.message.includes('empty') || err.message === 'Order not found') { error(res, err.message, 'CONFLICT', 409); }
     else { console.error('Failed to complete order', err?.message || err); error(res, 'Failed to complete order', 'INTERNAL_ERROR', 500); }
   }
 });
 
+// PUT /api/v1/checkout/orders/:id/location — where the sale happens (its stock comes from there; spec 51, gap 7)
+checkoutRouter.put('/orders/:id/location', requirePermission('bookings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    const locationId = req.body?.location_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!/^[0-9a-f-]{36}$/i.test(locationId || '')) { error(res, 'Choose a location of this business.', 'VALIDATION_ERROR', 400); return; }
+    const { rows: loc } = await adminPool.query('SELECT 1 FROM sys_locations WHERE id = $1 AND business_id = $2', [locationId, businessId]);
+    if (!loc[0]) { error(res, 'Choose a location of this business.', 'VALIDATION_ERROR', 400); return; }
+    const { rowCount } = await adminPool.query(
+      "UPDATE fin_orders SET location_id = $1, updated_at = NOW() WHERE id = $2 AND business_id = $3 AND status = 'open'", [locationId, req.params.id, businessId]);
+    if (!rowCount) { error(res, 'Order not found or not open', 'CONFLICT', 409); return; }
+    success(res, await checkoutService.getOrder(req.params.id));
+  } catch (err: any) { console.error('Failed to set order location', err?.message || err); error(res, 'Failed to set the location', 'INTERNAL_ERROR', 500); }
+});
 // PUT /api/v1/checkout/orders/:id/void — Void an open order
 checkoutRouter.put('/orders/:id/void', requirePermission('bookings:*'), async (req: Request, res: Response) => {
   try {

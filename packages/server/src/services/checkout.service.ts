@@ -59,18 +59,50 @@ interface CompleteOrderInput {
 }
 
 /**
+ * Run fn while holding a Postgres advisory lock named by key, so two requests for the same thing
+ * (two orders numbered at once, two checkouts of one booking) run one after the other.
+ */
+async function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const client = await adminPool.connect();
+  try {
+    await client.query('SELECT pg_advisory_lock(hashtext($1))', [key]);
+    return await fn();
+  } finally {
+    await client.query('SELECT pg_advisory_unlock(hashtext($1))', [key]).catch(() => undefined);
+    client.release();
+  }
+}
+
+/**
  * Create a new order (open cart).
  */
 export async function createOrder(input: CreateOrderInput) {
+  // The next number is MAX + 1, so numbering and inserting are done one order at a time per business;
+  // otherwise two orders created at the same moment get the same number.
+  return withLock(`fin_order_number:${input.businessId}`, () => insertOrder(input));
+}
+
+async function insertOrder(input: CreateOrderInput) {
   const { rows: numRows } = await adminPool.query(
     'SELECT generate_order_number($1) AS num', [input.businessId],
   );
   const orderNumber = numRows[0].num;
 
+  // Where the sale happens, so tracked products come out of the right stock (spec 51, gap 7):
+  // the booking's location, else the business's primary location. Staff can change it while open.
+  const { rows: locRows } = await adminPool.query(
+    `SELECT COALESCE(
+       (SELECT location_id FROM apt_bookings WHERE id = $2),
+       (SELECT id FROM sys_locations WHERE business_id = $1 AND status = 'active' ORDER BY is_primary DESC, created_at LIMIT 1)
+     ) AS location_id`,
+    [input.businessId, input.bookingId || null],
+  );
+
   const { rows } = await adminPool.query(
-    `INSERT INTO fin_orders (business_id, customer_id, booking_id, order_number, status, checked_out_by, credited_to, notes)
-     VALUES ($1, $2, $3, $4, 'open', $5, $6, $7) RETURNING *`,
-    [input.businessId, input.customerId || null, input.bookingId || null, orderNumber, input.checkedOutBy, input.creditedTo || null, input.notes || null],
+    `INSERT INTO fin_orders (business_id, customer_id, booking_id, order_number, status, checked_out_by, credited_to, notes, location_id)
+     VALUES ($1, $2, $3, $4, 'open', $5, $6, $7, $8) RETURNING *`,
+    [input.businessId, input.customerId || null, input.bookingId || null, orderNumber, input.checkedOutBy, input.creditedTo || null, input.notes || null,
+      locRows[0]?.location_id ?? null],
   );
   return rows[0];
 }
@@ -79,6 +111,11 @@ export async function createOrder(input: CreateOrderInput) {
  * Create an order pre-populated from a booking (service line item auto-added).
  */
 export async function createOrderFromBooking(bookingId: string, businessId: string, checkedOutBy: string) {
+  // One checkout of a booking at a time: a second request waits and then finds the open order.
+  return withLock(`fin_booking_checkout:${bookingId}`, () => openBookingOrder(bookingId, businessId, checkedOutBy));
+}
+
+async function openBookingOrder(bookingId: string, businessId: string, checkedOutBy: string) {
   // The service is paid once. When it was already paid (at reservation, spec 51 gap 5), checking
   // out after the service opens an order for anything else sold at the visit, without the service
   // line; with nothing added, completing it just finishes the appointment (payAndCompleteOrder).
@@ -173,6 +210,23 @@ export async function addItem(orderId: string, input: AddItemInput) {
     }
   }
 
+  // A tracked product: never more on the order than is on hand at the order's location (spec 51,
+  // gap 7, owner 15 Nov 2026). A larger quantity is limited to what is there; none left: refused.
+  let stockLimited: { requested: number; added: number; onHand: number } | null = null;
+  if (input.itemType === 'product' && input.itemId) {
+    const { availableForOrder, StockError } = await import('./inventory.service');
+    const avail = await availableForOrder(orderId, input.itemId, input.variantId || null);
+    if (avail) {
+      if (avail.available <= 0) {
+        throw new StockError(avail.onHand > 0 ? `All ${avail.onHand} in stock are already on this order.` : 'Out of stock.', 'OUT_OF_STOCK');
+      }
+      if (input.quantity > avail.available) {
+        stockLimited = { requested: input.quantity, added: avail.available, onHand: avail.onHand };
+        input = { ...input, quantity: avail.available };
+      }
+    }
+  }
+
   // Calculate tax on the net amount (unit_price * quantity - discount)
   const grossAmount = unitPrice * input.quantity;
   const discount = input.discountAmount || 0;
@@ -240,7 +294,7 @@ export async function addItem(orderId: string, input: AddItemInput) {
   );
 
   await recalculateOrderTotals(orderId);
-  return rows[0];
+  return stockLimited ? { ...rows[0], stock_limited: stockLimited } : rows[0];
 }
 
 /**
@@ -256,7 +310,17 @@ export async function updateItem(itemId: string, orderId: string, updates: Parti
   if (orderRows[0]?.status !== 'open') throw new Error('Order is not open');
 
   const item = existing[0];
-  const quantity = updates.quantity ?? item.quantity;
+  let quantity = updates.quantity ?? item.quantity;
+  // A tracked product: raising the quantity is limited to what is on hand (spec 51, gap 7).
+  let stockLimited: { requested: number; added: number; onHand: number } | null = null;
+  if (item.item_type === 'product' && item.item_id && quantity > item.quantity) {
+    const { availableForOrder } = await import('./inventory.service');
+    const avail = await availableForOrder(orderId, item.item_id, item.variant_id || null, item.id);
+    if (avail && quantity > avail.available) {
+      stockLimited = { requested: quantity, added: Math.max(avail.available, item.quantity), onHand: avail.onHand };
+      quantity = Math.max(avail.available, item.quantity);
+    }
+  }
   const unitPrice = updates.unitPrice ?? item.unit_price;
   const discount = updates.discountAmount ?? item.discount_amount;
   const netAmount = (unitPrice * quantity) - discount;
@@ -267,6 +331,7 @@ export async function updateItem(itemId: string, orderId: string, updates: Parti
   let taxRate = item.tax_rate;
   if (updates.quantity !== undefined || updates.unitPrice !== undefined || updates.discountAmount !== undefined) {
     const applied = await calculateTaxOnAmount(item.item_type, item.item_id, netAmount);
+    // (quantity above may have been limited to what is on hand)
     tax = applied.amount;
     taxCategoryId = applied.taxCategoryId;
     taxRate = applied.rate;
@@ -287,7 +352,7 @@ export async function updateItem(itemId: string, orderId: string, updates: Parti
   );
 
   await recalculateOrderTotals(orderId);
-  return rows[0];
+  return stockLimited ? { ...rows[0], stock_limited: stockLimited } : rows[0];
 }
 
 /**
@@ -374,6 +439,18 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   const method = input.paymentMethod === 'transfer' ? 'bank_transfer' : input.paymentMethod;
   const manual = MANUAL_METHODS.includes(method);
 
+  // Tracked products leave stock before the payment (locked, so two tills cannot sell the last
+  // one twice); if the payment does not go through, they are put back (spec 51, gap 7).
+  const inventory = await import('./inventory.service');
+  await inventory.takeForSale(orderId, input.checkedOutBy);
+  try {
+    await takePayment();
+  } catch (e) {
+    await inventory.cancelSale(orderId, input.checkedOutBy).catch((err) => console.error('[Stock] Could not put back stock for order', orderId, err?.message || err));
+    throw e;
+  }
+  async function takePayment() {
+
   // One-time card payment: the client confirmed a one-time PaymentIntent; finalize it
   // here and record the charge. A walk-in (no customer) pays this way, and so does a
   // customer paying an event ticket online with a card that is not saved (THE-20).
@@ -409,6 +486,7 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
     // A reference typed by the member of staff (the customer's transfer or check number) is
     // kept on the order; otherwise the order carries the payment's own reference.
     if (!manual || !input.paymentReference) input.paymentReference = payment.referenceNumber;
+  }
   }
 
   const { rows } = await adminPool.query(
@@ -890,7 +968,9 @@ export async function getOrder(orderId: string) {
   if (rows.length === 0) return null;
 
   const { rows: items } = await adminPool.query(
-    `SELECT oi.*, u.first_name AS credited_first_name, u.last_name AS credited_last_name
+    `SELECT oi.*, u.first_name AS credited_first_name, u.last_name AS credited_last_name,
+            -- taken from stock when sold (spec 51, gap 7): a refund asks back into stock or write off
+            EXISTS (SELECT 1 FROM inv_movements mv WHERE mv.order_item_id = oi.id AND mv.reason = 'sale') AS from_stock
      FROM fin_order_items oi
      LEFT JOIN usr_users u ON u.id = oi.credited_to
      WHERE oi.order_id = $1

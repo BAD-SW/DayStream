@@ -19,6 +19,11 @@ interface TableColumn<T> {
   /** Optional extra style for this column's header cell (e.g. whiteSpace). */
   headerStyle?: CSSProperties;
   /**
+   * Keep the sort and filter icons beside the label, the label wrapping onto a second line when
+   * the column is narrow, instead of the icons dropping under it (so a row of headers lines up).
+   */
+  headerIconsBeside?: boolean;
+  /**
    * The column filter (filter icon beside the sort icon, David 2026-11-02): a list of the
    * column's values or, for dates, a calendar. Found by itself from the data when left out;
    * `false` turns it off (e.g. a column of buttons).
@@ -353,10 +358,10 @@ export function Table<T extends Record<string, any>>({
                     aria-sort={sorted ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
                   >
                     {/* Label, then the sort icon, then the filter icon beside it (David, 2026-11-02). */}
-                    <span style={{ ...styles.headWrap, justifyContent: col.align === 'right' ? 'flex-end' : col.align === 'center' ? 'center' : 'flex-start' }}>
+                    <span style={{ ...styles.headWrap, ...(col.headerIconsBeside ? styles.headWrapBeside : {}), justifyContent: col.align === 'right' ? 'flex-end' : col.align === 'center' ? 'center' : 'flex-start' }}>
                       {col.sortable
-                        ? <button type="button" style={styles.headLabel} onClick={() => handleSort(col.key)}>{col.header}</button>
-                        : <span>{col.header}</span>}
+                        ? <button type="button" style={{ ...styles.headLabel, ...(col.headerIconsBeside ? styles.headLabelBeside : {}) }} onClick={() => handleSort(col.key)}>{col.header}</button>
+                        : <span style={col.headerIconsBeside ? styles.headLabelBeside : undefined}>{col.header}</span>}
                       {col.sortable && (
                         <button type="button" className={cssStyles.headIcon} data-on={sorted || undefined} onClick={() => handleSort(col.key)}
                           aria-label={`Sort by ${col.header}`} title={`Sort by ${col.header}`}>
@@ -507,6 +512,10 @@ const styles: Record<string, React.CSSProperties> = {
   footerCell: { padding: 'var(--space-sm) var(--space-md)', color: 'var(--color-text)', fontWeight: 'var(--font-weight-bold)' as any, fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap' },
   // In a narrow column the icons wrap under the label instead of being cut off.
   headWrap: { display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px', width: '100%' },
+  headWrapBeside: { flexWrap: 'nowrap', alignItems: 'flex-start' },
+  // The label wraps between words but never narrower than its longest word, so it cannot slide
+  // under the icons beside it.
+  headLabelBeside: { minWidth: 'min-content', overflowWrap: 'normal', wordBreak: 'normal' },
   headLabel: { border: 0, background: 'none', padding: 0, font: 'inherit', color: 'inherit', textTransform: 'inherit', letterSpacing: 'inherit', cursor: 'pointer', textAlign: 'inherit', whiteSpace: 'inherit', overflowWrap: 'anywhere' },
   more: { textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)' },
   moreBtn: { border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', borderRadius: 999, padding: '6px 14px', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-xs)', fontWeight: 600, cursor: 'pointer' },

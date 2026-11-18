@@ -17,6 +17,8 @@ export interface OrderItem {
   discount_amount: number;
   tax_amount: number;
   total_price: number;
+  /** The line was taken from stock when sold (spec 51, gap 7). */
+  from_stock?: boolean;
   credited_to: string | null;
   credited_first_name: string | null;
   credited_last_name: string | null;
@@ -36,6 +38,10 @@ export interface Order {
   booking_id: string | null;
   /** The order that already paid this order's appointment at reservation (spec 51, gap 5). */
   prepaid_order_number?: string | null;
+  /** Where the sale happens; tracked products are sold from this location's stock (spec 51, gap 7). */
+  location_id?: string | null;
+  /** Set on the answer to adding or changing a line when its quantity was limited to what is on hand. */
+  stock_limited?: { requested: number; added: number; onHand: number } | null;
   order_number: string;
   status: 'open' | 'completed' | 'voided' | 'refunded' | 'partially_refunded';
   subtotal: number;
@@ -176,9 +182,15 @@ export interface OrderRefundResult {
 /** Partial / line-item refund of an order. */
 export async function refundOrder(
   orderId: string, businessId: string, reason: string,
-  lines: Array<{ order_item_id: string; quantity: number }>,
+  lines: Array<{ order_item_id: string; quantity: number; restock?: boolean }>,
 ): Promise<OrderRefundResult> {
   const res = await apiClient.post(`/v1/checkout/orders/${orderId}/refund?business_id=${businessId}`, { reason, lines });
+  return res.data.data;
+}
+
+/** Where the sale happens (its stock comes from there). */
+export async function setOrderLocation(orderId: string, businessId: string, locationId: string): Promise<Order> {
+  const res = await apiClient.put(`/v1/checkout/orders/${orderId}/location?business_id=${businessId}`, { location_id: locationId });
   return res.data.data;
 }
 

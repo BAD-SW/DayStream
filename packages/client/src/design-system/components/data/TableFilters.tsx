@@ -317,7 +317,8 @@ export function DateFilter({ anchor, title, current, countFor, onApply, onClose 
 }
 
 const pop: Record<string, React.CSSProperties> = {
-  box: { position: 'fixed', zIndex: 1000, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', boxShadow: '0 12px 32px rgba(10, 20, 50, 0.18)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', overflow: 'auto', textTransform: 'none', letterSpacing: 'normal', fontWeight: 400, textAlign: 'left' },
+  // The modal surface: --color-surface is see-through in the light theme, so the table showed through.
+  box: { position: 'fixed', zIndex: 1000, background: 'var(--color-surface-modal, var(--color-surface))', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', boxShadow: '0 12px 32px rgba(10, 20, 50, 0.18)', color: 'var(--color-text)', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', overflow: 'auto', textTransform: 'none', letterSpacing: 'normal', fontWeight: 400, textAlign: 'left' },
   vals: { padding: 12, display: 'flex', flexDirection: 'column', gap: 10 },
   title: { fontSize: 'var(--font-size-sm)' },
   input: { width: '100%', boxSizing: 'border-box', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '7px 10px', fontFamily: 'var(--font-family)', fontSize: 'var(--font-size-sm)', background: 'var(--color-background)', color: 'var(--color-text)' },

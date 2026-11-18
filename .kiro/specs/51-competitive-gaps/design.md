@@ -32,6 +32,7 @@ Requirements: requirements.md, Requirement 1 (criteria 1-11).
    - [1.13 Build order](#113-build-order)
 2. [Gap 2: Treatment charting](#2-gap-2-treatment-charting)
 3. [Gap 3: Virtual waiting room](#3-gap-3-virtual-waiting-room)
+7. [Gap 7: Retail inventory (Requirement 7)](#7-gap-7-retail-inventory-requirement-7)
 19. [Paying with a membership or package (Requirement 19)](#19-paying-with-a-membership-or-package-requirement-19)
 
 ---
@@ -499,6 +500,97 @@ The calendar redesign made `/bookings` open the calendar for staff, which hid th
 
 ---
 
+## 7. Gap 7: Retail inventory (Requirement 7)
+
+In-person sales only: stock is counted per product (or variant) and location, changed only through recorded movements, and valued at average cost.
+
+### 7.1 Data model
+
+```sql
+-- migration 180 (all new tables: tenant_id NOT NULL, business_id NOT NULL, RLS)
+ALTER TABLE prd_merchandise          ADD COLUMN track_stock BOOLEAN NOT NULL DEFAULT false,
+                                     ADD COLUMN cost_cents INTEGER, ADD COLUMN barcode VARCHAR(64),
+                                     ADD COLUMN supplier_id UUID REFERENCES fin_vendors(id);
+ALTER TABLE prd_merchandise_variants ADD COLUMN cost_cents INTEGER, ADD COLUMN barcode VARCHAR(64);
+
+-- one row per stock item (a product without variants, or a variant) and location
+CREATE TABLE inv_stock (
+  id, tenant_id, business_id, location_id, merchandise_id, variant_id NULL,
+  on_hand INTEGER NOT NULL DEFAULT 0,
+  avg_cost_cents INTEGER NOT NULL DEFAULT 0,
+  reorder_level INTEGER, reorder_qty INTEGER,
+  updated_at,
+  UNIQUE (location_id, merchandise_id, variant_id)
+);
+
+-- every change; never updated or deleted
+CREATE TABLE inv_movements (
+  id, tenant_id, business_id, location_id, merchandise_id, variant_id NULL,
+  qty_change INTEGER NOT NULL,                 -- + in, - out
+  reason VARCHAR(20) NOT NULL CHECK (reason IN ('sale','refund_restock','refund_write_off','receive',
+         'adjust','count','transfer_in','transfer_out','opening')),
+  adjust_reason VARCHAR(40),                   -- damaged, lost, used in a service, found, correction
+  unit_cost_cents INTEGER,
+  order_item_id UUID, po_line_id UUID, count_id UUID, transfer_id UUID,
+  note TEXT, created_by UUID, created_at
+);
+
+-- migration 182: purchase orders; account 1300 Inventory seeded for every business
+CREATE TABLE inv_purchase_orders (id, tenant_id, business_id, po_number (PO-0001), vendor_id, location_id,
+  status ('draft','sent','partly_received','received','closed','cancelled'), expected_on DATE, note, sent_at, created_by, created_at, updated_at);
+CREATE TABLE inv_po_lines (id, tenant_id, business_id, po_id, merchandise_id, variant_id NULL,
+  qty_ordered, qty_received DEFAULT 0, qty_billed DEFAULT 0, unit_cost_cents);
+ALTER TABLE inv_movements ADD COLUMN po_line_id;   -- a receipt says which order line it came in on
+ALTER TABLE fin_bills ADD COLUMN purchase_order_id; -- a bill says which order it bills
+-- migration 181: transfers
+CREATE TABLE inv_transfers (id, tenant_id, business_id, from_location_id, to_location_id, note, created_by, created_at);
+ALTER TABLE inv_movements ADD COLUMN transfer_id;
+
+ALTER TABLE fin_orders ADD COLUMN location_id UUID REFERENCES sys_locations(id);  -- where the sale happens
+```
+
+- `inv_stock.on_hand` is kept with each movement in the same transaction (row lock), so it always equals the sum of movements.
+- `prd_merchandise` has no `tenant_id` today; the new tables have it, as AGENTS.md requires.
+
+### 7.2 Stock changes
+
+- **Sale:** when an order is completed, each tracked product line writes a `sale` movement at the order's location at the stock item's average cost (in the same transaction as completion). An order's location is the booking's location, else the one chosen at Checkout (a business with one location: that one).
+- **Refund:** the refund screen asks per product line "Back into stock" or "Write off"; `refund_restock` adds it back at the cost it was sold at, `refund_write_off` records it with no stock change.
+- **Receiving:** each received line writes `receive` and updates average cost: `new avg = (on_hand × avg + qty × unit cost) / (on_hand + qty)` (on hand below zero counts as zero).
+- **Adjust, count, transfer:** an adjustment writes `adjust` with its reason; a transfer writes `transfer_out` and `transfer_in` at the source's average cost and arrives at once (no stock in transit).
+- **Count (owner, 18 Nov 2026: on the product's Stock card, no separate count sessions):** Count lists the product's options at a location with on hand; each count entered that differs sets on hand to it (`count`, the first one `opening`); empty boxes are not changed.
+- **Never more than is on hand (owner, 15 Nov 2026):** adding a tracked product, or raising its quantity, is limited to what is on hand at the order's location less what is already on the order's other lines for it; the answer says it was limited. None on hand: the line is refused. Completing the order checks again under the stock row lock (stock may have changed since); if a line no longer fits, the order is not completed and staff are told which line to reduce. Stock never goes below zero through a sale.
+
+### 7.3 Checkout
+
+- The product picker and each product line show "n in stock" at the order's location (per variant), coloured when at or below the reorder level.
+- A quantity above what is on hand is limited to it, with "Only 3 in stock, 3 added" on the line; an item with none on hand is shown as Out of stock and cannot be added.
+- The order shows its location; a business with several locations chooses it (default: the booking's, else the primary).
+
+### 7.4 Screens
+
+- **Product page:** Track stock, cost, barcode, supplier; a Stock card per location and option (on hand, average cost, reorder level and quantity) with its history and Change stock, Reorder, Count and Transfer buttons.
+- **No separate Inventory page (owner, 18 Nov 2026):** stock is managed on each product's Stock card: Change stock and Reorder per row; Count and Transfer (with more than one location) for the whole product; History. The low-stock list is a report (Reports > Inventory > Low Stock), and an automated process sends the low_stock notification (owner, 19 Nov 2026).
+- **Purchase orders (Accounting > Purchase Orders, next to Vendors and Bills):** a list (order, date, vendor, deliver to, expected, status, received of ordered, total, to bill) and an order page `/accounting/purchase-orders/:id` (`new` for a new one). A draft is edited there: vendor, delivery location (when there are several), expected date, a note for the vendor, and lines of tracked products (products the vendor supplies listed first; an option must be chosen; unit cost starts at the option's or product's cost price; the quantity starts at its reorder quantity at the delivery location, else 1, and can be changed; owner, 19 Nov 2026). Save draft; Email to vendor (needs the vendor's email) or Mark as sent. The email uses the business's Purchase Order template (Settings > Templates, document type `purchase_order.sent`; owner, 18 Nov 2026): placeholders for the business, vendor name and contact, PO number, order and expected dates, delivery location and address, order total, note, and the details table (product with unit cost, quantity, amount). Without an active template a built-in layout is sent. Replies go to the template's reply-to, else the business email. A sent order is received (Receive: arrived quantity per line, at most what is still to come, and its unit cost), in one go or in parts; Create bill makes a vendor bill for what was received and not yet billed (due by the vendor's payment terms; vendor invoice number optional), shown on the order. The bill is approved when it is created, so it can be paid straight away (owner, 19 Nov 2026). Cancel order (nothing received) or Close order (partly received: the rest is not coming).
+- **Notifications:** a `low_stock` event in Settings > Inbox (default: owners and managers, bell and email). An automated check every 15 minutes (with the reminder job) tells the business once when an item is at or below its reorder level, in one message listing every item that has newly fallen low (product, option, location when there are several, on hand, reorder level and quantity); an item is told about again only after it has been restocked above its level (`inv_stock.low_notified_at`, migration 183).
+
+### 7.5 Accounting and reports
+
+- Accounts: 1300 Inventory (migration 182); 5100 Inventory Adjustments, 3900 Opening Balance Equity and its heading 3000 Equity (migration 183); seeded for every business. Stock is carried at cost: a purchase order's bill Dr 1300 / Cr 2100 Accounts Payable (one entry per bill, through the existing bill posting; stock received and not yet billed is on hand but not yet on the books). A sale: Dr 5000 Cost of Goods Sold / Cr 1300 at the average cost it was sold at, as lines of the order's journal entry. Returned to stock on a refund: Dr 1300 / Cr 5000 at the cost it was sold at; written off: nothing more (its cost stays in 5000). Opening stock: Dr 1300 / Cr 3900. Counts and adjustments: stock found Dr 1300 / Cr 5100, stock gone Dr 5100 / Cr 1300, at cost. Transfers stay in 1300 and post nothing. Each stock posting other than a sale is its own entry (reference `inventory_movement`) in the same transaction as the movement; a missing account is logged and the posting skipped.
+- Reports, in their own Inventory category (owner, 19 Nov 2026), through the report framework (filters, grouping, totals, CSV and PDF export): **Stock on Hand & Value** (as of today, shown in place of From and To and not chosen (owner, 19 Nov 2026); on hand and average cost are rebuilt from the stock history up to that day, so the report could later be run for a past date; always grouped by location with a subtotal per location and no Group by options: product, variant, on hand, reorder at, cost price, average cost, stock value at average cost, retail price, retail value, margin per item and %, the margin using the average cost, else the cost price); **Low Stock** (as of today, grouped by location like Stock on Hand & Value, no SKU or supplier: items at or below their reorder level, with reorder quantity, what is still to come on sent purchase orders, and the reorder cost); **Stock Movements** (date range, From and To kept; grouped by location like Stock on Hand & Value: every movement with its date, reason, change, unit cost, value, on hand after and who; no time, reference or note columns (owner, 19 Nov 2026)). Product cells link to the product page; order references to the receipt. The report framework gained a fixed grouping (`groupBy` on a report: rows are always shown and exported in those groups, with no Group by options) and hidden columns (carried on the rows for grouping, not shown or exported).
+
+### 7.6 Build order
+
+1. Migration 180, stock service (movements, average cost, locks), product fields and the product Stock tab, opening stock by count.
+2. Sale and refund movements; Checkout quantity on hand, warnings and order location.
+3. Count and transfer on the product's Stock card.
+4. Purchase orders, receiving, bills (migration 182; Accounting > Purchase Orders).
+5. Low-stock notification; accounting postings (migration 183).
+6. Inventory reports: Stock on Hand & Value (cost price, average cost, stock value, retail value, margin) and Stock Movements.
+7. Verification live with the owner.
+
+---
+
 ## 19. Paying with a membership or package (Requirement 19)
 
 One place decides what a customer's memberships and packages cover, holds the allowance for a booking, and counts it as used at payment. New Appointment, the payment step, the price shown while booking and Checkout all use it.
@@ -514,7 +606,7 @@ One place decides what a customer's memberships and packages cover, holds the al
 A new table records each use, so it can be counted, shown, moved and given back:
 
 ```sql
--- migration 180
+-- the next free migration number
 CREATE TABLE pay_benefit_uses (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id     UUID NOT NULL,
@@ -557,7 +649,7 @@ CREATE TABLE pay_benefit_uses (
 
 ### 19.5 Build order
 
-1. Migration 180 and the benefits service (what covers, held / used / released), replacing the `mem_*` reads.
+1. A migration (the next free number) and the benefits service (what covers, held / used / released), replacing the `mem_*` reads.
 2. Benefits endpoint; booking create / update hold the chosen benefit; cancel releases it.
 3. New Appointment price box with the choice; payment step and quote follow it.
 4. Checkout: benefit per line, change, used on completion; refund releases.

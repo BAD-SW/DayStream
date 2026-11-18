@@ -63,6 +63,7 @@ import { Payments } from './pages/Payments';
 import { GiftCards } from './pages/GiftCards';
 import { Payroll } from './pages/Payroll';
 import { AccountsPayable } from './pages/AccountsPayable';
+import { PurchaseOrderPage } from './pages/purchase-orders/PurchaseOrderPage';
 import { Staff } from './pages/Staff';
 import { Business } from './pages/Business';
 import { StaffCreate } from './pages/StaffCreate';
@@ -191,6 +192,7 @@ export function App() {
         {/* Payroll & AP */}
         <Route path="/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
         <Route path="/accounting" element={<ProtectedRoute><AccountsPayable /></ProtectedRoute>} />
+        <Route path="/accounting/purchase-orders/:id" element={<ProtectedRoute><PurchaseOrderPage /></ProtectedRoute>} />
         <Route path="/ap" element={<ProtectedRoute><AccountsPayable /></ProtectedRoute>} />
 
         {/* Business (Staff, Resources, Locations) */}

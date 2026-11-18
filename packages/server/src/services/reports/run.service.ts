@@ -39,6 +39,7 @@ async function runReportOnClock(
     dateRange: { start: ctx.start, end: ctx.end },
     generatedAt: new Date().toISOString(),
     currency,
+    ...(definition.asOf ? { asOf: true } : {}),
   };
 
   // Multi-section report
@@ -61,6 +62,7 @@ async function runReportOnClock(
     columns,
     rows,
     totals: computeTotals(columns, rows),
+    ...(definition.groupBy?.length ? { groupBy: definition.groupBy } : {}),
     meta,
   };
 }

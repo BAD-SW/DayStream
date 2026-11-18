@@ -83,7 +83,7 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
   - [x] ✅ Words on the check-in screens (phone page, kiosk, forms list) held per language and editable per business under Templates > Check-In; the ready-for-you email uses the same wording (no separate template)
   - [x] ✅ Appointment Reminder template (own entry in the Document Type list, with a Time Until Appointment placeholder); plain reminder until the business writes one
   - [x] ✅ Any wording on the check-in screens and in the ready-for-you email can include the customer's first name, service, appointment time and business name (chips in the editor stay visible while scrolling); the entry screen of the kiosk takes the business name only
-  - [x] ✅ Moved to open items (section 20): a screen for the business to set its reminder times
+  - [x] ✅ Moved to open items (section 21): a screen for the business to set its reminder times
   - [x] ✅ Bookings opens on the calendar or the list with the Waiting list, chosen by the business (Settings > System) and, if they wish, by each staff member on their profile (migration 177)
   - [ ] Verify live with the owner: business setting, staff profile choice, Calendar | List switch
   - [x] ✅ Manage link in the appointment emails: moved to gap 16 (it needs a customer self-service page first)
@@ -111,9 +111,25 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 - [ ] Verify live and close with the owner
 
 ## 7. Retail inventory (Requirement 7)
-- [ ] Confirm current state and agree requirements
-- [ ] Design
-- [ ] Build
+- [x] ✅ Confirm current state (products and flat variants with SKU and price only; no stock, cost, supplier, reorder level or location; sales and refunds change no stock; AP not linked to products; no stock reports; COGS account unused)
+- [x] ✅ Requirements agreed with the owner (15 Nov 2026): everything missing, plus quantity on hand while an order is put together; in-person sales only, no online orders or shipping
+- [x] ✅ Design written (design 7)
+- [x] ✅ Owner decided: never more than is on hand; a larger quantity is limited to what is on hand, the rest of the order is unaffected
+- Build (design 7.6)
+  - [x] ✅ Migration 180, stock service (movements, average cost), product fields and Stock tab, opening stock by count
+  - [x] ✅ Sale and refund movements; quantity on hand and warnings at Checkout; order location; stock checked before a walk-in card is charged
+  - [x] ✅ Adjust, count and transfer on the product's Stock card (migration 181 for transfers; owner, 18 Nov 2026: no separate Inventory page)
+  - [x] ✅ Purchase orders, receiving, vendor bills (migration 182, account 1300 Inventory; Accounting > Purchase Orders and the order page; email to vendor or mark as sent; receive in parts; bill what was received)
+    - [x] ✅ A purchase order line's quantity starts at the reorder quantity of the product (or variant) at the delivery location, else 1 (owner, 19 Nov 2026)
+    - [x] ✅ A purchase order's bill is approved when it is created, ready to pay (owner, 19 Nov 2026)
+    - [x] ✅ Purchase Order document type in Settings > Templates (owner, 18 Nov 2026); the vendor email uses it, with a built-in layout when there is no template; replies go to the business
+  - [x] ✅ Low-stock notification (owner, 19 Nov 2026: an automated process sends a low_stock notification; the list itself is a report, below); accounting postings (migration 183: 5100 Inventory Adjustments, 3900 Opening Balance Equity; cost of sales with the order journal, returns, counts, adjustments, opening stock)
+  - [x] ✅ Inventory reports (owner, 18 Nov 2026), a new Inventory category in Reports (owner, 19 Nov 2026) with the usual filters and export
+    - [x] ✅ Stock on Hand & Value: as of today; grouped by location; product, variant, on hand, reorder at, cost price, average cost, stock value, retail price, retail value, margin and margin % (owner, 19 Nov 2026: no SKU, barcode, supplier, status or category)
+    - [x] ✅ Low Stock: as of today; grouped by location; every item at or below its reorder level, with on hand, reorder level, reorder quantity, on order, cost price and reorder cost (owner, 19 Nov 2026)
+    - [x] ✅ Stock Movements: From and To; grouped by location; every stock change with date, movement, reason, change, unit cost, value, on hand after and who (owner, 19 Nov 2026)
+    - [x] ✅ Report screen: a report can be as of a date (shown, not chosen), always grouped (no Group by options), with hidden columns; headers top-aligned with their icons beside them; the column filter window is solid
+  - [x] ✅ Requirement 7 brought in line with what was built (criteria 5 to 10; owner, 19 Nov 2026)
 - [ ] Verify live and close with the owner
 
 ## 8. Staff mobile app (Requirement 8)
@@ -188,7 +204,14 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 - [ ] Build (design 19.5)
 - [ ] Verify live and close with the owner
 
-## 20. Open items raised along the way
+## 20. Features per business, set by the tenant (Requirement 20)
+- [x] ✅ Confirm current state (flags set for the whole platform on Configuration > Feature Flags; a tenant override table and API exist with no screen; no business level; most server routes do not check flags)
+- [ ] Agree requirements with the owner (which features, defaults, what happens to data when a feature is switched off, link to the tenant's pricing)
+- [ ] Design
+- [ ] Build
+- [ ] Verify live and close with the owner
+
+## 21. Open items raised along the way
 - [ ] Decide: add a minimum-notice field to the service edit screen (today it can only be set when the service is created)
 - [ ] Decide: should the chart feature be renamed for other industries (for example Service records or Job cards)?
 - [ ] Decide: should technicians see the Inbox?
@@ -198,8 +221,12 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 - [x] ✅ The server test of the automatic no-show was limited to its own business (it had marked bookings of the real business as No-Show; four were restored)
 - [ ] Fix: the server tests run against the development database and leave about 24 test businesses and their data behind; give the tests their own database, or have them clean up
 - [ ] Decide: should late appointments be marked No-Show automatically (a business setting, off by default)? Today nothing runs it; staff mark No-Show, helped by the red button after 15 minutes
+- [x] ✅ Two orders were created when Checkout opened (the page loaded twice in development, and two orders made at once got the same number): Checkout reuses an order being created, and the server numbers orders and opens a booking's checkout one at a time
+- [x] ✅ Bills could not be paid: every bill starts as draft and payment needs it approved, but the Bills tab had no Approve. Bills now have Approve (draft, pending, or overdue and never approved), then Record Payment; an approved bill past its due date (overdue) can still be paid. A form's error on the Accounting page shows on its own line under its buttons
+- [x] ✅ Considered addressed by the owner (19 Nov 2026), no clean-up: the extra open Checkout orders left by the duplicate-order bug in the development data (176 orders across all dev businesses share an order number with another, back to ORD-2026-0004; 110 are open, many with a line on them)
+- [x] ✅ Duplicate purchase orders from the Save draft bug: PO-0003 to PO-0006 cancelled by the owner; PO-0001 (a copy of PO-0002) cancelled (owner, 19 Nov 2026)
 
-## 21. Clean-up of the booking workflow (after the New Appointment and calendar changes)
+## 22. Clean-up of the booking workflow (after the New Appointment and calendar changes)
 Not gap work: fixes found while testing the booking workflow (owner, 14 Nov 2026).
 - [x] ✅ Reservation Payment Rule on the service (Service Details: Not required / Taken but not charged / Charged at reservation; migration 178)
 - [x] ✅ No card required: New Appointment skips the payment step; the button reads Save reservation

@@ -59,6 +59,8 @@ export class OrderRefundError extends Error {
 export interface RefundLineRequest {
   orderItemId: string;
   quantity: number;        // how many units of this line to return (>=1)
+  /** A product that was taken from stock: back into stock (default) or written off (spec 51, gap 7). */
+  restock?: boolean;
 }
 
 export interface OrderRefundResult {
@@ -255,6 +257,12 @@ export async function refundOrderLines(args: {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [businessId, orderId, c.item.id, refundTxnId, c.item.item_type, c.qty, c.revenueCents, c.taxCents, c.amountCents],
       );
+      // A product taken from stock comes back into it, or is recorded as written off.
+      if (c.item.item_type === 'product') {
+        const { returnFromRefund } = await import('./inventory.service');
+        const asked = lines.find((l) => l.orderItemId === c.item.id);
+        await returnFromRefund(client, { orderId, orderItemId: c.item.id, qty: c.qty, restock: asked?.restock !== false, userId: processedBy });
+      }
     }
 
     // Order status: fully returned => 'refunded', otherwise 'partially_refunded'.

@@ -28,6 +28,13 @@ async function reminderTick(): Promise<void> {
     await scheduleUpcomingReminders();
   } catch (err: any) {
     logger.error('Scheduling appointment reminders failed', { error: err?.message || err });
+  }
+  // The low-stock notification (spec 51, gap 7) is checked on the same 15-minute cadence.
+  try {
+    const { notifyLowStock } = await import('../services/inventory.service');
+    await notifyLowStock();
+  } catch (err: any) {
+    logger.error('Low-stock notification failed', { error: err?.message || err });
   } finally {
     reminding = false;
   }

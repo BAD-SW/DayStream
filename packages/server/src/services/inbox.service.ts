@@ -37,8 +37,8 @@ export async function inboxRoleOfUser(userId: string): Promise<InboxRole> {
 // Notification settings
 // ---------------------------------------------------------------------------------------------
 
-export type InboxEvent = 'new_unassigned' | 'assigned_message' | 'assigned_to_me' | 'mentioned' | 'unanswered' | 'delivery_failed' | 'new_lead' | 'daily_summary' | 'customer_arrived';
-export const INBOX_EVENTS: InboxEvent[] = ['new_unassigned', 'assigned_message', 'assigned_to_me', 'mentioned', 'unanswered', 'delivery_failed', 'new_lead', 'daily_summary', 'customer_arrived'];
+export type InboxEvent = 'new_unassigned' | 'assigned_message' | 'assigned_to_me' | 'mentioned' | 'unanswered' | 'delivery_failed' | 'new_lead' | 'daily_summary' | 'customer_arrived' | 'low_stock';
+export const INBOX_EVENTS: InboxEvent[] = ['new_unassigned', 'assigned_message', 'assigned_to_me', 'mentioned', 'unanswered', 'delivery_failed', 'new_lead', 'daily_summary', 'customer_arrived', 'low_stock'];
 /** Events a user cannot switch off for themselves (assignments and mentions). */
 export const ALWAYS_IN_APP: InboxEvent[] = ['assigned_to_me', 'mentioned'];
 
@@ -60,6 +60,8 @@ export const DEFAULT_INBOX_NOTIFICATIONS: InboxNotificationSettings = {
   daily_summary: r(true, true, false, false, false, true),
   // A customer has checked in (spec 51, gap 3); the booked practitioner is always included.
   customer_arrived: r(true, true, true, false, true, false),
+  // A tracked product is at or below its reorder level (spec 51, gap 7): owners and managers, bell and email.
+  low_stock: r(true, true, false, false, true, true),
 };
 
 export async function getNotificationSettings(businessId: string): Promise<{ events: InboxNotificationSettings; unanswered_hours: number }> {
@@ -127,7 +129,7 @@ async function businessUsers(businessId: string) {
  * notification (the bell) and / or an email. `to` limits it to given users (the assignee, the
  * people mentioned); otherwise every user whose role gets the event. The actor is never told.
  */
-export async function notify(businessId: string, event: InboxEvent, n: { title: string; body?: string; link?: string; to?: string[]; alsoTo?: string[]; actorId?: string | null }) {
+export async function notify(businessId: string, event: InboxEvent, n: { title: string; body?: string; link?: string; to?: string[]; alsoTo?: string[]; actorId?: string | null; emailNote?: string }) {
   try {
     const { events } = await getNotificationSettings(businessId);
     const rule = events[event];
@@ -146,7 +148,8 @@ export async function notify(businessId: string, event: InboxEvent, n: { title: 
         );
       }
       if (email) {
-        sendEmail({ to: u.email, subject: n.title, text: `${n.body || ''}\n\nOpen the Inbox in DayStream to answer.`, html: `<p>${escapeHtml(n.body || '')}</p><p>Open the Inbox in DayStream to answer.</p>` })
+        const note = n.emailNote || 'Open the Inbox in DayStream to answer.';
+        sendEmail({ to: u.email, subject: n.title, text: `${n.body || ''}\n\n${note}`, html: `<p>${escapeHtml(n.body || '').replace(/\n/g, '<br>')}</p><p>${escapeHtml(note)}</p>` })
           .catch((e: any) => logger.warn(`Inbox email to ${u.email} not sent: ${e?.message || e}`));
       }
       if (inApp || email) told++;

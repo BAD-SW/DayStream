@@ -93,7 +93,7 @@ export async function getBills(businessId: string, filters?: { status?: string; 
 
 export async function approveBill(id: string, businessId: string, approvedBy: string): Promise<boolean> {
   const { rowCount } = await adminPool.query(
-    "UPDATE fin_bills SET status = 'approved', approved_by = $3, approved_at = NOW(), updated_at = NOW() WHERE id = $1 AND business_id = $2 AND status IN ('draft','pending')",
+    "UPDATE fin_bills SET status = 'approved', approved_by = $3, approved_at = NOW(), updated_at = NOW() WHERE id = $1 AND business_id = $2 AND (status IN ('draft','pending') OR (status = 'overdue' AND approved_at IS NULL))",
     [id, businessId, approvedBy],
   );
   return (rowCount ?? 0) > 0;
@@ -130,7 +130,9 @@ export async function recordPayment(id: string, businessId: string, amount: numb
   if (rows.length === 0) return null;
   const bill = rows[0];
   if (bill.status === 'paid') throw Object.assign(new Error('This bill is already paid'), { code: 'BILL_ALREADY_PAID' });
-  if (bill.status !== 'approved') throw Object.assign(new Error(`A bill must be approved before it is paid (this one is ${bill.status})`), { code: 'BILL_NOT_APPROVED' });
+  // An approved bill that has passed its due date is 'overdue'; it can still be paid.
+  const approved = bill.status === 'approved' || (bill.status === 'overdue' && bill.approved_at);
+  if (!approved) throw Object.assign(new Error(`A bill must be approved before it is paid (this one is ${bill.status})`), { code: 'BILL_NOT_APPROVED' });
   const owed = bill.amount - bill.amount_paid;
   if (!Number.isInteger(amount) || amount <= 0 || amount > owed) {
     throw Object.assign(new Error(`The payment must be between 1 and ${owed} (what is still owed)`), { code: 'BILL_PAYMENT_AMOUNT' });

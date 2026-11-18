@@ -15,12 +15,28 @@ interface ExportBlock {
   totals: Record<string, number>;
 }
 
-/** Normalize a result into one or more blocks (single-table => one block). */
+/**
+ * Normalize a result into one or more blocks (single-table => one block; a report with a fixed
+ * grouping => one block per group, titled by its value, as on screen). Hidden columns are left out.
+ */
 function toBlocks(result: ReportRunResult): ExportBlock[] {
   if (result.sections && result.sections.length > 0) {
-    return result.sections.map((s) => ({ title: s.title, columns: s.columns, rows: s.rows, totals: s.totals }));
+    return result.sections.map((s) => ({ title: s.title, columns: s.columns.filter((c) => !c.hidden), rows: s.rows, totals: s.totals }));
   }
-  return [{ columns: result.columns, rows: result.rows, totals: result.totals }];
+  const columns = result.columns.filter((c) => !c.hidden);
+  if (result.groupBy?.length) {
+    const groups = new Map<string, Record<string, any>[]>();
+    for (const row of result.rows) {
+      const label = result.groupBy.map((k) => String(row[k] ?? '—')).join(' · ');
+      groups.set(label, [...(groups.get(label) || []), row]);
+    }
+    return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([title, rows]) => {
+      const totals: Record<string, number> = {};
+      for (const c of columns) if (c.total) totals[c.key] = rows.reduce((t, r) => t + (Number(r[c.key]) || 0), 0);
+      return { title, columns, rows, totals };
+    });
+  }
+  return [{ columns, rows: result.rows, totals: result.totals }];
 }
 
 /** Serialize a report result to CSV: per block, a header row, data rows, then a totals row. */
@@ -80,7 +96,7 @@ export function toPdf(result: ReportRunResult): Promise<Buffer> {
     doc.moveDown(0.2);
     doc.fontSize(10).font('Helvetica').fillColor('#444444');
     doc.text(meta.businessName);
-    doc.text(`Period: ${meta.dateRange.start} to ${meta.dateRange.end}`);
+    doc.text(meta.asOf ? `As of ${meta.dateRange.end}` : `Period: ${meta.dateRange.start} to ${meta.dateRange.end}`);
     doc.text(`Generated: ${new Date(meta.generatedAt).toLocaleString('en-US')}`);
     doc.fillColor('#000000');
     doc.moveDown(0.6);

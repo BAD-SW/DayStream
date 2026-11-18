@@ -157,14 +157,28 @@ The acceptance criteria below set the capability each gap must reach. They are r
 
 **User Story**: As a business owner who sells products, I want stock levels tracked as I sell and receive goods, so that I know what to reorder.
 
-**Current state**: Not started. Phase 28 left inventory out as a short-term scope decision ("no stock levels, reorder points or quantity management"); it was always expected long term. Products and variants are sold at the point of sale.
+**Current state**: Built (19 Nov 2026); the description below is what was there before. Phase 28 left inventory out as a short-term scope decision ("no stock levels, reorder points or quantity management"); it was always expected long term. Confirmed in the code (15 Nov 2026):
+- Products (`prd_merchandise`) have a name, SKU, price, category, tax and status; variants (`prd_merchandise_variants`) are a flat name, SKU and price. There is no quantity, cost price, barcode, supplier, reorder level or location on either, and products have no `tenant_id` column.
+- Selling a product at Checkout and refunding it change no stock. Product refunds work line by line.
+- Accounts payable has vendors, bills with free-text lines, and expenses, with no link to products, purchase orders or receiving.
+- No report covers stock; "Sales by item" notes there is no inventory module. Product sales post to revenue (4300); the chart of accounts has Cost of Goods Sold (5000) but nothing posts to it, and there is no inventory asset account.
+- The data migration (Phase 50) does not import products or stock.
 
 ##### Acceptance Criteria
 
-1. THE system SHALL track stock per product variant and location, reduced by sales and restored by refunds.
-2. THE system SHALL let staff receive stock, adjust it with a reason, and count it.
-3. THE system SHALL warn when a variant falls below its reorder level.
-4. THE system SHALL report stock on hand and its value.
+**Agreed with the owner (15 Nov 2026)**: all the missing pieces above are in scope, plus the quantity on hand shown while an order is being put together. All sales are made in person at the business: there is no online shop, no stock reserved for online orders, and no shipping.
+
+1. THE system SHALL let a business choose, per product, whether its stock is tracked, and SHALL track stock for each tracked product (or each of its variants) at each location.
+2. THE system SHALL keep, per product or variant, a cost price, a barcode, a supplier, and, per location, a reorder level and a reorder quantity.
+3. WHEN an order is completed at Checkout, THE system SHALL reduce stock at the order's location by the quantity sold; WHEN a product line is refunded, THE system SHALL let staff choose whether the item goes back into stock or is written off, and SHALL record it either way.
+4. WHILE products are being added to an order, THE system SHALL show the quantity on hand at the order's location for each product and variant, and SHALL NOT let more of a tracked product onto the order than is on hand: a larger quantity is limited to what is on hand (for example, 5 candles wanted, 3 in stock: 3 go on the order, and staff are told), and a product with none on hand cannot be added. The rest of the order is not affected (owner, 15 Nov 2026).
+5. THE system SHALL let staff raise a purchase order to a vendor (Accounting > Purchase Orders), with each line's quantity starting at the reorder quantity of the product or variant at the delivery location, email it to the vendor using the business's Purchase Order template or mark it as sent, receive it in full or in part, and record what was received at which location and at what cost; what was received SHALL be able to become the vendor bill in Accounts Payable, approved and ready to pay (owner, 19 Nov 2026).
+6. THE system SHALL let staff, on a product's Stock card, adjust its stock with a reason (damaged, lost, used in a service, found, correction), count it (each variant at a location; a counted number that differs from on hand becomes the new on hand), and move it between locations. There is no separate count of all products at once (owner, 18 Nov 2026).
+7. THE system SHALL record every stock change (what, where, how many, why, the order, purchase order or transfer it came from, who and when), SHALL NOT let anyone edit or delete those records, and SHALL show a product's stock history.
+8. WHEN a product's stock at a location falls to or below its reorder level, THE system SHALL show it on the Low Stock report and SHALL tell the staff who look after stock, once, by an automated check (the Inbox event "A product is at or below its reorder level", owners and managers by default); it SHALL be told about again only after it has been restocked above its reorder level (owner, 19 Nov 2026).
+9. THE system SHALL value stock at average cost (updated on each receipt), and SHALL report, in an Inventory category of Reports grouped by location and product: stock on hand and value as of today, low stock as of today, and stock movements over a chosen period (owner, 19 Nov 2026).
+10. THE system SHALL post the cost of products sold to Cost of Goods Sold and keep the value of stock in an inventory asset account, so the accounts show margin and stock value; counts and adjustments SHALL post to an inventory adjustments account and opening stock to opening balance equity.
+11. THE system SHALL let a business set its opening stock with a count, and SHALL treat a product with no stock tracking as it does today (sold without stock checks).
 
 ### Staff tools and content
 
@@ -352,6 +366,27 @@ The acceptance criteria below set the capability each gap must reach. They are r
 7. WHEN a booking held against a membership or package is cancelled, THE system SHALL give the allowance back; WHEN a used allowance is refunded, THE system SHALL give it back.
 8. THE system SHALL record on the order and its receipt which membership or package paid for which line.
 9. THE system SHALL apply the same membership and package rules wherever a booking or sale is priced (New Appointment, the payment step, Checkout and the price shown while booking), so they never disagree.
+
+### Platform
+
+#### Requirement 20: Features per Business, Set by the Tenant
+
+**User Story**: As a tenant owner, I want to switch features on or off for each of my businesses, so that a small business gets a simple product without the parts it does not need, and I can price my businesses by the features they have.
+
+**Current state**: Confirmed in the code (15 Nov 2026):
+- Features (online booking, waitlist, memberships, packages, two-way SMS, community, advanced reporting, prospects, loyalty points, events) are switched on or off on the system's Configuration > Feature Flags page, for the whole platform.
+- The database already has a tenant level: a flag can be overridden for one tenant (`sys_feature_flag_overrides`, with an API route to set it), but no screen sets it, and there is no business level at all.
+- The sidebar and dashboard hide a module when its flag is off, but the flags are worked out for the tenant only, and most of the server does not check them (a switched-off feature is hidden, not refused).
+
+##### Acceptance Criteria
+
+1. THE system SHALL let a system administrator decide which features a tenant may use at all, and which are switched on by default for its businesses.
+2. THE system SHALL let a tenant owner switch each feature the tenant may use on or off for each of the tenant's businesses, and SHALL show, per business, which features are on.
+3. WHEN a feature is off for a business, THE system SHALL hide it from that business's screens, menus and dashboard, and SHALL refuse its use through the server (pages, links and API), with a clear message.
+4. WHEN a feature is switched off, THE system SHALL keep the business's data for it (for example memberships already sold, events already published) and SHALL say what stays in force; switching it back on SHALL restore it as it was.
+5. THE system SHALL record who switched a feature on or off for a business, and when.
+6. THE system SHALL make each business's features available to the tenant's own pricing and billing of its businesses (when that exists), and SHALL show the tenant a summary of features per business.
+7. THE system SHALL treat features that depend on each other together (for example, packages offered through online booking), and SHALL say what else is affected when a feature is switched off.
 
 ---
 

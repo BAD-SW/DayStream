@@ -51,6 +51,11 @@ const updateMerchandiseSchema = Joi.object({
   display_order: Joi.number().integer().min(0),
   tax_category_id: Joi.string().uuid().allow(null, ''),
   is_taxable: Joi.boolean(),
+  // retail inventory (spec 51, gap 7)
+  track_stock: Joi.boolean(),
+  cost_cents: Joi.number().integer().min(0).allow(null),
+  barcode: Joi.string().max(64).allow('', null),
+  supplier_id: Joi.string().uuid().allow(null, ''),
 }).min(1);
 
 // GET /api/v1/merchandise — List merchandise
@@ -129,7 +134,16 @@ merchandiseRouter.put('/:id', requirePermission('services:*'), validate(updateMe
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
 
-    const item = await merchandiseService.updateMerchandise(req.params.id, businessId, req.body);
+    // A supplier must be one of this business's vendors; an empty value clears it.
+    const body = { ...req.body };
+    if (body.supplier_id === '') body.supplier_id = null;
+    if (body.barcode === '') body.barcode = null;
+    if (body.supplier_id) {
+      const { adminPool } = await import('../db/pool');
+      const { rows } = await adminPool.query('SELECT 1 FROM fin_vendors WHERE id = $1 AND business_id = $2', [body.supplier_id, businessId]);
+      if (!rows[0]) { error(res, "Choose one of this business's vendors as the supplier.", 'VALIDATION_ERROR', 400); return; }
+    }
+    const item = await merchandiseService.updateMerchandise(req.params.id, businessId, body);
     if (!item) { error(res, 'Product not found', 'NOT_FOUND', 404); return; }
     success(res, item);
   } catch (err: any) {
@@ -208,6 +222,8 @@ const createVariantSchema = Joi.object({
   sku: Joi.string().max(50).allow('', null),
   price: Joi.number().integer().min(0).required(),
   display_order: Joi.number().integer().min(0).default(0),
+  cost_cents: Joi.number().integer().min(0).allow(null),
+  barcode: Joi.string().max(64).allow('', null),
 });
 
 const updateVariantSchema = Joi.object({
@@ -216,6 +232,8 @@ const updateVariantSchema = Joi.object({
   price: Joi.number().integer().min(0),
   status: Joi.string().valid('active', 'inactive'),
   display_order: Joi.number().integer().min(0),
+  cost_cents: Joi.number().integer().min(0).allow(null),
+  barcode: Joi.string().max(64).allow('', null),
 }).min(1);
 
 // GET /api/v1/merchandise/:id/variants
@@ -237,6 +255,8 @@ merchandiseRouter.post('/:id/variants', requirePermission('services:*'), validat
       sku: req.body.sku,
       price: req.body.price,
       displayOrder: req.body.display_order,
+      costCents: req.body.cost_cents,
+      barcode: req.body.barcode,
     });
     success(res, variant, undefined, 201);
   } catch (err: any) {
@@ -254,6 +274,8 @@ merchandiseRouter.put('/:id/variants/:variantId', requirePermission('services:*'
       price: req.body.price,
       status: req.body.status,
       displayOrder: req.body.display_order,
+      costCents: req.body.cost_cents,
+      barcode: req.body.barcode,
     });
     if (!variant) { error(res, 'Variant not found', 'NOT_FOUND', 404); return; }
     success(res, variant);

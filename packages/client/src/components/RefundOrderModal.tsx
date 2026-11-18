@@ -26,6 +26,8 @@ export function RefundOrderModal({ businessId, order: orderProp, orderId, onClos
   const [order, setOrder] = useState<Order | null>(orderProp ?? null);
   const [loading, setLoading] = useState(!orderProp);
   const [qty, setQty] = useState<Record<string, number>>({});
+  // A product taken from stock goes back into stock unless staff write it off (spec 51, gap 7).
+  const [writeOff, setWriteOff] = useState<Record<string, boolean>>({});
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +61,7 @@ export function RefundOrderModal({ businessId, order: orderProp, orderId, onClos
     if (!reason.trim()) { setError('A reason is required.'); return; }
     const lines = refundable
       .filter((it) => (qty[it.id] || 0) > 0)
-      .map((it) => ({ order_item_id: it.id, quantity: qty[it.id] }));
+      .map((it) => ({ order_item_id: it.id, quantity: qty[it.id], ...(it.from_stock ? { restock: !writeOff[it.id] } : {}) }));
     if (lines.length === 0) { setError('Select at least one item to refund.'); return; }
     setBusy(true); setError(null);
     try {
@@ -100,13 +102,26 @@ export function RefundOrderModal({ businessId, order: orderProp, orderId, onClos
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {refundable.map((it) => {
                 const rem = remainingOf(it);
+                const askStock = !!it.from_stock && (qty[it.id] || 0) > 0;
                 return (
                   <div key={it.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '8px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{it.item_name}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{it.item_name}{it.variant_name ? ` (${it.variant_name})` : ''}</span>
                       <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
                         {formatCurrency(perUnit(it))} each · {rem} of {it.quantity} refundable
                       </span>
+                      {askStock && (
+                        <span role="radiogroup" aria-label={`What happens to the returned ${it.item_name}`} style={{ display: 'flex', gap: 'var(--space-md)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text)' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                            <input type="radio" name={`stock-${it.id}`} checked={!writeOff[it.id]} onChange={() => setWriteOff((p) => ({ ...p, [it.id]: false }))} />
+                            Back into stock
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                            <input type="radio" name={`stock-${it.id}`} checked={!!writeOff[it.id]} onChange={() => setWriteOff((p) => ({ ...p, [it.id]: true }))} />
+                            Write off (cannot be sold)
+                          </label>
+                        </span>
+                      )}
                     </div>
                     <input
                       type="number" min={0} max={rem}

@@ -18,6 +18,8 @@ export interface ReportCatalogEntry {
   permission?: string;
   /** Placeholder — no server definition yet; tile is disabled and does not navigate. */
   comingSoon?: boolean;
+  /** A position on one date: one 'As of' date (today by default) instead of From and To. */
+  asOf?: boolean;
 }
 
 export interface ReportCategory {
@@ -119,6 +121,18 @@ export const REPORT_CATALOG: ReportCategory[] = [
       { id: 'revenue-forecast', title: 'Revenue Forecast', description: 'Projected revenue from trends', icon: '🔮', comingSoon: true },
       { id: 'membership-renewals', title: 'Membership Renewals', description: 'Upcoming renewals and expected revenue', icon: '📆', comingSoon: true },
       { id: 'cash-flow-projection', title: 'Cash Flow Projection', description: 'Projected inflows and outflows', icon: '🌊', comingSoon: true },
+    ],
+  },
+  {
+    // Spec 51, gap 7 (owner, 19 Nov 2026: a category of its own).
+    id: 'inventory',
+    label: 'Inventory',
+    accentColor: '#8A6E4B',
+    accentColorDark: '#B8976D',
+    reports: [
+      { id: 'inventory-stock-value', title: 'Stock on Hand & Value', description: 'On hand, cost price, average cost, stock and retail value, and margin per product, as of a date', icon: '📦', asOf: true },
+      { id: 'inventory-low-stock', title: 'Low Stock', description: 'Products at or below their reorder level, with reorder quantity and what is on order, as of today', icon: '⚠', asOf: true },
+      { id: 'inventory-movements', title: 'Stock Movements', description: 'Every stock change: sales, returns, receipts, counts, adjustments and transfers', icon: '🔁' },
     ],
   },
 ];

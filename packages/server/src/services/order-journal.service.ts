@@ -187,5 +187,21 @@ export async function generateJournalEntries(orderId: string, businessId: string
     );
   }
 
-  console.log(`[Journal] Generated entry ${entryId} for order ${order.order_number}: cash=${order.total_amount}, tax=${totalTax}, discounts=${totalDiscounts}`);
+  // Cost of the products taken from stock (spec 51, gap 7): Dr Cost of Goods Sold, Cr Inventory,
+  // at the average cost each was sold at.
+  const { orderCostOfSales, COGS_ACCOUNT, INVENTORY_ACCOUNT } = await import('./inventory.service');
+  const cost = await orderCostOfSales(orderId);
+  const cogsId = accountMap.get(COGS_ACCOUNT);
+  const inventoryId = accountMap.get(INVENTORY_ACCOUNT);
+  if (cost > 0 && cogsId && inventoryId) {
+    await adminPool.query(
+      `INSERT INTO fin_journal_entry_lines (journal_entry_id, account_id, debit, credit, description)
+       VALUES ($1, $2, $3, 0, $4), ($1, $5, 0, $3, $4)`,
+      [entryId, cogsId, cost, 'Cost of products sold', inventoryId],
+    );
+  } else if (cost > 0) {
+    console.error(`[Journal] Missing Cost of Goods Sold or Inventory account for business ${businessId}; cost of order ${order.order_number} not posted`);
+  }
+
+  console.log(`[Journal] Generated entry ${entryId} for order ${order.order_number}: cash=${order.total_amount}, tax=${totalTax}, discounts=${totalDiscounts}, cost=${cost}`);
 }

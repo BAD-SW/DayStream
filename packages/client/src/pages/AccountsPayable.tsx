@@ -6,19 +6,20 @@ import { TabBar } from '../design-system/components/navigation/TabBar';
 import { StickyPageTop } from '../design-system/components/layout/StickyPageTop';
 import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, fieldMark, draftBox } from '../components/unsaved/DraftSections';
 import { LeaveGuard } from '../components/unsaved/LeaveGuard';
-import { SaveChanges } from '../components/unsaved/SaveChanges';
 import { TableActionButton } from '../design-system/components/actions/TableActionButton';
 import * as apApi from '../api/accounts-payable';
 import { formatCurrency } from '../utils/currency';
 import { formatDateOnly, toISODateOnly } from '../utils/date';
 import { PayrollTab } from './PayrollTab';
+import { PurchaseOrdersTab } from './purchase-orders/PurchaseOrdersTab';
+import { useSearchParams } from 'react-router-dom';
 
 const BILL_STATUS: Record<string, 'success' | 'warning' | 'error' | 'neutral'> = { draft: 'neutral', pending: 'neutral', approved: 'info' as any, paid: 'success', overdue: 'error', void: 'error' };
 
 /**
  * Accounting (David, 2026-11-02, decision 8): every form (vendor, bill, payment, expense, account)
- * keeps its own button, so a money record can be stored on its own; the page's Save changes in the
- * header stores every open form with changes at once. Changed fields, forms and tabs are marked;
+ * keeps its own button, so a money record can be stored on its own. No page-wide Save changes
+ * (owner, 18 Nov 2026: not needed, every form saves itself). Changed fields, forms and tabs are marked;
  * a form saved on its own is no longer unsaved. Leaving with an unsaved form asks first. Archive,
  * Delete and Void act straight away.
  */
@@ -30,9 +31,9 @@ export function AccountsPayable() {
   );
 }
 
-type ApTab = 'vendors' | 'bills' | 'expenses' | 'accounts' | 'journal' | 'payroll';
+type ApTab = 'vendors' | 'purchase_orders' | 'bills' | 'expenses' | 'accounts' | 'journal' | 'payroll';
 const AP_TABS: { key: ApTab; label: string }[] = [
-  { key: 'vendors', label: 'Vendors' }, { key: 'bills', label: 'Bills' }, { key: 'expenses', label: 'Expenses' },
+  { key: 'vendors', label: 'Vendors' }, { key: 'purchase_orders', label: 'Purchase Orders' }, { key: 'bills', label: 'Bills' }, { key: 'expenses', label: 'Expenses' },
   { key: 'accounts', label: 'Chart of Accounts' }, { key: 'journal', label: 'Journal' }, { key: 'payroll', label: 'Payroll' },
 ];
 const EMPTY_VENDOR = { name: '', contact_name: '', email: '', phone: '', category: '', payment_terms: 30, address: '', tax_id: '', notes: '', default_account_id: '' };
@@ -43,14 +44,18 @@ const EMPTY_ACCOUNT = { code: '', name: '', account_type: 'expense', description
 
 function AccountsPage() {
   const { dirtySections } = useDraftSections();
-  const [activeTab, setActiveTab] = useState<ApTab>('vendors');
+  // ?tab= opens a tab directly (e.g. back from a purchase order).
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab') as ApTab | null;
+  const [activeTab, setActiveTab] = useState<ApTab>(tabParam && AP_TABS.some((t) => t.key === tabParam) ? tabParam : 'vendors');
   // A form's own button: stores that form only; its error shows beside it.
   const [formError, setFormError] = useState<Record<string, string>>({});
   async function saveOne(key: string, save: () => Promise<void>) {
     setFormError((e) => ({ ...e, [key]: '' }));
     try { await save(); } catch (err: any) { setFormError((e) => ({ ...e, [key]: err?.response?.data?.error || err?.message || 'Not saved' })); }
   }
-  const errorFor = (key: string) => formError[key] ? <span role="alert" style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)' }}>{formError[key]}</span> : null;
+  // A form's error hangs just under its buttons, so the fields and buttons keep their places.
+  const errorFor = (key: string) => formError[key] ? <span role="alert" style={{ position: 'absolute', top: '100%', right: 0, marginTop: 'var(--space-xs)', whiteSpace: 'nowrap', color: 'var(--color-error)', fontSize: 'var(--font-size-sm)' }}>{formError[key]}</span> : null;
   const [vendors, setVendors] = useState<any[]>([]);
   const [bills, setBills] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -78,7 +83,9 @@ function AccountsPage() {
   const paymentDraft = useDraft<any>('ap-payment', 'Bill payment', EMPTY_PAYMENT, async (f) => { await persistPayment(f); return EMPTY_PAYMENT; }, { tab: 'bills' });
   const paymentForm = paymentDraft.value;
   const setPaymentForm = paymentDraft.setValue;
-  const markPayment = (k: string) => fieldMark(paymentDraft.changed((v: any) => v[k]));
+  // The payment form is filled in and recorded in one go: no changed-field or changed-form highlight
+  // (owner, 18 Nov 2026). Leaving with it half filled still asks first.
+  const markPayment = (_k: string): React.CSSProperties => ({});
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [editingAccount, setEditingAccount] = useState<any | null>(null);
   const accountDraft = useDraft<any>('ap-account', 'Account', EMPTY_ACCOUNT, async (f) => { await persistAccount(f); return EMPTY_ACCOUNT; }, { tab: 'accounts' });
@@ -101,7 +108,7 @@ function AccountsPage() {
   const [journalAccountFilter, setJournalAccountFilter] = useState('all');
   const businessId = localStorage.getItem('business_id') || '';
 
-  useEffect(() => { loadTab('vendors'); }, [businessId]);
+  useEffect(() => { loadTab(activeTab); }, [businessId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadTab(tabId: string) {
     if (!businessId) return;
@@ -204,9 +211,15 @@ function AccountsPage() {
     }
   }
 
+  async function handleApproveBill(id: string) {
+    try { await apApi.approveBill(id, businessId); loadTab('bills'); }
+    catch (err: any) { alert(err?.response?.data?.error || 'Could not approve the bill'); }
+  }
+
   async function handlePayBill(id: string) {
     const bill = bills.find((b: any) => b.id === id);
     const remaining = bill ? (bill.amount - bill.amount_paid) / 100 : 0;
+    setFormError((e) => ({ ...e, payment: '' }));
     paymentDraft.load({ bill_id: id, amount: String(remaining.toFixed(2)), payment_date: new Date().toISOString().slice(0, 10), payment_method: 'transfer', reference: '' });
     setShowPaymentForm(true);
   }
@@ -337,7 +350,9 @@ function AccountsPage() {
     { key: 'actions', header: '', filter: false as const, render: (_: any, row: any) => (
       <div style={{ display: 'flex', gap: '4px' }}>
         <TableActionButton label="Edit" variant="edit" onClick={() => openEditBill(row)} />
-        {row.status !== 'paid' && <TableActionButton label="Record Payment" variant="activate" onClick={() => handlePayBill(row.id)} />}
+        {/* A bill is paid once approved; draft and pending bills are approved first. */}
+        {(row.status === 'draft' || row.status === 'pending' || (row.status === 'overdue' && !row.approved_at)) && <TableActionButton label="Approve" variant="activate" onClick={() => handleApproveBill(row.id)} />}
+        {(row.status === 'approved' || (row.status === 'overdue' && row.approved_at)) && <TableActionButton label="Record Payment" variant="activate" onClick={() => handlePayBill(row.id)} />}
       </div>
     )},
   ];
@@ -436,7 +451,7 @@ function AccountsPage() {
             </select></div>
             <div><label style={styles.fieldLabel}>Name</label><input style={{ ...({ ...styles.input, width: '280px' }), ...markAccount('name') }} value={accountForm.name} onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} placeholder="Account name" /></div>
             <div><label style={styles.fieldLabel}>Description</label><input style={{ ...({ ...styles.input, width: '280px' }), ...markAccount('description') }} value={accountForm.description} onChange={(e) => setAccountForm({ ...accountForm, description: e.target.value })} placeholder="Optional" /></div>
-            <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+            <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', position: 'relative' }}>
               <button style={styles.primaryBtn} onClick={() => saveOne('account', accountDraft.save)}>{editingAccount ? 'Save' : 'Create'}</button>
               <button style={styles.secondaryBtn} onClick={() => { setShowAddAccount(false); accountDraft.load(EMPTY_ACCOUNT); }}>Cancel</button>
               {errorFor('account')}
@@ -630,7 +645,6 @@ function AccountsPage() {
       <StickyPageTop>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: 'var(--space-md)' }}>
           <h1 style={{ ...styles.title, marginBottom: 0 }}>Accounting</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}><SaveChanges /></div>
         </div>
         <TabBar aria-label="Accounting sections" active={activeTab} onChange={(t) => { setActiveTab(t); loadTab(t); }}
           tabs={AP_TABS.map((t) => ({ ...t, changed: dirtySections.some((s) => s.tab === t.key) }))} />
@@ -655,7 +669,7 @@ function AccountsPage() {
                     <option value="">— None —</option>
                     {accounts.filter((a: any) => a.account_type === 'expense' && a.status === 'active').map((a: any) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
                   </select></div>
-                  <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', position: 'relative' }}>
                     <button style={styles.primaryBtn} onClick={() => saveOne('vendor', vendorDraft.save)}>{editingVendor ? 'Save' : 'Create'}</button>
                     <button style={styles.secondaryBtn} onClick={() => { setShowVendorForm(false); vendorDraft.load(EMPTY_VENDOR); }}>Cancel</button>
                     {errorFor('vendor')}
@@ -686,7 +700,7 @@ function AccountsPage() {
                   <div><label style={styles.fieldLabel}>Amount (€) *</label><input style={{ ...({ ...styles.input, width: '100px' }), ...markBill('amount') }} type="number" step="0.01" value={billForm.amount} onChange={(e) => setBillForm({ ...billForm, amount: e.target.value })} /></div>
                   <div><label style={styles.fieldLabel}>Due Date *</label><input style={{ ...(styles.input), ...markBill('due_date') }} type="date" value={billForm.due_date} onChange={(e) => setBillForm({ ...billForm, due_date: e.target.value })} /></div>
                   <div><label style={styles.fieldLabel}>Description</label><input style={{ ...(styles.input), ...markBill('description') }} value={billForm.description} onChange={(e) => setBillForm({ ...billForm, description: e.target.value })} placeholder="What for" /></div>
-                  <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', position: 'relative' }}>
                     <button style={styles.primaryBtn} onClick={() => saveOne('bill', billDraft.save)}>{(billForm as any)._editId ? 'Save' : 'Create'}</button>
                     <button style={styles.secondaryBtn} onClick={() => { setShowBillForm(false); billDraft.load(EMPTY_BILL); }}>Cancel</button>
                     {errorFor('bill')}
@@ -695,7 +709,7 @@ function AccountsPage() {
               </div>
             )}
             {showPaymentForm && (
-              <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)', ...draftBox(paymentDraft.dirty) }}>
+              <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', marginBottom: 'var(--space-md)', background: 'var(--color-surface)' }}>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
                   <div><label style={styles.fieldLabel}>Amount (€) *</label><input style={{ ...({ ...styles.input, width: '100px' }), ...markPayment('amount') }} type="number" step="0.01" value={paymentForm.amount} onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })} /></div>
                   <div><label style={styles.fieldLabel}>Payment Date</label><input style={{ ...(styles.input), ...markPayment('payment_date') }} type="date" value={paymentForm.payment_date} onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })} /></div>
@@ -707,7 +721,7 @@ function AccountsPage() {
                     <option value="other">Other</option>
                   </select></div>
                   <div><label style={styles.fieldLabel}>Reference</label><input style={{ ...({ ...styles.input, width: '150px' }), ...markPayment('reference') }} value={paymentForm.reference} onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })} placeholder="Check #, transfer ref" /></div>
-                  <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', position: 'relative' }}>
                     <button style={styles.primaryBtn} onClick={() => saveOne('payment', paymentDraft.save)}>Record Payment</button>
                     <button style={styles.secondaryBtn} onClick={() => { setShowPaymentForm(false); paymentDraft.load(EMPTY_PAYMENT); }}>Cancel</button>
                     {errorFor('payment')}
@@ -739,7 +753,7 @@ function AccountsPage() {
                     <option value="transfer">Transfer</option>
                     <option value="other">Other</option>
                   </select></div>
-                  <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', position: 'relative' }}>
                     <button style={styles.primaryBtn} onClick={() => saveOne('expense', expenseDraft.save)}>{(expenseForm as any)._editId ? 'Save' : 'Create'}</button>
                     <button style={styles.secondaryBtn} onClick={() => { setShowExpenseForm(false); expenseDraft.load(EMPTY_EXPENSE); }}>Cancel</button>
                     {errorFor('expense')}
@@ -750,6 +764,7 @@ function AccountsPage() {
             <Table columns={expenseCols} data={expenses} loading={loading} emptyMessage="No expenses" clientSort initialSort={{ key: 'date', order: 'desc' }} />
           </div>
         ) },
+        { id: 'purchase_orders', label: 'Purchase Orders', content: <PurchaseOrdersTab businessId={businessId} /> },
         { id: 'accounts', label: 'Chart of Accounts', content: accountsContent },
         { id: 'journal', label: 'Journal', content: renderJournal(journalEntries, loading, handleVoidEntry) },
       ].filter((t) => t.id === activeTab).map((t) => <div key={t.id}>{t.content}</div>)}
@@ -768,7 +783,7 @@ const styles: Record<string, React.CSSProperties> = {
   secondaryBtn: { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--button-radius)', padding: '8px 16px', fontSize: 'var(--font-size-sm)', cursor: 'pointer', color: 'var(--color-text)', fontFamily: 'var(--font-family)', minHeight: 'var(--button-height-sm)' },
   toolbar: { display: 'flex', gap: 'var(--space-md)', alignItems: 'flex-end', marginBottom: 'var(--space-lg)', flexWrap: 'wrap' as const },
   inlineGroup: { display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-end' },
-  fieldLabel: { display: 'flex', flexDirection: 'column' as const, gap: '4px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-medium)' as any },
+  fieldLabel: { display: 'flex', flexDirection: 'column' as const, gap: '4px', marginBottom: 'calc(var(--space-xs) * 1.5)', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-medium)' as any },
   input: { padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-sm)', fontFamily: 'var(--font-family)', color: 'var(--color-text)', background: 'var(--color-surface)' },
   overlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-xl)', width: '100%', maxWidth: '500px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' },

@@ -26,16 +26,18 @@ export interface ReportColumn {
   align?: ReportColumnAlign;
   /** Optional fixed column width (CSS value). */
   width?: string;
+  /** Not shown as a column (on screen, CSV or PDF): carried on each row for a report's fixed grouping. */
+  hidden?: boolean;
   /**
    * Makes this column's cell a link to a detail page. `to` selects the
-   * destination (customer → /customers/:id, order → /receipt/:id) and `idKey`
+   * destination (customer → /customers/:id, order → /receipt/:id, product → /offers/merchandise/:id) and `idKey`
    * names the row field holding the target id. The cell still displays its own
    * value; only when the row has a non-empty id does it render as a link. Rows
    * carry the id field alongside the display value (it is not shown as its own
    * column).
    */
   link?: {
-    to: 'customer' | 'order';
+    to: 'customer' | 'order' | 'product';
     idKey: string;
   };
 }
@@ -49,6 +51,8 @@ export interface ReportRunMeta {
   generatedAt: string;
   /** ISO 4217 currency code used to format currency columns (e.g. 'USD', 'EUR'). */
   currency: string;
+  /** The report shows a position on one date (dateRange.end, 'As of'), not a period. */
+  asOf?: boolean;
 }
 
 /**
@@ -77,6 +81,11 @@ export interface ReportRunResult {
   totals: Record<string, number>;
   /** Present for multi-section reports; each renders as its own titled table. */
   sections?: ReportSection[];
+  /**
+   * A fixed grouping chosen by the report (column keys): the rows are always shown, and exported,
+   * in groups by these columns, with subtotals, and the runner offers no Group by options.
+   */
+  groupBy?: string[];
   meta: ReportRunMeta;
 }
 

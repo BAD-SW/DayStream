@@ -106,7 +106,9 @@ export async function getMerchandiseById(id: string, businessId: string) {
 }
 
 export async function updateMerchandise(id: string, businessId: string, updates: Record<string, any>) {
-  const allowedFields = ['category_id', 'name', 'description', 'short_description', 'sku', 'price', 'status', 'image_url', 'display_order', 'tax_category_id', 'is_taxable'];
+  // track_stock, cost_cents, barcode, supplier_id: retail inventory (spec 51, gap 7)
+  const allowedFields = ['category_id', 'name', 'description', 'short_description', 'sku', 'price', 'status', 'image_url', 'display_order', 'tax_category_id', 'is_taxable',
+    'track_stock', 'cost_cents', 'barcode', 'supplier_id'];
   const fields: string[] = [];
   const values: any[] = [];
   let idx = 1;
@@ -175,17 +177,17 @@ export async function getVariants(merchandiseId: string) {
   return rows;
 }
 
-export async function createVariant(merchandiseId: string, data: { name: string; sku?: string; price: number; displayOrder?: number }) {
+export async function createVariant(merchandiseId: string, data: { name: string; sku?: string; price: number; displayOrder?: number; costCents?: number | null; barcode?: string | null }) {
   const { rows } = await adminPool.query(
-    `INSERT INTO prd_merchandise_variants (merchandise_id, name, sku, price, display_order)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO prd_merchandise_variants (merchandise_id, name, sku, price, display_order, cost_cents, barcode)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [merchandiseId, data.name, data.sku || null, data.price, data.displayOrder ?? 0],
+    [merchandiseId, data.name, data.sku || null, data.price, data.displayOrder ?? 0, data.costCents ?? null, data.barcode || null],
   );
   return rows[0];
 }
 
-export async function updateVariant(variantId: string, data: { name?: string; sku?: string; price?: number; status?: string; displayOrder?: number }) {
+export async function updateVariant(variantId: string, data: { name?: string; sku?: string; price?: number; status?: string; displayOrder?: number; costCents?: number | null; barcode?: string | null }) {
   const fields: string[] = [];
   const values: any[] = [];
   let idx = 1;
@@ -195,6 +197,8 @@ export async function updateVariant(variantId: string, data: { name?: string; sk
   if (data.price !== undefined) { fields.push(`price = $${idx++}`); values.push(data.price); }
   if (data.status !== undefined) { fields.push(`status = $${idx++}`); values.push(data.status); }
   if (data.displayOrder !== undefined) { fields.push(`display_order = $${idx++}`); values.push(data.displayOrder); }
+  if (data.costCents !== undefined) { fields.push(`cost_cents = $${idx++}`); values.push(data.costCents); }
+  if (data.barcode !== undefined) { fields.push(`barcode = $${idx++}`); values.push(data.barcode || null); }
 
   if (fields.length === 0) return null;
   fields.push('updated_at = NOW()');

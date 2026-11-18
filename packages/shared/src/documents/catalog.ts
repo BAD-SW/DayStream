@@ -430,6 +430,76 @@ export const DOCUMENT_ARTIFACT_TYPES: DocumentArtifactType[] = [
       },
     ],
   },
+  {
+    // Spec 51, gap 7: emailed to the vendor from the purchase order page (Email to vendor).
+    // The recipient is the vendor, so the customer placeholders are left out.
+    key: 'purchase_order.sent',
+    label: 'Purchase Order',
+    description: 'Emailed to a vendor when a purchase order is sent from Accounting > Purchase Orders.',
+    placeholders: [
+      ...COMMON_PLACEHOLDERS.filter((p) => p.token.startsWith('business_')),
+      {
+        token: 'vendor_name',
+        label: 'Vendor Name',
+        description: 'The vendor the order is placed with.',
+        sample: 'Palma Plumbing',
+      },
+      {
+        token: 'vendor_contact_name',
+        label: 'Vendor Contact',
+        description: "The vendor's contact person (blank when none is set).",
+        sample: 'Pablo Pipefitter',
+      },
+      {
+        token: 'po_number',
+        label: 'PO Number',
+        description: 'The purchase order number.',
+        sample: 'PO-0007',
+      },
+      {
+        token: 'po_date',
+        label: 'Order Date',
+        description: 'The date the purchase order is sent.',
+        sample: '18 Nov 2026',
+      },
+      {
+        token: 'expected_date',
+        label: 'Expected Date',
+        description: 'When the delivery is expected (blank when not set).',
+        sample: '25 Nov 2026',
+      },
+      {
+        token: 'deliver_to',
+        label: 'Deliver To',
+        description: 'The location the order is delivered to.',
+        sample: 'Transcend Health',
+      },
+      {
+        token: 'deliver_to_address',
+        label: 'Delivery Address',
+        description: "The delivery location's address.",
+        sample: '12 Carrer Gran, Barcelona',
+      },
+      {
+        token: 'po_total',
+        label: 'Order Total',
+        description: 'The total of the order at the unit costs on it, formatted in the business currency.',
+        sample: '€149.50',
+      },
+      {
+        token: 'po_note',
+        label: 'Note for the Vendor',
+        description: 'The note written on the purchase order (blank when none).',
+        sample: 'Please deliver before noon.',
+      },
+      {
+        token: 'details_table',
+        label: 'Details Table',
+        description: 'A table of the products ordered (Description with unit cost, Qty, Amount) with a total. Expands where you place it.',
+        sample: '[line-item table]',
+      },
+    ],
+  },
   // ---- Planned document types (shown in the dropdown; "Coming Soon" in the label) ----
   {
     key: 'booking.cancellation',
