@@ -133,12 +133,15 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 - [x] ✅ Verify live and close with the owner (Checkout stock limit, Stock card, purchase orders to bills, accounting entries, low stock and the inventory reports; closed 19 Nov 2026)
 
 ## 8. Staff mobile app (Requirement 8)
-- [ ] Confirm current state and agree requirements
+- [x] ✅ Confirm current state (19 Nov 2026: customer app is an unreleased Expo scaffold without push; web app not installable; the server already has schedule, customers, notes, forms, QR check-in, time clock, Inbox and notifications)
+- ⏸️ On hold (owner, 19 Nov 2026): set aside for now. When resumed, decide a native app (staff mode in the Expo app; testable in Expo Go, push needs a store build) or the web app made installable (testable over Wi-Fi; camera and push need an https tunnel)
+- [ ] Agree requirements
 - [ ] Design
 - [ ] Build
 - [ ] Verify live and close with the owner
 
 ## 9. Video hosting and livestream (Requirement 9)
+- ⏸️ On hold (owner, 19 Nov 2026): skipped for now. Matters most to class studios selling online memberships (Momence, Mindbody, Arketa); needs an outside video service (for example Mux, Cloudflare Stream or Vimeo) with usage-based cost
 - [ ] Confirm current state (course authoring, paid access) and choose a video provider
 - [ ] Design
 - [ ] Build
@@ -164,7 +167,7 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 
 ## 14. Tips (Requirement 14)
 - [x] ✅ Confirm current state (no tip support; order total, charge, receipt, ledger, commission, payroll and refunds recorded in requirements.md)
-- [ ] Agree requirements with the owner (who gets the tip, when it is offered, cash tips, payout, refunds)
+- [x] ✅ Requirements agreed with the owner (19 Nov 2026): off by default; offered at Checkout; one payment; cash tips a setting; Tips Payable; split by service value or evenly, as the business chooses, changeable before payment; Tips report; card and other electronic tips included in the pay run of their period (owner, 19 Nov 2026), cash tips handed over at the time; refunds
 - [ ] Design
 - [ ] Build
 - [ ] Verify live and close with the owner

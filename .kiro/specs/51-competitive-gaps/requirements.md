@@ -186,7 +186,10 @@ The acceptance criteria below set the capability each gap must reach. They are r
 
 **User Story**: As a staff member, I want my schedule, my customers and check-in on my phone, so that I don't need a desk computer.
 
-**Current state**: Not started. The customer mobile app is built (Phase 19); staff tools are web only.
+**Current state**: Not started. Confirmed in the code (19 Nov 2026):
+- The customer app (`packages/mobile`, Phase 19) is an Expo / React Native scaffold of about 20 files: login, Home, Book, My Bookings, Events, Profile and a check-in screen that shows the customer's QR code. It has never been built for or published to the App Store or Google Play, points at a local server, and has no push notifications (nothing on the server sends them). Every staff screen is web only.
+- The web app opens on a phone but is laid out for a desk: it has the mobile viewport and 12 list pages switch to cards on a small screen, but it cannot be installed on the home screen (no web app manifest) and sends no push notifications.
+- What the staff app needs already exists on the server: bookings by staff member and day, customers with their notes and completed forms, check-in by a customer's QR code (`/v1/check-in/qr`, the customer's code from `/v1/check-in/qr-code/customer/:id`), the time clock (clock in, breaks, clock out; Clock and My Hours pages), the Inbox and in-app notifications (the bell), and role permissions.
 
 ##### Acceptance Criteria
 
@@ -262,13 +265,16 @@ The acceptance criteria below set the capability each gap must reach. They are r
 
 ##### Acceptance Criteria
 
-1. THE system SHALL let a tip be added to an order at checkout, as a percentage of the sale or a typed amount, and SHALL let the business choose the suggested percentages.
-2. THE system SHALL charge the sale and the tip together in one payment, and SHALL show the tip as its own line on the receipt.
-3. THE system SHALL record a tip as money owed to staff, separate from revenue, tax and commission, and SHALL keep it out of sales and profit reports.
-4. THE system SHALL attribute each tip to the staff member who served the customer, and SHALL let staff change that attribution or split it between staff.
-5. THE system SHALL show each business the tips collected and owed to each staff member for a period, and SHALL let the business record paying them out or add them to a pay run.
-6. THE system SHALL let a business switch tipping off, and SHALL let it decide whether a tip may be added on cash and other manual payments.
-7. THE system SHALL state what happens to a tip when an order is refunded.
+**Agreed with the owner (19 Nov 2026).**
+
+1. THE system SHALL let a business switch tipping on or off (off by default), and SHALL let it choose three suggested tip percentages (10%, 15% and 20% by default).
+2. WHEN tipping is on, THE system SHALL offer a tip at Checkout just before payment: no tip, one of the suggested percentages, or a typed amount; a percentage SHALL be worked out on the sale total after discounts and including tax (owner, 19 Nov 2026), and the tip itself SHALL carry no tax.
+3. THE system SHALL charge the sale and the tip together in one payment, including a walk-in's card, and SHALL show the tip as its own line on the receipt.
+4. THE system SHALL let a business decide whether a tip may be added to cash and other manual payments (allowed by default) or to card payments only.
+5. THE system SHALL record a tip as money owed to staff (a Tips Payable liability), separate from revenue, tax and commission, and SHALL keep it out of sales and profit reports.
+6. THE system SHALL give each tip to the staff who served the customer, as the business chooses: split by the value of each staff member's services on the order (the default), or split evenly between every staff member on the order's services. An order credited to one staff member only gives them the whole tip. Staff SHALL be able to change who gets the tip, or split it by hand, before the order is paid.
+7. THE system SHALL include each staff member's card and other electronic tips in the payroll calculation of the pay period they were collected in, as their own line of gross pay on the payslip, and SHALL clear them from what is owed once that pay run is finalised (owner, 19 Nov 2026). A tip added to a cash or other manual payment SHALL be recorded as handed to the staff member at the time and SHALL NOT be added to pay. THE system SHALL show each business the tips collected, paid and owed to each staff member for a period. Paying the staff member's bank account is Requirement 10.
+8. WHEN an order is refunded, THE system SHALL leave its tip unchanged unless the tip is refunded as its own line; refunding a tip SHALL take it off what each staff member is owed, in the same shares.
 #### Requirement 15: Service and Product Add-Ons
 
 **User Story**: As a business owner, I want customers and staff to be able to add extras to a booking, such as a longer session, an upgrade or a product, so that I earn more per visit and the extra time is reserved.
