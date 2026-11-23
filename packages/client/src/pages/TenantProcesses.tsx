@@ -1,4 +1,5 @@
 import { TenantBillingScheduleCard } from '../components/TenantBillingScheduleCard';
+import { TenantHistoryStorageCard } from '../components/TenantHistoryStorageCard';
 
 /**
  * TenantProcesses — tenant-level scheduled jobs / processes (tenant persona).
@@ -14,6 +15,9 @@ export function TenantProcesses() {
 
       <section style={styles.section}>
         <TenantBillingScheduleCard />
+      </section>
+      <section style={styles.section}>
+        <TenantHistoryStorageCard />
       </section>
     </div>
   );

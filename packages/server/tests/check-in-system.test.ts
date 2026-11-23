@@ -54,7 +54,7 @@ describe('Check-In System', () => {
     await adminPool.query(`DELETE FROM apt_check_in_records WHERE booking_id IN (${mine})`, [BUSINESS_ID]);
     await adminPool.query(`DELETE FROM apt_check_in_qr_codes WHERE booking_id IN (${mine}) OR customer_id = $2`, [BUSINESS_ID, CUSTOMER_ID]);
     await adminPool.query(`DELETE FROM apt_no_show_records WHERE booking_id IN (${mine})`, [BUSINESS_ID]);
-    await adminPool.query('DELETE FROM apt_booking_status_history WHERE booking_id IN (SELECT id FROM apt_bookings WHERE business_id = $1 AND booking_reference LIKE $2)', [BUSINESS_ID, 'BK-CI-%']);
+    // The appointments' history goes with them (it cannot be deleted on its own, spec 51 gap 18).
     await adminPool.query('DELETE FROM apt_bookings WHERE business_id = $1 AND booking_reference LIKE $2', [BUSINESS_ID, 'BK-CI-%']);
 
     // Create a confirmed booking for today

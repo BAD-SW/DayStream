@@ -32,11 +32,16 @@ export async function detectNoShows(tenantId: string) {
   const records = [];
 
   for (const booking of overdueBookings) {
-    // Mark booking as no_show
+    // Mark booking as no_show, and say why in its history (spec 51, gap 18, criterion 4)
     await adminPool.query(
       `UPDATE apt_bookings SET status = 'no_show' WHERE id = $1`,
       [booking.id],
     );
+    const { recordStatus } = await import('./booking-history.service');
+    await recordStatus(booking.id, 'confirmed', 'no_show', {
+      actor: 'system', source: 'job', job: 'No-show detection', userId: null,
+      reason: `Marked No-Show automatically: not checked in ${config.grace_period_minutes} minutes after the start`,
+    });
 
     // Create no_show_record
     const { rows } = await adminPool.query(

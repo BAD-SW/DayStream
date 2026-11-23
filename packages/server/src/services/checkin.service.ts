@@ -202,10 +202,8 @@ export async function completeCheckIn(booking: BookingRef, opts: {
     `UPDATE apt_bookings SET status = 'checked_in', checked_in_at = NOW(), updated_at = NOW() WHERE id = $1`,
     [booking.id],
   );
-  await adminPool.query(
-    `INSERT INTO apt_booking_status_history (booking_id, from_status, to_status, changed_by) VALUES ($1, $2, 'checked_in', $3)`,
-    [booking.id, booking.status, opts.processedBy || null],
-  ).catch(() => undefined);
+  const { recordStatus } = await import('./booking-history.service');
+  await recordStatus(booking.id, booking.status, 'checked_in', { userId: opts.processedBy || null });
   await evaluateOnBooking(booking.customer_id, booking.business_id).catch(() => undefined);
 
   await logAudit({

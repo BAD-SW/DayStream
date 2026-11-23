@@ -442,11 +442,9 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
   if (booking.customer_id) await touchActivity(booking.customer_id).catch(() => undefined);
 
   // Record status history
-  await adminPool.query(
-    `INSERT INTO apt_booking_status_history (booking_id, from_status, to_status, changed_by)
-     VALUES ($1, NULL, $2, $3)`,
-    [booking.id, status, input.createdBy],
-  );
+  // The appointment's history (spec 51, gap 18): created, by whom and from where.
+  const { recordStatus } = await import('./booking-history.service');
+  await recordStatus(booking.id, null, status, { userId: input.createdBy || null });
 
   // Log in customer activity timeline (skip for walk-ins)
   if (input.customerId) {

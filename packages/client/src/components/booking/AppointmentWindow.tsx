@@ -10,6 +10,7 @@ import './AppointmentWindow.css';
 import { PaymentStep } from './PaymentStep';
 import { PriceSummary } from './PriceSummary';
 import { BenefitChooser } from './BenefitChooser';
+import { BookingHistory } from './BookingHistory';
 import type { BenefitRef } from '../../api/bookings';
 // Bill's spec 51 pieces, moved here from the old New/Edit Booking pages
 import { FormsNeededNotice } from '../forms/FormsNeededNotice';
@@ -681,6 +682,8 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
           <div className="q-sec-b"><ChartsPanel businessId={businessId} customerId={booking.customer_id} bookingId={bookingId} defaultChartGroupId={svc?.default_chart_group_id ?? null} /></div>
         </section>
       )}
+      {/* Everything that happened to the appointment (spec 51, gap 18): staff only */}
+      {mode === 'edit' && bookingId && <BookingHistory bookingId={bookingId} businessId={businessId} refreshKey={booking?.updated_at} />}
       {error && <p className="mk-warn" role="alert">{error}</p>}
       {mode === 'edit' && live && !ending && (
         <div className="q-end">

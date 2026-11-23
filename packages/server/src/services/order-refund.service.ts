@@ -109,7 +109,7 @@ export async function refundOrderLines(args: {
     await client.query('BEGIN');
 
     const { rows: orderRows } = await client.query(
-      `SELECT id, status, customer_id, order_number, payment_method, total_amount, tip_amount, tip_refunded_cents
+      `SELECT id, status, customer_id, order_number, payment_method, total_amount, tip_amount, tip_refunded_cents, booking_id
        FROM fin_orders WHERE id = $1 AND business_id = $2 FOR UPDATE`,
       [orderId, businessId],
     );
@@ -209,6 +209,10 @@ export async function refundOrderLines(args: {
       await client.query('COMMIT');
       const { releaseUsedForOrderItem } = await import('./benefits.service');
       for (const id of giveBack) await releaseUsedForOrderItem(id);
+      if (order.booking_id) {
+        const { recordPayment } = await import('./booking-history.service');
+        await recordPayment(order.booking_id, { kind: 'refunded', order_id: orderId, order_number: order.order_number, amount_cents: 0 }, { userId: processedBy || null, reason });
+      }
       return { refundTransactionId: '', referenceNumber: '', status: 'completed', amountCents: 0, orderStatus: benefitStatus };
     }
     if (totalRefund <= 0) throw new OrderRefundError('Nothing to refund', 'NOTHING_TO_REFUND');
@@ -318,6 +322,15 @@ export async function refundOrderLines(args: {
     await client.query(`UPDATE fin_orders SET status = $1, updated_at = NOW() WHERE id = $2`, [newStatus, orderId]);
 
     await client.query('COMMIT');
+
+    // The refund in the appointment's history (spec 51, gap 18, criterion 5).
+    if (order.booking_id) {
+      const { recordPayment } = await import('./booking-history.service');
+      await recordPayment(order.booking_id, {
+        kind: 'refunded', order_id: orderId, order_number: order.order_number, amount_cents: totalRefund,
+        method: toCredit ? 'account_credit' : (order.payment_method || null),
+      }, { userId: processedBy || null, reason });
+    }
 
     // What the returned lines used of a membership or package is given back (spec 51, gap 19).
     if (giveBack.length > 0) {

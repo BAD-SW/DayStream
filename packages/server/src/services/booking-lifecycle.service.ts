@@ -93,11 +93,9 @@ async function transitionStatus(
   }
 
   // Record in status history
-  await adminPool.query(
-    `INSERT INTO apt_booking_status_history (booking_id, from_status, to_status, changed_by, reason)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [bookingId, currentStatus, newStatus, userId, options?.reason || null],
-  );
+  // The appointment's history (spec 51, gap 18): who and where come from the request or the job.
+  const { recordStatus } = await import('./booking-history.service');
+  await recordStatus(bookingId, currentStatus, newStatus, { userId: userId || null, reason: options?.reason || null });
 
   // Log in audit trail
   await logAudit({
@@ -137,6 +135,12 @@ async function transitionStatus(
  * customer has no email. Non-blocking.
  */
 export async function confirmBooking(bookingId: string, businessId: string, userId: string, tenantId: string): Promise<TransitionResult> {
+  // Only a pending booking is confirmed. A payment confirms "whatever the booking is" and used to
+  // undo a check-in (checked in → confirmed is the reset), so a paid appointment was never
+  // completed (found in its history, spec 51 gap 18, 23 Nov 2026).
+  const { rows: cur } = await adminPool.query('SELECT status FROM apt_bookings WHERE id = $1 AND business_id = $2', [bookingId, businessId]);
+  if (!cur[0]) return { success: false, error: 'Booking not found' };
+  if (cur[0].status !== 'pending') return { success: false, error: `Cannot transition from ${cur[0].status} to confirmed: only a pending booking is confirmed` };
   const result = await transitionStatus(bookingId, businessId, 'confirmed', userId, tenantId);
   if (result.success) {
     try {
@@ -384,6 +388,9 @@ export async function rescheduleBooking(
   const startTime = new Date(newStartTime);
   const endTime = new Date(startTime.getTime() + booking.duration * 60 * 1000);
   const staffId = newStaffId || booking.staff_id;
+  // What it was before the move, for its history (spec 51, gap 18).
+  const history = await import('./booking-history.service');
+  const before = await history.snapshotBooking(bookingId);
 
   // The new time is checked like a new booking: opening hours, the provider's availability,
   // conflicts, resources and capacity (it used to check only the provider's and customer's
@@ -416,12 +423,8 @@ export async function rescheduleBooking(
       .catch((e) => logger.warn(`Booking ${bookingId}: allowance not moved with the reschedule: ${e?.message || e}`));
   }
 
-  // Log
-  await adminPool.query(
-    `INSERT INTO apt_booking_status_history (booking_id, from_status, to_status, changed_by, reason)
-     VALUES ($1, $2, $2, $3, 'Rescheduled')`,
-    [bookingId, booking.status, userId],
-  );
+  // The history: the old and new time (and staff or resource, when they changed).
+  await history.recordChanges(bookingId, before, { userId: userId || null });
 
   if (tenantId && userId) {
     await logAudit({
@@ -483,11 +486,11 @@ export async function evaluateNoShows(windowMinutes = 15, businessId?: string): 
       [booking.id],
     );
 
-    await adminPool.query(
-      `INSERT INTO apt_booking_status_history (booking_id, from_status, to_status, reason)
-       VALUES ($1, 'confirmed', 'no_show', 'Auto no-show: not checked in within window')`,
-      [booking.id],
-    );
+    const { recordStatus } = await import('./booking-history.service');
+    await recordStatus(booking.id, 'confirmed', 'no_show', {
+      actor: 'system', source: 'job', job: 'Automatic no-show', userId: null,
+      reason: `Marked No-Show automatically: not checked in ${windowMinutes} minutes after the start`,
+    });
 
     if (booking.customer_id) {
       await createActivity({

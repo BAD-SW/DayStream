@@ -86,10 +86,8 @@ export async function walkInCheckIn(tenantId: string, input: WalkInInput) {
     `UPDATE apt_bookings SET status = 'checked_in', checked_in_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING *`,
     [booking.id],
   );
-  await adminPool.query(
-    `INSERT INTO apt_booking_status_history (booking_id, from_status, to_status, changed_by) VALUES ($1, $2, 'checked_in', $3)`,
-    [booking.id, booking.status, input.userId],
-  ).catch(() => undefined);
+  const { recordStatus } = await import('./booking-history.service');
+  await recordStatus(booking.id, booking.status, 'checked_in', { userId: input.userId || null, reason: 'Walk-in checked in' });
   await evaluateOnBooking(input.customerId, input.businessId).catch(() => undefined);
 
   await logAudit({

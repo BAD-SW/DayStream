@@ -139,6 +139,14 @@ export const jobRegistry: Record<string, JobHandler> = {
     const inbox = await import('../services/inbox.service');
     return { status: 'done', ...(await inbox.runReminders()) };
   },
+  // Appointment history of long-past appointments moved to file storage (spec 51, gap 18), per tenant:
+  // config.months after the appointment (default 12), config.batch appointments a run (default 500).
+  'booking_history_archive': async (ctx) => {
+    const { archiveBookingHistory } = await import('../services/booking-history.service');
+    // One run per tenant (its own time and time zone), for all its businesses.
+    const { runAsJob } = await import('../services/booking-history.service');
+    return { status: 'done', ...(await runAsJob('Appointment history storage', () => archiveBookingHistory({ tenantId: ctx.tenantId, months: Number(ctx.config?.months) || 12, batch: Number(ctx.config?.batch) || 500 }))) };
+  },
   // Files and folders that could not be removed when a customer was anonymised or deleted (spec 51).
   'storage_cleanup': async () => {
     const cleanup = await import('../services/storage-cleanup.service');

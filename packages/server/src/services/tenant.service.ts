@@ -90,6 +90,10 @@ export async function createTenant(input: CreateTenantInput, createdBy?: string)
 
     await client.query('COMMIT');
 
+    // Appointment history storage starts on for the tenant (spec 51, gap 18), so it is never forgotten.
+    const { ensureArchiveSchedule } = await import('./booking-history.service');
+    await ensureArchiveSchedule(tenant.id).catch((e) => logger.warn('History storage job not set up for the new tenant', { tenantId: tenant.id, error: (e as Error)?.message }));
+
     // Audit log
     await logAudit({
       tenantId: tenant.id,

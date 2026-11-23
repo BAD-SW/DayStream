@@ -33,6 +33,7 @@ Requirements: requirements.md, Requirement 1 (criteria 1-11).
 2. [Gap 2: Treatment charting](#2-gap-2-treatment-charting)
 3. [Gap 3: Virtual waiting room](#3-gap-3-virtual-waiting-room)
 7. [Gap 7: Retail inventory (Requirement 7)](#7-gap-7-retail-inventory-requirement-7)
+18. [Appointment history (Requirement 18)](#18-appointment-history-requirement-18)
 19. [Paying with a membership or package (Requirement 19)](#19-paying-with-a-membership-or-package-requirement-19)
 
 ---
@@ -672,6 +673,59 @@ CREATE TABLE fin_tip_shares (id, tenant_id, business_id, order_id, user_id,
 5. Verification live with the owner.
 
 ---
+## 18. Appointment history (Requirement 18)
+
+Everything that happens to an appointment is kept in one place, shown to staff on the appointment, and cannot be changed (owner, 23 Nov 2026).
+
+### 18.1 Data model (migration 192)
+
+The status history table becomes the appointment's history:
+
+```sql
+ALTER TABLE apt_booking_status_history
+  ALTER COLUMN to_status DROP NOT NULL,
+  ADD COLUMN event      VARCHAR(12) NOT NULL DEFAULT 'status',  -- created | status | changed | payment
+  ADD COLUMN changes    JSONB,         -- [{ field, from, to }]: names, not ids; times as ISO
+  ADD COLUMN details    JSONB,         -- a payment: { kind: order | paid | refunded | fee, order_id, order_number, amount_cents, method, fee }
+  ADD COLUMN actor_type VARCHAR(10),   -- staff | customer | system
+  ADD COLUMN source     VARCHAR(20),   -- staff | widget | customer_portal | self_check_in | import | job | system
+  ADD COLUMN job        VARCHAR(80);   -- an automatic job's name
+```
+
+- Existing rows: a creation (no previous status), a move ("Rescheduled") or a status change; by a staff member when one was recorded, else the system. `source` stays empty: shown as "before full history".
+- A trigger refuses any update or delete, except removing entries with their appointment (a cascade) and anonymising (`app.history_anonymise = 'on'` for that transaction only).
+- Entries are written with `clock_timestamp()`, so entries of one request keep their order.
+
+### 18.2 Who and where
+
+- `booking-history.service.ts`. An app-level middleware gives each request its context; who is read when an entry is written (after sign-in): a customer's own login, the booking widget, the customer link or self check-in is the customer; a signed-in staff member is staff; else the system. Where comes from the path: `/v1/widget` widget, `/v1/public/check-in` self check-in, `/v1/profile/customer` and other public links customer link, `/v1/import` import, else staff screen.
+- `runAsJob(name, fn)` runs a job's work as the system with its name; the automatic no-shows record their rule ("Marked No-Show automatically: not checked in 15 minutes after the start").
+
+### 18.3 What is recorded
+
+- Created (`booking.service`), every status change (`transitionStatus`, check-in, walk-in check-in, both automatic no-shows, a recurring series or occurrence cancelled, completed at Checkout).
+- Field changes: a snapshot before and after (`snapshotBooking`, `recordChanges`) in the appointment edit and Reschedule: time, service, option, staff, location, resource, people, price, notes, customer.
+- Payments (criterion 5): Checkout opened (the appointment's order), paid (amount, method), refunded, no-show fee charged. A late-cancellation fee is worked out but not charged anywhere yet, so there is nothing to record for it.
+- Fixed with it: a payment confirmed the appointment whatever its status, which undid a check-in (checked in → confirmed), so a paid appointment was never completed. Confirming now applies only to a pending appointment.
+
+### 18.4 Showing it
+
+- `GET /v1/bookings/:id/history` (staff with `bookings:read`; not a customer's own login): newest first, each with when, who (name, the customer, or System and its job), where, what happened in plain words, each field before → after, and the reason.
+- The appointment window (edit and view) has a History section, closed until opened.
+
+### 18.5 Anonymising
+
+- When a customer is anonymised, in the same transaction: their appointments' entries keep times, statuses, staff and payments; reasons are removed and the notes and customer values of changes are cleared.
+### 18.6 Long-term storage (migrations 193 and 194)
+
+So the table does not grow without end (owner, 23 Nov 2026): recent history stays in the database; the history of long-past appointments moves to file storage (the S3 bucket chosen on Configuration > Storage, or the local folder in development), one JSON file per appointment at `…/businesses/{b}/private/booking-history/{year}/{booking}.json` (private: never served publicly).
+
+- Job `booking_history_archive`, one per tenant (migration 194; owner, 23 Nov 2026): not per business (it would be forgotten or not understood), not one run for the platform (it would fall in some businesses' opening hours). Daily at the time the tenant chooses in its time zone, for all its businesses; `config: { months: 12, batch: 500 }`. Every tenant starts with it on at 03:00 in the tenant's time zone, and a new tenant gets it when created. It moves appointments finished (completed, cancelled, no-show) whose end is more than `months` ago.
+- The tenant's Processes page has an Appointment History Storage card: run time, time zone, months, on or off, next and last run, how many appointments have their history in the database and in files, Save and Run now (`GET`/`PUT /v1/bookings/history-storage`, `POST /v1/bookings/history-storage/run-now`, tenant level, `settings:*`). The file is written and read back first; only then are the rows removed (`app.history_archive = 'on'` for that transaction) and `apt_bookings.history_archive_path` / `history_archived_at` set. A failure leaves the rows where they are, for the next run.
+- An archived appointment changed later (a late refund): the new entry is in the table, shown with the archived ones, and added to the same file at the next run.
+- The History section reads the file and the table together; nothing looks different.
+- Anonymising a customer also rewrites their appointments' files without reasons, notes and their name. A bucket with S3 Object Lock in compliance mode would refuse that rewrite: use versioning (or governance mode) on the bucket instead.
+- A retention period after which files are removed is not set (a business and legal decision).
 ## 19. Paying with a membership or package (Requirement 19)
 
 One place decides what a customer's memberships and packages cover, holds the allowance for a booking, and counts it as used at payment. New Appointment, the payment step, the price shown while booking and Checkout all use it.

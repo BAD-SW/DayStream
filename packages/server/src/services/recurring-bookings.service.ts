@@ -194,9 +194,12 @@ export async function cancelSeries(seriesId: string, businessId: string, userId:
      WHERE recurring_series_id = $1 AND business_id = $2
        AND start_time > NOW()
        AND status IN ('pending', 'confirmed')
-     RETURNING id`,
+     RETURNING id, (SELECT status FROM apt_bookings x WHERE x.id = apt_bookings.id) AS old`,
     [seriesId, businessId, userId],
   );
+  // Each one in its history (spec 51, gap 18).
+  const { recordStatus } = await import('./booking-history.service');
+  for (const b of cancelled) await recordStatus(b.id, b.old, 'cancelled', { userId, reason: 'Series cancelled' });
   // Each cancelled appointment gives back the membership or package allowance held for it (spec 51, gap 19).
   const { releaseForBooking } = await import('./benefits.service');
   for (const b of cancelled) await releaseForBooking(b.id, { includeUsed: true });
@@ -208,13 +211,16 @@ export async function cancelSeries(seriesId: string, businessId: string, userId:
  * Cancel a single occurrence without affecting the series.
  */
 export async function cancelSingleOccurrence(bookingId: string, businessId: string, userId: string, tenantId: string): Promise<boolean> {
-  const { rowCount } = await adminPool.query(
+  const { rows: done, rowCount } = await adminPool.query(
     `UPDATE apt_bookings SET status = 'cancelled', cancelled_by = $3, cancelled_at = NOW(), cancellation_reason = 'Single occurrence cancelled'
      WHERE id = $1 AND business_id = $2 AND recurring_series_id IS NOT NULL
-       AND status IN ('pending', 'confirmed')`,
+       AND status IN ('pending', 'confirmed')
+     RETURNING (SELECT status FROM apt_bookings x WHERE x.id = apt_bookings.id) AS old`,
     [bookingId, businessId, userId],
   );
   if ((rowCount ?? 0) > 0) {
+    const { recordStatus } = await import('./booking-history.service');
+    await recordStatus(bookingId, done[0]?.old || 'confirmed', 'cancelled', { userId, reason: 'Single occurrence cancelled' });
     const { releaseForBooking } = await import('./benefits.service');
     await releaseForBooking(bookingId, { includeUsed: true });
   }

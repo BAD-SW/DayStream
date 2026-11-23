@@ -384,3 +384,25 @@ export async function getBookingBenefits(businessId: string, args: {
   });
   return res.data.data;
 }
+
+// --- Appointment history storage (spec 51, gap 18): the tenant's schedule ---
+
+export interface HistoryStorageSchedule {
+  enabled: boolean; scheduleTime: string; scheduleTimezone: string; months: number;
+  lastRunAt: string | null; lastRunStatus: string | null; lastError: string | null; nextRunAt: string | null;
+  /** Appointments whose history is in the database, and in files. */
+  inTable: number; archived: number;
+}
+
+export async function getHistoryStorage(): Promise<HistoryStorageSchedule> {
+  const res = await apiClient.get('/v1/bookings/history-storage');
+  return res.data.data;
+}
+export async function saveHistoryStorage(s: { scheduleTime: string; scheduleTimezone: string; enabled: boolean; months: number }): Promise<HistoryStorageSchedule> {
+  const res = await apiClient.put('/v1/bookings/history-storage', s);
+  return res.data.data;
+}
+export async function runHistoryStorageNow(): Promise<{ archived: number; entries: number; failed: number }> {
+  const res = await apiClient.post('/v1/bookings/history-storage/run-now');
+  return res.data.data;
+}

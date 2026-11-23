@@ -202,10 +202,17 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 
 ## 18. Appointment history (Requirement 18)
 - [x] ✅ Confirm current state (status history recorded in most places but not shown; other edits not recorded; no source of a change; the automatic no-show records no person)
-- [ ] Agree requirements with the owner (where the history is shown, who may see it, what customers see, older appointments)
-- [ ] Design
-- [ ] Build
-- [ ] Verify live and close with the owner
+- [x] ✅ Requirements agreed with the owner (23 Nov 2026): a History section on the appointment, for staff who may see it, not for customers; older appointments show what was recorded
+- [x] ✅ Design written (design 18)
+- Build (design 18)
+  - [x] ✅ Migration 192 (history columns, entries that cannot be changed), history service with who and where per request and per job
+  - [x] ✅ Recorded: created, every status change, field changes before and after, payments; automatic no-shows with their rule
+  - [x] ✅ History endpoint and the appointment's History section; anonymising
+  - [x] ✅ Fixed with it: a payment no longer undoes a check-in (confirming applies only to a pending appointment)
+  - [x] ✅ History shown as a table, one line per entry (owner, 23 Nov 2026)
+  - [x] ✅ Long-term storage (migration 193): history of appointments past 12 months moved to file storage (S3), one file per appointment, read with the recent history (owner, 23 Nov 2026)
+  - [x] ✅ Per-tenant schedule (migration 194): the tenant sets the run time, time zone and months on its Processes page; every tenant starts with it on (owner, 23 Nov 2026)
+- [x] ✅ Verified and closed with the owner (23 Nov 2026)
 
 ## 19. Paying with a membership or package (Requirement 19)
 - [x] ✅ Confirm current state (memberships read from the old mem_* tables, so not recognised; one package only, on the "Charged at reservation" step; nothing at Checkout; no usage counted; nothing given back on cancel)

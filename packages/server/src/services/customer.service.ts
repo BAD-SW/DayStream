@@ -630,6 +630,10 @@ export async function anonymizeCustomer(id: string, businessId: string, userId: 
         WHERE customer_id = $1`,
       [id],
     );
+    // Their appointments keep their history (times, statuses, staff, payments) without what it
+    // said about the person: reasons, notes and their name (spec 51, gap 18, criterion 6).
+    const { anonymiseHistory } = await import('./booking-history.service');
+    await anonymiseHistory(id, businessId, client);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined);

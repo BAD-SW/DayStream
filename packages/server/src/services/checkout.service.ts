@@ -138,6 +138,8 @@ async function openBookingOrder(bookingId: string, businessId: string, checkedOu
       creditedTo: bk[0]?.staff_id || undefined,
       notes: `Service paid at reservation (${paid[0].order_number})`,
     });
+    const { recordPayment } = await import('./booking-history.service');
+    await recordPayment(bookingId, { kind: 'order', order_id: extra.id, order_number: extra.order_number }, { userId: checkedOutBy || null });
     return getOrder(extra.id);
   }
   const { rows: bookings } = await adminPool.query(
@@ -168,6 +170,11 @@ async function openBookingOrder(bookingId: string, businessId: string, checkedOu
     checkedOutBy,
     creditedTo: booking.staff_id || undefined,
   });
+  // The appointment's history: its Checkout was opened (spec 51, gap 18, criterion 5).
+  {
+    const { recordPayment } = await import('./booking-history.service');
+    await recordPayment(bookingId, { kind: 'order', order_id: order.id, order_number: order.order_number }, { userId: checkedOutBy || null });
+  }
 
   const price = booking.variant_price || booking.price || 0;
   await addItem(order.id, {
@@ -421,6 +428,20 @@ function orderIdempotencyKey(orderId: string, method: string, input: CompleteOrd
   return `order:${orderId}:${instrument}`;
 }
 
+/** Checkout finishes the appointment (checked in or in progress), and says so in its history. */
+async function completeBookingAtCheckout(bookingId: string, userId: string | null | undefined, reason: string): Promise<void> {
+  const { rows } = await adminPool.query(
+    `UPDATE apt_bookings b SET status = 'completed'
+       FROM (SELECT id, status AS old FROM apt_bookings WHERE id = $1 FOR UPDATE) o
+      WHERE b.id = o.id AND b.status IN ('checked_in', 'in_progress') RETURNING o.old`,
+    [bookingId],
+  );
+  if (rows[0]) {
+    const { recordStatus } = await import('./booking-history.service');
+    await recordStatus(bookingId, rows[0].old, 'completed', { userId: userId || null, reason });
+  }
+}
+
 async function payAndCompleteOrder(orderId: string, businessId: string, input: CompleteOrderInput) {
   const { rows: orderRows } = await adminPool.query(
     'SELECT * FROM fin_orders WHERE id = $1 AND business_id = $2', [orderId, businessId],
@@ -439,9 +460,7 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
     const prepaidId = await findPrepaidOrderId(orderId, orderRows[0].booking_id);
     if (!prepaidId) throw new Error('Cannot complete an empty order');
     await adminPool.query(`UPDATE fin_orders SET status = 'voided', updated_at = NOW() WHERE id = $1 AND status = 'open'`, [orderId]);
-    await adminPool.query(
-      `UPDATE apt_bookings SET status = 'completed' WHERE id = $1 AND status IN ('checked_in', 'in_progress')`, [orderRows[0].booking_id],
-    );
+    await completeBookingAtCheckout(orderRows[0].booking_id, input.checkedOutBy, 'Finished at Checkout (paid at reservation)');
     return getOrder(prepaidId);
   }
 
@@ -519,10 +538,17 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   );
 
   if (orderRows[0].booking_id) {
-    await adminPool.query(
-      `UPDATE apt_bookings SET status = 'completed' WHERE id = $1 AND status IN ('checked_in', 'in_progress')`,
-      [orderRows[0].booking_id],
-    );
+    // The payment and the completion, in the appointment's history (spec 51, gap 18, criterion 5).
+    const { recordPayment } = await import('./booking-history.service');
+    // A no-show fee's own order is the fee charged; any other order, the appointment paid.
+    const { rows: fee } = await adminPool.query(
+      `SELECT 1 FROM fin_order_items WHERE order_id = $1 AND item_type = 'no_show_fee' LIMIT 1`, [orderId]);
+    await recordPayment(orderRows[0].booking_id, {
+      kind: fee.length > 0 ? 'fee' : 'paid', fee: fee.length > 0 ? 'no_show' : null,
+      order_id: orderId, order_number: rows[0].order_number,
+      amount_cents: Number(rows[0].total_amount) + (Number(rows[0].tip_amount) || 0), method: input.paymentMethod,
+    }, { userId: input.checkedOutBy || null });
+    await completeBookingAtCheckout(orderRows[0].booking_id, input.checkedOutBy, `Checked out (order ${rows[0].order_number})`);
   }
 
   // An event ticket paid on this order (online, or at reception through checkout)

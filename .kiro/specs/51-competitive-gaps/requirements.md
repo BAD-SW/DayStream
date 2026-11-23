@@ -333,7 +333,7 @@ The acceptance criteria below set the capability each gap must reach. They are r
 
 **User Story**: As a business owner, I want to see everything that happened to an appointment (who changed what, when, and why), so that I can explain any change, whether it was made by staff, by the customer or by the system.
 
-**Current state**: Partly recorded, not shown. Confirmed in the code:
+**Current state**: ✅ Complete, closed with the owner (23 Nov 2026); the description below is what was there before. Partly recorded, not shown. Confirmed in the code:
 - Status changes go to `apt_booking_status_history` (from, to, who, reason, when) from most places: creation, the lifecycle changes, check-in and the automatic no-show. The automatic no-show records no person; it only has a reason. Completing a sale at Checkout and cancelling a recurring series change the status without writing a history row.
 - Moving an appointment writes a history row ("Rescheduled") and an audit row with the old and new time; other edits (service, option, staff, location, notes, price, number of people) record nothing.
 - Creation, status changes, "ready for you" and moves also write to the general audit log, which only system administrators can query.
@@ -350,6 +350,8 @@ The acceptance criteria below set the capability each gap must reach. They are r
 5. THE system SHALL record changes to an appointment's payment that follow from the appointment (order created, paid, refunded, no-show or late-cancellation fee charged) in the same history.
 6. THE system SHALL keep the history when the appointment is cancelled or completed, and SHALL remove or anonymise it with the customer's other personal data when the customer is anonymised.
 7. THE system SHALL NOT let anyone edit or delete history entries.
+8. THE system SHALL show the history in a History section of the appointment, to every staff member who may see the appointment, and SHALL NOT show it to customers (owner, 23 Nov 2026).
+9. FOR appointments made before the full history, THE system SHALL show the status changes and moves already recorded, and SHALL say that other changes were not recorded then (owner, 23 Nov 2026).
 
 ### Payments
 

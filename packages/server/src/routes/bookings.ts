@@ -5,7 +5,7 @@ import { parseColumnFilters } from '../utils/column-filters';
 import Joi from 'joi';
 import { authenticate, AuthenticatedRequest } from '../auth/middleware';
 import { tenantContext } from '../auth/tenant-context';
-import { requirePermission, requireAnyPermission } from '../auth/permissions';
+import { requirePermission, requireAnyPermission, requireTenantLevel } from '../auth/permissions';
 import { CheckInRefused, checkInByBookingId } from '../services/checkin.service';
 import { notifyArrival } from '../services/arrival-alert.service';
 import { sendReadyNotification } from '../services/booking-notifications.service';
@@ -442,6 +442,40 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
   }
 });
 
+// --- Appointment history storage (spec 51, gap 18): the tenant's schedule for moving long-past
+// history to file storage, on the tenant's Processes page. One run per tenant, all its businesses.
+
+// GET /api/v1/bookings/history-storage
+bookingsRouter.get('/history-storage', requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const { getArchiveSchedule } = await import('../services/booking-history.service');
+    success(res, await getArchiveSchedule((req as AuthenticatedRequest).tenantId!));
+  } catch (err: any) { console.error('Failed to read the history storage schedule', err?.message || err); error(res, 'Failed to read the schedule', 'INTERNAL_ERROR', 500); }
+});
+
+const historyStorageSchema = Joi.object({
+  scheduleTime: Joi.string().pattern(/^\d{2}:\d{2}$/).required(),
+  scheduleTimezone: Joi.string().min(1).max(64).required(),
+  enabled: Joi.boolean().default(true),
+  months: Joi.number().integer().min(1).max(120).required(),
+});
+
+// PUT /api/v1/bookings/history-storage
+bookingsRouter.put('/history-storage', requireTenantLevel(), requirePermission('settings:*'), validate(historyStorageSchema), async (req: Request, res: Response) => {
+  try {
+    const { saveArchiveSchedule } = await import('../services/booking-history.service');
+    success(res, await saveArchiveSchedule((req as AuthenticatedRequest).tenantId!, req.body));
+  } catch (err: any) { console.error('Failed to save the history storage schedule', err?.message || err); error(res, 'Failed to save the schedule', 'INTERNAL_ERROR', 500); }
+});
+
+// POST /api/v1/bookings/history-storage/run-now
+bookingsRouter.post('/history-storage/run-now', requireTenantLevel(), requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const { runArchiveNow } = await import('../services/booking-history.service');
+    success(res, await runArchiveNow((req as AuthenticatedRequest).tenantId!));
+  } catch (err: any) { console.error('Failed to move appointment history', err?.message || err); error(res, err?.message || 'Failed to run', 'INTERNAL_ERROR', 500); }
+});
+
 // GET /api/v1/bookings/benefits?business_id&customer_id&service_id&variant_id&start_time&date&participants&booking_id
 // Every membership and package of the customer for this service and option, each covering it or
 // not (with why not), with used and left; and, for an existing booking, what it is held against
@@ -696,6 +730,25 @@ bookingsRouter.post('/:id/pay', requirePermission('bookings:*'), async (req: Req
     if (err?.code) { error(res, err.message, err.code, err.code === 'PAYMENT_DECLINED' ? 402 : 400); return; }
     console.error('Failed to pay booking', err?.message || err);
     error(res, err?.message || 'Failed to pay the booking', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// GET /api/v1/bookings/:id/history?business_id= — everything that happened to the appointment,
+// newest first, in plain words, with who made each change and where it came from (spec 51, gap 18).
+// Staff only: a customer's own login does not see it.
+bookingsRouter.get('/:id/history', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (isCustomerRole(req)) { error(res, 'Not available', 'FORBIDDEN', 403); return; }
+    const { rows } = await adminPool.query('SELECT 1 FROM apt_bookings WHERE id = $1 AND business_id = $2', [req.params.id, businessId]);
+    if (!rows[0]) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    const { getBookingHistory, sourceLabel } = await import('../services/booking-history.service');
+    const entries = await getBookingHistory(req.params.id);
+    success(res, entries.map((e) => ({ ...e, source_label: sourceLabel(e.source) })));
+  } catch (err: any) {
+    console.error('Failed to load the appointment history', err?.message || err);
+    error(res, 'Failed to load the history', 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -978,6 +1031,9 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
 
     const existing = await bookingService.getBookingById(req.params.id, businessId);
     if (!existing) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    // What it was before, for its history: each field changed is recorded before and after (spec 51, gap 18).
+    const history = await import('../services/booking-history.service');
+    const before = await history.snapshotBooking(req.params.id);
 
     // Build update fields
     const updates: Record<string, any> = {};
@@ -1119,6 +1175,7 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
         })
         .catch(() => undefined);
     }
+    await history.recordChanges(req.params.id, before, { userId: authReq.user.sub });
     // The membership or package: the one chosen now, or the one held, checked again after the change.
     let benefitError = await setBenefit();
     if (req.body.benefit === undefined && slotChange) benefitError = await benefits.recheckBookingBenefit(req.params.id, authReq.user.sub);

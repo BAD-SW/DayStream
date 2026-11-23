@@ -46,6 +46,8 @@ export const storagePaths = {
   customerForm: (t: string, b: string, c: string, submissionId: string) => `${storagePaths.customerFolder(t, b, c)}/forms/${seg(submissionId, 'submission id')}.pdf`,
   customerChart: (t: string, b: string, c: string, chartId: string) => `${storagePaths.customerFolder(t, b, c)}/charts/${seg(chartId, 'chart id')}.pdf`,
   customerDataExport: (t: string, b: string, c: string) => `${storagePaths.customerFolder(t, b, c)}/data-exports/${rid()}.pdf`,
+  // --- Appointment history moved out of the database once long past (spec 51, gap 18; private) ---
+  bookingHistory: (t: string, b: string, year: number, bookingId: string) => `${businessRoot(t, b)}/private/booking-history/${Math.trunc(year)}/${seg(bookingId, 'booking id')}.json`,
 
   // --- Business files (public) ---
   businessLogo: (t: string, b: string, fileExt: string) => `${businessRoot(t, b)}/public/branding/logo-${rid()}.${ext(fileExt)}`,

@@ -10,6 +10,7 @@ import { router } from './routes';
 import { openApiSpec } from './docs/openapi';
 import { config } from './config';
 import { adminPool } from './db/pool';
+import { historyContext } from './services/booking-history.service';
 
 export const app = express();
 
@@ -98,6 +99,10 @@ app.use('/api/v1/import', express.json({ limit: '25mb' }));
 
 // Body parsing
 app.use(express.json({ limit: '1mb' }));
+
+// Each request carries who made it and where it came from, for an appointment's history
+// (spec 51, gap 18): read when a change is recorded, after sign-in.
+app.use(historyContext);
 
 // Serve the embeddable booking widget script — Requirement 1.1: publicly accessible,
 // unauthenticated, cacheable. Lives outside src/ (packages/server/static/) so it needs
