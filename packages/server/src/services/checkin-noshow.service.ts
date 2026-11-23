@@ -17,6 +17,7 @@ export async function detectNoShows(tenantId: string) {
      JOIN sys_businesses bus ON bus.id = b.business_id
      WHERE bus.tenant_id = $1
        AND b.status = 'confirmed'
+       AND b.customer_id IS NOT NULL -- a walk-in is never a no-show
        AND b.start_time < $2
        AND NOT EXISTS (
          SELECT 1 FROM apt_check_in_records cr

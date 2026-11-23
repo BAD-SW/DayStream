@@ -33,7 +33,7 @@ async function transitionStatus(
   newStatus: string,
   userId: string,
   tenantId: string,
-  options?: { reason?: string },
+  options?: { reason?: string; keepBenefit?: boolean },
 ): Promise<TransitionResult> {
   const { rows } = await adminPool.query(
     'SELECT * FROM apt_bookings WHERE id = $1 AND business_id = $2',
@@ -87,7 +87,8 @@ async function transitionStatus(
 
   // A cancelled appointment gives back the membership or package allowance held or used for it;
   // a missed one (no-show) gives back only what was held (spec 51, gap 19, criterion 7).
-  if (newStatus === 'cancelled' || newStatus === 'no_show') {
+  // keepBenefit: a no-show charged to its membership or package uses the hold instead.
+  if ((newStatus === 'cancelled' || newStatus === 'no_show') && !options?.keepBenefit) {
     const { releaseForBooking } = await import('./benefits.service');
     await releaseForBooking(bookingId, { includeUsed: newStatus === 'cancelled' }).catch((e) => logger.warn(`Booking ${bookingId}: allowance not given back: ${e?.message || e}`));
   }
@@ -297,13 +298,79 @@ export async function completeBooking(bookingId: string, businessId: string, use
   return result;
 }
 
+export interface NoShowCard { id: string; label: string }
+/** The membership or package an appointment is held against (or was paid with at reservation). */
+export interface NoShowBenefit { kind: 'membership' | 'package'; name: string }
+export interface NoShowPreview {
+  fee: number;            // cents, from the booked option; 0 = no fee set
+  has_customer: boolean;  // false for a walk-in without a customer
+  card: NoShowCard | null; // the card the fee would be charged to, if any
+  benefit: NoShowBenefit | null; // when set, the no-show is charged to it instead of a card
+}
+export interface NoShowFeeOutcome {
+  // benefit: charged to the appointment's membership or package (its allowance is used)
+  status: 'none' | 'waived' | 'charged' | 'unpaid' | 'benefit';
+  amount: number;
+  reason?: 'no_customer' | 'no_card' | 'declined';
+  card_label?: string;
+  order_id?: string;
+  order_number?: string;
+  benefit?: NoShowBenefit;
+}
+
+async function noShowBenefit(bookingId: string) {
+  const { bookingBenefit } = await import('./benefits.service');
+  return bookingBenefit(bookingId);
+}
+
+function cardLabel(row: { method_type: string; display_brand: string | null; display_last4: string | null }): string {
+  const brand = row.display_brand || (row.method_type === 'bank_draw' ? 'Bank account' : 'Card');
+  return row.display_last4 ? `${brand} ending ${row.display_last4}` : brand;
+}
+
+/** The card a no-show fee would go to: the one held for the reservation, then the default card. */
+async function noShowCard(bookingId: string, businessId: string, customerId: string): Promise<NoShowCard | null> {
+  const { rows } = await adminPool.query(
+    `SELECT pm.id, pm.method_type, pm.display_brand, pm.display_last4 FROM pay_payment_methods pm
+      WHERE pm.owner_level = 'customer' AND pm.customer_id = $1 AND pm.business_id = $2 AND pm.status = 'active'
+        AND (pm.method_type = 'card' OR pm.id = (SELECT payment_method_id FROM apt_bookings WHERE id = $3))
+      ORDER BY (pm.id = (SELECT payment_method_id FROM apt_bookings WHERE id = $3)) DESC NULLS LAST, pm.is_default DESC, pm.created_at DESC LIMIT 1`,
+    [customerId, businessId, bookingId],
+  );
+  return rows[0] ? { id: rows[0].id, label: cardLabel(rows[0]) } : null;
+}
+
+/** What pressing No-show would do: the fee and the card it would be charged to. */
+export async function getNoShowPreview(bookingId: string, businessId: string): Promise<NoShowPreview | null> {
+  const { rows } = await adminPool.query(
+    `SELECT b.customer_id, sv.no_show_fee FROM apt_bookings b
+       LEFT JOIN svc_variants sv ON sv.id = b.variant_id
+      WHERE b.id = $1 AND b.business_id = $2`,
+    [bookingId, businessId],
+  );
+  if (!rows[0]) return null;
+  const customerId: string | null = rows[0].customer_id;
+  const benefit = customerId ? await noShowBenefit(bookingId) : null;
+  return {
+    fee: rows[0].no_show_fee ?? 0,
+    has_customer: !!customerId,
+    card: customerId && !benefit ? await noShowCard(bookingId, businessId, customerId) : null,
+    benefit: benefit ? { kind: benefit.kind, name: benefit.name } : null,
+  };
+}
+
 /**
- * Mark a booking as no-show. If the booked variant has a no-show fee, charge it:
- * a paid "No-Show Fee" order is created (posting to No-Show Fee Revenue), and the
- * charge is recorded on apt_no_show_records. Bookings whose variant has no fee
- * simply transition to no_show with no charge.
+ * Mark a booking as no-show. If the booked variant has a no-show fee, staff choose to charge it
+ * or not (spec 51, requirement 5). Charged: an appointment held against a membership or package
+ * uses that allowance (no card is charged); otherwise a "No-Show Fee" order is created and charged
+ * to the card (posting to No-Show Fee Revenue), or left open to collect when it cannot be.
+ * Recorded on apt_no_show_records and in the appointment history.
  */
-export async function noShowBooking(bookingId: string, businessId: string, userId: string, tenantId: string): Promise<TransitionResult> {
+
+export async function noShowBooking(
+  bookingId: string, businessId: string, userId: string, tenantId: string,
+  options: { charge?: boolean } = {},
+): Promise<TransitionResult & { fee?: NoShowFeeOutcome }> {
   // Resolve the booked variant's no-show fee before transitioning.
   const { rows: bkRows } = await adminPool.query(
     `SELECT b.customer_id, b.staff_id, sv.no_show_fee
@@ -312,10 +379,59 @@ export async function noShowBooking(bookingId: string, businessId: string, userI
      WHERE b.id = $1 AND b.business_id = $2`,
     [bookingId, businessId],
   );
-  const feeAmount: number = bkRows[0]?.no_show_fee ?? 0;
+  if (!bkRows[0]) return { success: false, error: 'Booking not found' };
+  // A walk-in (no customer) is already at the business, so it can never be a no-show (owner, 23 Nov 2026).
+  if (!bkRows[0].customer_id) return { success: false, error: 'A walk-in cannot be marked as a no-show' };
+  const optionFee: number = bkRows[0].no_show_fee ?? 0;
+  // The fee is the owner's call each time (spec 51, requirement 5): staff may waive it.
+  const waived = optionFee > 0 && options.charge === false;
+  const feeAmount = waived ? 0 : optionFee;
 
-  const result = await transitionStatus(bookingId, businessId, 'no_show', userId, tenantId);
+  // Reserved with a membership or package: the no-show is charged to it, never to a card
+  // (owner, 23 Nov 2026). Charged, its held allowance is used; not charged, it is given back.
+  const benefit = await noShowBenefit(bookingId);
+  if (benefit) {
+    const ref: NoShowBenefit = { kind: benefit.kind, name: benefit.name };
+    const charged = optionFee > 0 && !waived;
+    const reason = charged ? `No-show charged to ${benefit.name}`
+      : waived ? `No-show not charged: ${benefit.name} given back` : undefined;
+    const result = await transitionStatus(bookingId, businessId, 'no_show', userId, tenantId, { keepBenefit: true, reason });
+    if (!result.success) return result;
+    const svc = await import('./benefits.service');
+    if (charged) {
+      if (benefit.status === 'held') await svc.markUsed(benefit.id, undefined, 'No-show');
+    } else {
+      // No fee set: what was held goes back, what was paid at reservation stays (as before).
+      // Waived: both go back.
+      await svc.releaseForBooking(bookingId, { includeUsed: waived });
+    }
+    await adminPool.query(
+      `INSERT INTO apt_no_show_records (tenant_id, booking_id, customer_id, fee_amount, fee_charged, waived, waived_by)
+       VALUES ($1, $2, $3, 0, false, $4, $5)
+       ON CONFLICT (booking_id) DO UPDATE SET fee_amount = 0, fee_charged = false, waived = $4, waived_by = $5`,
+      [tenantId, bookingId, bkRows[0].customer_id, waived, waived ? userId : null],
+    ).catch((err: any) => logger.error('No-show record not written', { bookingId, error: err.message }));
+    return {
+      ...result, no_show_fee: 0,
+      fee: charged ? { status: 'benefit', amount: 0, benefit: ref }
+        : waived ? { status: 'waived', amount: 0, benefit: ref } : { status: 'none', amount: 0 },
+    };
+  }
+
+  const result = await transitionStatus(bookingId, businessId, 'no_show', userId, tenantId,
+    waived ? { reason: `No-show fee of ${(optionFee / 100).toFixed(2)} waived` } : undefined);
   if (!result.success) return result;
+  if (waived) {
+    if (bkRows[0]?.customer_id) {
+      await adminPool.query(
+        `INSERT INTO apt_no_show_records (tenant_id, booking_id, customer_id, fee_amount, fee_charged, waived, waived_by)
+         VALUES ($1, $2, $3, $4, false, true, $5)
+         ON CONFLICT (booking_id) DO UPDATE SET fee_amount = $4, fee_charged = false, waived = true, waived_by = $5`,
+        [tenantId, bookingId, bkRows[0].customer_id, optionFee, userId],
+      ).catch((err: any) => logger.error('No-show record not written', { bookingId, error: err.message }));
+    }
+    return { ...result, no_show_fee: 0, fee: { status: 'waived', amount: optionFee } };
+  }
 
   if (bkRows[0]?.customer_id) {
     await adminPool.query(
@@ -338,22 +454,35 @@ export async function noShowBooking(bookingId: string, businessId: string, userI
       });
 
       // Record the charge on the no-show record (create if the check-in
-      // subsystem hasn't already made one).
-      await adminPool.query(
-        `INSERT INTO apt_no_show_records (tenant_id, booking_id, customer_id, fee_amount, fee_charged)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (booking_id) DO UPDATE SET fee_amount = $4, fee_charged = $5`,
-        [tenantId, bookingId, bkRows[0]?.customer_id || null, feeAmount, feeOrder?.status === 'completed'],
-      );
-      if (feeOrder?.status !== 'completed') return { ...result, no_show_fee: 0 };
+      // subsystem hasn't already made one). A walk-in has no customer, so no record.
+      if (bkRows[0]?.customer_id) {
+        await adminPool.query(
+          `INSERT INTO apt_no_show_records (tenant_id, booking_id, customer_id, fee_amount, fee_charged)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (booking_id) DO UPDATE SET fee_amount = $4, fee_charged = $5`,
+          [tenantId, bookingId, bkRows[0].customer_id, feeAmount, feeOrder?.status === 'completed'],
+        ).catch((err: any) => logger.error('No-show record not written', { bookingId, error: err.message }));
+      }
+      const orderRef = { order_id: feeOrder?.id as string | undefined, order_number: feeOrder?.order_number as string | undefined };
+      // chargeNoShowFee picks the card the same way, so this is the card it used or tried.
+      const customerId: string | null = bkRows[0]?.customer_id || null;
+      const card = customerId ? await noShowCard(bookingId, businessId, customerId) : null;
+      if (feeOrder?.status === 'completed') {
+        return { ...result, no_show_fee: feeAmount, fee: { status: 'charged', amount: feeAmount, card_label: card?.label, ...orderRef } };
+      }
+      // Not charged: the fee waits as an open order to collect at Checkout.
+      return {
+        ...result, no_show_fee: 0,
+        fee: { status: 'unpaid', amount: feeAmount, reason: !customerId ? 'no_customer' : card ? 'declined' : 'no_card', card_label: card?.label, ...orderRef },
+      };
     } catch (err: any) {
       logger.error('No-show fee charge failed', { bookingId, error: err.message });
       // Don't fail the no-show transition if charging fails; report fee unbilled.
-      return { ...result, no_show_fee: 0 };
+      return { ...result, no_show_fee: 0, fee: { status: 'unpaid', amount: feeAmount, reason: 'declined' } };
     }
   }
 
-  return { ...result, no_show_fee: feeAmount };
+  return { ...result, no_show_fee: 0, fee: { status: 'none', amount: 0 } };
 }
 
 /**
@@ -474,6 +603,7 @@ export async function evaluateNoShows(windowMinutes = 15, businessId?: string): 
      FROM apt_bookings b
      JOIN sys_businesses biz ON biz.id = b.business_id
      WHERE b.status = 'confirmed'
+       AND b.customer_id IS NOT NULL -- a walk-in is never a no-show
        AND b.start_time < $1
        AND ($2::uuid IS NULL OR b.business_id = $2)`,
     [cutoff.toISOString(), businessId ?? null],

@@ -239,8 +239,32 @@ export async function completeBooking(id: string, businessId: string) {
   return res.data.data;
 }
 
-export async function noShowBooking(id: string, businessId: string) {
-  const res = await apiClient.put(`/v1/bookings/${id}/no-show?business_id=${businessId}`);
+export interface NoShowBenefit { kind: 'membership' | 'package'; name: string }
+export interface NoShowPreview {
+  fee: number;
+  has_customer: boolean;
+  card: { id: string; label: string } | null;
+  /** Reserved with a membership or package: the no-show is charged to it, not to a card. */
+  benefit: NoShowBenefit | null;
+}
+export interface NoShowFeeOutcome {
+  status: 'none' | 'waived' | 'charged' | 'unpaid' | 'benefit';
+  amount: number;
+  reason?: 'no_customer' | 'no_card' | 'declined';
+  card_label?: string;
+  order_id?: string;
+  order_number?: string;
+  benefit?: NoShowBenefit;
+}
+
+export async function getNoShowPreview(id: string, businessId: string): Promise<NoShowPreview> {
+  const res = await apiClient.get(`/v1/bookings/${id}/no-show-preview?business_id=${businessId}`);
+  return res.data.data;
+}
+
+/** Mark a no-show. charge = false waives the option's no-show fee. */
+export async function noShowBooking(id: string, businessId: string, charge = true): Promise<Booking & { no_show_fee: number; fee?: NoShowFeeOutcome }> {
+  const res = await apiClient.put(`/v1/bookings/${id}/no-show?business_id=${businessId}`, { charge });
   return res.data.data;
 }
 

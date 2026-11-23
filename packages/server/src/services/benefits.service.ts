@@ -291,7 +291,7 @@ export async function holdBenefit(args: {
  * membership use adds to the membership's usage for its period, so the existing reports and the
  * customer's timeline stay right.
  */
-export async function markUsed(useId: string, client?: PoolClient): Promise<void> {
+export async function markUsed(useId: string, client?: PoolClient, note = 'Paid with package'): Promise<void> {
   const db: Db = client || adminPool;
   const { rows } = await db.query(`SELECT * FROM pay_benefit_uses WHERE id = $1 AND status = 'held' FOR UPDATE`, [useId]);
   const u = rows[0] as BenefitUse | undefined;
@@ -300,8 +300,8 @@ export async function markUsed(useId: string, client?: PoolClient): Promise<void
   if (u.kind === 'package') {
     const { rows: r } = await db.query(
       `INSERT INTO pkg_redemptions (purchase_id, package_item_id, quantity_redeemed, minutes_redeemed, booking_id, notes)
-       VALUES ($1, $2, $3, $4, $5, 'Paid with package') RETURNING id`,
-      [u.purchase_id, u.package_item_id, u.minutes ? 1 : u.quantity, u.minutes, u.booking_id]);
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [u.purchase_id, u.package_item_id, u.minutes ? 1 : u.quantity, u.minutes, u.booking_id, note]);
     redemptionId = r[0].id;
   } else {
     const { rows: r } = await db.query(

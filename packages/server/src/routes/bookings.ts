@@ -961,20 +961,36 @@ bookingsRouter.put('/:id/reset', requireAnyPermission('bookings:*', 'checkin:*')
   }
 });
 
-// PUT /api/v1/bookings/:id/no-show
+// GET /api/v1/bookings/:id/no-show-preview — the no-show fee and the card it would be charged to
+bookingsRouter.get('/:id/no-show-preview', requirePermission('bookings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const preview = await lifecycleService.getNoShowPreview(req.params.id, businessId);
+    if (!preview) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+    success(res, preview);
+  } catch (err: any) {
+    console.error('Failed to preview no-show', err?.message || err);
+    error(res, 'Failed to preview no-show', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/bookings/:id/no-show — body { charge?: boolean }: false waives the option's fee
 bookingsRouter.put('/:id/no-show', requirePermission('bookings:*'), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const businessId = req.query.business_id as string;
     if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const charge = req.body?.charge;
+    if (charge !== undefined && typeof charge !== 'boolean') { error(res, 'charge must be true or false', 'VALIDATION_ERROR', 400); return; }
 
-    const result = await lifecycleService.noShowBooking(req.params.id, businessId, authReq.user.sub, authReq.tenantId);
+    const result = await lifecycleService.noShowBooking(req.params.id, businessId, authReq.user.sub, authReq.tenantId, { charge });
     if (!result.success) {
       const status = result.error === 'Booking not found' ? 404 : 400;
       error(res, result.error!, status === 404 ? 'NOT_FOUND' : 'INVALID_TRANSITION', status);
       return;
     }
-    success(res, { ...result.booking, no_show_fee: result.no_show_fee ?? 0 });
+    success(res, { ...result.booking, no_show_fee: result.no_show_fee ?? 0, fee: result.fee });
   } catch (err: any) {
     console.error('Failed to mark no-show', err?.message || err);
     error(res, 'Failed to mark no-show', 'INTERNAL_ERROR', 500);

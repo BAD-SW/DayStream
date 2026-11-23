@@ -232,6 +232,32 @@ describe('Booking Lifecycle', () => {
       expect(body.data.status).toBe('no_show');
     });
 
+    it('a walk-in cannot be marked as a no-show, by hand or by the automatic job', async () => {
+      const pastTime = new Date(Date.now() - 30 * 60 * 1000);
+      const { rows } = await adminPool.query(
+        `INSERT INTO apt_bookings (business_id, customer_id, walk_in_name, service_id, variant_id, staff_id, start_time, end_time, status, booking_reference, booking_type, price, created_by)
+         VALUES ($1, NULL, 'Walk-in',
+           (SELECT id FROM svc_services WHERE business_id = $1 LIMIT 1),
+           (SELECT sv.id FROM svc_variants sv JOIN svc_services s ON s.id = sv.service_id WHERE s.business_id = $1 LIMIT 1),
+           $2, $3, $4, 'confirmed', 'BK-LC-WALK', 'individual', 7500, '00000000-0000-0000-0000-000000000010')
+         ON CONFLICT (business_id, booking_reference) DO UPDATE SET status = 'confirmed', start_time = $3
+         RETURNING id`,
+        [BUSINESS_ID, STAFF_ID, pastTime.toISOString(), new Date(pastTime.getTime() + 60*60*1000).toISOString()],
+      );
+      const { statusCode, body } = await request(
+        'PUT', `/api/v1/bookings/${rows[0].id}/no-show?business_id=${BUSINESS_ID}`,
+        undefined, ownerToken,
+      );
+      expect(statusCode).toBe(400);
+      expect(body.error).toContain('walk-in');
+
+      await lifecycleService.evaluateNoShows(15, BUSINESS_ID);
+      const { rows: after } = await adminPool.query('SELECT status FROM apt_bookings WHERE id = $1', [rows[0].id]);
+      expect(after[0].status).toBe('confirmed');
+      // Leave it out of the next run's automatic no-show test.
+      await adminPool.query("UPDATE apt_bookings SET status = 'cancelled' WHERE id = $1", [rows[0].id]);
+    });
+
     it('auto no-show job processes past bookings', async () => {
       // Create another past booking
       const pastTime = new Date(Date.now() - 20 * 60 * 1000);

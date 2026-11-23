@@ -134,6 +134,10 @@ The acceptance criteria below set the capability each gap must reach. They are r
 7. WHEN a service requires a card, THE system SHALL NOT ask a walk-in for one, because the customer is already at the business.
 8. THE system SHALL offer the reservation's card first at Checkout, for the final total including anything added, SHALL let staff choose another card or method there, and SHALL charge a no-show fee to the reservation's card before any other saved card.
 9. WHEN a customer is not present to give a card, THE system SHALL let staff send the customer a link to give it (the book-and-pay link of this requirement).
+10. WHEN staff mark an appointment as a no-show and its option has a no-show fee, THE system SHALL show the fee and the card it would be charged to, or say that there is no card on file, and SHALL let staff choose to charge the fee or not charge it (the fee is at the owner's discretion; the amount is the option's).
+11. WHEN a no-show fee is not charged, THE system SHALL tell staff why (waived, no card on file, or the card declined), SHALL keep an unpaid fee as an open order to collect at Checkout, and SHALL record a waived fee in the appointment history and on the no-show record.
+12. THE system SHALL NOT offer No-show on a walk-in appointment (one with no customer), SHALL refuse to mark one as a no-show, and SHALL leave walk-ins out of any automatic no-show, because the customer is already at the business.
+13. WHEN an appointment reserved with a membership or package is marked as a no-show and its option has a no-show fee, THE system SHALL charge the no-show to that membership or package (using the allowance held for the appointment) and SHALL NOT charge a card; WHEN staff choose not to charge it, THE system SHALL give the allowance back (owner, 23 Nov 2026).
 
 ### Classes and retail
 

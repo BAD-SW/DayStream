@@ -7,6 +7,7 @@ import { Table } from '../design-system/components/data/Table';
 import type { TableFilters } from '../design-system/components/data/Table';
 import { Badge } from '../design-system/components/data/Badge';
 import { ConfirmDialog } from '../design-system/components/feedback/ConfirmDialog';
+import { NoShowModal } from '../components/booking/NoShowFee';
 import { formatCurrency } from '../utils/currency';
 import * as bookingsApi from '../api/bookings';
 import type { Booking } from '../api/bookings';
@@ -35,7 +36,8 @@ export function Bookings() {
   // Customers: the business's appointment cancellation settings (THE-20).
   const [cancelSettings, setCancelSettings] = useState<bookingsApi.CancelSettings | null>(null);
   const [toCancel, setToCancel] = useState<Booking | null>(null);
-  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  // orderId: an open order the notice offers to collect (an uncharged no-show fee).
+  const [notice, setNotice] = useState<{ ok: boolean; text: string; orderId?: string } | null>(null);
   // Appointments pane: only the chosen days are listed, starting with today (spec 51, gap 3).
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -173,7 +175,6 @@ export function Bookings() {
     try {
       if (action === 'confirm') await bookingsApi.confirmBooking(booking.id, businessId);
       else if (action === 'cancel') await bookingsApi.cancelBooking(booking.id, businessId);
-      else if (action === 'no-show') await bookingsApi.noShowBooking(booking.id, businessId);
       else if (action === 'check-in-now') await bookingsApi.checkInBooking(booking.id, businessId);
       else if (action === 'check-in-anyway') await bookingsApi.checkInBooking(booking.id, businessId, { reason: overrideFor?.reason || 'Checked in by staff' });
       else if (action === 'start') await bookingsApi.startBooking(booking.id, businessId);
@@ -228,7 +229,7 @@ export function Bookings() {
           {row.status === 'pending' && <ActionBtn label="Confirm" onClick={() => handleAction('confirm', row)} />}
           {row.status === 'confirmed' && <ActionBtn label="Check-in" onClick={() => handleAction('check-in', row)} />}
           {row.status === 'confirmed' && <ActionBtn label="Cancel" onClick={() => handleAction('cancel', row)} />}
-          {row.status === 'confirmed' && <ActionBtn label="No-show" danger={isLate(row)} onClick={() => setPendingNoShow(row)} />}
+          {row.status === 'confirmed' && row.customer_id && <ActionBtn label="No-show" danger={isLate(row)} onClick={() => setPendingNoShow(row)} />}
           {row.status === 'checked_in' && <ActionBtn label="Start" onClick={() => handleAction('start', row)} />}
           {(row.status === 'checked_in' || row.status === 'in_progress') && <ActionBtn label="Check-out" onClick={() => handleAction('checkout', row)} />}
           {row.status === 'checked_in' && <ActionBtn label="Reset" onClick={() => handleAction('reset', row)} />}
@@ -270,7 +271,12 @@ export function Bookings() {
             : 'To cancel an appointment, please contact the business.'}
         </p>
       )}
-      {notice && <p style={{ ...styles.policy, color: notice.ok ? 'var(--color-success)' : 'var(--color-error)' }} role="status">{notice.text}</p>}
+      {notice && (
+        <p style={{ ...styles.policy, color: notice.ok ? 'var(--color-success)' : 'var(--color-error)' }} role="status">
+          {notice.text}
+          {notice.orderId && <> <button type="button" style={styles.actionBtn} onClick={() => navigate(`/checkout?order=${notice.orderId}`)}>Collect now</button></>}
+        </p>
+      )}
 
       {!isCustomer && (
         <section aria-labelledby="waiting-title" style={{ ...styles.pane, ...styles.waitPane }}>
@@ -355,18 +361,11 @@ export function Bookings() {
         onConfirm={() => { if (overrideFor) { const b = overrideFor.booking; handleAction('check-in-anyway', b); setOverrideFor(null); } }}
       />
 
-      <ConfirmDialog
-        open={!!pendingNoShow}
-        title="Mark as No-Show"
-        message={
-          pendingNoShow?.no_show_fee && pendingNoShow.no_show_fee > 0
-            ? `This will cancel the appointment and charge the customer a no-show fee of ${formatCurrency(pendingNoShow.no_show_fee)} to their card on file. Proceed?`
-            : 'This will mark the appointment as a no-show and free up the time. No fee is configured for this service, so the customer will not be charged. Proceed?'
-        }
-        confirmLabel={pendingNoShow?.no_show_fee && pendingNoShow.no_show_fee > 0 ? 'Charge & Mark No-Show' : 'Mark No-Show'}
-        variant="destructive"
+      <NoShowModal
+        booking={pendingNoShow}
+        businessId={businessId}
         onClose={() => setPendingNoShow(null)}
-        onConfirm={() => { if (pendingNoShow) handleAction('no-show', pendingNoShow); }}
+        onDone={(r) => { setNotice(r); fetchBookings(); fetchWaiting(); }}
       />
 
       <ConfirmDialog

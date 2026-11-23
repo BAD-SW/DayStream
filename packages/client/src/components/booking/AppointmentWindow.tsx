@@ -11,6 +11,7 @@ import { PaymentStep } from './PaymentStep';
 import { PriceSummary } from './PriceSummary';
 import { BenefitChooser } from './BenefitChooser';
 import { BookingHistory } from './BookingHistory';
+import { NoShowFeeChoice, useNoShowPreview, noShowOutcomeText } from './NoShowFee';
 import type { BenefitRef } from '../../api/bookings';
 // Bill's spec 51 pieces, moved here from the old New/Edit Booking pages
 import { FormsNeededNotice } from '../forms/FormsNeededNotice';
@@ -397,6 +398,9 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
 
   const live = !!booking && ['pending', 'confirmed'].includes(booking.status);
   const startedNow = !!booking && new Date(booking.start_time).getTime() <= Date.now();
+  // The no-show fee: loaded when "Mark as no-show" is opened; staff choose to charge it or not.
+  const noShow = useNoShowPreview(ending === 'noshow' ? bookingId ?? null : null, businessId);
+  const [noShowCharge, setNoShowCharge] = useState(true);
   const openCancel = async () => {
     setEnding('cancel'); setError('');
     try { const p = await bookingsApi.getCancelPreview(bookingId!, businessId); setPreview(p); setRefundTo(p.paid_amount > 0 ? (p.refund_default === 'account_credit' && !booking?.customer_id ? 'original' : p.refund_default) : 'none'); } catch { setPreview({ fee: 0, paid_amount: 0, refund_default: 'original' }); setRefundTo('none'); }
@@ -408,8 +412,8 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
         const r = await bookingsApi.cancelBooking(bookingId!, businessId, cancelReason || undefined, preview && preview.paid_amount > 0 ? refundTo : undefined);
         onSaved(`Appointment cancelled${r?.cancellation_fee ? ' · fee ' + formatCurrency(r.cancellation_fee) : ''}${r?.refund ? ' · refunded ' + formatCurrency(r.refund.amount) + (r.refund.to === 'account_credit' ? ' as account credit' : '') : ''}`);
       } else {
-        const r = await bookingsApi.noShowBooking(bookingId!, businessId);
-        onSaved(`Marked as no-show${r?.no_show_fee ? ' · fee ' + formatCurrency(r.no_show_fee) : ''}`);
+        const r = await bookingsApi.noShowBooking(bookingId!, businessId, noShowCharge);
+        onSaved(noShowOutcomeText(r.fee));
       }
     } catch (err: any) {
       const e = err?.response?.data?.error; setError(typeof e === 'string' ? e : e?.message || 'It could not be done.');
@@ -688,7 +692,7 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
       {mode === 'edit' && live && !ending && (
         <div className="q-end">
           {!startedNow && <button type="button" className="btn sec danger" onClick={openCancel}>Cancel appointment</button>}
-          {startedNow && <button type="button" className="btn sec danger" onClick={() => { setEnding('noshow'); setError(''); }}>Mark as no-show</button>}
+          {startedNow && !!booking?.customer_id && <button type="button" className="btn sec danger" onClick={() => { setEnding('noshow'); setNoShowCharge(true); setError(''); }}>Mark as no-show</button>}
         </div>
       )}
       {ending && (
@@ -710,12 +714,12 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
           ) : (
             <>
               <b>Mark this appointment as a no-show?</b>
-              <p className="mk-hint">{(variant as any)?.no_show_fee ? `The no-show fee of ${formatCurrency((variant as any).no_show_fee)} is charged to the card on file.` : 'No no-show fee is set for this option, so nothing is charged.'} The time is freed.</p>
+              <NoShowFeeChoice preview={noShow.preview} failed={noShow.failed} charge={noShowCharge} onChange={setNoShowCharge} />
             </>
           )}
           <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end' }}>
             <button type="button" className="btn sec" onClick={() => setEnding(null)}>Keep appointment</button>
-            <button type="button" className="btn danger" disabled={saving || (ending === 'cancel' && !preview)} onClick={endBooking}>{saving ? 'Working…' : ending === 'cancel' ? 'Cancel appointment' : 'Mark as no-show'}</button>
+            <button type="button" className="btn danger" disabled={saving || (ending === 'cancel' && !preview) || (ending === 'noshow' && !noShow.preview && !noShow.failed)} onClick={endBooking}>{saving ? 'Working…' : ending === 'cancel' ? 'Cancel appointment' : noShowCharge && (noShow.preview?.fee ?? 0) > 0 ? 'Charge & mark no-show' : 'Mark as no-show'}</button>
           </div>
         </div>
       )}
