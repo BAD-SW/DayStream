@@ -31,10 +31,11 @@ export function TipPanel({ order, businessId, settings, locked, onChange }: {
   useEffect(() => { setSplitting(null); }, [staffKey]);
 
   // A percentage is of the total before tax (the default) or including tax, as the business chose.
-  // A service paid at reservation counts too (it is tipped at the visit), unless it was refunded.
+  // The server's base: with a service paid at reservation (unless refunded) and lines paid with a
+  // membership or package at their normal price (spec 51, gaps 14 and 19).
   const pre = order.prepaid?.status === 'completed' ? order.prepaid : null;
-  const total = order.total_amount + (pre?.total_amount || 0);
-  const taxTotal = order.tax_amount + (pre?.tax_amount || 0);
+  const total = order.tip_base?.total ?? order.total_amount + (pre?.total_amount || 0);
+  const taxTotal = order.tip_base?.tax ?? order.tax_amount + (pre?.tax_amount || 0);
   const base = settings.base === 'after_tax' ? total : total - taxTotal;
   const pct = (p: number) => Math.round((base * p) / 100);
   // The percentage the tip was picked as (0: no tip): the server works the tip out from it again

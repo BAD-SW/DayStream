@@ -126,6 +126,8 @@ export async function createBooking(data: {
   staff_id?: string; start_time: string; notes?: string; override_rules?: boolean; participant_count?: number; location_id?: string;
   /** The customer's saved card held for the reservation (Reservation Payment Rule "Card required"). */
   payment_method_id?: string | null;
+  /** The membership or package that pays (spec 51, gap 19). */
+  benefit?: BenefitRef | null;
 }) {
   const res = await apiClient.post('/v1/bookings', data);
   return res.data.data;
@@ -257,6 +259,8 @@ export async function updateBooking(id: string, businessId: string, data: {
   start_time?: string; notes?: string | null; customer_id?: string | null;
   walk_in_name?: string | null; participant_count?: number; location_id?: string;
   payment_method_id?: string | null;
+  /** Pay with another membership or package, or normally (null) (spec 51, gap 19). */
+  benefit?: BenefitRef | null;
 }) {
   const res = await apiClient.put(`/v1/bookings/${id}?business_id=${businessId}`, data);
   return res.data.data;
@@ -335,4 +339,48 @@ export async function saveCancellationSettings(businessId: string, kind: 'events
 export async function customerCancelBooking(id: string, businessId: string) {
   const res = await apiClient.put(`/v1/bookings/${id}/customer-cancel?business_id=${businessId}`);
   return res.data.data as Booking & { refund: { amount: number; to: 'card' | 'credit'; status: string } | null };
+}
+
+// --- Paying with a membership or package (spec 51, gap 19) ---
+
+/** A membership or package chosen to pay: the enrollment or purchase, and its item. */
+export interface BenefitRef { kind: 'membership' | 'package'; source_id: string; item_id: string }
+
+export interface BenefitOption extends BenefitRef {
+  name: string;
+  unit: 'uses' | 'sessions' | 'minutes' | 'items';
+  /** In the window (membership) or in total (package); null: without limit. */
+  allowance: number | null;
+  used: number; held: number; left: number | null; needed: number;
+  frequency: string | null; window_start: string | null; window_end: string | null;
+  expires_at: string | null;
+  covers: boolean; reason: string | null;
+}
+
+/** A use of an allowance (held for a booking or line, used when paid). */
+export interface BenefitUse {
+  id: string; kind: 'membership' | 'package'; status: 'held' | 'used' | 'released'; name: string;
+  enrollment_id: string | null; plan_item_id: string | null; purchase_id: string | null; package_item_id: string | null;
+  booking_id: string | null; order_item_id: string | null;
+}
+
+export const refOf = (u: BenefitUse): BenefitRef => (u.kind === 'membership'
+  ? { kind: 'membership', source_id: u.enrollment_id || '', item_id: u.plan_item_id || '' }
+  : { kind: 'package', source_id: u.purchase_id || '', item_id: u.package_item_id || '' });
+export const sameRef = (a: BenefitRef | null | undefined, b: BenefitRef | null | undefined) =>
+  !!a && !!b && a.kind === b.kind && a.source_id === b.source_id && a.item_id === b.item_id;
+
+/** The customer's memberships and packages for a service and option; for a booking, what it is held against. */
+export async function getBookingBenefits(businessId: string, args: {
+  customerId: string; serviceId: string; variantId?: string | null; startTime?: string | null; participants?: number; bookingId?: string | null;
+  /** The day chosen (YYYY-MM-DD) before its time: allowances are counted for that day. */
+  date?: string | null;
+}): Promise<{ options: BenefitOption[]; held: BenefitUse | null }> {
+  const res = await apiClient.get('/v1/bookings/benefits', {
+    params: {
+      business_id: businessId, customer_id: args.customerId, service_id: args.serviceId, variant_id: args.variantId || undefined,
+      start_time: args.startTime || undefined, date: args.date || undefined, participants: args.participants || 1, booking_id: args.bookingId || undefined,
+    },
+  });
+  return res.data.data;
 }

@@ -23,6 +23,8 @@ export interface PrepaidOrder {
     id: string; item_type: string; item_name: string; variant_name: string | null; quantity: number;
     unit_price: number; discount_amount: number; tax_amount: number; total_price: number;
     credited_to: string | null; credited_name: string | null;
+    /** The membership or package that paid the line (spec 51, gap 19, criterion 11). */
+    paid_with: string | null;
   }>;
 }
 
@@ -51,5 +53,7 @@ export async function getPrepaidOrder(orderId: string, bookingId: string | null,
        JOIN fin_orders o ON o.id = i.order_id
        LEFT JOIN usr_users u ON u.id = COALESCE(i.credited_to, o.credited_to)
       WHERE i.order_id = $1 ORDER BY i.created_at`, [id]);
-  return { ...rows[0], items };
+  const { orderLineBenefits } = await import('./benefits.service');
+  const paidWith = await orderLineBenefits(items.map((i: { id: string }) => i.id));
+  return { ...rows[0], items: items.map((i: { id: string }) => ({ ...i, paid_with: paidWith.get(i.id)?.name ?? null })) };
 }

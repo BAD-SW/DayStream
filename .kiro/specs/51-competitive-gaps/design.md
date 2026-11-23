@@ -724,11 +724,35 @@ CREATE TABLE pay_benefit_uses (
 ### 19.4 Screens
 
 - **New Appointment, as soon as a customer is chosen:** the Price box lists the customer's memberships and packages that cover what is booked, with used and left. "Pay with membership or package" is first and preselected on the one that runs out soonest; the customer's other covering memberships and packages, and "Pay normally", can be picked instead. Ones that do not cover it are shown greyed with the reason.
-- **Reservation Payment Rules:** with a membership or package chosen the service costs nothing, so "Charged at reservation" has nothing to charge for it (only uncovered extras are charged). "Taken but not charged" still asks for a card or bank account, for extras and any no-show or late-cancellation fee.
+- **Reservation Payment Rules:** with a membership or package chosen the service costs nothing, so the reservation is saved without the payment step: "Charged at reservation" has nothing to charge, and "Taken but not charged" does not ask for a card (owner, 23 Nov 2026; this replaces keeping a card for extras and fees). The allowance is held now and counted as used at Checkout.
 - **Checkout:** each covered line shows "Paid with ⟨name⟩ (n left after this)" and a Change control: another covering membership or package, or a normal method. Lines not covered are paid as usual.
 - **Receipt:** covered lines show the membership or package that paid them.
 
-### 19.5 Build order
+### 19.5 As built (23 Nov 2026)
+
+- Migration 190 `pay_benefit_uses`, as 19.2, plus `order_id`, and `redemption_id` / `mbr_usage_id` (what a use added when used, removed when it is given back).
+- `benefits.service.ts`: `benefitOptions` (what covers, sorted: covering first, then the one that runs out soonest), `holdBenefit` (an advisory lock per allowance), `markUsed`, `releaseUse`; bookings: `setBookingBenefit`, `recheckBookingBenefit` (after a change of service, option, time, people or customer: kept if it still covers, else given back and the answer says why); orders: `attachBookingBenefit` (the booking's hold pays its service line when the order opens), `setLineBenefit`, `useForOrder` (on payment), `releaseForOrderItem` (a removed line; a booking's hold goes back to the booking), `releaseForOrder` (a voided order).
+- A booking already used, or paying its open order's line, keeps its choice: saving it again changes nothing; another choice is made on the line at Checkout.
+- Cancelling gives back what was held or used for the booking; a no-show gives back only what was held (owner to confirm). A refunded product line paid with a benefit gives back what it used (no money moves).
+- The price shown while booking (`pricing.service.ts`, rules for members of some plans) reads `mbr_enrollments`; the payment step's old `mem_*` and single-package logic is replaced by the chosen benefit.
+- The line keeps its normal `unit_price`; the benefit is its discount, noted "Paid with ⟨name⟩", as the journal already books discounts.
+- Added in testing with the owner (23 Nov 2026):
+  - A package sold at Checkout is given to the customer when the order is paid (one purchase per package on the line, `pkg_purchases.order_item_id`, migration 191, which also gave the packages already sold without one). The intro-offer check is not made again after payment.
+  - The customer's Packages tab: each package bought, what it includes, used / booked / left, and each use with its appointment and order (`GET /v1/packages/purchases/customer/:id/usage`).
+  - With a membership or package chosen, New Appointment saves without the payment step and no card is required (19.4).
+  - The default is a covering membership first, then the package that expires soonest, then Pay normally; it follows the day, time and option until staff choose one.
+  - Only what can be used is listed: expired or used-up packages, paused or ended memberships are left out; a membership cancelled to end at the close of its period covers until then.
+  - Allowances are counted on the appointment's day: before a time is chosen, the day chosen; a line added at an appointment's Checkout, the appointment's day; a rescheduled appointment's hold moves with it.
+  - Checkout: the appointment's own service line cannot be removed; services can be added as lines.
+- Not in this build: a plan's member price (`discount_services_pct`) and the customer booking widget (it pays normally).
+
+### 19.6 Tips on what a membership or package paid (Requirement 19, criteria 10 and 11)
+
+- A line paid with a benefit keeps its normal price on the line (`unit_price`; the benefit is its discount), so the tip base uses `unit_price × quantity` for it, plus the tax it would have had when the tip setting is including tax; the split by value uses the same normal value (owner, 23 Nov 2026).
+- The tip is paid by the order's normal payment method; with nothing else to pay, the order is paid for the tip alone (as design 14.7).
+- Paid at reservation (design 14.7) shows a benefit-paid line as "Paid with ⟨name⟩" and the tip follows the rule above.
+
+### 19.7 Build order
 
 1. A migration (the next free number) and the benefits service (what covers, held / used / released), replacing the `mem_*` reads.
 2. Benefits endpoint; booking create / update hold the chosen benefit; cancel releases it.

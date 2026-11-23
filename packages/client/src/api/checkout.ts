@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import type { BenefitOption, BenefitRef, BenefitUse } from './bookings';
 
 // ============================================================
 // Orders
@@ -24,6 +25,8 @@ export interface OrderItem {
   credited_last_name: string | null;
   booking_id: string | null;
   notes: string | null;
+  /** The membership or package paying the line (spec 51, gap 19). */
+  benefit?: { use_id: string; kind: 'membership' | 'package'; name: string; status: string } | null;
   refunded_quantity: number;
   refunded_amount_cents: number;
 }
@@ -42,6 +45,8 @@ export interface PrepaidOrder {
     id: string; item_type: string; item_name: string; variant_name: string | null; quantity: number;
     unit_price: number; discount_amount: number; tax_amount: number; total_price: number;
     credited_to: string | null; credited_name: string | null;
+    /** The membership or package that paid the line (spec 51, gap 19). */
+    paid_with?: string | null;
   }>;
 }
 
@@ -72,6 +77,8 @@ export interface Order {
   tip_refunded_cents?: number;
   /** The suggested percentage the tip was picked as (it follows the order); null when typed. */
   tip_percent?: number | string | null;
+  /** What a suggested tip is of: with a service paid at reservation, and lines paid with a membership or package at their normal price. */
+  tip_base?: { total: number; tax: number };
   payment_method: string | null;
   payment_reference: string | null;
   credited_to: string | null;
@@ -294,5 +301,17 @@ export async function planTipPool(businessId: string, req: TipPoolRequest): Prom
 }
 export async function shareTipPool(businessId: string, req: TipPoolRequest): Promise<{ shared_cents: number; left_cents: number; staff: TipPoolPlan['staff'] }> {
   const res = await apiClient.post('/v1/checkout/tip-pool/share', req, { params: { business_id: businessId } });
+  return res.data.data;
+}
+
+// --- Paying a line with a membership or package (spec 51, gap 19) ---
+
+export async function getLineBenefits(orderId: string, itemId: string, businessId: string): Promise<{ options: BenefitOption[]; use: BenefitUse | null }> {
+  const res = await apiClient.get(`/v1/checkout/orders/${orderId}/items/${itemId}/benefits`, { params: { business_id: businessId } });
+  return res.data.data;
+}
+/** Pay the line with a membership or package, or normally again (null). */
+export async function setLineBenefit(orderId: string, itemId: string, businessId: string, benefit: BenefitRef | null): Promise<Order> {
+  const res = await apiClient.put(`/v1/checkout/orders/${orderId}/items/${itemId}/benefit`, { benefit }, { params: { business_id: businessId } });
   return res.data.data;
 }

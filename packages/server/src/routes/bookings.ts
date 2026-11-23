@@ -336,6 +336,13 @@ bookingsRouter.get('/recurring/:seriesId', requirePermission('bookings:read'), a
 
 import * as bookingService from '../services/booking.service';
 
+// A membership or package chosen to pay (spec 51, gap 19).
+const benefitSchema = Joi.object({
+  kind: Joi.string().valid('membership', 'package').required(),
+  source_id: Joi.string().uuid().required(),
+  item_id: Joi.string().uuid().required(),
+});
+
 const createBookingSchema = Joi.object({
   business_id: Joi.string().uuid().required(),
   customer_id: Joi.string().uuid().allow(null, ''),
@@ -351,18 +358,36 @@ const createBookingSchema = Joi.object({
   participant_count: Joi.number().integer().min(1).default(1),
   // The customer's saved card held for the reservation (Reservation Payment Rule "Card required").
   payment_method_id: Joi.string().uuid().allow(null),
+  // The membership or package that pays for it (spec 51, gap 19): held with the booking.
+  benefit: benefitSchema.allow(null),
 });
 
 // POST /api/v1/bookings — Create booking
 bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBookingSchema), async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    // Reservation Payment Rule (spec 51, gap 5): "Card required" needs one of the customer's saved cards.
+    // The membership or package chosen must cover it before the booking is made (spec 51, gap 19).
+    const benefits = await import('../services/benefits.service');
+    if (req.body.benefit) {
+      if (!req.body.customer_id) { error(res, 'Choose a customer to pay with a membership or package.', 'VALIDATION_ERROR', 400); return; }
+      const { rows: v } = await adminPool.query('SELECT duration FROM svc_variants WHERE id = $1', [req.body.variant_id]);
+      const option = await benefits.optionFor({
+        businessId: req.body.business_id, customerId: req.body.customer_id, itemType: 'service', itemId: req.body.service_id,
+        variantId: req.body.variant_id, on: req.body.start_time, quantity: req.body.participant_count, minutes: v[0]?.duration ?? null,
+      }, req.body.benefit);
+      if (!option || !option.covers) {
+        error(res, option ? `${option.name} does not cover this: ${option.reason}` : 'This customer has no such membership or package for this.', 'NOT_COVERED', 409);
+        return;
+      }
+    }
+    // Reservation Payment Rule (spec 51, gap 5): "Card required" needs one of the customer's saved
+    // cards, unless a membership or package pays for it (owner, 23 Nov 2026).
     let heldCardId: string | null;
     try {
       heldCardId = await reservationCard.cardForNewBooking({
         serviceId: req.body.service_id, businessId: req.body.business_id,
         customerId: req.body.customer_id || null, paymentMethodId: req.body.payment_method_id || null,
+        covered: !!req.body.benefit,
       });
     } catch (e) {
       if (e instanceof reservationCard.ReservationCardError) { error(res, e.message, e.code, 400); return; }
@@ -393,7 +418,13 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
       id: booking.id, business_id: booking.business_id, booking_reference: booking.booking_reference, customer_id: booking.customer_id,
       service_id: booking.service_id, staff_id: booking.staff_id, start_time: booking.start_time, end_time: booking.end_time, status: booking.status,
     });
-    success(res, booking, undefined, 201);
+    // Hold the allowance for it; if it was taken in the meantime, the booking stands and says so.
+    let benefitError: string | null = null;
+    if (req.body.benefit) {
+      try { await benefits.setBookingBenefit(booking.id, req.body.benefit, authReq.user.sub); }
+      catch (e) { if (e instanceof benefits.BenefitError) benefitError = e.message; else throw e; }
+    }
+    success(res, { ...booking, benefit: await benefits.bookingBenefit(booking.id), benefit_error: benefitError }, undefined, 201);
   } catch (err: any) {
     if (err.message.includes('not found')) {
       error(res, err.message, 'NOT_FOUND', 404);
@@ -408,6 +439,36 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
       console.error('Booking creation error:', err);
       error(res, 'Failed to create booking', 'INTERNAL_ERROR', 500);
     }
+  }
+});
+
+// GET /api/v1/bookings/benefits?business_id&customer_id&service_id&variant_id&start_time&date&participants&booking_id
+// Every membership and package of the customer for this service and option, each covering it or
+// not (with why not), with used and left; and, for an existing booking, what it is held against
+// (its own hold is not counted against it). Spec 51, gap 19.
+bookingsRouter.get('/benefits', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const q = req.query as Record<string, string | undefined>;
+    if (!q.business_id || !q.customer_id || !q.service_id) { error(res, 'business_id, customer_id and service_id are required', 'VALIDATION_ERROR', 400); return; }
+    const benefits = await import('../services/benefits.service');
+    let held: Awaited<ReturnType<typeof benefits.bookingBenefit>> = null;
+    if (q.booking_id) {
+      const { rows } = await adminPool.query('SELECT id FROM apt_bookings WHERE id = $1 AND business_id = $2', [q.booking_id, q.business_id]);
+      if (!rows[0]) { error(res, 'Booking not found', 'NOT_FOUND', 404); return; }
+      held = await benefits.bookingBenefit(q.booking_id);
+    }
+    const { rows: v } = q.variant_id
+      ? await adminPool.query('SELECT duration FROM svc_variants WHERE id = $1 AND service_id = $2', [q.variant_id, q.service_id])
+      : { rows: [] as Array<{ duration: number }> };
+    const options = await benefits.benefitOptions({
+      businessId: q.business_id, customerId: q.customer_id, itemType: 'service', itemId: q.service_id, variantId: q.variant_id || null,
+      // the time booked, else the day chosen (before its time), else now
+      on: q.start_time || (q.date && /^\d{4}-\d{2}-\d{2}$/.test(q.date) ? q.date : null), quantity: Math.max(1, Number(q.participants) || 1), minutes: v[0]?.duration ?? null,
+    }, { exceptUseIds: held && held.status === 'held' ? [held.id] : [] });
+    success(res, { options, held });
+  } catch (err: any) {
+    console.error('Failed to load memberships and packages', err?.message || err);
+    error(res, 'Failed to load memberships and packages', 'INTERNAL_ERROR', 500);
   }
 });
 
@@ -598,7 +659,9 @@ bookingsRouter.post('/payment-quote', requirePermission('bookings:*'), async (re
     const { businessPublishableKey } = await import('../services/walkin-payment.service');
     const q = await quote({
       businessId: b.business_id, customerId: b.customer_id || null, serviceId: b.service_id, variantId: b.variant_id,
-      participants: b.participant_count, promoCode: b.promo_code || null, usePackage: !!b.use_package, useCredit: !!b.use_credit, userId: authReq.user.sub,
+      participants: b.participant_count, promoCode: b.promo_code || null, useCredit: !!b.use_credit, userId: authReq.user.sub,
+      // the membership or package that pays (spec 51, gap 19), when it is for, and an existing booking
+      benefit: b.benefit || null, startTime: b.start_time || null, bookingId: b.booking_id || null,
     });
     // The card field for a walk-in's new card is shown before anything is charged; it needs the
     // business's publishable key (not a secret).
@@ -622,7 +685,9 @@ bookingsRouter.post('/:id/pay', requirePermission('bookings:*'), async (req: Req
     const { payBooking } = await import('../services/booking-payment.service');
     success(res, await payBooking({
       businessId, bookingId: booking.id, customerId: booking.customer_id, serviceId: booking.service_id, variantId: booking.variant_id,
-      participants: booking.participant_count, promoCode: b.promo_code || null, usePackage: !!b.use_package, useCredit: !!b.use_credit,
+      participants: booking.participant_count, promoCode: b.promo_code || null, useCredit: !!b.use_credit,
+      // the membership or package chosen (spec 51, gap 19); absent: whatever the booking is held against
+      ...(b.benefit !== undefined ? { benefit: b.benefit } : {}),
       method: b.method, paymentMethodId: b.payment_method_id || null, giftCardCode: b.gift_card_code || null, reference: b.reference || null,
       cashReceived: b.cash_received ?? null, userId: authReq.user.sub,
     }));
@@ -901,6 +966,8 @@ const updateBookingSchema = Joi.object({
   override_rules: Joi.boolean(),
   // Swap the card held for the reservation (null removes it where the service does not need one)
   payment_method_id: Joi.string().uuid().allow(null),
+  // Pay with another membership or package, or normally (null) (spec 51, gap 19)
+  benefit: benefitSchema.allow(null),
 });
 
 bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBookingSchema), async (req: Request, res: Response) => {
@@ -939,7 +1006,11 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
         // service needed a card can still be edited.
         const serviceChanged = updates.service_id !== undefined && updates.service_id !== existing.service_id;
         const cardTouched = req.body.payment_method_id !== undefined || customerChanged || serviceChanged;
-        if (!card && cardTouched && await reservationCard.cardIsRequired(finalService, businessId, finalCustomer)) {
+        // Paid with a membership or package (chosen now, or held already): no card is needed.
+        const coveredNow = req.body.benefit !== undefined
+          ? !!req.body.benefit
+          : !!(await (await import('../services/benefits.service')).bookingBenefit(req.params.id));
+        if (!card && cardTouched && !coveredNow && await reservationCard.cardIsRequired(finalService, businessId, finalCustomer)) {
           throw new reservationCard.ReservationCardError('This service needs a card for the reservation. Choose a saved card or add one.', 'CARD_REQUIRED');
         }
       } catch (e) {
@@ -953,8 +1024,17 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
       }
     }
 
+    // Pay with another membership or package, or normally (spec 51, gap 19).
+    const benefits = await import('../services/benefits.service');
+    const setBenefit = async (): Promise<string | null> => {
+      if (req.body.benefit === undefined) return null;
+      try { await benefits.setBookingBenefit(req.params.id, req.body.benefit, authReq.user.sub); return null; }
+      catch (e) { if (e instanceof benefits.BenefitError) return e.message; throw e; }
+    };
     if (Object.keys(updates).length === 0 && !req.body.start_time) {
-      success(res, existing);
+      const benefitError = await setBenefit();
+      if (benefitError) { error(res, benefitError, 'NOT_COVERED', 409); return; }
+      success(res, { ...existing, benefit: await benefits.bookingBenefit(req.params.id) });
       return;
     }
 
@@ -1039,7 +1119,10 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
         })
         .catch(() => undefined);
     }
-    success(res, saved);
+    // The membership or package: the one chosen now, or the one held, checked again after the change.
+    let benefitError = await setBenefit();
+    if (req.body.benefit === undefined && slotChange) benefitError = await benefits.recheckBookingBenefit(req.params.id, authReq.user.sub);
+    success(res, { ...saved, benefit: await benefits.bookingBenefit(req.params.id), benefit_error: benefitError });
   } catch (err: any) {
     if (isBookingRefusal(err)) { error(res, err.message, /conflict/i.test(err.message) ? 'CONFLICT' : 'BOOKING_NOT_ALLOWED', 409); return; }
     console.error('Failed to update booking', err?.message || err);

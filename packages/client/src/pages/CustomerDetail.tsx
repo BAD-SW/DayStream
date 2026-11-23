@@ -29,6 +29,7 @@ import {
   MessagesTab, TasksTab, DocumentsTab, AssignStaffDialog, PasswordResetDialog, PersonalDataDialog,
 } from './CustomerProfileParts';
 import { CustomerFormsTab } from './CustomerFormsTab';
+import { CustomerPackagesTab } from './CustomerPackagesTab';
 import { FormsNeededNotice } from '../components/forms/FormsNeededNotice';
 import { ChartsPanel } from '../components/charts/ChartsPanel';
 import { useClinicalAccess } from '../utils/useClinicalAccess';
@@ -39,7 +40,7 @@ const LIFECYCLE_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info
 
 const PROFILE_TABS: { key: string; label: string }[] = [
   { key: 'overview', label: 'Overview' }, { key: 'messages', label: 'Messages' }, { key: 'timeline', label: 'Timeline' },
-  { key: 'billing', label: 'Billing' }, { key: 'notes', label: 'Notes' }, { key: 'tasks', label: 'Tasks' },
+  { key: 'billing', label: 'Billing' }, { key: 'packages', label: 'Packages' }, { key: 'notes', label: 'Notes' }, { key: 'tasks', label: 'Tasks' },
   { key: 'documents', label: 'Documents' }, { key: 'forms', label: 'Forms' }, { key: 'charts', label: 'Charts' }, { key: 'preferences', label: 'Consent' },
 ];
 
@@ -266,6 +267,7 @@ function CustomerProfilePage() {
       {tab === 'messages' && <MessagesTab customer={customer} />}
       {tab === 'timeline' && <TimelineTab key={timelineVersion} customerId={customer.id} businessId={businessId} />}
       {tab === 'billing' && <BillingTab customerId={customer.id} businessId={businessId} />}
+      {tab === 'packages' && <CustomerPackagesTab customerId={customer.id} businessId={businessId} />}
       <div hidden={tab !== 'notes'}><DraftTab tab="notes"><NotesTab notes={notes} customerId={customer.id} businessId={businessId} onRefresh={(n) => setNotes(n)} /></DraftTab></div>
       <div hidden={tab !== 'tasks'}><DraftTab tab="tasks"><TasksTab customer={customer} businessId={businessId} staff={staff} addSignal={addTaskSignal} /></DraftTab></div>
       <div hidden={tab !== 'documents'}><DraftTab tab="documents"><DocumentsTab customerId={customer.id} businessId={businessId} /></DraftTab></div>

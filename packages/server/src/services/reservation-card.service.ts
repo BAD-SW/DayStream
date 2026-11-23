@@ -45,8 +45,10 @@ export async function assertCustomerCard(paymentMethodId: string, businessId: st
  */
 export async function cardForNewBooking(input: {
   serviceId: string; businessId: string; customerId?: string | null; paymentMethodId?: string | null;
+  /** A membership or package pays for it (spec 51, gap 19; owner, 23 Nov 2026): no card is needed. */
+  covered?: boolean;
 }): Promise<string | null> {
-  const required = await cardIsRequired(input.serviceId, input.businessId, input.customerId);
+  const required = !input.covered && await cardIsRequired(input.serviceId, input.businessId, input.customerId);
   if (!input.paymentMethodId) {
     if (required) throw new ReservationCardError('This service needs a card for the reservation. Choose a saved card or add one.', 'CARD_REQUIRED');
     return null;

@@ -67,6 +67,16 @@ packagesRouter.get('/purchases/customer/:customerId', requirePermission('service
   } catch (err: any) { console.error('Failed to get purchases', err?.message || err); error(res, 'Failed to get purchases', 'INTERNAL_ERROR', 500); }
 });
 
+// GET /api/v1/packages/purchases/customer/:customerId/usage?business_id= — the customer's Packages
+// tab: each package bought, what it includes, used / booked / left, and each use with its appointment
+packagesRouter.get('/purchases/customer/:customerId/usage', requirePermission('services:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, await packageService.getCustomerPackageUsage(req.params.customerId, businessId));
+  } catch (err: any) { console.error('Failed to get package usage', err?.message || err); error(res, 'Failed to load the packages', 'INTERNAL_ERROR', 500); }
+});
+
 // GET /api/v1/packages/purchases/:purchaseId/status
 packagesRouter.get('/purchases/:purchaseId/status', requirePermission('services:read'), async (req: Request, res: Response) => {
   try {

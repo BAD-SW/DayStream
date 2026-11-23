@@ -189,15 +189,19 @@ export async function cancelSeries(seriesId: string, businessId: string, userId:
   );
 
   // Cancel future bookings in the series
-  const { rowCount } = await adminPool.query(
+  const { rows: cancelled } = await adminPool.query(
     `UPDATE apt_bookings SET status = 'cancelled', cancelled_by = $3, cancelled_at = NOW(), cancellation_reason = 'Series cancelled'
      WHERE recurring_series_id = $1 AND business_id = $2
        AND start_time > NOW()
-       AND status IN ('pending', 'confirmed')`,
+       AND status IN ('pending', 'confirmed')
+     RETURNING id`,
     [seriesId, businessId, userId],
   );
+  // Each cancelled appointment gives back the membership or package allowance held for it (spec 51, gap 19).
+  const { releaseForBooking } = await import('./benefits.service');
+  for (const b of cancelled) await releaseForBooking(b.id, { includeUsed: true });
 
-  return { cancelled: rowCount ?? 0 };
+  return { cancelled: cancelled.length };
 }
 
 /**
@@ -210,5 +214,9 @@ export async function cancelSingleOccurrence(bookingId: string, businessId: stri
        AND status IN ('pending', 'confirmed')`,
     [bookingId, businessId, userId],
   );
+  if ((rowCount ?? 0) > 0) {
+    const { releaseForBooking } = await import('./benefits.service');
+    await releaseForBooking(bookingId, { includeUsed: true });
+  }
   return (rowCount ?? 0) > 0;
 }

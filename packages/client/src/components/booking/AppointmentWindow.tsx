@@ -9,6 +9,8 @@ import { zonedParts, hhmm, toMin, addDays, dayLabel, initials } from '../../util
 import './AppointmentWindow.css';
 import { PaymentStep } from './PaymentStep';
 import { PriceSummary } from './PriceSummary';
+import { BenefitChooser } from './BenefitChooser';
+import type { BenefitRef } from '../../api/bookings';
 // Bill's spec 51 pieces, moved here from the old New/Edit Booking pages
 import { FormsNeededNotice } from '../forms/FormsNeededNotice';
 import { ChartsPanel } from '../charts/ChartsPanel';
@@ -262,6 +264,10 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
   // New: Confirm booking becomes Next: payment, step 4 in the same window (PAY-1 A)
   // 'card': the Reservation Payment Rule "Card required" holds a saved card instead (spec 51, gap 5)
   const [step, setStep] = useState<'book' | 'pay' | 'card'>('book');
+  // The membership or package that pays (spec 51, gap 19): undefined until chosen (the best one is
+  // then preselected), null to pay normally. A new customer starts again.
+  const [benefit, setBenefit] = useState<BenefitRef | null | undefined>(undefined);
+  useEffect(() => { setBenefit(undefined); }, [customer?.id, walk]);
   // CAL-5: Cancel appointment (future) and Mark as no-show (started), in the edit window; no Delete
   const [ending, setEnding] = useState<null | 'cancel' | 'noshow'>(null);
   const [cancelReason, setCancelReason] = useState('');
@@ -418,6 +424,7 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
           business_id: businessId, customer_id: walk ? undefined : customer.id, walk_in_name: walk ? (walkName || 'Walk-in') : undefined,
           service_id: serviceId, variant_id: variantId, staff_id: chosen.staff_id || undefined, start_time: chosen.start_time,
           notes: notes || undefined, participant_count: parts, override_rules: ovr, location_id: chosen.location_id || undefined,
+          ...(!walk && benefit ? { benefit } : {}),
         });
         onSaved(`Reservation saved: ${svc!.name}, ${when}${chosen.staff_id ? ' with ' + staffName(chosen) : ''}`);
       } else {
@@ -426,7 +433,9 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
         if (!lockMove) { data.start_time = chosen.start_time; if (chosen.location_id) data.location_id = chosen.location_id; }
         if (!lockStaff) data.staff_id = chosen.staff_id || null;
         if (!lockCustomer) { if (walk) { data.customer_id = null; data.walk_in_name = walkName || 'Walk-in'; } else data.customer_id = customer.id; }
-        await bookingsApi.updateBooking(bookingId!, businessId, data);
+        if (!walk && benefit !== undefined) data.benefit = benefit;
+        const saved = await bookingsApi.updateBooking(bookingId!, businessId, data);
+        if (saved?.benefit_error) { setError(`Saved, but ${saved.benefit_error} It will be paid normally.`); return; }
         onSaved(`Appointment saved: ${svc!.name}, ${when}`);
       }
     } catch (err: any) {
@@ -600,6 +609,7 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
   const payDraft = step !== 'book' && chosen && svc && variant && date && time ? {
     customer, walk, walkName, serviceId, serviceName: svc.name, variantId, variantName: variant.name, parts, ovr,
     startIso: chosen.start_time, staffId: chosen.staff_id, locationId: chosen.location_id, notes, whenLabel: when, whoLabel: whoBits,
+    benefit: walk ? null : benefit ?? null,
   } : null;
   const body = loadError ? <p className="mk-warn">{loadError}</p> : payDraft ? (
     <PaymentStep businessId={businessId} draft={payDraft} mode={step === 'card' ? 'hold' : 'charge'}
@@ -622,10 +632,19 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
             <OptionChips svc={svc} variantId={variantId} onVariant={setVariantId} disabled={!!lockOffering} />
             <ParticipantsField svc={svc} parts={parts} onParts={setParts} ovr={ovr} onOvr={setOvr} disabled={!!lockOffering} />
           </div></div>
+          {/* Pay with a membership or package (spec 51, gap 19): as soon as a customer and a service are chosen */}
+          {!walk && customer?.id && svc && variantId && (
+            <div className="q-sec"><div className="q-sec-b">
+              <BenefitChooser businessId={businessId} customerId={customer.id} serviceId={serviceId} variantId={variantId}
+                startTime={chosen?.start_time || null} date={date || null} participants={parts} bookingId={mode === 'edit' ? bookingId : null}
+                value={benefit} onChange={setBenefit} disabled={viewOnly || !!lockOffering} />
+            </div></div>
+          )}
           {/* What it costs, from the first choice on (spec 51, gap 5; add-ons, gap 15, will show here) */}
           {mode === 'new' && svc && variantId && (
             <PriceSummary businessId={businessId} customerId={walk ? null : customer?.id || null} serviceId={serviceId} variantId={variantId}
-              participants={parts} rule={walk && svc.payment_rule === 'card_required' ? 'no_card' : svc.payment_rule} />
+              participants={parts} rule={walk && svc.payment_rule === 'card_required' ? 'no_card' : svc.payment_rule}
+              benefit={walk ? null : benefit ?? null} startTime={chosen?.start_time || null} />
           )}
         </div>
         <div className="q-col">
@@ -710,7 +729,8 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
           {!viewOnly && (mode === 'new'
             // Reservation Payment Rule (spec 51, gap 5): no card → save now; card required → hold a card
             // (not for a walk-in, who is already here); card charged at reservation → the payment step.
-            ? svc?.payment_rule === 'no_card' || (svc?.payment_rule === 'card_required' && walk)
+            // Paid with a membership or package: nothing to charge or keep, so saved now (owner, 23 Nov 2026).
+            ? svc?.payment_rule === 'no_card' || (svc?.payment_rule === 'card_required' && walk) || (!walk && !!benefit)
               ? <button type="button" className="btn" disabled={!ready || saving} onClick={save}>{saving ? 'Saving…' : 'Save reservation'}</button>
               : svc?.payment_rule === 'card_required'
                 ? <button type="button" className="btn" disabled={!ready} onClick={() => setStep('card')}>Next: payment ›</button>

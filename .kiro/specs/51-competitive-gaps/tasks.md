@@ -177,7 +177,7 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
   - [x] ✅ The tip follows the order before payment (migration 188): a percentage tip is worked out again when lines, promo or credits change; a typed tip is kept; no lines, no tip; a split by hand is dropped when the staff change (owner, 23 Nov 2026)
   - [x] ✅ Tip slider at Checkout from no tip to the highest percentage, starting at the business's default; settings for the default and the highest (migration 189) (owner, 23 Nov 2026)
   - [x] ✅ A service paid at reservation shown at the visit, read only: tipped on, shared with its staff, not charged or posted again, on the visit's receipt with the earlier payment taken off (owner, 23 Nov 2026)
-- [ ] Verify live and close with the owner
+- [x] ✅ Verified and closed with the owner (23 Nov 2026)
 
 ## 15. Service and product add-ons (Requirement 15)
 - [x] ✅ Confirm current state (no add-on support; extras are sold only as separate checkout lines)
@@ -210,9 +210,14 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 ## 19. Paying with a membership or package (Requirement 19)
 - [x] ✅ Confirm current state (memberships read from the old mem_* tables, so not recognised; one package only, on the "Charged at reservation" step; nothing at Checkout; no usage counted; nothing given back on cancel)
 - [x] ✅ Requirements and design written from the owner's description (15 Nov 2026)
-- [ ] Owner agrees the requirements and design
-- [ ] Build (design 19.5)
-- [ ] Verify live and close with the owner
+- [x] ✅ Owner agreed the requirements and design, with tips on what a membership or package paid (criteria 10 and 11) (23 Nov 2026)
+- Build (design 19.7)
+  - [x] ✅ Migration 190 and benefits service (what covers; held, used, released), replacing the mem_* pricing reads
+  - [x] ✅ Benefits endpoint; booking create and update hold the chosen benefit; cancel releases it
+  - [x] ✅ New Appointment: Pay with membership or package, preselected; price box, payment step and quote follow it
+  - [x] ✅ Checkout: benefit per line, change, used on completion; refund releases; receipt; tips on the normal price; Paid at reservation shows what paid
+  - [x] ✅ Found in testing (23 Nov 2026): packages sold at Checkout given to the customer (migration 191); customer Packages tab; no payment step or card when a membership or package pays; default order (membership, then earliest-expiring package); only usable ones listed; allowances counted on the appointment's day; appointment's service line kept at Checkout and services addable
+- [x] ✅ Verified and closed with the owner, including tips on what a membership or package paid (23 Nov 2026)
 
 ## 20. Features per business, set by the tenant (Requirement 20)
 - [x] ✅ Confirm current state (flags set for the whole platform on Configuration > Feature Flags; a tenant override table and API exist with no screen; no business level; most server routes do not check flags)

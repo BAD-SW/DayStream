@@ -96,17 +96,17 @@ describe('Pricing Engine — Calculation & Rules', () => {
     );
     CUSTOMER_ID = custRows[0].id;
 
-    // Membership plan + active membership
+    // Membership plan + active membership: the mbr_* model, which pricing reads (spec 51, gap 19)
     const { rows: planRows } = await adminPool.query(
-      `INSERT INTO mem_plans (business_id, name, plan_type, billing_cycle, price) VALUES ($1, 'Gold', 'unlimited', 'monthly', 12900) RETURNING id`,
+      `INSERT INTO mbr_plans (business_id, name, billing_frequency, price) VALUES ($1, 'Gold', 'monthly', 12900) RETURNING id`,
       [BUSINESS_ID],
     );
     PLAN_ID = planRows[0].id;
 
     const { rows: mbrRows } = await adminPool.query(
-      `INSERT INTO mem_memberships (business_id, customer_id, plan_id, status, start_date, credit_balance, created_by)
-       VALUES ($1, $2, $3, 'active', CURRENT_DATE, 0, '00000000-0000-0000-0000-000000000010') RETURNING id`,
-      [BUSINESS_ID, CUSTOMER_ID, PLAN_ID],
+      `INSERT INTO mbr_enrollments (plan_id, business_id, customer_id, status, start_date, current_period_start, current_period_end)
+       VALUES ($1, $2, $3, 'active', CURRENT_DATE, CURRENT_DATE, CURRENT_DATE + 30) RETURNING id`,
+      [PLAN_ID, BUSINESS_ID, CUSTOMER_ID],
     );
     MEMBERSHIP_ID = mbrRows[0].id;
 

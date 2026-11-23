@@ -200,16 +200,20 @@ interface PurchaseInput {
   customerId: string;
   initialStatus?: 'pending' | 'active'; // default 'active' — widget purchases awaiting payment use 'pending'
   source?: 'admin' | 'widget'; // default 'admin' (spec 38 Phase 5)
+  /** The Checkout line that sold it (spec 51, gap 19): one purchase per package sold on the line. */
+  orderItemId?: string | null;
+  /** Sold and paid at Checkout: the intro-offer check is not made again after payment. */
+  paid?: boolean;
 }
 
 export async function purchasePackage(input: PurchaseInput) {
   // Get package to determine expiration
   const pkg = await getPackageById(input.packageId, input.businessId);
   if (!pkg) throw new Error('Package not found');
-  if (pkg.status !== 'active') throw new Error('Package is not available for purchase');
+  if (pkg.status !== 'active' && !input.paid) throw new Error('Package is not available for purchase');
 
   // Check new customers only restriction
-  if (pkg.new_customers_only) {
+  if (pkg.new_customers_only && !input.paid) {
     const { rows: history } = await adminPool.query(
       `SELECT id FROM pkg_purchases WHERE customer_id = $1 AND business_id = $2 LIMIT 1`,
       [input.customerId, input.businessId],
@@ -242,9 +246,9 @@ export async function purchasePackage(input: PurchaseInput) {
   }
 
   const { rows } = await adminPool.query(
-    `INSERT INTO pkg_purchases (package_id, business_id, customer_id, expires_at, status, source)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [input.packageId, input.businessId, input.customerId, expiresAt, input.initialStatus || 'active', input.source || 'admin'],
+    `INSERT INTO pkg_purchases (package_id, business_id, customer_id, expires_at, status, source, order_item_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [input.packageId, input.businessId, input.customerId, expiresAt, input.initialStatus || 'active', input.source || 'admin', input.orderItemId ?? null],
   );
   return rows[0];
 }
@@ -421,4 +425,140 @@ export async function getPurchaseStatus(purchaseId: string) {
     });
   }
   return result;
+}
+
+// --- A customer's packages and their use (spec 51, gap 19; owner, 23 Nov 2026) ---
+
+export interface PackageUse {
+  /** A redemption (used) or an upcoming appointment holding the allowance (booked). */
+  kind: 'used' | 'booked';
+  at: string;
+  quantity: number;
+  minutes: number | null;
+  note: string | null;
+  booking: {
+    id: string; reference: string | null; start_time: string; status: string;
+    service_name: string | null; variant_name: string | null; staff_name: string | null;
+  } | null;
+  order: { id: string; order_number: string } | null;
+}
+
+export interface CustomerPackageItem {
+  item_id: string;
+  item_type: 'service' | 'merchandise';
+  name: string;
+  variant_name: string | null;
+  unit: 'sessions' | 'minutes';
+  total: number;
+  used: number;
+  /** Held by upcoming appointments, not used yet. */
+  booked: number;
+  left: number;
+  uses: PackageUse[];
+}
+
+export interface CustomerPackage {
+  purchase_id: string;
+  package_id: string;
+  name: string;
+  description: string | null;
+  /** active, expired, used up, or the purchase's own status (cancelled, pending...). */
+  status: string;
+  purchased_at: string;
+  expires_at: string | null;
+  order: { id: string; order_number: string } | null;
+  items: CustomerPackageItem[];
+}
+
+/**
+ * Every package the customer bought: what it includes, how much of each item is used, held by
+ * an upcoming appointment, and left; and each use with its appointment, for the customer's
+ * Packages tab. Newest first.
+ */
+export async function getCustomerPackageUsage(customerId: string, businessId: string): Promise<CustomerPackage[]> {
+  const { rows: purchases } = await adminPool.query(
+    `SELECT pp.id AS purchase_id, pp.package_id, pp.status, pp.purchased_at, pp.expires_at,
+            p.name, COALESCE(NULLIF(p.short_description, ''), p.description) AS description,
+            o.id AS order_id, o.order_number
+       FROM pkg_purchases pp
+       JOIN pkg_packages p ON p.id = pp.package_id
+       LEFT JOIN fin_order_items oi ON oi.id = pp.order_item_id
+       LEFT JOIN fin_orders o ON o.id = oi.order_id
+      WHERE pp.customer_id = $1 AND pp.business_id = $2
+      ORDER BY pp.purchased_at DESC`,
+    [customerId, businessId]);
+  if (purchases.length === 0) return [];
+  const ids = purchases.map((p: { purchase_id: string }) => p.purchase_id);
+
+  const { rows: items } = await adminPool.query(
+    `SELECT pp.id AS purchase_id, i.id AS item_id, i.item_type, i.quantity, COALESCE(i.redemption_type, 'sessions') AS unit,
+            COALESCE(s.name, m.name, 'Item') AS name, COALESCE(sv.name, mv.name) AS variant_name
+       FROM pkg_purchases pp
+       JOIN pkg_package_items i ON i.package_id = pp.package_id
+       LEFT JOIN svc_services s ON s.id = i.service_id
+       LEFT JOIN svc_variants sv ON sv.id = i.variant_id AND i.item_type = 'service'
+       LEFT JOIN prd_merchandise m ON m.id = i.merchandise_id
+       LEFT JOIN prd_merchandise_variants mv ON mv.id = i.variant_id AND i.item_type = 'merchandise'
+      WHERE pp.id = ANY($1::uuid[])
+      ORDER BY i.created_at`,
+    [ids]);
+
+  const booking = `json_build_object('id', b.id, 'reference', b.booking_reference, 'start_time', b.start_time, 'status', b.status,
+                    'service_name', bs.name, 'variant_name', bv.name, 'staff_name', NULLIF(TRIM(CONCAT(st.first_name, ' ', st.last_name)), ''))`;
+  // Used: each redemption, with the appointment it was for (when known) and the order that paid it.
+  const { rows: used } = await adminPool.query(
+    `SELECT r.purchase_id, r.package_item_id, r.redeemed_at AS at, r.quantity_redeemed AS quantity, r.minutes_redeemed AS minutes, r.notes,
+            CASE WHEN b.id IS NULL THEN NULL ELSE ${booking} END AS booking,
+            CASE WHEN o.id IS NULL THEN NULL ELSE json_build_object('id', o.id, 'order_number', o.order_number) END AS "order"
+       FROM pkg_redemptions r
+       LEFT JOIN apt_bookings b ON b.id = r.booking_id
+       LEFT JOIN svc_services bs ON bs.id = b.service_id
+       LEFT JOIN svc_variants bv ON bv.id = b.variant_id
+       LEFT JOIN usr_users st ON st.id = b.staff_id
+       LEFT JOIN pay_benefit_uses u ON u.redemption_id = r.id
+       LEFT JOIN fin_orders o ON o.id = u.order_id
+      WHERE r.purchase_id = ANY($1::uuid[])
+      ORDER BY COALESCE(b.start_time, r.redeemed_at) DESC`,
+    [ids]);
+  // Booked: held by an appointment not yet paid.
+  const { rows: held } = await adminPool.query(
+    `SELECT u.purchase_id, u.package_item_id, COALESCE(b.start_time, u.created_at) AS at, u.quantity, u.minutes,
+            CASE WHEN b.id IS NULL THEN NULL ELSE ${booking} END AS booking
+       FROM pay_benefit_uses u
+       LEFT JOIN apt_bookings b ON b.id = u.booking_id
+       LEFT JOIN svc_services bs ON bs.id = b.service_id
+       LEFT JOIN svc_variants bv ON bv.id = b.variant_id
+       LEFT JOIN usr_users st ON st.id = b.staff_id
+      WHERE u.purchase_id = ANY($1::uuid[]) AND u.status = 'held'
+      ORDER BY at DESC`,
+    [ids]);
+
+  const now = Date.now();
+  return purchases.map((p: any): CustomerPackage => {
+    const its = items.filter((i: any) => i.purchase_id === p.purchase_id).map((i: any): CustomerPackageItem => {
+      const minutes = i.unit === 'minutes';
+      const amount = (r: { quantity: number; minutes: number | null }) => (minutes ? Number(r.minutes) || 0 : Number(r.quantity) || 1);
+      const usedRows = used.filter((r: any) => r.purchase_id === p.purchase_id && r.package_item_id === i.item_id);
+      const heldRows = held.filter((r: any) => r.purchase_id === p.purchase_id && r.package_item_id === i.item_id);
+      const usedTotal = usedRows.reduce((t: number, r: any) => t + amount(r), 0);
+      const bookedTotal = heldRows.reduce((t: number, r: any) => t + amount(r), 0);
+      const uses: PackageUse[] = [
+        ...heldRows.map((r: any): PackageUse => ({ kind: 'booked', at: new Date(r.at).toISOString(), quantity: Number(r.quantity) || 1, minutes: r.minutes, note: null, booking: r.booking, order: null })),
+        ...usedRows.map((r: any): PackageUse => ({ kind: 'used', at: new Date(r.booking?.start_time || r.at).toISOString(), quantity: Number(r.quantity) || 1, minutes: r.minutes, note: r.notes, booking: r.booking, order: r.order })),
+      ].sort((a, b) => b.at.localeCompare(a.at));
+      return {
+        item_id: i.item_id, item_type: i.item_type, name: i.name, variant_name: i.variant_name,
+        unit: minutes ? 'minutes' : 'sessions', total: Number(i.quantity) || 0,
+        used: usedTotal, booked: bookedTotal, left: Math.max((Number(i.quantity) || 0) - usedTotal - bookedTotal, 0), uses,
+      };
+    });
+    const expired = !!p.expires_at && new Date(p.expires_at).getTime() <= now;
+    const usedUp = its.length > 0 && its.every((i) => i.left <= 0 && i.booked === 0);
+    return {
+      purchase_id: p.purchase_id, package_id: p.package_id, name: p.name, description: p.description,
+      status: p.status !== 'active' ? p.status : expired ? 'expired' : usedUp ? 'used up' : 'active',
+      purchased_at: new Date(p.purchased_at).toISOString(), expires_at: p.expires_at ? new Date(p.expires_at).toISOString() : null,
+      order: p.order_id ? { id: p.order_id, order_number: p.order_number } : null, items: its,
+    };
+  });
 }

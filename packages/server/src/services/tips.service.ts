@@ -97,12 +97,23 @@ async function tipOrders(orderId: string, db: Db): Promise<{ ids: string[]; prep
   return { ids: prepaidId ? [orderId, prepaidId] : [orderId], prepaidId };
 }
 
-/** What a suggested percentage is of: the order's total and tax, with a service paid at reservation (not refunded). */
-async function tipBaseOf(orderId: string, db: Db = adminPool): Promise<{ total: number; tax: number; hasPrepaid: boolean }> {
+/**
+ * A line paid with a membership or package counts for the tip at its normal price (its benefit
+ * is the line's discount) and with the tax it would have had (spec 51, gap 19, criterion 10).
+ */
+const BENEFIT_PAID = `EXISTS (SELECT 1 FROM pay_benefit_uses bu WHERE bu.order_item_id = oi.id AND bu.status <> 'released')`;
+
+/**
+ * What a suggested percentage is of: the order's total and tax, with a service paid at
+ * reservation (not refunded), and lines paid with a membership or package at their normal price.
+ */
+export async function tipBaseOf(orderId: string, db: Db = adminPool): Promise<{ total: number; tax: number; hasPrepaid: boolean }> {
   const { ids, prepaidId } = await tipOrders(orderId, db);
   const { rows } = await db.query(
-    `SELECT COALESCE(SUM(total_amount), 0)::int AS total, COALESCE(SUM(tax_amount), 0)::int AS tax
-       FROM fin_orders WHERE id = ANY($1::uuid[]) AND (id = $2 OR status = 'completed')`, [ids, orderId]);
+    `SELECT COALESCE(SUM(oi.total_price + CASE WHEN ${BENEFIT_PAID} THEN oi.discount_amount + ROUND(oi.unit_price * oi.quantity * COALESCE(oi.tax_rate, 0) / 10000.0) ELSE 0 END), 0)::int AS total,
+            COALESCE(SUM(oi.tax_amount + CASE WHEN ${BENEFIT_PAID} THEN ROUND(oi.unit_price * oi.quantity * COALESCE(oi.tax_rate, 0) / 10000.0) ELSE 0 END), 0)::int AS tax
+       FROM fin_order_items oi JOIN fin_orders o ON o.id = oi.order_id
+      WHERE o.id = ANY($1::uuid[]) AND (o.id = $2 OR o.status = 'completed')`, [ids, orderId]);
   return { total: rows[0].total, tax: rows[0].tax, hasPrepaid: !!prepaidId };
 }
 
@@ -115,7 +126,7 @@ async function staffOnOrder(orderId: string, db: Db): Promise<Array<{ user_id: s
   const { rows } = await db.query(
     `SELECT COALESCE(oi.credited_to, o.credited_to) AS user_id,
             MIN(TRIM(CONCAT(u.first_name, ' ', u.last_name))) AS name,
-            SUM(GREATEST(oi.total_price, 0))::bigint AS value
+            SUM(GREATEST(oi.total_price + CASE WHEN ${BENEFIT_PAID} THEN oi.discount_amount ELSE 0 END, 0))::bigint AS value
        FROM fin_order_items oi
        JOIN fin_orders o ON o.id = oi.order_id
        JOIN usr_users u ON u.id = COALESCE(oi.credited_to, o.credited_to)

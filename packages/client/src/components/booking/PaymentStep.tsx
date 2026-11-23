@@ -9,6 +9,7 @@ import { StripeOneTimeCardCharge, StripeDeferredCard } from '../StripeOneTimeCar
 import type { DeferredCardCharge } from '../StripeOneTimeCardCharge';
 import { AddPaymentMethodInline } from '../AddPaymentMethodInline';
 import { ReceiptActions } from '../ReceiptActions';
+import type { BenefitRef } from '../../api/bookings';
 
 // ============================================================
 // Step 4 of New Appointment (PAY-1 = A, David 11 Nov 2026; spec 51 gap 5). One screen for both
@@ -26,8 +27,8 @@ interface Saved { id: string; label: string }
 interface Quote {
   lines: Array<{ label: string; amount: number }>; total: number; due: number;
   promo: { code: string; ok: boolean; message?: string } | null; credit_needs_split: boolean;
-  membership: { name: string; access: string; percent: number } | null;
-  package: { purchase_id: string; item_id: string; name: string; left: number } | null;
+  /** The membership or package chosen in the window (spec 51, gap 19): does it cover the booking, and why not. */
+  benefit: { name: string; covers: boolean; reason: string | null; left_after: number | null } | null;
   credit: number; cards: Saved[];
   /** saved bank accounts (SEPA / ACH direct debit) */
   banks: Saved[];
@@ -40,6 +41,8 @@ export interface BookingDraft {
   serviceId: string; serviceName: string; variantId: string; variantName: string; parts: number; ovr: boolean;
   startIso: string; staffId?: string; locationId?: string | null; notes: string;
   whenLabel: string; whoLabel: string;
+  /** The membership or package chosen to pay (spec 51, gap 19); null: paid normally. */
+  benefit?: BenefitRef | null;
 }
 
 type Choice = 'onfile' | 'card' | 'bank';
@@ -54,7 +57,6 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
   onBack: () => void; onDone: (message: string) => void;
 }) {
   const hold = mode === 'hold';
-  const [usePkg, setUsePkg] = useState(true);
   const [useCredit, setUseCredit] = useState(false);
   const [promoInput, setPromoInput] = useState('');
   const [promo, setPromo] = useState('');
@@ -85,7 +87,8 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
     let off = false;
     apiClient.post(`/v1/bookings/payment-quote?business_id=${businessId}`, {
       business_id: businessId, customer_id: customerId, service_id: draft.serviceId, variant_id: draft.variantId,
-      participant_count: draft.parts, promo_code: hold ? null : promo || null, use_package: hold ? false : usePkg, use_credit: hold ? false : useCredit,
+      participant_count: draft.parts, promo_code: hold ? null : promo || null, use_credit: hold ? false : useCredit,
+      benefit: draft.benefit || null, start_time: draft.startIso,
     }).then((r) => {
       if (off) return;
       const q: Quote = r.data.data;
@@ -95,9 +98,11 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
     }).catch(() => { if (!off) setError('The price could not be worked out.'); });
     return () => { off = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [businessId, customerId, draft.serviceId, draft.variantId, draft.parts, promo, usePkg, useCredit, hold]);
+  }, [businessId, customerId, draft.serviceId, draft.variantId, draft.parts, promo, useCredit, hold, draft.benefit]);
 
   const due = quote?.due ?? 0;
+  // The membership or package is used only when it covers the booking; otherwise it is paid normally.
+  const usedBenefit = draft.benefit && quote?.benefit?.covers !== false ? draft.benefit : null;
   const covered = !hold && !!quote && due === 0;
   const chosenId = method === 'onfile' ? cardId : method === 'bank' ? bankId : '';
   // A new card for a customer is saved first (then it is a card on file); for a walk-in it is taken
@@ -128,6 +133,7 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
     service_id: draft.serviceId, variant_id: draft.variantId, staff_id: draft.staffId, start_time: draft.startIso,
     notes: draft.notes || undefined, participant_count: draft.parts, override_rules: draft.ovr, location_id: draft.locationId || undefined,
     ...(paymentMethodId ? { payment_method_id: paymentMethodId } : {}),
+    ...(usedBenefit ? { benefit: usedBenefit } : {}),
   });
   const errText = (err: any, fallback: string) => { const e = err?.response?.data?.error; return typeof e === 'string' ? e : e?.message || err?.message || fallback; };
 
@@ -154,7 +160,7 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
     try {
       const r = await apiClient.post(`/v1/bookings/${bookingId}/pay?business_id=${businessId}`, {
         method: covered ? 'covered' : method === 'bank' ? 'bank' : method === 'onfile' ? 'onfile' : 'card',
-        payment_method_id: chosenId || null, promo_code: promo || null, use_package: usePkg, use_credit: useCredit,
+        payment_method_id: chosenId || null, promo_code: promo || null, use_credit: useCredit, benefit: usedBenefit,
       });
       const res = r.data.data;
       if (res.status === 'card_form') {
@@ -212,12 +218,13 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
                 <div className="pay-line tot"><span>{hold ? 'Due after the service' : 'To pay'}</span><b>{formatCurrency(due)}</b></div>
               </div>
               {hold && <p className="mk-hint">Nothing is charged now. At Checkout, after the service, the card or bank account kept here is charged for the final amount, including anything added.</p>}
-              {!hold && (quote.package || quote.credit > 0 || quote.membership) && (
+              {quote.benefit && !quote.benefit.covers && (
+                <p className="mk-warn">{quote.benefit.name} does not cover this: {quote.benefit.reason} Go back to choose another, or it is paid normally.</p>
+              )}
+              {!hold && quote.credit > 0 && (
                 <div className="pay-uses">
                   <span className="q-lab">What {first} already has</span>
-                  {quote.package && <label className="pay-use"><input type="checkbox" checked={usePkg} onChange={(e) => setUsePkg(e.target.checked)} /> Use 1 session of <b>{quote.package.name}</b> <small>{quote.package.left} left</small></label>}
-                  {quote.credit > 0 && <label className="pay-use"><input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} /> Use account credit <small>{formatCurrency(quote.credit)} available</small></label>}
-                  {quote.membership && <p className="pay-use"><b>{quote.membership.name} member</b> <small>applied automatically</small></p>}
+                  <label className="pay-use"><input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} /> Use account credit <small>{formatCurrency(quote.credit)} available</small></label>
                 </div>
               )}
               {!hold && quote.credit_needs_split && <p className="mk-warn">The credit covers part of it: paying the rest with another method needs split payment (PAY-2, later). Untick the credit, or add credit.</p>}

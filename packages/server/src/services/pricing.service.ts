@@ -56,11 +56,9 @@ export async function calculatePrice(input: PriceCalculationInput): Promise<Pric
   let customerBookingCount = 0;
 
   if (customerId) {
-    const { rows: memberships } = await adminPool.query(
-      "SELECT plan_id FROM mem_memberships WHERE customer_id = $1 AND business_id = $2 AND status = 'active'",
-      [customerId, businessId],
-    );
-    customerMembershipPlanIds = memberships.map((m) => m.plan_id);
+    // The customer's memberships (the mbr_* model, spec 51 gap 19; the old mem_* tables are no longer filled).
+    const { activePlanIds } = await import('./benefits.service');
+    customerMembershipPlanIds = await activePlanIds(businessId, customerId);
 
     const { rows: corpMembers } = await adminPool.query(
       `SELECT cam.account_id FROM pri_corporate_members cam

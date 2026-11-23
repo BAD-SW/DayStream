@@ -248,15 +248,18 @@ async function orderReceiptRows(orderId: string, currency: string): Promise<Docu
   const { rows: o } = await adminPool.query('SELECT booking_id, tip_amount FROM fin_orders WHERE id = $1', [orderId]);
   if (!o[0]) return null;
   const { rows: items } = await adminPool.query(
-    'SELECT item_name, variant_name, quantity, total_price, tax_amount FROM fin_order_items WHERE order_id = $1 ORDER BY created_at', [orderId]);
+    'SELECT id, item_name, variant_name, quantity, total_price, tax_amount FROM fin_order_items WHERE order_id = $1 ORDER BY created_at', [orderId]);
   const { getPrepaidOrder } = await import('./prepaid-order.service');
   const prepaid = await getPrepaidOrder(orderId, o[0].booking_id);
   const paidBefore = prepaid?.items || [];
   const tip = Number(o[0].tip_amount) || 0;
   if (items.length === 0 && !(paidBefore.length > 0 && tip > 0)) return null;
-  type Line = { item_name: string; variant_name: string | null; quantity: number; total_price: number; tax_amount: number | null };
+  type Line = { id: string; item_name: string; variant_name: string | null; quantity: number; total_price: number; tax_amount: number | null };
+  // Lines paid with a membership or package say which (spec 51, gap 19, criterion 8).
+  const { orderLineBenefits } = await import('./benefits.service');
+  const paidWith = await orderLineBenefits([...paidBefore, ...items].map((it: { id: string }) => it.id));
   const line = (it: Line) => ({
-    description: it.variant_name ? `${it.item_name} — ${it.variant_name}` : it.item_name,
+    description: `${it.variant_name ? `${it.item_name} — ${it.variant_name}` : it.item_name}${paidWith.get(it.id) ? ` (paid with ${paidWith.get(it.id)!.name})` : ''}`,
     qty: Number(it.quantity),
     amountCents: it.total_price - (it.tax_amount || 0),
   });

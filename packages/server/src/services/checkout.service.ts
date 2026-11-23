@@ -182,6 +182,9 @@ async function openBookingOrder(bookingId: string, businessId: string, checkedOu
     bookingId,
   });
 
+  // The membership or package the booking is held against pays its service line (spec 51, gap 19).
+  const { attachBookingBenefit } = await import('./benefits.service');
+  await attachBookingBenefit(order.id, bookingId);
   return getOrder(order.id);
 }
 
@@ -359,9 +362,22 @@ export async function updateItem(itemId: string, orderId: string, updates: Parti
  * Remove a line item from an open order.
  */
 export async function removeItem(itemId: string, orderId: string) {
-  const { rows: orderRows } = await adminPool.query('SELECT status FROM fin_orders WHERE id = $1', [orderId]);
+  const { rows: orderRows } = await adminPool.query('SELECT status, booking_id FROM fin_orders WHERE id = $1', [orderId]);
   if (orderRows[0]?.status !== 'open') throw new Error('Order is not open');
+  // The service of the appointment being checked out stays on its order: it is what is being paid
+  // for (owner, 23 Nov 2026). Its price or credit can be changed; the appointment can be cancelled.
+  if (orderRows[0].booking_id) {
+    const { rows: own } = await adminPool.query(
+      `SELECT 1 FROM fin_order_items WHERE id = $1 AND order_id = $2 AND item_type = 'service' AND booking_id = $3`,
+      [itemId, orderId, orderRows[0].booking_id]);
+    if (own.length > 0) {
+      throw Object.assign(new Error("The appointment's service can't be removed from its checkout. Change its price, or cancel the appointment instead."), { code: 'BOOKING_SERVICE' });
+    }
+  }
 
+  // What the line held of a membership or package is given back (a booking's hold, to the booking).
+  const { releaseForOrderItem } = await import('./benefits.service');
+  await releaseForOrderItem(itemId);
   const { rowCount } = await adminPool.query(
     'DELETE FROM fin_order_items WHERE id = $1 AND order_id = $2', [itemId, orderId],
   );
@@ -523,6 +539,12 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
     for (const r of paidPlaces) if (r.pay_at !== 'online') await queueEventEmail(r.id, 'confirmed');
   }
 
+  // What the membership or package held for its lines is now used (spec 51, gap 19).
+  {
+    const { useForOrder } = await import('./benefits.service');
+    await useForOrder(orderId).catch((err) => console.error('[Benefits] Allowance not counted as used for order', orderId, err?.message || err));
+  }
+
   // The tip's shares: owed to the staff who served (electronic) or handed over now (manual).
   if (tip > 0) {
     const { recordShares } = await import('./tips.service');
@@ -588,6 +610,40 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   } catch (err: any) {
     console.error('[Enrollment] Failed to process membership enrollments:', err?.message || err);
     enrollmentWarnings.push({ planId: '', planName: null, reason: err?.message || 'Failed to process membership enrollments.' });
+  }
+
+  // Give the customer each package sold on this order (owner, 23 Nov 2026: a package bought at
+  // Checkout was charged but never given, so it could not be used). One purchase per package on
+  // the line; a failure is surfaced like a membership's, since the sale is already paid.
+  try {
+    const { rows: packageItems } = await adminPool.query(
+      `SELECT oi.id, oi.item_id, oi.item_name, oi.quantity,
+              (SELECT COUNT(*)::int FROM pkg_purchases pp WHERE pp.order_item_id = oi.id) AS given
+         FROM fin_order_items oi WHERE oi.order_id = $1 AND oi.item_type = 'package' AND oi.item_id IS NOT NULL`,
+      [orderId],
+    );
+    if (packageItems.length > 0 && orderRows[0].customer_id) {
+      const { purchasePackage } = await import('./package.service');
+      for (const item of packageItems) {
+        for (let n = item.given; n < item.quantity; n++) {
+          try {
+            await purchasePackage({ packageId: item.item_id, businessId, customerId: orderRows[0].customer_id, orderItemId: item.id, paid: true });
+          } catch (pkgErr: any) {
+            const reason = pkgErr?.message || 'The package could not be given to the customer';
+            console.error(`[Package] Order ${orderId} paid but package NOT given (package ${item.item_id}): ${reason}`);
+            enrollmentWarnings.push({ planId: item.item_id, planName: item.item_name ?? null, reason });
+            break;
+          }
+        }
+      }
+    } else if (packageItems.length > 0) {
+      for (const item of packageItems) {
+        enrollmentWarnings.push({ planId: item.item_id, planName: item.item_name ?? null, reason: 'No customer on the order — the package could not be given to anyone.' });
+      }
+    }
+  } catch (err: any) {
+    console.error('[Package] Failed to give packages:', err?.message || err);
+    enrollmentWarnings.push({ planId: '', planName: 'Package', reason: err?.message || 'Failed to give the package(s) sold.' });
   }
 
   // Create + fund any gift cards PURCHASED on this order (Model B, C7). Each
@@ -966,6 +1022,8 @@ export async function voidOrder(orderId: string, businessId: string) {
     [orderId, businessId],
   );
   if (rows.length === 0) throw new Error('Order not found or cannot be voided');
+  const { releaseForOrder } = await import('./benefits.service');
+  await releaseForOrder(orderId);
   return rows[0];
 }
 
@@ -998,7 +1056,20 @@ export async function getOrder(orderId: string) {
   const { getPrepaidOrder } = await import('./prepaid-order.service');
   const prepaid = await getPrepaidOrder(orderId, rows[0].booking_id);
 
-  return { ...rows[0], items, prepaid, prepaid_order_number: prepaid?.order_number ?? null };
+  // Each line paid with a membership or package: which one (spec 51, gap 19).
+  const { orderLineBenefits } = await import('./benefits.service');
+  const benefitOf = await orderLineBenefits(items.map((i: { id: string }) => i.id));
+  const withBenefits = items.map((i: { id: string }) => ({ ...i, benefit: benefitOf.get(i.id) ?? null }));
+
+  // What a suggested tip is of (spec 51, gaps 14 and 19): with a service paid at reservation, and
+  // lines paid with a membership or package at their normal price. Checkout's slider uses it.
+  const { tipBaseOf } = await import('./tips.service');
+  const tipBase = await tipBaseOf(orderId);
+
+  return {
+    ...rows[0], items: withBenefits, prepaid, prepaid_order_number: prepaid?.order_number ?? null,
+    tip_base: { total: tipBase.total, tax: tipBase.tax },
+  };
 }
 
 /**

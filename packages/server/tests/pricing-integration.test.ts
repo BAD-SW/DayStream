@@ -34,6 +34,8 @@ describe('Pricing Engine — Integration Tests', () => {
     await adminPool.query('DELETE FROM pri_discount_codes WHERE business_id = $1', [BUSINESS_ID]);
     await adminPool.query('DELETE FROM pri_bundles WHERE business_id = $1', [BUSINESS_ID]);
     await adminPool.query('DELETE FROM mem_memberships WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM mbr_enrollments WHERE business_id = $1', [BUSINESS_ID]);
+    await adminPool.query('DELETE FROM mbr_plans WHERE business_id = $1', [BUSINESS_ID]);
     await adminPool.query('DELETE FROM svc_services WHERE business_id = $1', [BUSINESS_ID]);
     await adminPool.query('DELETE FROM svc_categories WHERE business_id = $1', [BUSINESS_ID]);
     await adminPool.query('DELETE FROM svc_tax_categories WHERE business_id = $1', [BUSINESS_ID]);
@@ -88,17 +90,17 @@ describe('Pricing Engine — Integration Tests', () => {
     );
     NEW_CUSTOMER_ID = c2[0].id;
 
-    // Membership plan + active membership for CUSTOMER_ID
+    // Membership plan + active membership for CUSTOMER_ID: the mbr_* model, which pricing reads (spec 51, gap 19)
     const { rows: planRows } = await adminPool.query(
-      `INSERT INTO mem_plans (business_id, name, plan_type, billing_cycle, price) VALUES ($1, 'Gold', 'unlimited', 'monthly', 12900) RETURNING id`,
+      `INSERT INTO mbr_plans (business_id, name, billing_frequency, price) VALUES ($1, 'Gold', 'monthly', 12900) RETURNING id`,
       [BUSINESS_ID],
     );
     PLAN_ID = planRows[0].id;
 
     await adminPool.query(
-      `INSERT INTO mem_memberships (business_id, customer_id, plan_id, status, start_date, credit_balance, created_by)
-       VALUES ($1, $2, $3, 'active', CURRENT_DATE, 0, '00000000-0000-0000-0000-000000000010')`,
-      [BUSINESS_ID, CUSTOMER_ID, PLAN_ID],
+      `INSERT INTO mbr_enrollments (plan_id, business_id, customer_id, status, start_date, current_period_start, current_period_end)
+       VALUES ($1, $2, $3, 'active', CURRENT_DATE, CURRENT_DATE, CURRENT_DATE + 30)`,
+      [PLAN_ID, BUSINESS_ID, CUSTOMER_ID],
     );
 
     // Discount code

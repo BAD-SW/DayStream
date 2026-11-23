@@ -261,7 +261,7 @@ The acceptance criteria below set the capability each gap must reach. They are r
 
 **User Story**: As a business owner whose staff are tipped, I want customers to be able to add a tip when they pay, so that the tip reaches the staff member and is kept separate from the sale.
 
-**Current state**: Not started. Nothing in the system knows about tips. An order's total is the sum of its item lines, with no order-level amount, and that total is what the card is charged, what the receipt prints, what the ledger books as cash received and what the payments report sums. Commission is worked out from the item lines only, so it would be unaffected by a tip. Payroll has no pay component for tips and no liability account for tips owed. Refunds work line by line and say nothing about a tip. Staff checkout (card, cash, transfer, check, gift card) is the only path that takes payment through orders; the booking widget's payment step is a simulation, and there is no card-terminal or kiosk payment.
+**Current state**: ✅ Complete, closed with the owner (23 Nov 2026); the description below is what was there before. Nothing in the system knows about tips. An order's total is the sum of its item lines, with no order-level amount, and that total is what the card is charged, what the receipt prints, what the ledger books as cash received and what the payments report sums. Commission is worked out from the item lines only, so it would be unaffected by a tip. Payroll has no pay component for tips and no liability account for tips owed. Refunds work line by line and say nothing about a tip. Staff checkout (card, cash, transfer, check, gift card) is the only path that takes payment through orders; the booking widget's payment step is a simulation, and there is no card-terminal or kiosk payment.
 
 ##### Acceptance Criteria
 
@@ -277,6 +277,7 @@ The acceptance criteria below set the capability each gap must reach. They are r
 8. WHEN an order is refunded, THE system SHALL leave its tip unchanged unless the tip is refunded as its own line; refunding a tip SHALL take it off what each staff member is owed, in the same shares.
 9. WHEN a tip is paid on an order with no staff member on it, THE system SHALL put the tip in the business's tip pool, and SHALL let the owner or a manager share the pool for a range of dates in one of three ways: by hand (amounts per staff member that add up to the pool for those dates), by the hours each staff member was clocked in on the day of each tip, or evenly among the staff clocked in on the day of each tip (owner, 22 Nov 2026). A tip from a day when nobody was clocked in SHALL stay in the pool until it is shared by hand. Once shared, each part SHALL be treated as that staff member's own tip (electronic parts paid in payroll, cash parts handed over from the till), and THE system SHALL show what is waiting in the pool.
 10. WHEN an appointment whose service was paid at reservation is checked out, THE system SHALL show the service lines and their payment at Checkout as already paid, SHALL base a suggested tip and the staff it goes to on them as well as on anything else sold at the visit, and SHALL charge only what is sold at the visit and the tip (owner, 23 Nov 2026). THE system SHALL NOT let those lines or their payment be changed or removed at the visit, SHALL NOT post their revenue or payment again, and SHALL show them on the visit's receipt with the earlier payment taken off.
+11. WHEN a line is paid with a membership or package, THE system SHALL base the tip on its normal price as Requirement 19, criterion 10, says.
 #### Requirement 15: Service and Product Add-Ons
 
 **User Story**: As a business owner, I want customers and staff to be able to add extras to a booking, such as a longer session, an upgrade or a product, so that I earn more per visit and the extra time is reserved.
@@ -356,7 +357,7 @@ The acceptance criteria below set the capability each gap must reach. They are r
 
 **User Story**: As front-desk staff, I want to see what a customer's memberships and packages cover when I book them, and use one to pay for the appointment, so that members and package holders are not charged for what they already paid for, and their allowance is always right.
 
-**Current state**: Confirmed in the code (15 Nov 2026):
+**Current state**: ✅ Complete, closed with the owner (23 Nov 2026); the description below is what was there before. Confirmed in the code (15 Nov 2026):
 - Memberships live in the `mbr_*` tables (plans, plan items with a quantity and how often it resets, enrollments), but the booking payment step and the membership pricing rules read the older `mem_*` tables, which nothing fills any more. A membership is therefore not recognised when booking.
 - Packages are recognised only on the "Charged at reservation" payment step, and only one: the first package that has a session left for the service. The option chosen is ignored, minutes packages and products are not handled, and the session is used before payment, with nothing to undo it.
 - Checkout applies no membership or package at all, and charges the option's list price.
@@ -374,6 +375,8 @@ The acceptance criteria below set the capability each gap must reach. They are r
 7. WHEN a booking held against a membership or package is cancelled, THE system SHALL give the allowance back; WHEN a used allowance is refunded, THE system SHALL give it back.
 8. THE system SHALL record on the order and its receipt which membership or package paid for which line.
 9. THE system SHALL apply the same membership and package rules wherever a booking or sale is priced (New Appointment, the payment step, Checkout and the price shown while booking), so they never disagree.
+10. THE system SHALL count a line paid with a membership or package at its normal price for a tip (before tax, or including the tax it would have had, as the business's tip setting says), and SHALL share the tip between staff by those normal values; THE system SHALL take the tip itself by a normal payment method, never from the membership or package (owner, 23 Nov 2026; Requirement 14).
+11. WHEN an appointment paid with a membership or package at reservation is checked out, THE system SHALL show the line under Paid at reservation as paid with that membership or package, and SHALL offer a tip on it as criterion 10 says (owner, 23 Nov 2026; Requirement 14, criterion 10).
 
 ### Platform
 

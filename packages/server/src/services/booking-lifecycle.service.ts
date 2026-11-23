@@ -85,6 +85,13 @@ async function transitionStatus(
     updateParams,
   );
 
+  // A cancelled appointment gives back the membership or package allowance held or used for it;
+  // a missed one (no-show) gives back only what was held (spec 51, gap 19, criterion 7).
+  if (newStatus === 'cancelled' || newStatus === 'no_show') {
+    const { releaseForBooking } = await import('./benefits.service');
+    await releaseForBooking(bookingId, { includeUsed: newStatus === 'cancelled' }).catch((e) => logger.warn(`Booking ${bookingId}: allowance not given back: ${e?.message || e}`));
+  }
+
   // Record in status history
   await adminPool.query(
     `INSERT INTO apt_booking_status_history (booking_id, from_status, to_status, changed_by, reason)
@@ -399,6 +406,14 @@ export async function rescheduleBooking(
   } catch (err: any) {
     if (err?.severity || /^(TypeError|ReferenceError|RangeError|SyntaxError)$/.test(err?.name || '')) throw err;
     return { success: false, error: /conflict/i.test(err.message) ? err.message : `Conflict at the new time: ${err.message}` };
+  }
+
+  // A membership's allowance follows the appointment to its new day (or week, or month); if that
+  // one is used up, the hold is given back and it is paid normally (spec 51, gap 19).
+  {
+    const { recheckBookingBenefit } = await import('./benefits.service');
+    await recheckBookingBenefit(bookingId, userId || null)
+      .catch((e) => logger.warn(`Booking ${bookingId}: allowance not moved with the reschedule: ${e?.message || e}`));
   }
 
   // Log

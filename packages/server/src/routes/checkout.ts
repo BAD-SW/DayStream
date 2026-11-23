@@ -214,6 +214,7 @@ checkoutRouter.delete('/orders/:id/items/:itemId', requirePermission('bookings:*
     const order = await checkoutService.getOrder(req.params.id);
     success(res, order);
   } catch (err: any) {
+    if (err?.code === 'BOOKING_SERVICE') { error(res, err.message, 'BOOKING_SERVICE', 409); return; }
     if (err.message.includes('not open') || err.message.includes('not found')) { error(res, err.message, 'CONFLICT', 409); }
     else { error(res, 'Failed to remove item', 'INTERNAL_ERROR', 500); }
   }
@@ -461,6 +462,53 @@ checkoutRouter.put('/orders/:id/tip', requirePermission('bookings:*'), validate(
   } catch (err: any) {
     if (err?.name === 'TipError') { error(res, err.message, err.code, err.code === 'NOT_FOUND' ? 404 : err.code === 'CONFLICT' ? 409 : 400); return; }
     console.error('Failed to set the tip', err?.message || err); error(res, 'Failed to set the tip', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// --- Paying a line with a membership or package (spec 51, gap 19) ---
+
+const lineOfOrder = async (orderId: string, itemId: string, businessId: string) => {
+  const { rows } = await adminPool.query(
+    `SELECT oi.id, o.status FROM fin_order_items oi JOIN fin_orders o ON o.id = oi.order_id
+      WHERE oi.id = $1 AND o.id = $2 AND o.business_id = $3`, [itemId, orderId, businessId]);
+  return rows[0] as { id: string; status: string } | undefined;
+};
+
+// GET /api/v1/checkout/orders/:id/items/:itemId/benefits?business_id= — the customer's memberships
+// and packages for this line, each covering it or not, and the one paying it now
+checkoutRouter.get('/orders/:id/items/:itemId/benefits', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!(await lineOfOrder(req.params.id, req.params.itemId, businessId))) { error(res, 'Line not found', 'NOT_FOUND', 404); return; }
+    const { lineOptions } = await import('../services/benefits.service');
+    success(res, (await lineOptions(req.params.itemId)) || { options: [], use: null });
+  } catch (err: any) { console.error('Failed to load memberships and packages', err?.message || err); error(res, 'Failed to load memberships and packages', 'INTERNAL_ERROR', 500); }
+});
+
+const lineBenefitSchema = Joi.object({
+  benefit: Joi.object({
+    kind: Joi.string().valid('membership', 'package').required(),
+    source_id: Joi.string().uuid().required(),
+    item_id: Joi.string().uuid().required(),
+  }).allow(null).required(),
+});
+
+// PUT /api/v1/checkout/orders/:id/items/:itemId/benefit?business_id= — pay the line with a
+// membership or package, or normally again (null)
+checkoutRouter.put('/orders/:id/items/:itemId/benefit', requirePermission('bookings:*'), validate(lineBenefitSchema), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const line = await lineOfOrder(req.params.id, req.params.itemId, businessId);
+    if (!line) { error(res, 'Line not found', 'NOT_FOUND', 404); return; }
+    if (line.status !== 'open') { error(res, 'The order is already paid.', 'CONFLICT', 409); return; }
+    const { setLineBenefit } = await import('../services/benefits.service');
+    await setLineBenefit(req.params.itemId, req.body.benefit, (req as AuthenticatedRequest).user.sub);
+    success(res, await checkoutService.getOrder(req.params.id));
+  } catch (err: any) {
+    if (err?.name === 'BenefitError') { error(res, err.message, err.code, err.code === 'NOT_FOUND' ? 404 : err.code === 'NOT_COVERED' ? 409 : 400); return; }
+    console.error('Failed to set the membership or package', err?.message || err); error(res, 'Failed to set the membership or package', 'INTERNAL_ERROR', 500);
   }
 });
 

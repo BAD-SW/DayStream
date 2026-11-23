@@ -15,6 +15,7 @@ import type { Order, OrderItem } from '../api/checkout';
 import { formatCurrency } from '../utils/currency';
 import { formatDateOnly } from '../utils/date';
 import { TipPanel } from '../components/TipPanel';
+import { LineBenefitPicker } from '../components/LineBenefitPicker';
 import { getLocations } from '../api/locations';
 import type { Location } from '../api/locations';
 import { getLocationStock } from '../api/inventory';
@@ -73,6 +74,8 @@ export function Checkout() {
   const [offerings, setOfferings] = useState<{ services: any[]; products: any[]; memberships: any[]; packages: any[] }>({ services: [], products: [], memberships: [], packages: [] });
   const [showAddItem, setShowAddItem] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  // The line whose membership or package picker is open (spec 51, gap 19).
+  const [benefitLineId, setBenefitLineId] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
   // Branded receipt actions shown once the order is paid.
   const [receiptBusy, setReceiptBusy] = useState(false);
@@ -203,7 +206,7 @@ export function Checkout() {
     const loadOfferings = async () => {
       const { apiClient } = await import('../api/client');
       const results = { services: [] as any[], products: [] as any[], memberships: [] as any[], packages: [] as any[] };
-      try { const r = await (await import('../api/services')).getServices(businessId); const l = (r as any).data || r; results.services = Array.isArray(l) ? l : []; } catch {}
+      try { const r = await (await import('../api/services')).getServices(businessId, { status: 'active', limit: 100 }); const l = (r as any).data || r; results.services = Array.isArray(l) ? l : []; } catch {}
       try { const r = await apiClient.get(`/v1/merchandise?business_id=${businessId}&limit=100`); results.products = r.data.data || []; } catch {}
       try { const r = await apiClient.get(`/v1/memberships/plans?business_id=${businessId}&limit=100`); results.memberships = r.data.data || []; } catch {}
       try { const r = await apiClient.get(`/v1/packages?business_id=${businessId}&limit=100`); results.packages = r.data.data || []; } catch {}
@@ -273,8 +276,10 @@ export function Checkout() {
     try {
       const updated = await checkoutApi.removeItem(order.id, item.id);
       setOrder(updated);
-    } catch { /* silent */ }
+    } catch (err) { alert(errText(err, 'The item could not be removed.')); }
   };
+  // The service of the appointment being checked out stays on the order (owner, 23 Nov 2026).
+  const isBookingService = (item: OrderItem) => item.item_type === 'service' && !!item.booking_id && item.booking_id === order?.booking_id;
 
   // Load the business's accepted methods (availability resolver) and, when the
   // order has a customer, that customer's stored methods for processed payments.
@@ -496,6 +501,8 @@ export function Checkout() {
   const isOpen = order.status === 'open';
   // What the customer pays: the sale and its tip (spec 51, gap 14).
   const payable = order.total_amount + (order.tip_amount || 0);
+  // A line paid (or to be paid) with a membership or package (spec 51, gap 19).
+  const canUseBenefit = (item: OrderItem) => isOpen && !!order.customer_id && (item.item_type === 'service' || item.item_type === 'product') && !!item.item_id;
   // Paid at reservation, nothing else sold and no tip: the appointment is just finished.
   const nothingToPay = !!order.prepaid_order_number && order.items.length === 0 && !((order.tip_amount || 0) > 0);
   const isCompleted = order.status === 'completed';
@@ -631,6 +638,7 @@ export function Checkout() {
                     <span style={styles.itemTypeLabel}>{item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1)}:</span>{' '}
                     <strong>{item.item_name}</strong>
                     {item.credited_name && <div style={styles.overrideInline}>Credit: {item.credited_name}</div>}
+                    {item.paid_with && <div style={styles.overrideInline}>Paid with {item.paid_with}</div>}
                   </td>
                   <td style={styles.td}>{item.variant_name || '—'}</td>
                   <td style={styles.tdRight}>{item.quantity}</td>
@@ -716,6 +724,19 @@ export function Checkout() {
                       {item.credited_to && item.credited_to !== order.credited_to && (
                         <div style={styles.overrideInline}>Credit: {item.credited_first_name} {item.credited_last_name}</div>
                       )}
+                      {/* Paid with a membership or package (spec 51, gap 19): which one, and change it */}
+                      {item.benefit && (
+                        <div style={{ ...styles.overrideInline, color: 'var(--color-success, var(--color-text))' }}>
+                          Paid with {item.benefit.name}
+                          {canUseBenefit(item) && benefitLineId !== item.id && <> · <button type="button" style={styles.linkBtn} onClick={() => setBenefitLineId(item.id)}>Change</button></>}
+                        </div>
+                      )}
+                      {!item.benefit && canUseBenefit(item) && benefitLineId !== item.id && (
+                        <div><button type="button" style={styles.linkBtn} onClick={() => setBenefitLineId(item.id)}>Pay with membership or package</button></div>
+                      )}
+                      {benefitLineId === item.id && (
+                        <LineBenefitPicker order={order} itemId={item.id} businessId={businessId} onChanged={setOrder} onClose={() => setBenefitLineId(null)} />
+                      )}
                     </td>
                     <td style={styles.td}>{item.variant_name || '—'}</td>
                     <td style={styles.tdRight}>{item.quantity}</td>
@@ -730,7 +751,7 @@ export function Checkout() {
                     {isOpen && (
                       <td style={{ ...styles.tdRight, whiteSpace: 'nowrap' as const, verticalAlign: 'middle' as const }}>
                         <button style={styles.editBtn} onClick={() => setEditingItemId(item.id)} title="Edit">✏️</button>
-                        <button style={styles.removeBtn} onClick={() => handleRemoveItem(item)} title="Remove">✕</button>
+                        {!isBookingService(item) && <button style={styles.removeBtn} onClick={() => handleRemoveItem(item)} title="Remove" aria-label={`Remove ${item.item_name}`}>✕</button>}
                       </td>
                     )}
                   </tr>
@@ -781,7 +802,7 @@ export function Checkout() {
 
       {/* Tip (spec 51, gap 14): before the payment, when the business takes tips */}
       {isOpen && tipSettings?.enabled && (order.items.length > 0 || order.prepaid?.status === 'completed')
-        && (order.total_amount > 0 || (order.prepaid?.status === 'completed' && order.prepaid.total_amount > 0) || (order.tip_amount || 0) > 0) && (
+        && ((order.tip_base?.total ?? order.total_amount) > 0 || (order.prepaid?.status === 'completed' && order.prepaid.total_amount > 0) || (order.tip_amount || 0) > 0) && (
         <TipPanel order={order} businessId={businessId} settings={tipSettings} locked={!!oneTimeSession} onChange={setOrder} />
       )}
 
@@ -946,7 +967,7 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
   onAdded: (order: Order, lineName: string) => void;
   onCancel: () => void;
 }) {
-  const [itemType, setItemType] = useState<'product' | 'membership' | 'package' | 'gift_card'>('product');
+  const [itemType, setItemType] = useState<'service' | 'product' | 'membership' | 'package' | 'gift_card'>('product');
   const [selectedId, setSelectedId] = useState('');
   const [variants, setVariants] = useState<any[]>([]);
   const [selectedVariantId, setSelectedVariantId] = useState('');
@@ -984,7 +1005,9 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
     return () => { cancelled = true; };
   }, [itemType]);
 
-  const itemList = itemType === 'product' ? offerings.products
+  // Services sold at the visit as well (owner, 23 Nov 2026): the active ones, priced by their options.
+  const itemList = itemType === 'service' ? offerings.services.filter((s: any) => !s.status || s.status === 'active')
+    : itemType === 'product' ? offerings.products
     : itemType === 'membership' ? offerings.memberships
     : offerings.packages;
 
@@ -999,6 +1022,15 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
           const v = res.data.data || [];
           setVariants(v);
           setSelectedVariantId('');
+        }).catch(() => setVariants([]));
+      });
+    } else if (itemType === 'service' && selectedId) {
+      // A service's options carry its price (and length); the only option is chosen for you.
+      import('../api/services').then((svcApi) => {
+        svcApi.getVariants(selectedId).then((v) => {
+          const list = (v || []).filter((x: any) => !x.status || x.status === 'active');
+          setVariants(list);
+          setSelectedVariantId(list.length === 1 ? list[0].id : '');
         }).catch(() => setVariants([]));
       });
     } else {
@@ -1045,7 +1077,8 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
       } catch { /* proceed if check fails */ }
     }
 
-    const price = selectedVariant?.price ?? selectedItem.price;
+    if (itemType === 'service' && variants.length > 0 && !selectedVariant) { alert('Choose an option for the service.'); return; }
+    const price = selectedVariant?.price ?? selectedItem.price ?? 0;
     const variantName = selectedVariant?.name || undefined;
 
     setSaving(true);
@@ -1085,6 +1118,7 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
       <div style={{ ...styles.lineItem, background: 'var(--color-background)', borderRadius: 'var(--radius-md)', padding: '12px' }}>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <select style={styles.inlineSelect} value={itemType} onChange={(e) => { setItemType(e.target.value as any); setSelectedId(''); }}>
+            <option value="service">Service</option>
             <option value="product">Product</option>
             <option value="membership">Membership</option>
             <option value="package">Package</option>
@@ -1118,6 +1152,7 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
     <div style={{ ...styles.lineItem, background: 'var(--color-background)', borderRadius: 'var(--radius-md)', padding: '12px' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr auto 45px 120px auto', gap: '6px', alignItems: 'center' }}>
         <select style={styles.inlineSelect} value={itemType} onChange={(e) => { setItemType(e.target.value as any); setSelectedId(''); }}>
+          <option value="service">Service</option>
           <option value="product">Product</option>
           <option value="membership">Membership</option>
           <option value="package">Package</option>
@@ -1129,14 +1164,14 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
             const s = isProduct ? stockOf(item.id, undefined) : null;
             return (
               <option key={item.id} value={item.id} disabled={s?.onHand === 0}>
-                {item.name} — {formatCurrency(item.price)}{s ? ` · ${stockText(s)}` : ''}
+                {item.name}{itemType === 'service' ? (item.min_price != null ? ` — from ${formatCurrency(item.min_price)}` : '') : ` — ${formatCurrency(item.price)}`}{s ? ` · ${stockText(s)}` : ''}
               </option>
             );
           })}
         </select>
         {variants.length > 0 ? (
           <select style={{ ...styles.inlineSelect, minWidth: '110px' }} value={selectedVariantId} onChange={(e) => setSelectedVariantId(e.target.value)}>
-            {stockOf(selectedId, undefined) !== null
+            {itemType === 'service' || stockOf(selectedId, undefined) !== null
               ? <option value="">— Choose an option —</option>
               : <option value="">Base ({formatCurrency(selectedItem?.price || 0)})</option>}
             {variants.map((v: any) => {
@@ -1156,7 +1191,7 @@ function InlineAddItem({ orderId, offerings, staffList, customerId, stockOf, max
           ))}
         </select>
         <div style={{ display: 'flex', gap: '4px' }}>
-          <Button size="sm" onClick={handleAdd} loading={saving} disabled={!selectedId || needsOption || maxQty === 0}>Add</Button>
+          <Button size="sm" onClick={handleAdd} loading={saving} disabled={!selectedId || needsOption || maxQty === 0 || (itemType === 'service' && variants.length > 0 && !selectedVariantId)}>Add</Button>
           <Button variant="secondary" size="sm" onClick={onCancel}>✕</Button>
         </div>
       </div>
@@ -1329,6 +1364,7 @@ const styles: Record<string, React.CSSProperties> = {
   lineItem: { borderBottom: '1px solid var(--color-border)', padding: '12px 0', display: 'flex', flexDirection: 'column' as const, gap: '6px' },
   lineItemMain: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   lineItemInfo: { display: 'flex', alignItems: 'center', flexWrap: 'wrap' as const, gap: '4px' },
+  linkBtn: { background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', cursor: 'pointer', fontSize: 'var(--font-size-xs)', fontFamily: 'var(--font-family)', textDecoration: 'underline' },
   itemTypeLabel: { fontSize: 'var(--font-size-sm)', fontWeight: 500, color: 'var(--color-text-secondary)', minWidth: '80px' },
   overrideInline: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginLeft: '12px', fontStyle: 'italic' as const },
   lineItemMeta: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },

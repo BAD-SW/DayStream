@@ -186,6 +186,31 @@ export async function refundOrderLines(args: {
       if (tipCents > tipLeft) throw new OrderRefundError(`Only ${(tipLeft / 100).toFixed(2)} of the tip is left to refund`, 'INVALID_TIP');
       totalRefund += tipCents;
     }
+    // Lines paid with a membership or package cost nothing, so refunding them moves no money:
+    // the item comes back and so does the allowance it used (spec 51, gap 19, criterion 7).
+    const { rows: benefitRows } = await client.query(
+      `SELECT DISTINCT order_item_id FROM pay_benefit_uses WHERE order_item_id = ANY($1::uuid[]) AND status = 'used'`, [itemIds]);
+    const benefitPaid = new Set(benefitRows.map((r: { order_item_id: string }) => r.order_item_id));
+    // Fully returned lines give back what they used, once the refund is saved.
+    const giveBack = computed.filter((c) => benefitPaid.has(c.item.id) && c.qty === c.item.quantity - c.item.refunded_quantity).map((c) => c.item.id as string);
+    if (totalRefund <= 0 && computed.length > 0 && computed.every((c) => benefitPaid.has(c.item.id))) {
+      for (const c of computed) {
+        await client.query('UPDATE fin_order_items SET refunded_quantity = refunded_quantity + $1 WHERE id = $2', [c.qty, c.item.id]);
+        if (c.item.item_type === 'product') {
+          const { returnFromRefund } = await import('./inventory.service');
+          const asked = lines.find((l) => l.orderItemId === c.item.id);
+          await returnFromRefund(client, { orderId, orderItemId: c.item.id, qty: c.qty, restock: asked?.restock !== false, userId: processedBy });
+        }
+      }
+      const { rows: left } = await client.query(
+        `SELECT COALESCE(SUM(quantity - refunded_quantity), 0)::int AS remaining_qty FROM fin_order_items WHERE order_id = $1`, [orderId]);
+      const benefitStatus = left[0].remaining_qty <= 0 ? 'refunded' : 'partially_refunded';
+      await client.query(`UPDATE fin_orders SET status = $1, updated_at = NOW() WHERE id = $2`, [benefitStatus, orderId]);
+      await client.query('COMMIT');
+      const { releaseUsedForOrderItem } = await import('./benefits.service');
+      for (const id of giveBack) await releaseUsedForOrderItem(id);
+      return { refundTransactionId: '', referenceNumber: '', status: 'completed', amountCents: 0, orderStatus: benefitStatus };
+    }
     if (totalRefund <= 0) throw new OrderRefundError('Nothing to refund', 'NOTHING_TO_REFUND');
     if (toCredit && !order.customer_id) throw new OrderRefundError('Account credit needs a customer on the order', 'CUSTOMER_REQUIRED');
 
@@ -293,6 +318,12 @@ export async function refundOrderLines(args: {
     await client.query(`UPDATE fin_orders SET status = $1, updated_at = NOW() WHERE id = $2`, [newStatus, orderId]);
 
     await client.query('COMMIT');
+
+    // What the returned lines used of a membership or package is given back (spec 51, gap 19).
+    if (giveBack.length > 0) {
+      const { releaseUsedForOrderItem } = await import('./benefits.service');
+      for (const id of giveBack) await releaseUsedForOrderItem(id).catch((e) => logger.warn(`Order refund ${reference}: allowance not given back: ${e?.message || e}`));
+    }
 
     // Post the per-line GL reversal after commit (non-blocking).
     await postOrderRefundJournal(businessId, orderId, refundTxnId, computed, order.order_number, toCredit, tipCents).catch((e) =>
