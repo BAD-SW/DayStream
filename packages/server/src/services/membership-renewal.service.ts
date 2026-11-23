@@ -10,6 +10,7 @@ import { getRetrySchedule, getReminderDaysBefore } from './dunning-schedule';
 import { postPaymentJournalEntry } from './payment-journal.service';
 import { canContact } from './contactability.service';
 import { createActivity } from './customer-activity.service';
+import { logAudit } from './audit.service';
 import type { MethodOwner } from './payment-methods.service';
 
 /**
@@ -42,6 +43,7 @@ export interface RenewalSummary {
   pending: number;    // charge accepted but settling async (bank debit)
   failed: number;     // charge declined/failed → dunning opened
   skipped: number;    // no stored method, or no connection/setup issue
+  closed?: number;    // cancelled memberships ended because their paid period is over
 }
 
 interface DueEnrollment {
@@ -65,7 +67,7 @@ export async function runMembershipRenewals(
   businessId: string, today: Date = new Date(), _executionId: string | null = null,
   from?: string, to?: string,
 ): Promise<RenewalSummary> {
-  const summary: RenewalSummary = { businessId, due: 0, charged: 0, pending: 0, failed: 0, skipped: 0 };
+  const summary: RenewalSummary = { businessId, due: 0, charged: 0, pending: 0, failed: 0, skipped: 0, closed: 0 };
 
   // Resolve the business's tenant + currency once (enrollments carry neither).
   const { rows: bizRows } = await adminPool.query(
@@ -80,6 +82,11 @@ export async function runMembershipRenewals(
   const currency: string = bizRows[0].currency || (await resolveBusinessCurrency(businessId));
 
   const todayStr = today.toISOString().split('T')[0];
+
+  // A membership cancelled to end at the close of its period runs through the period already paid
+  // for; once that period is over, this run ends it (owner, 23 Nov 2026). Cancel sets cancelled_at
+  // and stops billing, and nothing else ever changed the status, so it stayed "active" for good.
+  summary.closed = await closeEndedMemberships(businessId, tenantId, today);
 
   // Which enrollments are "due" depends on how the run was triggered:
   //
@@ -626,4 +633,35 @@ export async function runBusinessBillingNow(
   // window end keeps a manual run's reminders consistent with its dunning pass.
   const reminders = await scheduleRenewalReminders(businessId, effectiveToday);
   return { autoResumed, renewals, dunning, reminders };
+}
+
+/**
+ * End the memberships of a business that were cancelled and whose paid period is over (its last
+ * day is before today in the business's time zone): status cancelled, with a timeline entry and an
+ * audit entry for each. Returns how many were ended.
+ */
+export async function closeEndedMemberships(businessId: string, tenantId: string, today: Date = new Date()): Promise<number> {
+  const { rows: tz } = await adminPool.query("SELECT COALESCE(timezone, 'UTC') AS tz FROM sys_businesses WHERE id = $1", [businessId]);
+  const localToday = today.toLocaleDateString('sv-SE', { timeZone: tz[0]?.tz || 'UTC' });
+  const { rows: ended } = await adminPool.query(
+    `UPDATE mbr_enrollments e SET status = 'cancelled', next_billing_date = NULL, updated_at = NOW()
+       FROM mbr_plans p
+      WHERE p.id = e.plan_id AND e.business_id = $1 AND e.status IN ('active', 'paused')
+        AND e.cancelled_at IS NOT NULL AND e.current_period_end < $2::date
+      RETURNING e.id, e.customer_id, p.name AS plan_name,
+                to_char(e.cancelled_at, 'YYYY-MM-DD') AS cancelled_on, to_char(e.current_period_end, 'YYYY-MM-DD') AS ended_on`,
+    [businessId, localToday]);
+  for (const r of ended as Array<{ id: string; customer_id: string; plan_name: string; cancelled_on: string; ended_on: string }>) {
+    await createActivity({
+      customerId: r.customer_id, businessId, activityType: 'membership',
+      description: `${r.plan_name} membership ended on ${r.ended_on} (cancelled on ${r.cancelled_on})`,
+      metadata: { enrollment_id: r.id, cancelled_on: r.cancelled_on, ended_on: r.ended_on },
+    }).catch(() => undefined);
+    await logAudit({
+      tenantId, action: 'membership.ended', resourceType: 'mbr_enrollment', resourceId: r.id,
+      details: { reason: 'cancelled, period over', cancelled_on: r.cancelled_on, ended_on: r.ended_on },
+    }).catch(() => undefined);
+  }
+  if (ended.length > 0) logger.info(`Membership renewals: ended ${ended.length} cancelled membership(s) for business ${businessId}`);
+  return ended.length;
 }
