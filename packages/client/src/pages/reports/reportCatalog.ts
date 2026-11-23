@@ -99,6 +99,8 @@ export const REPORT_CATALOG: ReportCategory[] = [
       { id: 'commissions', title: 'Commissions', description: 'Commission earned per order, by staff', icon: '💵' },
       { id: 'payroll-summary', title: 'Payroll Summary', description: 'Gross pay by staff and period, with line-item detail of base and commission', icon: '🧮' },
       { id: 'timesheet', title: 'Timesheet', description: 'Clocked hours by staff and day, with breaks', icon: '⏱️' },
+      // Spec 51, gap 14
+      { id: 'tips', title: 'Tips', description: 'Tips collected, refunded, paid and owed per staff member', icon: '🙏' },
     ],
   },
   {

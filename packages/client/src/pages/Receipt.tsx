@@ -94,7 +94,9 @@ export function Receipt() {
         <Button variant="secondary" size="sm" onClick={() => navigate(-1 as any)}>{labels.back}</Button>
         <div style={{ display: 'flex', gap: '8px' }}>
           {(order.status === 'completed' || order.status === 'partially_refunded')
-            && order.items.some((it) => checkoutApi.REFUNDABLE_ITEM_TYPES.has(it.item_type) && it.quantity - (it.refunded_quantity || 0) > 0) && (
+            && (order.items.some((it) => checkoutApi.REFUNDABLE_ITEM_TYPES.has(it.item_type) && it.quantity - (it.refunded_quantity || 0) > 0)
+              // a tip left to refund (spec 51, gap 14)
+              || (order.tip_amount || 0) - (order.tip_refunded_cents || 0) > 0) && (
             <Button variant="destructive" size="sm" onClick={() => setShowRefund(true)}>Refund</Button>
           )}
           <Button variant="secondary" size="sm" onClick={handlePrint}>{labels.print}</Button>

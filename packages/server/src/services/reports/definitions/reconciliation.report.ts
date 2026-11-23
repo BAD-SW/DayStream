@@ -95,7 +95,8 @@ export const reconciliationReport: ReportDefinition = {
       payments AS (
         SELECT d, SUM(amount)::int AS amount FROM (
           -- (a) completed order payments (one row per order), excluded methods out
-          SELECT o.completed_at::date AS d, o.total_amount AS amount
+          -- (the sale and its tip: a tip is money taken, not a sale; spec 51, gap 14)
+          SELECT o.completed_at::date AS d, o.total_amount + o.tip_amount AS amount
             FROM fin_orders o
            WHERE o.business_id = $1 AND o.status IN ('completed', 'partially_refunded', 'refunded')
              AND o.payment_method NOT IN ('gift_card', 'other', 'account_credit')

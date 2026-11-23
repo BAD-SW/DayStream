@@ -226,7 +226,7 @@ function drawDetailsTable(
     const rowTop = y;
     doc.text(row.description || '—', left, rowTop, { width: qtyX - left - 8 });
     const descBottom = doc.y;
-    doc.text(String(row.qty), qtyX, rowTop, { width: 50, align: 'right' });
+    doc.text(row.qty == null ? '' : String(row.qty), qtyX, rowTop, { width: 50, align: 'right' });
     doc.text(money(row.amountCents), amtX, rowTop, { width: 90, align: 'right' });
     y = Math.max(descBottom, rowTop + 12) + 4;
   }

@@ -4,6 +4,7 @@ import { Button } from '../design-system/components/actions/Button';
 import * as checkoutApi from '../api/checkout';
 import type { Order, OrderItem } from '../api/checkout';
 import { formatCurrency } from '../utils/currency';
+import { CurrencyInput } from './CurrencyInput';
 
 /**
  * RefundOrderModal — line-item (order) refund, shared by the Receipt page and the
@@ -28,6 +29,8 @@ export function RefundOrderModal({ businessId, order: orderProp, orderId, onClos
   const [qty, setQty] = useState<Record<string, number>>({});
   // A product taken from stock goes back into stock unless staff write it off (spec 51, gap 7).
   const [writeOff, setWriteOff] = useState<Record<string, boolean>>({});
+  // The tip, refunded as its own line (spec 51, gap 14): how much of what is left.
+  const [tipRefund, setTipRefund] = useState(0);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,8 +53,9 @@ export function RefundOrderModal({ businessId, order: orderProp, orderId, onClos
 
   const remainingOf = (it: OrderItem) => it.quantity - (it.refunded_quantity || 0);
   const perUnit = (it: OrderItem) => Math.round(it.total_price / it.quantity);
-  const estTotal = refundable.reduce((sum, it) => sum + perUnit(it) * (qty[it.id] || 0), 0);
-  const anySelected = refundable.some((it) => (qty[it.id] || 0) > 0);
+  const tipLeft = Math.max(0, (order?.tip_amount || 0) - (order?.tip_refunded_cents || 0));
+  const estTotal = refundable.reduce((sum, it) => sum + perUnit(it) * (qty[it.id] || 0), 0) + Math.min(tipRefund, tipLeft);
+  const anySelected = refundable.some((it) => (qty[it.id] || 0) > 0) || tipRefund > 0;
 
   const setLineQty = (id: string, v: number, max: number) =>
     setQty((prev) => ({ ...prev, [id]: Math.max(0, Math.min(max, v)) }));
@@ -62,10 +66,10 @@ export function RefundOrderModal({ businessId, order: orderProp, orderId, onClos
     const lines = refundable
       .filter((it) => (qty[it.id] || 0) > 0)
       .map((it) => ({ order_item_id: it.id, quantity: qty[it.id], ...(it.from_stock ? { restock: !writeOff[it.id] } : {}) }));
-    if (lines.length === 0) { setError('Select at least one item to refund.'); return; }
+    if (lines.length === 0 && tipRefund <= 0) { setError('Select at least one item, or the tip, to refund.'); return; }
     setBusy(true); setError(null);
     try {
-      const res = await checkoutApi.refundOrder(order.id, businessId, reason.trim(), lines);
+      const res = await checkoutApi.refundOrder(order.id, businessId, reason.trim(), lines, Math.min(tipRefund, tipLeft));
       if (res.status === 'failed') { setError(res.failureReason || 'The refund was declined.'); return; }
       onRefunded();
     } catch (err: any) {
@@ -79,7 +83,7 @@ export function RefundOrderModal({ businessId, order: orderProp, orderId, onClos
     <Modal open onClose={onClose} title={title}
       footer={<>
         <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button variant="destructive" loading={busy} disabled={loading || !order || refundable.length === 0} onClick={submit}>
+        <Button variant="destructive" loading={busy} disabled={loading || !order || (refundable.length === 0 && tipLeft === 0)} onClick={submit}>
           Refund {estTotal > 0 ? formatCurrency(estTotal) : ''}
         </Button>
       </>}>
@@ -88,7 +92,7 @@ export function RefundOrderModal({ businessId, order: orderProp, orderId, onClos
           <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>Loading order…</p>
         ) : !order ? (
           <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: 0 }}>{error || 'Order not found.'}</p>
-        ) : refundable.length === 0 ? (
+        ) : refundable.length === 0 && tipLeft === 0 ? (
           <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
             Nothing left to refund on this order. (Services, memberships, packages and gift cards are not refundable.)
           </p>
@@ -133,6 +137,22 @@ export function RefundOrderModal({ businessId, order: orderProp, orderId, onClos
                   </div>
                 );
               })}
+              {tipLeft > 0 && (
+                // The tip is its own line: refunding items never refunds it (spec 51, gap 14).
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '8px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>Tip</span>
+                    <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
+                      {formatCurrency(tipLeft)} refundable · taken off what the staff are owed
+                    </span>
+                  </div>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+                    <CurrencyInput value={tipRefund} onChange={(v) => setTipRefund(Math.max(0, Math.min(v, tipLeft)))} style={{ width: '90px' }} />
+                    <button type="button" onClick={() => setTipRefund(tipLeft)}
+                      style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: 'var(--font-size-xs)', padding: 0, fontFamily: 'var(--font-family)' }}>All</button>
+                  </span>
+                </div>
+              )}
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

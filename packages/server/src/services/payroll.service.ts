@@ -74,6 +74,18 @@ export async function runPayroll(periodId: string, businessId: string, tenantId:
     [businessId, period.period_end, period.period_start],
   );
 
+  // Electronic tips owed up to the end of the period are part of gross pay (spec 51, gap 14); a
+  // staff member with tips but no pay rule still gets a line.
+  const { tipsOwedForPayroll } = await import('./tips.service');
+  const pe = period.period_end as unknown;
+  const periodEnd = pe instanceof Date
+    ? `${pe.getFullYear()}-${String(pe.getMonth() + 1).padStart(2, '0')}-${String(pe.getDate()).padStart(2, '0')}`
+    : String(pe).slice(0, 10);
+  const tipsForStaff = await tipsOwedForPayroll(businessId, periodEnd);
+  for (const userId of tipsForStaff.keys()) {
+    if (!staffWithRules.some((s: { user_id: string }) => s.user_id === userId)) staffWithRules.push({ user_id: userId });
+  }
+
   const entries: any[] = [];
   let totalGross = 0;
   let totalDeductions = 0;
@@ -156,6 +168,12 @@ export async function runPayroll(periodId: string, businessId: string, tenantId:
     if (orderCommission.perSession !== 0) {
       breakdown.push({ type: 'per_session', basis: 'orders', amount: orderCommission.perSession });
       grossPay += orderCommission.perSession;
+    }
+    // Tips paid electronically: their own line; the shares are kept so finalising marks them paid.
+    const tips = tipsForStaff.get(userId);
+    if (tips && tips.cents !== 0) {
+      breakdown.push({ type: 'tips', basis: 'electronic', amount: tips.cents, shares: tips.shares });
+      grossPay += tips.cents;
     }
 
     // Apply deductions (manual deductions + auto tax calculations)
@@ -267,6 +285,23 @@ export async function finalizePayroll(periodId: string, businessId: string, user
       'SELECT COALESCE(SUM(gross_pay), 0)::int AS gross FROM fin_payroll_entries WHERE pay_period_id = $1', [periodId],
     );
     const gross = tot[0].gross;
+    // Tips in this run (spec 51, gap 14): no longer owed once it is final; on the books they come
+    // out of Tips Payable, not wages.
+    const { rows: tipEntries } = await adminPool.query('SELECT breakdown FROM fin_payroll_entries WHERE pay_period_id = $1', [periodId]);
+    let tipsCents = 0;
+    const tipShares: Array<{ id: string; cents: number }> = [];
+    for (const e of tipEntries) {
+      const b = typeof e.breakdown === 'string' ? JSON.parse(e.breakdown) : e.breakdown;
+      for (const line of (b?.compensation || []) as Array<{ type: string; amount: number; shares?: Array<{ id: string; cents: number }> }>) {
+        if (line.type !== 'tips') continue;
+        tipsCents += line.amount;
+        tipShares.push(...(line.shares || []));
+      }
+    }
+    if (tipShares.length) {
+      const { markTipsPaid } = await import('./tips.service');
+      await markTipsPaid(periodId, tipShares);
+    }
     const { rows: posted } = await adminPool.query(
       `SELECT 1 FROM fin_journal_entries WHERE reference_type = 'payroll' AND reference_id = $1 AND is_void = false LIMIT 1`, [periodId],
     );
@@ -278,10 +313,11 @@ export async function finalizePayroll(periodId: string, businessId: string, user
         [businessId],
       );
       const { rows: acc } = await adminPool.query(
-        `SELECT code, id FROM fin_chart_of_accounts WHERE business_id = $1 AND code IN ('6050', '2200')`, [businessId],
+        `SELECT code, id FROM fin_chart_of_accounts WHERE business_id = $1 AND code IN ('6050', '2200', '2700')`, [businessId],
       );
       const wages = acc.find((a: any) => a.code === '6050')?.id;
       const payable = acc.find((a: any) => a.code === '2200')?.id;
+      const tipsPayable = acc.find((a: any) => a.code === '2700')?.id;
       if (wages && payable) {
         const period = rows[0];
         const { rows: entry } = await adminPool.query(
@@ -289,11 +325,28 @@ export async function finalizePayroll(periodId: string, businessId: string, user
            VALUES ($1, $2, $3, 'payroll', $4, $5) RETURNING id`,
           [businessId, period.period_end, `Payroll ${String(period.period_start).slice(0, 10)} to ${String(period.period_end).slice(0, 10)}`, periodId, userId],
         );
+        // Tips were already owed (2700): that part of gross pay is not a wages cost.
+        const tipsPart = tipsPayable ? tipsCents : 0;
         await adminPool.query(
           `INSERT INTO fin_journal_entry_lines (journal_entry_id, account_id, debit, credit, description)
-           VALUES ($1, $2, $3, 0, 'Gross pay'), ($1, $4, 0, $3, 'Net pay, withholding and deductions owed')`,
-          [entry[0].id, wages, gross, payable],
+           VALUES ($1, $2, 0, $3, 'Net pay, withholding and deductions owed')`,
+          [entry[0].id, payable, gross],
         );
+        if (gross - tipsPart !== 0) {
+          await adminPool.query(
+            `INSERT INTO fin_journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES ($1, $2, $3, 0, 'Gross pay')`,
+            [entry[0].id, wages, gross - tipsPart]);
+        }
+        // Tips paid: Dr 2700. Tips given back (refunded after they were paid): Cr 2700.
+        if (tipsPart > 0) {
+          await adminPool.query(
+            `INSERT INTO fin_journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES ($1, $2, $3, 0, 'Tips paid to staff')`,
+            [entry[0].id, tipsPayable, tipsPart]);
+        } else if (tipsPart < 0) {
+          await adminPool.query(
+            `INSERT INTO fin_journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES ($1, $2, 0, $3, 'Refunded tips given back by staff')`,
+            [entry[0].id, tipsPayable, -tipsPart]);
+        }
       }
     }
   } catch (err: any) {

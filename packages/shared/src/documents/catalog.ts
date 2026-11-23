@@ -39,7 +39,8 @@ export const DETAILS_TABLE_TOKEN = 'details_table';
 /** One row of a document's line-item (details) table. */
 export interface DocumentTableRow {
   description: string;
-  qty: number;
+  /** null: a line with no quantity, such as Tax or Tip (shown blank). */
+  qty: number | null;
   /** Amount in minor units (cents). */
   amountCents: number;
 }

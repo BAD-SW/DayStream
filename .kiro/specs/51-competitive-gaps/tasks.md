@@ -168,8 +168,15 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 ## 14. Tips (Requirement 14)
 - [x] ✅ Confirm current state (no tip support; order total, charge, receipt, ledger, commission, payroll and refunds recorded in requirements.md)
 - [x] ✅ Requirements agreed with the owner (19 Nov 2026): off by default; offered at Checkout; one payment; cash tips a setting; Tips Payable; split by service value or evenly, as the business chooses, changeable before payment; Tips report; card and other electronic tips included in the pay run of their period (owner, 19 Nov 2026), cash tips handed over at the time; refunds
-- [ ] Design
-- [ ] Build
+- [x] ✅ Design written (design 14)
+- Build (design 14.8)
+  - [x] ✅ Migration 185, settings, tips service, Checkout tip panel and payment, receipt
+  - [x] ✅ Journal, refunds, payroll, Tips report
+  - [x] ✅ Suggested tips before tax (default) or including tax, a setting (migration 186); receipt items before tax with Tax and Tip lines, matching Checkout (owner, 22 Nov 2026)
+  - [x] ✅ Tip pool for tips with no staff member on the order (migration 187): Accounting > Payroll > Tip Pool, shared by hand, by hours clocked in or evenly among staff clocked in; cash journal on sharing; Tip pool section in the Tips report (owner, 22 Nov 2026)
+  - [x] ✅ The tip follows the order before payment (migration 188): a percentage tip is worked out again when lines, promo or credits change; a typed tip is kept; no lines, no tip; a split by hand is dropped when the staff change (owner, 23 Nov 2026)
+  - [x] ✅ Tip slider at Checkout from no tip to the highest percentage, starting at the business's default; settings for the default and the highest (migration 189) (owner, 23 Nov 2026)
+  - [x] ✅ A service paid at reservation shown at the visit, read only: tipped on, shared with its staff, not charged or posted again, on the visit's receipt with the earlier payment taken off (owner, 23 Nov 2026)
 - [ ] Verify live and close with the owner
 
 ## 15. Service and product add-ons (Requirement 15)

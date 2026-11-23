@@ -591,6 +591,87 @@ ALTER TABLE fin_orders ADD COLUMN location_id UUID REFERENCES sys_locations(id);
 
 ---
 
+## 14. Gap 14: Tips (Requirement 14)
+
+A tip is money the customer gives the staff who served them. It is charged with the sale, never counted as a sale, and owed to staff until it is handed over (cash) or paid in payroll (electronic).
+
+### 14.1 Data model
+
+```sql
+-- migration 185
+ALTER TABLE fin_orders ADD COLUMN tip_amount INTEGER NOT NULL DEFAULT 0 CHECK (tip_amount >= 0),
+                       ADD COLUMN tip_refunded_cents INTEGER NOT NULL DEFAULT 0,
+                       ADD COLUMN tip_split JSONB;            -- a split set by hand: [{user_id, amount_cents}]
+-- each staff member's share of a paid tip
+CREATE TABLE fin_tip_shares (id, tenant_id, business_id, order_id, user_id,
+  amount_cents, refunded_cents DEFAULT 0,
+  electronic BOOLEAN,                 -- card / direct debit / wallet / gift card: paid through payroll
+  status ('owed','handed_over','paid','pool','allocated'), pay_period_id NULL, paid_cents, paid_at,
+  from_pool_share_id NULL,           -- a staff share made by sharing out a pool share (migration 187)
+  created_at, updated_at);
+-- migration 187: user_id NULL for a pool share; CHECK ((user_id IS NULL) = (status IN ('pool','allocated')))
+-- account 2700 Tips Payable (liability), seeded for every business
+-- settings (sys_business_configurations): tips.enabled (false), tips.default_percent (15), tips.max_percent (30, migration 189),
+--   tips.on_manual (true), tips.split ('value' | 'even'), tips.base ('before_tax' | 'after_tax', migration 186)
+```
+
+- `fin_orders.total_amount` stays the sale total. What the customer pays is `total_amount + tip_amount`, so every sales figure (Sales by Item, Revenue, Reconciliation's Sales, commission) leaves tips out by itself.
+
+### 14.2 Checkout
+
+- With tipping on, Checkout shows a Tip panel above the payment: a slider from No tip to the business's highest percentage of the total (after discounts; before tax by default, or including tax, as the business chose), in 1% steps, showing the percentage and the amount; and a typed amount; then the total to pay. A new order starts at the business's default percentage and that tip is put on the order; moving the slider saves where it is let go; no tip is kept as 0% so the default is not put back (owner, 23 Nov 2026; migration 189 replaces `tips.percentages` with `tips.default_percent` and `tips.max_percent`). `PUT /checkout/orders/:id/tip { tip_cents, split? }` stores it on the open order; a cash or other manual payment with a tip is refused when the business allows tips on card only.
+- A suggested percentage is sent as `percent` and the server works the tip out from it; `fin_orders.tip_percent` keeps it (migration 188; NULL for a typed amount). Every change that recalculates the order's totals (a line added, changed or removed, a promo) calls `refreshOrderTip`, as does a change to the order's credit: a percentage tip is worked out again, an order with no lines has no tip, and a split by hand is dropped when the tip or the staff change (owner, 23 Nov 2026).
+- Who gets it is shown under the tip: the staff on the order's lines (a line's credit, else the order's), shared by the value of their lines or evenly, as the business chose; Change opens a split by hand (amounts that must add up to the tip).
+- The payment takes `total_amount + tip_amount` in every path: a saved card or bank account, a gift card, a walk-in's one-time card (the PaymentIntent is created for the sum), and cash, transfer and check (recorded).
+- On completion the shares are written: `electronic` for card, direct debit, wallets and gift card, else handed over at the time (status `handed_over`).
+- The receipt (screen, PDF and email) shows each item before tax, then Tax and Tip as lines of their own with no quantity, then the total paid (owner, 22 Nov 2026).
+
+### 14.3 Accounting
+
+- The order's journal entry debits Cash (or Gift Card Liability) for sale + tip and credits 2700 Tips Payable for the tip. A tip handed over in cash: Dr 2700 / Cr 1100 when the order is completed.
+- Payroll: when a pay run is calculated, each staff member's electronic tips collected in the period and not yet in a finalised run are a `tips` line of gross pay (a staff member with tips but no pay rule still gets an entry). Finalising the run marks those shares `paid` with the pay period; the payroll journal debits 2700 for the tips part of gross pay instead of the wages account.
+- A refunded tip: Dr 2700 / Cr Cash; each share's `refunded_cents` takes its part (in the same proportions); a share already paid in payroll, or handed over in cash, goes below zero on what is owed, and the next pay run takes it off (Cr 2700 in the payroll entry).
+
+### 14.4 Refunds
+
+- The refund window lists the tip as its own line (amount left to refund); it can be refunded alone or with product lines. Refunding product lines never touches the tip.
+
+### 14.5 Settings and report
+
+- Settings > Payment Methods > Tips: on or off, where the tip slider starts and its highest percentage, whether they are of the total before or including tax, tips on cash and manual payments (yes / card only), how a tip is shared (by service value / evenly).
+- Reports > Staff > Tips (date range): per staff member, tips collected (electronic, cash), refunded, paid (handed over and in payroll) and owed, with a detail of each tip (order, date, method, share).
+
+### 14.6 Tip pool
+
+- An order paid with a tip and no staff member on it writes one share with `user_id` NULL and status `pool` (owner, 22 Nov 2026). A cash pool tip stays in the till; its order entry makes no Dr 2700 / Cr 1100.
+- Accounting > Payroll > Tip Pool shows what is waiting (electronic and cash) and shares it for a date range (`start` optional, `end` required, the business's local days):
+  - `hand`: an amount per staff member; the amounts must add up to the pool for the dates.
+  - `hours`: each pool tip among the staff clocked in on its day (`computeDailyHours` from `clk_events`), by their minutes worked that day.
+  - `even`: each pool tip evenly among the staff clocked in on its day.
+  - By the clock, a tip from a day nobody was clocked in stays in the pool, and the preview lists those days.
+- `GET /checkout/tip-pool` (summary and staff), `POST /checkout/tip-pool/plan` (preview, nothing changes; `unassigned_cents` shows what is still to give out by hand) and `POST /checkout/tip-pool/share`, all `settings:*`.
+- Sharing, in one transaction: each part becomes a staff share of the same order with the tip's own date and `from_pool_share_id`: electronic `owed` (into the next pay run), cash `handed_over`. The pool share becomes `allocated`. Cash shared out posts one entry Dr 2700 / Cr 1100 (`reference_type 'tip_pool'`). A pool share that changed after the preview (a refund) stops the share with a conflict.
+- Refunds skip `allocated` pool shares and come off the staff shares made from them. Payroll reads staff shares only (`user_id IS NOT NULL`).
+- The Tips report has a Tip pool section: each pool tip with its amount, refunded, shared out and waiting. Shared-out parts are already in the staff sections, so the pool section is not added to them.
+
+### 14.7 A service paid at reservation
+
+- The service stays on the order that paid it (the reservation order); the visit's order holds only what is sold at the visit and the tip, so nothing is posted twice (owner, 23 Nov 2026). The alternative, copying the service onto the visit's order as a prepaid line with a credit, was rejected: every report, commission, stock, journal and refund path would have to skip those lines.
+- `prepaid-order.service.ts`: the reservation order is another completed (or refunded) order of the same booking holding the booking's service line. `getOrder` returns it as `prepaid` (number, date, method, totals, lines with their staff).
+- Checkout shows a read-only Paid at reservation card above the items: its lines, Paid amount and a link to its receipt. No edit or remove; refunds stay on that order.
+- Tip: the suggested percentages are of the visit's total plus the reservation order's (not when refunded); the staff on its lines share the tip with the visit's (`tipOrders` in `tips.service.ts`). With no lines of its own, a visit keeps its tip.
+- Paying: with nothing else sold and no tip, Finish appointment (as before). With a tip, the visit's order is paid for the tip alone; its journal entry is Dr Cash / Cr 2700 only.
+- Receipt (screen, PDF and email, one builder `orderReceiptRows`): the reservation order's lines before tax, the visit's lines, Tax, "Paid at reservation (ORD-…)" taking off what was paid then, the Tip; the total is what was paid at the visit.
+
+### 14.8 Build order
+
+1. Migration 185, settings, tips service (shares, split), Checkout tip panel and payment, receipt.
+2. Journal, refunds, payroll, Tips report.
+3. Tip pool (migration 187): pool shares, Tip Pool screen, sharing by hand or by the clock, report section.
+4. The tip follows the order (migration 188); a service paid at reservation shown at the visit and tipped on (14.7).
+5. Verification live with the owner.
+
+---
 ## 19. Paying with a membership or package (Requirement 19)
 
 One place decides what a customer's memberships and packages cover, holds the allowance for a booking, and counts it as used at payment. New Appointment, the payment step, the price shown while booking and Checkout all use it.

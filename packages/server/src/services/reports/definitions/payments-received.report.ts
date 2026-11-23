@@ -47,7 +47,8 @@ export const paymentsReceivedReport: ReportDefinition = {
         o.order_number AS reference,
         o.id AS order_id,
         'Payment' AS payment_type,
-        o.total_amount::int AS amount,
+        -- what was paid: the sale and its tip (spec 51, gap 14)
+        (o.total_amount + o.tip_amount)::int AS amount,
         o.completed_at AS sort_ts
 
       FROM fin_orders o

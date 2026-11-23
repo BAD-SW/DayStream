@@ -28,6 +28,23 @@ export interface OrderItem {
   refunded_amount_cents: number;
 }
 
+export interface PrepaidOrder {
+  id: string;
+  order_number: string;
+  status: 'completed' | 'refunded';
+  completed_at: string | null;
+  payment_method: string | null;
+  subtotal: number;
+  tax_amount: number;
+  discount_amount: number;
+  total_amount: number;
+  items: Array<{
+    id: string; item_type: string; item_name: string; variant_name: string | null; quantity: number;
+    unit_price: number; discount_amount: number; tax_amount: number; total_price: number;
+    credited_to: string | null; credited_name: string | null;
+  }>;
+}
+
 export interface Order {
   id: string;
   business_id: string;
@@ -38,6 +55,8 @@ export interface Order {
   booking_id: string | null;
   /** The order that already paid this order's appointment at reservation (spec 51, gap 5). */
   prepaid_order_number?: string | null;
+  /** The order that paid this appointment's service at reservation: shown read only, never charged again (spec 51, gap 14). */
+  prepaid?: PrepaidOrder | null;
   /** Where the sale happens; tracked products are sold from this location's stock (spec 51, gap 7). */
   location_id?: string | null;
   /** Set on the answer to adding or changing a line when its quantity was limited to what is on hand. */
@@ -48,6 +67,11 @@ export interface Order {
   tax_amount: number;
   discount_amount: number;
   total_amount: number;
+  /** The tip on top of the sale (spec 51, gap 14); what is paid is total_amount + tip_amount. */
+  tip_amount?: number;
+  tip_refunded_cents?: number;
+  /** The suggested percentage the tip was picked as (it follows the order); null when typed. */
+  tip_percent?: number | string | null;
   payment_method: string | null;
   payment_reference: string | null;
   credited_to: string | null;
@@ -183,8 +207,9 @@ export interface OrderRefundResult {
 export async function refundOrder(
   orderId: string, businessId: string, reason: string,
   lines: Array<{ order_item_id: string; quantity: number; restock?: boolean }>,
+  tipCents = 0,
 ): Promise<OrderRefundResult> {
-  const res = await apiClient.post(`/v1/checkout/orders/${orderId}/refund?business_id=${businessId}`, { reason, lines });
+  const res = await apiClient.post(`/v1/checkout/orders/${orderId}/refund?business_id=${businessId}`, { reason, lines, tip_cents: tipCents });
   return res.data.data;
 }
 
@@ -216,5 +241,58 @@ export async function removePromoCode(orderId: string, businessId: string): Prom
 
 export async function voidOrder(orderId: string, businessId: string): Promise<any> {
   const res = await apiClient.put(`/v1/checkout/orders/${orderId}/void?business_id=${businessId}`);
+  return res.data.data;
+}
+
+// --- Tips (spec 51, gap 14) ---
+
+/** default_percent / max_percent: the tip slider at Checkout starts at the default and goes from 0 to the highest (owner, 23 Nov 2026). */
+export interface TipSettings { enabled: boolean; default_percent: number; max_percent: number; on_manual: boolean; split: 'value' | 'even'; base: 'before_tax' | 'after_tax' }
+export interface TipShare { user_id: string; name: string; amount_cents: number }
+export interface OrderTip { tip_cents: number; by_hand: boolean; shares: TipShare[]; staff: Array<{ user_id: string; name: string }> }
+
+export async function getTipSettings(businessId: string): Promise<TipSettings> {
+  const res = await apiClient.get('/v1/checkout/tip-settings', { params: { business_id: businessId } });
+  return res.data.data;
+}
+export async function saveTipSettings(businessId: string, s: TipSettings): Promise<TipSettings> {
+  const res = await apiClient.put('/v1/checkout/tip-settings', s, { params: { business_id: businessId } });
+  return res.data.data;
+}
+export async function getOrderTip(orderId: string, businessId: string): Promise<OrderTip> {
+  const res = await apiClient.get(`/v1/checkout/orders/${orderId}/tip`, { params: { business_id: businessId } });
+  return res.data.data;
+}
+/** Set (or clear, with 0) the tip on an open order; a split by hand must add up to the tip. */
+export async function setOrderTip(orderId: string, businessId: string, tipCents: number, split?: Array<{ user_id: string; amount_cents: number }> | null, percent?: number | null): Promise<Order> {
+  const res = await apiClient.put(`/v1/checkout/orders/${orderId}/tip`, { tip_cents: tipCents, percent: percent ?? null, split: split ?? null }, { params: { business_id: businessId } });
+  return res.data.data;
+}
+
+// --- Tip pool: tips on orders with no staff member on them (spec 51, gap 14) ---
+
+export type TipPoolMode = 'hand' | 'hours' | 'even';
+export interface TipPoolSummary {
+  waiting_cents: number; electronic_cents: number; cash_cents: number; tips: number;
+  first_day: string | null; last_day: string | null;
+  staff: Array<{ user_id: string; name: string }>;
+}
+export interface TipPoolRequest { mode: TipPoolMode; start: string | null; end: string; amounts?: Array<{ user_id: string; amount_cents: number }> }
+export interface TipPoolPlan {
+  total_cents: number; left_cents: number; unassigned_cents: number; days_without_staff: string[];
+  staff: Array<{ user_id: string; name: string; amount_cents: number; hours: number }>;
+}
+
+export async function getTipPool(businessId: string): Promise<TipPoolSummary> {
+  const res = await apiClient.get('/v1/checkout/tip-pool', { params: { business_id: businessId } });
+  return res.data.data;
+}
+/** How the pool would be shared for these dates; nothing changes. */
+export async function planTipPool(businessId: string, req: TipPoolRequest): Promise<TipPoolPlan> {
+  const res = await apiClient.post('/v1/checkout/tip-pool/plan', req, { params: { business_id: businessId } });
+  return res.data.data;
+}
+export async function shareTipPool(businessId: string, req: TipPoolRequest): Promise<{ shared_cents: number; left_cents: number; staff: TipPoolPlan['staff'] }> {
+  const res = await apiClient.post('/v1/checkout/tip-pool/share', req, { params: { business_id: businessId } });
   return res.data.data;
 }

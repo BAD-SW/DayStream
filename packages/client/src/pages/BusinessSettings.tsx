@@ -13,6 +13,7 @@ import { TabBar } from '../design-system/components/navigation/TabBar';
 import { DraftSectionsProvider, DraftTab, useDraftSections, useDraft, draftBox, UnsavedTag, fieldMark, checkMark, toggleMark } from '../components/unsaved/DraftSections';
 import { LeaveGuard } from '../components/unsaved/LeaveGuard';
 import * as payApi from '../api/payments';
+import * as checkoutApi from '../api/checkout';
 import * as bookingsApi from '../api/bookings';
 import { BOOKINGS_VIEW_OPTIONS, getBookingsView, saveBusinessBookingsView } from '../api/bookingsView';
 import type { BookingsView } from '../api/bookingsView';
@@ -964,11 +965,83 @@ function PaymentMethodsSettings() {
       </div>
 
       <div style={{ borderTop: '1px solid var(--color-border)', margin: '32px 0 0', paddingTop: '24px' }}>
+        <TipsSetting businessId={businessId} />
+      </div>
+
+      <div style={{ borderTop: '1px solid var(--color-border)', margin: '32px 0 0', paddingTop: '24px' }}>
         <InvoicingSetting businessId={businessId} />
       </div>
 
       <div style={{ borderTop: '1px solid var(--color-border)', margin: '32px 0 0', paddingTop: '24px' }}>
         <BillingRunTimeSetting businessId={businessId} />
+      </div>
+    </div>
+  );
+}
+
+// --- Tips (spec 51, gap 14) ---
+type TipDraft = { enabled: boolean; defaultPercent: string; maxPercent: string; onManual: boolean; split: 'value' | 'even'; base: 'before_tax' | 'after_tax' };
+const tipDraftOf = (s: checkoutApi.TipSettings): TipDraft => ({
+  enabled: s.enabled, onManual: s.on_manual, split: s.split, base: s.base,
+  defaultPercent: String(s.default_percent), maxPercent: String(s.max_percent),
+});
+function TipsSetting({ businessId }: { businessId: string }) {
+  const [loading, setLoading] = useState(true);
+  const draft = useDraft<TipDraft>('tips', 'Payment Methods › Tips',
+    { enabled: false, defaultPercent: '15', maxPercent: '30', onManual: true, split: 'value', base: 'before_tax' }, async (d) => {
+      const def = Number(d.defaultPercent); const max = Number(d.maxPercent);
+      if (!Number.isInteger(max) || max < 1 || max > 100) throw new Error('The highest tip is a whole percentage from 1 to 100.');
+      if (!Number.isInteger(def) || def < 0 || def > max) throw new Error('The default tip is a whole percentage from 0 up to the highest tip.');
+      return tipDraftOf(await checkoutApi.saveTipSettings(businessId, { enabled: d.enabled, default_percent: def, max_percent: max, on_manual: d.onManual, split: d.split, base: d.base }));
+    });
+  const t = draft.value;
+  useEffect(() => {
+    if (!businessId) return;
+    checkoutApi.getTipSettings(businessId).then((s) => draft.load(tipDraftOf(s))).catch(() => {}).finally(() => setLoading(false));
+  }, [businessId, draft.load]);
+  if (loading) return null;
+  const pctInput = (k: 'defaultPercent' | 'maxPercent', label: string, min: number) => (
+    <input type="number" min={min} max={100} step={1} value={t[k]} aria-label={label}
+      onChange={(e) => draft.setValue({ ...t, [k]: e.target.value })}
+      style={{ width: '64px', padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-background)', color: 'var(--color-text)', ...fieldMark(draft.changed((v) => v[k])) }} />
+  );
+  return (
+    <div style={draftBox(draft.dirty)}>
+      <h2 style={styles.sectionTitle}>Tips<UnsavedTag dirty={draft.dirty} /></h2>
+      <p style={styles.description}>
+        Let customers add a tip when they pay at Checkout. A tip is charged with the sale, shown as its own line on the receipt,
+        and owed to the staff who served the customer: tips on card and other electronic payments are paid in payroll, tips on
+        cash are handed over at the time. Tips are never counted as sales.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: 'var(--font-size-sm)', color: 'var(--color-text)' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+          <input type="checkbox" checked={t.enabled} onChange={(e) => draft.setValue({ ...t, enabled: e.target.checked })} style={checkMark(draft.changed((v) => v.enabled))} />
+          Offer a tip at Checkout
+        </label>
+        {t.enabled && <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span>Tip slider starts at</span>{pctInput('defaultPercent', 'Default tip (%)', 0)}<span>%, up to</span>
+            {pctInput('maxPercent', 'Highest tip on the slider (%)', 1)}<span>% of the total</span>
+            <select aria-label="Tip percentages are of" value={t.base} onChange={(e) => draft.setValue({ ...t, base: e.target.value as TipDraft['base'] })}
+              style={{ padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-background)', color: 'var(--color-text)', ...fieldMark(draft.changed((v) => v.base)) }}>
+              <option value="before_tax">before tax</option>
+              <option value="after_tax">including tax</option>
+            </select>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+            <input type="checkbox" checked={t.onManual} onChange={(e) => draft.setValue({ ...t, onManual: e.target.checked })} style={checkMark(draft.changed((v) => v.onManual))} />
+            Allow a tip on cash and other manual payments (otherwise on card payments only)
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <label htmlFor="tips-split">When several staff served the customer, share the tip</label>
+            <select id="tips-split" value={t.split} onChange={(e) => draft.setValue({ ...t, split: e.target.value as TipDraft['split'] })}
+              style={{ padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-background)', color: 'var(--color-text)', ...fieldMark(draft.changed((v) => v.split)) }}>
+              <option value="value">by the value of each one's services</option>
+              <option value="even">evenly</option>
+            </select>
+          </div>
+          <p style={{ margin: 0, color: 'var(--color-text-secondary)' }}>Staff can change who gets a tip, or split it by hand, before the order is paid.</p>
+        </>}
       </div>
     </div>
   );

@@ -479,7 +479,7 @@ function renderDetailsTableHtml(
   const body = (table.rows || []).map((r) => `
     <tr>
       <td style="padding:6px 8px;border-bottom:1px solid #eee;">${escapeHtml(r.description)}</td>
-      <td align="right" style="padding:6px 8px;border-bottom:1px solid #eee;">${escapeHtml(String(r.qty))}</td>
+      <td align="right" style="padding:6px 8px;border-bottom:1px solid #eee;">${r.qty == null ? '' : escapeHtml(String(r.qty))}</td>
       <td align="right" style="padding:6px 8px;border-bottom:1px solid #eee;">${escapeHtml(money(r.amountCents))}</td>
     </tr>`).join('');
   const total = `
@@ -494,7 +494,7 @@ function renderDetailsTableHtml(
 /** Plain-text rendering of the details table for the text/plain fallback. */
 function renderDetailsTableText(table: DocumentDetailsTable, currencyLocale = 'en-US'): string {
   const money = (cents: number) => formatCurrency(cents, table.currency || 'EUR', currencyLocale);
-  const lines = (table.rows || []).map((r) => `  ${r.description}  x${r.qty}  ${money(r.amountCents)}`);
+  const lines = (table.rows || []).map((r) => `  ${r.description}${r.qty == null ? '' : `  x${r.qty}`}  ${money(r.amountCents)}`);
   lines.push(`  Total: ${money(table.totalCents)}`);
   return lines.join('\n');
 }

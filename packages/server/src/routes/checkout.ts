@@ -301,7 +301,9 @@ const refundOrderSchema = Joi.object({
     quantity: Joi.number().integer().min(1).required(),
     // a product line: back into stock (default) or written off (spec 51, gap 7)
     restock: Joi.boolean().default(true),
-  })).min(1).required(),
+  })).min(0).default([]),
+  // part or all of the order's tip, refunded as its own line (spec 51, gap 14)
+  tip_cents: Joi.number().integer().min(0).default(0),
 });
 
 // POST /api/v1/checkout/orders/:id/refund — partial / line-item refund of an order.
@@ -318,13 +320,14 @@ checkoutRouter.post('/orders/:id/refund', requirePermission('bookings:*'), valid
       lines: req.body.lines.map((l: any) => ({ orderItemId: l.order_item_id, quantity: l.quantity, restock: l.restock !== false })),
       reason: req.body.reason,
       processedBy: authReq.user.sub,
+      tipCents: req.body.tip_cents || 0,
     });
     success(res, result);
   } catch (err: any) {
     const codes: Record<string, number> = {
       REASON_REQUIRED: 400, NO_LINES: 400, ORDER_NOT_FOUND: 404, ORDER_NOT_REFUNDABLE: 409,
       LINE_NOT_FOUND: 404, INVALID_QUANTITY: 400, NOTHING_TO_REFUND: 400, NO_CONNECTION: 409,
-      ITEM_NOT_REFUNDABLE: 409,
+      ITEM_NOT_REFUNDABLE: 409, INVALID_TIP: 400,
     };
     if (err?.code && codes[err.code]) { error(res, err.message, err.code, codes[err.code]); return; }
     console.error('Failed to refund order', err?.message || err);
@@ -378,13 +381,140 @@ checkoutRouter.put('/orders/:id/complete', requirePermission('bookings:*'), vali
       PAYMENT_DECLINED: 402, CUSTOMER_REQUIRED: 400, INVALID_AMOUNT: 400, INVALID_METHOD: 400, METHOD_REQUIRED: 400,
       CODE_REQUIRED: 400, NO_CONNECTION: 409, METHOD_UNAVAILABLE: 409, GIFT_CARD_NOT_FOUND: 404,
       GIFT_CARD_INACTIVE: 409, GIFT_CARD_EXPIRED: 409, GIFT_CARD_CURRENCY: 409, GIFT_CARD_INSUFFICIENT: 409,
-      AMOUNT_MISMATCH: 400,
+      AMOUNT_MISMATCH: 400, TIP_CARD_ONLY: 400,
     };
     if (err?.code && PAYMENT_STATUS[err.code]) { error(res, err.message, err.code, PAYMENT_STATUS[err.code]); return; }
     // A tracked product no longer in stock (sold elsewhere since it was added): nothing was charged.
     if (err?.code === 'OUT_OF_STOCK' || err?.code === 'NOT_ENOUGH_STOCK') { error(res, err.message, err.code, 409); return; }
     if (err.message.includes('not open') || err.message.includes('empty') || err.message === 'Order not found') { error(res, err.message, 'CONFLICT', 409); }
     else { console.error('Failed to complete order', err?.message || err); error(res, 'Failed to complete order', 'INTERNAL_ERROR', 500); }
+  }
+});
+
+// --- Tips (spec 51, gap 14) ---
+
+const tipSettingsSchema = Joi.object({
+  enabled: Joi.boolean().required(),
+  // the tip slider: where it starts and its highest percentage (owner, 23 Nov 2026)
+  default_percent: Joi.number().integer().min(0).max(100).required(),
+  max_percent: Joi.number().integer().min(1).max(100).required(), // the default is kept within it
+  on_manual: Joi.boolean().required(),
+  split: Joi.string().valid('value', 'even').required(),
+  base: Joi.string().valid('before_tax', 'after_tax').default('before_tax'),
+});
+const tipSettingsOut = (s: { enabled: boolean; defaultPercent: number; maxPercent: number; onManual: boolean; split: string; base: string }) =>
+  ({ enabled: s.enabled, default_percent: s.defaultPercent, max_percent: s.maxPercent, on_manual: s.onManual, split: s.split, base: s.base });
+
+// GET /api/v1/checkout/tip-settings?business_id=
+checkoutRouter.get('/tip-settings', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { getTipSettings } = await import('../services/tips.service');
+    success(res, tipSettingsOut(await getTipSettings(businessId)));
+  } catch (err: any) { console.error('Failed to load tip settings', err?.message || err); error(res, 'Failed to load tip settings', 'INTERNAL_ERROR', 500); }
+});
+
+// PUT /api/v1/checkout/tip-settings?business_id=
+checkoutRouter.put('/tip-settings', requirePermission('settings:*'), validate(tipSettingsSchema), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { setTipSettings } = await import('../services/tips.service');
+    const b = req.body;
+    success(res, tipSettingsOut(await setTipSettings(businessId, (req as AuthenticatedRequest).user.sub,
+      { enabled: b.enabled, defaultPercent: b.default_percent, maxPercent: b.max_percent, onManual: b.on_manual, split: b.split, base: b.base })));
+  } catch (err: any) { console.error('Failed to save tip settings', err?.message || err); error(res, 'Failed to save tip settings', 'INTERNAL_ERROR', 500); }
+});
+
+// GET /api/v1/checkout/orders/:id/tip?business_id= — the tip, who gets it, and the staff who can
+checkoutRouter.get('/orders/:id/tip', requirePermission('bookings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { rows } = await adminPool.query('SELECT tip_amount FROM fin_orders WHERE id = $1 AND business_id = $2', [req.params.id, businessId]);
+    if (!rows[0]) { error(res, 'Order not found', 'NOT_FOUND', 404); return; }
+    const { sharesFor } = await import('../services/tips.service');
+    const out = await sharesFor(req.params.id);
+    success(res, { tip_cents: rows[0].tip_amount, by_hand: out.byHand, shares: out.shares, staff: out.staff });
+  } catch (err: any) { console.error('Failed to load the tip', err?.message || err); error(res, 'Failed to load the tip', 'INTERNAL_ERROR', 500); }
+});
+
+const orderTipSchema = Joi.object({
+  tip_cents: Joi.number().integer().min(0).max(100000000).required(),
+  // a suggested percentage: the tip is worked out from it and follows the order until payment
+  percent: Joi.number().min(0).max(100).allow(null),
+  split: Joi.array().items(Joi.object({
+    user_id: Joi.string().uuid().required(),
+    amount_cents: Joi.number().integer().min(0).required(),
+  })).allow(null),
+});
+
+// PUT /api/v1/checkout/orders/:id/tip?business_id= — set or clear the tip on an open order
+checkoutRouter.put('/orders/:id/tip', requirePermission('bookings:*'), validate(orderTipSchema), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { setOrderTip } = await import('../services/tips.service');
+    await setOrderTip({ businessId, orderId: req.params.id, tipCents: req.body.tip_cents, percent: req.body.percent ?? null, split: req.body.split ?? null });
+    success(res, await checkoutService.getOrder(req.params.id));
+  } catch (err: any) {
+    if (err?.name === 'TipError') { error(res, err.message, err.code, err.code === 'NOT_FOUND' ? 404 : err.code === 'CONFLICT' ? 409 : 400); return; }
+    console.error('Failed to set the tip', err?.message || err); error(res, 'Failed to set the tip', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// --- Tip pool: tips on orders with no staff member on them (spec 51, gap 14) ---
+
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const tipPoolSchema = Joi.object({
+  mode: Joi.string().valid('hand', 'hours', 'even').required(),
+  start: Joi.string().pattern(DATE).allow(null).default(null),
+  end: Joi.string().pattern(DATE).required(),
+  amounts: Joi.array().items(Joi.object({
+    user_id: Joi.string().uuid().required(),
+    amount_cents: Joi.number().integer().min(0).required(),
+  })).default([]),
+});
+
+const tipErrorStatus = (code: string) => (code === 'NOT_FOUND' ? 404 : code === 'CONFLICT' ? 409 : 400);
+
+// GET /api/v1/checkout/tip-pool?business_id= — what is waiting to be shared, and the staff
+checkoutRouter.get('/tip-pool', requirePermission('settings:*'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { poolSummary, poolStaff } = await import('../services/tips.service');
+    success(res, { ...(await poolSummary(businessId)), staff: await poolStaff(businessId) });
+  } catch (err: any) { console.error('Failed to load the tip pool', err?.message || err); error(res, 'Failed to load the tip pool', 'INTERNAL_ERROR', 500); }
+});
+
+// POST /api/v1/checkout/tip-pool/plan?business_id= — how the pool would be shared (nothing changes)
+checkoutRouter.post('/tip-pool/plan', requirePermission('settings:*'), validate(tipPoolSchema), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { planPool } = await import('../services/tips.service');
+    const b = req.body;
+    const plan = await planPool({ businessId, start: b.start, end: b.end, mode: b.mode, amounts: b.amounts });
+    success(res, { total_cents: plan.total_cents, left_cents: plan.left_cents, unassigned_cents: plan.unassigned_cents, days_without_staff: plan.days_without_staff, staff: plan.staff });
+  } catch (err: any) {
+    if (err?.name === 'TipError') { error(res, err.message, err.code, tipErrorStatus(err.code)); return; }
+    console.error('Failed to plan the tip pool', err?.message || err); error(res, 'Failed to plan the tip pool', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// POST /api/v1/checkout/tip-pool/share?business_id= — share the pool out as planned
+checkoutRouter.post('/tip-pool/share', requirePermission('settings:*'), validate(tipPoolSchema), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { sharePool } = await import('../services/tips.service');
+    const b = req.body;
+    success(res, await sharePool({ businessId, start: b.start, end: b.end, mode: b.mode, amounts: b.amounts, userId: (req as AuthenticatedRequest).user.sub }));
+  } catch (err: any) {
+    if (err?.name === 'TipError') { error(res, err.message, err.code, tipErrorStatus(err.code)); return; }
+    console.error('Failed to share the tip pool', err?.message || err); error(res, 'Failed to share the tip pool', 'INTERNAL_ERROR', 500);
   }
 });
 

@@ -65,7 +65,7 @@ function DetailsTable({ table, primary, secondary }: { table: BrandedDocumentTab
         {table.rows.map((r, i) => (
           <tr key={i}>
             <td style={s.td}>{r.description || '—'}</td>
-            <td style={{ ...s.td, ...s.tdRight }}>{r.qty}</td>
+            <td style={{ ...s.td, ...s.tdRight }}>{r.qty ?? ''}</td>
             <td style={{ ...s.td, ...s.tdRight }}>{fmtMoney(r.amountCents, table.currency)}</td>
           </tr>
         ))}

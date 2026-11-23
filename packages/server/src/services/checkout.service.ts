@@ -293,7 +293,7 @@ export async function addItem(orderId: string, input: AddItemInput) {
      input.itemType === 'gift_card' ? giftExpiry : null],
   );
 
-  await recalculateOrderTotals(orderId);
+  await recalculateOrderTotals(orderId, { staffChanged: true });
   return stockLimited ? { ...rows[0], stock_limited: stockLimited } : rows[0];
 }
 
@@ -351,7 +351,7 @@ export async function updateItem(itemId: string, orderId: string, updates: Parti
      updates.notes !== undefined ? updates.notes : item.notes, taxCategoryId, taxRate, itemId],
   );
 
-  await recalculateOrderTotals(orderId);
+  await recalculateOrderTotals(orderId, { staffChanged: updates.creditedTo !== undefined && (updates.creditedTo ?? null) !== (item.credited_to ?? null) });
   return stockLimited ? { ...rows[0], stock_limited: stockLimited } : rows[0];
 }
 
@@ -367,7 +367,7 @@ export async function removeItem(itemId: string, orderId: string) {
   );
   if ((rowCount ?? 0) === 0) throw new Error('Item not found');
 
-  await recalculateOrderTotals(orderId);
+  await recalculateOrderTotals(orderId, { staffChanged: true });
   return true;
 }
 
@@ -415,21 +415,18 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   const { rows: items } = await adminPool.query(
     'SELECT id FROM fin_order_items WHERE order_id = $1', [orderId],
   );
-  if (items.length === 0) {
-    // An appointment paid at reservation, with nothing else sold at the visit: finish the
-    // appointment, drop the empty order, and answer with the order that paid it.
-    const { rows: prepaid } = orderRows[0].booking_id
-      ? await adminPool.query(
-        `SELECT id FROM fin_orders WHERE booking_id = $1 AND id <> $2 AND status IN ('completed', 'refunded') ORDER BY completed_at LIMIT 1`,
-        [orderRows[0].booking_id, orderId],
-      )
-      : { rows: [] as any[] };
-    if (!prepaid[0]) throw new Error('Cannot complete an empty order');
+  // An appointment paid at reservation: the visit's order holds only what else is sold at the
+  // visit, and the tip. With neither, finish the appointment, drop the empty order, and answer
+  // with the order that paid it; with a tip only, the tip is paid on this order (spec 51, gap 14).
+  const { findPrepaidOrderId } = await import('./prepaid-order.service');
+  if (items.length === 0 && !(Number(orderRows[0].tip_amount) > 0 && (await findPrepaidOrderId(orderId, orderRows[0].booking_id)))) {
+    const prepaidId = await findPrepaidOrderId(orderId, orderRows[0].booking_id);
+    if (!prepaidId) throw new Error('Cannot complete an empty order');
     await adminPool.query(`UPDATE fin_orders SET status = 'voided', updated_at = NOW() WHERE id = $1 AND status = 'open'`, [orderId]);
     await adminPool.query(
       `UPDATE apt_bookings SET status = 'completed' WHERE id = $1 AND status IN ('checked_in', 'in_progress')`, [orderRows[0].booking_id],
     );
-    return getOrder(prepaid[0].id);
+    return getOrder(prepaidId);
   }
 
   // The payment belongs to the order. It used to be the screen's job to take a card or gift
@@ -438,6 +435,15 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   const openOrder = orderRows[0];
   const method = input.paymentMethod === 'transfer' ? 'bank_transfer' : input.paymentMethod;
   const manual = MANUAL_METHODS.includes(method);
+  // What the customer pays: the sale and its tip (spec 51, gap 14). The tip is not part of the sale.
+  const tip = Number(openOrder.tip_amount) || 0;
+  const payable = openOrder.total_amount + tip;
+  if (tip > 0 && manual) {
+    const { getTipSettings } = await import('./tips.service');
+    if (!(await getTipSettings(businessId)).onManual) {
+      throw new OrderPaymentError('This business takes tips on card payments only. Remove the tip, or pay by card.', 'TIP_CARD_ONLY');
+    }
+  }
 
   // Tracked products leave stock before the payment (locked, so two tills cannot sell the last
   // one twice); if the payment does not go through, they are put back (spec 51, gap 7).
@@ -457,7 +463,7 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   // This is the ONLY way a processed payment proceeds without a customer.
   const isWalkinCard = !manual && method === 'card' && !!input.oneTimeChargeRef;
 
-  if (openOrder.total_amount > 0 && isWalkinCard) {
+  if (payable > 0 && isWalkinCard) {
     const { finalizeOneTimeOrderCharge } = await import('./walkin-payment.service');
     const payment = await finalizeOneTimeOrderCharge({
       businessId, orderId, providerReference: input.oneTimeChargeRef!, processedBy: input.checkedOutBy,
@@ -466,7 +472,7 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
       throw new OrderPaymentError(payment.failureReason || 'The payment was declined', 'PAYMENT_DECLINED');
     }
     if (!input.paymentReference) input.paymentReference = payment.referenceNumber;
-  } else if (openOrder.total_amount > 0 && (openOrder.customer_id || !manual)) {
+  } else if (payable > 0 && (openOrder.customer_id || !manual)) {
     if (!openOrder.customer_id) {
       throw new OrderPaymentError('Select a customer, or take a one-time card payment, to pay by card, direct debit or gift card', 'CUSTOMER_REQUIRED');
     }
@@ -474,7 +480,7 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
     const { takeOneTimePayment } = await import('./customer-payment.service');
     const payment = await takeOneTimePayment({
       businessId, tenantId: tenantRows[0].tenant_id, customerId: openOrder.customer_id,
-      method: method as any, amountCents: openOrder.total_amount,
+      method: method as any, amountCents: payable,
       paymentMethodId: input.paymentMethodId || null, giftCardCode: input.giftCardCode || null,
       checkNumber: method === 'check' ? (input.checkNumber || input.paymentReference || null) : null,
       bookingId: openOrder.booking_id || null, description: `Order ${openOrder.order_number}`,
@@ -515,6 +521,12 @@ async function payAndCompleteOrder(orderId: string, businessId: string, input: C
   if (paidPlaces.some((r: any) => r.pay_at !== 'online')) {
     const { queueEventEmail } = await import('./customer-events.service');
     for (const r of paidPlaces) if (r.pay_at !== 'online') await queueEventEmail(r.id, 'confirmed');
+  }
+
+  // The tip's shares: owed to the staff who served (electronic) or handed over now (manual).
+  if (tip > 0) {
+    const { recordShares } = await import('./tips.service');
+    await recordShares(orderId, method).catch((err) => console.error('[Tips] Shares not recorded for order', orderId, err?.message || err));
   }
 
   // Auto-generate journal entries for accounting
@@ -874,7 +886,7 @@ export async function applyPromoCode(orderId: string, businessId: string, promoC
   );
 
   // Recalculate order totals (pure sum of line items)
-  await recalculateOrderTotals(orderId);
+  await recalculateOrderTotals(orderId, { staffChanged: false });
   return getOrder(orderId);
 }
 
@@ -911,7 +923,7 @@ export async function removePromoCode(orderId: string, businessId: string) {
     [orderId],
   );
 
-  await recalculateOrderTotals(orderId);
+  await recalculateOrderTotals(orderId, { staffChanged: false });
   return getOrder(orderId);
 }
 
@@ -925,6 +937,9 @@ export async function updateOrderCreditedTo(orderId: string, businessId: string,
     [creditedTo, orderId, businessId],
   );
   if (rows.length === 0) throw new Error('Order not found or not open');
+  // a split of the tip by hand was for the old staff
+  const { refreshOrderTip } = await import('./tips.service');
+  await refreshOrderTip(orderId, { staffChanged: true });
   return getOrder(orderId);
 }
 
@@ -978,15 +993,12 @@ export async function getOrder(orderId: string) {
     [orderId],
   );
 
-  // The order that already paid this order's appointment (paid at reservation), if any.
-  const { rows: prepaid } = rows[0].booking_id
-    ? await adminPool.query(
-      `SELECT order_number FROM fin_orders WHERE booking_id = $1 AND id <> $2 AND status IN ('completed', 'refunded') ORDER BY completed_at LIMIT 1`,
-      [rows[0].booking_id, orderId],
-    )
-    : { rows: [] as any[] };
+  // The order that already paid this order's appointment (paid at reservation), if any: shown on
+  // the visit's order read only, its lines and payment staying on that order (spec 51, gap 14).
+  const { getPrepaidOrder } = await import('./prepaid-order.service');
+  const prepaid = await getPrepaidOrder(orderId, rows[0].booking_id);
 
-  return { ...rows[0], items, prepaid_order_number: prepaid[0]?.order_number ?? null };
+  return { ...rows[0], items, prepaid, prepaid_order_number: prepaid?.order_number ?? null };
 }
 
 /**
@@ -1135,7 +1147,7 @@ export async function calculateTaxForItem(itemType: string, itemId: string | nul
 /**
  * Recalculate order totals as a pure sum of line items.
  */
-async function recalculateOrderTotals(orderId: string) {
+async function recalculateOrderTotals(orderId: string, tip: { staffChanged: boolean } = { staffChanged: false }) {
   const { rows } = await adminPool.query(
     `SELECT
        COALESCE(SUM(unit_price * quantity), 0)::int AS subtotal,
@@ -1151,4 +1163,7 @@ async function recalculateOrderTotals(orderId: string) {
      WHERE id = $5`,
     [rows[0].subtotal, rows[0].tax, rows[0].discount, rows[0].total, orderId],
   );
+  // The tip follows the order before payment (spec 51, gap 14; owner, 23 Nov 2026).
+  const { refreshOrderTip } = await import('./tips.service');
+  await refreshOrderTip(orderId, tip);
 }

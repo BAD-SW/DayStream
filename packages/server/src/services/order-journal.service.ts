@@ -20,6 +20,7 @@ const CASH_ACCOUNT_CODE = '1100';        // Cash & Bank
 const TAX_PAYABLE_CODE = '2300';         // Tax Payable
 const DISCOUNTS_ACCOUNT_CODE = '4900';   // Discounts & Adjustments
 const GIFT_CARD_LIABILITY_CODE = '2600'; // Gift Card Liability
+const TIPS_PAYABLE_CODE = '2700';        // Tips Payable (spec 51, gap 14)
 
 // Selling a gift card funds a liability (we owe the value back), NOT revenue.
 const LIABILITY_ITEM_TYPES = ['gift_card'];
@@ -119,7 +120,10 @@ export async function generateJournalEntries(orderId: string, businessId: string
   // value, so we draw down the Gift Card Liability instead of debiting Cash. This is
   // the redemption half of gift-card accounting (Dr 2600 Liability / Cr revenue) and
   // avoids the double-count of booking fictitious cash for a gift-card payment.
-  if (order.total_amount > 0) {
+  // What was paid: the sale and its tip (spec 51, gap 14).
+  const tip = Number(order.tip_amount) || 0;
+  const paid = order.total_amount + tip;
+  if (paid > 0) {
     const tenderedByGiftCard = order.payment_method === 'gift_card';
     const giftCardLiabilityId = accountMap.get(GIFT_CARD_LIABILITY_CODE);
     const debitAccountId = tenderedByGiftCard ? giftCardLiabilityId : cashAccountId;
@@ -129,7 +133,7 @@ export async function generateJournalEntries(orderId: string, businessId: string
       await adminPool.query(
         `INSERT INTO fin_journal_entry_lines (journal_entry_id, account_id, debit, credit, description)
          VALUES ($1, $2, $3, 0, $4)`,
-        [entryId, debitAccountId, order.total_amount,
+        [entryId, debitAccountId, paid,
           tenderedByGiftCard ? 'Gift card redeemed (liability drawn down)' : `Payment received - ${order.payment_method}`],
       );
     }
@@ -185,6 +189,32 @@ export async function generateJournalEntries(orderId: string, businessId: string
        VALUES ($1, $2, $3, 0, $4)`,
       [entryId, discountsAccountId, totalDiscounts, `Promo discount - ${order.promo_code || 'manual'}`],
     );
+  }
+
+  // The tip is owed to staff, not revenue: Cr 2700 Tips Payable. A tip on a cash or other manual
+  // payment was handed to them at the time: Dr 2700 / Cr Cash at once.
+  if (tip > 0) {
+    const tipsId = accountMap.get(TIPS_PAYABLE_CODE);
+    if (!tipsId) {
+      console.error(`[Journal] Missing Tips Payable account (${TIPS_PAYABLE_CODE}) for business ${businessId}; tip of order ${order.order_number} not posted`);
+    } else {
+      await adminPool.query(
+        `INSERT INTO fin_journal_entry_lines (journal_entry_id, account_id, debit, credit, description) VALUES ($1, $2, 0, $3, 'Tip owed to staff')`,
+        [entryId, tipsId, tip],
+      );
+      const { isElectronic } = await import('./tips.service');
+      // Only what was handed over: a cash tip in the tip pool stays in the till until it is shared out.
+      const { rows: shared } = await adminPool.query(
+        `SELECT COALESCE(SUM(amount_cents), 0)::int AS cents FROM fin_tip_shares WHERE order_id = $1 AND status = 'handed_over'`, [orderId]);
+      const handed = Number(shared[0]?.cents) || 0;
+      if (!isElectronic(order.payment_method) && handed > 0) {
+        await adminPool.query(
+          `INSERT INTO fin_journal_entry_lines (journal_entry_id, account_id, debit, credit, description)
+           VALUES ($1, $2, $3, 0, 'Tip handed to staff'), ($1, $4, 0, $3, 'Tip handed to staff')`,
+          [entryId, tipsId, handed, cashAccountId],
+        );
+      }
+    }
   }
 
   // Cost of the products taken from stock (spec 51, gap 7): Dr Cost of Goods Sold, Cr Inventory,

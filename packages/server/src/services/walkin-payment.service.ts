@@ -61,7 +61,8 @@ export async function beginOneTimeOrderCharge(
   businessId: string, orderId: string,
 ): Promise<OneTimeChargeSession> {
   const { rows: orderRows } = await adminPool.query(
-    `SELECT id, status, total_amount, customer_id FROM fin_orders WHERE id = $1 AND business_id = $2`,
+    // What the customer pays: the sale and its tip (spec 51, gap 14).
+    `SELECT id, status, total_amount + tip_amount AS total_amount, customer_id FROM fin_orders WHERE id = $1 AND business_id = $2`,
     [orderId, businessId],
   );
   const order = orderRows[0];
@@ -120,7 +121,7 @@ export async function finalizeOneTimeOrderCharge(args: {
   const { businessId, orderId, providerReference, processedBy } = args;
 
   const { rows: orderRows } = await adminPool.query(
-    `SELECT id, customer_id, total_amount FROM fin_orders WHERE id = $1 AND business_id = $2`,
+    `SELECT id, customer_id, total_amount + tip_amount AS total_amount FROM fin_orders WHERE id = $1 AND business_id = $2`,
     [orderId, businessId],
   );
   const order = orderRows[0];

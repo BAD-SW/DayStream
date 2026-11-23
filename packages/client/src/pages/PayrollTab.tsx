@@ -7,6 +7,7 @@ import type { TableFilters } from '../design-system/components/data/Table';
 import { formatCurrency } from '../utils/currency';
 import { useDraft, fieldMark, checkMark, draftBox } from '../components/unsaved/DraftSections';
 import { formatDateOnly } from '../utils/date';
+import { TipPoolPanel } from './TipPoolPanel';
 
 interface PayPeriod {
   id: string;
@@ -31,7 +32,7 @@ interface PayrollEntry {
 
 export function PayrollTab() {
   const businessId = localStorage.getItem('business_id') || '';
-  const [activeView, setActiveView] = useState<'current' | 'history'>('current');
+  const [activeView, setActiveView] = useState<'current' | 'history' | 'tip-pool'>('current');
 
   // Current/Unprocessed
   const [unprocessedPeriods, setUnprocessedPeriods] = useState<PayPeriod[]>([]);
@@ -163,8 +164,9 @@ export function PayrollTab() {
     <div>
       {/* View Toggle */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-        <button onClick={() => setActiveView('current')} style={{ ...styles.viewBtn, ...(activeView === 'current' ? styles.viewBtnActive : {}) }}>Current</button>
-        <button onClick={() => setActiveView('history')} style={{ ...styles.viewBtn, ...(activeView === 'history' ? styles.viewBtnActive : {}) }}>History</button>
+        <button onClick={() => { setActiveView('current'); setTaxSectionOpen(false); }} style={{ ...styles.viewBtn, ...(activeView === 'current' && !taxSectionOpen ? styles.viewBtnActive : {}) }}>Current</button>
+        <button onClick={() => { setActiveView('history'); setTaxSectionOpen(false); }} style={{ ...styles.viewBtn, ...(activeView === 'history' && !taxSectionOpen ? styles.viewBtnActive : {}) }}>History</button>
+        <button onClick={() => { setActiveView('tip-pool'); setTaxSectionOpen(false); }} style={{ ...styles.viewBtn, ...(activeView === 'tip-pool' && !taxSectionOpen ? styles.viewBtnActive : {}) }}>Tip Pool</button>
         <button onClick={() => { setTaxSectionOpen(!taxSectionOpen); if (!taxSectionOpen && taxProfiles.length === 0) loadTaxProfiles(); }} style={{ ...styles.viewBtn, ...(taxSectionOpen ? styles.viewBtnActive : {}) }}>Tax Profiles</button>
       </div>
 
@@ -227,6 +229,9 @@ export function PayrollTab() {
           )}
         </div>
       )}
+
+      {/* Tip pool: tips with no staff member on the order, shared out here (spec 51, gap 14) */}
+      {activeView === 'tip-pool' && !taxSectionOpen && <TipPoolPanel businessId={businessId} />}
 
       {/* Tax Profiles View */}
       {taxSectionOpen && (
@@ -302,7 +307,7 @@ function EntriesTable({ entries, expandedId, onToggle }: { entries: PayrollEntry
           <div>
             <strong>Compensation</strong>
             {(entry.breakdown.compensation || []).map((c: any, i: number) => (
-              <div key={i}>{c.type}: {formatCurrency(c.amount)}{c.hours ? ` (${c.hours}h)` : ''}{c.sessions ? ` (${c.sessions} sessions)` : ''}</div>
+              <div key={i}>{c.type === 'tips' ? 'Tips (card and electronic)' : c.type}: {formatCurrency(c.amount)}{c.hours ? ` (${c.hours}h)` : ''}{c.sessions ? ` (${c.sessions} sessions)` : ''}</div>
             ))}
           </div>
           <div>

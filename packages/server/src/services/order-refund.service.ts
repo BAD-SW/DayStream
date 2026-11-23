@@ -51,6 +51,7 @@ const DEFERRED_REVENUE_CODE = '2400';
 const CASH_CODE = '1100';
 const CUSTOMER_DEPOSITS_CODE = '2500';
 const TAX_PAYABLE_CODE = '2300';
+const TIPS_PAYABLE_CODE = '2700'; // spec 51, gap 14
 
 export class OrderRefundError extends Error {
   constructor(message: string, public code: string) { super(message); }
@@ -93,18 +94,22 @@ export async function refundOrderLines(args: {
   refundTo?: 'original' | 'account_credit';
   /** A paid appointment cancelled before the visit: its service line may be refunded. */
   allowServiceLines?: boolean;
+  /** Part or all of the order's tip, refunded as its own line (spec 51, gap 14). */
+  tipCents?: number;
 }): Promise<OrderRefundResult> {
   const { businessId, tenantId, orderId, lines, reason, processedBy } = args;
   const toCredit = args.refundTo === 'account_credit';
   if (!reason || !reason.trim()) throw new OrderRefundError('A reason is required to refund', 'REASON_REQUIRED');
-  if (!lines || lines.length === 0) throw new OrderRefundError('Select at least one item to refund', 'NO_LINES');
+  const tipCents = Number(args.tipCents) || 0;
+  if (!Number.isInteger(tipCents) || tipCents < 0) throw new OrderRefundError('Enter a tip refund of 0 or more', 'INVALID_TIP');
+  if ((!lines || lines.length === 0) && tipCents === 0) throw new OrderRefundError('Select at least one item to refund', 'NO_LINES');
 
   const client = await adminPool.connect();
   try {
     await client.query('BEGIN');
 
     const { rows: orderRows } = await client.query(
-      `SELECT id, status, customer_id, order_number, payment_method, total_amount
+      `SELECT id, status, customer_id, order_number, payment_method, total_amount, tip_amount, tip_refunded_cents
        FROM fin_orders WHERE id = $1 AND business_id = $2 FOR UPDATE`,
       [orderId, businessId],
     );
@@ -175,6 +180,12 @@ export async function refundOrderLines(args: {
       totalRefund += lineAmount;
     }
 
+    // The tip, as its own line: at most what is left of it.
+    if (tipCents > 0) {
+      const tipLeft = (Number(order.tip_amount) || 0) - (Number(order.tip_refunded_cents) || 0);
+      if (tipCents > tipLeft) throw new OrderRefundError(`Only ${(tipLeft / 100).toFixed(2)} of the tip is left to refund`, 'INVALID_TIP');
+      totalRefund += tipCents;
+    }
     if (totalRefund <= 0) throw new OrderRefundError('Nothing to refund', 'NOTHING_TO_REFUND');
     if (toCredit && !order.customer_id) throw new OrderRefundError('Account credit needs a customer on the order', 'CUSTOMER_REQUIRED');
 
@@ -265,6 +276,13 @@ export async function refundOrderLines(args: {
       }
     }
 
+    // The tip: taken off the order and off each staff member's share, in the same proportions.
+    if (tipCents > 0) {
+      await client.query('UPDATE fin_orders SET tip_refunded_cents = tip_refunded_cents + $2 WHERE id = $1', [orderId, tipCents]);
+      const { refundTipShares } = await import('./tips.service');
+      await refundTipShares(client, orderId, tipCents);
+    }
+
     // Order status: fully returned => 'refunded', otherwise 'partially_refunded'.
     const { rows: remainingRows } = await client.query(
       `SELECT COALESCE(SUM(quantity - refunded_quantity), 0)::int AS remaining_qty
@@ -277,7 +295,7 @@ export async function refundOrderLines(args: {
     await client.query('COMMIT');
 
     // Post the per-line GL reversal after commit (non-blocking).
-    await postOrderRefundJournal(businessId, orderId, refundTxnId, computed, order.order_number, toCredit).catch((e) =>
+    await postOrderRefundJournal(businessId, orderId, refundTxnId, computed, order.order_number, toCredit, tipCents).catch((e) =>
       logger.warn(`Order refund ${reference}: GL reversal failed: ${e?.message || e}`),
     );
 
@@ -324,6 +342,7 @@ async function postOrderRefundJournal(
   computed: Array<{ item: any; qty: number; revenueCents: number; taxCents: number; amountCents: number }>,
   orderNumber: string,
   toCredit = false,
+  tipCents = 0,
 ): Promise<void> {
   const { rows: existing } = await adminPool.query(
     `SELECT 1 FROM fin_journal_entries WHERE reference_type = 'order_refund' AND reference_id = $1 AND is_void = false LIMIT 1`,
@@ -343,10 +362,11 @@ async function postOrderRefundJournal(
     totalTax += c.taxCents;
     totalCash += c.amountCents;
   }
+  totalCash += tipCents;
   if (totalCash <= 0) return;
 
   const payoutCode = toCredit ? CUSTOMER_DEPOSITS_CODE : CASH_CODE;
-  const codes = [payoutCode, TAX_PAYABLE_CODE, ...revenueByCode.keys()];
+  const codes = [payoutCode, TAX_PAYABLE_CODE, TIPS_PAYABLE_CODE, ...revenueByCode.keys()];
   const { rows: acctRows } = await adminPool.query(
     `SELECT id, code FROM fin_chart_of_accounts WHERE business_id = $1 AND code = ANY($2)`,
     [businessId, Array.from(new Set(codes))],
@@ -372,6 +392,9 @@ async function postOrderRefundJournal(
   if (totalTax > 0 && taxId) {
     linesOut.push({ account_id: taxId, debit: totalTax, credit: 0, description: 'Refund — reverse tax collected' });
   }
+  // A refunded tip is no longer owed to staff.
+  const tipsId = accounts.get(TIPS_PAYABLE_CODE);
+  if (tipCents > 0 && tipsId) linesOut.push({ account_id: tipsId, debit: tipCents, credit: 0, description: 'Refund — tip no longer owed to staff' });
   linesOut.push({ account_id: cashId, debit: 0, credit: totalCash, description: toCredit ? 'Customer credit granted (drawable)' : 'Refund paid' });
 
   await journal.createEntry({

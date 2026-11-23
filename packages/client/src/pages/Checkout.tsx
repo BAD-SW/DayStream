@@ -13,6 +13,8 @@ import { MissingDetailsPrompt } from '../components/MissingDetailsPrompt';
 import { CurrencyInput } from '../components/CurrencyInput';
 import type { Order, OrderItem } from '../api/checkout';
 import { formatCurrency } from '../utils/currency';
+import { formatDateOnly } from '../utils/date';
+import { TipPanel } from '../components/TipPanel';
 import { getLocations } from '../api/locations';
 import type { Location } from '../api/locations';
 import { getLocationStock } from '../api/inventory';
@@ -97,6 +99,12 @@ export function Checkout() {
   const [customerSearching, setCustomerSearching] = useState(false);
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
   const [newCustomerForm, setNewCustomerForm] = useState({ first_name: '', last_name: '', email: '', phone: '' });
+  // Tips (spec 51, gap 14): the business's settings decide whether the Tip panel shows.
+  const [tipSettings, setTipSettings] = useState<checkoutApi.TipSettings | null>(null);
+  useEffect(() => {
+    if (!businessId) return;
+    checkoutApi.getTipSettings(businessId).then(setTipSettings).catch(() => setTipSettings(null));
+  }, [businessId]);
 
   // Retail stock (spec 51, gap 7): the order's location and what is on hand there.
   const [locations, setLocations] = useState<Location[]>([]);
@@ -486,6 +494,10 @@ export function Checkout() {
   if (!order) return null;
 
   const isOpen = order.status === 'open';
+  // What the customer pays: the sale and its tip (spec 51, gap 14).
+  const payable = order.total_amount + (order.tip_amount || 0);
+  // Paid at reservation, nothing else sold and no tip: the appointment is just finished.
+  const nothingToPay = !!order.prepaid_order_number && order.items.length === 0 && !((order.tip_amount || 0) > 0);
   const isCompleted = order.status === 'completed';
 
   return (
@@ -587,6 +599,60 @@ export function Checkout() {
         </div>
       )}
 
+      {/* Paid at reservation (spec 51, gap 14): the service paid when it was booked, shown read
+          only so the visit can be tipped on it. Its lines and payment stay on that order: they
+          cannot be changed or removed here and are never charged or posted again. */}
+      {order.prepaid && (
+        <div style={styles.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
+            <h3 style={styles.cardTitle}>Paid at reservation</h3>
+            <span style={styles.empty}>
+              Order <a href={`/receipt/${order.prepaid.id}`} style={{ color: 'var(--color-primary)' }}
+                onClick={(e) => { e.preventDefault(); navigate(`/receipt/${order.prepaid!.id}`); }}>{order.prepaid.order_number}</a>
+              {order.prepaid.completed_at ? ` · ${formatDateOnly(order.prepaid.completed_at)}` : ''}
+              {order.prepaid.payment_method ? ` · ${PAY_METHOD_LABEL[order.prepaid.payment_method] || order.prepaid.payment_method}` : ''}
+            </span>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                <th style={styles.th}>Item</th>
+                <th style={styles.th}>Variant</th>
+                <th style={styles.thRight}>Qty</th>
+                <th style={styles.thRight}>Price</th>
+                <th style={styles.thRight}>Tax</th>
+                <th style={styles.thRight}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {order.prepaid.items.map((item) => (
+                <tr key={item.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                  <td style={styles.td}>
+                    <span style={styles.itemTypeLabel}>{item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1)}:</span>{' '}
+                    <strong>{item.item_name}</strong>
+                    {item.credited_name && <div style={styles.overrideInline}>Credit: {item.credited_name}</div>}
+                  </td>
+                  <td style={styles.td}>{item.variant_name || '—'}</td>
+                  <td style={styles.tdRight}>{item.quantity}</td>
+                  <td style={styles.tdRight}>{formatCurrency(item.unit_price)}</td>
+                  <td style={styles.tdRight}>{item.tax_amount > 0 ? formatCurrency(item.tax_amount) : '—'}</td>
+                  <td style={{ ...styles.tdRight, fontWeight: 600 }}>{formatCurrency(item.total_price)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ ...styles.totalRow, marginTop: 'var(--space-sm)' }}>
+            <span>{order.prepaid.status === 'refunded' ? 'Refunded' : 'Paid'}</span>
+            <span>{formatCurrency(order.prepaid.total_amount)}</span>
+          </div>
+          <p style={{ ...styles.empty, margin: 'var(--space-xs) 0 0' }}>
+            {order.prepaid.status === 'refunded'
+              ? 'This payment was refunded on its own order.'
+              : 'Previously paid. Tip not included.'}
+          </p>
+        </div>
+      )}
+
       {/* Line Items */}
       <div style={styles.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
@@ -600,7 +666,7 @@ export function Checkout() {
           </div>
         )}
 
-        {order.items.length === 0 && <p style={styles.empty}>No items in cart</p>}
+        {order.items.length === 0 && <p style={styles.empty}>{order.prepaid ? 'Nothing else sold at this visit.' : 'No items in cart'}</p>}
 
         {order.items.length > 0 && (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' }}>
@@ -707,25 +773,32 @@ export function Checkout() {
         <div style={{ ...styles.totalRow, fontWeight: 700, fontSize: 'var(--font-size-lg)', borderTop: '1px solid var(--color-border)', paddingTop: '8px', marginTop: '8px' }}>
           <span>Total</span><span>{formatCurrency(order.total_amount)}</span>
         </div>
+        {(order.tip_amount || 0) > 0 && <>
+          <div style={styles.totalRow}><span>Tip</span><span>{formatCurrency(order.tip_amount || 0)}</span></div>
+          <div style={{ ...styles.totalRow, fontWeight: 700 }}><span>{isOpen ? 'Total to pay' : 'Total paid'}</span><span>{formatCurrency(payable)}</span></div>
+        </>}
       </div>
 
-      {/* Paid at reservation: the service is not charged again; only extras are */}
-      {isOpen && order.prepaid_order_number && (
+      {/* Tip (spec 51, gap 14): before the payment, when the business takes tips */}
+      {isOpen && tipSettings?.enabled && (order.items.length > 0 || order.prepaid?.status === 'completed')
+        && (order.total_amount > 0 || (order.prepaid?.status === 'completed' && order.prepaid.total_amount > 0) || (order.tip_amount || 0) > 0) && (
+        <TipPanel order={order} businessId={businessId} settings={tipSettings} locked={!!oneTimeSession} onChange={setOrder} />
+      )}
+
+      {/* Paid at reservation with nothing else sold and no tip: nothing to pay, just finish */}
+      {isOpen && nothingToPay && (
         <div style={styles.card}>
           <p style={{ color: 'var(--color-text)', margin: 0 }}>
-            The service was paid when it was booked (order <strong>{order.prepaid_order_number}</strong>). Add anything else
-            sold at this visit, or finish the appointment.
+            Nothing is due at this visit. Add anything else sold, or a tip, or finish the appointment.
           </p>
-          {order.items.length === 0 && (
-            <div style={{ ...styles.actions, marginTop: '16px' }}>
-              <Button onClick={handleFinishPrepaid} loading={completing}>Finish appointment</Button>
-            </div>
-          )}
+          <div style={{ ...styles.actions, marginTop: 'var(--space-md)' }}>
+            <Button onClick={handleFinishPrepaid} loading={completing}>Finish appointment</Button>
+          </div>
         </div>
       )}
 
-      {/* Payment Actions */}
-      {isOpen && !(order.prepaid_order_number && order.items.length === 0) && (
+      {/* Payment Actions: what is sold at the visit and the tip (a service paid at reservation is not charged again) */}
+      {isOpen && !nothingToPay && (
         <div style={styles.card}>
           <h3 style={{ color: 'var(--color-text)', margin: '0 0 12px', fontSize: 'var(--font-size-md)' }}>Payment</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '420px' }}>
@@ -754,7 +827,7 @@ export function Checkout() {
                     <StripeOneTimeCardCharge
                       clientSecret={oneTimeSession.clientSecret!}
                       publishableKey={oneTimeSession.publishableKey!}
-                      busyLabel={`Charge ${formatCurrency(order.total_amount)}`}
+                      busyLabel={`Charge ${formatCurrency(payable)}`}
                       onPaid={(piId) => handleWalkInCardPaid(piId)}
                       onCancel={() => setOneTimeSession(null)}
                     />
@@ -767,7 +840,7 @@ export function Checkout() {
                         onChange={(e) => setWalkInName(e.target.value)}
                       />
                       <AddMethodButton
-                        label={`Enter card to charge ${formatCurrency(order.total_amount)}`}
+                        label={`Enter card to charge ${formatCurrency(payable)}`}
                         onClick={handleStartOneTimeCharge}
                       />
                       {startingOneTime && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>Preparing secure card entry…</span>}

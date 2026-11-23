@@ -239,6 +239,38 @@ export async function renderReceiptPdf(transactionId: string, businessId: string
 }
 
 /**
+ * An order's receipt lines: each item before tax, then Tax, then the Tip (owner, 22 Nov 2026).
+ * At the visit of an appointment paid at reservation, the service paid then is listed and taken
+ * off again as already paid, so the total is what was paid today (spec 51, gap 14; owner,
+ * 23 Nov 2026). Null when the order has nothing to list.
+ */
+async function orderReceiptRows(orderId: string, currency: string): Promise<DocumentDetailsTable | null> {
+  const { rows: o } = await adminPool.query('SELECT booking_id, tip_amount FROM fin_orders WHERE id = $1', [orderId]);
+  if (!o[0]) return null;
+  const { rows: items } = await adminPool.query(
+    'SELECT item_name, variant_name, quantity, total_price, tax_amount FROM fin_order_items WHERE order_id = $1 ORDER BY created_at', [orderId]);
+  const { getPrepaidOrder } = await import('./prepaid-order.service');
+  const prepaid = await getPrepaidOrder(orderId, o[0].booking_id);
+  const paidBefore = prepaid?.items || [];
+  const tip = Number(o[0].tip_amount) || 0;
+  if (items.length === 0 && !(paidBefore.length > 0 && tip > 0)) return null;
+  type Line = { item_name: string; variant_name: string | null; quantity: number; total_price: number; tax_amount: number | null };
+  const line = (it: Line) => ({
+    description: it.variant_name ? `${it.item_name} — ${it.variant_name}` : it.item_name,
+    qty: Number(it.quantity),
+    amountCents: it.total_price - (it.tax_amount || 0),
+  });
+  const all: Line[] = [...paidBefore, ...items];
+  const rows: DocumentDetailsTable['rows'] = all.map(line);
+  const tax = all.reduce((n, it) => n + (Number(it.tax_amount) || 0), 0);
+  if (tax > 0) rows.push({ description: 'Tax', qty: null, amountCents: tax });
+  if (prepaid && paidBefore.length > 0) {
+    rows.push({ description: `Paid at reservation (${prepaid.order_number})`, qty: null, amountCents: -paidBefore.reduce((n, it) => n + it.total_price, 0) });
+  }
+  if (tip > 0) rows.push({ description: 'Tip', qty: null, amountCents: tip });
+  return { rows, totalCents: rows.reduce((n, r) => n + r.amountCents, 0), currency };
+}
+/**
  * Build the line-item details table for a transaction's receipt. If the payment
  * paid a checkout order, use that order's line items; otherwise fall back to a
  * single row (the transaction's description, or "Payment", at its amount).
@@ -247,27 +279,14 @@ async function buildTransactionDetailsTable(
   t: { id: string; amount: number; currency: string; description: string | null },
   businessId: string,
 ): Promise<DocumentDetailsTable> {
-  const { rows: items } = await adminPool.query(
-    `SELECT oi.item_name, oi.variant_name, oi.quantity, oi.total_price
-       FROM fin_order_items oi
-       JOIN pay_transactions t ON t.id = $1
-       JOIN fin_orders o
-         ON o.business_id = $2
-        AND (t.order_id = o.id OR (o.payment_reference IS NOT NULL AND o.payment_reference = t.reference_number))
-      WHERE oi.order_id = o.id
-      ORDER BY oi.created_at`,
-    [t.id, businessId],
-  );
-
-  if (items.length > 0) {
-    const rows = items.map((it: any) => ({
-      description: it.variant_name ? `${it.item_name} — ${it.variant_name}` : it.item_name,
-      qty: it.quantity,
-      amountCents: it.total_price,
-    }));
-    const totalCents = rows.reduce((n: number, r: { amountCents: number }) => n + r.amountCents, 0);
-    return { rows, totalCents, currency: t.currency };
-  }
+  // The order this payment paid.
+  const { rows: orderRows } = await adminPool.query(
+    `SELECT o.id FROM fin_orders o JOIN pay_transactions t ON t.id = $1
+      WHERE o.business_id = $2 AND (t.order_id = o.id OR (o.payment_reference IS NOT NULL AND o.payment_reference = t.reference_number))
+      ORDER BY o.created_at LIMIT 1`,
+    [t.id, businessId]);
+  const table = orderRows[0] ? await orderReceiptRows(orderRows[0].id, t.currency) : null;
+  if (table) return table;
 
   // No itemized order — a single row for the payment itself.
   return {
@@ -368,22 +387,10 @@ export async function buildDetailsTableForNotification(
   if (type === 'payment.receipt' || type === 'invoice.paid') {
     const reference = (data.reference_number ?? data.receipt_number) as string | undefined;
     if (reference) {
-      const { rows: items } = await adminPool.query(
-        `SELECT oi.item_name, oi.variant_name, oi.quantity, oi.total_price
-           FROM fin_order_items oi
-           JOIN fin_orders o ON o.id = oi.order_id
-          WHERE o.business_id = $1 AND o.payment_reference = $2
-          ORDER BY oi.created_at`,
-        [businessId, reference],
-      );
-      if (items.length > 0) {
-        const rows = items.map((it: any) => ({
-          description: it.variant_name ? `${it.item_name} — ${it.variant_name}` : it.item_name,
-          qty: Number(it.quantity),
-          amountCents: it.total_price,
-        }));
-        return { rows, totalCents: rows.reduce((n, r) => n + r.amountCents, 0), currency };
-      }
+      const { rows: o } = await adminPool.query(
+        'SELECT id FROM fin_orders WHERE business_id = $1 AND payment_reference = $2 ORDER BY created_at LIMIT 1', [businessId, reference]);
+      const table = o[0] ? await orderReceiptRows(o[0].id, currency) : null;
+      if (table) return table;
     }
     // Single-row fallback: the payment itself.
     const amount = typeof data.amount_cents === 'number' ? data.amount_cents : 0;
