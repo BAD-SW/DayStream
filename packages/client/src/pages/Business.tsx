@@ -43,7 +43,7 @@ function BusinessPage() {
   const labels: Record<Tab, string> = { staff: 'Staff', resources: 'Resources', locations: 'Locations', categories: 'Categories', taxes: 'Taxes', templates: 'Templates', migration: 'Data Migration' };
 
   return (
-    <div style={styles.page}>
+    <div style={activeTab === 'templates' ? { ...styles.page, maxWidth: '1440px' } : styles.page}>
       <LeaveGuard when={dirtySections.length > 0 || templateDirty} />
       <StickyPageTop>
         <div style={styles.header}>

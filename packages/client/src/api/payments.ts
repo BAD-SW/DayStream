@@ -1259,6 +1259,20 @@ export async function updateDocumentTemplate(
   return res.data.data;
 }
 
+/** The platform's active system templates, read only, for a business (spec 51, gap 17). */
+export async function listSystemDocumentTemplates(businessId: string, artifactType?: string): Promise<DocumentBrandingTemplate[]> {
+  const res = await apiClient.get('/v1/pay/document-branding/system', {
+    params: { business_id: businessId, ...(artifactType ? { artifact_type: artifactType } : {}) },
+  });
+  return res.data.data;
+}
+
+/** Duplicate a system template into the business: its own copy, not active yet. */
+export async function copySystemDocumentTemplate(businessId: string, systemTemplateId: string): Promise<DocumentBrandingTemplate> {
+  const res = await apiClient.post(`/v1/pay/document-branding/from-system/${systemTemplateId}`, { business_id: businessId });
+  return res.data.data;
+}
+
 export async function deleteDocumentTemplate(businessId: string, id: string): Promise<void> {
   // DELETE with a body (business scoping) — Axios needs the `data` option.
   await apiClient.delete(`/v1/pay/document-branding/${id}`, { data: { business_id: businessId } });

@@ -3,9 +3,10 @@ import { Button } from '../design-system/components/actions/Button';
 import { Badge } from '../design-system/components/data/Badge';
 import { ThemeGallery } from './settings/ThemeGallery';
 import { PaymentProcessorsPanel } from './settings/PaymentProcessorsPanel';
+import { DocumentTemplatesSettings } from './settings/DocumentTemplatesSettings';
 import { apiClient } from '../api/client';
 
-type Tab = 'settings' | 'feature-flags' | 'api-keys' | 'email' | 'storage' | 'notifications' | 'logs' | 'query-history' | 'payment-processors' | 'platform-billing' | 'default-theme';
+type Tab = 'settings' | 'feature-flags' | 'api-keys' | 'email' | 'storage' | 'notifications' | 'logs' | 'query-history' | 'payment-processors' | 'platform-billing' | 'default-theme' | 'templates';
 
 export function AdminConfig() {
   const [activeTab, setActiveTab] = useState<Tab>('settings');
@@ -22,6 +23,7 @@ export function AdminConfig() {
     { key: 'payment-processors', label: 'Payment Processors' },
     { key: 'platform-billing', label: 'Platform Billing' },
     { key: 'default-theme', label: 'Themes' },
+    { key: 'templates', label: 'Templates' },
   ];
 
   return (
@@ -55,6 +57,8 @@ export function AdminConfig() {
       {activeTab === 'payment-processors' && <PaymentProcessorsPanel />}
       {activeTab === 'platform-billing' && <PlatformBillingPanel />}
       {activeTab === 'default-theme' && <DefaultThemePanel />}
+      {/* System templates (spec 51, gap 17): the Document Templates editor for the platform's templates */}
+      {activeTab === 'templates' && <DocumentTemplatesSettings scope="system" />}
     </div>
   );
 }

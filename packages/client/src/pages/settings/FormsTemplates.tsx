@@ -4,15 +4,19 @@ import { Modal } from '../../design-system/components/feedback/Modal';
 import { LANGUAGE_OPTIONS } from '@daystream/shared';
 import { LanguageSelect } from '../../components/LanguageSelect';
 import { FormTemplateEditor } from './FormTemplateEditor';
+import { FormRenderer } from '../../components/forms/FormRenderer';
 import * as formsApi from '../../api/forms';
-import type { Form } from '../../api/forms';
+import * as systemApi from '../../api/systemTemplates';
+import type { Form, SystemForm } from '../../api/forms';
 
 /**
  * The "Forms" type on the Templates tab (spec 51, gap 1): the business's forms in the same list
  * style as the other templates, with Edit, Duplicate, Add language and Delete (archive).
  */
-export function FormsTemplates({ businessId, onDirtyChange, kind = 'form' }: {
+export function FormsTemplates({ businessId, onDirtyChange, kind = 'form', scope = 'business' }: {
   businessId: string;
+  /** 'system': the platform's system forms or chart templates (spec 51, gap 17). */
+  scope?: 'business' | 'system';
   /** 'chart' lists the clinical chart templates (spec 51, gap 2) instead of forms. */
   kind?: 'form' | 'chart';
   onDirtyChange?: (dirty: boolean) => void;
@@ -25,16 +29,38 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form' }: {
   const [langTarget, setLangTarget] = useState<Form | null>(null);
   const [newLang, setNewLang] = useState('');
   const [busy, setBusy] = useState(false);
+  // Unsaved changes in the open builder; switching to another row asks first.
+  const [editorDirty, setEditorDirty] = useState(false);
+  const handleDirty = useCallback((d: boolean) => { setEditorDirty(d); onDirtyChange?.(d); }, [onDirtyChange]);
+  const open = (target: Form | 'new') => {
+    if (editorDirty && !confirm('Discard your unsaved changes?')) return;
+    setEditing(target);
+  };
 
   const isChart = kind === 'chart';
+  const isSystem = scope === 'system';
   const noun = isChart ? 'chart template' : 'form';
+  // A business also sees the platform's active system forms, read only, to preview and duplicate.
+  const [systemForms, setSystemForms] = useState<SystemForm[]>([]);
+  const [preview, setPreview] = useState<SystemForm | null>(null);
+  const [copying, setCopying] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    formsApi.listForms(businessId, kind)
-      .then(setForms)
+    const own = isSystem
+      ? systemApi.listAdminSystemForms(kind).then((list) => list.map(formsApi.systemFormAsForm))
+      : formsApi.listForms(businessId, kind);
+    own.then(setForms)
       .catch(() => setError(`Could not load the ${noun}s.`))
       .finally(() => setLoading(false));
-  }, [businessId, kind, noun]);
+    if (!isSystem) formsApi.listSystemForms(businessId, kind).then(setSystemForms).catch(() => setSystemForms([]));
+  }, [businessId, kind, noun, isSystem]);
+
+  // Duplicate a system form into the business and open the copy (not active, applying to nothing yet).
+  const copyFromSystem = async (f: SystemForm) => {
+    setCopying(f.id); setError(null);
+    try { const created = await formsApi.copySystemForm(businessId, f.id); load(); setEditorDirty(false); setEditing(created); }
+    catch (e) { fail(e); } finally { setCopying(null); }
+  };
   useEffect(() => { load(); }, [load]);
 
   const fail = (e: unknown) => {
@@ -44,7 +70,11 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form' }: {
 
   const handleDuplicate = async (f: Form) => {
     setError(null);
-    try { await formsApi.duplicateForm(businessId, f.id); load(); } catch (e) { fail(e); }
+    try {
+      if (isSystem) await systemApi.createAdminSystemForm(kind, { name: `${f.name} (Copy)`, language: f.language, definition: f.definition, is_active: false });
+      else await formsApi.duplicateForm(businessId, f.id);
+      load();
+    } catch (e) { fail(e); }
   };
 
   const handleDelete = async (f: Form) => {
@@ -53,10 +83,11 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form' }: {
       ? `Delete chart template "${label}"? Charts already written from it are kept.`
       : `Delete form "${label}"? Forms customers already completed are kept.`)) return;
     setError(null);
-    try { await formsApi.deleteForm(businessId, f.id); if (editing && editing !== 'new' && editing.id === f.id) setEditing(null); load(); } catch (e) { fail(e); }
+    try { if (isSystem) await systemApi.deleteAdminSystemForm(f.id); else await formsApi.deleteForm(businessId, f.id); if (editing && editing !== 'new' && editing.id === f.id) setEditing(null); load(); } catch (e) { fail(e); }
   };
 
   const openLanguage = (f: Form) => {
+    if (editorDirty && !confirm('Discard your unsaved changes?')) return;
     const used = new Set(forms.filter((x) => x.groupId === f.groupId).map((x) => x.language));
     const free = LANGUAGE_OPTIONS.find((l) => !used.has(l.code));
     setNewLang(free?.code ?? '');
@@ -70,6 +101,7 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form' }: {
       const created = await formsApi.addFormLanguageVersion(businessId, langTarget.id, newLang);
       setLangTarget(null);
       load();
+      setEditorDirty(false);
       setEditing(created);
     } catch (e) { fail(e); } finally { setBusy(false); }
   };
@@ -100,9 +132,36 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form' }: {
       </p>
       {error && <p style={s.error} role="alert">{error}</p>}
 
+      {/* The lists on the left at a set width, the open builder on the right (owner, 24 Nov 2026) */}
+      <div style={s.split}>
+      <div style={s.splitList}>
+      {/* The platform's system forms, read only: Preview and Duplicate (spec 51, gap 17) */}
+      {!isSystem && systemForms.length > 0 && (
+        <>
+          <div style={s.listHeader}>
+            <h3 style={s.subTitle}>{isChart ? 'System chart templates' : 'System forms'}</h3>
+          </div>
+          <p style={s.helper}>Starting points from the platform. Duplicate one to make your own copy, then choose when it is needed.</p>
+          <div style={s.list}>
+            {systemForms.map((f) => (
+              <div key={f.id} style={s.listRow}>
+                <div style={s.listInfo}>
+                  <span style={s.listName}>{f.name}</span>
+                  <span style={s.tag}>System</span>
+                  {!isChart && f.signed && <span style={s.tag}>Signed</span>}
+                </div>
+                <div style={s.listActions}>
+                  <Button size="sm" variant="secondary" onClick={() => setPreview(f)}>Preview</Button>
+                  <Button size="sm" variant="ghost" loading={copying === f.id} onClick={() => { if (editorDirty && !confirm('Discard your unsaved changes?')) return; copyFromSystem(f); }}>Duplicate</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       <div style={s.listHeader}>
         <h3 style={s.subTitle}>{isChart ? 'Charts' : 'Forms'}</h3>
-        <Button size="sm" onClick={() => setEditing('new')} disabled={editing !== null}>{isChart ? 'New chart template' : 'New form'}</Button>
+        <Button size="sm" onClick={() => open('new')}>{isChart ? 'New chart template' : 'New form'}</Button>
       </div>
 
       {forms.length === 0 ? (
@@ -112,7 +171,8 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form' }: {
       ) : (
         <div style={s.list}>
           {forms.map((f) => (
-            <div key={f.id} style={{ ...s.listRow, marginLeft: f.language ? 'var(--space-lg)' : 0 }}>
+            <div key={f.id} style={{ ...s.listRow, marginLeft: f.language ? 'var(--space-lg)' : 0, ...(editing !== null && editing !== 'new' && editing.id === f.id ? s.listRowOpen : {}) }}
+              aria-current={editing !== null && editing !== 'new' && editing.id === f.id ? 'true' : undefined}>
               <div style={s.listInfo}>
                 <span style={s.listName}>{f.name}</span>
                 {f.language && <span style={s.tag}>{f.language}</span>}
@@ -122,27 +182,41 @@ export function FormsTemplates({ businessId, onDirtyChange, kind = 'form' }: {
                 </span>
               </div>
               <div style={s.listActions}>
-                <Button size="sm" variant="secondary" onClick={() => setEditing(f)} disabled={editing !== null}>Edit</Button>
+                <Button size="sm" variant="secondary" onClick={() => open(f)}>Edit</Button>
                 <Button size="sm" variant="ghost" onClick={() => handleDuplicate(f)}>Duplicate</Button>
-                {!isChart && <Button size="sm" variant="ghost" onClick={() => openLanguage(f)}>Add language</Button>}
+                {!isChart && !isSystem && <Button size="sm" variant="ghost" onClick={() => openLanguage(f)}>Add language</Button>}
                 <Button size="sm" variant="ghost" onClick={() => handleDelete(f)}>Delete</Button>
               </div>
             </div>
           ))}
         </div>
       )}
+      </div>
 
       {editing && (
-        <FormTemplateEditor
-          key={editing === 'new' ? 'new' : editing.id}
-          businessId={businessId}
-          form={editing === 'new' ? null : editing}
-          kind={kind}
-          onSaved={() => { setEditing(null); load(); }}
-          onCancel={() => setEditing(null)}
-          onDirtyChange={onDirtyChange}
-        />
+        <div style={s.splitEditor}>
+          <FormTemplateEditor
+            key={editing === 'new' ? 'new' : editing.id}
+            businessId={businessId}
+            form={editing === 'new' ? null : editing}
+            kind={kind}
+            scope={scope}
+            onSaved={() => { setEditing(null); load(); }}
+            onCancel={() => setEditing(null)}
+            onDirtyChange={handleDirty}
+          />
+        </div>
       )}
+      </div>
+
+      <Modal open={!!preview} onClose={() => setPreview(null)} title={`Preview — ${preview?.name ?? ''}`} size="lg">
+        {preview && (
+          <>
+            <p style={s.helper}>Read only. Duplicate it to make your own copy you can change.</p>
+            <FormRenderer definition={preview.definition} idPrefix="system-preview" answers={{}} onChange={() => undefined} disabled />
+          </>
+        )}
+      </Modal>
 
       <Modal open={!!langTarget} onClose={() => setLangTarget(null)} title="Add a language version" size="sm">
         {availableLanguages.length === 0 ? (
@@ -183,5 +257,10 @@ const s: Record<string, React.CSSProperties> = {
   tag: { fontSize: 'var(--font-size-xs)', padding: '2px 8px', borderRadius: 'var(--radius-full, 9999px)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' },
   statusTag: { fontSize: 'var(--font-size-xs)' },
   listActions: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
+  // Lists on the left at a set width, the open builder on the right; stacked when there is no room.
+  split: { display: 'flex', alignItems: 'flex-start', gap: 'var(--space-lg)', flexWrap: 'wrap' },
+  splitList: { flex: '0 0 340px', minWidth: 0, maxWidth: '100%' },
+  splitEditor: { flex: '1 1 480px', minWidth: 0, paddingTop: 'var(--space-sm)' },
+  listRowOpen: { borderColor: 'var(--color-primary)', boxShadow: 'inset 3px 0 0 var(--color-primary)' },
   modalActions: { display: 'flex', gap: '12px', marginTop: 'var(--space-lg)' },
 };

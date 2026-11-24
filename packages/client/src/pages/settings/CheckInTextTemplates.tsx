@@ -4,6 +4,7 @@ import { LanguageSelect } from '../../components/LanguageSelect';
 import { CHECK_IN_TEXT_FIELDS, CHECK_IN_TEXT_PLACEHOLDERS, CHECK_IN_TEXT_DEFAULTS, DEFAULT_LANGUAGE, isSupportedLanguage } from '@daystream/shared';
 import type { CheckInTextField } from '@daystream/shared';
 import * as api from '../../api/checkinTexts';
+import * as systemApi from '../../api/systemTemplates';
 
 /**
  * The "Check-In" type on the Templates tab (spec 51, gap 3): the words on the customer's check-in
@@ -12,8 +13,10 @@ import * as api from '../../api/checkinTexts';
  */
 const GROUPS: CheckInTextField['group'][] = ['Phone page', 'Forms list', 'Kiosk'];
 
-export function CheckInTextTemplates({ businessId, onDirtyChange }: {
+export function CheckInTextTemplates({ businessId, onDirtyChange, scope = 'business' }: {
   businessId: string;
+  /** 'system': the platform's wording, under which every business's own changes sit (spec 51, gap 17). */
+  scope?: 'business' | 'system';
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [language, setLanguage] = useState<string>(DEFAULT_LANGUAGE);
@@ -26,15 +29,20 @@ export function CheckInTextTemplates({ businessId, onDirtyChange }: {
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const inputs = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | null>>({});
 
-  const defaults = isSupportedLanguage(language) ? CHECK_IN_TEXT_DEFAULTS[language] : CHECK_IN_TEXT_DEFAULTS[DEFAULT_LANGUAGE];
+  const isSystem = scope === 'system';
+  const builtIn = isSupportedLanguage(language) ? CHECK_IN_TEXT_DEFAULTS[language] : CHECK_IN_TEXT_DEFAULTS[DEFAULT_LANGUAGE];
+  // What a piece says when it is not changed here: for a business, the platform's wording (spec 51,
+  // gap 17); for the platform, the built-in wording.
+  const [platform, setPlatform] = useState<Record<string, string> | null>(null);
+  const defaults = (platform ?? builtIn) as typeof builtIn;
 
   const load = useCallback(() => {
     setLoading(true); setError(null); setNote(null);
-    api.getCheckInTexts(businessId, language)
-      .then((r) => { setSaved(r.overrides); setValues(r.overrides); })
+    (isSystem ? systemApi.getSystemCheckInTexts(language) : api.getCheckInTexts(businessId, language))
+      .then((r) => { setSaved(r.overrides); setValues(r.overrides); setPlatform((r as { defaults?: Record<string, string> }).defaults ?? null); })
       .catch(() => setError('Could not load the wording.'))
       .finally(() => setLoading(false));
-  }, [businessId, language]);
+  }, [businessId, language, isSystem]);
   useEffect(() => { load(); }, [load]);
 
   const clean = (v: Record<string, string>) => Object.fromEntries(Object.entries(v).filter(([, x]) => x.trim() !== ''));
@@ -45,7 +53,9 @@ export function CheckInTextTemplates({ businessId, onDirtyChange }: {
   const save = async () => {
     setSaving(true); setError(null); setNote(null);
     try {
-      const r = await api.saveCheckInTexts(businessId, language, clean(values));
+      const r = isSystem
+        ? await systemApi.saveSystemCheckInTexts(language, clean(values))
+        : await api.saveCheckInTexts(businessId, language, clean(values));
       setSaved(r.overrides); setValues(r.overrides);
       setNote('Saved.');
     } catch (e) {
@@ -70,9 +80,14 @@ export function CheckInTextTemplates({ businessId, onDirtyChange }: {
     <div>
       <p style={s.description}>
         These are the words customers see when they check in from their phone or at the kiosk, and in the list of
-        forms. Leave a box empty to use the built-in wording. Where a piece of wording can include the customer's
+        forms. Leave a box empty to use the default wording shown in it{isSystem ? ' (built in)' : ' (the platform\'s)'}. Where a piece of wording can include the customer's
         details, the box lists them: write them as {'{{first_name}}'}.
       </p>
+      {/* Save at the top too, so there is no need to scroll down (owner, 24 Nov 2026) */}
+      <div style={{ ...s.actions, marginTop: 0, marginBottom: 'var(--space-md)' }}>
+        <Button size="sm" onClick={save} loading={saving} disabled={!dirty}>Save wording</Button>
+        <Button size="sm" variant="ghost" onClick={() => setValues(saved)} disabled={!dirty || saving}>Discard changes</Button>
+      </div>
       {error && <p style={s.error} role="alert">{error}</p>}
       {note && <p style={s.note} role="status">{note}</p>}
 

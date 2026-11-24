@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button } from '../../design-system/components/actions/Button';
 import { Modal } from '../../design-system/components/feedback/Modal';
 import { RichTextEditor, RichTextEditorHandle, sanitizeRichText } from '../../design-system/components/forms/RichTextEditor';
@@ -10,6 +10,7 @@ import { FormsTemplates } from './FormsTemplates';
 import { CheckInTextTemplates } from './CheckInTextTemplates';
 import { useClinicalAccess } from '../../utils/useClinicalAccess';
 import * as payApi from '../../api/payments';
+import * as systemApi from '../../api/systemTemplates';
 import type {
   DocumentArtifactType,
   DocumentPlaceholder,
@@ -148,9 +149,33 @@ const SAMPLE_DETAILS_TABLE = {
  * Templates keep their own Save (David, 2026-11-02, decision 9). `onDirtyChange` tells the page
  * whether an open template has unsaved changes, so leaving can ask first.
  */
-export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void } = {}) {
+export function DocumentTemplatesSettings({ onDirtyChange, scope = 'business' }: {
+  onDirtyChange?: (dirty: boolean) => void;
+  /** 'system': the platform's templates, on System Configuration → Templates (spec 51, gap 17). */
+  scope?: 'business' | 'system';
+} = {}) {
   const businessId = useContextManager().activeContext.businessId || '';
   const canUseCharts = useClinicalAccess();
+  const isSystem = scope === 'system';
+  // Where templates are read and saved: the business's own, or the platform's system templates.
+  const api = useMemo(() => (isSystem ? {
+    types: () => systemApi.getSystemArtifactTypes(),
+    list: (type: string) => systemApi.listSystemTemplates(type),
+    create: (type: string, input: DocumentBrandingInput) => systemApi.createSystemTemplate(type, input),
+    update: (id: string, input: DocumentBrandingInput) => systemApi.updateSystemTemplate(id, input),
+    remove: (id: string) => systemApi.deleteSystemTemplate(id),
+  } : {
+    types: () => payApi.getDocumentArtifactTypes(),
+    list: (type: string) => payApi.listDocumentTemplates(businessId, type),
+    create: (type: string, input: DocumentBrandingInput) => payApi.createDocumentTemplate(businessId, type, input),
+    update: (id: string, input: DocumentBrandingInput) => payApi.updateDocumentTemplate(businessId, id, input),
+    remove: (id: string) => payApi.deleteDocumentTemplate(businessId, id),
+  }), [isSystem, businessId]);
+  // A business also sees the platform's active system templates, read only (spec 51, gap 17).
+  const [systemTemplates, setSystemTemplates] = useState<DocumentBrandingTemplate[]>([]);
+  const [copying, setCopying] = useState<string | null>(null);
+  // What the Preview shows: the template being edited, or a system template (read only).
+  const [previewForm, setPreviewForm] = useState<EditForm | null>(null);
 
   const [catalog, setCatalog] = useState<DocumentArtifactType[]>([]);
   const [artifactType, setArtifactType] = useState<string>('');
@@ -183,21 +208,38 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
 
   // Load the artifact catalog once.
   useEffect(() => {
-    payApi.getDocumentArtifactTypes()
+    api.types()
       .then((cat) => {
         setCatalog(cat);
         if (cat.length > 0) setArtifactType(cat[0].key);
       })
       .catch(() => setError('Failed to load document types.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [api]);
 
   const loadTemplates = useCallback(() => {
-    if (!businessId || !artifactType || artifactType === FORMS_TYPE || artifactType === CHARTS_TYPE || artifactType === CHECKIN_TEXT_TYPE) return;
-    payApi.listDocumentTemplates(businessId, artifactType)
+    if ((!isSystem && !businessId) || !artifactType || artifactType === FORMS_TYPE || artifactType === CHARTS_TYPE || artifactType === CHECKIN_TEXT_TYPE) return;
+    api.list(artifactType)
       .then(setTemplates)
       .catch(() => setError('Failed to load templates.'));
-  }, [businessId, artifactType]);
+    if (!isSystem) {
+      payApi.listSystemDocumentTemplates(businessId, artifactType)
+        .then(setSystemTemplates)
+        .catch(() => setSystemTemplates([]));
+    }
+  }, [api, isSystem, businessId, artifactType]);
+
+  // Duplicate a system template into the business and open the copy (not active yet).
+  const copyFromSystem = async (t: DocumentBrandingTemplate) => {
+    if (!keepOrDiscard()) return;
+    setCopying(t.id); setError(null);
+    try {
+      const created = await payApi.copySystemDocumentTemplate(businessId, t.id);
+      loadTemplates();
+      openEdit(created);
+    } catch (e: unknown) { setError(saveErr(e)); }
+    finally { setCopying(null); }
+  };
 
   // Reload templates whenever the selected artifact type changes.
   useEffect(() => {
@@ -205,13 +247,18 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
     loadTemplates();
   }, [loadTemplates]);
 
+  // With the editor beside the list, opening another row would drop unsaved changes; ask first.
+  const keepOrDiscard = () => !dirty || confirm('Discard your unsaved changes?');
+
   const openNew = () => {
+    if (!keepOrDiscard()) return;
     setForm({ ...EMPTY_FORM, name: 'New Template' });
     setOpenedForm({ ...EMPTY_FORM, name: 'New Template' });
     setEditingId('new');
   };
 
   const openEdit = (t: DocumentBrandingTemplate) => {
+    if (!keepOrDiscard()) return;
     setForm(toForm(t));
     setOpenedForm(toForm(t));
     setEditingId(t.id);
@@ -221,6 +268,7 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
   // (name suffixed "(Copy)"), so a business can tweak seasonal details and save a
   // fresh variant without re-entering everything. Saving creates a new template.
   const openDuplicate = (t: DocumentBrandingTemplate) => {
+    if (!keepOrDiscard()) return;
     setForm({ ...toForm(t), name: `${t.name} (Copy)` });
     setOpenedForm({ ...toForm(t), name: `${t.name} (Copy)` });
     setEditingId('new');
@@ -237,9 +285,9 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
     setSaving(true); setError(null);
     try {
       if (editingId === 'new') {
-        await payApi.createDocumentTemplate(businessId, artifactType, toInput(form));
+        await api.create(artifactType, toInput(form));
       } else if (editingId) {
-        await payApi.updateDocumentTemplate(businessId, editingId, toInput(form));
+        await api.update(editingId, toInput(form));
       }
       loadTemplates();
       closeEditor();
@@ -253,7 +301,7 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
   const handleDelete = async (t: DocumentBrandingTemplate) => {
     if (!confirm(`Delete template "${t.name}"? This cannot be undone.`)) return;
     try {
-      await payApi.deleteDocumentTemplate(businessId, t.id);
+      await api.remove(t.id);
       if (editingId === t.id) closeEditor();
       loadTemplates();
     } catch (e: unknown) {
@@ -288,60 +336,102 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
 
   if (loading) return <p style={s.muted}>Loading...</p>;
 
-  if (!businessId) {
+  if (!isSystem && !businessId) {
     return <p style={s.muted}>Select a business to manage document templates.</p>;
   }
 
-  const primary = form.color_primary || DEFAULT_PRIMARY;
-  const secondary = form.color_secondary || DEFAULT_SECONDARY;
+  // Which template the business's emails of this type use now (criterion 4).
+  const ownActive = templates.find((t) => t.isActive);
+  const usedNote = isSystem ? null
+    : ownActive ? `Your emails of this type use your template “${ownActive.name}”.`
+    : systemTemplates[0] ? `You have no active template of your own, so your emails of this type use the system template “${systemTemplates[0].name}”. Duplicate it to make it yours.`
+    : 'No active template: a plain email is sent.';
+
+
+  // Artifact type selector
+  const typePicker = (
+    <div style={s.field}>
+      <label style={s.label} htmlFor="artifact-type">Document Type</label>
+      <select
+        id="artifact-type"
+        style={s.select}
+        value={artifactType}
+        onChange={(e) => setArtifactType(e.target.value)}
+      >
+        {catalog.map((c) => (
+          <option key={c.key} value={c.key}>{c.label}</option>
+        ))}
+        {/* The same types on System Configuration as on a business (spec 51, gap 17, criterion 7) */}
+        <option value={FORMS_TYPE}>Forms</option>
+        {(isSystem || canUseCharts) && <option value={CHARTS_TYPE}>Charts</option>}
+        <option value={CHECKIN_TEXT_TYPE}>Check-In</option>
+      </select>
+      {selectedType && <span style={s.helper}>{selectedType.description}</span>}
+    </div>
+  );
+  const splitLayout = artifactType !== CHECKIN_TEXT_TYPE && artifactType !== FORMS_TYPE && artifactType !== CHARTS_TYPE;
 
   return (
     <div style={s.section}>
-      <h2 style={s.title}>Document Templates</h2>
+      <h2 style={s.title}>{isSystem ? 'System Templates' : 'Document Templates'}</h2>
       <p style={s.description}>
-        Brand the documents your customers receive. Pick a document type, then create one or more
-        templates — for example a default and a seasonal variant, or per-language versions.
+        {isSystem
+          ? 'The platform\'s templates. A business that has no active template of its own for a document type sends with the active system template, filled in with its own details. Businesses see them read only and can duplicate one to customise it.'
+          : 'Brand the documents your customers receive. Pick a document type, then create one or more templates — for example a default and a seasonal variant, or per-language versions.'}
       </p>
 
       {error && <p style={s.error} role="alert">{error}</p>}
 
-      {/* Artifact type selector */}
-      <div style={s.field}>
-        <label style={s.label} htmlFor="artifact-type">Document Type</label>
-        <select
-          id="artifact-type"
-          style={s.select}
-          value={artifactType}
-          onChange={(e) => setArtifactType(e.target.value)}
-        >
-          {catalog.map((c) => (
-            <option key={c.key} value={c.key}>{c.label}</option>
-          ))}
-          <option value={FORMS_TYPE}>Forms</option>
-          {canUseCharts && <option value={CHARTS_TYPE}>Charts</option>}
-          <option value={CHECKIN_TEXT_TYPE}>Check-In</option>
-        </select>
-        {selectedType && <span style={s.helper}>{selectedType.description}</span>}
-      </div>
+      {/* The document type picker: above Forms, Charts and Check-In; at the top of the left column for the other types */}
+      {!splitLayout && typePicker}
 
       {artifactType === CHECKIN_TEXT_TYPE ? (
-        <CheckInTextTemplates businessId={businessId} onDirtyChange={onDirtyChange} />
+        <CheckInTextTemplates businessId={businessId} onDirtyChange={onDirtyChange} scope={scope} />
       ) : artifactType === FORMS_TYPE || artifactType === CHARTS_TYPE ? (
-        <FormsTemplates key={artifactType} businessId={businessId} onDirtyChange={onDirtyChange}
-          kind={artifactType === CHARTS_TYPE ? 'chart' : 'form'} />
+        <FormsTemplates key={`${scope}-${artifactType}`} businessId={businessId} onDirtyChange={onDirtyChange}
+          kind={artifactType === CHARTS_TYPE ? 'chart' : 'form'} scope={scope} />
       ) : (<>
+      {/* The lists on the left at a set width, the open template on the right (owner, 24 Nov 2026) */}
+      <div style={s.split}>
+      <div style={s.splitList}>
+      {typePicker}
+      {/* The platform's system templates, read only: Preview and Duplicate (spec 51, gap 17) */}
+      {!isSystem && systemTemplates.length > 0 && (
+        <>
+          <div style={s.listHeader}>
+            <h3 style={s.subTitle}>System templates</h3>
+          </div>
+          <div style={s.list}>
+            {systemTemplates.map((t) => (
+              <div key={t.id} style={s.listRow}>
+                <div style={s.listInfo}>
+                  <span style={s.listName}>{t.name}</span>
+                  <span style={s.langTag}>System</span>
+                  {t.language && <span style={s.langTag}>{t.language}</span>}
+                </div>
+                <div style={s.listActions}>
+                  <Button size="sm" variant="secondary" onClick={() => setPreviewForm(toForm(t))}>Preview</Button>
+                  <Button size="sm" variant="ghost" loading={copying === t.id} onClick={() => copyFromSystem(t)}>Duplicate</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       {/* Template list */}
       <div style={s.listHeader}>
         <h3 style={s.subTitle}>Templates</h3>
         <Button size="sm" onClick={openNew}>New Template</Button>
       </div>
 
+      {usedNote && <p style={s.helper} role="status">{usedNote}</p>}
+
       {templates.length === 0 ? (
-        <p style={s.muted}>No templates yet. Create one to brand this document.</p>
+        <p style={s.muted}>{isSystem ? 'No system template for this document type yet.' : 'No templates yet. Create one, or duplicate a system template above.'}</p>
       ) : (
         <div style={s.list}>
           {templates.map((t) => (
-            <div key={t.id} style={s.listRow}>
+            <div key={t.id} style={{ ...s.listRow, ...(editingId === t.id ? s.listRowOpen : {}) }} aria-current={editingId === t.id ? 'true' : undefined}>
               <div style={s.listInfo}>
                 <span style={s.listName}>{t.name}</span>
                 {t.language && <span style={s.langTag}>{t.language}</span>}
@@ -358,11 +448,18 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
           ))}
         </div>
       )}
+      </div>
 
-      {/* Editor */}
+      {/* Editor, to the right of the lists; its Preview and Save at its top as well as its bottom */}
       {editingId && selectedType && (
-        <div style={s.editor}>
-          <h3 style={s.subTitle}>{editingId === 'new' ? 'New Template' : 'Edit Template'}</h3>
+        <div style={{ ...s.editor, ...s.splitEditor }}>
+          <div style={s.editorHead}>
+            <h3 style={s.subTitle}>{editingId === 'new' ? 'New Template' : 'Edit Template'}</h3>
+            <div style={s.listActions}>
+              <Button size="sm" variant="secondary" onClick={() => setPreviewOpen(true)} disabled={saving}>Preview</Button>
+              <Button size="sm" onClick={handleSave} loading={saving}>{editingId === 'new' ? 'Create Template' : 'Save Changes'}</Button>
+            </div>
+          </div>
 
           <div style={s.formGrid}>
             <div style={s.field}>
@@ -488,29 +585,41 @@ export function DocumentTemplatesSettings({ onDirtyChange }: { onDirtyChange?: (
           </div>
         </div>
       )}
+      </div>
 
       {/* Preview — renders the template with sample values + chosen branding. */}
-      {selectedType && (
-        <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title={`Preview — ${selectedType.label}`} size="lg">
+      {selectedType && (() => {
+        // The template being edited, or a system template opened with Preview (read only).
+        const shown = previewForm ?? form;
+        return (
+        <Modal open={previewOpen || !!previewForm} onClose={() => { setPreviewOpen(false); setPreviewForm(null); }}
+          title={`Preview — ${selectedType.label}${previewForm ? ' (system template)' : ''}`} size="lg">
           <div style={s.previewNote}>
-            Placeholders are shown filled with example values. Actual documents use real customer data.
+            Placeholders are shown filled with example values. Actual documents use real customer data
+            {previewForm ? ' and your own business details and branding' : ''}.
           </div>
           <BrandedDocumentView fields={{
-            primaryColor: primary,
-            secondaryColor: secondary,
-            logoUrl: form.logo_url || null,
+            primaryColor: shown.color_primary || DEFAULT_PRIMARY,
+            secondaryColor: shown.color_secondary || DEFAULT_SECONDARY,
+            logoUrl: shown.logo_url || null,
             businessName: fillSamples('{{business_name}}', selectedType.placeholders),
-            subject: fillSamples(form.subject_template, selectedType.placeholders),
+            subject: fillSamples(shown.subject_template, selectedType.placeholders),
             // Keep the {{details_table}} marker literal in the body so the preview
             // can draw a sample table where the user placed it.
-            bodyHtml: form.body_template ? sanitizeRichText(fillSamples(form.body_template, selectedType.placeholders)) : '',
-            footerText: fillSamples(form.footer_text, selectedType.placeholders),
-            footerLinkText: fillSamples(form.footer_link_text, selectedType.placeholders),
-            footerLinkUrl: fillSamples(form.footer_link_url, selectedType.placeholders),
+            bodyHtml: shown.body_template ? sanitizeRichText(fillSamples(shown.body_template, selectedType.placeholders)) : '',
+            footerText: fillSamples(shown.footer_text, selectedType.placeholders),
+            footerLinkText: fillSamples(shown.footer_link_text, selectedType.placeholders),
+            footerLinkUrl: fillSamples(shown.footer_link_url, selectedType.placeholders),
             detailsTable: SAMPLE_DETAILS_TABLE,
           }} />
+          {previewForm && (
+            <div style={{ ...s.actions, marginTop: 'var(--space-md)' }}>
+              <p style={s.helper}>Read only. Duplicate it to make your own copy you can change.</p>
+            </div>
+          )}
         </Modal>
-      )}
+        );
+      })()}
       </>)}
     </div>
   );
@@ -553,7 +662,7 @@ function saveErr(e: unknown): string {
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 const s: Record<string, React.CSSProperties> = {
-  section: { maxWidth: '900px' },
+  section: {},
   title: { margin: '0 0 var(--space-sm) 0', fontSize: 'var(--font-size-h2, 1.5rem)', fontWeight: 600, color: 'var(--color-text)' },
   subTitle: { margin: 0, fontSize: 'var(--font-size-h4, 1.125rem)', fontWeight: 600, color: 'var(--color-text)' },
   description: { fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', margin: '0 0 var(--space-lg) 0', lineHeight: 1.5, maxWidth: '640px' },
@@ -576,14 +685,20 @@ const s: Record<string, React.CSSProperties> = {
   // List
   listHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: 'var(--space-lg) 0 var(--space-sm) 0' },
   list: { display: 'flex', flexDirection: 'column' as const, gap: '8px', marginBottom: 'var(--space-lg)' },
-  listRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md, 8px)', background: 'var(--color-surface)' },
-  listInfo: { display: 'flex', alignItems: 'center', gap: '12px' },
+  listRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' as const, gap: '8px', padding: '12px 16px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md, 8px)', background: 'var(--color-surface)' },
+  listInfo: { display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' as const, minWidth: 0 },
   listName: { fontWeight: 600, color: 'var(--color-text)', fontSize: 'var(--font-size-base)' },
   langTag: { fontSize: 'var(--font-size-xs)', padding: '2px 8px', borderRadius: 'var(--radius-full, 9999px)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' },
   statusTag: { fontSize: 'var(--font-size-xs)' },
   listActions: { display: 'flex', gap: '8px' },
   // Editor
   editor: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg, 12px)', padding: 'var(--space-lg)', background: 'var(--color-surface)', marginTop: 'var(--space-md)' },
+  // Lists on the left at a set width, the open template on the right; side by side when there is room
+  split: { display: 'flex', alignItems: 'flex-start', gap: 'var(--space-lg)', flexWrap: 'wrap' as const },
+  splitList: { flex: '0 0 340px', minWidth: 0, maxWidth: '100%' },
+  splitEditor: { flex: '1 1 480px', minWidth: 0, marginTop: 0 },
+  editorHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-sm)', flexWrap: 'wrap' as const, marginBottom: 'var(--space-md)' },
+  listRowOpen: { borderColor: 'var(--color-primary)', boxShadow: 'inset 3px 0 0 var(--color-primary)' },
   chipArea: { margin: 'var(--space-md) 0', padding: 'var(--space-md)', border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-md, 8px)' },
   chips: { display: 'flex', flexWrap: 'wrap' as const, gap: '6px', marginTop: '8px' },
   chip: { padding: '4px 10px', fontSize: 'var(--font-size-xs)', borderRadius: 'var(--radius-full, 9999px)', border: '1px solid var(--color-accent)', background: 'transparent', color: 'var(--color-accent)', cursor: 'pointer', fontFamily: 'var(--font-family)' },

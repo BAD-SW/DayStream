@@ -179,6 +179,15 @@ const APPOINTMENT_PLACEHOLDERS: DocumentPlaceholder[] = [
   },
 ];
 
+/** Placeholders of the event registration emails (spec 51, gap 17). */
+const EVENT_PLACEHOLDERS: DocumentPlaceholder[] = [
+  { token: 'event_name', label: 'Event', description: 'The event the customer registered for.', sample: 'Breathwork Workshop' },
+  { token: 'event_when', label: 'Event Date and Time', description: 'When the event is, in the business\'s time zone.', sample: 'Thursday 12 March 2026, 18:00–20:00' },
+  { token: 'event_location', label: 'Event Location', description: 'Where the event is held.', sample: 'Studio 2' },
+  { token: 'event_ticket', label: 'Ticket', description: 'The ticket and how many people.', sample: 'Standard × 2' },
+  { token: 'booking_reference', label: 'Booking Reference', description: 'The registration reference.', sample: 'EVR-2026-0042' },
+];
+
 /**
  * The brandable artifact types. We ship the framework proven end-to-end with
  * Invoice; the remaining types are registered here so adding them later is a
@@ -522,6 +531,55 @@ export const DOCUMENT_ARTIFACT_TYPES: DocumentArtifactType[] = [
     label: 'New Customer',
     description: 'Sent to new customers that have an email address.',
     placeholders: [...COMMON_PLACEHOLDERS],
+  },
+  // ---- Emails that were sent as plain text only (spec 51, gap 17, criterion 5) ----
+  {
+    key: 'booking.reschedule',
+    label: 'Appointment Rescheduled',
+    description: 'Sent when an appointment is moved to another day or time.',
+    placeholders: [
+      ...COMMON_PLACEHOLDERS,
+      ...APPOINTMENT_PLACEHOLDERS,
+      { token: 'previous_date', label: 'Previous Date', description: 'The day the appointment was on before it moved.', sample: 'Mar 12, 2026' },
+      { token: 'previous_time', label: 'Previous Time', description: 'The time the appointment was at before it moved.', sample: '10:00 AM' },
+    ],
+  },
+  {
+    key: 'event.registration_confirmed',
+    label: 'Event Registration',
+    description: 'Sent when a customer is registered for an event (paid, or free).',
+    placeholders: [...COMMON_PLACEHOLDERS, ...EVENT_PLACEHOLDERS],
+  },
+  {
+    key: 'event.registration_reserved',
+    label: 'Event Place Reserved',
+    description: 'Sent when a place at an event is reserved, to be paid at reception.',
+    placeholders: [
+      ...COMMON_PLACEHOLDERS,
+      ...EVENT_PLACEHOLDERS,
+      { token: 'event_payment_note', label: 'Amount to Pay', description: 'What is left to pay at reception, as a sentence.', sample: 'To pay at reception: €30.00' },
+    ],
+  },
+  {
+    key: 'event.registration_cancelled',
+    label: 'Event Registration Cancelled',
+    description: 'Sent when an event registration is cancelled.',
+    placeholders: [
+      ...COMMON_PLACEHOLDERS,
+      ...EVENT_PLACEHOLDERS,
+      { token: 'event_refund_note', label: 'Refund', description: 'What is refunded and how, as a sentence (empty when nothing is refunded).', sample: '€30.00 will be refunded to your card' },
+    ],
+  },
+  {
+    key: 'customer.task_reminder',
+    label: 'Task Reminder',
+    description: 'Sent to a customer when staff set a task with a reminder for them.',
+    placeholders: [
+      ...COMMON_PLACEHOLDERS,
+      { token: 'task_title', label: 'Task', description: 'What the task is.', sample: 'Bring your blood test results' },
+      { token: 'task_details', label: 'Task Details', description: 'More about the task, when staff added any.', sample: 'Results from the last three months, please.' },
+      { token: 'task_due_date', label: 'Due Date', description: 'When the task is due.', sample: 'Mar 12, 2026, 10:00 AM' },
+    ],
   },
   {
     key: 'marketing.email',

@@ -33,16 +33,24 @@ export async function getOverrides(businessId: string, language: string): Promis
   return (rows[0]?.texts ?? {}) as Record<string, string>;
 }
 
-/** The complete wording for a screen: the business's changes over the language's built-in wording. */
-export async function resolveTexts(businessId: string, language: string): Promise<CheckInText> {
-  return checkInTextFor(language, await getOverrides(businessId, language));
+/** The platform's wording for one language (spec 51, gap 17, criterion 9): only the changed pieces. */
+export async function getSystemTexts(language: string): Promise<Record<string, string>> {
+  const { rows } = await adminPool.query('SELECT texts FROM sys_check_in_texts WHERE language = $1', [language]);
+  return (rows[0]?.texts ?? {}) as Record<string, string>;
 }
 
-/** Saves the business's wording for a language. A blank piece goes back to the built-in wording. */
-export async function saveOverrides(
-  businessId: string, tenantId: string, userId: string, language: string, input: Record<string, unknown>,
-): Promise<Record<string, string>> {
-  if (!isSupportedLanguage(language)) throw new CheckInTextError('Choose a supported language.', 'INVALID_LANGUAGE');
+/** The wording a business starts from: the platform's over the language's built-in wording. */
+export async function platformTexts(language: string): Promise<CheckInText> {
+  return checkInTextFor(language, await getSystemTexts(language));
+}
+
+/** The complete wording for a screen: the business's changes over the platform's over the built-in wording. */
+export async function resolveTexts(businessId: string, language: string): Promise<CheckInText> {
+  return checkInTextFor(language, { ...(await getSystemTexts(language)), ...(await getOverrides(businessId, language)) });
+}
+
+/** Only known pieces, as trimmed text; a blank piece is left out (it goes back to the wording below it). */
+function cleanTexts(input: Record<string, unknown>): Record<string, string> {
   const clean: Record<string, string> = {};
   for (const [key, value] of Object.entries(input)) {
     if (!(EDITABLE_CHECK_IN_TEXT_KEYS as readonly string[]).includes(key)) throw new CheckInTextError(`"${key}" is not wording that can be changed.`, 'INVALID_TEXT');
@@ -53,6 +61,27 @@ export async function saveOverrides(
     if (v.length > MAX_TEXT) throw new CheckInTextError('A piece of wording is too long.', 'INVALID_TEXT');
     clean[key] = v;
   }
+  return clean;
+}
+
+/** Saves the platform's wording for a language (platform administrators). */
+export async function saveSystemTexts(language: string, input: Record<string, unknown>, actor: { userId: string; tenantId: string }): Promise<Record<string, string>> {
+  if (!isSupportedLanguage(language)) throw new CheckInTextError('Choose a supported language.', 'INVALID_LANGUAGE');
+  const clean = cleanTexts(input);
+  await adminPool.query(
+    `INSERT INTO sys_check_in_texts (language, texts, updated_by) VALUES ($1, $2, $3)
+     ON CONFLICT (language) DO UPDATE SET texts = EXCLUDED.texts, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+    [language, JSON.stringify(clean), actor.userId]);
+  await logAudit({ tenantId: actor.tenantId, userId: actor.userId, action: 'checkin.system_texts_updated', resourceType: 'sys_check_in_texts', details: { language, changed: Object.keys(clean) } }).catch(() => undefined);
+  return clean;
+}
+
+/** Saves the business's wording for a language. A blank piece goes back to the built-in wording. */
+export async function saveOverrides(
+  businessId: string, tenantId: string, userId: string, language: string, input: Record<string, unknown>,
+): Promise<Record<string, string>> {
+  if (!isSupportedLanguage(language)) throw new CheckInTextError('Choose a supported language.', 'INVALID_LANGUAGE');
+  const clean = cleanTexts(input);
   await adminPool.query(
     `INSERT INTO apt_check_in_texts (tenant_id, business_id, language, texts, updated_by)
      VALUES ($1, $2, $3, $4, $5)

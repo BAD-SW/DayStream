@@ -490,3 +490,170 @@ systemConfigRouter.put('/google-cloud', requirePermission('*:*'), async (req: Re
     success(res, { saved: true });
   } catch (err: any) { console.error('Failed to save Google Cloud config', err?.message || err); error(res, 'Failed to save Google Cloud config', 'INTERNAL_ERROR', 500); }
 });
+
+// ============================================================
+// System templates (spec 51, gap 17; design 17.5): the platform's document templates, used by a
+// business with no active template of its own for the type. Platform administrators only.
+// ============================================================
+
+import Joi from 'joi';
+import { validate } from '../middleware/validate';
+import { SUPPORTED_LANGUAGES, DOCUMENT_ARTIFACT_TYPES } from '@daystream/shared';
+import * as systemTemplates from '../services/system-document-templates.service';
+import type { DocumentBrandingInput } from '../services/document-branding.service';
+
+const templateFields = {
+  name: Joi.string().max(120),
+  language: Joi.string().valid(...SUPPORTED_LANGUAGES).allow(null, ''),
+  is_active: Joi.boolean(),
+  selection_rules: Joi.object().unknown(true),
+  logo_url: Joi.string().uri().allow(null, ''),
+  color_primary: Joi.string().max(9).allow(null, ''),
+  color_secondary: Joi.string().max(9).allow(null, ''),
+  sender_name: Joi.string().max(120).allow(null, ''),
+  reply_to: Joi.string().email().allow(null, ''),
+  subject_template: Joi.string().allow(null, ''),
+  body_template: Joi.string().allow(null, ''),
+  footer_text: Joi.string().allow(null, ''),
+  footer_link_text: Joi.string().max(160).allow(null, ''),
+  footer_link_url: Joi.string().uri({ scheme: ['http', 'https'] }).allow(null, ''),
+};
+const createTemplateSchema = Joi.object({ artifact_type: Joi.string().max(40).required(), ...templateFields });
+const updateTemplateSchema = Joi.object(templateFields).min(1);
+
+/** The editor's body (snake case, '' = cleared) as the service's input. */
+function templateInput(b: Record<string, unknown>): DocumentBrandingInput {
+  const out: DocumentBrandingInput = {};
+  const blank = (v: unknown) => (v === '' ? null : v);
+  if (b.name !== undefined) out.name = b.name as string;
+  if (b.language !== undefined) out.language = blank(b.language) as string | null;
+  if (b.is_active !== undefined) out.isActive = b.is_active as boolean;
+  if (b.selection_rules !== undefined) out.selectionRules = b.selection_rules as Record<string, unknown>;
+  if (b.logo_url !== undefined) out.logoUrl = blank(b.logo_url) as string | null;
+  if (b.color_primary !== undefined) out.colorPrimary = blank(b.color_primary) as string | null;
+  if (b.color_secondary !== undefined) out.colorSecondary = blank(b.color_secondary) as string | null;
+  if (b.sender_name !== undefined) out.senderName = blank(b.sender_name) as string | null;
+  if (b.reply_to !== undefined) out.replyTo = blank(b.reply_to) as string | null;
+  if (b.subject_template !== undefined) out.subjectTemplate = blank(b.subject_template) as string | null;
+  if (b.body_template !== undefined) out.bodyTemplate = blank(b.body_template) as string | null;
+  if (b.footer_text !== undefined) out.footerText = blank(b.footer_text) as string | null;
+  if (b.footer_link_text !== undefined) out.footerLinkText = blank(b.footer_link_text) as string | null;
+  if (b.footer_link_url !== undefined) out.footerLinkUrl = blank(b.footer_link_url) as string | null;
+  return out;
+}
+
+function templateError(res: Response, e: unknown, fallback: string) {
+  if (e instanceof systemTemplates.SystemTemplateError) {
+    error(res, e.message, e.code === 'NOT_FOUND' ? 'NOT_FOUND' : 'VALIDATION_ERROR', e.code === 'NOT_FOUND' ? 404 : 400);
+    return;
+  }
+  logger.error(fallback, { error: (e as Error)?.message });
+  error(res, fallback, 'INTERNAL_ERROR', 500);
+}
+
+// GET /api/v1/admin/system-config/document-templates/artifact-types — the document types and their placeholders
+systemConfigRouter.get('/document-templates/artifact-types', requirePermission('*:*'), (_req: Request, res: Response) => {
+  success(res, DOCUMENT_ARTIFACT_TYPES);
+});
+
+// GET /api/v1/admin/system-config/document-templates?artifact_type= — the system templates
+systemConfigRouter.get('/document-templates', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    success(res, await systemTemplates.listSystemTemplates({ artifactType: (req.query.artifact_type as string) || undefined }));
+  } catch (e) { templateError(res, e, 'Failed to list system templates'); }
+});
+
+systemConfigRouter.post('/document-templates', requirePermission('*:*'), validate(createTemplateSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    success(res, await systemTemplates.createSystemTemplate(req.body.artifact_type, templateInput(req.body), { userId: authReq.user.sub, tenantId: authReq.user.tid }), undefined, 201);
+  } catch (e) { templateError(res, e, 'Failed to create the system template'); }
+});
+
+systemConfigRouter.put('/document-templates/:id', requirePermission('*:*'), validate(updateTemplateSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    success(res, await systemTemplates.updateSystemTemplate(req.params.id, templateInput(req.body), { userId: authReq.user.sub, tenantId: authReq.user.tid }));
+  } catch (e) { templateError(res, e, 'Failed to update the system template'); }
+});
+
+systemConfigRouter.delete('/document-templates/:id', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    await systemTemplates.deleteSystemTemplate(req.params.id, { userId: authReq.user.sub, tenantId: authReq.user.tid });
+    success(res, { deleted: true });
+  } catch (e) { templateError(res, e, 'Failed to delete the system template'); }
+});
+
+// ============================================================
+// System forms, chart templates and check-in wording (spec 51, gap 17, criteria 7 to 9).
+// Platform administrators only.
+// ============================================================
+
+import * as systemForms from '../services/system-forms.service';
+import * as checkInTexts from '../services/checkin-texts.service';
+
+const systemFormFields = {
+  name: Joi.string().max(200),
+  language: Joi.string().valid(...SUPPORTED_LANGUAGES).allow(null, ''),
+  definition: Joi.object().unknown(true),
+  is_active: Joi.boolean(),
+};
+const createSystemFormSchema = Joi.object({ kind: Joi.string().valid('form', 'chart').required(), ...systemFormFields, name: Joi.string().max(200).required(), definition: Joi.object().unknown(true).required() });
+const updateSystemFormSchema = Joi.object(systemFormFields).min(1);
+
+function formError(res: Response, e: unknown, fallback: string) {
+  if (e instanceof systemForms.SystemFormError) {
+    error(res, e.message, e.code === 'NOT_FOUND' ? 'NOT_FOUND' : 'VALIDATION_ERROR', e.code === 'NOT_FOUND' ? 404 : 400);
+    return;
+  }
+  logger.error(fallback, { error: (e as Error)?.message });
+  error(res, fallback, 'INTERNAL_ERROR', 500);
+}
+const actorOf = (req: Request) => { const a = req as AuthenticatedRequest; return { userId: a.user.sub, tenantId: a.user.tid }; };
+
+// GET /api/v1/admin/system-config/forms?kind=form|chart
+systemConfigRouter.get('/forms', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try { success(res, await systemForms.listSystemForms(req.query.kind === 'chart' ? 'chart' : 'form')); }
+  catch (e) { formError(res, e, 'Failed to list system forms'); }
+});
+
+systemConfigRouter.post('/forms', requirePermission('*:*'), validate(createSystemFormSchema), async (req: Request, res: Response) => {
+  try {
+    const b = req.body;
+    success(res, await systemForms.createSystemForm({ kind: b.kind, name: b.name, language: b.language, definition: b.definition, isActive: b.is_active }, actorOf(req)), undefined, 201);
+  } catch (e) { formError(res, e, 'Failed to create the system form'); }
+});
+
+systemConfigRouter.put('/forms/:id', requirePermission('*:*'), validate(updateSystemFormSchema), async (req: Request, res: Response) => {
+  try {
+    const b = req.body;
+    success(res, await systemForms.updateSystemForm(req.params.id, { name: b.name, language: b.language, definition: b.definition, isActive: b.is_active }, actorOf(req)));
+  } catch (e) { formError(res, e, 'Failed to update the system form'); }
+});
+
+systemConfigRouter.delete('/forms/:id', requirePermission('*:*'), async (req: Request, res: Response) => {
+  try { await systemForms.deleteSystemForm(req.params.id, actorOf(req)); success(res, { deleted: true }); }
+  catch (e) { formError(res, e, 'Failed to delete the system form'); }
+});
+
+// GET /api/v1/admin/system-config/check-in-texts?language= — the platform's wording (changed pieces) and the built-in wording
+systemConfigRouter.get('/check-in-texts', requirePermission('*:*'), async (req: Request, res: Response) => {
+  const language = String(req.query.language || '');
+  if (!(SUPPORTED_LANGUAGES as readonly string[]).includes(language)) { error(res, 'Choose a supported language.', 'INVALID_LANGUAGE', 400); return; }
+  try { success(res, { language, overrides: await checkInTexts.getSystemTexts(language) }); }
+  catch (e) { logger.error('Failed to load system check-in wording', { error: (e as Error)?.message }); error(res, 'Failed to load the wording', 'INTERNAL_ERROR', 500); }
+});
+
+const systemCheckInTextsSchema = Joi.object({
+  language: Joi.string().valid(...SUPPORTED_LANGUAGES).required(),
+  texts: Joi.object().pattern(Joi.string(), Joi.string().allow('', null)).required(),
+});
+systemConfigRouter.put('/check-in-texts', requirePermission('*:*'), validate(systemCheckInTextsSchema), async (req: Request, res: Response) => {
+  try { success(res, { language: req.body.language, overrides: await checkInTexts.saveSystemTexts(req.body.language, req.body.texts, actorOf(req)) }); }
+  catch (e) {
+    const err = e as { code?: string; message?: string };
+    if (err.code === 'INVALID_TEXT' || err.code === 'INVALID_LANGUAGE') { error(res, err.message ?? 'Invalid wording', err.code, 400); return; }
+    logger.error('Failed to save system check-in wording', { error: err.message }); error(res, 'Failed to save the wording', 'INTERNAL_ERROR', 500);
+  }
+});

@@ -203,12 +203,14 @@ export async function queueBookingReschedule(booking: any, customerEmail: string
     type: 'booking.reschedule',
     recipientId: booking.customer_id,
     recipientEmail: customerEmail,
-    data: {
-      booking_reference: booking.booking_reference,
-      service_name: serviceWithAddons(booking),
+    // The full appointment (as the confirmation has it, add-ons in the service name) and where it
+    // was before, so the Appointment Rescheduled template has the customer, staff and links
+    // (spec 51, gap 17).
+    data: buildAppointmentData(booking, customerEmail, {
       old_start_time: oldStartTime,
       new_start_time: booking.start_time,
-    },
+      ...(await appointmentLinks(booking)),
+    }),
   });
 }
 
@@ -454,7 +456,11 @@ export async function processNotificationQueue(): Promise<{ sent: number; failed
  * deliberately does not start sending booking mail that wasn't sent before.
  */
 /** Types that have a template but fall back to the plain email while the business has none. */
-const TEMPLATE_OR_PLAIN: ReadonlySet<string> = new Set(['booking.reminder']);
+// (A business template, else the platform's system template, spec 51 gap 17; with neither, the plain email.)
+const TEMPLATE_OR_PLAIN: ReadonlySet<string> = new Set([
+  'booking.reminder', 'booking.reschedule', 'customer.task_reminder',
+  'event.registration_confirmed', 'event.registration_reserved', 'event.registration_cancelled',
+]);
 
 async function sendEmail(notification: any): Promise<void> {
   const type: string = notification.type;

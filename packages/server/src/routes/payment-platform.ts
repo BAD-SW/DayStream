@@ -1432,6 +1432,36 @@ paymentPlatformRouter.put('/document-branding/:id', requirePermission('settings:
   } catch (e: any) { sendCodedError(res, e, DOC_BRANDING_ERR, 'Failed to update template'); }
 });
 
+// System templates (spec 51, gap 17): the platform's active templates, read only for a business;
+// one is used when the business has no active template of its own for the type.
+paymentPlatformRouter.get('/document-branding/system', requirePermission('settings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { listSystemTemplates } = await import('../services/system-document-templates.service');
+    success(res, await listSystemTemplates({ artifactType: (req.query.artifact_type as string) || undefined, activeOnly: true }));
+  } catch (e: any) { sendCodedError(res, e, DOC_BRANDING_ERR, 'Failed to list system templates'); }
+});
+
+// Duplicate a system template into the business: its own copy, not active until it activates it.
+const fromSystemSchema = Joi.object({ business_id: Joi.string().uuid().required() });
+paymentPlatformRouter.post('/document-branding/from-system/:id', requirePermission('settings:*'), validate(fromSystemSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const { getSystemTemplate } = await import('../services/system-document-templates.service');
+    const sys = await getSystemTemplate(req.params.id);
+    if (!sys || !sys.isActive) { error(res, 'System template not found', 'NOT_FOUND', 404); return; }
+    const created = await docBranding.createTemplate({
+      tenantId: authReq.tenantId, businessId: req.body.business_id, artifactType: sys.artifactType, createdBy: authReq.user.sub,
+      name: `Copy of ${sys.name.replace(/^Starter:\s*/, '')}`.slice(0, 120), language: sys.language, isActive: false,
+      selectionRules: sys.selectionRules, logoUrl: sys.logoUrl, colorPrimary: sys.colorPrimary, colorSecondary: sys.colorSecondary,
+      senderName: sys.senderName, replyTo: sys.replyTo, subjectTemplate: sys.subjectTemplate, bodyTemplate: sys.bodyTemplate,
+      footerText: sys.footerText, footerLinkText: sys.footerLinkText, footerLinkUrl: sys.footerLinkUrl, copiedFromSystemId: sys.id,
+    });
+    success(res, created, undefined, 201);
+  } catch (e: any) { sendCodedError(res, e, DOC_BRANDING_ERR, 'Failed to copy the system template'); }
+});
+
 const deleteDocBrandingSchema = Joi.object({ business_id: Joi.string().uuid().required() });
 
 paymentPlatformRouter.delete('/document-branding/:id', requirePermission('settings:*'), validate(deleteDocBrandingSchema), async (req: Request, res: Response) => {

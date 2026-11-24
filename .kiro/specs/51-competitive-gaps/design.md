@@ -35,6 +35,7 @@ Requirements: requirements.md, Requirement 1 (criteria 1-11).
 7. [Gap 7: Retail inventory (Requirement 7)](#7-gap-7-retail-inventory-requirement-7)
 14. [Gap 14: Tips (Requirement 14)](#14-gap-14-tips-requirement-14)
 15. [Service add-ons (Requirement 15)](#15-service-add-ons-requirement-15)
+17. [Starter templates (Requirement 17)](#17-starter-templates-requirement-17)
 18. [Appointment history (Requirement 18)](#18-appointment-history-requirement-18)
 19. [Paying with a membership or package (Requirement 19)](#19-paying-with-a-membership-or-package-requirement-19)
 
@@ -745,6 +746,97 @@ ALTER TABLE pkg_package_items ADD COLUMN addon_id UUID REFERENCES svc_addons(id)
 | PUT | `/v1/services/:id/addons?business_id=` | Save them: `[{ addon_id?, name, description, price }]` in order; without `addon_id` is new, left out is deleted |
 | GET | `/v1/addons?business_id=` | The business's add-ons with their service (package items) |
 | POST, PUT | `/v1/bookings`, `/v1/bookings/:id`, `/v1/widget/booking` | `addons: string[]` |
+
+---
+## 17. Starter templates (Requirement 17)
+
+The platform keeps system templates, one set for every business. Platform administrators build them in a Templates tab of System Configuration, with the same editor as a business's Document Templates page. A business sees them read only and duplicates one to make its own copy. A business with no active template of its own for a document type sends with the system template for it (owner, 24 Nov 2026).
+
+### 17.1 Data model (migration 198)
+
+```sql
+-- the platform's templates: platform configuration, like sys_system_configurations (no tenant;
+-- read and written only through the platform administrators' routes)
+CREATE TABLE sys_document_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  artifact_type VARCHAR(40) NOT NULL,        -- the same catalog keys as pay_document_branding
+  name VARCHAR(120) NOT NULL,
+  language VARCHAR(10),                      -- kept for later; English only for now
+  is_active BOOLEAN NOT NULL DEFAULT false,
+  selection_rules JSONB,
+  logo_url TEXT, color_primary VARCHAR(9), color_secondary VARCHAR(9),   -- normally left empty
+  sender_name VARCHAR(120), reply_to VARCHAR(255),                       -- normally left empty
+  subject_template TEXT, body_template TEXT,
+  footer_text TEXT, footer_link_text VARCHAR(120), footer_link_url TEXT,
+  created_by UUID, updated_by UUID, created_at, updated_at
+);
+CREATE INDEX ON sys_document_templates (artifact_type, is_active);
+
+-- a business copy remembers the system template it came from (shown as "Copied from ...")
+ALTER TABLE pay_document_branding ADD COLUMN copied_from_system_id UUID REFERENCES sys_document_templates(id) ON DELETE SET NULL;
+```
+
+- The same columns as `pay_document_branding`, so one editor and one renderer serve both.
+- Branding and sender fields on a system template are normally empty: the renderer already treats an empty field as "use the business's branding / the platform default", so a system template looks like the business that sends it.
+
+### 17.2 Which template is used (criterion 4)
+
+`selectTemplate(businessId, type, language)` keeps its order for the business's own active templates (language match, then no language, then the first). When the business has none for the type, it takes the active system template for the type (the same language order). Only then does the plain fallback apply. Placeholders are filled from the queued data and the sending business, as today.
+
+The Appointment Reminder's plain fallback (with the check-in link) stays for a business that has no template and no active system template.
+
+### 17.3 The five new document types (criterion 5)
+
+Added to the shared catalog with their placeholders and samples, and to the sending path so they render through templates like the others:
+
+| Key | Label | Placeholders (besides business and customer) |
+|-----|-------|------|
+| `booking.reschedule` | Appointment Rescheduled | service, previous date and time, new date and time, staff, booking reference, add to calendar, check-in link |
+| `event.registration_confirmed` | Event Registration | event, when, location, ticket, booking reference |
+| `event.registration_reserved` | Event Place Reserved | event, when, location, ticket, booking reference, amount to pay |
+| `event.registration_cancelled` | Event Registration Cancelled | event, when, booking reference, refund |
+| `customer.task_reminder` | Task Reminder | task, task details, due date |
+
+- The reschedule notification is queued with the full appointment data (as the confirmation is), plus the previous start time, so its template has the customer, staff and links.
+- With neither a business nor a system template, these five keep today's plain email.
+
+### 17.4 Screens
+
+- **System Configuration → Templates** (platform administrators): the Document Templates screen in a system mode: the document type list, the template list, New Template, Edit, Duplicate, Delete, Preview with sample values, Active. Saving goes to the system routes.
+- **Business Setup → Templates**: the business's templates as today, then **System templates** for the chosen type, each marked "System", with View (the editor read only), Preview and **Duplicate**. Duplicate opens a new business template filled from it ("Copy of ...", not active until the business activates it, `copied_from_system_id` set). A note says which template the business's emails use for the type now: its own, or the system template.
+
+### 17.5 API
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/v1/admin/system-config/document-templates?artifact_type=` | System templates (platform administrators) |
+| POST, PUT, DELETE | `/v1/admin/system-config/document-templates[/:id]` | Create, edit, delete (platform administrators) |
+| GET | `/v1/payments/document-templates/system?business_id=&artifact_type=` | The active system templates, read only, for a business's Templates page |
+| POST | `/v1/payments/document-templates/from-system/:id?business_id=` | Duplicate a system template into the business |
+
+### 17.6 Starter wording (criterion 6)
+
+Migration 198 loads one starter system template per document type (16), in plain, friendly English with the placeholders in place, not active. The platform administrator reviews, changes and activates them on the Templates tab.
+
+### 17.7 As built (24 Nov 2026)
+
+- A system template on a business's Templates page has Preview (the template with sample values) and Duplicate; there is no separate read-only editor, as the preview shows the whole template.
+- The renderer now formats dates and times in the business's time zone (it used the server's), found while checking the starters.
+- The starter wording avoids sentences that read badly when a business has not filled in its phone or address.
+
+### 17.8 Forms, charts and check-in wording (criteria 7 to 9, migration 199)
+
+- `sys_form_templates (kind 'form'|'chart', name, language, definition JSONB, is_active, ...)`: built on System Configuration → Templates with the business's form builder in system mode (no "when this form is needed" box: services and renewal are each business's). `GET/POST/PUT/DELETE /v1/admin/system-config/forms`.
+- A business's Forms and Charts lists show the active system ones read only (`GET /v1/forms/system`), with Preview (the form rendered, disabled) and Duplicate (`POST /v1/forms/from-system/:id`): its own form or chart template, not active, applying to nothing, `frm_forms.copied_from_system_id` set. A system form never applies to a business by itself.
+- `sys_check_in_texts (language, texts)`: the platform's wording. A screen uses the built-in wording, then the platform's, then the business's own (`resolveTexts`). The business's Check-In editor shows the platform's wording as each piece's default (`defaults` on `GET /v1/checkin-texts`). `GET/PUT /v1/admin/system-config/check-in-texts`.
+
+### 17.9 Build order
+
+1. Migration 198 (table, copy link, starter templates); system template service and routes.
+2. `selectTemplate` falls back to the system template; the five document types in the catalog and the sending path; the reschedule notification's full data.
+3. System Configuration → Templates tab (the editor in system mode).
+4. Business Templates page: system templates read only, View, Preview, Duplicate; which template is used.
+5. Verification live with the owner.
 
 ---
 ## 18. Appointment history (Requirement 18)

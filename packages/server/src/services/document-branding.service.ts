@@ -44,6 +44,8 @@ export interface DocumentBrandingTemplate {
   footerText: string | null;
   footerLinkText: string | null;
   footerLinkUrl: string | null;
+  /** A copy of a system template: the one it came from (spec 51, gap 17). */
+  copiedFromSystemId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -87,6 +89,7 @@ function mapRow(r: any): DocumentBrandingTemplate {
     footerText: r.footer_text,
     footerLinkText: r.footer_link_text,
     footerLinkUrl: r.footer_link_url,
+    copiedFromSystemId: r.copied_from_system_id ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -97,7 +100,7 @@ const SELECT_COLS = `
   id, tenant_id, business_id, artifact_type, name, language, is_active,
   selection_rules, logo_url, color_primary, color_secondary, sender_name,
   reply_to, subject_template, body_template, footer_text, footer_link_text,
-  footer_link_url, created_at, updated_at
+  footer_link_url, copied_from_system_id, created_at, updated_at
 `;
 
 /**
@@ -141,6 +144,8 @@ export interface CreateTemplateInput extends DocumentBrandingInput {
   businessId: string;
   artifactType: string;
   createdBy: string;
+  /** Duplicated from this system template (spec 51, gap 17). */
+  copiedFromSystemId?: string | null;
 }
 
 /** Create a new template for an artifact type. */
@@ -161,8 +166,8 @@ export async function createTemplate(input: CreateTemplateInput): Promise<Docume
        (tenant_id, business_id, artifact_type, name, language, is_active,
         selection_rules, logo_url, color_primary, color_secondary, sender_name,
         reply_to, subject_template, body_template, footer_text, footer_link_text,
-        footer_link_url)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        footer_link_url, copied_from_system_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
      RETURNING ${SELECT_COLS}`,
     [
       input.tenantId,
@@ -182,6 +187,7 @@ export async function createTemplate(input: CreateTemplateInput): Promise<Docume
       input.footerText ?? null,
       input.footerLinkText ?? null,
       input.footerLinkUrl ?? null,
+      input.copiedFromSystemId ?? null,
     ],
   );
   const created = mapRow(rows[0]);

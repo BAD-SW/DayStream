@@ -30,6 +30,39 @@ export interface FormInput {
   is_active?: boolean;
 }
 
+/** A system form or chart template (spec 51, gap 17): the platform's, to preview and duplicate. */
+export interface SystemForm {
+  id: string;
+  kind: 'form' | 'chart';
+  name: string;
+  language: string | null;
+  definition: FormDefinition;
+  isActive: boolean;
+  signed: boolean;
+  isSystem: true;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A system form in the shape the form builder edits (it applies to nothing and never renews). */
+export function systemFormAsForm(f: SystemForm): Form {
+  return {
+    ...f, businessId: '', groupId: f.id, version: 1, applies: {}, renewAfterMonths: null, status: 'active',
+  };
+}
+
+/** The platform's active system forms or chart templates, read only, for a business. */
+export async function listSystemForms(businessId: string, kind: 'form' | 'chart' = 'form'): Promise<SystemForm[]> {
+  const res = await apiClient.get('/v1/forms/system', { params: { business_id: businessId, kind } });
+  return res.data.data;
+}
+
+/** Duplicate a system form into the business: its own copy, not active, applying to nothing yet. */
+export async function copySystemForm(businessId: string, systemFormId: string): Promise<Form> {
+  const res = await apiClient.post(`/v1/forms/from-system/${systemFormId}`, { business_id: businessId });
+  return res.data.data;
+}
+
 export async function listForms(businessId: string, kind: 'form' | 'chart' = 'form'): Promise<Form[]> {
   const res = await apiClient.get('/v1/forms', { params: { business_id: businessId, kind } });
   return res.data.data;

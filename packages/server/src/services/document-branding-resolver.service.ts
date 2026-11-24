@@ -43,8 +43,9 @@ export function resolveArtifactKey(notificationType: string): string {
  *   1. active template whose language matches the requested language exactly
  *   2. active template with no language set (language-agnostic / default)
  *   3. any active template (first by name)
- * Returns null when the business has no active template for the type — callers
- * then fall back to a platform-default render.
+ * With no active template of its own, the platform's active system template for the type is used
+ * (spec 51, gap 17). Returns null when there is neither — callers then fall back to a
+ * platform-default render.
  */
 export async function selectTemplate(
   businessId: string,
@@ -55,7 +56,11 @@ export async function selectTemplate(
   if (!isKnownArtifactType(artifactKey)) return null;
 
   const candidates = (await listTemplates(businessId, artifactKey)).filter((t) => t.isActive);
-  if (candidates.length === 0) return null;
+  // None of its own: the platform's active system template for the type (spec 51, gap 17).
+  if (candidates.length === 0) {
+    const { activeSystemTemplate } = await import('./system-document-templates.service');
+    return activeSystemTemplate(artifactKey, language);
+  }
 
   if (language) {
     const exact = candidates.find((t) => (t.language ?? '').toLowerCase() === language.toLowerCase());
@@ -75,11 +80,13 @@ interface BusinessIdentity {
   phone: string | null;
   currency: string;
   locale: string;
+  /** The business's time zone (IANA), for dates and times. */
+  timeZone?: string;
 }
 
 async function getBusinessIdentity(businessId: string): Promise<BusinessIdentity> {
   const { rows } = await adminPool.query(
-    `SELECT name, address, email, phone, currency, default_language
+    `SELECT name, address, email, phone, currency, default_language, timezone
        FROM sys_businesses WHERE id = $1`,
     [businessId],
   );
@@ -91,6 +98,7 @@ async function getBusinessIdentity(businessId: string): Promise<BusinessIdentity
     phone: r.phone ?? null,
     currency: r.currency ?? process.env.PLATFORM_CURRENCY ?? 'EUR',
     locale: localeFor(r.default_language),
+    timeZone: r.timezone || undefined,
   };
 }
 
@@ -108,7 +116,7 @@ function localeFor(language?: string | null): string {
  * is interpreted as UTC midnight, which in any timezone behind UTC renders as the
  * previous day — so we construct the date from its parts to keep it stable.
  */
-function fmtDate(value: unknown, locale: string): string {
+function fmtDate(value: unknown, locale: string, timeZone?: string): string {
   if (value == null || value === '') return '';
   const raw = String(value);
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
@@ -116,15 +124,17 @@ function fmtDate(value: unknown, locale: string): string {
     ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
     : new Date(raw);
   if (Number.isNaN(d.getTime())) return raw;
-  return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+  // A date-only value is that day already; a moment is shown on the business's day (its time zone).
+  return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric', ...(dateOnly || !timeZone ? {} : { timeZone }) });
 }
 
 /** Format the time-of-day from an ISO timestamp (for appointment_time). */
-function fmtTime(value: unknown, locale: string): string {
+function fmtTime(value: unknown, locale: string, timeZone?: string): string {
   if (value == null || value === '') return '';
   const d = new Date(String(value));
   if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' });
+  // In the business's time zone (it used to be the server's; found with spec 51 gap 17).
+  return d.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit', ...(timeZone ? { timeZone } : {}) });
 }
 
 /**
@@ -139,6 +149,7 @@ export function buildTokenMap(
 ): Record<string, string> {
   const currency = typeof data.currency === 'string' ? data.currency : identity.currency;
   const locale = identity.locale;
+  const timeZone = identity.timeZone;
 
   const money = (cents: unknown): string =>
     typeof cents === 'number' ? formatCurrency(cents, currency, locale) : '';
@@ -172,20 +183,20 @@ export function buildTokenMap(
     // (they'd otherwise render blank). Both read the same data-bag keys.
     adjustment_number: str(data.adjustment_number ?? data.invoice_number),
     invoice_number: str(data.adjustment_number ?? data.invoice_number),
-    adjustment_date: fmtDate(data.adjustment_date ?? data.invoice_date ?? data.issue_date, locale),
-    invoice_date: fmtDate(data.adjustment_date ?? data.invoice_date ?? data.issue_date, locale),
+    adjustment_date: fmtDate(data.adjustment_date ?? data.invoice_date ?? data.issue_date, locale, timeZone),
+    invoice_date: fmtDate(data.adjustment_date ?? data.invoice_date ?? data.issue_date, locale, timeZone),
     receipt_number: str(data.receipt_number ?? data.reference_number),
     credit_note_number: str(data.credit_note_number),
     reference_number: str(data.reference_number),
     original_invoice_number: str(data.original_invoice_number),
-    credit_note_date: fmtDate(data.credit_note_date, locale),
-    due_date: fmtDate(data.due_date, locale),
-    payment_date: fmtDate(data.payment_date, locale),
-    refund_date: fmtDate(data.refund_date, locale),
-    original_payment_date: fmtDate(data.original_payment_date, locale),
-    retry_date: fmtDate(data.retry_date, locale),
-    renewal_date: fmtDate(data.renewal_date, locale),
-    expiry_date: fmtDate(data.expiry_date, locale),
+    credit_note_date: fmtDate(data.credit_note_date, locale, timeZone),
+    due_date: fmtDate(data.due_date, locale, timeZone),
+    payment_date: fmtDate(data.payment_date, locale, timeZone),
+    refund_date: fmtDate(data.refund_date, locale, timeZone),
+    original_payment_date: fmtDate(data.original_payment_date, locale, timeZone),
+    retry_date: fmtDate(data.retry_date, locale, timeZone),
+    renewal_date: fmtDate(data.renewal_date, locale, timeZone),
+    expiry_date: fmtDate(data.expiry_date, locale, timeZone),
     payment_method: str(data.payment_method ?? data.method),
     failure_reason: str(data.failure_reason),
     reason: str(data.reason),
@@ -198,8 +209,8 @@ export function buildTokenMap(
     service_name: str(data.service_name),
     staff_name: str(data.staff_name),
     booking_reference: str(data.booking_reference),
-    appointment_date: fmtDate(data.appointment_date ?? data.start_time, locale),
-    appointment_time: fmtTime(data.appointment_time ?? data.start_time, locale),
+    appointment_date: fmtDate(data.appointment_date ?? data.start_time, locale, timeZone),
+    appointment_time: fmtTime(data.appointment_time ?? data.start_time, locale, timeZone),
     // Links (pass through; validated at save time).
     payment_link: str(data.payment_link),
     update_payment_link: str(data.update_payment_link),
@@ -214,8 +225,8 @@ export function buildTokenMap(
     vendor_name: str(data.vendor_name),
     vendor_contact_name: str(data.vendor_contact_name),
     po_number: str(data.po_number),
-    po_date: fmtDate(data.po_date, locale),
-    expected_date: fmtDate(data.expected_date, locale),
+    po_date: fmtDate(data.po_date, locale, timeZone),
+    expected_date: fmtDate(data.expected_date, locale, timeZone),
     deliver_to: str(data.deliver_to),
     deliver_to_address: str(data.deliver_to_address),
     po_total: money(data.po_total_cents),
@@ -223,6 +234,20 @@ export function buildTokenMap(
     // Add-to-calendar block (links + .ics attachment) — not generated yet;
     // resolves empty until the calendar/portal work lands.
     calendar_links: str(data.calendar_links),
+    // Appointment rescheduled (spec 51, gap 17): where it was before.
+    previous_date: fmtDate(data.old_start_time, locale, timeZone),
+    previous_time: fmtTime(data.old_start_time, locale, timeZone),
+    // Event registration emails: already written in the hosting business's time zone.
+    event_name: str(data.event_title),
+    event_when: str(data.when_text),
+    event_location: str(data.location),
+    event_ticket: str(data.ticket_text),
+    event_payment_note: str(data.amount_text),
+    event_refund_note: str(data.refund_text),
+    // Task reminder.
+    task_title: str(data.task_title),
+    task_details: str(data.task_description),
+    task_due_date: data.due_at ? `${fmtDate(data.due_at, locale, timeZone)}, ${fmtTime(data.due_at, locale, timeZone)}` : '',
   };
   return map;
 }

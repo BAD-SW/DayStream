@@ -7,6 +7,7 @@ import { validateFormDefinition, MAX_FORM_COLUMNS } from '@daystream/shared';
 import { LanguageSelect } from '../../components/LanguageSelect';
 import type { FormItem, FormItemType, FormAnswer, FormValidationIssue } from '@daystream/shared';
 import * as formsApi from '../../api/forms';
+import * as systemApi from '../../api/systemTemplates';
 import type { Form } from '../../api/forms';
 import { getServices } from '../../api/services';
 
@@ -74,10 +75,13 @@ interface Props {
   onDirtyChange?: (dirty: boolean) => void;
   /** 'chart' builds a clinical chart template: no language, no when-needed rules, no customer signature. */
   kind?: 'form' | 'chart';
+  /** 'system': a platform system form (spec 51, gap 17): no services or renewal (those are each business's). */
+  scope?: 'business' | 'system';
 }
 
-export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirtyChange, kind: templateKind = 'form' }: Props) {
+export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirtyChange, kind: templateKind = 'form', scope = 'business' }: Props) {
   const isChart = templateKind === 'chart';
+  const isSystem = scope === 'system';
   const noun = isChart ? 'chart template' : 'form';
   const initial = useMemo(() => ({
     name: form?.name ?? (isChart ? 'New chart template' : 'New form'),
@@ -110,13 +114,14 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   useEffect(() => {
+    if (isSystem) return;
     getServices(businessId, { limit: 500 })
       .then((res) => {
         const list = (res?.data ?? []) as { id: string; name: string }[];
         setServices(list.map((x) => ({ id: x.id, label: x.name })));
       })
       .catch(() => setServices([]));
-  }, [businessId]);
+  }, [businessId, isSystem]);
 
   const issuesById = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -179,7 +184,10 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
     };
     setSaving(true);
     try {
-      if (form) await formsApi.updateForm(businessId, form.id, input);
+      if (isSystem) {
+        if (form) await systemApi.updateAdminSystemForm(form.id, input);
+        else await systemApi.createAdminSystemForm(templateKind, input);
+      } else if (form) await formsApi.updateForm(businessId, form.id, input);
       else await formsApi.createForm(businessId, { ...input, kind: templateKind });
       onDirtyChange?.(false);
       onSaved();
@@ -195,9 +203,16 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
 
   return (
     <div style={s.editor}>
-      <h3 style={s.subTitle}>
-        {form ? `Edit ${noun}${form.language ? ` (${form.language})` : ''}` : `New ${noun}`}
-      </h3>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
+        <h3 style={s.subTitle}>
+          {form ? `Edit ${noun}${form.language ? ` (${form.language})` : ''}` : `New ${noun}`}
+        </h3>
+        {/* Preview and Save at the top too, so there is no need to scroll down (owner, 24 Nov 2026) */}
+        <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+          <Button size="sm" variant="secondary" onClick={() => { setPreviewAnswers({}); setPreviewOpen(true); }} disabled={saving || items.length === 0}>Preview</Button>
+          <Button size="sm" onClick={handleSave} loading={saving}>{form ? 'Save changes' : `Create ${noun}`}</Button>
+        </div>
+      </div>
       {error && <p style={s.error} role="alert">{error}</p>}
 
       <div style={s.formGrid}>
@@ -220,7 +235,8 @@ export function FormTemplateEditor({ businessId, form, onSaved, onCancel, onDirt
         </label>
       </div>
 
-      {!isChart && (
+      {/* A system form applies to nothing: each business decides when its own copy is needed. */}
+      {!isChart && !isSystem && (
       <div style={s.box}>
         <h4 style={s.boxTitle}>When this form is needed</h4>
         <p style={s.helper}>

@@ -35,7 +35,8 @@ checkInTextsRouter.get('/', async (req: Request, res: Response) => {
     if (!UUID_RE.test(businessId)) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
     if (!(SUPPORTED_LANGUAGES as readonly string[]).includes(language)) { error(res, 'Choose a supported language.', 'INVALID_LANGUAGE', 400); return; }
     if (!(await ownBusiness(req, businessId))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
-    success(res, { language, overrides: await texts.getOverrides(businessId, language) });
+    // defaults: what each piece says when the business has not changed it (the platform's wording).
+    success(res, { language, overrides: await texts.getOverrides(businessId, language), defaults: await texts.platformTexts(language) });
   } catch (e) {
     console.error('Failed to load check-in wording', (e as Error).message);
     error(res, 'Failed to load the wording', 'INTERNAL_ERROR', 500);

@@ -223,10 +223,33 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
 
 ## 17. Starter templates (Requirement 17)
 - [x] ✅ Confirm current state (no template is created for a new business; a missing template gives a bare email)
-- [ ] Agree requirements with the owner (which types, wording and languages, existing businesses, how a starter is marked)
-- [ ] Design
-- [ ] Build
-- [ ] Verify live and close with the owner
+- [x] ✅ Agree requirements with the owner (24 Nov 2026: system templates in a Templates tab of System Configuration; businesses see them read only and duplicate to customise; used when a business has none of its own; the five plain-text customer emails get document types; other languages later)
+- [x] ✅ Design (design.md section 17, agreed with the owner 24 Nov 2026)
+
+### 17.1 System templates
+- [x] ✅ Migration 198: sys_document_templates, the copy link on business templates, starter wording for every type (not active; worded so an empty phone or address reads well)
+- [x] ✅ System template service and platform administrator routes; business routes to list the active system templates and duplicate one
+
+### 17.2 Sending
+- [x] ✅ selectTemplate falls back to the active system template when the business has none of its own; dates and times in emails now in the business's time zone (they were in the server's)
+- [x] ✅ Five new document types in the catalog and the sending path (rescheduled, three event emails, task reminder); the reschedule notification queued with the full appointment data
+
+### 17.3 Screens
+- [x] ✅ System Configuration → Templates tab (the Document Templates editor in system mode)
+- [x] ✅ Business Templates page: system templates read only (Preview, Duplicate into an inactive "Copy of …" opened in the editor); a note says which template the business's emails of the type use
+
+- [x] ✅ Preview and Save at the top of the template editor too (owner, 24 Nov 2026)
+- [x] ✅ System templates listed above the business's own
+- [x] ✅ Lists at a set width on the left, the open template or form on the right (stacked on a narrow screen); the open row highlighted; Preview and Save at the top of the editor, only New Template above the list; opening another row with unsaved changes asks first (owner, 24 Nov 2026)
+
+### 17.3a Forms, charts and check-in wording (owner, 24 Nov 2026: system templates are not limited to emails)
+- [x] ✅ Migration 199: sys_form_templates (forms and chart templates), the copy link on business forms, sys_check_in_texts; starters: health intake, consent and waiver, treatment note (not active)
+- [x] ✅ System Configuration → Templates offers the same 20 types as a business (Forms, Charts, Check-In added)
+- [x] ✅ System forms and charts built with the business's form builder (no services or renewal, those are each business's); a business sees the active ones read only, with Preview and Duplicate (an inactive copy applying to nothing, opened in the builder)
+- [x] ✅ Platform check-in wording: built-in, then the platform's, then the business's own; the business's screen shows the platform's wording as each piece's default
+
+### 17.4 Close
+- [x] ✅ Verify live and close with the owner (24 Nov 2026)
 
 ## 18. Appointment history (Requirement 18)
 - [x] ✅ Confirm current state (status history recorded in most places but not shown; other edits not recorded; no source of a change; the automatic no-show records no person)

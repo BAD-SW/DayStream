@@ -4,6 +4,8 @@ import { apiClient } from './client';
 export interface CheckInTextOverrides {
   language: string;
   overrides: Record<string, string>;
+  /** What each piece says when the business has not changed it: the platform's wording (spec 51, gap 17). */
+  defaults?: Record<string, string>;
 }
 
 export async function getCheckInTexts(businessId: string, language: string): Promise<CheckInTextOverrides> {

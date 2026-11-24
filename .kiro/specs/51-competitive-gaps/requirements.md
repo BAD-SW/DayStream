@@ -324,16 +324,21 @@ The acceptance criteria below set the capability each gap must reach. They are r
 
 **User Story**: As a business owner setting up DayStream, I want ready-made, well-worded templates for every email and document the system sends, so that customers get a proper message from the first day and I only change what I want to.
 
-**Current state**: Not started. No template is created for a new business. A business that has not built a template for an appointment, receipt, invoice or other document gets a bare email with a greeting, the logo bar and a footer, and no details. The one exception is the appointment reminder, which falls back to a plain reminder with the check-in link while the business has no Appointment Reminder template. Each business has to write every template from a blank editor, in the Templates tab of Business Setup.
+**Current state**: ✅ Complete, closed with the owner (24 Nov 2026); the description below is what was there before. No template is created for a new business. A business that has not built a template for an appointment, receipt, invoice or other document gets a bare email with a greeting, the logo bar and a footer, and no details. The one exception is the appointment reminder, which falls back to a plain reminder with the check-in link while the business has no Appointment Reminder template. Each business has to write every template from a blank editor, in the Templates tab of Business Setup. Five customer emails have no template type at all and are always sent as plain text: appointment rescheduled, event registration confirmed, event place reserved, event registration cancelled, and the task reminder.
+
+**Agreed with the owner (24 Nov 2026)**: the platform keeps system templates, built by platform administrators in a Templates tab of System Configuration (/admin/config) that works like the business's Document Templates page. A business sees the system templates read only and can duplicate one to make its own copy, which it then customises (wording, logo, colours). Placeholders fill in with the sending business's details as they do today. Languages other than English are left for later.
 
 ##### Acceptance Criteria
 
-1. THE system SHALL give every new business a starter template for each template type it can send, written in plain, friendly wording with the placeholders already in place.
-2. THE system SHALL let a business give an existing business the starter templates for the types it has no template for, without touching templates it has already written.
-3. THE system SHALL keep each starter template editable and deletable like any other template, and SHALL mark it as a starter until the business changes it.
-4. THE system SHALL provide the starter wording in each language the system supports, using the business's language.
-5. THE system SHALL show a preview of the starter template with sample values before the business activates it.
-
+1. THE system SHALL let a platform administrator create, edit, preview, activate and delete system templates in a Templates tab of System Configuration, choosing the document type from the same list as the business's Document Templates page and using that type's placeholders.
+2. THE system SHALL show a business the system templates alongside its own on its Document Templates page, marked as system templates, read only (viewable and previewable, not editable or deletable by the business).
+3. THE system SHALL let a business duplicate a system template into its own template, which it can then edit, activate or delete like any template it wrote.
+4. WHEN a business has no active template of its own for a document type, THE system SHALL send that document using the active system template for the type, with the placeholders filled in with the business's details; WHEN the business has an active template of its own for the type, THE system SHALL use that instead.
+5. THE system SHALL add document types, with their placeholders, for the five customer emails that have none: appointment rescheduled, event registration confirmed, event place reserved, event registration cancelled, and task reminder; these SHALL use a business template or a system template like any other type.
+6. THE system SHALL provide starter wording for a system template of every document type, in plain, friendly English with the placeholders in place, for the platform administrator to review, change and activate.
+7. THE system SHALL offer the same template types on System Configuration → Templates as on a business's Templates page, including Forms, Charts and Check-In (owner, 24 Nov 2026: system templates are not limited to emails).
+8. THE system SHALL let a platform administrator build system forms and chart templates with the same form builder a business uses; THE system SHALL show a business the active ones read only, with Preview and Duplicate; a duplicate SHALL become the business's own form or chart template, which the business customises and attaches to its services; a system form or chart SHALL NOT apply to a business by itself; THE system SHALL provide starters for a health intake form, a consent and waiver form and a treatment note chart.
+9. THE system SHALL let a platform administrator change the default wording of the check-in screens for the platform; a business that has not changed a text SHALL see the platform's wording, and a text the business has changed SHALL stay its own.
 ### Records
 
 #### Requirement 18: Appointment History

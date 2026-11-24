@@ -73,6 +73,43 @@ formsRouter.get('/outstanding', requirePermission('customers:read'), async (req:
   } catch (e) { fail(res, e, 'Failed to check forms'); }
 });
 
+// GET /v1/forms/system?business_id=&kind= — the platform's active system forms or chart templates,
+// read only, to preview and duplicate (spec 51, gap 17, criterion 8). (Before /:id.)
+formsRouter.get('/system', requirePermission('settings:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId || !UUID_RE.test(businessId)) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    if (!(await ownBusiness(req, businessId))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    const kind = req.query.kind === 'chart' ? 'chart' : 'form';
+    if (kind === 'chart' && !(await hasClinicalAccess((req as AuthenticatedRequest).user))) {
+      error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return;
+    }
+    const { listSystemForms } = await import('../services/system-forms.service');
+    success(res, await listSystemForms(kind, { activeOnly: true }));
+  } catch (e) { fail(res, e, 'Failed to list system forms'); }
+});
+
+// POST /v1/forms/from-system/:id — duplicate a system form into the business: its own copy, not
+// active, applying to nothing until the business chooses (spec 51, gap 17).
+const fromSystemSchema = Joi.object({ business_id: Joi.string().uuid().required() });
+formsRouter.post('/from-system/:id', requirePermission('settings:*'), validate(fromSystemSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    if (!(await ownBusiness(req, req.body.business_id))) { error(res, 'Business not found', 'NOT_FOUND', 404); return; }
+    const { getSystemForm } = await import('../services/system-forms.service');
+    const sys = await getSystemForm(req.params.id);
+    if (!sys || !sys.isActive) { error(res, 'System form not found', 'NOT_FOUND', 404); return; }
+    if (sys.kind === 'chart' && !(await hasClinicalAccess(authReq.user))) { error(res, 'Insufficient permissions', 'FORBIDDEN', 403); return; }
+    const created = await forms.createForm({
+      tenantId: authReq.tenantId, businessId: req.body.business_id, createdBy: authReq.user.sub,
+      kind: sys.kind, name: `Copy of ${sys.name.replace(/^Starter:\s*/, '')}`.slice(0, 200),
+      language: sys.language, definition: sys.definition, applies: {}, renewAfterMonths: null, isActive: false,
+    });
+    await adminPool.query('UPDATE frm_forms SET copied_from_system_id = $1 WHERE id = $2', [sys.id, created.id]);
+    success(res, created, undefined, 201);
+  } catch (e) { fail(res, e, 'Failed to copy the system form'); }
+});
+
 // GET /v1/forms/:id?business_id=
 formsRouter.get('/:id', requirePermission('customers:read'), async (req: Request, res: Response) => {
   try {
