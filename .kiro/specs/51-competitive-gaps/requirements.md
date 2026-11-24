@@ -282,21 +282,24 @@ The acceptance criteria below set the capability each gap must reach. They are r
 9. WHEN a tip is paid on an order with no staff member on it, THE system SHALL put the tip in the business's tip pool, and SHALL let the owner or a manager share the pool for a range of dates in one of three ways: by hand (amounts per staff member that add up to the pool for those dates), by the hours each staff member was clocked in on the day of each tip, or evenly among the staff clocked in on the day of each tip (owner, 22 Nov 2026). A tip from a day when nobody was clocked in SHALL stay in the pool until it is shared by hand. Once shared, each part SHALL be treated as that staff member's own tip (electronic parts paid in payroll, cash parts handed over from the till), and THE system SHALL show what is waiting in the pool.
 10. WHEN an appointment whose service was paid at reservation is checked out, THE system SHALL show the service lines and their payment at Checkout as already paid, SHALL base a suggested tip and the staff it goes to on them as well as on anything else sold at the visit, and SHALL charge only what is sold at the visit and the tip (owner, 23 Nov 2026). THE system SHALL NOT let those lines or their payment be changed or removed at the visit, SHALL NOT post their revenue or payment again, and SHALL show them on the visit's receipt with the earlier payment taken off.
 11. WHEN a line is paid with a membership or package, THE system SHALL base the tip on its normal price as Requirement 19, criterion 10, says.
-#### Requirement 15: Service and Product Add-Ons
+#### Requirement 15: Service Add-Ons
 
-**User Story**: As a business owner, I want customers and staff to be able to add extras to a booking, such as a longer session, an upgrade or a product, so that I earn more per visit and the extra time is reserved.
+**User Story**: As a business owner, I want to offer extras that enhance a service, such as hot stones with a massage, each with its own price, so that staff can add them when booking and I earn more per visit.
 
-**Current state**: Not started. A booking is one service and variant, and an order is a list of item lines, so an extra can only be sold today as a separate line at checkout, after the visit. Nothing links an extra to the service it goes with, adds its time to the booking, or offers it while booking. The only trace of the idea is an unused "free add-on" membership benefit type.
+**Current state**: ✅ Complete, closed with the owner (24 Nov 2026); the description that follows is what was there before. A booking is one service and variant, and an order is a list of item lines, so an extra can only be sold today as a separate line at checkout, after the visit. Nothing links an extra to the service it goes with or offers it while booking. The only trace of the idea is an unused "free add-on" membership benefit type.
+
+**Agreed with the owner (23 Nov 2026, changed 24 Nov 2026)**: an add-on enhances the service; it does not add time. It is kept simple: like an option, it is added on the service, with a name, a description and a price, and a service can have as many as needed. There is no shared list of add-ons and no product add-on (24 Nov 2026). An add-on has no tax category of its own. Customers choose add-ons online too. Add-ons are charged on top of a membership or package, unless a package includes them.
 
 ##### Acceptance Criteria
 
-1. THE system SHALL let a business define add-ons, each with a name, a price, an optional extra duration and an optional product it uses, and attach them to the services they can be added to.
-2. THE system SHALL offer a service's add-ons when it is booked, by staff and online, and SHALL let one or several be chosen.
-3. THE system SHALL add an add-on's duration to the booking, checking staff and resource availability for the longer time.
-4. THE system SHALL put each add-on on the order as its own line, with the price, tax and staff credit rules of any other line.
-5. THE system SHALL let staff add or remove an add-on on an existing booking, and SHALL show the add-ons on the calendar, the booking and the receipt.
-6. THE system SHALL let a membership benefit make named add-ons free.
-
+1. THE system SHALL let a business add, on each service, zero to many add-ons, each with a name, a description and a price, and SHALL let an add-on be edited or deleted there (a deleted add-on is no longer offered; appointments that have it keep it).
+2. WHEN a service is chosen while making or changing an appointment, by staff or by a customer online, THE system SHALL show that service's add-ons with their prices, and SHALL let none, one or several be chosen.
+3. THE system SHALL NOT change the appointment's length or the times offered because of an add-on.
+4. THE system SHALL show each chosen add-on as its own line with its price, under the service, in the price shown while booking, and SHALL include it in the total and in what is charged at reservation.
+5. THE system SHALL keep the price of each add-on as it was when it was chosen, and SHALL put each add-on on the appointment's order at Checkout as its own line, taxed like its service and credited to the service's staff member.
+6. THE system SHALL charge add-ons in addition to a membership or package that pays for the service, unless the package includes that add-on; THE system SHALL let a package include add-ons, used and given back by the rules of Requirement 19.
+7. THE system SHALL let staff add or remove add-ons on an existing appointment until it is checked out, and SHALL record the change in the appointment history. WHEN an add-on already paid is removed (for example it is not available on the day), THE system SHALL let staff refund it to the payment, as account credit, or not at all (an alternative being given), SHALL make the refund before taking it off, and SHALL record the choice and reason in the history (owner, 24 Nov 2026).
+8. THE system SHALL show the chosen add-ons on the appointment, the calendar, the customer's appointment emails and the receipt.
 ### Customers
 
 #### Requirement 16: Customer Self-Service

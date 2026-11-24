@@ -196,6 +196,7 @@ packagesRouter.post('/:id/items', requirePermission('services:*'), async (req: R
       itemType: req.body.item_type,
       serviceId: req.body.service_id,
       merchandiseId: req.body.merchandise_id,
+      addonId: req.body.addon_id,
       variantId: req.body.variant_id,
       quantity: req.body.quantity,
       redemptionType: req.body.redemption_type,

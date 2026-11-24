@@ -5,6 +5,7 @@ import { adminPool } from '../db/pool';
  */
 const REVENUE_ACCOUNT_CODES: Record<string, string> = {
   service: '4100',      // Service Revenue
+  add_on: '4100',       // An ad hoc add-on enhances its service (spec 51, gap 15)
   product: '4300',      // Product Revenue
   membership: '4200',   // Membership Revenue (used for recognition later)
   package: '4500',      // Package Revenue (used for recognition later)

@@ -70,7 +70,7 @@ export const staffPerformanceReport: ReportDefinition = {
        sales AS (
          SELECT oi.credited_to AS staff_id,
                 COALESCE(SUM(
-                  CASE WHEN oi.item_type IN ('service', 'product') THEN oi.amount ELSE 0 END
+                  CASE WHEN oi.item_type IN ('service', 'add_on', 'product') THEN oi.amount ELSE 0 END
                 ), 0)::int AS product_revenue,
                 COALESCE(SUM(
                   CASE WHEN oi.item_type = 'no_show_fee' THEN oi.amount ELSE 0 END

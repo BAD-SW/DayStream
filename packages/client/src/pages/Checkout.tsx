@@ -15,6 +15,7 @@ import type { Order, OrderItem } from '../api/checkout';
 import { formatCurrency } from '../utils/currency';
 import { formatDateOnly } from '../utils/date';
 import { TipPanel } from '../components/TipPanel';
+import { RemovePaidAddonModal } from '../components/booking/RemovePaidAddonModal';
 import { LineBenefitPicker } from '../components/LineBenefitPicker';
 import { getLocations } from '../api/locations';
 import type { Location } from '../api/locations';
@@ -37,6 +38,15 @@ const limitedText = (l: NonNullable<Order['stock_limited']>, name: string, chang
   `${name}: only ${l.onHand} in stock, so ${changed ? `the quantity is ${l.added}` : `${l.added} ${l.added === 1 ? 'was' : 'were'} added`}, not ${l.requested}.`;
 const errText = (e: unknown, fallback: string) =>
   (e as { response?: { data?: { error?: string } } })?.response?.data?.error || fallback;
+
+/** A line's type as shown before its name ("Service:", "Add-on:", "No-show fee:"). */
+const typeLabel = (t: string) => {
+  const s = t === 'add_on' ? 'add-on' : t.replace(/_/g, ' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+
+/** Visually hidden, still read by screen readers. */
+const srOnly: React.CSSProperties = { position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' };
 
 const PAY_METHOD_LABEL: Record<string, string> = {
   cash: 'Cash', card: 'Card', bank_draw: 'Direct debit', bank_transfer: 'Bank transfer',
@@ -114,6 +124,9 @@ export function Checkout() {
   const [tracked, setTracked] = useState<Set<string>>(new Set());
   const [stock, setStock] = useState<Map<string, StockInfo>>(new Map());
   const [stockNote, setStockNote] = useState<string | null>(null);
+  // An add-on paid at reservation being removed (spec 51, gap 15), and what happened.
+  const [removingAddon, setRemovingAddon] = useState<{ bookingAddonId: string; name: string; amount: number } | null>(null);
+  const [addonNotice, setAddonNotice] = useState<string | null>(null);
   const orderLocationId = order?.location_id || locations.find((l) => l.is_primary)?.id || locations[0]?.id || null;
 
   useEffect(() => {
@@ -629,14 +642,16 @@ export function Checkout() {
                 <th style={styles.thRight}>Price</th>
                 <th style={styles.thRight}>Tax</th>
                 <th style={styles.thRight}>Total</th>
+                {isOpen && <th style={styles.th}><span style={srOnly}>Actions</span></th>}
               </tr>
             </thead>
             <tbody>
               {order.prepaid.items.map((item) => (
                 <tr key={item.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                   <td style={styles.td}>
-                    <span style={styles.itemTypeLabel}>{item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1)}:</span>{' '}
-                    <strong>{item.item_name}</strong>
+                    <span style={styles.itemTypeLabel}>{typeLabel(item.item_type)}:</span>{' '}
+                    {(item.refunded_quantity || 0) >= item.quantity ? <s><strong>{item.item_name}</strong></s> : <strong>{item.item_name}</strong>}
+                    {(item.refunded_quantity || 0) > 0 && <div style={styles.overrideInline}>Refunded{(item.refunded_quantity || 0) < item.quantity ? ` (${item.refunded_quantity} of ${item.quantity})` : ''}</div>}
                     {item.credited_name && <div style={styles.overrideInline}>Credit: {item.credited_name}</div>}
                     {item.paid_with && <div style={styles.overrideInline}>Paid with {item.paid_with}</div>}
                   </td>
@@ -645,13 +660,38 @@ export function Checkout() {
                   <td style={styles.tdRight}>{formatCurrency(item.unit_price)}</td>
                   <td style={styles.tdRight}>{item.tax_amount > 0 ? formatCurrency(item.tax_amount) : '—'}</td>
                   <td style={{ ...styles.tdRight, fontWeight: 600 }}>{formatCurrency(item.total_price)}</td>
+                  {isOpen && (
+                    <td style={styles.tdRight}>
+                      {/* An add-on paid at reservation can be removed, with a refund (spec 51, gap 15) */}
+                      {item.booking_addon_id && order.booking_id && (item.refunded_quantity || 0) < item.quantity && (
+                        <Button size="sm" variant="ghost" aria-label={`Remove ${item.item_name}`}
+                          onClick={() => setRemovingAddon({ bookingAddonId: item.booking_addon_id!, name: item.item_name,
+                            amount: Math.round((item.total_price * (item.quantity - (item.refunded_quantity || 0))) / item.quantity) })}>
+                          Remove
+                        </Button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
+          {removingAddon && order.booking_id && (
+            <RemovePaidAddonModal bookingId={order.booking_id} businessId={businessId} bookingAddonId={removingAddon.bookingAddonId}
+              name={removingAddon.name} amount={removingAddon.amount} hasCustomer={!!order.customer_id}
+              onClose={() => setRemovingAddon(null)}
+              onDone={(message) => { setRemovingAddon(null); setAddonNotice(message); loadOrder(); }} />
+          )}
+          {addonNotice && <p style={{ ...styles.empty, margin: 'var(--space-sm) 0 0', color: 'var(--color-success)' }} role="status">{addonNotice}</p>}
+          {order.prepaid.status === 'partially_refunded' && (order.prepaid.refunded_amount || 0) > 0 && (
+            <div style={{ ...styles.totalRow, marginTop: 'var(--space-sm)' }}>
+              <span>Refunded since</span>
+              <span>−{formatCurrency(order.prepaid.refunded_amount || 0)}</span>
+            </div>
+          )}
           <div style={{ ...styles.totalRow, marginTop: 'var(--space-sm)' }}>
             <span>{order.prepaid.status === 'refunded' ? 'Refunded' : 'Paid'}</span>
-            <span>{formatCurrency(order.prepaid.total_amount)}</span>
+            <span>{formatCurrency(order.prepaid.status === 'partially_refunded' ? order.prepaid.total_amount - (order.prepaid.refunded_amount || 0) : order.prepaid.total_amount)}</span>
           </div>
           <p style={{ ...styles.empty, margin: 'var(--space-xs) 0 0' }}>
             {order.prepaid.status === 'refunded'
@@ -708,7 +748,7 @@ export function Checkout() {
                 ) : (
                   <tr key={item.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                     <td style={styles.td}>
-                      <span style={styles.itemTypeLabel}>{item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1)}:</span>{' '}
+                      <span style={styles.itemTypeLabel}>{typeLabel(item.item_type)}:</span>{' '}
                       <strong>{item.item_name}</strong>
                       {isOpen && item.item_type === 'product' && (() => {
                         const s = stockOf(item.item_id, item.variant_id ?? null);
@@ -801,8 +841,8 @@ export function Checkout() {
       </div>
 
       {/* Tip (spec 51, gap 14): before the payment, when the business takes tips */}
-      {isOpen && tipSettings?.enabled && (order.items.length > 0 || order.prepaid?.status === 'completed')
-        && ((order.tip_base?.total ?? order.total_amount) > 0 || (order.prepaid?.status === 'completed' && order.prepaid.total_amount > 0) || (order.tip_amount || 0) > 0) && (
+      {isOpen && tipSettings?.enabled && (order.items.length > 0 || order.prepaid?.status === 'completed' || order.prepaid?.status === 'partially_refunded')
+        && ((order.tip_base?.total ?? order.total_amount) > 0 || ((order.prepaid?.status === 'completed' || order.prepaid?.status === 'partially_refunded') && order.prepaid.total_amount > 0) || (order.tip_amount || 0) > 0) && (
         <TipPanel order={order} businessId={businessId} settings={tipSettings} locked={!!oneTimeSession} onChange={setOrder} />
       )}
 
@@ -1317,7 +1357,7 @@ function InlineEditItem({ item, orderId, staffList, maxQty, onSaved, onCancel }:
   return (
     <div style={{ ...styles.lineItem, background: 'var(--color-background)', borderRadius: 'var(--radius-md)', padding: '12px' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr auto 45px 120px auto', gap: '6px', alignItems: 'center' }}>
-        <span style={styles.itemTypeLabel}>{item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1)}:</span>
+        <span style={styles.itemTypeLabel}>{typeLabel(item.item_type)}:</span>
         <strong style={{ color: 'var(--color-text)', fontSize: 'var(--font-size-sm)' }}>{item.item_name}</strong>
         {variants.length > 0 ? (
           <select style={{ ...styles.inlineSelect, minWidth: '110px' }} value={selectedVariantId} onChange={(e) => setSelectedVariantId(e.target.value)}>

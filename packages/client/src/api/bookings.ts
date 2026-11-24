@@ -7,6 +7,8 @@ export interface Booking {
   booking_reference: string;
   service_id: string;
   service_name: string;
+  /** The add-ons, comma-separated (spec 51, gap 15). */
+  addon_names?: string | null;
   variant_id: string;
   variant_name?: string;
   customer_id: string | null;
@@ -255,6 +257,15 @@ export interface NoShowFeeOutcome {
   order_id?: string;
   order_number?: string;
   benefit?: NoShowBenefit;
+}
+
+/** Take off an add-on already paid (spec 51, gap 15), refunded to the payment, as account credit, or not. */
+export async function removePaidAddon(bookingId: string, businessId: string, bookingAddonId: string, refundTo: 'none' | 'original' | 'account_credit', reason?: string): Promise<{
+  addons: Array<{ id: string; addon_id: string; name: string; price: number; paid: boolean }>;
+  refund: { amount: number; to: string; status: string; reference: string } | null;
+}> {
+  const res = await apiClient.put(`/v1/bookings/${bookingId}/addons/${bookingAddonId}/remove?business_id=${businessId}`, { refund_to: refundTo, reason: reason || null });
+  return res.data.data;
 }
 
 export async function getNoShowPreview(id: string, businessId: string): Promise<NoShowPreview> {

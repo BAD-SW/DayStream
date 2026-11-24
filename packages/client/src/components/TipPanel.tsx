@@ -33,8 +33,8 @@ export function TipPanel({ order, businessId, settings, locked, onChange }: {
   // A percentage is of the total before tax (the default) or including tax, as the business chose.
   // The server's base: with a service paid at reservation (unless refunded) and lines paid with a
   // membership or package at their normal price (spec 51, gaps 14 and 19).
-  const pre = order.prepaid?.status === 'completed' ? order.prepaid : null;
-  const total = order.tip_base?.total ?? order.total_amount + (pre?.total_amount || 0);
+  const pre = order.prepaid?.status === 'completed' || order.prepaid?.status === 'partially_refunded' ? order.prepaid : null;
+  const total = order.tip_base?.total ?? order.total_amount + (pre ? pre.total_amount - (pre.refunded_amount || 0) : 0);
   const taxTotal = order.tip_base?.tax ?? order.tax_amount + (pre?.tax_amount || 0);
   const base = settings.base === 'after_tax' ? total : total - taxTotal;
   const pct = (p: number) => Math.round((base * p) / 100);

@@ -27,9 +27,11 @@ interface PackageFilters {
 
 interface PackageItemInput {
   packageId: string;
-  itemType: 'service' | 'merchandise';
+  itemType: 'service' | 'merchandise' | 'add_on';
   serviceId?: string;
   merchandiseId?: string;
+  /** An add-on the package includes (spec 51, gap 15). */
+  addonId?: string;
   variantId?: string;
   quantity: number;
   redemptionType?: 'sessions' | 'minutes';
@@ -152,10 +154,13 @@ export async function pausePackage(id: string, businessId: string) {
 
 export async function getPackageItems(packageId: string) {
   const { rows } = await adminPool.query(
-    `SELECT pi.*, s.name AS service_name, m.name AS merchandise_name
+    `SELECT pi.*, s.name AS service_name, m.name AS merchandise_name,
+            a.name || ' (' || asv.name || ')' AS addon_name
      FROM pkg_package_items pi
      LEFT JOIN svc_services s ON s.id = pi.service_id
      LEFT JOIN prd_merchandise m ON m.id = pi.merchandise_id
+     LEFT JOIN svc_addons a ON a.id = pi.addon_id
+     LEFT JOIN svc_services asv ON asv.id = a.service_id
      WHERE pi.package_id = $1 ORDER BY pi.created_at`,
     [packageId],
   );
@@ -164,9 +169,11 @@ export async function getPackageItems(packageId: string) {
 
 export async function addPackageItem(input: PackageItemInput) {
   const { rows } = await adminPool.query(
-    `INSERT INTO pkg_package_items (package_id, item_type, service_id, merchandise_id, variant_id, quantity, redemption_type)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-    [input.packageId, input.itemType, input.serviceId || null, input.merchandiseId || null, input.variantId || null, input.quantity, input.redemptionType || 'sessions'],
+    `INSERT INTO pkg_package_items (package_id, item_type, service_id, merchandise_id, variant_id, quantity, redemption_type, addon_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [input.packageId, input.itemType, input.itemType === 'add_on' ? null : input.serviceId || null, input.itemType === 'add_on' ? null : input.merchandiseId || null,
+      input.itemType === 'add_on' ? null : input.variantId || null, input.quantity, input.itemType === 'add_on' ? 'sessions' : input.redemptionType || 'sessions',
+      input.itemType === 'add_on' ? input.addonId || null : null],
   );
   return rows[0];
 }
@@ -407,10 +414,13 @@ export async function getRemainingBalance(purchaseId: string, packageItemId: str
  */
 export async function getPurchaseStatus(purchaseId: string) {
   const { rows: items } = await adminPool.query(
-    `SELECT pi.*, s.name AS service_name, m.name AS merchandise_name
+    `SELECT pi.*, s.name AS service_name, m.name AS merchandise_name,
+            a.name || ' (' || asv.name || ')' AS addon_name
      FROM pkg_package_items pi
      LEFT JOIN svc_services s ON s.id = pi.service_id
      LEFT JOIN prd_merchandise m ON m.id = pi.merchandise_id
+     LEFT JOIN svc_addons a ON a.id = pi.addon_id
+     LEFT JOIN svc_services asv ON asv.id = a.service_id
      JOIN pkg_purchases pp ON pp.package_id = pi.package_id
      WHERE pp.id = $1`,
     [purchaseId],
@@ -492,9 +502,11 @@ export async function getCustomerPackageUsage(customerId: string, businessId: st
 
   const { rows: items } = await adminPool.query(
     `SELECT pp.id AS purchase_id, i.id AS item_id, i.item_type, i.quantity, COALESCE(i.redemption_type, 'sessions') AS unit,
-            COALESCE(s.name, m.name, 'Item') AS name, COALESCE(sv.name, mv.name) AS variant_name
+            COALESCE(s.name, m.name, a.name || ' (' || asv.name || ')', 'Item') AS name, COALESCE(sv.name, mv.name) AS variant_name
        FROM pkg_purchases pp
        JOIN pkg_package_items i ON i.package_id = pp.package_id
+       LEFT JOIN svc_addons a ON a.id = i.addon_id
+       LEFT JOIN svc_services asv ON asv.id = a.service_id
        LEFT JOIN svc_services s ON s.id = i.service_id
        LEFT JOIN svc_variants sv ON sv.id = i.variant_id AND i.item_type = 'service'
        LEFT JOIN prd_merchandise m ON m.id = i.merchandise_id

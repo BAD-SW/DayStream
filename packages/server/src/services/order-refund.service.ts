@@ -30,7 +30,7 @@ import * as journal from './journal.service';
  */
 
 const REVENUE_ACCOUNT_CODES: Record<string, string> = {
-  service: '4100', product: '4300', membership: '4200', package: '4500', no_show_fee: '4600', event: '4700',
+  service: '4100', add_on: '4100', product: '4300', membership: '4200', package: '4500', no_show_fee: '4600', event: '4700',
 };
 const DEFERRED_ITEM_TYPES = ['membership', 'package'];
 
@@ -147,7 +147,7 @@ export async function refundOrderLines(args: {
     for (const req of lines) {
       const item = itemById.get(req.orderItemId);
       if (!item) throw new OrderRefundError(`Line item ${req.orderItemId} not found on this order`, 'LINE_NOT_FOUND');
-      if (!REFUNDABLE_ITEM_TYPES.has(item.item_type) && !(args.allowServiceLines && item.item_type === 'service')) {
+      if (!REFUNDABLE_ITEM_TYPES.has(item.item_type) && !(args.allowServiceLines && (item.item_type === 'service' || item.item_type === 'add_on'))) {
         throw new OrderRefundError(
           `${item.item_type === 'service' ? 'Services are not refundable (issue a discount instead)'
             : item.item_type === 'membership' || item.item_type === 'package' ? `A ${item.item_type} cannot be refunded — cancel it instead`

@@ -11,6 +11,8 @@ import { PaymentStep } from './PaymentStep';
 import { PriceSummary } from './PriceSummary';
 import { BenefitChooser } from './BenefitChooser';
 import { BookingHistory } from './BookingHistory';
+import { AddonPicker } from './AddonPicker';
+import type { ChosenAddon } from './AddonPicker';
 import { NoShowFeeChoice, useNoShowPreview, noShowOutcomeText } from './NoShowFee';
 import type { BenefitRef } from '../../api/bookings';
 // Bill's spec 51 pieces, moved here from the old New/Edit Booking pages
@@ -247,6 +249,15 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
   const [walkName, setWalkName] = useState(prefill?.walkInName || '');
   const [serviceId, setServiceId] = useState(prefill?.serviceId || '');
   const [variantId, setVariantId] = useState(prefill?.variantId || '');
+  // The add-ons chosen (spec 51, gap 15), and those the appointment has (edit), with prices as chosen.
+  const [addons, setAddons] = useState<string[]>([]);
+  const [keptAddons, setKeptAddons] = useState<ChosenAddon[]>([]);
+  // A paid add-on being taken off (it was not available on the day): how it is refunded.
+  const [removingPaid, setRemovingPaid] = useState<ChosenAddon | null>(null);
+  const [paidRefundTo, setPaidRefundTo] = useState<'original' | 'account_credit' | 'none'>('original');
+  const [paidReason, setPaidReason] = useState('');
+  const [paidBusy, setPaidBusy] = useState(false);
+  const [paidMsg, setPaidMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [parts, setParts] = useState(prefill?.participants || 1);
   const [ovr, setOvr] = useState(false);
   const [loc, setLoc] = useState<string | null>(prefill?.locationId || null);
@@ -297,6 +308,8 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
     bookingsApi.getBooking(bookingId, businessId).then(async (bk: any) => {
       setBooking(bk);
       setServiceId(bk.service_id); setVariantId(bk.variant_id); setParts(bk.participant_count || 1);
+      const had: ChosenAddon[] = (bk.addons || []).map((a: any) => ({ addon_id: a.addon_id, name: a.name, price: a.price, paid: !!a.paid, booking_addon_id: a.id }));
+      setKeptAddons(had); setAddons(had.map((a) => a.addon_id));
       setNotes(bk.notes || ''); setNoteOpen(!!bk.notes);
       if (bk.staff_id) { setStaff(bk.staff_id); setPick(bk.staff_id); }
       if (bk.location_id) setLoc(bk.location_id);
@@ -420,6 +433,23 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
     } finally { setSaving(false); }
   };
 
+  // A paid add-on taken off (spec 51, gap 15): refunded now as chosen; the appointment's add-ons follow.
+  const removePaidAddon = async () => {
+    if (!removingPaid?.booking_addon_id || !bookingId) return;
+    setPaidBusy(true); setPaidMsg(null);
+    try {
+      const r = await bookingsApi.removePaidAddon(bookingId, businessId, removingPaid.booking_addon_id, paidRefundTo, paidReason || undefined);
+      const had: ChosenAddon[] = r.addons.map((a) => ({ addon_id: a.addon_id, name: a.name, price: a.price, paid: !!a.paid, booking_addon_id: a.id }));
+      setKeptAddons(had);
+      setAddons((cur) => cur.filter((id) => id !== removingPaid.addon_id));
+      const amount = r.refund?.amount ? formatCurrency(r.refund.amount) : null;
+      setPaidMsg({ ok: true, text: `${removingPaid.name} removed${amount ? `, ${amount} refunded${paidRefundTo === 'account_credit' ? ' as account credit' : ' to the payment'}` : paidRefundTo === 'none' ? ', not refunded' : ''}.` });
+      setRemovingPaid(null);
+    } catch (err: any) {
+      const e = err?.response?.data?.error; setPaidMsg({ ok: false, text: typeof e === 'string' ? e : 'The add-on could not be removed.' });
+    } finally { setPaidBusy(false); }
+  };
+
   const save = async () => {
     if (!ready || !chosen) return;
     setSaving(true); setError('');
@@ -430,6 +460,7 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
           service_id: serviceId, variant_id: variantId, staff_id: chosen.staff_id || undefined, start_time: chosen.start_time,
           notes: notes || undefined, participant_count: parts, override_rules: ovr, location_id: chosen.location_id || undefined,
           ...(!walk && benefit ? { benefit } : {}),
+          ...(addons.length ? { addons } : {}),
         });
         onSaved(`Reservation saved: ${svc!.name}, ${when}${chosen.staff_id ? ' with ' + staffName(chosen) : ''}`);
       } else {
@@ -439,7 +470,9 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
         if (!lockStaff) data.staff_id = chosen.staff_id || null;
         if (!lockCustomer) { if (walk) { data.customer_id = null; data.walk_in_name = walkName || 'Walk-in'; } else data.customer_id = customer.id; }
         if (!walk && benefit !== undefined) data.benefit = benefit;
+        data.addons = addons;
         const saved = await bookingsApi.updateBooking(bookingId!, businessId, data);
+        if (saved?.addons_error) { setError(`Saved, but the add-ons were not changed: ${saved.addons_error}`); return; }
         if (saved?.benefit_error) { setError(`Saved, but ${saved.benefit_error} It will be paid normally.`); return; }
         onSaved(`Appointment saved: ${svc!.name}, ${when}`);
       }
@@ -615,6 +648,7 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
     customer, walk, walkName, serviceId, serviceName: svc.name, variantId, variantName: variant.name, parts, ovr,
     startIso: chosen.start_time, staffId: chosen.staff_id, locationId: chosen.location_id, notes, whenLabel: when, whoLabel: whoBits,
     benefit: walk ? null : benefit ?? null,
+    addons,
   } : null;
   const body = loadError ? <p className="mk-warn">{loadError}</p> : payDraft ? (
     <PaymentStep businessId={businessId} draft={payDraft} mode={step === 'card' ? 'hold' : 'charge'}
@@ -636,6 +670,29 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
             <ServicePicker services={services} serviceId={serviceId} onService={(id) => { setServiceId(id); setTime(null); setStaff(prefill?.staffId && mode === 'new' ? prefill.staffId : 'any'); setPick(null); }} disabled={!!lockOffering} />
             <OptionChips svc={svc} variantId={variantId} onVariant={setVariantId} disabled={!!lockOffering} />
             <ParticipantsField svc={svc} parts={parts} onParts={setParts} ovr={ovr} onOvr={setOvr} disabled={!!lockOffering} />
+            <AddonPicker businessId={businessId} serviceId={serviceId} value={addons} onChange={setAddons}
+              kept={keptAddons} pruneOnLoad={mode === 'new' || (!!booking && serviceId !== booking.service_id)} disabled={viewOnly}
+              onRemovePaid={mode === 'edit' && bookingId ? (a) => { setRemovingPaid(a); setPaidRefundTo('original'); setPaidReason(''); setPaidMsg(null); } : undefined} />
+            {removingPaid && (
+              <div className="q-endpanel" role="group" aria-label={`Remove ${removingPaid.name}`}>
+                <b>Remove {removingPaid.name}? It was paid ({formatCurrency(removingPaid.price)}).</b>
+                <div className="mk-f">
+                  <div className="mk-l">Refund</div>
+                  <div className="chips">
+                    {([['original', 'To the payment'], ['account_credit', 'As account credit'], ['none', 'No refund (an alternative is given)']] as const)
+                      .filter(([v]) => v !== 'account_credit' || !!booking?.customer_id)
+                      .map(([v, l]) => <button key={v} type="button" className="ch" aria-pressed={paidRefundTo === v} onClick={() => setPaidRefundTo(v)}>{l}</button>)}
+                  </div>
+                </div>
+                <textarea rows={2} value={paidReason} onChange={(e) => setPaidReason(e.target.value)} placeholder="Reason (optional), for example not available today" aria-label="Reason" />
+                <p className="mk-hint">The refund is made now. To give an alternative, choose another add-on after this; it is charged at Checkout.</p>
+                <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end' }}>
+                  <button type="button" className="btn sec" disabled={paidBusy} onClick={() => setRemovingPaid(null)}>Keep it</button>
+                  <button type="button" className="btn danger" disabled={paidBusy} onClick={removePaidAddon}>{paidBusy ? 'Working…' : 'Remove add-on'}</button>
+                </div>
+              </div>
+            )}
+            {paidMsg && <p className={paidMsg.ok ? 'mk-hint' : 'mk-warn'} role="status">{paidMsg.text}</p>}
           </div></div>
           {/* Pay with a membership or package (spec 51, gap 19): as soon as a customer and a service are chosen */}
           {!walk && customer?.id && svc && variantId && (
@@ -645,11 +702,11 @@ export function AppointmentWindow({ businessId, timezone, mode, bookingId, prefi
                 value={benefit} onChange={setBenefit} disabled={viewOnly || !!lockOffering} />
             </div></div>
           )}
-          {/* What it costs, from the first choice on (spec 51, gap 5; add-ons, gap 15, will show here) */}
+          {/* What it costs, from the first choice on (spec 51, gap 5), with its add-ons (gap 15) */}
           {mode === 'new' && svc && variantId && (
             <PriceSummary businessId={businessId} customerId={walk ? null : customer?.id || null} serviceId={serviceId} variantId={variantId}
               participants={parts} rule={walk && svc.payment_rule === 'card_required' ? 'no_card' : svc.payment_rule}
-              benefit={walk ? null : benefit ?? null} startTime={chosen?.start_time || null} />
+              benefit={walk ? null : benefit ?? null} startTime={chosen?.start_time || null} addons={addons} />
           )}
         </div>
         <div className="q-col">

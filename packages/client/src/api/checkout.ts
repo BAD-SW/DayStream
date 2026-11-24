@@ -34,16 +34,21 @@ export interface OrderItem {
 export interface PrepaidOrder {
   id: string;
   order_number: string;
-  status: 'completed' | 'refunded';
+  status: 'completed' | 'partially_refunded' | 'refunded';
   completed_at: string | null;
   payment_method: string | null;
   subtotal: number;
   tax_amount: number;
   discount_amount: number;
   total_amount: number;
+  /** Refunded of it since (an add-on removed after payment, spec 51 gap 15). */
+  refunded_amount?: number;
   items: Array<{
     id: string; item_type: string; item_name: string; variant_name: string | null; quantity: number;
     unit_price: number; discount_amount: number; tax_amount: number; total_price: number;
+    refunded_quantity?: number;
+    /** An add-on's line: the appointment's add-on, which can be removed with a refund (spec 51, gap 15). */
+    booking_addon_id?: string | null;
     credited_to: string | null; credited_name: string | null;
     /** The membership or package that paid the line (spec 51, gap 19). */
     paid_with?: string | null;

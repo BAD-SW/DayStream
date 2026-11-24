@@ -15,7 +15,11 @@ interface CreateOrderInput {
 }
 
 interface AddItemInput {
-  itemType: 'service' | 'product' | 'membership' | 'package' | 'no_show_fee' | 'gift_card' | 'event';
+  itemType: 'service' | 'product' | 'membership' | 'package' | 'no_show_fee' | 'gift_card' | 'event' | 'add_on';
+  /** An add-on's line (spec 51, gap 15): the appointment's add-on it charges. */
+  bookingAddonId?: string;
+  /** An ad hoc add-on: the service whose tax category it takes. */
+  taxServiceId?: string;
   itemId?: string;
   itemName: string;
   variantId?: string;
@@ -121,7 +125,7 @@ async function openBookingOrder(bookingId: string, businessId: string, checkedOu
   // line; with nothing added, completing it just finishes the appointment (payAndCompleteOrder).
   const { rows: paid } = await adminPool.query(
     `SELECT b.status AS booking_status, o.order_number FROM fin_orders o JOIN apt_bookings b ON b.id = o.booking_id
-      WHERE o.booking_id = $1 AND o.business_id = $2 AND o.status IN ('completed', 'refunded') ORDER BY o.completed_at LIMIT 1`,
+      WHERE o.booking_id = $1 AND o.business_id = $2 AND o.status IN ('completed', 'partially_refunded', 'refunded') ORDER BY o.completed_at LIMIT 1`,
     [bookingId, businessId],
   );
   if (paid.length > 0) {
@@ -131,7 +135,8 @@ async function openBookingOrder(bookingId: string, businessId: string, checkedOu
     const { rows: extras } = await adminPool.query(
       `SELECT id FROM fin_orders WHERE booking_id = $1 AND business_id = $2 AND status = 'open' ORDER BY created_at LIMIT 1`, [bookingId, businessId],
     );
-    if (extras.length > 0) return getOrder(extras[0].id);
+    // Add-ons chosen after the reservation was paid go on the visit's order (spec 51, gap 15).
+    if (extras.length > 0) { await syncAddonLines(extras[0].id, bookingId); return getOrder(extras[0].id); }
     const { rows: bk } = await adminPool.query('SELECT customer_id, staff_id FROM apt_bookings WHERE id = $1 AND business_id = $2', [bookingId, businessId]);
     const extra = await createOrder({
       businessId, customerId: bk[0]?.customer_id || undefined, bookingId, checkedOutBy,
@@ -140,6 +145,7 @@ async function openBookingOrder(bookingId: string, businessId: string, checkedOu
     });
     const { recordPayment } = await import('./booking-history.service');
     await recordPayment(bookingId, { kind: 'order', order_id: extra.id, order_number: extra.order_number }, { userId: checkedOutBy || null });
+    await syncAddonLines(extra.id, bookingId);
     return getOrder(extra.id);
   }
   const { rows: bookings } = await adminPool.query(
@@ -161,7 +167,7 @@ async function openBookingOrder(bookingId: string, businessId: string, checkedOu
   const { rows: existing } = await adminPool.query(
     `SELECT id FROM fin_orders WHERE booking_id = $1 AND status = 'open'`, [bookingId],
   );
-  if (existing.length > 0) return getOrder(existing[0].id);
+  if (existing.length > 0) { await syncAddonLines(existing[0].id, bookingId); return getOrder(existing[0].id); }
 
   const order = await createOrder({
     businessId,
@@ -189,10 +195,69 @@ async function openBookingOrder(bookingId: string, businessId: string, checkedOu
     bookingId,
   });
 
+  // Its add-ons, each as its own line after the service (spec 51, gap 15).
+  await syncAddonLines(order.id, bookingId);
+
   // The membership or package the booking is held against pays its service line (spec 51, gap 19).
   const { attachBookingBenefit } = await import('./benefits.service');
   await attachBookingBenefit(order.id, bookingId);
   return getOrder(order.id);
+}
+
+/** An add-on as it goes on an order (an appointment's, or one being priced before booking). */
+export interface AddonLine {
+  addon_id: string; name: string; price: number;
+  /** apt_booking_addons.id, when it is an appointment's */
+  booking_addon_id?: string;
+}
+
+/**
+ * Put one add-on on an open order (spec 51, gap 15; design 15.3): an 'add_on' line taxed like the
+ * service, credited to the service's staff member.
+ */
+export async function addAddonLine(orderId: string, a: AddonLine, ctx: { serviceId: string; staffId?: string | null; bookingId?: string | null }): Promise<void> {
+  await addItem(orderId, {
+    itemType: 'add_on', itemId: a.addon_id, itemName: a.name, quantity: 1, unitPrice: a.price, taxServiceId: ctx.serviceId,
+    creditedTo: ctx.staffId || undefined, bookingId: ctx.bookingId || undefined, bookingAddonId: a.booking_addon_id,
+  });
+}
+
+/**
+ * An appointment's open order follows its add-ons: each add-on not yet on an order (open or paid)
+ * gets its line here, and a line whose add-on was taken off is removed.
+ */
+export async function syncAddonLines(orderId: string, bookingId: string): Promise<void> {
+  const { rows: order } = await adminPool.query('SELECT status FROM fin_orders WHERE id = $1', [orderId]);
+  if (order[0]?.status !== 'open') return;
+  const { rows: bk } = await adminPool.query('SELECT service_id, staff_id FROM apt_bookings WHERE id = $1', [bookingId]);
+  if (!bk[0]) return;
+  // lines of add-ons taken off the appointment
+  const { rows: stale } = await adminPool.query(
+    `SELECT oi.id FROM fin_order_items oi JOIN apt_booking_addons ba ON ba.id = oi.booking_addon_id
+      WHERE oi.order_id = $1 AND ba.status = 'removed'`, [orderId]);
+  for (const s of stale) await removeItem(s.id, orderId);
+  // add-ons with no line on any order of the appointment that is open or paid
+  const { rows: missing } = await adminPool.query(
+    `SELECT ba.id AS booking_addon_id, ba.addon_id, ba.name, ba.price
+       FROM apt_booking_addons ba
+      WHERE ba.booking_id = $1 AND ba.status = 'active'
+        AND NOT EXISTS (SELECT 1 FROM fin_order_items oi JOIN fin_orders o ON o.id = oi.order_id
+                         WHERE oi.booking_addon_id = ba.id AND o.status IN ('open', 'completed', 'refunded', 'partially_refunded'))
+      ORDER BY ba.created_at, ba.name`, [bookingId]);
+  for (const m of missing) {
+    await addAddonLine(orderId, m, { serviceId: bk[0].service_id, staffId: bk[0].staff_id, bookingId });
+  }
+  // Charged on top of a membership or package, unless the appointment's package includes them.
+  if (missing.length > 0) {
+    const { payAddonsFromBookingPackage } = await import('./benefits.service');
+    await payAddonsFromBookingPackage(orderId, bookingId);
+  }
+}
+
+/** After an appointment's add-ons changed: its open order, if any, follows. */
+export async function syncBookingOrder(bookingId: string): Promise<void> {
+  const { rows } = await adminPool.query(`SELECT id FROM fin_orders WHERE booking_id = $1 AND status = 'open' ORDER BY created_at LIMIT 1`, [bookingId]);
+  if (rows[0]) await syncAddonLines(rows[0].id, bookingId);
 }
 
 /**
@@ -272,6 +337,17 @@ export async function addItem(orderId: string, input: AddItemInput) {
       : (giftBusinessId ? await computeGiftCardExpiry(giftBusinessId) : null);
   } else if (input.taxAmount !== undefined) {
     taxAmount = input.taxAmount;
+  } else if (input.itemType === 'add_on') {
+    // An ad hoc add-on is taxed like its service; the category is kept on the line (spec 51, gap 15).
+    const { rows: svcRows } = input.taxServiceId
+      ? await adminPool.query('SELECT tax_category_id FROM svc_services WHERE id = $1', [input.taxServiceId])
+      : { rows: [] as Array<{ tax_category_id: string | null }> };
+    taxCategoryId = svcRows[0]?.tax_category_id ?? null;
+    if (taxCategoryId) {
+      const applied = await calculateTaxOnCategory(taxCategoryId, netAmount);
+      taxAmount = applied.amount;
+      taxRate = applied.rate;
+    }
   } else if (input.itemType === 'event' && input.itemId) {
     // An event ticket is taxed at the event's tax category, or at the selling business's
     // default tax when the event has none (THE-20).
@@ -293,14 +369,15 @@ export async function addItem(orderId: string, input: AddItemInput) {
   const totalPrice = netAmount + taxAmount;
 
   const { rows } = await adminPool.query(
-    `INSERT INTO fin_order_items (order_id, item_type, item_id, item_name, variant_id, variant_name, quantity, unit_price, discount_amount, tax_amount, tax_category_id, tax_rate, total_price, credited_to, booking_id, notes, gift_recipient_name, gift_recipient_email, gift_expiry)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING *`,
+    `INSERT INTO fin_order_items (order_id, item_type, item_id, item_name, variant_id, variant_name, quantity, unit_price, discount_amount, tax_amount, tax_category_id, tax_rate, total_price, credited_to, booking_id, notes, gift_recipient_name, gift_recipient_email, gift_expiry, booking_addon_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING *`,
     [orderId, input.itemType, input.itemId || null, input.itemName, input.variantId || null, input.variantName || null,
      input.quantity, unitPrice, discount, taxAmount, taxCategoryId, taxRate, totalPrice,
      input.creditedTo || null, input.bookingId || null, itemNotes,
      input.itemType === 'gift_card' ? (input.giftRecipientName || null) : null,
      input.itemType === 'gift_card' ? (input.giftRecipientEmail || null) : null,
-     input.itemType === 'gift_card' ? giftExpiry : null],
+     input.itemType === 'gift_card' ? giftExpiry : null,
+     input.bookingAddonId || null],
   );
 
   await recalculateOrderTotals(orderId, { staffChanged: true });
@@ -340,7 +417,7 @@ export async function updateItem(itemId: string, orderId: string, updates: Parti
   let taxCategoryId = item.tax_category_id;
   let taxRate = item.tax_rate;
   if (updates.quantity !== undefined || updates.unitPrice !== undefined || updates.discountAmount !== undefined) {
-    const applied = await calculateTaxOnAmount(item.item_type, item.item_id, netAmount);
+    const applied = await calculateTaxOnAmount(item.item_type, item.item_id, netAmount, item.id);
     // (quantity above may have been limited to what is on hand)
     tax = applied.amount;
     taxCategoryId = applied.taxCategoryId;
@@ -385,10 +462,21 @@ export async function removeItem(itemId: string, orderId: string) {
   // What the line held of a membership or package is given back (a booking's hold, to the booking).
   const { releaseForOrderItem } = await import('./benefits.service');
   await releaseForOrderItem(itemId);
+  const { rows: addonRows } = await adminPool.query(
+    'SELECT booking_addon_id FROM fin_order_items WHERE id = $1 AND order_id = $2', [itemId, orderId]);
   const { rowCount } = await adminPool.query(
     'DELETE FROM fin_order_items WHERE id = $1 AND order_id = $2', [itemId, orderId],
   );
   if ((rowCount ?? 0) === 0) throw new Error('Item not found');
+  // An add-on's line removed at Checkout: the appointment no longer has the add-on (spec 51, gap 15).
+  const bookingAddonId: string | null = addonRows[0]?.booking_addon_id ?? null;
+  if (bookingAddonId && orderRows[0].booking_id) {
+    const history = await import('./booking-history.service');
+    const before = await history.snapshotBooking(orderRows[0].booking_id);
+    const { rowCount: removed } = await adminPool.query(
+      `UPDATE apt_booking_addons SET status = 'removed', removed_at = NOW() WHERE id = $1 AND status = 'active'`, [bookingAddonId]);
+    if (removed) await history.recordChanges(orderRows[0].booking_id, before, { reason: 'Removed at Checkout' });
+  }
 
   await recalculateOrderTotals(orderId, { staffChanged: true });
   return true;
@@ -950,7 +1038,7 @@ export async function applyPromoCode(orderId: string, businessId: string, promoC
     const netAmount = qi.grossAmount - itemDiscount;
 
     // Recalculate tax on the net amount using this item's own rate
-    const applied = await calculateTaxOnAmount(qi.itemType, qi.itemId, netAmount);
+    const applied = await calculateTaxOnAmount(qi.itemType, qi.itemId, netAmount, qi.id);
     const tax = applied.amount;
     const totalPrice = netAmount + tax;
 
@@ -990,7 +1078,7 @@ export async function removePromoCode(orderId: string, businessId: string) {
   for (const item of items) {
     if (item.discount_amount !== 0) {
       const grossAmount = item.unit_price * item.quantity;
-      const applied = await calculateTaxOnAmount(item.item_type, item.item_id, grossAmount);
+      const applied = await calculateTaxOnAmount(item.item_type, item.item_id, grossAmount, item.id);
       const tax = applied.amount;
       const totalPrice = grossAmount + tax;
       await adminPool.query(
@@ -1200,7 +1288,17 @@ async function applyDefaultTaxCategory(businessId: string, netAmount: number): P
   return { amount: Math.round(netAmount * rate / 10000), taxCategoryId: rows[0].id, rate };
 }
 
-export async function calculateTaxOnAmount(itemType: string, itemId: string | null, netAmount: number): Promise<AppliedTax> {
+export async function calculateTaxOnAmount(itemType: string, itemId: string | null, netAmount: number, orderItemId?: string): Promise<AppliedTax> {
+  // An ad hoc add-on is taxed like its appointment's service (spec 51, gap 15): the category was
+  // stored on the line when it was added, and stays with it (also while the line is at zero).
+  if (itemType === 'add_on') {
+    if (!orderItemId) return { amount: 0, taxCategoryId: null, rate: null };
+    const { rows } = await adminPool.query('SELECT tax_category_id FROM fin_order_items WHERE id = $1', [orderItemId]);
+    const stored: string | null = rows[0]?.tax_category_id ?? null;
+    if (!stored) return { amount: 0, taxCategoryId: null, rate: null };
+    if (netAmount <= 0) return { amount: 0, taxCategoryId: stored, rate: null };
+    return calculateTaxOnCategory(stored, netAmount);
+  }
   if (!itemId || netAmount <= 0) return { amount: 0, taxCategoryId: null, rate: null };
 
   let taxCategoryId: string | null = null;

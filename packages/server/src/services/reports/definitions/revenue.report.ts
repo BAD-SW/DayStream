@@ -57,7 +57,7 @@ export const revenueReport: ReportDefinition = {
         LEFT JOIN cus_customers c ON c.id = o.customer_id
        WHERE o.business_id = $1
          AND o.status IN ('completed', 'partially_refunded', 'refunded')
-         AND oi.item_type IN ('service', 'product', 'event')
+         AND oi.item_type IN ('service', 'add_on', 'product', 'event')
          AND o.completed_at::date BETWEEN $2::date AND $3::date
 
       UNION ALL
@@ -86,7 +86,7 @@ export const revenueReport: ReportDefinition = {
         JOIN fin_orders o ON o.id = rl.order_id
         LEFT JOIN cus_customers c ON c.id = o.customer_id
        WHERE rl.business_id = $1
-         AND oi.item_type IN ('service', 'product', 'event')
+         AND oi.item_type IN ('service', 'add_on', 'product', 'event')
          AND rl.created_at::date BETWEEN $2::date AND $3::date
 
       UNION ALL

@@ -39,13 +39,13 @@ export async function recognizedRevenueByCustomer(businessId: string): Promise<M
       WHERE o.business_id = $1
         AND o.status = 'completed'
         AND o.customer_id IS NOT NULL
-        AND oi.item_type IN ('service', 'product')
+        AND oi.item_type IN ('service', 'add_on', 'product')
       GROUP BY o.customer_id, oi.item_type`,
     [businessId],
   );
   for (const row of orderRows) {
     const r = ensure(row.customer_id);
-    if (row.item_type === 'service') r.service += Number(row.amount) || 0;
+    if (row.item_type === 'service' || row.item_type === 'add_on') r.service += Number(row.amount) || 0;
     else if (row.item_type === 'product') r.product += Number(row.amount) || 0;
   }
 

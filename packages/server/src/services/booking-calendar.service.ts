@@ -34,6 +34,8 @@ interface CalendarBooking {
   participant_count: number;
   participants?: number;
   payment_status: PaymentStatus;
+  /** The add-ons, for '+ Hot stones' on the card (spec 51, gap 15). */
+  addon_names: string | null;
 }
 
 /**
@@ -201,7 +203,9 @@ export async function getCalendar(query: CalendarQuery) {
             s.name AS service_name, s.max_capacity AS service_max_capacity,
             COALESCE(c.first_name || ' ' || c.last_name, b.walk_in_name, 'Walk-in') AS customer_name,
             COALESCE(u.first_name || ' ' || u.last_name, '') AS staff_name,
-            r.capacity AS resource_capacity
+            r.capacity AS resource_capacity,
+            (SELECT string_agg(ba.name, ', ' ORDER BY ba.created_at) FROM apt_booking_addons ba
+              WHERE ba.booking_id = b.id AND ba.status = 'active') AS addon_names
      FROM apt_bookings b
      JOIN svc_services s ON s.id = b.service_id
      LEFT JOIN cus_customers c ON c.id = b.customer_id
@@ -236,6 +240,7 @@ export async function getCalendar(query: CalendarQuery) {
       id: row.id,
       service_id: row.service_id,
       service_name: row.service_name,
+      addon_names: row.addon_names ?? null,
       customer_name: row.customer_name,
       staff_id: row.staff_id ?? null,
       staff_name: row.staff_name,

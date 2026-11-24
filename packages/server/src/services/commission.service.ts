@@ -116,7 +116,7 @@ export async function computeOrderCommissionLines(args: ComputeArgs): Promise<Co
           AND o.status IN ('completed', 'partially_refunded', 'refunded')
           AND o.completed_at::date BETWEEN $2::date AND $3::date
           AND COALESCE(oi.credited_to, o.credited_to) IS NOT NULL
-          AND oi.item_type IN ('service', 'product', 'membership', 'package')
+          AND oi.item_type IN ('service', 'add_on', 'product', 'membership', 'package')
           ${userClause}
        UNION ALL
        -- ...less the refunded part, on the day of the refund, when the business takes
@@ -141,7 +141,7 @@ export async function computeOrderCommissionLines(args: ComputeArgs): Promise<Co
           AND rl.business_id = $1
           AND rl.created_at::date BETWEEN $2::date AND $3::date
           AND COALESCE(oi.credited_to, o.credited_to) IS NOT NULL
-          AND oi.item_type IN ('service', 'product', 'membership', 'package')
+          AND oi.item_type IN ('service', 'add_on', 'product', 'membership', 'package')
           ${userClause}
      ),
      matched AS (

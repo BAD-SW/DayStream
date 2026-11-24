@@ -360,6 +360,8 @@ const createBookingSchema = Joi.object({
   payment_method_id: Joi.string().uuid().allow(null),
   // The membership or package that pays for it (spec 51, gap 19): held with the booking.
   benefit: benefitSchema.allow(null),
+  // The add-ons chosen (svc_addons ids) (spec 51, gap 15)
+  addons: Joi.array().items(Joi.string().uuid()).max(50).default([]),
 });
 
 // POST /api/v1/bookings — Create booking
@@ -380,6 +382,10 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
         return;
       }
     }
+    // The add-ons chosen must be offered on the service (spec 51, gap 15), checked before booking.
+    const addonsService = await import('../services/addons.service');
+    try { await addonsService.assertOffered(req.body.service_id, req.body.business_id, req.body.addons || []); }
+    catch (e) { if (e instanceof addonsService.AddonError) { error(res, e.message, 'VALIDATION_ERROR', 400); return; } throw e; }
     // Reservation Payment Rule (spec 51, gap 5): "Card required" needs one of the customer's saved
     // cards, unless a membership or package pays for it (owner, 23 Nov 2026).
     let heldCardId: string | null;
@@ -412,6 +418,8 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
       // An appointment made by staff is not held to the service's minimum notice (that is for
       // customers booking themselves). Hours, staff, resources and clashes still apply.
       skipLeadTime: !isCustomerRole(req),
+      // its add-ons (spec 51, gap 15), already checked above
+      addonIds: req.body.addons || [],
     });
 
     emitEvent(authReq.tenantId, 'booking.created', {
@@ -424,7 +432,7 @@ bookingsRouter.post('/', requirePermission('bookings:*'), validate(createBooking
       try { await benefits.setBookingBenefit(booking.id, req.body.benefit, authReq.user.sub); }
       catch (e) { if (e instanceof benefits.BenefitError) benefitError = e.message; else throw e; }
     }
-    success(res, { ...booking, benefit: await benefits.bookingBenefit(booking.id), benefit_error: benefitError }, undefined, 201);
+    success(res, { ...booking, addons: await addonsService.bookingAddons(booking.id), benefit: await benefits.bookingBenefit(booking.id), benefit_error: benefitError }, undefined, 201);
   } catch (err: any) {
     if (err.message.includes('not found')) {
       error(res, err.message, 'NOT_FOUND', 404);
@@ -666,6 +674,66 @@ const cancelSchema = Joi.object({
   refund_to: Joi.string().valid('none', 'original', 'account_credit'),
 });
 
+// PUT /api/v1/bookings/:id/addons/:bookingAddonId/remove — take off an add-on already paid (spec 51,
+// gap 15, criterion 9: it was not available on the day), refunding it to the payment, as account
+// credit, or not at all (an alternative given). The refund comes first; if it fails nothing changes.
+const removePaidAddonSchema = Joi.object({
+  refund_to: Joi.string().valid('none', 'original', 'account_credit').required(),
+  reason: Joi.string().max(300).allow('', null),
+});
+bookingsRouter.put('/:id/addons/:bookingAddonId/remove', requirePermission('bookings:*'), validate(removePaidAddonSchema), async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const { rows: ba } = await adminPool.query(
+      `SELECT ba.id, ba.name, b.status AS booking_status FROM apt_booking_addons ba JOIN apt_bookings b ON b.id = ba.booking_id
+        WHERE ba.id = $1 AND ba.booking_id = $2 AND ba.business_id = $3 AND ba.status = 'active'`,
+      [req.params.bookingAddonId, req.params.id, businessId]);
+    if (!ba[0]) { error(res, 'Add-on not found on this appointment', 'NOT_FOUND', 404); return; }
+    if (['completed', 'cancelled', 'no_show'].includes(ba[0].booking_status)) { error(res, 'This appointment can no longer be changed', 'INVALID_TRANSITION', 400); return; }
+    // its line on a paid order, and what is left to refund of it
+    const { rows: line } = await adminPool.query(
+      `SELECT oi.id, oi.order_id, oi.quantity - oi.refunded_quantity AS left,
+              CASE WHEN oi.quantity > 0 THEN (oi.total_price * (oi.quantity - oi.refunded_quantity)) / oi.quantity ELSE 0 END AS amount
+         FROM fin_order_items oi JOIN fin_orders o ON o.id = oi.order_id
+        WHERE oi.booking_addon_id = $1 AND o.status IN ('completed', 'partially_refunded') AND oi.quantity > oi.refunded_quantity
+        ORDER BY o.completed_at LIMIT 1`, [ba[0].id]);
+    const refundTo = req.body.refund_to as 'none' | 'original' | 'account_credit';
+    let refund: { amountCents: number; status: string; referenceNumber: string } | null = null;
+    if (line[0] && refundTo !== 'none') {
+      const { refundOrderLines } = await import('../services/order-refund.service');
+      refund = await refundOrderLines({
+        businessId, tenantId: authReq.tenantId, orderId: line[0].order_id,
+        lines: [{ orderItemId: line[0].id, quantity: Number(line[0].left) }],
+        reason: req.body.reason ? `Add-on removed: ${req.body.reason}` : `Add-on removed: ${ba[0].name}`,
+        processedBy: authReq.user.sub, refundTo, allowServiceLines: true,
+      });
+      if (refund.status === 'failed') { error(res, 'The refund failed', 'REFUND_FAILED', 502); return; }
+    }
+    const history = await import('../services/booking-history.service');
+    const before = await history.snapshotBooking(req.params.id);
+    await adminPool.query(`UPDATE apt_booking_addons SET status = 'removed', removed_at = NOW(), removed_by = $2 WHERE id = $1`, [ba[0].id, authReq.user.sub]);
+    const money = (c: number) => (c / 100).toFixed(2);
+    const what = !line[0] ? 'not paid'
+      : refundTo === 'none' ? 'not refunded'
+      : refund && refund.amountCents > 0 ? `refunded ${money(refund.amountCents)}${refundTo === 'account_credit' ? ' as account credit' : ' to the payment'}`
+      : 'given back to the package';
+    await history.recordChanges(req.params.id, before, {
+      userId: authReq.user.sub, reason: `Removed after payment, ${what}${req.body.reason ? `: ${req.body.reason}` : ''}`,
+    });
+    const { bookingAddons } = await import('../services/addons.service');
+    success(res, {
+      addons: await bookingAddons(req.params.id),
+      refund: refund ? { amount: refund.amountCents, to: refundTo, status: refund.status, reference: refund.referenceNumber } : null,
+    });
+  } catch (err: any) {
+    if (err?.name === 'OrderRefundError' || ['CUSTOMER_REQUIRED', 'NOTHING_TO_REFUND', 'ORDER_NOT_REFUNDABLE', 'NO_CONNECTION', 'ITEM_NOT_REFUNDABLE'].includes(err?.code)) { error(res, err.message, err.code || 'REFUND_REFUSED', 409); return; }
+    console.error('Failed to remove a paid add-on', err?.message || err);
+    error(res, 'The add-on could not be removed', 'INTERNAL_ERROR', 500);
+  }
+});
+
 /** The refundable lines of a booking's completed order (the visit itself). */
 async function bookingRefundLines(bookingId: string, businessId: string): Promise<{ orderId: string | null; lines: Array<{ id: string; left: number; amount: number }> }> {
   const { rows: orders } = await adminPool.query(
@@ -696,6 +764,8 @@ bookingsRouter.post('/payment-quote', requirePermission('bookings:*'), async (re
       participants: b.participant_count, promoCode: b.promo_code || null, useCredit: !!b.use_credit, userId: authReq.user.sub,
       // the membership or package that pays (spec 51, gap 19), when it is for, and an existing booking
       benefit: b.benefit || null, startTime: b.start_time || null, bookingId: b.booking_id || null,
+      // the add-ons chosen (spec 51, gap 15)
+      addons: Array.isArray(b.addons) ? b.addons.filter((x: unknown): x is string => typeof x === 'string') : [],
     });
     // The card field for a walk-in's new card is shown before anything is charged; it needs the
     // business's publishable key (not a secret).
@@ -1037,6 +1107,8 @@ const updateBookingSchema = Joi.object({
   payment_method_id: Joi.string().uuid().allow(null),
   // Pay with another membership or package, or normally (null) (spec 51, gap 19)
   benefit: benefitSchema.allow(null),
+  // The appointment's add-ons from now on (svc_addons ids) (spec 51, gap 15)
+  addons: Joi.array().items(Joi.string().uuid()).max(50),
 });
 
 bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBookingSchema), async (req: Request, res: Response) => {
@@ -1103,10 +1175,35 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
       try { await benefits.setBookingBenefit(req.params.id, req.body.benefit, authReq.user.sub); return null; }
       catch (e) { if (e instanceof benefits.BenefitError) return e.message; throw e; }
     };
+    // The add-ons (spec 51, gap 15): those chosen now, checked against the service it will have; or,
+    // when the service changes, those the new service does not offer are dropped (and said so).
+    const addonsService = await import('../services/addons.service');
+    const finalServiceId: string = updates.service_id || existing.service_id;
+    const serviceChanging = updates.service_id !== undefined && updates.service_id !== existing.service_id;
+    if (req.body.addons !== undefined) {
+      try { await addonsService.assertOffered(finalServiceId, businessId, (req.body.addons as string[]).filter((id) => !(existing.addons || []).some((a: { addon_id: string }) => a.addon_id === id) || serviceChanging)); }
+      catch (e) { if (e instanceof addonsService.AddonError) { error(res, e.message, 'VALIDATION_ERROR', 400); return; } throw e; }
+    }
+    const applyAddons = async (): Promise<string[]> => {
+      if (req.body.addons !== undefined) await addonsService.setBookingAddons(req.params.id, businessId, req.body.addons, authReq.user.sub);
+      const dropped = serviceChanging ? await addonsService.dropUnofferedAddons(req.params.id, businessId, authReq.user.sub) : [];
+      // An open order of the appointment follows (design 15.3).
+      if (req.body.addons !== undefined || dropped.length > 0) {
+        const { syncBookingOrder } = await import('../services/checkout.service');
+        await syncBookingOrder(req.params.id);
+      }
+      return dropped;
+    };
+
     if (Object.keys(updates).length === 0 && !req.body.start_time) {
+      if (req.body.addons !== undefined) {
+        try { await applyAddons(); }
+        catch (e) { if (e instanceof addonsService.AddonError) { error(res, e.message, 'VALIDATION_ERROR', 400); return; } throw e; }
+        await history.recordChanges(req.params.id, before, { userId: authReq.user.sub });
+      }
       const benefitError = await setBenefit();
       if (benefitError) { error(res, benefitError, 'NOT_COVERED', 409); return; }
-      success(res, { ...existing, benefit: await benefits.bookingBenefit(req.params.id) });
+      success(res, { ...existing, addons: await addonsService.bookingAddons(req.params.id), benefit: await benefits.bookingBenefit(req.params.id) });
       return;
     }
 
@@ -1191,11 +1288,18 @@ bookingsRouter.put('/:id', requirePermission('bookings:*'), validate(updateBooki
         })
         .catch(() => undefined);
     }
+    let addonsDropped: string[] = [];
+    let addonsError: string | null = null;
+    try { addonsDropped = await applyAddons(); }
+    catch (e) { if (e instanceof addonsService.AddonError) addonsError = e.message; else throw e; }
     await history.recordChanges(req.params.id, before, { userId: authReq.user.sub });
     // The membership or package: the one chosen now, or the one held, checked again after the change.
     let benefitError = await setBenefit();
     if (req.body.benefit === undefined && slotChange) benefitError = await benefits.recheckBookingBenefit(req.params.id, authReq.user.sub);
-    success(res, { ...saved, benefit: await benefits.bookingBenefit(req.params.id), benefit_error: benefitError });
+    success(res, {
+      ...saved, addons: await addonsService.bookingAddons(req.params.id), addons_dropped: addonsDropped, addons_error: addonsError,
+      benefit: await benefits.bookingBenefit(req.params.id), benefit_error: benefitError,
+    });
   } catch (err: any) {
     if (isBookingRefusal(err)) { error(res, err.message, /conflict/i.test(err.message) ? 'CONFLICT' : 'BOOKING_NOT_ALLOWED', 409); return; }
     console.error('Failed to update booking', err?.message || err);

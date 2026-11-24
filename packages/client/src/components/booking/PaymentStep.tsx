@@ -43,6 +43,8 @@ export interface BookingDraft {
   whenLabel: string; whoLabel: string;
   /** The membership or package chosen to pay (spec 51, gap 19); null: paid normally. */
   benefit?: BenefitRef | null;
+  /** The add-ons chosen (spec 51, gap 15): priced here and booked with it. */
+  addons?: string[];
 }
 
 type Choice = 'onfile' | 'card' | 'bank';
@@ -88,7 +90,7 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
     apiClient.post(`/v1/bookings/payment-quote?business_id=${businessId}`, {
       business_id: businessId, customer_id: customerId, service_id: draft.serviceId, variant_id: draft.variantId,
       participant_count: draft.parts, promo_code: hold ? null : promo || null, use_credit: hold ? false : useCredit,
-      benefit: draft.benefit || null, start_time: draft.startIso,
+      benefit: draft.benefit || null, start_time: draft.startIso, addons: draft.addons || [],
     }).then((r) => {
       if (off) return;
       const q: Quote = r.data.data;
@@ -98,7 +100,7 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
     }).catch(() => { if (!off) setError('The price could not be worked out.'); });
     return () => { off = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [businessId, customerId, draft.serviceId, draft.variantId, draft.parts, promo, useCredit, hold, draft.benefit]);
+  }, [businessId, customerId, draft.serviceId, draft.variantId, draft.parts, promo, useCredit, hold, draft.benefit, (draft.addons || []).join(',')]);
 
   const due = quote?.due ?? 0;
   // The membership or package is used only when it covers the booking; otherwise it is paid normally.
@@ -134,6 +136,7 @@ export function PaymentStep({ businessId, draft, mode = 'charge', onBack, onDone
     notes: draft.notes || undefined, participant_count: draft.parts, override_rules: draft.ovr, location_id: draft.locationId || undefined,
     ...(paymentMethodId ? { payment_method_id: paymentMethodId } : {}),
     ...(usedBenefit ? { benefit: usedBenefit } : {}),
+    ...(draft.addons && draft.addons.length ? { addons: draft.addons } : {}),
   });
   const errText = (err: any, fallback: string) => { const e = err?.response?.data?.error; return typeof e === 'string' ? e : e?.message || err?.message || fallback; };
 

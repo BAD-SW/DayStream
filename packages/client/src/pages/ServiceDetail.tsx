@@ -13,6 +13,7 @@ import type { Service, ServiceVariant, ServiceCategory, AvailabilityRule } from 
 import { formatCurrency } from '../utils/currency';
 import { useClinicalAccess } from '../utils/useClinicalAccess';
 import * as formsApi from '../api/forms';
+import { ServiceAddonsCard } from '../components/addons/ServiceAddonsCard';
 
 const STATUS_VARIANTS: Record<string, 'success' | 'warning' | 'error' | 'info' | 'neutral'> = {
   active: 'success', draft: 'neutral', paused: 'warning', archived: 'error',
@@ -90,6 +91,7 @@ function ServiceDetailPage() {
       {/* Content */}
       <ServiceForm service={service} categories={categories} taxCategories={taxCategories} businessId={businessId} onUpdate={setService} />
       <VariantsCard service={service} />
+      <ServiceAddonsCard serviceId={service.id} businessId={businessId} />
       <ImagesCard service={service} businessId={businessId} />
       <AvailabilityCard service={service} />
     </div>
@@ -291,7 +293,7 @@ function VariantsCard({ service }: { service: Service }) {
     <div style={{ ...styles.card, ...draftBox(list.dirty) }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
         <h3 style={{ ...styles.cardTitle, margin: 0 }}>Variants<UnsavedTag dirty={list.dirty} /></h3>
-        <Button size="sm" variant="secondary" onClick={() => setEditing({})}>Add Variant</Button>
+        <Button size="sm" variant="secondary" onClick={() => setEditing({})}>Add variant</Button>
       </div>
 
       {shown.length === 0 && <p style={styles.muted}>No variants yet. Add at least one variant to activate this service.</p>}
@@ -313,8 +315,8 @@ function VariantsCard({ service }: { service: Service }) {
                 </div>
                 {!r.isNew && <Badge variant={STATUS_VARIANTS[v.status] || 'neutral'}>{v.status}</Badge>}
                 {r.deleted ? <Button size="sm" variant="ghost" onClick={() => list.undo(r.key)}>Undo</Button> : <>
-                  <button style={styles.editBtn} onClick={() => setEditing({ key: r.key, variant: v })} title="Edit">✏️</button>
-                  <button style={styles.deleteBtn} onClick={() => list.remove(r.key)} title="Delete">×</button>
+                  <button style={styles.editBtn} onClick={() => setEditing({ key: r.key, variant: v })} title="Edit" aria-label={`Edit ${v.name}`}>✏️</button>
+                  <button style={styles.deleteBtn} onClick={() => list.remove(r.key)} title="Delete" aria-label={`Delete ${v.name}`}>×</button>
                 </>}
               </div>
             );
@@ -369,7 +371,7 @@ function ServiceVariantModal({ variant, onClose, onDone }: { variant?: ServiceVa
     <div style={styles.overlay}>
       <div style={styles.modal}>
         <div style={styles.modalHeader}>
-          <h3 style={styles.modalTitle}>{variant ? 'Edit Variant' : 'Add Variant'}</h3>
+          <h3 style={styles.modalTitle}>{variant ? 'Edit variant' : 'Add variant'}</h3>
           <button style={styles.closeBtn} onClick={onClose}>×</button>
         </div>
         {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: '0 0 8px 0' }}>{error}</p>}
@@ -424,7 +426,7 @@ function ServiceVariantModal({ variant, onClose, onDone }: { variant?: ServiceVa
           <p style={{ ...styles.muted, fontSize: 'var(--font-size-xs)' }}>Saved with the page's Save changes.</p>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
-            <Button type="submit">{variant ? 'Done' : 'Add Variant'}</Button>
+            <Button type="submit">{variant ? 'Done' : 'Add variant'}</Button>
           </div>
         </form>
       </div>
@@ -702,8 +704,8 @@ const styles: Record<string, React.CSSProperties> = {
   input: { border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '8px 12px', fontSize: 'var(--font-size-base)', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'var(--font-family)', background: 'var(--color-background)', color: 'var(--color-text)' },
   muted: { fontSize: 'var(--font-size-base)', color: 'var(--color-text-secondary)', margin: 0 },
   variantRow: { display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 'var(--font-size-base)' },
-  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '2px 4px', borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
-  deleteBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1, borderRadius: 'var(--button-radius)', minHeight: 'var(--button-height-sm)' },
+  editBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-base)', padding: '2px 4px', borderRadius: 'var(--button-radius)', minHeight: '44px', minWidth: '44px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
+  deleteBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--font-size-lg)', color: 'var(--color-error)', padding: '2px 6px', lineHeight: 1, borderRadius: 'var(--button-radius)', minHeight: '44px', minWidth: '44px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
   overlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { background: 'var(--color-surface-modal, #FFFFFF)', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '500px', maxHeight: '85vh', overflow: 'auto', border: '1px solid var(--color-border)', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },

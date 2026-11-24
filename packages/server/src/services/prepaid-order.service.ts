@@ -12,16 +12,21 @@ type Db = Pick<PoolClient, 'query'>;
 export interface PrepaidOrder {
   id: string;
   order_number: string;
-  status: 'completed' | 'refunded';
+  status: 'completed' | 'partially_refunded' | 'refunded';
   completed_at: string | null;
   payment_method: string | null;
   subtotal: number;
   tax_amount: number;
   discount_amount: number;
   total_amount: number;
+  /** What was refunded of it since (for example an add-on removed after payment, spec 51 gap 15). */
+  refunded_amount: number;
   items: Array<{
     id: string; item_type: string; item_name: string; variant_name: string | null; quantity: number;
     unit_price: number; discount_amount: number; tax_amount: number; total_price: number;
+    refunded_quantity: number;
+    /** An add-on's line: the appointment's add-on (it can be removed from Checkout, spec 51 gap 15). */
+    booking_addon_id: string | null;
     credited_to: string | null; credited_name: string | null;
     /** The membership or package that paid the line (spec 51, gap 19, criterion 11). */
     paid_with: string | null;
@@ -32,7 +37,7 @@ export async function findPrepaidOrderId(orderId: string, bookingId: string | nu
   if (!bookingId) return null;
   const { rows } = await db.query(
     `SELECT o.id FROM fin_orders o
-      WHERE o.booking_id = $1 AND o.id <> $2 AND o.status IN ('completed', 'refunded')
+      WHERE o.booking_id = $1 AND o.id <> $2 AND o.status IN ('completed', 'partially_refunded', 'refunded')
         AND EXISTS (SELECT 1 FROM fin_order_items i WHERE i.order_id = o.id AND i.booking_id = $1 AND i.item_type = 'service')
       ORDER BY o.completed_at LIMIT 1`,
     [bookingId, orderId]);
@@ -47,6 +52,7 @@ export async function getPrepaidOrder(orderId: string, bookingId: string | null,
        FROM fin_orders WHERE id = $1`, [id]);
   const { rows: items } = await db.query(
     `SELECT i.id, i.item_type, i.item_name, i.variant_name, i.quantity, i.unit_price, i.discount_amount, i.tax_amount, i.total_price,
+            i.refunded_quantity, i.booking_addon_id,
             COALESCE(i.credited_to, o.credited_to) AS credited_to,
             NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), '') AS credited_name
        FROM fin_order_items i
@@ -55,5 +61,7 @@ export async function getPrepaidOrder(orderId: string, bookingId: string | null,
       WHERE i.order_id = $1 ORDER BY i.created_at`, [id]);
   const { orderLineBenefits } = await import('./benefits.service');
   const paidWith = await orderLineBenefits(items.map((i: { id: string }) => i.id));
-  return { ...rows[0], items: items.map((i: { id: string }) => ({ ...i, paid_with: paidWith.get(i.id)?.name ?? null })) };
+  const refunded = items.reduce((s: number, i: { quantity: number; refunded_quantity: number; total_price: number }) =>
+    s + (i.quantity > 0 ? Math.round((i.total_price * i.refunded_quantity) / i.quantity) : 0), 0);
+  return { ...rows[0], refunded_amount: refunded, items: items.map((i: { id: string }) => ({ ...i, paid_with: paidWith.get(i.id)?.name ?? null })) };
 }

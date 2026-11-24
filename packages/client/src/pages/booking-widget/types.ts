@@ -49,6 +49,8 @@ export interface FlowState {
   requirePaymentBeforeConfirmation: boolean | null;
 
   selectedVariantId: string | null;
+  /** The add-ons chosen with the service (spec 51, gap 15). */
+  selectedAddonIds: string[];
   selectedDate: string | null;
   /** The one specific (time, location, staff) combo the visitor is booking. */
   selectedSlot: WidgetAvailabilityCombo | null;
@@ -70,6 +72,7 @@ export const initialFlowState = (businessId: string, productId: string): FlowSta
   product: null,
   requirePaymentBeforeConfirmation: null,
   selectedVariantId: null,
+  selectedAddonIds: [],
   selectedDate: null,
   selectedSlot: null,
   holdId: null,

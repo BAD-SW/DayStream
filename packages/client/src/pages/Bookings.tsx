@@ -209,7 +209,10 @@ export function Bookings() {
       key: 'customer_first_name', header: 'Customer', sortable: true,
       render: (_: any, row: Booking) => row.customer_first_name ? `${row.customer_first_name} ${row.customer_last_name}` : (row as any).walk_in_name || 'Walk-in',
     },
-    { key: 'service_name', header: 'Service', sortable: true },
+    { key: 'service_name', header: 'Service', sortable: true, render: (v: string, row: Booking) => (row.addon_names
+      // with add-ons: a plus after the service; the add-ons show on hover and to screen readers
+      ? <span title={`Add-ons: ${row.addon_names}`} aria-label={`${v}, with add-ons: ${row.addon_names}`}>{v} +</span>
+      : v) },
     {
       key: 'start_time', header: 'Date/Time', sortable: true, filter: 'date' as const,
       render: (val: string) => new Date(val).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', timeZone: businessTimezone }),

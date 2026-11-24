@@ -251,7 +251,15 @@ async function orderReceiptRows(orderId: string, currency: string): Promise<Docu
     'SELECT id, item_name, variant_name, quantity, total_price, tax_amount FROM fin_order_items WHERE order_id = $1 ORDER BY created_at', [orderId]);
   const { getPrepaidOrder } = await import('./prepaid-order.service');
   const prepaid = await getPrepaidOrder(orderId, o[0].booking_id);
-  const paidBefore = prepaid?.items || [];
+  // What is still paid of the reservation's lines: a line refunded since (an add-on removed after
+  // payment, spec 51 gap 15) is left out, a part refunded is taken off.
+  const paidBefore = (prepaid?.items || []).flatMap((it) => {
+    const left = Number(it.quantity) - Number(it.refunded_quantity || 0);
+    if (left <= 0) return [];
+    if (left === Number(it.quantity)) return [it];
+    const share = (n: number) => Math.round((n * left) / Number(it.quantity));
+    return [{ ...it, quantity: left, total_price: share(it.total_price), tax_amount: share(it.tax_amount || 0) }];
+  });
   const tip = Number(o[0].tip_amount) || 0;
   if (items.length === 0 && !(paidBefore.length > 0 && tip > 0)) return null;
   type Line = { id: string; item_name: string; variant_name: string | null; quantity: number; total_price: number; tax_amount: number | null };

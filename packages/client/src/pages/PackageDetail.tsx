@@ -201,7 +201,8 @@ function PackageItemsCard({ packageId }: { packageId: string }) {
     create: (i) => apiClient.post(`/v1/packages/${packageId}/items`, {
       item_type: i.item_type, service_id: i.item_type === 'service' ? i.service_id : undefined,
       merchandise_id: i.item_type === 'merchandise' ? i.merchandise_id : undefined,
-      variant_id: i.redemption_type === 'minutes' ? undefined : (i.variant_id || undefined),
+      addon_id: i.item_type === 'add_on' ? i.addon_id : undefined,
+      variant_id: i.redemption_type === 'minutes' || i.item_type === 'add_on' ? undefined : (i.variant_id || undefined),
       quantity: i.quantity,
       redemption_type: i.redemption_type,
     }).then((r) => ({ ...i, ...r.data.data })),
@@ -232,7 +233,7 @@ function PackageItemsCard({ packageId }: { packageId: string }) {
             return (
               <div key={r.key} style={{ ...styles.itemRow, opacity: r.deleted ? 0.6 : 1, ...(edited ? fieldMark(true) : {}) }}>
                 <div style={{ flex: 1, textDecoration: r.deleted ? 'line-through' : 'none' }}>
-                  <Badge variant={item.item_type === 'service' ? 'info' : 'neutral'}>{item.item_type === 'service' ? 'Service' : 'Product'}</Badge><strong style={{ marginLeft: '8px' }}>{item.service_name || item.merchandise_name || 'Unknown'}</strong>
+                  <Badge variant={item.item_type === 'service' ? 'info' : 'neutral'}>{item.item_type === 'service' ? 'Service' : item.item_type === 'add_on' ? 'Add-on' : 'Product'}</Badge><strong style={{ marginLeft: '8px' }}>{item.service_name || item.merchandise_name || item.addon_name || 'Unknown'}</strong>
                   {r.isNew && <> <RowTag>New</RowTag></>}
                   {edited && <> <RowTag>Changed</RowTag></>}
                   {r.deleted && <> <RowTag>Deleted when you save</RowTag></>}
@@ -257,12 +258,14 @@ function PackageItemsCard({ packageId }: { packageId: string }) {
 
 function AddEditPackageItemModal({ item, onClose, onDone }: { item: any; onClose: () => void; onDone: (data: any) => void }) {
   const businessId = localStorage.getItem('business_id') || '';
-  const [itemType, setItemType] = useState<'service' | 'merchandise'>(item?.item_type || 'service');
+  const [itemType, setItemType] = useState<'service' | 'merchandise' | 'add_on'>(item?.item_type || 'service');
+  // add-ons a package can include (spec 51, gap 15): used with the appointment's package
+  const [addons, setAddons] = useState<Array<{ id: string; name: string }>>([]);
   const [redemptionType, setRedemptionType] = useState<'sessions' | 'minutes'>(item?.redemption_type || 'sessions');
   const [services, setServices] = useState<any[]>([]);
   const [merchandise, setMerchandise] = useState<any[]>([]);
   const [variants, setVariants] = useState<any[]>([]);
-  const [selectedId, setSelectedId] = useState(item?.service_id || item?.merchandise_id || '');
+  const [selectedId, setSelectedId] = useState(item?.service_id || item?.merchandise_id || item?.addon_id || '');
   const [selectedVariantId, setSelectedVariantId] = useState(item?.variant_id || '');
   const [quantity, setQuantity] = useState(item?.quantity || 1);
   const [error, setError] = useState('');
@@ -271,16 +274,19 @@ function AddEditPackageItemModal({ item, onClose, onDone }: { item: any; onClose
   useEffect(() => {
     apiClient.get(`/v1/services?business_id=${businessId}&status=active&limit=100`).then((r) => setServices(r.data.data || [])).catch(() => {});
     apiClient.get(`/v1/merchandise?business_id=${businessId}&status=active&limit=100`).then((r) => setMerchandise(r.data.data || [])).catch(() => {});
+    apiClient.get('/v1/addons', { params: { business_id: businessId } })
+      .then((r) => setAddons(((r.data.data || []) as Array<{ id: string; name: string; service_name: string }>).map((a) => ({ id: a.id, name: `${a.name} (${a.service_name})` }))))
+      .catch(() => {});
   }, [businessId]);
 
   useEffect(() => {
-    if (!selectedId) { setVariants([]); if (!isEditing) setSelectedVariantId(''); return; }
+    if (!selectedId || itemType === 'add_on') { setVariants([]); if (!isEditing) setSelectedVariantId(''); return; }
     const url = itemType === 'service' ? `/v1/services/${selectedId}/variants` : `/v1/merchandise/${selectedId}/variants`;
     apiClient.get(url).then((r) => setVariants(r.data.data || [])).catch(() => setVariants([]));
     if (!isEditing) setSelectedVariantId('');
   }, [selectedId, itemType]);
 
-  const options = itemType === 'service' ? services : merchandise;
+  const options = itemType === 'service' ? services : itemType === 'add_on' ? addons : merchandise;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -291,7 +297,9 @@ function AddEditPackageItemModal({ item, onClose, onDone }: { item: any; onClose
     onDone({
       item_type: itemType, service_id: itemType === 'service' ? selectedId : undefined,
       merchandise_id: itemType === 'merchandise' ? selectedId : undefined,
+      addon_id: itemType === 'add_on' ? selectedId : undefined,
       service_name: itemType === 'service' ? name : undefined, merchandise_name: itemType === 'merchandise' ? name : undefined,
+      addon_name: itemType === 'add_on' ? name : undefined,
       variant_id, quantity, redemption_type: redemptionType,
     });
   };
@@ -302,13 +310,13 @@ function AddEditPackageItemModal({ item, onClose, onDone }: { item: any; onClose
         <div style={styles.modalHeader}><h3 style={styles.modalTitle}>{isEditing ? 'Edit Item' : 'Add Item'}</h3><button style={styles.closeBtn} onClick={onClose}>×</button></div>
         {error && <p style={{ color: 'var(--color-error)', fontSize: 'var(--font-size-sm)', margin: '0 0 8px' }}>{error}</p>}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={styles.formGroup}><label style={styles.label}>Type</label><select style={styles.input} value={itemType} disabled={isEditing} onChange={(e) => { setItemType(e.target.value as any); setSelectedId(''); }}><option value="service">Service</option><option value="merchandise">Product</option></select></div>
-          <div style={styles.formGroup}><label style={styles.label}>{itemType === 'service' ? 'Service' : 'Product'} *</label><select style={styles.input} value={selectedId} disabled={isEditing} onChange={(e) => setSelectedId(e.target.value)} required><option value="">Select...</option>{options.map((o: any) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
+          <div style={styles.formGroup}><label style={styles.label}>Type</label><select style={styles.input} value={itemType} disabled={isEditing} onChange={(e) => { setItemType(e.target.value as any); setSelectedId(''); }}><option value="service">Service</option><option value="merchandise">Product</option><option value="add_on">Add-on</option></select></div>
+          <div style={styles.formGroup}><label style={styles.label}>{itemType === 'service' ? 'Service' : itemType === 'add_on' ? 'Add-on' : 'Product'} *</label><select style={styles.input} value={selectedId} disabled={isEditing} onChange={(e) => setSelectedId(e.target.value)} required><option value="">Select...</option>{options.map((o: any) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
           {itemType === 'service' && (
             <div style={styles.formGroup}><label style={styles.label}>Redemption Mode</label><select style={styles.input} value={redemptionType} onChange={(e) => { setRedemptionType(e.target.value as any); if (e.target.value === 'minutes') setSelectedVariantId(''); }}><option value="sessions">Fixed sessions (specific variant)</option><option value="minutes">Time pool (total minutes, any variant)</option></select></div>
           )}
           {redemptionType === 'sessions' && variants.length > 0 && (<div style={styles.formGroup}><label style={styles.label}>Variant</label><select style={styles.input} value={selectedVariantId} onChange={(e) => setSelectedVariantId(e.target.value)}><option value="">All / any</option>{variants.map((v: any) => <option key={v.id} value={v.id}>{v.name}{v.price != null ? ` — ${formatCurrency(v.price)}` : ''}</option>)}</select></div>)}
-          <div style={styles.formGroup}><label style={styles.label}>{redemptionType === 'minutes' ? 'Total Minutes' : 'Quantity (sessions)'}</label><input style={styles.input} type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />{redemptionType === 'minutes' && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: '2px' }}>{quantity >= 60 ? `${Math.floor(quantity / 60)}h ${quantity % 60 > 0 ? `${quantity % 60}m` : ''}` : `${quantity}m`}</span>}</div>
+          <div style={styles.formGroup}><label style={styles.label}>{redemptionType === 'minutes' ? 'Total Minutes' : itemType === 'add_on' ? 'Quantity (uses)' : 'Quantity (sessions)'}</label><input style={styles.input} type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />{redemptionType === 'minutes' && <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginTop: '2px' }}>{quantity >= 60 ? `${Math.floor(quantity / 60)}h ${quantity % 60 > 0 ? `${quantity % 60}m` : ''}` : `${quantity}m`}</span>}</div>
           <p style={{ ...styles.muted, fontSize: 'var(--font-size-xs)' }}>Saved with the page's Save changes.</p>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}><Button variant="secondary" type="button" onClick={onClose}>Cancel</Button><Button type="submit">{isEditing ? 'Done' : 'Add Item'}</Button></div>
         </form>

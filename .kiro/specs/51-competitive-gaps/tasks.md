@@ -179,12 +179,40 @@ One section per gap, in the order of requirements.md. Each gap follows the same 
   - [x] ✅ A service paid at reservation shown at the visit, read only: tipped on, shared with its staff, not charged or posted again, on the visit's receipt with the earlier payment taken off (owner, 23 Nov 2026)
 - [x] ✅ Verified and closed with the owner (23 Nov 2026)
 
-## 15. Service and product add-ons (Requirement 15)
+## 15. Service add-ons (Requirement 15)
 - [x] ✅ Confirm current state (no add-on support; extras are sold only as separate checkout lines)
-- [ ] Agree requirements with the owner (an add-on that uses a product depends on gap 7, inventory)
-- [ ] Design
-- [ ] Build
-- [ ] Verify live and close with the owner
+- [x] ✅ Agree requirements with the owner (owner 23 Nov 2026: ad hoc and product add-ons, priced per service, no extra time, chosen by staff and online, charged on top of a membership or package unless the package includes them; changed 24 Nov 2026: added on the service like an option, a name, a description and a price, no product add-ons)
+- [x] ✅ Design (design.md section 15, agreed with the owner 23 Nov 2026)
+
+### 15.1 Add-ons and services
+- [x] ✅ Migration 196: svc_addons, svc_service_addons, apt_booking_addons, order line link and 'add_on' type, package item add-on
+- [x] ✅ Add-ons service and routes (list, create, edit, archive; what a service offers, with prices)
+- [x] ✅ Service Details → Add-ons: rows like the options, Add Add-on (name, description, price), edit and delete; saved with the page's Save changes (owner, 24 Nov 2026; replaces an Offerings → Add-ons tab with a shared list and product add-ons)
+- [x] ✅ Migration 197: each add-on on its service with its price; product columns and the per-service price table dropped
+
+### 15.2 Appointments
+- [x] ✅ Booking create and update with add-ons (checked against the service, name and price kept); history entries ("Add-ons: none → Hot stones")
+- [x] ✅ Appointment window: add-on chips under the option (price, paid); changing the service drops what it does not offer and says so
+- [x] ✅ Price quote and price summary lines
+
+### 15.3 Checkout
+- [x] ✅ Order lines for add-ons, taxed like the service, credited to the service's staff
+- [x] ✅ Open order follows add-on changes; an add-on line removed at Checkout is taken off the appointment; paid at reservation: new add-ons on the visit's order
+- [x] ✅ Journal and refunds for 'add_on' (Service Revenue); revenue, staff performance and commission count it with services; receipt
+
+### 15.4 Packages
+- [x] ✅ Package item can be an add-on (package screen, customer's Packages tab); benefit engine target 'add_on' (packages only, never a membership); an add-on line is paid from the appointment's package when it includes it, in the price shown while booking and at Checkout
+
+### 15.5 Showing them
+- [x] ✅ Calendar blocks and Bookings list ("Sport Massage +", the add-ons on hover; owner, 24 Nov 2026); appointment emails show the service with its add-ons (confirmation, reminder, change, cancellation)
+- [x] ✅ Booking widget: add-ons after the option; summary and simulated payment include them
+
+- [x] ✅ A paid add-on can be removed (owner, 24 Nov 2026): clicking it in the appointment window asks for the refund (to the payment, as account credit, or none with an alternative given) and a reason; refunded first, then taken off; recorded in the history (`PUT /v1/bookings/:id/addons/:bookingAddonId/remove`). The same from Checkout: a Remove button on each add-on line of "Paid at reservation" opens the refund choice; an order partly refunded still counts as paid (card, tip base, change rules, receipt)
+
+- [x] ✅ Calendar blocks show "Sport Massage +" like the appointment list (the add-ons on hover); Service Details → Variants to the style guide: "Add variant", edit and delete buttons 44 by 44 with spoken labels (owner, 24 Nov 2026)
+
+### 15.6 Close
+- [x] ✅ Verify live and close with the owner (24 Nov 2026)
 
 ## 16. Customer self-service (Requirement 16)
 - [x] ✅ Confirm current state (booking widget with simulated payment, My Bookings with cancel, events, personal links for forms and check-in; profile routes with no page; no account page, change password, reschedule, manage link, order or membership views)

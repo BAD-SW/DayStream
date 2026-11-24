@@ -521,7 +521,7 @@ export function BookingCalendar() {
                   return { label: v.label, full: v.full, none: v.none, tip };
                 } : undefined,
                 onNew: (m: number, e: React.MouseEvent) => openDraft({ date, time: hhmm(m), serviceId: c.serviceId, staffId: c.staffId, colKey: c.key }, e),
-                label: (bk: any) => (c.serviceId ? `${bk.customer_name}${people(bk)}${bk.staff_name ? ' · ' + bk.staff_name : ''}` : `${bk.customer_name} · ${bk.service_name}`),
+                label: (bk: any) => (c.serviceId ? `${bk.customer_name}${people(bk)}${bk.staff_name ? ' · ' + bk.staff_name : ''}` : `${bk.customer_name} · ${bk.service_name}${bk.addon_names ? ' +' : ''}`),
               };
             })}
             dayHours={dayHours}
@@ -553,7 +553,7 @@ export function BookingCalendar() {
                   return { label: v.label, full: v.full, none: v.none, tip };
                 } : undefined,
                 onNew: (m: number, e: React.MouseEvent) => openDraft({ date: d, time: hhmm(m), colKey: 'd:' + d }, e),
-                label: (bk: any) => `${bk.service_name}${people(bk)}${bk.staff_name ? ' · ' + bk.staff_name.split(' ')[0] : ''}`,
+                label: (bk: any) => `${bk.service_name}${bk.addon_names ? ' +' : ''}${people(bk)}${bk.staff_name ? ' · ' + bk.staff_name.split(' ')[0] : ''}`,
               };
             })}
             dayHours={dayHours}
@@ -679,7 +679,7 @@ export function TimeGrid({ columns, hourRange, timezone, dayHours, colorMap, onB
                       <button key={bk.id} type="button" className="bk2 sc" data-service-id={bk.service_id}
                         style={{ ['--sc' as any]: cv(colorMap.get(bk.service_id) || SERVICE_COLOR_VARS[0]), top, height, ...pos(col, n) }}
                         onClick={() => onBookingClick(bk.id)}
-                        title={`Edit: ${bk.customer_name} · ${bk.service_name}${bk.participant_count > 1 ? ` (${bk.participant_count} people)` : ''}${bk.staff_name ? ' · ' + bk.staff_name : ''}, ${hhmm(st)}–${hhmm(en)} · ${PAYMENT_STATUS_LABEL[bk.payment_status as PaymentStatus] || PAYMENT_STATUS_LABEL.unpaid}`}>
+                        title={`Edit: ${bk.customer_name} · ${bk.service_name}${bk.addon_names ? ' + ' + bk.addon_names : ''}${bk.participant_count > 1 ? ` (${bk.participant_count} people)` : ''}${bk.staff_name ? ' · ' + bk.staff_name : ''}, ${hhmm(st)}–${hhmm(en)} · ${PAYMENT_STATUS_LABEL[bk.payment_status as PaymentStatus] || PAYMENT_STATUS_LABEL.unpaid}`}>
                         <span>{label}</span>
                       </button>
                     );

@@ -138,6 +138,8 @@ const bookingSchema = Joi.object({
   staff_id: Joi.string().uuid().allow(null),
   notes: Joi.string().allow('', null),
   hold_id: Joi.string().uuid().allow(null),
+  // the add-ons chosen (spec 51, gap 15)
+  addons: Joi.array().items(Joi.string().uuid()).max(50).default([]),
 });
 
 widgetRouter.post('/booking', ...businessIdChecks, authenticate, validate(bookingSchema), async (req: Request, res: Response) => {
@@ -152,10 +154,12 @@ widgetRouter.post('/booking', ...businessIdChecks, authenticate, validate(bookin
       staffId: req.body.staff_id || undefined,
       notes: req.body.notes || undefined,
       holdId: req.body.hold_id || undefined,
+      addonIds: req.body.addons || [],
     }, authReq.user as any);
     success(res, {
       booking_reference: booking.booking_reference,
       service_name: booking.service_name,
+      addons: (booking.addons || []).map((a: { name: string; price: number }) => ({ name: a.name, price: a.price })),
       start_time: booking.start_time,
       staff_name: booking.staff_first_name ? `${booking.staff_first_name} ${booking.staff_last_name}` : null,
       status: booking.status,

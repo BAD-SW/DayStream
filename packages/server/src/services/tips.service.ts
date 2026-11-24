@@ -109,11 +109,14 @@ const BENEFIT_PAID = `EXISTS (SELECT 1 FROM pay_benefit_uses bu WHERE bu.order_i
  */
 export async function tipBaseOf(orderId: string, db: Db = adminPool): Promise<{ total: number; tax: number; hasPrepaid: boolean }> {
   const { ids, prepaidId } = await tipOrders(orderId, db);
+  // A line of the order paid at reservation counts for what is not refunded of it (an add-on
+  // refunded after payment, spec 51 gap 15); a fully refunded order does not count.
+  const kept = `(CASE WHEN o.id = $2 OR oi.quantity = 0 THEN 1 ELSE (oi.quantity - oi.refunded_quantity)::numeric / oi.quantity END)`;
   const { rows } = await db.query(
-    `SELECT COALESCE(SUM(oi.total_price + CASE WHEN ${BENEFIT_PAID} THEN oi.discount_amount + ROUND(oi.unit_price * oi.quantity * COALESCE(oi.tax_rate, 0) / 10000.0) ELSE 0 END), 0)::int AS total,
-            COALESCE(SUM(oi.tax_amount + CASE WHEN ${BENEFIT_PAID} THEN ROUND(oi.unit_price * oi.quantity * COALESCE(oi.tax_rate, 0) / 10000.0) ELSE 0 END), 0)::int AS tax
+    `SELECT COALESCE(ROUND(SUM(${kept} * (oi.total_price + CASE WHEN ${BENEFIT_PAID} THEN oi.discount_amount + ROUND(oi.unit_price * oi.quantity * COALESCE(oi.tax_rate, 0) / 10000.0) ELSE 0 END))), 0)::int AS total,
+            COALESCE(ROUND(SUM(${kept} * (oi.tax_amount + CASE WHEN ${BENEFIT_PAID} THEN ROUND(oi.unit_price * oi.quantity * COALESCE(oi.tax_rate, 0) / 10000.0) ELSE 0 END))), 0)::int AS tax
        FROM fin_order_items oi JOIN fin_orders o ON o.id = oi.order_id
-      WHERE o.id = ANY($1::uuid[]) AND (o.id = $2 OR o.status = 'completed')`, [ids, orderId]);
+      WHERE o.id = ANY($1::uuid[]) AND (o.id = $2 OR o.status IN ('completed', 'partially_refunded'))`, [ids, orderId]);
   return { total: rows[0].total, tax: rows[0].tax, hasPrepaid: !!prepaidId };
 }
 
@@ -126,7 +129,9 @@ async function staffOnOrder(orderId: string, db: Db): Promise<Array<{ user_id: s
   const { rows } = await db.query(
     `SELECT COALESCE(oi.credited_to, o.credited_to) AS user_id,
             MIN(TRIM(CONCAT(u.first_name, ' ', u.last_name))) AS name,
-            SUM(GREATEST(oi.total_price + CASE WHEN ${BENEFIT_PAID} THEN oi.discount_amount ELSE 0 END, 0))::bigint AS value
+            -- what is not refunded of each line (a refunded add-on earns no share of the tip)
+            ROUND(SUM(GREATEST(oi.total_price + CASE WHEN ${BENEFIT_PAID} THEN oi.discount_amount ELSE 0 END, 0)
+              * CASE WHEN oi.quantity = 0 THEN 1 ELSE (oi.quantity - oi.refunded_quantity)::numeric / oi.quantity END))::bigint AS value
        FROM fin_order_items oi
        JOIN fin_orders o ON o.id = oi.order_id
        JOIN usr_users u ON u.id = COALESCE(oi.credited_to, o.credited_to)

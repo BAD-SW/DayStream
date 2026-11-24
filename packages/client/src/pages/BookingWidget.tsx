@@ -118,13 +118,21 @@ export function BookingWidget() {
   const amountCents = useMemo(() => {
     if (productType === 'service') {
       const variant = flow.product?.variants?.find((v) => v.id === flow.selectedVariantId);
-      return variant?.price ?? 0;
+      // with the add-ons chosen (spec 51, gap 15)
+      const extras = (flow.product?.addons || []).filter((a) => flow.selectedAddonIds.includes(a.id)).reduce((s, a) => s + a.price, 0);
+      return (variant?.price ?? 0) + extras;
     }
     return flow.purchase?.price ?? flow.product?.price ?? 0;
-  }, [flow.product, flow.selectedVariantId, flow.purchase, productType]);
+  }, [flow.product, flow.selectedVariantId, flow.selectedAddonIds, flow.purchase, productType]);
 
-  function handleServiceProductContinue(variantId: string) {
-    setFlow((f) => ({ ...f, selectedVariantId: variantId }));
+  // The service as the summary shows it: with its add-ons (spec 51, gap 15).
+  const serviceLabel = useMemo(() => {
+    const names = (flow.product?.addons || []).filter((a) => flow.selectedAddonIds.includes(a.id)).map((a) => a.name);
+    return names.length > 0 ? `${flow.product?.name || ''} + ${names.join(', ')}` : flow.product?.name || '';
+  }, [flow.product, flow.selectedAddonIds]);
+
+  function handleServiceProductContinue(variantId: string, addonIds: string[]) {
+    setFlow((f) => ({ ...f, selectedVariantId: variantId, selectedAddonIds: addonIds }));
     setStep('calendar');
   }
 
@@ -219,6 +227,7 @@ export function BookingWidget() {
         startTime: flow.selectedSlot.start_time,
         staffId: flow.selectedSlot.staff_id,
         holdId: flow.holdId || undefined,
+        addonIds: flow.selectedAddonIds,
       });
       setFlow((f) => ({ ...f, customer, phone, booking }));
       setStep(booking.status === 'confirmed' ? 'confirmation' : 'payment');
@@ -283,6 +292,7 @@ export function BookingWidget() {
           <ProductDetailStep
             product={flow.product}
             selectedVariantId={flow.selectedVariantId}
+            selectedAddonIds={flow.selectedAddonIds}
             onContinue={handleServiceProductContinue}
           />
         )}
@@ -331,7 +341,7 @@ export function BookingWidget() {
           <>
             {productType === 'service' && flow.selectedSlot && (
               <AppointmentSummary
-                productName={flow.product.name}
+                productName={serviceLabel}
                 startTime={flow.selectedSlot.start_time}
                 locationName={flow.selectedSlot.location_name}
                 staffName={flow.selectedSlot.staff_id ? `${flow.selectedSlot.staff_first_name} ${flow.selectedSlot.staff_last_name}` : null}
@@ -352,7 +362,7 @@ export function BookingWidget() {
           <>
             {productType === 'service' && flow.selectedSlot && (
               <AppointmentSummary
-                productName={flow.product.name}
+                productName={serviceLabel}
                 startTime={flow.selectedSlot.start_time}
                 locationName={flow.selectedSlot.location_name}
                 staffName={flow.selectedSlot.staff_id ? `${flow.selectedSlot.staff_first_name} ${flow.selectedSlot.staff_last_name}` : null}

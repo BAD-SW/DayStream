@@ -1,7 +1,7 @@
 import { adminPool } from '../db/pool';
 import * as checkout from './checkout.service';
 import { getCustomerCreditBalance } from './account-credit.service';
-import { optionFor, setBookingBenefit, bookingBenefit, BenefitError } from './benefits.service';
+import { optionFor, setBookingBenefit, bookingBenefit, BenefitError, benefitOptions } from './benefits.service';
 import type { BenefitRef, BenefitOption } from './benefits.service';
 
 /**
@@ -30,6 +30,8 @@ export interface PayChoices {
   bookingId?: string | null;
   useCredit?: boolean;
   userId: string;
+  /** The add-ons chosen (svc_addons ids) (spec 51, gap 15). */
+  addons?: string[];
 }
 
 interface Benefits {
@@ -92,6 +94,15 @@ async function priceOrder(orderId: string, businessId: string, c: PayChoices, sc
     benefit = { name: item.benefit.name, covers: true, reason: null, left_after: null };
     lines.push({ label: `Paid with ${item.benefit.name}`, amount: -gross }); covered = true;
   }
+  // Each add-on under the service (spec 51, gap 15), and what a package pays of it. (Re-read: a
+  // package may have been applied to it above.)
+  const withAddons = await checkout.getOrder(orderId) as any;
+  for (const a of (withAddons.items || []).filter((x: any) => x.item_type === 'add_on')) {
+    const gross = a.unit_price * a.quantity;
+    lines.push({ label: `+ ${a.item_name}`, amount: gross });
+    const paidWith = a.benefit?.name || (a.discount_amount >= gross && gross > 0 && String(a.notes || '').startsWith('Paid with ') ? String(a.notes).slice('Paid with '.length).split(';')[0] : null);
+    if (paidWith) lines.push({ label: `Paid with ${paidWith}`, amount: -gross });
+  }
   let promo: { code: string; ok: boolean; message?: string } | null = null;
   if (c.promoCode && !covered) {
     try {
@@ -125,6 +136,29 @@ export async function quote(c: PayChoices) {
   const order = { id: scratch[0].id as string };
   try {
     await checkout.addItem(order.id, { itemType: 'service', itemId: c.serviceId, itemName: v[0].service_name, variantId: c.variantId, variantName: v[0].variant_name, quantity: qty, unitPrice: v[0].price } as any);
+    // The add-ons chosen, each its own line (spec 51, gap 15): one the booking already has keeps its
+    // price; a new one is at the service's price now.
+    if (c.addons && c.addons.length > 0) {
+      const { serviceAddons, bookingAddons } = await import('./addons.service');
+      const offered = await serviceAddons(c.serviceId, c.businessId);
+      const kept = c.bookingId ? await bookingAddons(c.bookingId) : [];
+      for (const id of [...new Set(c.addons)]) {
+        const k = kept.find((x) => x.addon_id === id);
+        const o = offered.find((x) => x.addon_id === id);
+        const line = k ? { addon_id: k.addon_id, name: k.name, price: k.price } : o ? { addon_id: o.id, name: o.name, price: o.price } : null;
+        if (line) await checkout.addAddonLine(order.id, line, { serviceId: c.serviceId });
+        // The package chosen for the service also pays the add-on when it includes it (gap 15, criterion 8).
+        if (line && c.benefit?.kind === 'package' && c.customerId) {
+          const opts = await benefitOptions({ businessId: c.businessId, customerId: c.customerId, itemType: 'add_on', itemId: id, on: c.startTime || null, quantity: 1 });
+          const covering = opts.find((o) => o.kind === 'package' && o.source_id === c.benefit!.source_id && o.covers);
+          if (covering) {
+            const { rows: li } = await adminPool.query(
+              'SELECT id, unit_price, quantity FROM fin_order_items WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1', [order.id]);
+            if (li[0]) await checkout.updateItem(li[0].id, order.id, { discountAmount: li[0].unit_price * li[0].quantity, notes: `Paid with ${covering.name}` } as any);
+          }
+        }
+      }
+    }
     // The membership or package chosen (spec 51, gap 19): the booking's own hold is not counted against it.
     let option: BenefitOption | null = null;
     if (c.benefit && c.customerId) {

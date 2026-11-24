@@ -1004,3 +1004,48 @@ servicesRouter.put('/:id/locations', requirePermission('services:*'), async (req
     error(res, 'Failed to update service locations', 'INTERNAL_ERROR', 500);
   }
 });
+
+// ============================================================
+// Service add-ons (spec 51, gap 15; design 15.7)
+// ============================================================
+
+import * as addonsService from '../services/addons.service';
+
+const setServiceAddonsSchema = Joi.object({
+  // the service's add-ons in order: one with addon_id is kept (edited), one without is new
+  addons: Joi.array().items(Joi.object({
+    addon_id: Joi.string().uuid().allow(null),
+    name: Joi.string().trim().min(1).max(200).required(),
+    description: Joi.string().max(2000).allow('', null),
+    price: Joi.number().integer().min(0).required(),
+  })).max(100).required(),
+});
+
+// GET /api/v1/services/:id/addons?business_id= — the service's add-ons, with prices
+servicesRouter.get('/:id/addons', requirePermission('services:read'), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    success(res, await addonsService.serviceAddons(req.params.id, businessId));
+  } catch (err: any) {
+    console.error('Failed to list service add-ons', err?.message || err);
+    error(res, 'Failed to list service add-ons', 'INTERNAL_ERROR', 500);
+  }
+});
+
+// PUT /api/v1/services/:id/addons?business_id= — save the service's add-ons: [{ addon_id?, name, description, price }]
+servicesRouter.put('/:id/addons', requirePermission('services:*'), validate(setServiceAddonsSchema), async (req: Request, res: Response) => {
+  try {
+    const businessId = req.query.business_id as string;
+    if (!businessId) { error(res, 'business_id required', 'VALIDATION_ERROR', 400); return; }
+    const authReq = req as AuthenticatedRequest;
+    success(res, await addonsService.setServiceAddons(req.params.id, businessId, req.body.addons, authReq.user.sub));
+  } catch (err: any) {
+    if (err instanceof addonsService.AddonError) {
+      error(res, err.message, err.code === 'NOT_FOUND' ? 'NOT_FOUND' : 'VALIDATION_ERROR', err.code === 'NOT_FOUND' ? 404 : 400);
+      return;
+    }
+    console.error('Failed to set service add-ons', err?.message || err);
+    error(res, 'Failed to set service add-ons', 'INTERNAL_ERROR', 500);
+  }
+});

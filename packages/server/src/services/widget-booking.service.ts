@@ -94,6 +94,13 @@ export async function getProducts(businessId: string) {
   ];
 }
 
+/** The add-ons a customer can choose online for a service (spec 51, gap 15). */
+async function widgetAddons(serviceId: string, businessId: string): Promise<Array<{ id: string; name: string; description: string | null; price: number }>> {
+  const { serviceAddons } = await import('./addons.service');
+  const list = await serviceAddons(serviceId, businessId);
+  return list.map((a) => ({ id: a.id, name: a.name, description: a.description, price: a.price }));
+}
+
 export async function getProductDetail(businessId: string, productId: string) {
   await requireEnabledWidget(businessId);
 
@@ -108,7 +115,7 @@ export async function getProductDetail(businessId: string, productId: string) {
       `SELECT id, name, duration, price FROM svc_variants WHERE service_id = $1 AND status = 'active' ORDER BY display_order`,
       [productId],
     );
-    return { ...serviceRows[0], product_type: 'service', variants };
+    return { ...serviceRows[0], product_type: 'service', variants, addons: await widgetAddons(productId, businessId) };
   }
 
   const { rows: packageRows } = await adminPool.query(
@@ -261,6 +268,8 @@ interface CreateWidgetBookingDto {
   staffId?: string;
   notes?: string;
   holdId?: string;
+  /** The add-ons chosen (svc_addons ids) (spec 51, gap 15). */
+  addonIds?: string[];
 }
 
 export async function createWidgetBooking(dto: CreateWidgetBookingDto, user: AuthUser) {
@@ -281,6 +290,13 @@ export async function createWidgetBooking(dto: CreateWidgetBookingDto, user: Aut
       [dto.holdId, dto.businessId, dto.serviceId, dto.variantId, new Date(dto.startTime).toISOString(), user.sub],
     );
     if (holdRows.length === 0) throw new WidgetError('Slot hold expired or does not match', 409);
+  }
+
+  // Only add-ons the customer could see may be chosen.
+  const addonIds = [...new Set(dto.addonIds || [])];
+  if (addonIds.length > 0) {
+    const allowed = await widgetAddons(dto.serviceId, dto.businessId);
+    if (addonIds.some((id) => !allowed.some((a) => a.id === id))) throw new WidgetError('An add-on chosen is not available for this service.', 400);
   }
 
   const { rows: bizRows } = await adminPool.query('SELECT tenant_id FROM sys_businesses WHERE id = $1', [dto.businessId]);
@@ -306,6 +322,7 @@ export async function createWidgetBooking(dto: CreateWidgetBookingDto, user: Aut
       tenantId: bizRows[0].tenant_id,
       initialStatus,
       source: 'widget',
+      addonIds,
       // The widget queues its own confirmation (below / after payment) using the
       // authenticated customer's email, so suppress createBooking's own send to
       // avoid a double. A pending (payment-first) booking confirms later via
@@ -328,6 +345,9 @@ export async function createWidgetBooking(dto: CreateWidgetBookingDto, user: Aut
   return full;
 }
 
+/** What the add-ons add to an appointment's price (cents). */
+const addonsTotal = (b: { addons?: Array<{ price: number }> }) => (b.addons || []).reduce((s, a) => s + a.price, 0);
+
 export async function payForBooking(bookingId: string, businessId: string, user: AuthUser) {
   await requireEnabledWidget(businessId);
   assertCustomerRole(user);
@@ -347,7 +367,7 @@ export async function payForBooking(bookingId: string, businessId: string, user:
     await adminPool.query(
       `INSERT INTO wgt_widget_transactions (tenant_id, business_id, booking_id, customer_id, amount_cents, currency, payment_method, status)
        VALUES ($1, $2, $3, $4, $5, 'EUR', 'simulated', 'failed')`,
-      [bizRows[0].tenant_id, businessId, bookingId, booking.customer_id, booking.price],
+      [bizRows[0].tenant_id, businessId, bookingId, booking.customer_id, booking.price + addonsTotal(booking)],
     );
     throw new WidgetError('Booking is already confirmed', 409);
   }
@@ -356,7 +376,7 @@ export async function payForBooking(bookingId: string, businessId: string, user:
     `INSERT INTO wgt_widget_transactions (tenant_id, business_id, booking_id, customer_id, amount_cents, currency, payment_method, status)
      VALUES ($1, $2, $3, $4, $5, 'EUR', 'simulated', 'completed')
      RETURNING id`,
-    [bizRows[0].tenant_id, businessId, bookingId, booking.customer_id, booking.price],
+    [bizRows[0].tenant_id, businessId, bookingId, booking.customer_id, booking.price + addonsTotal(booking)],
   );
 
   // Confirm through the lifecycle so the status transition, history, audit, and the

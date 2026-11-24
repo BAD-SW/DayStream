@@ -6,6 +6,8 @@ interface CurrencyInputProps {
   style?: React.CSSProperties;
   placeholder?: string;
   disabled?: boolean;
+  /** For a label's htmlFor (a FormField's name). */
+  id?: string;
 }
 
 /**
@@ -15,7 +17,7 @@ interface CurrencyInputProps {
  * 
  * Uses the browser's locale for decimal separator (. or ,).
  */
-export function CurrencyInput({ value, onChange, style, placeholder, disabled }: CurrencyInputProps) {
+export function CurrencyInput({ value, onChange, style, placeholder, disabled, id }: CurrencyInputProps) {
   const formatDisplay = useCallback((cents: number): string => {
     const abs = Math.abs(cents);
     const intPart = Math.floor(abs / 100);
@@ -65,6 +67,7 @@ export function CurrencyInput({ value, onChange, style, placeholder, disabled }:
 
   return (
     <input
+      id={id}
       style={style}
       value={formatDisplay(value)}
       // Edits are driven by onKeyDown/onPaste (digit-shift formatting), not native typing, so

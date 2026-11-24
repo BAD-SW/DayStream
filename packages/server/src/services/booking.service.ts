@@ -42,6 +42,8 @@ interface CreateBookingInput {
   // its own email flow, so born-confirmed widget bookings also suppress here and
   // the widget queues once itself.
   suppressConfirmation?: boolean;
+  /** The add-ons chosen (svc_addons ids), checked against the service before (spec 51, gap 15). */
+  addonIds?: string[];
 }
 
 interface BookingFilters {
@@ -446,6 +448,15 @@ async function checkAndSaveBooking(input: CreateBookingInput): Promise<any> {
   const { recordStatus } = await import('./booking-history.service');
   await recordStatus(booking.id, null, status, { userId: input.createdBy || null });
 
+  // Its add-ons, before the confirmation is queued so the email lists them (spec 51, gap 15).
+  if (input.addonIds && input.addonIds.length > 0) {
+    const { setBookingAddons } = await import('./addons.service');
+    const { snapshotBooking, recordChanges } = await import('./booking-history.service');
+    const before = await snapshotBooking(booking.id);
+    await setBookingAddons(booking.id, input.businessId, input.addonIds, input.createdBy || null);
+    await recordChanges(booking.id, before, { userId: input.createdBy || null });
+  }
+
   // Log in customer activity timeline (skip for walk-ins)
   if (input.customerId) {
     await createActivity({
@@ -578,7 +589,10 @@ export async function getBookings(filters: BookingFilters) {
     adminPool.query(
       `SELECT b.*, s.name AS service_name, c.first_name AS customer_first_name, c.last_name AS customer_last_name,
               u.first_name AS staff_first_name, u.last_name AS staff_last_name,
-              sv.no_show_fee
+              sv.no_show_fee,
+              -- the add-ons, for '+ Hot stones' after the service (spec 51, gap 15)
+              (SELECT string_agg(ba.name, ', ' ORDER BY ba.created_at) FROM apt_booking_addons ba
+                WHERE ba.booking_id = b.id AND ba.status = 'active') AS addon_names
        FROM apt_bookings b
        JOIN svc_services s ON s.id = b.service_id
        LEFT JOIN svc_variants sv ON sv.id = b.variant_id
@@ -667,7 +681,9 @@ export async function getBookingById(id: string, businessId: string) {
       ORDER BY completed_at`,
     [id, businessId],
   );
-  return { ...rows[0], status_history: history, paid_orders: paidOrders };
+  // Its add-ons, with the price each had when chosen (spec 51, gap 15).
+  const { bookingAddons } = await import('./addons.service');
+  return { ...rows[0], status_history: history, paid_orders: paidOrders, addons: await bookingAddons(id) };
 }
 
 // --- Helpers ---

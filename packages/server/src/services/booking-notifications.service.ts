@@ -118,7 +118,7 @@ export async function queueBookingConfirmation(booking: any, customerEmail: stri
     recipientEmail: customerEmail,
     data: {
       booking_reference: booking.booking_reference,
-      service_name: booking.service_name || '',
+      service_name: serviceWithAddons(booking),
       variant_name: booking.variant_name || '',
       start_time: booking.start_time,
       end_time: booking.end_time,
@@ -148,6 +148,13 @@ export async function queueBookingCancellation(booking: any, customerEmail: stri
   });
 }
 
+/** The service as the emails show it: with its add-ons, e.g. 'Massage + Hot stones' (spec 51, gap 15). */
+function serviceWithAddons(booking: { service_name?: string | null; addons?: Array<{ name: string }> | null }): string {
+  const names = (booking.addons || []).map((a) => a.name).filter(Boolean);
+  const service = booking.service_name || '';
+  return names.length > 0 ? `${service} + ${names.join(', ')}` : service;
+}
+
 /**
  * Build the token data bag for an appointment notification (confirmation,
  * cancellation, reschedule). Populates the recipient, staff, service, and
@@ -173,7 +180,7 @@ function buildAppointmentData(
     .filter(Boolean).join(' ').trim();
   return {
     booking_reference: booking.booking_reference,
-    service_name: booking.service_name || '',
+    service_name: serviceWithAddons(booking),
     start_time: booking.start_time,
     // start_time also drives appointment_date / appointment_time in the resolver.
     staff_name: staffName || null,
@@ -198,7 +205,7 @@ export async function queueBookingReschedule(booking: any, customerEmail: string
     recipientEmail: customerEmail,
     data: {
       booking_reference: booking.booking_reference,
-      service_name: booking.service_name || '',
+      service_name: serviceWithAddons(booking),
       old_start_time: oldStartTime,
       new_start_time: booking.start_time,
     },
@@ -239,7 +246,7 @@ export async function queueBookingReminder(booking: any, customerEmail: string, 
       recipientEmail: customerEmail,
       data: {
         booking_reference: booking.booking_reference,
-        service_name: booking.service_name || '',
+        service_name: serviceWithAddons(booking),
         start_time: booking.start_time,
         staff_name: booking.staff_first_name ? `${booking.staff_first_name} ${booking.staff_last_name}` : null,
         hours_before: hoursBefore,

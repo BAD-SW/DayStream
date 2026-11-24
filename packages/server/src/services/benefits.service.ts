@@ -25,8 +25,8 @@ export interface BenefitRef {
 export interface BenefitTarget {
   businessId: string;
   customerId: string;
-  itemType: 'service' | 'product';
-  /** svc_services.id or prd_merchandise.id */
+  itemType: 'service' | 'product' | 'add_on';
+  /** svc_services.id, prd_merchandise.id or svc_addons.id (an add-on: only a package includes one, spec 51 gap 15) */
   itemId: string;
   variantId?: string | null;
   /** When it is used: the appointment's start (or now, for a sale), or a day (YYYY-MM-DD) before a time is chosen. */
@@ -128,11 +128,14 @@ export async function benefitOptions(t: BenefitTarget, opts: { exceptUseIds?: st
   const day = dayOnly ? (t.on as string) : localDay(on, tz);
   const today = localDay(new Date(), tz);
   const qty = Math.max(1, Math.round(t.quantity || 1));
-  const kindOf = t.itemType === 'service' ? 'service' : 'merchandise';
+  const kindOf = t.itemType === 'service' ? 'service' : t.itemType === 'add_on' ? 'add_on' : 'merchandise';
+  // the package item's column for it
+  const pkgColumn = kindOf === 'service' ? 'i.service_id' : kindOf === 'add_on' ? 'i.addon_id' : 'i.merchandise_id';
   const out: BenefitOption[] = [];
 
-  // Memberships: an active enrollment of a plan with an item for this service or product.
-  const { rows: mem } = await db.query(
+  // Memberships: an active enrollment of a plan with an item for this service or product. A membership
+  // never pays an add-on (owner, 23 Nov 2026).
+  const { rows: mem } = kindOf === 'add_on' ? { rows: [] as any[] } : await db.query(
     `SELECT e.id AS enrollment_id, e.status, e.cancelled_at, to_char(e.start_date, 'YYYY-MM-DD') AS start_date,
             to_char(e.current_period_end, 'YYYY-MM-DD') AS period_end,
             pl.name, pi.id AS item_id, pi.variant_id, pi.quantity_per_period, COALESCE(pi.access_frequency, 'monthly') AS frequency
@@ -179,7 +182,7 @@ export async function benefitOptions(t: BenefitTarget, opts: { exceptUseIds?: st
        JOIN pkg_packages p ON p.id = pp.package_id
        JOIN pkg_package_items i ON i.package_id = p.id
       WHERE pp.business_id = $1 AND pp.customer_id = $2 AND pp.status = 'active'
-        AND i.item_type = $3 AND ${kindOf === 'service' ? 'i.service_id' : 'i.merchandise_id'} = $4
+        AND i.item_type = $3 AND ${pkgColumn} = $4
       ORDER BY pp.expires_at NULLS LAST, pp.purchased_at`,
     [t.businessId, t.customerId, kindOf, t.itemId]);
   for (const r of pkg) {
@@ -204,7 +207,7 @@ export async function benefitOptions(t: BenefitTarget, opts: { exceptUseIds?: st
     else if (left < needed) reason = left <= 0 ? 'Used up.' : `Only ${left} ${minutesItem ? 'minutes' : 'left'}${minutesItem ? ' left' : ''}.`;
     out.push({
       kind: 'package', source_id: r.purchase_id, item_id: r.item_id, name: r.name,
-      unit: minutesItem ? 'minutes' : (kindOf === 'service' ? 'sessions' : 'items'), allowance, used: red[0].used, held: hold[0].held, left, needed,
+      unit: minutesItem ? 'minutes' : (kindOf === 'service' ? 'sessions' : kindOf === 'add_on' ? 'uses' : 'items'), allowance, used: red[0].used, held: hold[0].held, left, needed,
       frequency: null, window_start: null, window_end: null, expires_at: r.expires_at ? new Date(r.expires_at).toISOString() : null,
       covers: reason === null, reason,
     });
@@ -469,6 +472,7 @@ const paidWithNote = (name: string) => `Paid with ${name}`;
 async function lineTarget(orderItemId: string, db: Db = adminPool): Promise<{ target: BenefitTarget; orderId: string; bookingId: string | null; gross: number } | null> {
   const { rows } = await db.query(
     `SELECT oi.id, oi.order_id, oi.item_type, oi.item_id, oi.variant_id, oi.quantity, oi.unit_price, oi.booking_id,
+            ba.addon_id AS booking_addon_addon_id,
             o.business_id, o.customer_id, o.status, v.duration,
             -- the line's appointment, else the appointment the order is for (a line added at its Checkout)
             COALESCE(b.start_time, ob.start_time) AS start_time, COALESCE(b.end_time, ob.end_time) AS end_time
@@ -476,9 +480,18 @@ async function lineTarget(orderItemId: string, db: Db = adminPool): Promise<{ ta
        LEFT JOIN apt_bookings b ON b.id = oi.booking_id
        LEFT JOIN apt_bookings ob ON ob.id = o.booking_id
        LEFT JOIN svc_variants v ON v.id = oi.variant_id AND oi.item_type = 'service'
+       LEFT JOIN apt_booking_addons ba ON ba.id = oi.booking_addon_id
       WHERE oi.id = $1`, [orderItemId]);
   const r = rows[0];
-  if (!r || !r.customer_id || !r.item_id || !['service', 'product'].includes(r.item_type)) return null;
+  if (!r || !r.customer_id || !r.item_id || !['service', 'product', 'add_on'].includes(r.item_type)) return null;
+  // An add-on's line (ad hoc, or a product added as an add-on) is matched as the add-on (spec 51, gap 15).
+  const addonId: string | null = r.item_type === 'add_on' ? r.item_id : r.booking_addon_addon_id ?? null;
+  if (addonId) {
+    return {
+      orderId: r.order_id, bookingId: r.booking_id, gross: r.unit_price * r.quantity,
+      target: { businessId: r.business_id, customerId: r.customer_id, itemType: 'add_on', itemId: addonId, variantId: null, on: r.start_time || new Date(), quantity: r.quantity, minutes: null },
+    };
+  }
   const length = r.duration || (r.start_time && r.end_time ? Math.round((new Date(r.end_time).getTime() - new Date(r.start_time).getTime()) / 60000) : null);
   return {
     orderId: r.order_id, bookingId: r.booking_id, gross: r.unit_price * r.quantity,
@@ -602,4 +615,34 @@ export async function orderLineBenefits(orderItemIds: string[]): Promise<Map<str
     if (u.order_item_id && !out.has(u.order_item_id)) out.set(u.order_item_id, { use_id: u.id, kind: u.kind, name: await useName(u), status: u.status });
   }
   return out;
+}
+
+/**
+ * Add-ons are charged on top of a membership or package, unless the package includes them (spec 51,
+ * gap 15, criterion 8): each add-on line of the order not paid yet is paid from the package the
+ * appointment is held against (or was paid with), when that package includes the add-on and has
+ * some left. Run when the order is opened and whenever its add-on lines change.
+ */
+export async function payAddonsFromBookingPackage(orderId: string, bookingId: string): Promise<void> {
+  // the appointment's own use: for its service, not one of its add-on lines
+  const { rows: own } = await adminPool.query(
+    `SELECT u.purchase_id FROM pay_benefit_uses u LEFT JOIN fin_order_items oi ON oi.id = u.order_item_id
+      WHERE u.booking_id = $1 AND u.kind = 'package' AND u.status <> 'released'
+        AND (oi.id IS NULL OR (oi.item_type = 'service' AND oi.booking_addon_id IS NULL))
+      ORDER BY u.created_at LIMIT 1`, [bookingId]);
+  const pkgUse = own[0] as { purchase_id: string } | undefined;
+  if (!pkgUse?.purchase_id) return;
+  const { rows: lines } = await adminPool.query(
+    `SELECT oi.id FROM fin_order_items oi
+      WHERE oi.order_id = $1 AND (oi.item_type = 'add_on' OR oi.booking_addon_id IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM pay_benefit_uses u WHERE u.order_item_id = oi.id AND u.status <> 'released')
+      ORDER BY oi.created_at`, [orderId]);
+  for (const l of lines) {
+    const lt = await lineTarget(l.id);
+    if (!lt) continue;
+    const option = (await benefitOptions(lt.target)).find((o) => o.kind === 'package' && o.source_id === pkgUse.purchase_id && o.covers);
+    if (!option) continue;
+    try { await setLineBenefit(l.id, { kind: 'package', source_id: option.source_id, item_id: option.item_id }, null); }
+    catch (e) { if (!(e instanceof BenefitError)) throw e; }
+  }
 }

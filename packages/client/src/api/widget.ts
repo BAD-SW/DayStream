@@ -113,7 +113,17 @@ export interface WidgetProductItem {
   service_name?: string | null;
 }
 
+/** An add-on a customer can choose with a service (spec 51, gap 15). */
+export interface WidgetAddon {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+}
+
 export interface WidgetProductDetail extends WidgetProduct {
+  /** service-only: the add-ons that can be chosen with it */
+  addons?: WidgetAddon[];
   description?: string | null;
   default_duration?: number;
   expiration_type?: string;
@@ -260,6 +270,8 @@ export interface CreateWidgetBookingDto {
   staffId?: string;
   notes?: string;
   holdId?: string;
+  /** The add-ons chosen (spec 51, gap 15). */
+  addonIds?: string[];
 }
 
 export function createBooking(dto: CreateWidgetBookingDto): Promise<WidgetBooking> {
@@ -272,6 +284,7 @@ export function createBooking(dto: CreateWidgetBookingDto): Promise<WidgetBookin
     staff_id: dto.staffId,
     notes: dto.notes,
     hold_id: dto.holdId,
+    addons: dto.addonIds || [],
   }));
 }
 

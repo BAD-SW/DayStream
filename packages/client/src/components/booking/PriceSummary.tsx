@@ -19,11 +19,14 @@ const WHEN: Record<PaymentRule, string> = {
   charge_at_booking: 'Paid when the reservation is made, in the next step.',
 };
 
-export function PriceSummary({ businessId, customerId, serviceId, variantId, participants, rule, benefit, startTime }: {
+export function PriceSummary({ businessId, customerId, serviceId, variantId, participants, rule, benefit, startTime, addons }: {
   businessId: string; customerId: string | null; serviceId: string; variantId: string; participants: number; rule?: PaymentRule;
   /** The membership or package chosen to pay (spec 51, gap 19), and when it is for. */
   benefit?: BenefitRef | null; startTime?: string | null;
+  /** The add-ons chosen (spec 51, gap 15): each its own line. */
+  addons?: string[];
 }) {
+  const addonKey = (addons || []).join(',');
   const [lines, setLines] = useState<Line[] | null>(null);
   const [total, setTotal] = useState(0);
   const [failed, setFailed] = useState(false);
@@ -37,12 +40,12 @@ export function PriceSummary({ businessId, customerId, serviceId, variantId, par
       apiClient.post(`/v1/bookings/payment-quote?business_id=${businessId}`, {
         business_id: businessId, customer_id: customerId, service_id: serviceId, variant_id: variantId,
         participant_count: participants, promo_code: null, use_credit: false,
-        benefit: benefit || null, start_time: startTime || null,
+        benefit: benefit || null, start_time: startTime || null, addons: addonKey ? addonKey.split(',') : [],
       }).then((r) => { if (!off) { setLines(r.data.data.lines); setTotal(r.data.data.total); } })
         .catch(() => { if (!off) { setLines(null); setFailed(true); } });
     }, 250);
     return () => { off = true; window.clearTimeout(t); };
-  }, [businessId, customerId, serviceId, variantId, participants, benefit?.kind, benefit?.source_id, benefit?.item_id, startTime]);
+  }, [businessId, customerId, serviceId, variantId, participants, benefit?.kind, benefit?.source_id, benefit?.item_id, startTime, addonKey]);
 
   if (!serviceId || !variantId) return null;
   return (

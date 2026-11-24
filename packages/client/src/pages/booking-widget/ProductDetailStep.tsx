@@ -5,12 +5,17 @@ import { formatDuration, formatMoney } from './format';
 interface Props {
   product: WidgetProductDetail;
   selectedVariantId: string | null;
-  onContinue: (variantId: string) => void;
+  /** The add-ons chosen before (when coming back to this step). */
+  selectedAddonIds: string[];
+  onContinue: (variantId: string, addonIds: string[]) => void;
 }
 
-export function ProductDetailStep({ product, selectedVariantId, onContinue }: Props) {
+export function ProductDetailStep({ product, selectedVariantId, selectedAddonIds, onContinue }: Props) {
   const variants = product.variants || []; // always present for a service, per the widget API contract
+  const addons = product.addons || [];
   const [variantId, setVariantId] = useState<string>(selectedVariantId || variants[0]?.id || '');
+  const [addonIds, setAddonIds] = useState<string[]>(selectedAddonIds.filter((id) => addons.some((a) => a.id === id)));
+  const toggle = (id: string) => setAddonIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
 
   return (
     <div className="dsw-step">
@@ -40,10 +45,24 @@ export function ProductDetailStep({ product, selectedVariantId, onContinue }: Pr
         </div>
       ) : null}
 
+      {/* Add-ons (spec 51, gap 15): extras with the service, each with its price; they add no time */}
+      {addons.length > 0 && (
+        <fieldset className="dsw-variant-list" style={{ border: 'none', padding: 0, margin: 0, minWidth: 0 }}>
+          <legend className="dsw-step-text">Add-ons</legend>
+          {addons.map((a) => (
+            <label key={a.id} className={`dsw-variant-option ${addonIds.includes(a.id) ? 'dsw-variant-option--selected' : ''}`}>
+              <input type="checkbox" name="addon" value={a.id} checked={addonIds.includes(a.id)} onChange={() => toggle(a.id)} />
+              <span className="dsw-variant-name">{a.name}{a.description && <small className="dsw-variant-meta"> {a.description}</small>}</span>
+              <span className="dsw-variant-meta">+ {formatMoney(a.price)}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+
       <button
         className="dsw-btn dsw-btn--primary"
         disabled={!variantId}
-        onClick={() => onContinue(variantId)}
+        onClick={() => onContinue(variantId, addonIds)}
       >
         Continue
       </button>

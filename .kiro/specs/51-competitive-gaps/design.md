@@ -33,6 +33,8 @@ Requirements: requirements.md, Requirement 1 (criteria 1-11).
 2. [Gap 2: Treatment charting](#2-gap-2-treatment-charting)
 3. [Gap 3: Virtual waiting room](#3-gap-3-virtual-waiting-room)
 7. [Gap 7: Retail inventory (Requirement 7)](#7-gap-7-retail-inventory-requirement-7)
+14. [Gap 14: Tips (Requirement 14)](#14-gap-14-tips-requirement-14)
+15. [Service add-ons (Requirement 15)](#15-service-add-ons-requirement-15)
 18. [Appointment history (Requirement 18)](#18-appointment-history-requirement-18)
 19. [Paying with a membership or package (Requirement 19)](#19-paying-with-a-membership-or-package-requirement-19)
 
@@ -671,6 +673,78 @@ CREATE TABLE fin_tip_shares (id, tenant_id, business_id, order_id, user_id,
 3. Tip pool (migration 187): pool shares, Tip Pool screen, sharing by hand or by the clock, report section.
 4. The tip follows the order (migration 188); a service paid at reservation shown at the visit and tipped on (14.7).
 5. Verification live with the owner.
+
+---
+## 15. Service add-ons (Requirement 15)
+
+An add-on enhances a service and adds no time. It is added on the service like an option: a name, a description and a price; a service has as many as needed (owner, 24 Nov 2026, replacing a shared list of ad hoc and product add-ons built first). Staff and customers choose them with the service; each becomes its own line on the price, the order and the receipt.
+
+### 15.1 Data model (migrations 196 and 197)
+
+```sql
+-- a service's add-ons (tenant_id, business_id NOT NULL, RLS)
+CREATE TABLE svc_addons (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL, business_id UUID NOT NULL,
+  service_id UUID NOT NULL REFERENCES svc_services(id),
+  name VARCHAR(200) NOT NULL, description TEXT,
+  price INTEGER NOT NULL CHECK (price >= 0),           -- cents
+  display_order INTEGER NOT NULL DEFAULT 0,
+  status VARCHAR(20) NOT NULL DEFAULT 'active',          -- 'archived' when deleted on the service
+  created_by, created_at, updated_at
+);
+-- what an appointment has: name and price as they were when chosen (criterion 5)
+CREATE TABLE apt_booking_addons (
+  id, tenant_id, business_id, booking_id, addon_id REFERENCES svc_addons(id),
+  name VARCHAR(200) NOT NULL, price INTEGER NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'active',          -- 'removed'
+  created_by, created_at, removed_by, removed_at
+);
+ALTER TABLE fin_order_items ADD COLUMN booking_addon_id UUID REFERENCES apt_booking_addons(id);
+-- fin_order_items.item_type gains 'add_on' (invoice, credit-note and debit-note lines keep their own types)
+ALTER TABLE pkg_package_items ADD COLUMN addon_id UUID REFERENCES svc_addons(id);  -- item_type 'add_on'
+```
+
+- Migration 196 made a shared list with product add-ons and per-service prices; migration 197 moved each add-on onto its service with its price and dropped the product columns and the per-service price table (only test data existed).
+- An add-on is chosen at most once per appointment, quantity 1, also on a group or shared booking.
+- Deleting an add-on on the service archives it: it is no longer offered; appointments that have it keep it at their price.
+
+### 15.2 Choosing add-ons
+
+- The appointment window shows the service's add-ons under the option as chips with prices. Changing the service drops the add-ons of the old service and says which. One already paid (at reservation) cannot be taken off; it is refunded from the order like any paid line.
+- The booking widget shows them after the option, as checkboxes with prices.
+- Create and update booking take `addons: string[]`; the server checks each is an active add-on of the booking's service and copies name and price into `apt_booking_addons`. Add-ons chosen when booking are set before the confirmation email is queued.
+- Each change is written to the appointment history: "Add-ons: none → Hot stones".
+
+### 15.3 Price and order lines
+
+- The price quote adds a line per add-on under the service, so New Appointment, the payment step and the widget show the same numbers.
+- `openBookingOrder` (via `syncAddonLines`) adds one `item_type 'add_on'` line per add-on after the service line, with `booking_addon_id`, credited to the booking's staff member, taxed with the service's tax category, which is kept on the line for any later recalculation.
+- An open order follows the appointment's add-ons; removing an add-on's line at Checkout takes it off the appointment ("Removed at Checkout"). When the service was paid at reservation, add-ons not on that order go on the visit's order.
+- 'add_on' lines post to Service Revenue (4100) and are refunded like service lines; revenue, staff performance, recognised revenue and commission count them with services.
+
+### 15.4 Memberships and packages (criterion 6)
+
+- A membership never pays an add-on.
+- A package item can be an add-on of a service (shown as "Hot stones (Massage)"). The benefit engine has a third target, `itemType 'add_on'`, packages only.
+- When the appointment's order is opened, and whenever its add-on lines change, each add-on line is paid from the package the appointment is held against, if that package includes the add-on and has some left (`payAddonsFromBookingPackage`); otherwise it is charged. The price shown while booking shows the same.
+
+### 15.5 Screens
+
+- **Service Details → Add-ons**: rows like the options, each with its name, price and description; Add Add-on opens name, description and price; edit and delete per row; saved with the page's Save changes.
+- **Appointment window**: add-on chips under the option; the price summary lists them.
+- **Calendar card and Bookings list**: "Massage + Hot stones".
+- **Receipt**: each add-on as a line after the service. **Appointment emails**: the service name reads "Massage + Hot stones".
+- **Package screen**: an included item can be an add-on.
+
+### 15.6 API
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/v1/services/:id/addons?business_id=` | The service's add-ons |
+| PUT | `/v1/services/:id/addons?business_id=` | Save them: `[{ addon_id?, name, description, price }]` in order; without `addon_id` is new, left out is deleted |
+| GET | `/v1/addons?business_id=` | The business's add-ons with their service (package items) |
+| POST, PUT | `/v1/bookings`, `/v1/bookings/:id`, `/v1/widget/booking` | `addons: string[]` |
 
 ---
 ## 18. Appointment history (Requirement 18)

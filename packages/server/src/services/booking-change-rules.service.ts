@@ -58,7 +58,7 @@ export function computeChangeRules(
 /** Paid = the booking's order was checked out (completed, or completed and later refunded). */
 export async function isBookingPaid(bookingId: string, businessId: string): Promise<boolean> {
   const { rows } = await adminPool.query(
-    `SELECT 1 FROM fin_orders WHERE booking_id = $1 AND business_id = $2 AND status IN ('completed', 'refunded') LIMIT 1`,
+    `SELECT 1 FROM fin_orders WHERE booking_id = $1 AND business_id = $2 AND status IN ('completed', 'partially_refunded', 'refunded') LIMIT 1`,
     [bookingId, businessId],
   );
   return rows.length > 0;

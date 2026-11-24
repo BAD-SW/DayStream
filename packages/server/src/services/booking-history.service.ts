@@ -20,7 +20,7 @@ export type HistorySource = 'staff' | 'widget' | 'customer_portal' | 'self_check
 export interface HistoryChange { field: HistoryField; from: string | number | null; to: string | number | null }
 export type HistoryField =
   | 'start_time' | 'end_time' | 'service' | 'option' | 'staff' | 'location' | 'resource'
-  | 'participants' | 'price' | 'notes' | 'customer';
+  | 'participants' | 'price' | 'notes' | 'customer' | 'addons';
 
 export interface PaymentDetails {
   kind: 'order' | 'paid' | 'refunded' | 'fee';
@@ -135,7 +135,9 @@ export async function snapshotBooking(bookingId: string, db: Db = adminPool): Pr
     `SELECT b.start_time, b.end_time, s.name AS service, v.name AS option,
             NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), '') AS staff, l.name AS location, r.name AS resource,
             b.participant_count AS participants, b.price, b.notes,
-            COALESCE(NULLIF(TRIM(CONCAT(c.first_name, ' ', c.last_name)), ''), b.walk_in_name) AS customer
+            COALESCE(NULLIF(TRIM(CONCAT(c.first_name, ' ', c.last_name)), ''), b.walk_in_name) AS customer,
+            (SELECT string_agg(ba.name, ', ' ORDER BY ba.name) FROM apt_booking_addons ba
+              WHERE ba.booking_id = b.id AND ba.status = 'active') AS addons
        FROM apt_bookings b
        LEFT JOIN svc_services s ON s.id = b.service_id
        LEFT JOIN svc_variants v ON v.id = b.variant_id
@@ -151,12 +153,13 @@ export async function snapshotBooking(bookingId: string, db: Db = adminPool): Pr
     start_time: iso(r.start_time), end_time: iso(r.end_time), service: r.service, option: r.option, staff: r.staff,
     location: r.location, resource: r.resource, participants: r.participants == null ? null : Number(r.participants),
     price: r.price == null ? null : Number(r.price), notes: r.notes || null, customer: r.customer,
+    addons: r.addons || null,
   };
 }
 
 /** What differs between two snapshots (the end time follows the start or the option, so it is only listed alone). */
 export function diffSnapshots(before: BookingSnapshot, after: BookingSnapshot): HistoryChange[] {
-  const fields: HistoryField[] = ['start_time', 'service', 'option', 'staff', 'location', 'resource', 'participants', 'price', 'customer', 'notes'];
+  const fields: HistoryField[] = ['start_time', 'service', 'option', 'addons', 'staff', 'location', 'resource', 'participants', 'price', 'customer', 'notes'];
   const out: HistoryChange[] = fields.filter((f) => (before[f] ?? null) !== (after[f] ?? null)).map((f) => ({ field: f, from: before[f] ?? null, to: after[f] ?? null }));
   if ((before.end_time ?? null) !== (after.end_time ?? null) && !out.some((c) => c.field === 'start_time' || c.field === 'option')) {
     out.push({ field: 'end_time', from: before.end_time, to: after.end_time });
@@ -196,7 +199,7 @@ const STATUS: Record<string, string> = {
 const status = (s: string | null) => (s ? STATUS[s] || s.replace(/_/g, ' ') : '—');
 const FIELD: Record<HistoryField, string> = {
   start_time: 'Time', end_time: 'End time', service: 'Service', option: 'Option', staff: 'Staff', location: 'Location',
-  resource: 'Resource', participants: 'People', price: 'Price', notes: 'Notes', customer: 'Customer',
+  resource: 'Resource', participants: 'People', price: 'Price', notes: 'Notes', customer: 'Customer', addons: 'Add-ons',
 };
 const SOURCE: Record<HistorySource, string> = {
   staff: 'staff screen', widget: 'booking widget', customer_portal: 'customer link', self_check_in: 'self check-in',
@@ -249,7 +252,7 @@ export async function getBookingHistory(bookingId: string): Promise<HistoryEntry
     const tz = r.tz as string;
     const when = (v: unknown) => (v ? new Date(String(v)).toLocaleString('en-GB', { timeZone: tz, day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
     const money = (cents: unknown) => (cents == null ? '' : new Intl.NumberFormat('en-GB', { style: 'currency', currency: r.currency }).format(Number(cents) / 100));
-    const value = (f: HistoryField, v: string | number | null) => (v === null || v === '' ? '—'
+    const value = (f: HistoryField, v: string | number | null) => (v === null || v === '' ? (f === 'addons' ? 'none' : '—')
       : f === 'start_time' || f === 'end_time' ? when(v) : f === 'price' ? money(v) : String(v));
     const changes: HistoryChange[] = Array.isArray(r.changes) ? r.changes : [];
     const d: PaymentDetails | null = r.details || null;
